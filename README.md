@@ -120,16 +120,16 @@ holding's target across its account rows if you maintain multiple positions.
 
 Allocation tables derive label and hierarchy targets by summing the underlying
 position targets, using the same membership splits as current allocations.
-**Derived target (% of portfolio)** and **Current (% of portfolio)** share the
+**Target (% of portfolio)** and **Current (% of portfolio)** share the
 whole-portfolio basis. **Current − target (pp)** is positive above target and
 negative below. Filtering narrows the contributing positions without rescaling
 their targets. Parent targets include their descendants; do not sum parent and
 child rows together.
 
 ETF look-through distributes an ETF target using the snapshot's constituent
-weights, including residual Other. Direct and ETF-derived targets combine by
+weights, including residual Other. Targets from direct positions and ETF constituents combine by
 asset identity. The optional SMH display group sums its fund and stock targets.
-If any contributing position lacks a target, the derived target and gap stay
+If any contributing position lacks a target, the target and gap stay
 blank and a **Known target subtotal (%)** shows the available portion. An
 explicit zero target is complete. Missing portfolio prices leave the whole-
 portfolio current comparison and gap blank while preserving known targets.

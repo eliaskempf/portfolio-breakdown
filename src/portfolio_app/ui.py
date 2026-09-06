@@ -251,7 +251,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                     figure = bar_chart(nodes) if chart_type == "Bar" else pie_chart(nodes) if chart_type == "Pie" else hierarchy_chart(nodes, chart_type)
                     st.plotly_chart(figure, width="stretch", height=figure.layout.height, theme=None, config={"responsive": True, "displaylogo": False})
                 else:
-                    st.info("This selection has no current allocation. Its derived targets are shown below.")
+                    st.info("This selection has no current allocation. Its targets are shown below.")
                 show_paths = False
                 if view.startswith("taxonomy:"):
                     show_paths = st.checkbox("Show classification paths", help="The breadcrumb locating a category in the taxonomy, for example Technology › Semiconductors. This is not a file path.")

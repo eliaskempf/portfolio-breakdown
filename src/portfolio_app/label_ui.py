@@ -107,7 +107,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             st.plotly_chart(figure, width="stretch", height=figure.layout.height, theme=None,
                             config={"responsive": True, "displaylogo": False})
         else:
-            st.info("This branch has no current allocation. Its derived targets are shown below.")
+            st.info("This branch has no current allocation. Its targets are shown below.")
         if root:
             allocation_total(" › ".join((by_key[root[0]].title, *root[1:])), float(tree.iloc[0]["value"]))
             st.caption("Asset percentages use this detail’s assigned value. Assets with several paths within a label share its value equally across those paths.")
