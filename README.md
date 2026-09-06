@@ -139,6 +139,48 @@ investment. Its current value is zero without requiring a quote, and its target
 contributes to its labels immediately. Add classification labels for new assets
 in the private YAML file; otherwise they appear under Unclassified.
 
+The sidebar’s **Ignore empty positions** hides zero-share rows from analysis
+and the rebalancing calculator. Their combined target is divided equally among
+remaining unique asset IDs, then equally among each asset’s held account rows.
+This is an equal percentage-point increment, not a proportional scaling. For
+example, removing an invented 20% planned target adds 10 pp to each of two
+remaining assets. Saved positions and targets remain unchanged and editable in
+**Manage positions**. Switching the option resets position filters. Redistribution
+requires complete targets if any targets have been entered; it never treats an
+unknown target as zero. With no targets, the option simply hides empty positions.
+
+The **Rebalance** tab offers three read-only calculation modes:
+
+- **Fewest trades (buys and sells)** reaches every target range with no new money,
+  minimizing changed position/account rows first and total turnover second.
+- **Minimum new money (no sells)** finds the smallest fully invested contribution
+  that reaches every range, then minimizes trades at that contribution.
+- **Allocate new money** fully invests a given amount using at most the chosen
+  number of trades. It minimizes the sum of distances outside target ranges,
+  then trade count, then distance from exact targets. A comparison table and
+  plan selector show whether additional trades offer enough improvement.
+
+Choose an absolute tolerance (default ±0.5 percentage points) or a percentage
+relative to each target. For a 10% target, ±0.5 pp and ±5% relative both allow
+9.5–10.5%. Relative tolerance leaves a zero target at zero; absolute tolerance
+can allow a small holding. Bounds are clipped to 0–100%.
+
+Rebalancing uses whole-portfolio position targets totaling 100%, complete EUR
+valuations, and final weights including the contribution. Overview filters,
+label selections and ETF display groups do not alter the tradable positions.
+**No new positions** forbids buying zero-share account rows while retaining
+their targets; **Ignore empty positions** instead removes and redistributes
+them before calculation. Infeasible restrictions produce an explanation.
+
+Amounts assume fractional shares and exclude fees, taxes, spreads and lot-size
+constraints. New money is fully invested; there is no modeled cash account.
+EUR amounts are rounded only for display. Plans never place orders or write
+holdings. SciPy’s HiGHS linear/mixed-integer optimizer must report a proven
+optimum; a solver limit or failed constraint check produces no trade plan.
+Each solve has a ten-second limit; interactive calculations support up to 100
+position rows. With zero invested capital, choose a budget in **Allocate new
+money** instead of asking for a minimum contribution.
+
 `classifications.yaml` maps asset IDs to any number of named taxonomies:
 
 ```yaml
@@ -547,8 +589,9 @@ They cover valuation, persistent cache fallback, parent/child conservation,
 multi-path classifications, filtering, denominators, targets, ETF residuals,
 company exposure merging, snapshot refresh failure recovery, position saves,
 backups, stale-edit rejection, bulk purchase averaging and historical cost entry,
-listing search, Git privacy guards, and Streamlit controls. The server health
+listing search, minimum-trade and minimum-cash rebalancing, trade-count tradeoffs,
+empty-position redistribution, Git privacy guards, and Streamlit controls. The server health
 endpoint is `/_stcore/health`.
 
-Manually overridden hierarchy-node targets, rebalance calculations, P&L, and historical analysis
+Manually overridden hierarchy-node targets, P&L, and historical analysis
 remain deferred.

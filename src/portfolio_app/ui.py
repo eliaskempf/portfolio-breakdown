@@ -22,6 +22,8 @@ from portfolio_app.label_presentation import asset_badges, badge_column, taxonom
 from portfolio_app.holdings import DataError, metadata_dimensions
 from portfolio_app.position_ui import render_position_editor
 from portfolio_app.positions import read_snapshot
+from portfolio_app.rebalancing import ignore_empty_positions, RebalanceError
+from portfolio_app.rebalance_ui import render_rebalancing
 from portfolio_app.prices import PriceService, StaticProvider, YahooProvider
 from portfolio_app.presentation import allocation_total, apply_style, empty_overview, workspace_header
 from portfolio_app.taxonomy import branches, describe, load_classifications, taxonomy_names
@@ -41,7 +43,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         context = (str(data_dir.resolve()), demo)
         if st.session_state.get("portfolio_workspace_context") != context:
             for key in list(st.session_state):
-                if key.startswith(("position_edit_", "filter_", "label_compare_", "allocation_group_")) or key == "position_saved_notice":
+                if key.startswith(("position_edit_", "filter_", "label_compare_", "allocation_group_", "rebalance_")) or key in {"position_saved_notice", "ignore_empty_positions"}:
                     del st.session_state[key]
             st.session_state["portfolio_workspace_context"] = context
     workspace_header(demo)
@@ -60,15 +62,44 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         st.error(str(exc))
         st.info("Edit holdings.csv and classifications.yaml in the data directory, then rerun the app.")
         return
-    overview, positions = st.tabs(["Overview", "Manage positions"], default="Manage positions" if holdings.empty else "Overview", key="main_tabs")
+    def reset_position_filters():
+        # A changed position universe must not leave restored rows hidden by a
+        # selection made while those rows were unavailable.
+        for key in list(st.session_state):
+            if key.startswith("filter_"):
+                del st.session_state[key]
+
+    ignore_empty = st.sidebar.checkbox(
+        "Ignore empty positions", key="ignore_empty_positions", on_change=reset_position_filters,
+        help="Hide positions with zero shares from analysis and rebalancing. Distribute their targets equally among remaining assets, then equally among each asset’s account rows. Saved positions and targets stay unchanged. Switching this option resets position filters.",
+    )
+    analysis_holdings = holdings
+    analysis_error = None
+    if ignore_empty:
+        try:
+            analysis_holdings = ignore_empty_positions(holdings)
+        except RebalanceError as exc:
+            analysis_error = str(exc)
+        st.sidebar.caption("Empty positions are hidden from analysis. Their targets are shared equally among remaining assets for this view only. Manage positions retains all saved rows.")
+    overview, rebalance, positions = st.tabs(["Overview", "Rebalance", "Manage positions"], default="Manage positions" if holdings.empty else "Overview", key="main_tabs")
     with positions:
         render_position_editor(data_dir / "holdings.csv", snapshot, funds, demo=demo, embedded=True)
+    valued = None
     with overview:
-        if holdings.empty:
+        if analysis_error:
+            st.error(analysis_error)
+        elif analysis_holdings.empty:
             empty_overview()
-            st.info("Add a position using Manage positions to start exploring your portfolio.")
-            return
-        render_analysis(data_dir, holdings, classifications, funds, demo=demo, price_service=price_service)
+            st.info("All positions have zero shares. Disable Ignore empty positions to include them." if not holdings.empty else
+                    "Add a position using Manage positions to start exploring your portfolio.")
+        else:
+            if ignore_empty:
+                st.caption("Ignoring empty positions · Targets shown here include their equally redistributed allocations. Saved targets are unchanged.")
+            valued = render_analysis(data_dir, analysis_holdings, classifications, funds, demo=demo, price_service=price_service)
+    with rebalance:
+        if analysis_error:
+            st.error(analysis_error)
+        render_rebalancing(valued)
 
 
 def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service):
@@ -142,14 +173,14 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         st.warning("Some selected positions could not be valued. Their values and weights remain blank; enable Show price details in the holdings table to see why.")
     if selected.empty:
         st.info("No holdings match the selected filters.")
-        return
+        return valued
     exposures = normalize_exposures(selected)
     if representation == "ETF look-through":
         try:
             exposures = expand_etfs(exposures, funds, holdings)
         except DataError as exc:
             st.error(str(exc))
-            return
+            return valued
     exposures["asset_name"] = exposures["asset_name"].map(display_name)
     effective_exposures = exposures
     saved_classifications = classifications
@@ -160,7 +191,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             classifications = group_classifications(classifications, display_group)
         except DataError as exc:
             st.error(str(exc))
-            return
+            return valued
     if "target_allocation" in valued and valued["target_allocation"].notna().any():
         try:
             targets = target_exposures(selected, funds, lookthrough=representation == "ETF look-through", group=display_group, holdings=holdings)
@@ -168,7 +199,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                 measure["asset_name"] = measure["asset_name"].map(display_name)
         except DataError as exc:
             st.error(str(exc))
-            return
+            return valued
     with st.sidebar:
         st.header("Allocation view")
         options = [("holding", "Holding"), *[(f"metadata:{name}", name.replace("_", " ").title()) for name in dimensions],
@@ -299,6 +330,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     } | {f"classification:{name}": (badge_column("Labels", taxonomy_colors(classifications, name)) if name == "labels" else
                                     "AI theme" if name == "ai" else name.replace("_", " ").title()) for name in names})
     st.caption("Prices use the latest available daily unadjusted close, which may be delayed. Timestamps identify price bars; FX timestamps are separate. Acquisition price is displayed as entered; P&L is deferred.")
+    return valued
 
 
 if __name__ == "__main__":
