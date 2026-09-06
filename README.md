@@ -118,6 +118,27 @@ keeps missing targets blank, and does not renormalize targets when filtering.
 Targets are not metadata filters or inferred from current weights. Split a
 holding's target across its account rows if you maintain multiple positions.
 
+Allocation tables derive label and hierarchy targets by summing the underlying
+position targets, using the same membership splits as current allocations.
+**Derived target (% of portfolio)** and **Current (% of portfolio)** share the
+whole-portfolio basis. **Current − target (pp)** is positive above target and
+negative below. Filtering narrows the contributing positions without rescaling
+their targets. Parent targets include their descendants; do not sum parent and
+child rows together.
+
+ETF look-through distributes an ETF target using the snapshot's constituent
+weights, including residual Other. Direct and ETF-derived targets combine by
+asset identity. The optional SMH display group sums its fund and stock targets.
+If any contributing position lacks a target, the derived target and gap stay
+blank and a **Known target subtotal (%)** shows the available portion. An
+explicit zero target is complete. Missing portfolio prices leave the whole-
+portfolio current comparison and gap blank while preserving known targets.
+
+You can save a position with **zero shares and a nonzero target** to plan a new
+investment. Its current value is zero without requiring a quote, and its target
+contributes to its labels immediately. Add classification labels for new assets
+in the private YAML file; otherwise they appear under Unclassified.
+
 `classifications.yaml` maps asset IDs to any number of named taxonomies:
 
 ```yaml
@@ -529,5 +550,5 @@ backups, stale-edit rejection, bulk purchase averaging and historical cost entry
 listing search, Git privacy guards, and Streamlit controls. The server health
 endpoint is `/_stcore/health`.
 
-Hierarchy-node targets, rebalance calculations, P&L, and historical analysis
+Manually overridden hierarchy-node targets, rebalance calculations, P&L, and historical analysis
 remain deferred.

@@ -134,6 +134,26 @@ def test_grouping_multiple_accounts_and_empty_selections(fund, positions):
     assert group_members_table(positions.iloc[:0], group).empty
 
 
+def test_target_expansion_conserves_etf_residual_and_direct_targets(fund, positions):
+    from portfolio_app.targets import target_exposures
+
+    positions["target_allocation"] = [.2, .5, float("nan")]
+    targets = target_exposures(positions, [fund], lookthrough=True)
+    assert targets.known["value"].sum() == pytest.approx(.7)
+    assert targets.known.loc[targets.known.asset_id == "my-nvidia", "value"].sum() == pytest.approx(.24)
+    assert targets.known.loc[targets.known.source_type == "etf_other", "value"].sum() == pytest.approx(.425)
+    assert targets.missing["value"].sum() == 1
+    # Filtering out a direct holding must not change the constituent's identity.
+    filtered = target_exposures(positions.loc[positions.id == "semis"], [fund], lookthrough=True, holdings=positions)
+    assert "my-nvidia" in set(filtered.known.asset_id)
+    group = InstrumentGroup("view-group:example", "Synthetic group", frozenset({"semis", "my-nvidia"}), frozenset({"semis"}))
+    grouped = target_exposures(positions, [fund], lookthrough=True, group=group)
+    assert grouped.known.loc[grouped.known.asset_id == group.asset_id, "value"].sum() == pytest.approx(.7)
+    positions.loc[positions.id == "semis", "target_allocation"] = float("nan")
+    missing = target_exposures(positions, [fund], lookthrough=True, group=group)
+    assert missing.missing.loc[missing.missing.asset_id == group.asset_id, "value"].sum() == pytest.approx(1)
+
+
 def test_full_weights_need_no_residual(fund):
     frame = fund.constituents.copy()
     frame["weight"] = [0.6, 0.4]

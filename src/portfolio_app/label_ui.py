@@ -12,9 +12,12 @@ from portfolio_app.label_comparison import (
 from portfolio_app.presentation import allocation_total
 from portfolio_app.label_presentation import asset_badges, badge_column, color_label_chart, taxonomy_colors
 from portfolio_app.taxonomy import Classifications, UNCLASSIFIED, taxonomy_names
+from portfolio_app.targets import TargetExposures, add_target_columns, target_totals
+from portfolio_app.target_ui import target_caption, target_column_config
 
 
-def render_label_comparison(exposures: pd.DataFrame, classifications: Classifications) -> None:
+def render_label_comparison(exposures: pd.DataFrame, classifications: Classifications, *,
+                            targets: TargetExposures | None = None, portfolio_value: float = 0., valuation_complete: bool = True) -> None:
     st.subheader("Allocation across labels")
     names = taxonomy_names(classifications)
     if not names:
@@ -37,6 +40,10 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         return
     memberships = label_memberships(exposures, classifications, labels)
     has_overlap = any(row.value > 0 and len(memberships[row.asset_id]) > 1 for row in exposures.itertuples())
+    if targets is not None:
+        for measure in (targets.known, targets.missing):
+            target_memberships = label_memberships(measure, classifications, labels)
+            has_overlap |= any(row.value > 0 and len(target_memberships[row.asset_id]) > 1 for row in measure.itertuples())
     policy = "split"  # With disjoint labels, both policies give the same result.
     with st.sidebar:
         if has_overlap:
@@ -51,6 +58,11 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         chart_type = st.selectbox("Chart", chart_types, index=chart_types.index("Sunburst") if "Sunburst" in chart_types else 0,
                                   key=f"label_compare_chart_{policy}")
     comparison = compare_labels(exposures, classifications, labels, overlap=policy)
+    target_comparisons = None
+    if targets is not None:
+        target_comparisons = [compare_labels(measure, classifications, labels, overlap=policy)
+                              for measure in (targets.known, targets.missing)]
+        target_caption(valuation_complete=valuation_complete)
     if not comparison.matched_value:
         st.info("No positive valued assets match these labels in the current portfolio selection.")
     else:
@@ -91,21 +103,39 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             figure = bar_chart(nodes) if chart_type == "Bar" else pie_chart(nodes)
         color_label_chart(figure, tree if chart_type in {"Sunburst", "Treemap"} else nodes, colors,
                           detail_color=colors[by_key[root[0]].title] if root else None)
-        st.plotly_chart(figure, width="stretch", height=figure.layout.height, theme=None,
-                        config={"responsive": True, "displaylogo": False})
+        if float(tree.iloc[0]["value"]) > 0:
+            st.plotly_chart(figure, width="stretch", height=figure.layout.height, theme=None,
+                            config={"responsive": True, "displaylogo": False})
+        else:
+            st.info("This branch has no current allocation. Its derived targets are shown below.")
         if root:
             allocation_total(" › ".join((by_key[root[0]].title, *root[1:])), float(tree.iloc[0]["value"]))
             st.caption("Asset percentages use this detail’s assigned value. Assets with several paths within a label share its value equally across those paths.")
             assets = comparison_assets(comparison, root, include_ids=True)
+            if target_comparisons is not None:
+                target_details = [item.allocations.loc[item.allocations["path"].map(lambda path: path[:len(root)] == root)]
+                                  for item in target_comparisons]
+                # Include targets for assets awaiting a quote in this branch.
+                identities = target_details[0][["asset_id", "asset_name"]].drop_duplicates("asset_id").rename(columns={"asset_name": "Investment"})
+                assets = assets.merge(identities, on="asset_id", how="outer", suffixes=("", "_target"))
+                assets["Investment"] = assets["Investment"].fillna(assets.pop("Investment_target"))
+                assets = add_target_columns(assets, assets["asset_id"].tolist(), target_totals(*target_details, key="asset_id"),
+                                            portfolio_value=portfolio_value, valuation_complete=valuation_complete)
+                assets = assets.sort_values(["EUR value", "Investment"], ascending=[False, True],
+                                             na_position="last", kind="stable", ignore_index=True)
             assets["Labels"] = assets.pop("asset_id").map(lambda asset: asset_badges(classifications, asset, taxonomy))
             st.dataframe(assets, hide_index=True, height="content", width="stretch", column_config={
                 "Labels": badge_column("Labels", colors),
                 "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
                 "Allocation %": st.column_config.NumberColumn("Within this detail (%)", format="%.2f %%"),
-            })
+            } | target_column_config())
             return
         allocation_total("Assets matching the selected labels — counted once", comparison.matched_value)
     table = comparison.table.copy()
+    if target_comparisons is not None:
+        table = add_target_columns(table, table["Label"].tolist(),
+                                   target_totals(*(item.table for item in target_comparisons), key="Label", value="EUR value"),
+                                   portfolio_value=portfolio_value, valuation_complete=valuation_complete)
     table["Label"] = table["Label"].map(lambda label: [label])
     st.dataframe(table, hide_index=True, height="content", width="stretch", column_config={
         "Label": badge_column("Label", colors),
@@ -114,4 +144,4 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                                                            help="Share of the unique value matching any selected label."),
         "Portfolio %": st.column_config.NumberColumn("Of filtered portfolio (%)", format="%.2f %%"),
         "Assets": st.column_config.NumberColumn(help="Unique matching assets; direct and ETF-derived exposure to the same asset count once."),
-    })
+    } | target_column_config())

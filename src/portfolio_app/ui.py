@@ -26,6 +26,8 @@ from portfolio_app.prices import PriceService, StaticProvider, YahooProvider
 from portfolio_app.presentation import allocation_total, apply_style, empty_overview, workspace_header
 from portfolio_app.taxonomy import branches, describe, load_classifications, taxonomy_names
 from portfolio_app.valuation import portfolio_weights, value_holdings
+from portfolio_app.targets import add_target_columns, target_exposures, target_totals
+from portfolio_app.target_ui import target_caption, target_column_config
 
 
 def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None) -> None:
@@ -151,10 +153,19 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     exposures["asset_name"] = exposures["asset_name"].map(display_name)
     effective_exposures = exposures
     saved_classifications = classifications
+    targets = None
     if display_group is not None:
         try:
             exposures = group_exposures(exposures, display_group)
             classifications = group_classifications(classifications, display_group)
+        except DataError as exc:
+            st.error(str(exc))
+            return
+    if "target_allocation" in valued and valued["target_allocation"].notna().any():
+        try:
+            targets = target_exposures(selected, funds, lookthrough=representation == "ETF look-through", group=display_group, holdings=holdings)
+            for measure in (targets.known, targets.missing):
+                measure["asset_name"] = measure["asset_name"].map(display_name)
         except DataError as exc:
             st.error(str(exc))
             return
@@ -188,7 +199,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         tickers.update(dict(zip(holdings["id"], holdings["ticker"])))
         chart_exposures["asset_name"] = [f"{row.asset_name} ({tickers[row.asset_id]})" if tickers[row.asset_id] else row.asset_name for row in exposures.itertuples()]
     if view == "selected_labels":
-        render_label_comparison(chart_exposures, classifications)
+        render_label_comparison(chart_exposures, classifications, targets=targets, portfolio_value=total, valuation_complete=all_missing == 0)
     else:
         if view.startswith("taxonomy:"):
             nodes = aggregate(chart_exposures, classifications, taxonomy=taxonomy, root=root, depth=depth, include_holdings=include_holdings and chart_type not in {"Bar", "Pie"})
@@ -197,16 +208,19 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             nodes.loc[nodes["parent_id"] == "", "label"] = "Selected holdings"
         nodes = sort_allocation_nodes(nodes)
         st.subheader("Allocation")
-        if nodes.empty or selected_total <= 0:
+        if nodes.empty or (selected_total <= 0 and targets is None):
             st.info("No positive valued allocation is available for this selection.")
         else:
             root_value = nodes.iloc[0]["value"]
-            if root_value <= 0:
+            if root_value <= 0 and targets is None:
                 st.info("The selected hierarchy root has no positive valued allocation.")
             else:
                 st.caption(f"Displayed root: €{root_value:,.2f}. Allocation percentages are relative to this root. Chart clicks explore the chart; use Hierarchy root to update both chart and table.")
-                figure = bar_chart(nodes) if chart_type == "Bar" else pie_chart(nodes) if chart_type == "Pie" else hierarchy_chart(nodes, chart_type)
-                st.plotly_chart(figure, width="stretch", height=figure.layout.height, theme=None, config={"responsive": True, "displaylogo": False})
+                if root_value > 0:
+                    figure = bar_chart(nodes) if chart_type == "Bar" else pie_chart(nodes) if chart_type == "Pie" else hierarchy_chart(nodes, chart_type)
+                    st.plotly_chart(figure, width="stretch", height=figure.layout.height, theme=None, config={"responsive": True, "displaylogo": False})
+                else:
+                    st.info("This selection has no current allocation. Its derived targets are shown below.")
                 show_paths = False
                 if view.startswith("taxonomy:"):
                     show_paths = st.checkbox("Show classification paths", help="The breadcrumb locating a category in the taxonomy, for example Technology › Semiconductors. This is not a file path.")
@@ -214,6 +228,18 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                 total_label = f"{nodes.iloc[0]['label']} — total" if view.startswith("taxonomy:") else "Selected holdings — total"
                 allocation_total(total_label, root_value)
                 allocation = hierarchy_table(nodes, show_paths=show_paths)
+                if targets is not None:
+                    measures = []
+                    for measure in (targets.known, targets.missing):
+                        if view.startswith("taxonomy:"):
+                            measures.append(aggregate(measure, classifications, taxonomy=taxonomy, root=root, depth=depth,
+                                                      include_holdings=include_holdings and chart_type not in {"Bar", "Pie"}))
+                        else:
+                            measures.append(aggregate_dimension(measure, "holding" if view == "holding" else view.removeprefix("metadata:")))
+                    totals = target_totals(*measures, key="node_id")
+                    allocation = add_target_columns(allocation, nodes.loc[nodes["parent_id"] != "", "node_id"].tolist(), totals,
+                                                    portfolio_value=total, valuation_complete=all_missing == 0)
+                    target_caption(valuation_complete=all_missing == 0)
                 label_config = {}
                 if view == "holding" and names:
                     label_set = "labels" if "labels" in names else "sector" if "sector" in names else names[0]
@@ -225,7 +251,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                     "Classification path": st.column_config.TextColumn(help="Full breadcrumb within the selected taxonomy."),
                     "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
                     "Allocation %": st.column_config.NumberColumn(format="%.2f %%"),
-                } | label_config)
+                } | label_config | target_column_config())
     classifications = saved_classifications
     if display_group is not None:
         render_group_members(selected, display_group)

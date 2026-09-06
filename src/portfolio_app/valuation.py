@@ -20,10 +20,16 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
         result[column] = float("nan")
     for column in text_columns:
         result[column] = ""
-    price_results = {ticker: prices.price(ticker, refresh=refresh) for ticker in holdings["ticker"].unique() if ticker}
+    active = holdings.loc[holdings["shares"] > 0]
+    price_results = {ticker: prices.price(ticker, refresh=refresh) for ticker in active["ticker"].unique() if ticker}
     currencies = {item.quote.currency for item in price_results.values() if item.quote}
     fx_results = {currency: prices.fx(currency, refresh=refresh) for currency in currencies}
     for index, position in holdings.iterrows():
+        if position["shares"] == 0:
+            result.at[index, "current_value_eur"] = 0.
+            result.at[index, "price_status"] = "not_held"
+            result.at[index, "valuation_note"] = "Zero shares; target-only position."
+            continue
         if not position["ticker"]:
             result.at[index, "valuation_note"] = "Missing ticker"
             result.at[index, "price_status"] = "missing"

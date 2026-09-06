@@ -124,3 +124,48 @@ def test_detail_resets_when_selected_labels_or_filters_remove_branch(label_data)
     by_label(app.multiselect, "Holdings").set_value(["c"]).run()
     assert not app.exception
     assert len(app.get("plotly_chart")) == 0
+
+
+def test_derived_targets_zero_positions_filters_and_incomplete_targets(label_data):
+    (label_data / "holdings.csv").write_text(
+        "id,name,ticker,shares,target_allocation\na,Synthetic A,NVDA,1,0.2\nb,Synthetic B,,0,0.3\nc,Synthetic C,ENR.DE,2,\n"
+    )
+    app = launch(label_data)
+    assert not app.exception
+    table = app.dataframe[0].value
+    assert sorted(table["Known target portfolio %"].tolist()) == [0, 20, 30]
+    assert table["Target portfolio %"].isna().sum() == 1
+    assert app.metric[2].value == "0"
+    b = Label("labels", ("Group B",)).key
+    by_label(app.selectbox, "Detail view").set_value((b,)).run()
+    assert not app.exception
+    detail = app.dataframe[0].value
+    assert detail["Target portfolio %"].tolist() == [30]
+    assert detail["Gap (pp)"].tolist() == [-30]
+    by_label(app.button, "Back to overview").click().run()
+    by_label(app.multiselect, "Holdings").set_value(["a"]).run()
+    assert not app.exception
+    table = app.dataframe[0].value
+    assert table["Target portfolio %"].sum() == 20
+    assert table["Current portfolio %"].sum() == pytest.approx(100 * 80 / 120)
+    # Advanced taxonomy tables also derive parent/child targets.
+    by_label(app.selectbox, "Group by").set_value("taxonomy:labels").run()
+    assert not app.exception
+    assert set(app.dataframe[0].value["Target portfolio %"]) == {20}
+
+
+@pytest.mark.parametrize("shares", [0, 1])
+def test_targets_remain_visible_for_all_zero_or_unpriced_portfolios(label_data, shares):
+    (label_data / "holdings.csv").write_text(
+        f"id,name,ticker,shares,target_allocation\na,Synthetic A,,{shares},0.2\nb,Synthetic B,,0,0.3\n"
+    )
+    app = launch(label_data)
+    assert not app.exception
+    assert app.dataframe[0].value["Target portfolio %"].sum() == 50
+    assert app.dataframe[0].value["Gap (pp)"].isna().all()
+    assert len(app.get("plotly_chart")) == 0
+    if shares == 0:
+        by_label(app.selectbox, "Group by").set_value("holding").run()
+        assert not app.exception
+        assert app.dataframe[0].value["Target portfolio %"].sum() == 50
+        assert len(app.get("plotly_chart")) == 0
