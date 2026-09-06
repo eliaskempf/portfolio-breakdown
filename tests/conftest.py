@@ -1,0 +1,39 @@
+from datetime import datetime, timezone
+
+import pytest
+
+from portfolio_app.demo import create_demo_data
+from portfolio_app.holdings import load_holdings
+from portfolio_app.prices import PriceService, StaticProvider
+from portfolio_app.taxonomy import load_classifications
+from portfolio_app.valuation import value_holdings
+
+
+@pytest.fixture(scope="session")
+def sample_data_dir(tmp_path_factory):
+    return create_demo_data(tmp_path_factory.mktemp("synthetic-portfolio"))
+
+
+@pytest.fixture
+def now():
+    return datetime(2026, 9, 5, 12, tzinfo=timezone.utc)
+
+
+@pytest.fixture
+def holdings(sample_data_dir):
+    return load_holdings(sample_data_dir / "holdings.csv")
+
+
+@pytest.fixture
+def classifications(sample_data_dir):
+    return load_classifications(sample_data_dir / "classifications.yaml")
+
+
+@pytest.fixture
+def service(now, sample_data_dir):
+    return PriceService(StaticProvider(sample_data_dir / "demo_prices.json"), now=lambda: now)
+
+
+@pytest.fixture
+def valued(holdings, service):
+    return value_holdings(holdings, service)

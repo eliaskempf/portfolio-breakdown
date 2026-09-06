@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+repository=$(git rev-parse --show-toplevel)
+cd "$repository"
+uv_binary=$(git config --local --get portfolio.uvPath || true)
+if [ -z "$uv_binary" ]; then
+    uv_binary=uv
+fi
+exec "$uv_binary" --no-cache run --frozen --no-sync python "$repository/src/portfolio_app/privacy.py" --tracked

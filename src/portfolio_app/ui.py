@@ -1,0 +1,269 @@
+"""Streamlit controls and presentation; calculations live in pure modules."""
+
+import argparse
+import json
+from collections import Counter
+from hashlib import sha256
+from pathlib import Path
+
+import streamlit as st
+
+from portfolio_app.aggregation import aggregate, aggregate_dimension
+from portfolio_app.charts import bar_chart, hierarchy_chart, hierarchy_table, pie_chart, sort_allocation_nodes
+from portfolio_app.display_names import display_name
+from portfolio_app.etf import effective_exposure_table, expand_etfs, load_funds, validate_fund_listings
+from portfolio_app.etf_ui import render_fund_details, render_snapshot_controls
+from portfolio_app.exposures import normalize_exposures
+from portfolio_app.filtering import filter_holdings
+from portfolio_app.label_ui import render_label_comparison
+from portfolio_app.label_presentation import asset_badges, badge_column, taxonomy_colors
+from portfolio_app.holdings import DataError, metadata_dimensions
+from portfolio_app.position_ui import render_position_editor
+from portfolio_app.positions import read_snapshot
+from portfolio_app.prices import PriceService, StaticProvider, YahooProvider
+from portfolio_app.presentation import allocation_total, apply_style, empty_overview, workspace_header
+from portfolio_app.taxonomy import branches, describe, load_classifications, taxonomy_names
+from portfolio_app.valuation import portfolio_weights, value_holdings
+
+
+def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None) -> None:
+    st.set_page_config(page_title="Portfolio breakdown", layout="wide")
+    apply_style()
+    if demo_dir is not None:
+        workspace = st.sidebar.radio("Portfolio workspace", ["My portfolio", "Demo portfolio"], index=1 if demo else 0, key="active_portfolio")
+        demo = workspace == "Demo portfolio"
+        if demo:
+            data_dir = demo_dir
+        context = (str(data_dir.resolve()), demo)
+        if st.session_state.get("portfolio_workspace_context") != context:
+            for key in list(st.session_state):
+                if key.startswith(("position_edit_", "filter_", "label_compare_")) or key == "position_saved_notice":
+                    del st.session_state[key]
+            st.session_state["portfolio_workspace_context"] = context
+    workspace_header(demo)
+    if demo:
+        st.caption("Editable demo · Synthetic prices, FX and ETF weights. Edits reset when the app restarts; refreshes and workspace switches keep them.")
+    elif demo_dir is not None:
+        st.caption("My portfolio — your positions are saved locally and kept between app starts.")
+    try:
+        snapshot = read_snapshot(data_dir / "holdings.csv")
+        holdings = snapshot.holdings
+        classifications_path = data_dir / "classifications.yaml"
+        classifications = load_classifications(classifications_path) if classifications_path.exists() else {}
+        funds = load_funds(data_dir / "etfs")
+        validate_fund_listings(holdings, funds)
+    except DataError as exc:
+        st.error(str(exc))
+        st.info("Edit holdings.csv and classifications.yaml in the data directory, then rerun the app.")
+        return
+    overview, positions = st.tabs(["Overview", "Manage positions"], default="Manage positions" if holdings.empty else "Overview", key="main_tabs")
+    with positions:
+        render_position_editor(data_dir / "holdings.csv", snapshot, funds, demo=demo, embedded=True)
+    with overview:
+        if holdings.empty:
+            empty_overview()
+            st.info("Add a position using Manage positions to start exploring your portfolio.")
+            return
+        render_analysis(data_dir, holdings, classifications, funds, demo=demo, price_service=price_service)
+
+
+def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service):
+    names = taxonomy_names(classifications)
+    dimensions = metadata_dimensions(holdings)
+    with st.sidebar:
+        st.header("Explore your allocation")
+        show_tickers = st.checkbox("Show tickers", value=False, key="display_tickers")
+        with st.expander("Market data"):
+            refresh = st.button("Refresh prices", disabled=demo)
+            funds = render_snapshot_controls(funds, demo=demo)
+        representation = st.radio("Portfolio representation", ["Instruments", "ETF look-through"])
+        with st.expander("Filter positions"):
+            metadata = {}
+            for dimension in dimensions:
+                choices = sorted(holdings[dimension].unique())
+                metadata[dimension] = st.multiselect(
+                    dimension.replace("_", " ").title(), choices, default=choices,
+                    format_func=lambda value: value or "Unspecified", key=f"filter_meta_{dimension}",
+                )
+            ids = list(holdings["id"].unique())
+            labels = {row.id: (f"{display_name(row.name)} ({row.ticker or row.id.upper()})" if show_tickers else display_name(row.name)) for row in holdings.itertuples()}
+            counts = Counter(labels.values())
+            labels = {asset: f"{label} [{index + 1}]" if counts[label] > 1 else label for index, (asset, label) in enumerate(labels.items())}
+            # Streamlit serializes multiselect options by their formatted text.
+            # A changed display mode needs a fresh widget while selections stay
+            # tied to stable asset IDs, not the previous display strings.
+            filter_key = "filter_holdings_" + sha256(repr(labels).encode()).hexdigest()[:16]
+            if st.session_state.get("filter_holdings_widget") != filter_key:
+                st.session_state[filter_key] = [asset for asset in st.session_state.get("filter_holdings_selection", ids) if asset in ids]
+                st.session_state["filter_holdings_widget"] = filter_key
+            selected_ids = st.multiselect("Holdings", ids, format_func=labels.get, key=filter_key,
+                                         help="Enable Show tickers to distinguish exchange listings with the same name.")
+            st.session_state["filter_holdings_selection"] = selected_ids
+            taxonomy_filters = {}
+            with st.expander("Taxonomy branch filters"):
+                st.caption("Include whole instruments matching any selected branch, before ETF expansion. Filters across taxonomies are combined.")
+                for name in names:
+                    selected = st.multiselect(
+                        f"{name} branches", branches(classifications, ids, name),
+                        format_func=lambda path: " > ".join(path), key=f"filter_taxonomy_{name}",
+                    )
+                    if selected:
+                        taxonomy_filters[name] = selected
+    if price_service is None:
+        try:
+            provider = StaticProvider(data_dir / "demo_prices.json") if demo else YahooProvider(data_dir / ".cache" / "yahoo")
+            price_service = PriceService(provider, None if demo else data_dir / ".cache" / "prices.json")
+        except (OSError, ValueError) as exc:
+            st.error(f"Cannot load demo prices: {exc}")
+            return
+    with st.spinner("Valuing holdings…"):
+        valued = value_holdings(holdings, price_service, refresh=refresh)
+    if price_service.cache_warning:
+        st.warning(price_service.cache_warning)
+    selected = filter_holdings(
+        valued, classifications, metadata=metadata, asset_ids=selected_ids, taxonomy_branches=taxonomy_filters,
+    )
+    selected["portfolio_weight"] = portfolio_weights(selected["current_value_eur"])
+    total = valued["current_value_eur"].sum()
+    selected_total = selected["current_value_eur"].sum()
+    missing = int(selected["current_value_eur"].isna().sum())
+    all_missing = int(valued["current_value_eur"].isna().sum())
+    first, second, third = st.columns(3)
+    first.metric("Portfolio value", f"€{total:,.2f}")
+    second.metric("Selected value", f"€{selected_total:,.2f}")
+    third.metric("Awaiting a price", str(missing))
+    st.caption(f"{len(selected)} of {len(valued)} positions selected. {all_missing} unvalued across all positions. Percentages exclude unvalued positions.")
+    if missing:
+        st.warning("Some selected positions could not be valued. Their values and weights remain blank; enable Show price details in the holdings table to see why.")
+    if selected.empty:
+        st.info("No holdings match the selected filters.")
+        return
+    exposures = normalize_exposures(selected)
+    if representation == "ETF look-through":
+        try:
+            exposures = expand_etfs(exposures, funds, holdings)
+        except DataError as exc:
+            st.error(str(exc))
+            return
+    exposures["asset_name"] = exposures["asset_name"].map(display_name)
+    with st.sidebar:
+        st.header("Allocation view")
+        options = [("holding", "Holding"), *[(f"metadata:{name}", name.replace("_", " ").title()) for name in dimensions],
+                   *[(f"taxonomy:{name}", f"Taxonomy: {name}") for name in names]]
+        label_option = [("selected_labels", "Selected labels")]
+        options = label_option + options if "labels" in names else options + label_option
+        view = st.selectbox("Group by", [key for key, _ in options], format_func=dict(options).get)
+        root = ()
+        depth = None
+        include_holdings = False
+        if view.startswith("taxonomy:"):
+            taxonomy = view.removeprefix("taxonomy:")
+            if taxonomy == "ai":
+                st.caption("AI themes describe business roles, not the proportion of company revenue from AI.")
+            asset_ids = exposures["asset_id"].tolist() if representation == "ETF look-through" else selected["id"].tolist()
+            roots = [(), *branches(classifications, asset_ids, taxonomy)]
+            root = st.selectbox("Hierarchy root", roots, format_func=lambda path: " > ".join(path) if path else "Entire taxonomy", key=f"root_{taxonomy}")
+            max_depth = max((len(path) - len(root) for path in roots if path[:len(root)] == root), default=0)
+            depth = st.selectbox("View depth", [None, *range(1, max_depth + 1)], format_func=lambda value: "Full tree" if value is None else f"{value} level(s) below root", key=f"depth_{taxonomy}_{root}")
+            include_holdings = st.checkbox("Show holdings beneath labels")
+        if view != "selected_labels":
+            chart_type = st.selectbox("Chart", ["Sunburst", "Treemap", "Bar", "Pie"])
+    chart_exposures = exposures.copy()
+    if show_tickers:
+        # Prefer the direct listing's ticker for every row of the same asset,
+        # including ETF-derived rows, so their holding leaves remain combined.
+        tickers = dict(zip(exposures["asset_id"], exposures["ticker"]))
+        tickers.update(dict(zip(holdings["id"], holdings["ticker"])))
+        chart_exposures["asset_name"] = [f"{row.asset_name} ({tickers[row.asset_id]})" if tickers[row.asset_id] else row.asset_name for row in exposures.itertuples()]
+    if view == "selected_labels":
+        render_label_comparison(chart_exposures, classifications)
+    else:
+        if view.startswith("taxonomy:"):
+            nodes = aggregate(chart_exposures, classifications, taxonomy=taxonomy, root=root, depth=depth, include_holdings=include_holdings and chart_type not in {"Bar", "Pie"})
+        else:
+            nodes = aggregate_dimension(exposures, "holding" if view == "holding" else view.removeprefix("metadata:"), show_tickers=show_tickers)
+            nodes.loc[nodes["parent_id"] == "", "label"] = "Selected holdings"
+        nodes = sort_allocation_nodes(nodes)
+        st.subheader("Allocation")
+        if nodes.empty or selected_total <= 0:
+            st.info("No positive valued allocation is available for this selection.")
+        else:
+            root_value = nodes.iloc[0]["value"]
+            if root_value <= 0:
+                st.info("The selected hierarchy root has no positive valued allocation.")
+            else:
+                st.caption(f"Displayed root: €{root_value:,.2f}. Allocation percentages are relative to this root. Chart clicks explore the chart; use Hierarchy root to update both chart and table.")
+                figure = bar_chart(nodes) if chart_type == "Bar" else pie_chart(nodes) if chart_type == "Pie" else hierarchy_chart(nodes, chart_type)
+                st.plotly_chart(figure, width="stretch", height=figure.layout.height, theme=None, config={"responsive": True, "displaylogo": False})
+                show_paths = False
+                if view.startswith("taxonomy:"):
+                    show_paths = st.checkbox("Show classification paths", help="The breadcrumb locating a category in the taxonomy, for example Technology › Semiconductors. This is not a file path.")
+                    st.caption("Indented rows show the hierarchy. Parent values include their children; these rows should not be added together.")
+                total_label = f"{nodes.iloc[0]['label']} — total" if view.startswith("taxonomy:") else "Selected holdings — total"
+                allocation_total(total_label, root_value)
+                allocation = hierarchy_table(nodes, show_paths=show_paths)
+                label_config = {}
+                if view == "holding" and names:
+                    label_set = "labels" if "labels" in names else "sector" if "sector" in names else names[0]
+                    allocation["Labels"] = [asset_badges(classifications, json.loads(node.node_id)[1][0], label_set)
+                                            for node in nodes.loc[nodes["parent_id"] != ""].itertuples()]
+                    label_config["Labels"] = badge_column("Labels", taxonomy_colors(classifications, label_set))
+                st.dataframe(allocation, hide_index=True, width="stretch", height="content", column_config={
+                    "Category": "Investment" if view == "holding" else "Category",
+                    "Classification path": st.column_config.TextColumn(help="Full breadcrumb within the selected taxonomy."),
+                    "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
+                    "Allocation %": st.column_config.NumberColumn(format="%.2f %%"),
+                } | label_config)
+    if representation == "ETF look-through":
+        st.subheader("Effective exposure")
+        st.caption("Direct and ETF-derived exposure share the selected portfolio denominator. Use the hierarchy root to explore constituent classifications. Unsupported ETFs remain instruments.")
+        st.dataframe(effective_exposure_table(exposures), hide_index=True, width="stretch", height="content", column_config={
+            column: st.column_config.NumberColumn(format="€ %.2f")
+            for column in ("Direct (EUR)", "ETF-derived (EUR)", "Total (EUR)")
+        } | {"Ticker": "Ticker" if show_tickers else None, "Allocation %": st.column_config.NumberColumn(format="%.2f %%")})
+    displayed_classifications = ["labels"] if view == "selected_labels" and "labels" in names else names
+    render_fund_details(funds, selected, holdings=holdings, classifications=classifications, show_tickers=show_tickers,
+                        classification_names=displayed_classifications)
+    st.subheader("Holdings")
+    if representation == "ETF look-through":
+        st.caption("Original instrument positions; allocation charts and the effective-exposure table above use ETF look-through.")
+    table = selected.sort_values("portfolio_weight", ascending=False, kind="stable", na_position="last").copy()
+    table["name"] = table["name"].map(display_name)
+    for name in names:
+        table[f"classification:{name}"] = table["id"].map(lambda asset_id: describe(classifications, asset_id, name))
+    if "labels" in displayed_classifications:
+        table["classification:labels"] = table["id"].map(lambda asset_id: asset_badges(classifications, asset_id, "labels"))
+    table["portfolio_weight"] *= 100
+    columns = ["id", "name", "shares", "ticker", "quote_currency", "current_price", "fx_to_eur", "current_value_eur", "portfolio_weight", *dimensions]
+    if "target_allocation" in table and table["target_allocation"].notna().any():
+        table["target_allocation"] *= 100
+        columns.insert(columns.index("portfolio_weight") + 1, "target_allocation")
+        st.caption("Target allocations are entered per position against the whole portfolio and stay unchanged when filtering. Missing targets remain blank.")
+    if table["acquisition_price"].notna().any():
+        columns.append("acquisition_price")
+        if "acquisition_currency" in table:
+            columns.append("acquisition_currency")
+    columns += [f"classification:{name}" for name in displayed_classifications]
+    if st.checkbox("Show price details", help="Quote timestamps, FX status and valuation notes"):
+        columns += ["price_status", "price_observed_at", "price_age_hours", "fx_status", "fx_observed_at", "fx_age_hours", "valuation_note"]
+    st.dataframe(table[columns], hide_index=True, width="stretch", height="content", column_config={
+        "id": None, "name": "Investment", "ticker": "Ticker" if show_tickers else None, "shares": "Shares",
+        "quote_currency": "Currency", "fx_to_eur": None,
+        "current_value_eur": st.column_config.NumberColumn("Current value (EUR)", format="€ %.2f"),
+        "portfolio_weight": st.column_config.NumberColumn("Selected weight (%)", format="%.2f %%"),
+        "target_allocation": st.column_config.NumberColumn("Target allocation (% of whole portfolio)", format="%.2f %%"),
+        "current_price": st.column_config.NumberColumn("Price (quote currency)", format="%.4f"),
+        "acquisition_price": st.column_config.NumberColumn("Average buy-in per share", format="%.6f"),
+        "acquisition_currency": st.column_config.TextColumn("Buy-in currency"),
+    } | {f"classification:{name}": (badge_column("Labels", taxonomy_colors(classifications, name)) if name == "labels" else
+                                    "AI theme" if name == "ai" else name.replace("_", " ").title()) for name in names})
+    st.caption("Prices use the latest available daily unadjusted close, which may be delayed. Timestamps identify price bars; FX timestamps are separate. Acquisition price is displayed as entered; P&L is deferred.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-dir", type=Path, default=Path.cwd() / "data" / "portfolio")
+    parser.add_argument("--demo-dir", type=Path)
+    parser.add_argument("--demo", action="store_true")
+    args = parser.parse_args()
+    render_app(args.data_dir, demo=args.demo, demo_dir=args.demo_dir)
