@@ -15,6 +15,8 @@ from portfolio_app.etf import effective_exposure_table, expand_etfs, load_funds,
 from portfolio_app.etf_ui import render_fund_details, render_snapshot_controls
 from portfolio_app.exposures import normalize_exposures
 from portfolio_app.filtering import filter_holdings
+from portfolio_app.group_ui import render_group_members, smh_group_control
+from portfolio_app.grouping import group_classifications, group_exposures
 from portfolio_app.label_ui import render_label_comparison
 from portfolio_app.label_presentation import asset_badges, badge_column, taxonomy_colors
 from portfolio_app.holdings import DataError, metadata_dimensions
@@ -37,7 +39,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         context = (str(data_dir.resolve()), demo)
         if st.session_state.get("portfolio_workspace_context") != context:
             for key in list(st.session_state):
-                if key.startswith(("position_edit_", "filter_", "label_compare_")) or key == "position_saved_notice":
+                if key.startswith(("position_edit_", "filter_", "label_compare_", "allocation_group_")) or key == "position_saved_notice":
                     del st.session_state[key]
             st.session_state["portfolio_workspace_context"] = context
     workspace_header(demo)
@@ -77,6 +79,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             refresh = st.button("Refresh prices", disabled=demo)
             funds = render_snapshot_controls(funds, demo=demo)
         representation = st.radio("Portfolio representation", ["Instruments", "ETF look-through"])
+        display_group = smh_group_control(holdings, funds)
         with st.expander("Filter positions"):
             metadata = {}
             for dimension in dimensions:
@@ -146,6 +149,15 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             st.error(str(exc))
             return
     exposures["asset_name"] = exposures["asset_name"].map(display_name)
+    effective_exposures = exposures
+    saved_classifications = classifications
+    if display_group is not None:
+        try:
+            exposures = group_exposures(exposures, display_group)
+            classifications = group_classifications(classifications, display_group)
+        except DataError as exc:
+            st.error(str(exc))
+            return
     with st.sidebar:
         st.header("Allocation view")
         options = [("holding", "Holding"), *[(f"metadata:{name}", name.replace("_", " ").title()) for name in dimensions],
@@ -160,7 +172,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             taxonomy = view.removeprefix("taxonomy:")
             if taxonomy == "ai":
                 st.caption("AI themes describe business roles, not the proportion of company revenue from AI.")
-            asset_ids = exposures["asset_id"].tolist() if representation == "ETF look-through" else selected["id"].tolist()
+            asset_ids = exposures["asset_id"].tolist()
             roots = [(), *branches(classifications, asset_ids, taxonomy)]
             root = st.selectbox("Hierarchy root", roots, format_func=lambda path: " > ".join(path) if path else "Entire taxonomy", key=f"root_{taxonomy}")
             max_depth = max((len(path) - len(root) for path in roots if path[:len(root)] == root), default=0)
@@ -214,10 +226,13 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                     "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
                     "Allocation %": st.column_config.NumberColumn(format="%.2f %%"),
                 } | label_config)
+    classifications = saved_classifications
+    if display_group is not None:
+        render_group_members(selected, display_group)
     if representation == "ETF look-through":
         st.subheader("Effective exposure")
         st.caption("Direct and ETF-derived exposure share the selected portfolio denominator. Use the hierarchy root to explore constituent classifications. Unsupported ETFs remain instruments.")
-        st.dataframe(effective_exposure_table(exposures), hide_index=True, width="stretch", height="content", column_config={
+        st.dataframe(effective_exposure_table(effective_exposures), hide_index=True, width="stretch", height="content", column_config={
             column: st.column_config.NumberColumn(format="€ %.2f")
             for column in ("Direct (EUR)", "ETF-derived (EUR)", "Total (EUR)")
         } | {"Ticker": "Ticker" if show_tickers else None, "Allocation %": st.column_config.NumberColumn(format="%.2f %%")})

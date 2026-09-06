@@ -18,6 +18,79 @@ def by_label(elements, label):
     return next(element for element in elements if element.label == label)
 
 
+@pytest.fixture
+def grouped_data(tmp_path, sample_data_dir):
+    import json
+    import yaml
+
+    directory = tmp_path / "synthetic-grouping"
+    shutil.copytree(sample_data_dir, directory)
+    with (directory / "holdings.csv").open("a") as file:
+        file.write("fund,Synthetic Fund,VVSM.DE,IE00BMC38736,2,,Core,Demo account A\n")
+    prices = json.loads((directory / "demo_prices.json").read_text())
+    prices["prices"]["VVSM.DE"] = {"price": 100, "currency": "EUR", "observed_at": "2026-09-04T20:00:00+00:00"}
+    (directory / "demo_prices.json").write_text(json.dumps(prices))
+    classes = yaml.safe_load((directory / "classifications.yaml").read_text())
+    classes["fund"] = {"classifications": {"labels": [["Group A", "Funds"]]}}
+    for asset in ("nvda", "tsmc"):
+        classes[asset]["classifications"]["labels"] = [["Group A", "Stocks"]]
+    (directory / "classifications.yaml").write_text(yaml.safe_dump(classes))
+    return directory
+
+
+def test_optional_smh_grouping_stock_choice_lookthrough_and_filters(grouped_data):
+    before = {name: (grouped_data / name).read_bytes() for name in ("holdings.csv", "classifications.yaml")}
+    app = launch(grouped_data)
+    assert not app.exception
+    assert by_label(app.checkbox, "Group SMH with related stocks").value is False
+    by_label(app.selectbox, "Group by").set_value("holding").run()
+    by_label(app.checkbox, "Group SMH with related stocks").check().run()
+    assert not app.exception
+    assert set(by_label(app.multiselect, "Stocks in the SMH group").value) == {"nvda", "tsmc"}
+    for representation in ("Instruments", "ETF look-through"):
+        by_label(app.radio, "Portfolio representation").set_value(representation).run()
+        assert not app.exception
+        table = app.dataframe[0].value
+        assert table["EUR value"].sum() == 944
+        assert table.loc[table.Category == "SMH + related stocks", "EUR value"].tolist() == [560]
+        assert table["Allocation %"].sum() == pytest.approx(100)
+    effective = next(item.value for item in app.dataframe if "ETF-derived (EUR)" in item.value)
+    assert effective.loc[effective.Asset == "Nvidia", "Total (EUR)"].tolist() == [256]
+    by_label(app.checkbox, "Show tickers").check().run()
+    assert app.dataframe[0].value.Category.str.contains("view-group").sum() == 0
+    by_label(app.multiselect, "Stocks in the SMH group").set_value(["nvda"]).run()
+    assert not app.exception
+    table = app.dataframe[0].value
+    assert table.loc[table.Category == "SMH + related stocks", "EUR value"].tolist() == [440]
+    by_label(app.multiselect, "Holdings").set_value(["nvda"]).run()
+    assert not app.exception
+    assert app.dataframe[0].value["EUR value"].tolist() == [240]
+    by_label(app.checkbox, "Group SMH with related stocks").uncheck().run()
+    assert not app.exception
+    assert app.dataframe[0].value.Category.tolist() == ["Nvidia (NVDA)"]
+    assert all((grouped_data / name).read_bytes() == content for name, content in before.items())
+
+
+def test_smh_group_uses_fund_labels_and_shows_original_members(grouped_data):
+    from portfolio_app.label_comparison import Label
+
+    app = launch(grouped_data)
+    by_label(app.checkbox, "Group SMH with related stocks").check().run()
+    by_label(app.radio, "Portfolio representation").set_value("ETF look-through").run()
+    assert not app.exception
+    assert app.dataframe[0].value["EUR value"].sum() == 560
+    root = (Label("labels", ("Group A",)).key,)
+    by_label(app.selectbox, "Detail view").set_value(root).run()
+    assert not app.exception
+    assert app.dataframe[0].value.Investment.tolist() == ["SMH + related stocks"]
+    detail = next(item.value for item in app.dataframe if "Within group (%)" in item.value)
+    assert detail["EUR value"].sum() == 560
+    assert set(detail.Investment) == {"Synthetic Fund", "Nvidia", "TSMC"}
+    by_label(app.multiselect, "Stocks in the SMH group").set_value([]).run()
+    assert not app.exception
+    assert app.dataframe[0].value["EUR value"].sum() == 560  # Fund and stocks separate within Group A.
+
+
 def test_demo_launch_and_subset_selection(sample_data_dir):
     app = launch(sample_data_dir)
     assert not app.exception

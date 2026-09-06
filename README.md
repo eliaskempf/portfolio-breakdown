@@ -449,6 +449,27 @@ selection drills into the resulting constituent allocations. The holdings
 table continues to show original instrument positions. Unsupported ETFs remain
 unexpanded instruments.
 
+### Combine the ETF with direct stocks
+
+Enable **Group SMH with related stocks** in the sidebar to show the held UCITS
+ETF and selected direct stocks as one **SMH + related stocks** allocation.
+**Stocks in the SMH group** starts with Nvidia and TSMC when held and present
+in the local snapshot; you can select other matching constituents or remove
+stocks. ISIN identifies exchange listings; a missing ISIN permits exact ticker
+matching. The separate US-listed SMH fund is excluded.
+
+The group includes the full selected ETF value and each chosen stock's full
+EUR value, counted once. Position/account filters still apply. In look-through
+mode the allocation group includes all of SMH, including any residual Other,
+while other ETFs keep their usual expansion. Exposure to the same company from
+another ETF remains outside the group. The **Effective exposure** table continues
+to show the original direct and ETF-derived company exposures.
+
+The display group follows the ETF's classifications and counts as one displayed
+asset. Open **SMH group members** to inspect its original positions and their
+shares of the group value. Saved holdings, purchase costs, targets and
+classifications remain unchanged. Turn the option off to restore the usual view.
+
 Fund snapshots live in the active portfolio's `etfs/` directory: a YAML manifest identifies the fund, date,
 source, listing aliases, and constituent CSV. Weights are fractions of the
 entire ETF. For partial snapshots, the remainder is explicitly retained as

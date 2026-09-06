@@ -14,6 +14,7 @@ from portfolio_app.etf import (
     load_funds, matching_fund, snapshot_age_days, validate_constituents,
 )
 from portfolio_app.exposures import normalize_exposures
+from portfolio_app.grouping import InstrumentGroup, group_classifications, group_exposures, group_members_table
 from portfolio_app.holdings import DataError
 from portfolio_app.vaneck import parse_holdings, refresh_snapshot
 
@@ -55,6 +56,82 @@ def test_partial_weights_and_source_values_are_conserved(fund, positions):
     assert nvidia["ETF-derived (EUR)"] == 800
     assert nvidia["Total (EUR)"] == 2800
     assert nvidia["Allocation %"] == pytest.approx(22.4)
+
+
+def test_smh_group_candidates_respect_listing_identity_and_snapshot(fund, positions):
+    from portfolio_app.etf import smh_group_candidates
+
+    positions = positions.copy()
+    positions.loc[positions.id == "my-nvidia", "ticker"] = "NVD.DE"
+    assert smh_group_candidates(positions, [fund]) == ({"semis"}, {"my-nvidia"}, {"my-nvidia"})
+    assert smh_group_candidates(positions, []) == (set(), set(), set())
+    positions.loc[positions.id == "my-nvidia", ["ticker", "isin"]] = ["NVDA", "US0000000000"]
+    assert smh_group_candidates(positions, [fund])[1] == set()
+    positions.loc[positions.id == "my-nvidia", "isin"] = ""
+    assert smh_group_candidates(positions, [fund])[1] == {"my-nvidia"}
+    empty_weights = fund.constituents.copy()
+    empty_weights["weight"] = 0.
+    assert smh_group_candidates(positions, [replace(fund, constituents=empty_weights)])[1] == set()
+
+
+@pytest.mark.parametrize("lookthrough", [False, True])
+def test_grouping_conserves_values_metadata_and_collapses_residual(fund, positions, lookthrough):
+    group = InstrumentGroup("view-group:example", "Synthetic group", frozenset({"semis", "my-nvidia"}), frozenset({"semis"}))
+    original = normalize_exposures(positions)
+    if lookthrough:
+        original = expand_etfs(original, [fund], positions)
+    before = original.copy(deep=True)
+    result = group_exposures(original, group)
+    pd.testing.assert_frame_equal(original, before)
+    assert result["value"].sum() == 12500
+    assert result.loc[result.asset_id == group.asset_id, "value"].sum() == 12000
+    assert result.groupby("account")["value"].sum().to_dict() == {"A": 2000, "B": 10500}
+    assert result.source_position_id.tolist() == original.source_position_id.tolist()
+    assert result.loc[result.asset_id == group.asset_id, "ticker"].eq("").all()
+    nodes = aggregate_dimension(result, "holding", show_tickers=True)
+    assert nodes.loc[nodes["label"] == group.name, "value"].tolist() == [12000]
+    # Source instruments determine grouping, not the underlying company alone.
+    other = original.loc[original.asset_id == "my-nvidia"].iloc[[0]].copy()
+    other["source_instrument"] = "another-fund"
+    other["direct_or_indirect"] = "indirect"
+    extended = group_exposures(pd.concat([original, other], ignore_index=True), group)
+    assert extended.loc[extended.source_instrument == "another-fund", "asset_id"].tolist() == ["my-nvidia"]
+
+
+def test_group_classifications_and_filtered_members_preserve_original_data(fund, positions):
+    group = InstrumentGroup("view-group:example", "Synthetic group", frozenset({"semis", "my-nvidia"}), frozenset({"semis"}))
+    classes = {"semis": {"labels": (("Synthetic category", "Funds"),)}, "my-nvidia": {"labels": (("Synthetic category", "Chips"),)}}
+    result = group_classifications(classes, group)
+    assert result[group.asset_id] == classes["semis"]
+    assert group.asset_id not in classes
+    exposures = group_exposures(expand_etfs(normalize_exposures(positions), [fund], positions), group)
+    nodes = aggregate(exposures, result, taxonomy="labels")
+    assert nodes.loc[nodes.label == "Funds", "value"].tolist() == [12000]
+    detail = group_members_table(positions.loc[positions.id == "my-nvidia"], group)
+    assert detail["EUR value"].tolist() == [2000]
+    assert detail["Within group (%)"].tolist() == [100]
+    # Unvalued positions remain visible and do not turn into zero-valued holdings.
+    positions.loc[positions.id == "my-nvidia", "current_value_eur"] = float("nan")
+    detail = group_members_table(positions, group)
+    assert detail.iloc[-1]["Investment"] == "Nvidia"
+    assert pd.isna(detail.iloc[-1]["EUR value"])
+    with pytest.raises(DataError, match="conflicts"):
+        group_exposures(exposures, group)
+
+
+def test_grouping_multiple_accounts_and_empty_selections(fund, positions):
+    group = InstrumentGroup("view-group:example", "Synthetic group", frozenset({"semis", "my-nvidia"}), frozenset({"semis"}))
+    extra = positions.iloc[[0]].copy()
+    extra["position_id"], extra["account"], extra["current_value_eur"] = "p4", "C", 500.
+    positions = pd.concat([positions, extra], ignore_index=True)
+    exposures = expand_etfs(normalize_exposures(positions), [fund], positions)
+    result = group_exposures(exposures, group)
+    assert result.loc[result.asset_id == group.asset_id, "value"].sum() == 12500
+    detail = group_members_table(positions, group)
+    assert detail["EUR value"].tolist() == [10000, 2500]
+    assert detail["Within group (%)"].sum() == 100
+    assert group_exposures(exposures.iloc[:0], group).empty
+    assert group_members_table(positions.iloc[:0], group).empty
 
 
 def test_full_weights_need_no_residual(fund):

@@ -121,7 +121,7 @@ def aggregate_dimension(exposures: pd.DataFrame, dimension: str, *, show_tickers
     for row in exposures.to_dict("records"):
         key = row["asset_id"] if dimension == "holding" else str(row[dimension] or "Unspecified")
         symbol = str(row.get("ticker") or row["asset_id"]).upper()
-        labels[key] = (f"{row['asset_name']} ({symbol})" if show_tickers else row['asset_name']) if dimension == "holding" else key
+        labels[key] = (f"{row['asset_name']} ({symbol})" if show_tickers and row.get("source_type") != "instrument_group" else row['asset_name']) if dimension == "holding" else key
         records.append({"asset_id": row["asset_id"], "asset_name": row["asset_name"], "path": (key,), "value": row["value"]})
     nodes = build_tree(pd.DataFrame(records, columns=ALLOCATION_COLUMNS), root_label=dimension)
     # Keep node identities based on stable IDs, independently of display tickers.

@@ -80,6 +80,30 @@ def matching_fund(position: dict, funds: list[FundSnapshot]) -> FundSnapshot | N
     return next((fund for fund in funds if (isin == fund.isin if isin else ticker in fund.tickers)), None)
 
 
+def smh_group_candidates(holdings: pd.DataFrame, funds: list[FundSnapshot]) -> tuple[set[str], set[str], set[str]]:
+    """Held UCITS listings, matching direct stocks, and Nvidia/TSMC defaults.
+
+    Only named, positive-weight constituents of the configured snapshot qualify.
+    An explicit stock ISIN must match; ticker fallback requires a missing ISIN.
+    """
+    fund = next((fund for fund in funds if fund.isin == "IE00BMC38736"), None)
+    if fund is None:
+        return set(), set(), set()
+    fund_ids, stocks, defaults = set(), set(), set()
+    constituents = fund.constituents.loc[fund.constituents["weight"] > 0].to_dict("records")
+    for position in holdings.to_dict("records"):
+        if matching_fund(position, [fund]):
+            fund_ids.add(position["id"])
+            continue
+        isin, ticker = position.get("isin", ""), position.get("ticker", "")
+        matches = [row for row in constituents if (isin == row["isin"] if isin else ticker and ticker == row["ticker"])]
+        if matches:
+            stocks.add(position["id"])
+            if any(row["ticker"] in {"NVDA", "TSM"} for row in matches):
+                defaults.add(position["id"])
+    return fund_ids, stocks, defaults
+
+
 def validate_fund_listings(holdings: pd.DataFrame, funds: list[FundSnapshot]) -> None:
     for row in holdings.to_dict("records"):
         fund = matching_fund(row, funds)
