@@ -23,7 +23,8 @@ from portfolio_app.holdings import DataError, metadata_dimensions
 from portfolio_app.position_ui import render_position_editor
 from portfolio_app.positions import read_snapshot
 from portfolio_app.performance import position_performance
-from portfolio_app.performance_ui import render_performance_summary
+from portfolio_app.performance_ui import render_performance_summary, performance_column_config, label_performance_caption
+from portfolio_app.performance_allocation import performance_exposures, add_performance_column
 from portfolio_app.rebalancing import ignore_empty_positions, RebalanceError
 from portfolio_app.rebalance_ui import render_rebalancing
 from portfolio_app.prices import PriceService, StaticProvider, YahooProvider
@@ -110,6 +111,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     with st.sidebar:
         st.header("Explore your allocation")
         show_tickers = st.checkbox("Show tickers", value=False, key="display_tickers")
+        performance_percent = st.radio("Performance display", ["%", "Amount"], horizontal=True, key="display_performance") == "%"
         with st.expander("Market data"):
             refresh = st.button("Refresh prices", disabled=demo)
             funds = render_snapshot_controls(funds, demo=demo)
@@ -214,6 +216,13 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         except DataError as exc:
             st.error(str(exc))
             return valued
+    try:
+        performance = performance_exposures(selected, funds, lookthrough=representation == "ETF look-through", group=display_group, holdings=holdings)
+    except DataError as exc:
+        st.error(str(exc))
+        return valued
+    for measure in performance.measures():
+        measure["asset_name"] = measure["asset_name"].map(display_name)
     with st.sidebar:
         st.header("Allocation view")
         options = [("holding", "Holding"), *[(f"metadata:{name}", name.replace("_", " ").title()) for name in dimensions],
@@ -244,7 +253,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         tickers.update(dict(zip(holdings["id"], holdings["ticker"])))
         chart_exposures["asset_name"] = [f"{row.asset_name} ({tickers[row.asset_id]})" if tickers[row.asset_id] else row.asset_name for row in exposures.itertuples()]
     if view == "selected_labels":
-        render_label_comparison(chart_exposures, classifications, targets=targets, portfolio_value=total, valuation_complete=all_missing == 0)
+        render_label_comparison(chart_exposures, classifications, targets=targets, portfolio_value=total, valuation_complete=all_missing == 0,
+                                performance=performance, performance_percent=performance_percent)
     else:
         if view.startswith("taxonomy:"):
             nodes = aggregate(chart_exposures, classifications, taxonomy=taxonomy, root=root, depth=depth, include_holdings=include_holdings and chart_type not in {"Bar", "Pie"})
@@ -285,6 +295,16 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                     allocation = add_target_columns(allocation, nodes.loc[nodes["parent_id"] != "", "node_id"].tolist(), totals,
                                                     portfolio_value=total, valuation_complete=all_missing == 0)
                     target_caption(valuation_complete=all_missing == 0)
+                performance_measures = []
+                for measure in performance.measures():
+                    if view.startswith("taxonomy:"):
+                        performance_measures.append(aggregate(measure, classifications, taxonomy=taxonomy, root=root, depth=depth,
+                                                              include_holdings=include_holdings and chart_type not in {"Bar", "Pie"}))
+                    else:
+                        performance_measures.append(aggregate_dimension(measure, "holding" if view == "holding" else view.removeprefix("metadata:")))
+                allocation = add_performance_column(allocation, nodes.loc[nodes["parent_id"] != "", "node_id"].tolist(),
+                                                    performance_measures, key="node_id", percent=performance_percent)
+                label_performance_caption()
                 label_config = {}
                 if view == "holding" and names:
                     label_set = "labels" if "labels" in names else "sector" if "sector" in names else names[0]
@@ -296,7 +316,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                     "Classification path": st.column_config.TextColumn(help="Full breadcrumb within the selected taxonomy."),
                     "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
                     "Allocation %": st.column_config.NumberColumn(format="%.2f %%"),
-                } | label_config | target_column_config())
+                } | label_config | target_column_config() | performance_column_config(percent=performance_percent))
     classifications = saved_classifications
     if display_group is not None:
         render_group_members(selected, display_group)
@@ -326,7 +346,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         columns.insert(columns.index("portfolio_weight") + 1, "target_allocation")
         st.caption("Target allocations are entered per position against the whole portfolio and stay unchanged when filtering. Missing targets remain blank.")
     if table["acquisition_price"].notna().any():
-        performance_columns = ["unrealized_gain", "return_pct"]
+        table["Performance"] = table["return_pct" if performance_percent else "unrealized_gain"]
+        performance_columns = ["Performance"]
         if "acquisition_currency" in table:
             performance_columns.append("acquisition_currency")
         columns[columns.index("shares"):columns.index("shares")] = performance_columns
@@ -344,11 +365,9 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         "acquisition_price": st.column_config.NumberColumn("Average buy-in per share", format="%.6f"),
         "acquisition_currency": st.column_config.TextColumn("Buy-in currency"),
         "cost_basis": st.column_config.NumberColumn("Cost basis (buy-in currency)", format="%.2f"),
-        "unrealized_gain": st.column_config.NumberColumn("Gain / loss", format="%+.2f", help="Amount in the Buy-in currency column."),
-        "return_pct": st.column_config.NumberColumn("Return (%)", format="%+.2f %%", help="Unrealized gain divided by cost in the recorded buy-in currency."),
         "performance_note": st.column_config.TextColumn("Performance details"),
     } | {f"classification:{name}": (badge_column("Labels", taxonomy_colors(classifications, name)) if name == "labels" else
-                                    "AI theme" if name == "ai" else name.replace("_", " ").title()) for name in names})
+                                    "AI theme" if name == "ai" else name.replace("_", " ").title()) for name in names} | performance_column_config(percent=performance_percent, grouped=False))
     st.caption("Prices use the latest available daily unadjusted close, which may be delayed. Timestamps identify price bars; FX timestamps are separate. Performance uses your recorded average buy-in for the shares currently held.")
     return valued
 

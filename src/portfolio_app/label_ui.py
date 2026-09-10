@@ -10,6 +10,8 @@ from portfolio_app.label_comparison import (
     available_labels, compare_labels, comparison_assets, comparison_tree, immediate_children, label_memberships,
 )
 from portfolio_app.presentation import allocation_total
+from portfolio_app.performance_allocation import PerformanceExposures, add_performance_column
+from portfolio_app.performance_ui import performance_column_config, label_performance_caption
 from portfolio_app.label_presentation import asset_badges, badge_column, color_label_chart, taxonomy_colors
 from portfolio_app.taxonomy import Classifications, UNCLASSIFIED, taxonomy_names
 from portfolio_app.targets import TargetExposures, add_target_columns, target_totals
@@ -17,7 +19,8 @@ from portfolio_app.target_ui import target_caption, target_column_config
 
 
 def render_label_comparison(exposures: pd.DataFrame, classifications: Classifications, *,
-                            targets: TargetExposures | None = None, portfolio_value: float = 0., valuation_complete: bool = True) -> None:
+                            targets: TargetExposures | None = None, portfolio_value: float = 0., valuation_complete: bool = True,
+                            performance: PerformanceExposures | None = None, performance_percent: bool = True) -> None:
     st.subheader("Allocation across labels")
     names = taxonomy_names(classifications)
     if not names:
@@ -58,6 +61,9 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         chart_type = st.selectbox("Chart", chart_types, index=chart_types.index("Sunburst") if "Sunburst" in chart_types else 0,
                                   key=f"label_compare_chart_{policy}")
     comparison = compare_labels(exposures, classifications, labels, overlap=policy)
+    performance_comparisons = [compare_labels(measure, classifications, labels, overlap=policy) for measure in performance.measures()] if performance else None
+    if performance is not None:
+        label_performance_caption()
     target_comparisons = None
     if targets is not None:
         target_comparisons = [compare_labels(measure, classifications, labels, overlap=policy)
@@ -123,12 +129,16 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                                             portfolio_value=portfolio_value, valuation_complete=valuation_complete)
                 assets = assets.sort_values(["EUR value", "Investment"], ascending=[False, True],
                                              na_position="last", kind="stable", ignore_index=True)
+            if performance_comparisons is not None:
+                performance_details = [item.allocations.loc[item.allocations["path"].map(lambda path: path[:len(root)] == root)]
+                                       for item in performance_comparisons]
+                assets = add_performance_column(assets, assets.asset_id.tolist(), performance_details, key="asset_id", percent=performance_percent)
             assets["Labels"] = assets.pop("asset_id").map(lambda asset: asset_badges(classifications, asset, taxonomy))
             st.dataframe(assets, hide_index=True, height="content", width="stretch", column_config={
                 "Labels": badge_column("Labels", colors),
                 "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
                 "Allocation %": st.column_config.NumberColumn("Within this detail (%)", format="%.2f %%"),
-            } | target_column_config())
+            } | target_column_config() | performance_column_config(percent=performance_percent))
             return
         allocation_total("Assets matching the selected labels — counted once", comparison.matched_value)
     table = comparison.table.copy()
@@ -136,6 +146,9 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         table = add_target_columns(table, table["Label"].tolist(),
                                    target_totals(*(item.table for item in target_comparisons), key="Label", value="EUR value"),
                                    portfolio_value=portfolio_value, valuation_complete=valuation_complete)
+    if performance_comparisons is not None:
+        table = add_performance_column(table, table.Label.tolist(), [item.table for item in performance_comparisons],
+                                       key="Label", value="EUR value", percent=performance_percent)
     table["Label"] = table["Label"].map(lambda label: [label])
     st.dataframe(table, hide_index=True, height="content", width="stretch", column_config={
         "Label": badge_column("Label", colors),
@@ -144,4 +157,4 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                                                            help="Share of the unique value matching any selected label."),
         "Portfolio %": st.column_config.NumberColumn("Of filtered portfolio (%)", format="%.2f %%"),
         "Assets": st.column_config.NumberColumn(help="Unique matching assets; direct and ETF-derived exposure to the same asset count once."),
-    } | target_column_config())
+    } | target_column_config() | performance_column_config(percent=performance_percent))

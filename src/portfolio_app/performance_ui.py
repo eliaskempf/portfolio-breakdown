@@ -23,3 +23,18 @@ def render_performance_summary(performance) -> None:
                "Per-position gains and returns use the recorded buy-in currency. Foreign-currency buy-ins are excluded from the EUR summary because purchase-date FX is unknown. "
                "Dividends and realized gains are excluded; fees are included only if already part of your buy-in. "
                "Overview filters narrow the holdings table; this summary always covers the whole portfolio.")
+
+
+def performance_column_config(*, percent: bool, grouped: bool = True) -> dict:
+    return {"Performance": st.column_config.NumberColumn(
+        "Return (%)" if percent else "Gain / loss (EUR)" if grouped else "Gain / loss",
+        format="%+.2f %%" if percent else "€ %+.2f" if grouped else "%+.2f",
+        help="Unrealized gain divided by matching total cost. Partial means only covered positions contribute." if percent else
+             "Unrealized gain on covered EUR-cost positions." if grouped else "Amount in the Buy-in currency column."),
+        "Performance coverage": st.column_config.TextColumn(help="Complete: all held contributions have EUR costs and valuations. Partial: some contributions are excluded. Unavailable: no comparable performance.")}
+
+
+def label_performance_caption() -> None:
+    st.caption("Performance uses covered EUR buy-ins: total gain ÷ total cost, with the same label splits as allocation. "
+               "Partial means missing prices, missing costs or foreign-currency costs are excluded. ETF constituent returns are unavailable without historical costs; "
+               "use Instruments to include the fund’s own return. Whole funds inside display groups retain their performance.")

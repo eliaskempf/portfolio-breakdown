@@ -379,8 +379,10 @@ The return is total gain divided by total cost for those same positions, not
 an average of position returns. It always covers the whole portfolio; filters
 narrow only the holdings table.
 
-The holdings table shows cost basis, gain/loss, and return in each position’s
-recorded buy-in currency. Cost basis is shares times average buy-in; unrealized
+The sidebar’s **Performance display** switches the shared performance column
+between **%** and **Amount** in holdings, label comparisons, label drill-downs,
+and hierarchy/allocation tables. Holdings use each position’s recorded buy-in
+currency; grouped amounts are EUR. The holdings table also shows cost basis. Cost basis is shares times average buy-in; unrealized
 gain is current value in that currency minus cost basis. Foreign quotes are
 converted into the buy-in currency at current FX. Historical costs are never
 converted using current FX, and foreign-currency costs are excluded from the
@@ -388,6 +390,20 @@ EUR summary because purchase-date FX is unknown. Missing costs, currencies,
 prices or required FX leave performance unavailable with an explanation.
 Zero-share positions have no performance; zero-cost positions can have a gain
 but no percentage return.
+
+Label performance sums matching current values and costs, then calculates
+(total current value − total cost) / total cost. It follows the same overlap
+and hierarchy-path splits as allocation; it never averages individual returns.
+**Performance coverage** marks Complete, Partial, or Unavailable. Partial
+results cover only the eligible EUR-cost positions and must not be read as the
+return of every asset in the label. Missing prices/costs and foreign-currency
+costs reduce coverage; zero-share planned positions do not.
+
+In ETF look-through, current constituent weights cannot establish historical
+constituent costs. Expanded fund contributions therefore have unavailable
+performance. In Instruments mode the fund’s own return contributes under its
+labels. A display group that contains the whole fund also retains its return,
+including when other instruments are shown in look-through mode.
 
 These figures cover shares currently held and use the latest available prices.
 They exclude dividends and realized gains. Fees count only if already included
