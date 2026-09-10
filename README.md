@@ -370,6 +370,30 @@ the broker's remaining-position data instead of dividing all historical
 deposits by the shares left. This app stores current summaries and optional
 purchase-input batches; it does not account for sales, tax lots, or realized gains.
 
+## Current performance
+
+Overview shows **Performance since buy-in**, including unrealized gain/loss,
+return on cost, and cost basis. The EUR summary uses only held positions with
+explicit EUR buy-ins and available EUR valuations, and reports its coverage.
+The return is total gain divided by total cost for those same positions, not
+an average of position returns. It always covers the whole portfolio; filters
+narrow only the holdings table.
+
+The holdings table shows cost basis, gain/loss, and return in each position’s
+recorded buy-in currency. Cost basis is shares times average buy-in; unrealized
+gain is current value in that currency minus cost basis. Foreign quotes are
+converted into the buy-in currency at current FX. Historical costs are never
+converted using current FX, and foreign-currency costs are excluded from the
+EUR summary because purchase-date FX is unknown. Missing costs, currencies,
+prices or required FX leave performance unavailable with an explanation.
+Zero-share positions have no performance; zero-cost positions can have a gain
+but no percentage return.
+
+These figures cover shares currently held and use the latest available prices.
+They exclude dividends and realized gains. Fees count only if already included
+in the recorded buy-in. After sales or corporate actions, update the shares
+and average cost of the remaining position in Manage positions.
+
 ## Valuation and price status
 
 Live prices come from yfinance's latest available **unadjusted daily close**;
@@ -593,5 +617,5 @@ listing search, minimum-trade and minimum-cash rebalancing, trade-count tradeoff
 empty-position redistribution, Git privacy guards, and Streamlit controls. The server health
 endpoint is `/_stcore/health`.
 
-Manually overridden hierarchy-node targets, P&L, and historical analysis
+Manually overridden hierarchy-node targets, realized P&L, and historical analysis
 remain deferred.

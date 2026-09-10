@@ -22,6 +22,8 @@ from portfolio_app.label_presentation import asset_badges, badge_column, taxonom
 from portfolio_app.holdings import DataError, metadata_dimensions
 from portfolio_app.position_ui import render_position_editor
 from portfolio_app.positions import read_snapshot
+from portfolio_app.performance import position_performance
+from portfolio_app.performance_ui import render_performance_summary
 from portfolio_app.rebalancing import ignore_empty_positions, RebalanceError
 from portfolio_app.rebalance_ui import render_rebalancing
 from portfolio_app.prices import PriceService, StaticProvider, YahooProvider
@@ -154,6 +156,17 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             return
     with st.spinner("Valuing holdings…"):
         valued = value_holdings(holdings, price_service, refresh=refresh)
+        cost_currencies = set(valued.loc[(valued.shares > 0) & valued.acquisition_price.notna(), "acquisition_currency"].dropna()) if "acquisition_currency" in valued else set()
+        rates = {}
+        for currency in cost_currencies - {"", "EUR"}:
+            matching = valued.loc[valued.quote_currency == currency, "fx_to_eur"].dropna()
+            if not matching.empty:
+                rates[currency] = float(matching.iloc[0])
+            elif ((valued.get("acquisition_currency", "") == currency) & (valued.quote_currency != currency)).any():
+                quote = price_service.fx(currency, refresh=refresh).quote
+                if quote is not None and quote.currency == "EUR":
+                    rates[currency] = quote.price
+        valued = position_performance(valued, rates)
     if price_service.cache_warning:
         st.warning(price_service.cache_warning)
     selected = filter_holdings(
@@ -169,6 +182,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     second.metric("Selected value", f"€{selected_total:,.2f}")
     third.metric("Awaiting a price", str(missing))
     st.caption(f"{len(selected)} of {len(valued)} positions selected. {all_missing} unvalued across all positions. Percentages exclude unvalued positions.")
+    render_performance_summary(valued)
     if missing:
         st.warning("Some selected positions could not be valued. Their values and weights remain blank; enable Show price details in the holdings table to see why.")
     if selected.empty:
@@ -312,9 +326,11 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         columns.insert(columns.index("portfolio_weight") + 1, "target_allocation")
         st.caption("Target allocations are entered per position against the whole portfolio and stay unchanged when filtering. Missing targets remain blank.")
     if table["acquisition_price"].notna().any():
-        columns.append("acquisition_price")
+        performance_columns = ["unrealized_gain", "return_pct"]
         if "acquisition_currency" in table:
-            columns.append("acquisition_currency")
+            performance_columns.append("acquisition_currency")
+        columns[columns.index("shares"):columns.index("shares")] = performance_columns
+        columns += ["acquisition_price", "cost_basis", "performance_note"]
     columns += [f"classification:{name}" for name in displayed_classifications]
     if st.checkbox("Show price details", help="Quote timestamps, FX status and valuation notes"):
         columns += ["price_status", "price_observed_at", "price_age_hours", "fx_status", "fx_observed_at", "fx_age_hours", "valuation_note"]
@@ -327,9 +343,13 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         "current_price": st.column_config.NumberColumn("Price (quote currency)", format="%.4f"),
         "acquisition_price": st.column_config.NumberColumn("Average buy-in per share", format="%.6f"),
         "acquisition_currency": st.column_config.TextColumn("Buy-in currency"),
+        "cost_basis": st.column_config.NumberColumn("Cost basis (buy-in currency)", format="%.2f"),
+        "unrealized_gain": st.column_config.NumberColumn("Gain / loss", format="%+.2f", help="Amount in the Buy-in currency column."),
+        "return_pct": st.column_config.NumberColumn("Return (%)", format="%+.2f %%", help="Unrealized gain divided by cost in the recorded buy-in currency."),
+        "performance_note": st.column_config.TextColumn("Performance details"),
     } | {f"classification:{name}": (badge_column("Labels", taxonomy_colors(classifications, name)) if name == "labels" else
                                     "AI theme" if name == "ai" else name.replace("_", " ").title()) for name in names})
-    st.caption("Prices use the latest available daily unadjusted close, which may be delayed. Timestamps identify price bars; FX timestamps are separate. Acquisition price is displayed as entered; P&L is deferred.")
+    st.caption("Prices use the latest available daily unadjusted close, which may be delayed. Timestamps identify price bars; FX timestamps are separate. Performance uses your recorded average buy-in for the shares currently held.")
     return valued
 
 
