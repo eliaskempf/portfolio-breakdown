@@ -1,5 +1,6 @@
 """Interactive, read-only rebalance plans for the whole portfolio."""
 
+from collections import Counter
 from hashlib import sha256
 
 import pandas as pd
@@ -34,6 +35,24 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
         new_money = st.number_input("New money (EUR)", min_value=0., value=500., step=100., key="rebalance_cash") if mode == MODES[2] else 0.
         max_trades = int(st.number_input("Maximum trades", min_value=1, max_value=max(1, len(valued)),
                                          value=min(4, max(1, len(valued))), step=1, key=f"rebalance_max_trades_{len(valued)}")) if mode == MODES[2] else len(valued)
+    eligible_ids = None
+    if mode == MODES[2] and st.checkbox("Limit buys to selected positions", key="rebalance_limit_buys"):
+        identity_fields = [column for column in ("position_id", "id", "name", "ticker", "account", "portfolio") if column in valued]
+        identity = sha256(valued[identity_fields].to_json().encode()).hexdigest()[:16]
+        labels = {row.position_id: " · ".join(str(part) for part in (
+            display_name(row["name"]),
+            row.get("account", "") or "No account", row.get("portfolio", "") or "No portfolio") if part)
+                  for _, row in valued.iterrows()}
+        duplicates = Counter(labels.values())
+        labels = {key: f"{label} [row {i + 1}]" if duplicates[label] > 1 else label for i, (key, label) in enumerate(labels.items())}
+        eligible_ids = st.multiselect("Positions eligible for buying", list(labels), format_func=labels.get,
+                                      key=f"rebalance_buy_positions_{identity}",
+                                      help="Choose instrument/account rows that may receive new money. Unselected positions stay invested, keep their targets and receive no trades.")
+        active = valued.loc[valued.position_id.isin(eligible_ids)]
+        allowed_count = int((active.shares > 0).sum()) if no_new else len(active)
+        st.caption(f"{len(eligible_ids)} selected · {allowed_count} eligible after position restrictions. "
+                   "The full amount is allocated only among eligible positions, using the whole portfolio’s targets. "
+                   "Some selected positions may receive zero when other buys improve the balance more or the trade limit is reached.")
     st.caption("±0.5 pp gives a 10% target a 9.5–10.5% range. A 5% relative tolerance gives that same range; a zero target has a zero relative range. "
                "Plans allow fractional shares, fully invest new money, and exclude fees, taxes, spreads and lot-size rules. EUR amounts are rounded for display.")
     try:
@@ -42,7 +61,7 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
         st.info(str(exc))
         return
     fields = [column for column in ("position_id", "id", "name", "ticker", "account", "portfolio", "shares", "current_value_eur", "target_allocation") if column in valued]
-    fingerprint = sha256((valued[fields].to_json() + repr((mode, tolerance_type, tolerance, no_new, new_money, max_trades))).encode()).hexdigest()
+    fingerprint = sha256((valued[fields].to_json() + repr((mode, tolerance_type, tolerance, no_new, new_money, max_trades, None if eligible_ids is None else tuple(sorted(eligible_ids))))).encode()).hexdigest()
     if st.button("Calculate rebalance", type="primary", key="rebalance_calculate"):
         st.session_state.pop("rebalance_result", None)
         try:
@@ -54,7 +73,7 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
                 else:
                     bar = st.progress(0, text="Comparing trade counts")
                     try:
-                        plans = cash_tradeoffs(problem, new_money, max_trades=max_trades, no_new_positions=no_new,
+                        plans = cash_tradeoffs(problem, new_money, max_trades=max_trades, no_new_positions=no_new, eligible_position_ids=eligible_ids,
                                                progress=lambda done, total: bar.progress(done / total, text=f"Checked up to {done} trades"))
                     finally:
                         bar.empty()

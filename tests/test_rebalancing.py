@@ -219,3 +219,57 @@ def test_tiny_portfolio_preserves_real_trades_instead_of_rounding_to_zero():
     assert plan.trade_count == 2
     np.testing.assert_allclose(plan.table["Trade (EUR)"], [-1e-8, 1e-8], atol=1e-15)
     np.testing.assert_allclose(plan.table["After (EUR)"], [5e-8, 5e-8], atol=1e-15)
+
+
+def test_eligible_subset_invests_all_cash_without_changing_other_positions():
+    p = portfolio([80., 10., 10.], [.4, .3, .3], tolerance=0)
+    plan = allocate_new_money(p, 100, max_trades=3, eligible_position_ids={"row-1", "row-2"})
+    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([0, 50, 50], abs=1e-5)
+    assert plan.table["After %"].tolist() == pytest.approx([40, 30, 30])
+    assert_conserved(plan, 100, buys_only=True)
+    single = allocate_new_money(p, 100, max_trades=3, eligible_position_ids={"row-1"})
+    assert single.table["Trade (EUR)"].tolist() == pytest.approx([0, 100, 0])
+    assert single.deviation_after == pytest.approx(50)
+    assert not single.within_bands
+    # The full portfolio remains the denominator; targets are not normalized to the subset.
+    assert single.table["After %"].tolist() == pytest.approx([40, 55, 5])
+    assert_conserved(single, 100, buys_only=True)
+
+
+def test_tradeoff_frontier_respects_eligible_subset_and_max_trades():
+    p = portfolio([80., 10., 10.], [.4, .3, .3], tolerance=0)
+    plans = cash_tradeoffs(p, 100, max_trades=3, eligible_position_ids={"row-1", "row-2"})
+    assert [plan.trade_count for plan in plans] == [1, 2]
+    for plan in plans:
+        assert plan.table["Trade (EUR)"].iloc[0] == 0
+        assert_conserved(plan, 100, buys_only=True)
+    one = allocate_new_money(p, 100, max_trades=1, eligible_position_ids={"row-1", "row-2"})
+    assert one.trade_count == 1
+
+
+def test_eligible_positions_intersect_no_new_and_identify_account_rows():
+    p = portfolio([80., 20., 0.], [.4, .4, .2], tolerance=0)
+    p.positions["id"] = ["same", "other", "same"]
+    p.positions["account"] = ["Synthetic A", "Synthetic A", "Synthetic B"]
+    allowed = {"row-1", "row-2"}
+    plan = allocate_new_money(p, 100, max_trades=3, eligible_position_ids=allowed, no_new_positions=True)
+    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([0, 100, 0])
+    plan = allocate_new_money(p, 100, max_trades=3, eligible_position_ids={"row-2"})
+    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([0, 0, 100])
+    with pytest.raises(RebalanceError, match="No feasible buy"):
+        allocate_new_money(p, 100, max_trades=3, eligible_position_ids={"row-2"}, no_new_positions=True)
+
+
+def test_empty_selection_requires_no_cash_and_invalid_ids_are_rejected():
+    p = portfolio([60., 40.], [.5, .5])
+    with pytest.raises(RebalanceError, match="select at least one"):
+        allocate_new_money(p, 10, max_trades=2, eligible_position_ids=set())
+    plan = allocate_new_money(p, 0, max_trades=0, eligible_position_ids=set())
+    assert plan.trade_count == 0
+    assert_conserved(plan, 100, buys_only=True)
+    for invalid in ({"unknown"}, "row-1", [1]):
+        with pytest.raises(RebalanceError):
+            allocate_new_money(p, 10, max_trades=2, eligible_position_ids=invalid)
+    p.positions["position_id"] = ["same", "same"]
+    with pytest.raises(RebalanceError, match="unique position IDs"):
+        allocate_new_money(p, 10, max_trades=2, eligible_position_ids={"same"})

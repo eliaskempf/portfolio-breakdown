@@ -121,3 +121,48 @@ def test_all_empty_positions_have_useful_message_and_can_allocate_cash(rebalance
     calculate(app)
     assert metrics(app)["Trades"] == "2"
     assert metrics(app)["New money"] == "€100.00"
+
+
+def test_buy_selection_constrains_cash_and_invalidates_previous_plan(rebalance_data):
+    path = rebalance_data / "holdings.csv"
+    before = path.read_bytes()
+    app = launch(rebalance_data)
+    by_label(app.selectbox, "Rebalancing mode").set_value(MODES[2]).run()
+    by_label(app.number_input, "New money (EUR)").set_value(100).run()
+    by_label(app.checkbox, "Limit buys to selected positions").check().run()
+    calculate(app)
+    assert any("select at least one" in item.value for item in app.error)
+    by_label(app.multiselect, "Positions eligible for buying").set_value(["position-1"]).run()
+    calculate(app)
+    plan = next(item.value for item in app.dataframe if "Action" in item.value)
+    assert plan.Investment.tolist() == ["Synthetic B"]
+    assert plan["Trade (EUR)"].tolist() == pytest.approx([100])
+    by_label(app.multiselect, "Positions eligible for buying").set_value(["position-1", "position-2"]).run()
+    assert "Trades" not in metrics(app)
+    by_label(app.multiselect, "Holdings").set_value([]).run()
+    calculate(app)
+    assert metrics(app)["Trades"] == "2"
+    assert metrics(app)["Deviation outside ranges"] == "0.000 pp"
+    assert path.read_bytes() == before
+    by_label(app.selectbox, "Rebalancing mode").set_value(MODES[0]).run()
+    calculate(app)
+    assert metrics(app)["Trades"] == "3"  # Buy-only subset does not leak into the sell/buy mode.
+
+
+def test_buy_selection_empty_positions_and_changed_universe_fail_closed(rebalance_data):
+    path = rebalance_data / "holdings.csv"
+    with path.open("a") as handle:
+        handle.write("d,Synthetic D,UNKNOWN,0,0\n")
+    app = launch(rebalance_data)
+    by_label(app.selectbox, "Rebalancing mode").set_value(MODES[2]).run()
+    by_label(app.checkbox, "Limit buys to selected positions").check().run()
+    by_label(app.multiselect, "Positions eligible for buying").set_value(["position-3"]).run()
+    by_label(app.checkbox, "No new positions").check().run()
+    calculate(app)
+    assert any("No feasible buy" in item.value for item in app.error)
+    by_label(app.checkbox, "Ignore empty positions").check().run()
+    assert not app.exception
+    assert by_label(app.multiselect, "Positions eligible for buying").value == []
+    assert len(by_label(app.multiselect, "Positions eligible for buying").options) == 3
+    calculate(app)
+    assert any("select at least one" in item.value for item in app.error)

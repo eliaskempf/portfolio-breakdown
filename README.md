@@ -160,6 +160,19 @@ The **Rebalance** tab offers three read-only calculation modes:
   then trade count, then distance from exact targets. A comparison table and
   plan selector show whether additional trades offer enough improvement.
 
+In **Allocate new money**, enable **Limit buys to selected positions** and
+choose the instrument/account rows in **Positions eligible for buying**. The
+full contribution is invested only in that selection. Other positions receive
+no trades and keep their targets; the objective and allocation percentages
+still use the whole portfolio. Eligibility does not require buying every
+selected position or dividing the amount equally. The existing trade limit,
+tolerance and trade-count comparison still apply. **No new positions** further
+excludes selected rows with zero shares. An empty eligible selection cannot
+receive positive new money. Changing the eligible selection hides stale plans;
+changing the position identities clears the selection for you to choose again.
+This restriction applies only to Allocate new money and never changes saved
+holdings or targets.
+
 Choose an absolute tolerance (default ±0.5 percentage points) or a percentage
 relative to each target. For a 10% target, ±0.5 pp and ±5% relative both allow
 9.5–10.5%. Relative tolerance leaves a zero target at zero; absolute tolerance

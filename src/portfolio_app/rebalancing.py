@@ -1,5 +1,6 @@
 """Target-band rebalancing with proven minimum trade/cash objectives."""
 
+from collections.abc import Collection
 from dataclasses import dataclass
 import math
 from typing import Callable, Literal
@@ -124,7 +125,7 @@ class _AllocationModel:
     """Final weights, trade indicators and absolute-deviation auxiliary variables."""
 
     def __init__(self, problem: RebalanceInput, total: float, *, buys_only: bool, no_new: bool,
-                 hard_bands: bool, max_trades: int):
+                 hard_bands: bool, max_trades: int, buy_allowed: np.ndarray | None = None):
         n = len(problem.values)
         self.n = n
         # x: final weight, z: trade, q: turnover, e: outside-band error, r: target distance
@@ -138,6 +139,8 @@ class _AllocationModel:
             self.lower[self.x], self.upper[self.x] = problem.lower, problem.upper
         if buys_only:
             self.lower[self.x] = np.maximum(self.lower[self.x], current)
+        if buy_allowed is not None:
+            self.upper[:n][~buy_allowed] = current[~buy_allowed]
         if no_new:
             self.upper[:n][~problem.held] = np.minimum(self.upper[:n][~problem.held], current[~problem.held])
         if (self.lower > self.upper + 1e-12).any():
@@ -219,15 +222,32 @@ def minimum_new_money(problem: RebalanceInput, *, no_new_positions: bool = False
     return minimum_trades(problem, new_money=cash, buys_only=True, no_new_positions=no_new_positions)
 
 
+def _buy_eligibility(problem: RebalanceInput, eligible_position_ids: Collection[str] | None,
+                     no_new_positions: bool) -> np.ndarray:
+    allowed = np.ones(len(problem.values), dtype=bool)
+    if eligible_position_ids is not None:
+        if not isinstance(eligible_position_ids, Collection) or isinstance(eligible_position_ids, (str, bytes)) or any(not isinstance(key, str) for key in eligible_position_ids):
+            raise RebalanceError("Eligible positions must be a collection of position IDs.")
+        if "position_id" not in problem.positions or problem.positions.position_id.duplicated().any():
+            raise RebalanceError("Selecting eligible positions requires unique position IDs.")
+        if set(eligible_position_ids) - set(problem.positions.position_id):
+            raise RebalanceError("An eligible position is no longer in this portfolio. Select the positions again.")
+        allowed = problem.positions.position_id.isin(eligible_position_ids).to_numpy()
+    return allowed & problem.held if no_new_positions else allowed
+
+
 def allocate_new_money(problem: RebalanceInput, new_money: float, *, max_trades: int,
-                       no_new_positions: bool = False) -> RebalancePlan:
+                       no_new_positions: bool = False, eligible_position_ids: Collection[str] | None = None) -> RebalancePlan:
     """Invest the full amount; minimize outside-band deviation, then trade count."""
     if not math.isfinite(new_money) or new_money < 0 or problem.total + new_money <= 0:
         raise RebalanceError("Enter nonnegative new money, with a positive final portfolio value.")
     if not isinstance(max_trades, int) or isinstance(max_trades, bool) or not 0 <= max_trades <= len(problem.values):
         raise RebalanceError("Maximum trades must be a whole number between zero and the position count.")
+    allowed = _buy_eligibility(problem, eligible_position_ids, no_new_positions)
+    if new_money > 0 and not allowed.any():
+        raise RebalanceError("No feasible buy: select at least one eligible position allowed by No new positions before investing new money.")
     model = _AllocationModel(problem, problem.total + new_money, buys_only=True, no_new=no_new_positions,
-                             hard_bands=False, max_trades=max_trades)
+                             hard_bands=False, max_trades=max_trades, buy_allowed=allowed)
     result = model.solve(model.e)
     model.limit(model.e, result.fun + 1e-9)
     result = model.solve(model.z)
@@ -235,16 +255,20 @@ def allocate_new_money(problem: RebalanceInput, new_money: float, *, max_trades:
     result = model.solve(model.r)
     plan = _result(problem, result.x[model.x], new_money, buys_only=True,
                    no_new_positions=no_new_positions, require_bands=False)
+    if (plan.table.loc[~allowed, "Trade (EUR)"] != 0).any():
+        raise RebalanceError("The solver changed a position outside the eligible selection; no plan is shown.")
     if plan.trade_count > max_trades:
         raise RebalanceError("The solver result exceeded the trade limit; no plan is shown.")
     return plan
 
 
 def cash_tradeoffs(problem: RebalanceInput, new_money: float, *, max_trades: int,
-                   no_new_positions: bool = False, progress: Callable[[int, int], None] | None = None) -> list[RebalancePlan]:
+                   no_new_positions: bool = False, eligible_position_ids: Collection[str] | None = None,
+                   progress: Callable[[int, int], None] | None = None) -> list[RebalancePlan]:
     plans = []
     for limit in range(1, max_trades + 1):
-        plan = allocate_new_money(problem, new_money, max_trades=limit, no_new_positions=no_new_positions)
+        plan = allocate_new_money(problem, new_money, max_trades=limit, no_new_positions=no_new_positions,
+                                  eligible_position_ids=eligible_position_ids)
         if not plans or plan.deviation_after < plans[-1].deviation_after - 1e-6:
             plans.append(plan)
         if progress:
