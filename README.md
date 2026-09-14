@@ -164,8 +164,13 @@ In **Allocate new money**, enable **Limit buys to selected positions** and
 choose the instrument/account rows in **Positions eligible for buying**. Then
 choose **Distribution**:
 
-- **Spread equally** (default for a selected subset): divide the contribution
-  equally among every eligible row, using one buy per row.
+- **Rebalance selected positions** (default for a selected subset): account for
+  current holdings and final portfolio value, prioritizing larger shortfalls.
+  Minimize the sum of squared percentage-point gaps to exact targets, without
+  a trade-count penalty. This balances the remaining gaps instead of choosing
+  one trade when several splits provide the same absolute improvement.
+  Sufficiently funded positions can receive nothing. Tolerance ranges affect
+  the reported status, not this split.
 - **Spread by target weights**: divide the contribution in proportion to the
   selected eligible targets. For example, targets of 20% and 10% receive two
   thirds and one third of the new money. Zero targets receive nothing.
@@ -173,10 +178,11 @@ choose **Distribution**:
   allocation, with a trade limit and trade-count comparison. This can put the
   entire contribution into one position.
 
-Spreading divides the new contribution itself; existing holdings do not change
-the split. The trade limit applies only to optimization. Spreading allocates
-whole EUR cents using largest remainders so displayed buys sum to the budget;
-an amount too small to fund every positive-weight recipient is rejected.
+Only **Spread by target weights** ignores existing holdings when splitting the
+contribution. The trade limit applies only to **Optimize rebalancing**. Both
+other distributions allocate whole EUR cents using largest remainders so buys
+sum to the budget. Target-weight splitting rejects an amount too small to fund
+every positive-weight recipient; target-gap balancing can use fewer recipients.
 **No new positions** excludes selected rows with zero shares before splitting.
 Unselected positions receive no trades. Final weights and deviation still use
 whole-portfolio targets, so spreading can leave positions outside their ranges.

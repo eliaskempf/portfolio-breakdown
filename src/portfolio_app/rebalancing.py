@@ -281,31 +281,44 @@ def cash_tradeoffs(problem: RebalanceInput, new_money: float, *, max_trades: int
 
 
 def spread_new_money(problem: RebalanceInput, new_money: float, *, eligible_position_ids: Collection[str],
-                     method: Literal["equal", "target"] = "equal", no_new_positions: bool = False) -> RebalancePlan:
-    """Split the contribution itself; every positive-weight recipient gets a buy.
+                     method: Literal["balance", "target"] = "balance", no_new_positions: bool = False) -> RebalancePlan:
+    """Balance final target gaps, or split the contribution by target weights.
 
-    Targets determine the contribution split, not desired final position values.
-    Use largest remainders for EUR cents so displayed buys sum to the budget.
+    Balance minimizes sum((final_weight - target)**2), without a trade penalty.
+    Project desired buys onto the nonnegative, fixed-budget simplex. Unselected
+    rows are constant in that objective. Bands only affect the reported status.
+    Largest-remainder rounding also minimizes this quadratic over whole cents.
     """
     if not math.isfinite(new_money) or new_money <= 0 or not math.isfinite(new_money * 100):
         raise RebalanceError("Enter a positive contribution to spread across your selection.")
     cents = round(new_money * 100)
-    if not math.isclose(new_money * 100, cents, abs_tol=1e-6, rel_tol=0):
+    if cents < 1 or not math.isclose(new_money * 100, cents, abs_tol=1e-6, rel_tol=0):
         raise RebalanceError("Enter the contribution in whole EUR cents.")
     allowed = _buy_eligibility(problem, eligible_position_ids, no_new_positions)
     if not allowed.any():
         raise RebalanceError("No feasible buy: select at least one eligible position allowed by No new positions.")
-    if method not in {"equal", "target"}:
-        raise RebalanceError("Choose equal amounts or target weights for the contribution.")
-    weights = np.where(allowed, 1. if method == "equal" else problem.targets, 0.)
-    if weights.sum() <= 0:
-        raise RebalanceError("The selected eligible targets are all zero. Choose Spread equally or set positive targets.")
-    exact = cents * weights / weights.sum()
+    if method not in {"balance", "target"}:
+        raise RebalanceError("Choose target-gap balancing or target weights for the contribution.")
+    if method == "balance":
+        deficits = (problem.targets[allowed] * (problem.total + new_money) - problem.values[allowed]) * 100
+        # Translation leaves the projection unchanged and avoids cancellation
+        # when a small contribution is added to a large portfolio.
+        deficits -= deficits.max()
+        ordered = np.sort(deficits)[::-1]
+        thresholds = (np.cumsum(ordered) - cents) / np.arange(1, len(ordered) + 1)
+        active = np.flatnonzero(ordered > thresholds)
+        exact = np.zeros(len(problem.values))
+        exact[allowed] = np.maximum(deficits - thresholds[active[-1]], 0)
+    else:
+        weights = np.where(allowed, problem.targets, 0.)
+        if weights.sum() <= 0:
+            raise RebalanceError("The selected eligible targets are all zero. Set positive targets or choose Rebalance selected positions.")
+        exact = cents * weights / weights.sum()
     pennies = np.floor(exact)
     remainder = cents - int(pennies.sum())
     order = np.argsort(-(exact - pennies), kind="stable")
     pennies[order[:remainder]] += 1
-    if ((weights > 0) & (pennies == 0)).any():
+    if method == "target" and ((exact > 0) & (pennies == 0)).any():
         raise RebalanceError("This amount is too small to give every positive-weight recipient at least €0.01. Increase the amount or choose fewer positions.")
     delta = pennies / 100
     return _result(problem, (problem.values + delta) / (problem.total + new_money), new_money,

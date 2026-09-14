@@ -49,13 +49,18 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
                                       help="Choose instrument/account rows that may receive new money. Unselected positions stay invested, keep their targets and receive no trades.")
         active = valued.loc[valued.position_id.isin(eligible_ids)]
         allowed_count = int((active.shares > 0).sum()) if no_new else len(active)
-        distribution = st.selectbox("Distribution", ["Spread equally", "Spread by target weights", "Optimize rebalancing"], key="rebalance_distribution")
+        distribution = st.selectbox("Distribution", ["Rebalance selected positions", "Spread by target weights", "Optimize rebalancing"], key="rebalance_distribution")
         st.caption(f"{len(eligible_ids)} selected · {allowed_count} eligible after position restrictions.")
         if distribution == "Optimize rebalancing":
             st.caption("Choose buys that reduce whole-portfolio deviation. This can put the entire contribution into one position.")
+        elif distribution == "Rebalance selected positions":
+            st.caption("Use current holdings and targets to balance the remaining gaps across your selection. "
+                       "Larger shortfalls receive priority; sufficiently funded positions may receive nothing. "
+                       "Minimizes squared percentage-point gaps to exact targets, without a trade-count penalty or limit. "
+                       "Tolerance ranges affect the reported status, not this split. Buys sum to your contribution in whole cents.")
         else:
             st.caption("Split the new contribution across the eligible selection. Existing holdings are kept. "
-                       "Spread equally gives every eligible row an equal amount; target weights split the money in proportion to their targets, with zero targets receiving nothing. "
+                       "Target weights split the money in proportion to their targets, with zero targets receiving nothing. "
                        "This uses one trade per recipient, without a maximum-trade limit. Amounts are rounded to cents while preserving the total.")
     spreading = distribution != "Optimize rebalancing"
     max_trades = int(st.number_input("Maximum trades", min_value=1, max_value=max(1, len(valued)),
@@ -79,7 +84,7 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
                     plans = [minimum_new_money(problem, no_new_positions=no_new)]
                 elif spreading:
                     plans = [spread_new_money(problem, new_money, eligible_position_ids=eligible_ids,
-                                               method="equal" if distribution == "Spread equally" else "target", no_new_positions=no_new)]
+                                               method="balance" if distribution == "Rebalance selected positions" else "target", no_new_positions=no_new)]
                 else:
                     bar = st.progress(0, text="Comparing trade counts")
                     try:

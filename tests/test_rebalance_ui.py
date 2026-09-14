@@ -170,20 +170,22 @@ def test_buy_selection_empty_positions_and_changed_universe_fail_closed(rebalanc
     assert any("select at least one" in item.value for item in app.error)
 
 
-def test_spreading_is_default_for_selected_positions_and_buys_each(rebalance_data):
+def test_target_gap_balancing_is_default_for_selected_positions(rebalance_data):
     original = (rebalance_data / "holdings.csv").read_bytes()
     app = launch(rebalance_data)
     by_label(app.selectbox, "Rebalancing mode").set_value(MODES[2]).run()
     by_label(app.number_input, "New money (EUR)").set_value(100).run()
     by_label(app.number_input, "Maximum trades").set_value(1).run()
     by_label(app.checkbox, "Limit buys to selected positions").check().run()
-    assert by_label(app.selectbox, "Distribution").value == "Spread equally"
+    assert by_label(app.selectbox, "Distribution").value == "Rebalance selected positions"
     assert not any(item.label == "Maximum trades" for item in app.number_input)
     by_label(app.multiselect, "Positions eligible for buying").set_value(["position-0", "position-1", "position-2"]).run()
     calculate(app)
-    assert metrics(app)["Trades"] == "3"
+    assert metrics(app)["Trades"] == "2"
     plan = next(item.value for item in app.dataframe if "Action" in item.value)
-    assert plan["Trade (EUR)"].tolist() == pytest.approx([33.34, 33.33, 33.33])
+    assert plan.Investment.tolist() == ["Synthetic B", "Synthetic C"]
+    assert plan["Trade (EUR)"].tolist() == pytest.approx([50, 50])
+    assert any("squared percentage-point gaps" in item.value for item in app.caption)
     assert not any("closest allocation" in item.value for item in app.info)
     by_label(app.selectbox, "Distribution").set_value("Spread by target weights").run()
     assert "Trades" not in metrics(app)
