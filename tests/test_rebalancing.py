@@ -273,3 +273,53 @@ def test_empty_selection_requires_no_cash_and_invalid_ids_are_rejected():
     p.positions["position_id"] = ["same", "same"]
     with pytest.raises(RebalanceError, match="unique position IDs"):
         allocate_new_money(p, 10, max_trades=2, eligible_position_ids={"same"})
+
+
+def test_spread_equal_buys_every_selected_row_and_conserves_cents():
+    from portfolio_app.rebalancing import spread_new_money
+    p = portfolio([80., 10., 10., 0.], [.4, .3, .2, .1], tolerance=0)
+    plan = spread_new_money(p, 100, eligible_position_ids={"row-0", "row-1", "row-2"})
+    assert plan.trade_count == 3
+    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([33.34, 33.33, 33.33, 0])
+    assert_conserved(plan, 100, buys_only=True)
+    assert not plan.within_bands  # Distribution is not an optimization claim.
+
+
+def test_spread_target_weights_apply_to_contribution_not_existing_holdings():
+    from portfolio_app.rebalancing import spread_new_money
+    p = portfolio([80., 10., 10.], [.4, .3, .3])
+    plan = spread_new_money(p, 100, eligible_position_ids={"row-0", "row-2"}, method="target")
+    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([57.14, 0, 42.86])
+    assert_conserved(plan, 100, buys_only=True)
+
+
+def test_spread_no_new_positions_and_zero_targets():
+    from portfolio_app.rebalancing import spread_new_money
+    p = portfolio([80., 20., 0.], [.6, .4, 0])
+    ids = {"row-0", "row-1", "row-2"}
+    plan = spread_new_money(p, 100, eligible_position_ids=ids, no_new_positions=True)
+    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([50, 50, 0])
+    plan = spread_new_money(p, 100, eligible_position_ids=ids, method="target")
+    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([60, 40, 0])
+    with pytest.raises(RebalanceError, match="all zero"):
+        spread_new_money(p, 100, eligible_position_ids={"row-2"}, method="target")
+    assert spread_new_money(p, 100, eligible_position_ids={"row-2"}).trade_count == 1
+
+
+def test_spread_rejects_unusable_budgets_and_selections():
+    from portfolio_app.rebalancing import spread_new_money
+    p = portfolio([80., 20.], [.6, .4])
+    for amount in (0, -1, float("nan"), float("inf"), .001, .01):
+        with pytest.raises(RebalanceError):
+            spread_new_money(p, amount, eligible_position_ids={"row-0", "row-1"})
+    with pytest.raises(RebalanceError, match="select at least one"):
+        spread_new_money(p, 100, eligible_position_ids=set())
+
+
+def test_spread_small_contribution_into_large_portfolio_preserves_real_cents():
+    from portfolio_app.rebalancing import spread_new_money
+    p = portfolio([10_000_000., 10_000_000.], [.5, .5])
+    plan = spread_new_money(p, .02, eligible_position_ids={"row-0", "row-1"})
+    assert plan.trade_count == 2
+    assert plan.table["Trade (EUR)"].tolist() == [.01, .01]
+    assert_conserved(plan, 20_000_000, buys_only=True)

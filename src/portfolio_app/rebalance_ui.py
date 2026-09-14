@@ -8,7 +8,7 @@ import streamlit as st
 
 from portfolio_app.display_names import display_name
 from portfolio_app.rebalancing import (
-    RebalanceError, cash_tradeoffs, minimum_new_money, minimum_trades, prepare_rebalance,
+    RebalanceError, cash_tradeoffs, minimum_new_money, minimum_trades, prepare_rebalance, spread_new_money,
 )
 
 MODES = ["Fewest trades (buys and sells)", "Minimum new money (no sells)", "Allocate new money"]
@@ -33,8 +33,7 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
         no_new = st.checkbox("No new positions", key="rebalance_no_new",
                              help="Only buy position rows that already hold shares. Empty positions keep their targets unless Ignore empty positions is enabled.")
         new_money = st.number_input("New money (EUR)", min_value=0., value=500., step=100., key="rebalance_cash") if mode == MODES[2] else 0.
-        max_trades = int(st.number_input("Maximum trades", min_value=1, max_value=max(1, len(valued)),
-                                         value=min(4, max(1, len(valued))), step=1, key=f"rebalance_max_trades_{len(valued)}")) if mode == MODES[2] else len(valued)
+    distribution = "Optimize rebalancing"
     eligible_ids = None
     if mode == MODES[2] and st.checkbox("Limit buys to selected positions", key="rebalance_limit_buys"):
         identity_fields = [column for column in ("position_id", "id", "name", "ticker", "account", "portfolio") if column in valued]
@@ -50,9 +49,17 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
                                       help="Choose instrument/account rows that may receive new money. Unselected positions stay invested, keep their targets and receive no trades.")
         active = valued.loc[valued.position_id.isin(eligible_ids)]
         allowed_count = int((active.shares > 0).sum()) if no_new else len(active)
-        st.caption(f"{len(eligible_ids)} selected · {allowed_count} eligible after position restrictions. "
-                   "The full amount is allocated only among eligible positions, using the whole portfolio’s targets. "
-                   "Some selected positions may receive zero when other buys improve the balance more or the trade limit is reached.")
+        distribution = st.selectbox("Distribution", ["Spread equally", "Spread by target weights", "Optimize rebalancing"], key="rebalance_distribution")
+        st.caption(f"{len(eligible_ids)} selected · {allowed_count} eligible after position restrictions.")
+        if distribution == "Optimize rebalancing":
+            st.caption("Choose buys that reduce whole-portfolio deviation. This can put the entire contribution into one position.")
+        else:
+            st.caption("Split the new contribution across the eligible selection. Existing holdings are kept. "
+                       "Spread equally gives every eligible row an equal amount; target weights split the money in proportion to their targets, with zero targets receiving nothing. "
+                       "This uses one trade per recipient, without a maximum-trade limit. Amounts are rounded to cents while preserving the total.")
+    spreading = distribution != "Optimize rebalancing"
+    max_trades = int(st.number_input("Maximum trades", min_value=1, max_value=max(1, len(valued)),
+                                     value=min(4, max(1, len(valued))), step=1, key=f"rebalance_max_trades_{len(valued)}")) if mode == MODES[2] and not spreading else len(valued)
     st.caption("±0.5 pp gives a 10% target a 9.5–10.5% range. A 5% relative tolerance gives that same range; a zero target has a zero relative range. "
                "Plans allow fractional shares, fully invest new money, and exclude fees, taxes, spreads and lot-size rules. EUR amounts are rounded for display.")
     try:
@@ -61,15 +68,18 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
         st.info(str(exc))
         return
     fields = [column for column in ("position_id", "id", "name", "ticker", "account", "portfolio", "shares", "current_value_eur", "target_allocation") if column in valued]
-    fingerprint = sha256((valued[fields].to_json() + repr((mode, tolerance_type, tolerance, no_new, new_money, max_trades, None if eligible_ids is None else tuple(sorted(eligible_ids))))).encode()).hexdigest()
+    fingerprint = sha256((valued[fields].to_json() + repr((mode, tolerance_type, tolerance, no_new, new_money, max_trades, distribution, None if eligible_ids is None else tuple(sorted(eligible_ids))))).encode()).hexdigest()
     if st.button("Calculate rebalance", type="primary", key="rebalance_calculate"):
         st.session_state.pop("rebalance_result", None)
         try:
-            with st.spinner("Finding the best trade plan…"):
+            with st.spinner("Calculating your trade plan…"):
                 if mode == MODES[0]:
                     plans = [minimum_trades(problem, no_new_positions=no_new)]
                 elif mode == MODES[1]:
                     plans = [minimum_new_money(problem, no_new_positions=no_new)]
+                elif spreading:
+                    plans = [spread_new_money(problem, new_money, eligible_position_ids=eligible_ids,
+                                               method="equal" if distribution == "Spread equally" else "target", no_new_positions=no_new)]
                 else:
                     bar = st.progress(0, text="Comparing trade counts")
                     try:
@@ -110,10 +120,13 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
                "Targets are evaluated against the final portfolio value, including new money.")
     if plan.within_bands:
         st.success("Every position is within its target range.")
+    elif spreading:
+        st.info("The contribution is spread as requested. Some positions remain outside their target ranges.")
     else:
         st.info("This is the closest allocation within the trade limit and restrictions; some positions remain outside their ranges.")
     if plan.deviation_after > plan.deviation_before + 1e-5:
-        st.warning("Fully investing this amount under these restrictions increases deviation. Try more trades or a different cash amount.")
+        st.warning("This contribution increases deviation from the whole portfolio’s target ranges." if spreading else
+                   "Fully investing this amount under these restrictions increases deviation. Try more trades or a different cash amount.")
     table = plan.table.rename(columns={"name": "Investment", "account": "Account", "portfolio": "Portfolio"}).copy()
     table["Investment"] = table["Investment"].map(display_name)
     config = {"position_id": None, "id": None, "ticker": None,

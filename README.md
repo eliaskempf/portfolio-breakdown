@@ -161,17 +161,28 @@ The **Rebalance** tab offers three read-only calculation modes:
   plan selector show whether additional trades offer enough improvement.
 
 In **Allocate new money**, enable **Limit buys to selected positions** and
-choose the instrument/account rows in **Positions eligible for buying**. The
-full contribution is invested only in that selection. Other positions receive
-no trades and keep their targets; the objective and allocation percentages
-still use the whole portfolio. Eligibility does not require buying every
-selected position or dividing the amount equally. The existing trade limit,
-tolerance and trade-count comparison still apply. **No new positions** further
-excludes selected rows with zero shares. An empty eligible selection cannot
-receive positive new money. Changing the eligible selection hides stale plans;
-changing the position identities clears the selection for you to choose again.
-This restriction applies only to Allocate new money and never changes saved
-holdings or targets.
+choose the instrument/account rows in **Positions eligible for buying**. Then
+choose **Distribution**:
+
+- **Spread equally** (default for a selected subset): divide the contribution
+  equally among every eligible row, using one buy per row.
+- **Spread by target weights**: divide the contribution in proportion to the
+  selected eligible targets. For example, targets of 20% and 10% receive two
+  thirds and one third of the new money. Zero targets receive nothing.
+- **Optimize rebalancing**: choose buys that improve the whole portfolio's
+  allocation, with a trade limit and trade-count comparison. This can put the
+  entire contribution into one position.
+
+Spreading divides the new contribution itself; existing holdings do not change
+the split. The trade limit applies only to optimization. Spreading allocates
+whole EUR cents using largest remainders so displayed buys sum to the budget;
+an amount too small to fund every positive-weight recipient is rejected.
+**No new positions** excludes selected rows with zero shares before splitting.
+Unselected positions receive no trades. Final weights and deviation still use
+whole-portfolio targets, so spreading can leave positions outside their ranges.
+Changing the selection or distribution hides stale plans. Changing position
+identities clears the selection for you to choose again. These controls apply
+only to Allocate new money and never change saved holdings or targets.
 
 Choose an absolute tolerance (default ±0.5 percentage points) or a percentage
 relative to each target. For a 10% target, ±0.5 pp and ±5% relative both allow

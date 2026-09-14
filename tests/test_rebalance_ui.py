@@ -130,6 +130,7 @@ def test_buy_selection_constrains_cash_and_invalidates_previous_plan(rebalance_d
     by_label(app.selectbox, "Rebalancing mode").set_value(MODES[2]).run()
     by_label(app.number_input, "New money (EUR)").set_value(100).run()
     by_label(app.checkbox, "Limit buys to selected positions").check().run()
+    by_label(app.selectbox, "Distribution").set_value("Optimize rebalancing").run()
     calculate(app)
     assert any("select at least one" in item.value for item in app.error)
     by_label(app.multiselect, "Positions eligible for buying").set_value(["position-1"]).run()
@@ -156,6 +157,7 @@ def test_buy_selection_empty_positions_and_changed_universe_fail_closed(rebalanc
     app = launch(rebalance_data)
     by_label(app.selectbox, "Rebalancing mode").set_value(MODES[2]).run()
     by_label(app.checkbox, "Limit buys to selected positions").check().run()
+    by_label(app.selectbox, "Distribution").set_value("Optimize rebalancing").run()
     by_label(app.multiselect, "Positions eligible for buying").set_value(["position-3"]).run()
     by_label(app.checkbox, "No new positions").check().run()
     calculate(app)
@@ -166,3 +168,28 @@ def test_buy_selection_empty_positions_and_changed_universe_fail_closed(rebalanc
     assert len(by_label(app.multiselect, "Positions eligible for buying").options) == 3
     calculate(app)
     assert any("select at least one" in item.value for item in app.error)
+
+
+def test_spreading_is_default_for_selected_positions_and_buys_each(rebalance_data):
+    original = (rebalance_data / "holdings.csv").read_bytes()
+    app = launch(rebalance_data)
+    by_label(app.selectbox, "Rebalancing mode").set_value(MODES[2]).run()
+    by_label(app.number_input, "New money (EUR)").set_value(100).run()
+    by_label(app.number_input, "Maximum trades").set_value(1).run()
+    by_label(app.checkbox, "Limit buys to selected positions").check().run()
+    assert by_label(app.selectbox, "Distribution").value == "Spread equally"
+    assert not any(item.label == "Maximum trades" for item in app.number_input)
+    by_label(app.multiselect, "Positions eligible for buying").set_value(["position-0", "position-1", "position-2"]).run()
+    calculate(app)
+    assert metrics(app)["Trades"] == "3"
+    plan = next(item.value for item in app.dataframe if "Action" in item.value)
+    assert plan["Trade (EUR)"].tolist() == pytest.approx([33.34, 33.33, 33.33])
+    assert not any("closest allocation" in item.value for item in app.info)
+    by_label(app.selectbox, "Distribution").set_value("Spread by target weights").run()
+    assert "Trades" not in metrics(app)
+    calculate(app)
+    plan = next(item.value for item in app.dataframe if "Action" in item.value)
+    assert plan["Trade (EUR)"].tolist() == pytest.approx([40, 30, 30])
+    by_label(app.selectbox, "Distribution").set_value("Optimize rebalancing").run()
+    assert any(item.label == "Maximum trades" for item in app.number_input)
+    assert (rebalance_data / "holdings.csv").read_bytes() == original

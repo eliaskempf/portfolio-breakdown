@@ -90,7 +90,7 @@ class RebalancePlan:
 
 
 def _result(problem: RebalanceInput, weights: np.ndarray, new_money: float, *, buys_only: bool,
-            no_new_positions: bool, require_bands: bool) -> RebalancePlan:
+            no_new_positions: bool, require_bands: bool, trade_amounts: np.ndarray | None = None) -> RebalancePlan:
     total = problem.total + new_money
     current = problem.values / total
     if (not np.isfinite(weights).all() or abs(weights.sum() - 1) > SOLVER_TOL or
@@ -101,9 +101,11 @@ def _result(problem: RebalanceInput, weights: np.ndarray, new_money: float, *, b
     within = bool(((weights >= problem.lower - SOLVER_TOL) & (weights <= problem.upper + SOLVER_TOL)).all())
     if require_bands and not within:
         raise RebalanceError("The solver could not verify a plan inside every target range.")
-    delta = (weights - current) * total
-    # Numerical solver noise is not a trade. Amounts remain unrounded internally.
-    delta[np.abs(delta) < total * 1e-9] = 0.
+    delta = (weights - current) * total if trade_amounts is None else trade_amounts.copy()
+    if trade_amounts is None:
+        # Numerical solver noise is not a trade. Explicit cent allocations must
+        # retain their amounts even when tiny compared with the portfolio.
+        delta[np.abs(delta) < total * 1e-9] = 0.
     table = problem.positions[[column for column in ("position_id", "id", "name", "ticker", "account", "portfolio")
                                if column in problem.positions]].copy()
     table["Action"] = np.where(delta > 0, "Buy", np.where(delta < 0, "Sell", "Hold"))
@@ -276,3 +278,35 @@ def cash_tradeoffs(problem: RebalanceInput, new_money: float, *, max_trades: int
         if plan.within_bands:
             break
     return plans
+
+
+def spread_new_money(problem: RebalanceInput, new_money: float, *, eligible_position_ids: Collection[str],
+                     method: Literal["equal", "target"] = "equal", no_new_positions: bool = False) -> RebalancePlan:
+    """Split the contribution itself; every positive-weight recipient gets a buy.
+
+    Targets determine the contribution split, not desired final position values.
+    Use largest remainders for EUR cents so displayed buys sum to the budget.
+    """
+    if not math.isfinite(new_money) or new_money <= 0 or not math.isfinite(new_money * 100):
+        raise RebalanceError("Enter a positive contribution to spread across your selection.")
+    cents = round(new_money * 100)
+    if not math.isclose(new_money * 100, cents, abs_tol=1e-6, rel_tol=0):
+        raise RebalanceError("Enter the contribution in whole EUR cents.")
+    allowed = _buy_eligibility(problem, eligible_position_ids, no_new_positions)
+    if not allowed.any():
+        raise RebalanceError("No feasible buy: select at least one eligible position allowed by No new positions.")
+    if method not in {"equal", "target"}:
+        raise RebalanceError("Choose equal amounts or target weights for the contribution.")
+    weights = np.where(allowed, 1. if method == "equal" else problem.targets, 0.)
+    if weights.sum() <= 0:
+        raise RebalanceError("The selected eligible targets are all zero. Choose Spread equally or set positive targets.")
+    exact = cents * weights / weights.sum()
+    pennies = np.floor(exact)
+    remainder = cents - int(pennies.sum())
+    order = np.argsort(-(exact - pennies), kind="stable")
+    pennies[order[:remainder]] += 1
+    if ((weights > 0) & (pennies == 0)).any():
+        raise RebalanceError("This amount is too small to give every positive-weight recipient at least €0.01. Increase the amount or choose fewer positions.")
+    delta = pennies / 100
+    return _result(problem, (problem.values + delta) / (problem.total + new_money), new_money,
+                   buys_only=True, no_new_positions=no_new_positions, require_bands=False, trade_amounts=delta)
