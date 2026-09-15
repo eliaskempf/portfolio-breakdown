@@ -180,6 +180,20 @@ choose **Distribution**:
     the fewest trades whose root mean squared (RMS) target gap is within that
     amount of the best plan under the cap. Zero allows no additional error.
     The suggested plan is selected initially; any comparison plan can be inspected.
+- **Limit allocations for this rebalance** (within Rebalance selected positions):
+  enter an optional **Max allocation after rebalance (%)** for each selected
+  instrument/account row. Blank means no cap; zero prevents further buys.
+  The cap uses final portfolio value including the entire contribution and
+  any unallocated cash. Saved targets keep guiding the allocation and are never
+  overwritten by temporary caps. A position already above its cap receives no
+  buys; this buy-only calculation does not force a sale. A cap that conflicts
+  with Buy every selected position or Minimum purchase produces an explanation.
+  Caps reset when the selection changes and are not saved to portfolio files.
+  The calculator invests as much as the caps, minimum buys and trade limit allow,
+  then minimizes squared target gaps. Remaining money appears as **Unallocated
+  cash**, included in the percentage denominator; displayed position percentages
+  may total less than 100%. Fewer-trade suggestions preserve the maximum amount
+  that can be invested; comparison rows also show each plan's unallocated cash.
 - **Spread by target weights**: divide the contribution in proportion to the
   selected eligible targets. For example, targets of 20% and 10% receive two
   thirds and one third of the new money. Zero targets receive nothing.
@@ -190,14 +204,15 @@ choose **Distribution**:
 RMS target gap is the square root of the mean squared percentage-point gap
 across all portfolio position rows. It measures the squared-deviation objective
 on a readable scale; it is separate from deviation outside tolerance ranges.
-For a fixed number of buys with a uniform minimum, buying the largest target
-shortfalls is optimal. The calculator solves the remaining constrained split
-and compares feasible trade counts, including when all positions are in range.
+Without caps, for a fixed number of buys with a uniform minimum, buying the
+largest target shortfalls is optimal. With caps, candidate choices also account
+for the remaining capacity of each position. The calculator compares feasible
+trade counts, including when all positions are in range.
 
 Only **Spread by target weights** ignores existing holdings when splitting the
 contribution. Minimum-purchase and selection-intent controls apply to
 **Rebalance selected positions**. Both distributions allocate whole EUR cents
-so buys sum to the budget. Target-weight splitting rejects an amount too small
+so buys plus any unallocated cash sum to the budget. Target-weight splitting rejects an amount too small
 to fund every positive-weight recipient with at least one cent.
 **No new positions** excludes selected rows with zero shares. If this conflicts
 with **Buy every selected position**, deselect those rows, allow skipping, or
@@ -221,7 +236,9 @@ their targets; **Ignore empty positions** instead removes and redistributes
 them before calculation. Infeasible restrictions produce an explanation.
 
 Amounts assume fractional shares and exclude fees, taxes, spreads and lot-size
-constraints. New money is fully invested; there is no modeled cash account.
+constraints. New money is fully invested except when temporary allocation caps
+and purchase restrictions leave an unallocated remainder. This is a calculation
+result, not a saved cash account.
 EUR amounts are rounded only for display. Plans never place orders or write
 holdings. SciPy’s HiGHS linear/mixed-integer optimizer must report a proven
 optimum; a solver limit or failed constraint check produces no trade plan.

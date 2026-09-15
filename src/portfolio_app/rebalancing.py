@@ -1,6 +1,6 @@
 """Target-band rebalancing with proven minimum trade/cash objectives."""
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 import math
 from typing import Callable, Literal
@@ -10,6 +10,7 @@ import pandas as pd
 from scipy.optimize import Bounds, LinearConstraint, linprog, milp
 
 from portfolio_app.contributions import contribution_candidates
+from portfolio_app.capped_contributions import capped_candidates
 from portfolio_app.holdings import DataError
 
 SOLVER_TOL = 2e-6
@@ -88,6 +89,7 @@ class RebalancePlan:
     deviation_before: float
     deviation_after: float
     within_bands: bool
+    unallocated_cash: float = 0.
 
     @property
     def target_rms(self) -> float:
@@ -96,10 +98,12 @@ class RebalancePlan:
 
 
 def _result(problem: RebalanceInput, weights: np.ndarray, new_money: float, *, buys_only: bool,
-            no_new_positions: bool, require_bands: bool, trade_amounts: np.ndarray | None = None) -> RebalancePlan:
+            no_new_positions: bool, require_bands: bool, trade_amounts: np.ndarray | None = None,
+            unallocated_cash: float = 0.) -> RebalancePlan:
     total = problem.total + new_money
     current = problem.values / total
-    if (not np.isfinite(weights).all() or abs(weights.sum() - 1) > SOLVER_TOL or
+    if (not math.isfinite(unallocated_cash) or not 0 <= unallocated_cash <= new_money or
+            not np.isfinite(weights).all() or abs(weights.sum() + unallocated_cash / total - 1) > SOLVER_TOL or
             (weights < -SOLVER_TOL).any() or
             (buys_only and (weights < current - SOLVER_TOL).any()) or
             (no_new_positions and (weights[~problem.held] > current[~problem.held] + SOLVER_TOL).any())):
@@ -126,7 +130,7 @@ def _result(problem: RebalanceInput, weights: np.ndarray, new_money: float, *, b
     return RebalancePlan(table, new_money, int(np.count_nonzero(delta)), int(np.count_nonzero(delta > 0)),
                          int(np.count_nonzero(delta < 0)),
                          deviation(problem.values / problem.total, problem.lower, problem.upper) if problem.total else float("nan"),
-                         deviation(weights, problem.lower, problem.upper), within)
+                         deviation(weights, problem.lower, problem.upper), within, unallocated_cash)
 
 
 class _AllocationModel:
@@ -288,7 +292,8 @@ def cash_tradeoffs(problem: RebalanceInput, new_money: float, *, max_trades: int
 
 def balanced_cash_tradeoffs(problem: RebalanceInput, new_money: float, *, eligible_position_ids: Collection[str],
                             minimum_purchase: float = .01, buy_all: bool = False,
-                            max_trades: int | None = None, no_new_positions: bool = False) -> list[RebalancePlan]:
+                            max_trades: int | None = None, no_new_positions: bool = False,
+                            max_allocations: Mapping[str, float] | None = None) -> list[RebalancePlan]:
     """Best squared-gap plans under minimum purchases and selected-row intent."""
     cents = _positive_cents(new_money, "contribution")
     minimum = _positive_cents(minimum_purchase, "minimum purchase")
@@ -310,13 +315,38 @@ def balanced_cash_tradeoffs(problem: RebalanceInput, new_money: float, *, eligib
         raise RebalanceError(f"This plan needs at least €{required / 100:,.2f} at the chosen minimum purchase. "
                              f"Add €{(required - cents) / 100:,.2f}, lower the minimum purchase, or select fewer positions.")
     deficits = (problem.targets[allowed] * (problem.total + new_money) - problem.values[allowed]) * 100
-    candidates = contribution_candidates(deficits, cents, minimum, buy_all=buy_all, max_trades=max_trades)
+    caps = np.full(len(problem.values), np.nan)
+    if max_allocations is not None:
+        if not isinstance(max_allocations, Mapping) or set(max_allocations) - set(eligible_position_ids):
+            raise RebalanceError("Maximum allocations must refer to selected position IDs.")
+        for key, cap in max_allocations.items():
+            if isinstance(cap, bool) or not isinstance(cap, (int, float)) or not math.isfinite(cap) or not 0 <= cap <= 1:
+                raise RebalanceError("Maximum allocations must be finite fractions between zero and one.")
+            caps[problem.positions.position_id == key] = cap
+    capacity = np.where(np.isnan(caps), cents, np.minimum(cents, np.floor(np.maximum(0, caps * (problem.total + new_money) - problem.values) * 100 + 1e-7)))
+    upper = capacity[allowed]
+    if buy_all and (upper < minimum).any():
+        raise RebalanceError("A maximum allocation leaves less room than the minimum purchase for a selected position. Raise or clear that cap, lower Minimum purchase, or allow skipping positions. Existing holdings are never sold to meet a cap.")
+    if (upper < cents).any():
+        try:
+            candidates = capped_candidates(deficits, cents, minimum, upper, buy_all=buy_all, max_trades=max_trades)
+        except DataError as exc:
+            raise RebalanceError(str(exc)) from exc
+    else:
+        candidates = contribution_candidates(deficits, cents, minimum, buy_all=buy_all, max_trades=max_trades)
     plans = []
     for pennies in candidates:
         delta = np.zeros(len(problem.values))
         delta[allowed] = pennies / 100
-        plans.append(_result(problem, (problem.values + delta) / (problem.total + new_money), new_money,
-                             buys_only=True, no_new_positions=no_new_positions, require_bands=False, trade_amounts=delta))
+        leftover = (cents - int(pennies.sum())) / 100
+        if (pennies > upper).any() or ((pennies > 0) & (pennies < minimum)).any() or np.count_nonzero(pennies) > max_trades or (buy_all and (pennies == 0).any()):
+            raise RebalanceError("The capped plan failed its purchase constraints; no plan is shown.")
+        plan = _result(problem, (problem.values + delta) / (problem.total + new_money), new_money,
+                       buys_only=True, no_new_positions=no_new_positions, require_bands=False, trade_amounts=delta,
+                       unallocated_cash=leftover)
+        if not np.isnan(caps).all():
+            plan.table["Max allocation %"] = caps * 100
+        plans.append(plan)
     return plans
 
 
@@ -332,7 +362,7 @@ def _positive_cents(amount: float, label: str) -> int:
 def spread_new_money(problem: RebalanceInput, new_money: float, *, eligible_position_ids: Collection[str],
                      method: Literal["balance", "target"] = "balance", no_new_positions: bool = False,
                      minimum_purchase: float = .01, buy_all: bool = False,
-                     max_trades: int | None = None) -> RebalancePlan:
+                     max_trades: int | None = None, max_allocations: Mapping[str, float] | None = None) -> RebalancePlan:
     """Balance final target gaps, or split the contribution by target weights.
 
     Balance minimizes sum((final_weight - target)**2), without a trade penalty.
@@ -343,7 +373,7 @@ def spread_new_money(problem: RebalanceInput, new_money: float, *, eligible_posi
     if method == "balance":
         return balanced_cash_tradeoffs(problem, new_money, eligible_position_ids=eligible_position_ids,
                                        minimum_purchase=minimum_purchase, buy_all=buy_all,
-                                       max_trades=max_trades, no_new_positions=no_new_positions)[-1]
+                                       max_trades=max_trades, no_new_positions=no_new_positions, max_allocations=max_allocations)[-1]
     cents = _positive_cents(new_money, "contribution")
     allowed = _buy_eligibility(problem, eligible_position_ids, no_new_positions)
     if not allowed.any():

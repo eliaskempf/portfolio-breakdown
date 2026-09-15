@@ -253,3 +253,59 @@ def test_buy_every_selection_explains_no_new_conflict(rebalance_data):
     by_label(app.selectbox, "Selection intent").set_value("Allow skipping positions").run()
     calculate(app)
     assert metrics(app)["Trades"] == "1"
+
+
+def edit_caps(app, changes):
+    key = next(key for key in app.session_state.filtered_state if key.startswith('rebalance_caps_'))
+    app.session_state[key] = {'edited_rows': {i: {'Max allocation %': value} for i, value in changes.items()},
+                              'added_rows': [], 'deleted_rows': []}
+
+
+def capped_app(rebalance_data):
+    app = launch(rebalance_data)
+    by_label(app.selectbox, 'Rebalancing mode').set_value(MODES[2]).run()
+    by_label(app.number_input, 'New money (EUR)').set_value(100).run()
+    by_label(app.checkbox, 'Limit buys to selected positions').check().run()
+    by_label(app.multiselect, 'Positions eligible for buying').set_value(['position-0', 'position-1', 'position-2']).run()
+    by_label(app.number_input, 'Minimum purchase (EUR)').set_value(5).run()
+    by_label(app.checkbox, 'Limit allocations for this rebalance').check().run()
+    return app
+
+
+def test_temporary_caps_redirect_buys_show_cash_and_never_save_targets(rebalance_data):
+    before = (rebalance_data / 'holdings.csv').read_bytes()
+    app = capped_app(rebalance_data)
+    edit_caps(app, {1: 20})
+    calculate(app)
+    plan = next(item.value for item in app.dataframe if 'Action' in item.value)
+    assert plan.set_index('Investment')['Trade (EUR)'].to_dict() == {'Synthetic A': 10, 'Synthetic B': 30, 'Synthetic C': 60}
+    edit_caps(app, {0: 45, 1: 15, 2: 15})
+    app.run()
+    assert 'Trades' not in metrics(app)
+    edit_caps(app, {0: 45, 1: 15, 2: 15})
+    calculate(app)
+    assert metrics(app)['Unallocated cash'] == '€50.00'
+    assert metrics(app)['New money'] == '€100.00'
+    assert any('included in the final portfolio value' in item.value for item in app.info)
+    by_label(app.checkbox, 'Limit allocations for this rebalance').uncheck().run()
+    assert 'Trades' not in metrics(app)
+    calculate(app)
+    assert 'Unallocated cash' not in metrics(app)
+    assert (rebalance_data / 'holdings.csv').read_bytes() == before
+
+
+def test_cap_conflicts_and_selection_changes_clear_limits(rebalance_data):
+    app = capped_app(rebalance_data)
+    edit_caps(app, {0: 0})
+    calculate(app)
+    assert any('less room than the minimum' in item.value for item in app.error)
+    by_label(app.selectbox, 'Selection intent').set_value('Allow skipping positions').run()
+    edit_caps(app, {0: 0})
+    calculate(app)
+    plan = next(item.value for item in app.dataframe if 'Action' in item.value)
+    assert set(plan.Investment) == {'Synthetic B', 'Synthetic C'}
+    by_label(app.multiselect, 'Positions eligible for buying').set_value(['position-0']).run()
+    calculate(app)
+    plan = next(item.value for item in app.dataframe if 'Action' in item.value)
+    assert plan.Investment.tolist() == ['Synthetic A']
+    assert plan['Trade (EUR)'].tolist() == [100]
