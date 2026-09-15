@@ -166,11 +166,20 @@ choose **Distribution**:
 
 - **Rebalance selected positions** (default for a selected subset): account for
   current holdings and final portfolio value, prioritizing larger shortfalls.
-  Minimize the sum of squared percentage-point gaps to exact targets, without
-  a trade-count penalty. This balances the remaining gaps instead of choosing
-  one trade when several splits provide the same absolute improvement.
-  Sufficiently funded positions can receive nothing. Tolerance ranges affect
-  the reported status, not this split.
+  Minimize the sum of squared percentage-point gaps to exact targets under your
+  purchase constraints. Tolerance ranges affect the reported status, not this
+  split. Configure **Selection intent** and **Minimum purchase (EUR)**:
+  - **Buy every selected position** (default): buy at least the minimum amount
+    for every selected row, including overweight and zero-target rows. The
+    initial minimum is €25 and can be changed. Insufficient budgets show the
+    required contribution and shortfall; positions are never silently skipped.
+  - **Allow skipping positions**: choose the best allocation, with every
+    suggested buy meeting the minimum. **Prefer fewer trades** is off by default.
+    Enable it to set **Maximum trades** and compare allocation quality across
+    trade counts. **Allowed extra target error (pp)** defaults to 0.1 pp: choose
+    the fewest trades whose root mean squared (RMS) target gap is within that
+    amount of the best plan under the cap. Zero allows no additional error.
+    The suggested plan is selected initially; any comparison plan can be inspected.
 - **Spread by target weights**: divide the contribution in proportion to the
   selected eligible targets. For example, targets of 20% and 10% receive two
   thirds and one third of the new money. Zero targets receive nothing.
@@ -178,12 +187,21 @@ choose **Distribution**:
   allocation, with a trade limit and trade-count comparison. This can put the
   entire contribution into one position.
 
+RMS target gap is the square root of the mean squared percentage-point gap
+across all portfolio position rows. It measures the squared-deviation objective
+on a readable scale; it is separate from deviation outside tolerance ranges.
+For a fixed number of buys with a uniform minimum, buying the largest target
+shortfalls is optimal. The calculator solves the remaining constrained split
+and compares feasible trade counts, including when all positions are in range.
+
 Only **Spread by target weights** ignores existing holdings when splitting the
-contribution. The trade limit applies only to **Optimize rebalancing**. Both
-other distributions allocate whole EUR cents using largest remainders so buys
-sum to the budget. Target-weight splitting rejects an amount too small to fund
-every positive-weight recipient; target-gap balancing can use fewer recipients.
-**No new positions** excludes selected rows with zero shares before splitting.
+contribution. Minimum-purchase and selection-intent controls apply to
+**Rebalance selected positions**. Both distributions allocate whole EUR cents
+so buys sum to the budget. Target-weight splitting rejects an amount too small
+to fund every positive-weight recipient with at least one cent.
+**No new positions** excludes selected rows with zero shares. If this conflicts
+with **Buy every selected position**, deselect those rows, allow skipping, or
+turn off No new positions; the calculator explains the conflict.
 Unselected positions receive no trades. Final weights and deviation still use
 whole-portfolio targets, so spreading can leave positions outside their ranges.
 Changing the selection or distribution hides stale plans. Changing position

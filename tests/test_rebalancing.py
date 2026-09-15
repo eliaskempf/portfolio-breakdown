@@ -380,3 +380,78 @@ def test_balancing_tolerance_only_changes_reported_status_and_no_new_is_enforced
     with pytest.raises(RebalanceError, match="No feasible buy"):
         spread_new_money(portfolio(values, targets), 100,
                          eligible_position_ids={"row-2"}, no_new_positions=True)
+
+
+@pytest.mark.parametrize("buy_all", [False, True])
+@pytest.mark.parametrize("limit", [1, 2, 3])
+@pytest.mark.parametrize("minimum", [1, 2, 3])
+def test_minimum_buy_and_trade_caps_match_exhaustive_integer_optimum(buy_all, limit, minimum):
+    from portfolio_app.rebalancing import balanced_cash_tradeoffs
+    # Includes a target-zero row and a large shortfall; all data is invented.
+    p = portfolio([.08, .01, .03, .01], [.2, .5, 0, .3], tolerance=0)
+    if buy_all and (limit < 3 or minimum * 3 > 8):
+        with pytest.raises(RebalanceError):
+            balanced_cash_tradeoffs(p, .08, eligible_position_ids={"row-0", "row-1", "row-2"},
+                                    minimum_purchase=minimum / 100, buy_all=buy_all, max_trades=limit)
+        return
+    plans = balanced_cash_tradeoffs(p, .08, eligible_position_ids={"row-0", "row-1", "row-2"},
+                                    minimum_purchase=minimum / 100, buy_all=buy_all, max_trades=limit)
+    final = p.total + .08
+    for plan in plans:
+        best = float("inf")
+        for first in range(9):
+            for second in range(9 - first):
+                buys = np.array([first, second, 8 - first - second, 0])
+                if np.count_nonzero(buys) > plan.trade_count or ((buys > 0) & (buys < minimum)).any():
+                    continue
+                if buy_all and not (buys[:3] > 0).all():
+                    continue
+                best = min(best, np.mean(((p.values + buys / 100) / final * 100 - p.targets * 100) ** 2))
+        assert plan.target_rms ** 2 == pytest.approx(best, abs=1e-9)
+        buys = plan.table["Trade (EUR)"].to_numpy()
+        assert ((buys == 0) | (buys >= minimum / 100)).all()
+        assert buys[3] == 0
+        assert_conserved(plan, p.total, buys_only=True)
+    assert all(a.target_rms > b.target_rms for a, b in zip(plans, plans[1:]))
+
+
+def test_buy_every_selected_even_overweight_and_exact_minimum_budget():
+    from portfolio_app.rebalancing import balanced_cash_tradeoffs
+    p = portfolio([80., 10., 10.], [.4, .3, .3])
+    ids = {"row-0", "row-1", "row-2"}
+    plan = balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, minimum_purchase=25, buy_all=True)[0]
+    assert plan.table["Trade (EUR)"].tolist() == [25, 37.5, 37.5]
+    exact = balanced_cash_tradeoffs(p, 75, eligible_position_ids=ids, minimum_purchase=25, buy_all=True)[0]
+    assert exact.table["Trade (EUR)"].tolist() == [25, 25, 25]
+    with pytest.raises(RebalanceError, match="at least €75.00.*Add €5.00"):
+        balanced_cash_tradeoffs(p, 70, eligible_position_ids=ids, minimum_purchase=25, buy_all=True)
+    with pytest.raises(RebalanceError, match="requires 3 trades"):
+        balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, minimum_purchase=25, buy_all=True, max_trades=2)
+
+
+def test_trade_comparison_uses_squared_gaps_even_when_band_error_is_equal():
+    from portfolio_app.rebalancing import balanced_cash_tradeoffs
+    p = portfolio([80., 10., 10.], [.4, .3, .3], tolerance=100)
+    plans = balanced_cash_tradeoffs(p, 20, eligible_position_ids={"row-0", "row-1", "row-2"}, minimum_purchase=5)
+    assert [plan.trade_count for plan in plans] == [1, 2]
+    assert all(plan.within_bands for plan in plans)
+    assert plans[0].target_rms > plans[1].target_rms
+    assert plans[1].table["Trade (EUR)"].tolist() == [0, 10, 10]
+
+
+def test_minimum_buy_input_restrictions_and_no_new_conflict():
+    from portfolio_app.rebalancing import balanced_cash_tradeoffs
+    p = portfolio([80., 20., 0.], [.4, .4, .2])
+    ids = {"row-0", "row-1", "row-2"}
+    with pytest.raises(RebalanceError, match="conflicts with No new positions"):
+        balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, buy_all=True, no_new_positions=True)
+    for minimum in (0, -1, float("nan"), float("inf"), .001):
+        with pytest.raises(RebalanceError):
+            balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, minimum_purchase=minimum)
+    for limit in (0, -1, 4, True, 1.5):
+        with pytest.raises(RebalanceError, match="Maximum trades"):
+            balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, max_trades=limit)
+    with pytest.raises(RebalanceError, match="at least €25.00"):
+        balanced_cash_tradeoffs(p, 20, eligible_position_ids=ids, minimum_purchase=25)
+    plan = balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, minimum_purchase=25, no_new_positions=True)[-1]
+    assert plan.table["Trade (EUR)"].tolist() == [25, 75, 0]

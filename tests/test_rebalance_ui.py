@@ -181,10 +181,11 @@ def test_target_gap_balancing_is_default_for_selected_positions(rebalance_data):
     assert not any(item.label == "Maximum trades" for item in app.number_input)
     by_label(app.multiselect, "Positions eligible for buying").set_value(["position-0", "position-1", "position-2"]).run()
     calculate(app)
-    assert metrics(app)["Trades"] == "2"
+    assert by_label(app.selectbox, "Selection intent").value == "Buy every selected position"
+    assert metrics(app)["Trades"] == "3"
     plan = next(item.value for item in app.dataframe if "Action" in item.value)
-    assert plan.Investment.tolist() == ["Synthetic B", "Synthetic C"]
-    assert plan["Trade (EUR)"].tolist() == pytest.approx([50, 50])
+    assert plan.Investment.tolist() == ["Synthetic B", "Synthetic C", "Synthetic A"]
+    assert plan["Trade (EUR)"].tolist() == pytest.approx([37.5, 37.5, 25])
     assert any("squared percentage-point gaps" in item.value for item in app.caption)
     assert not any("closest allocation" in item.value for item in app.info)
     by_label(app.selectbox, "Distribution").set_value("Spread by target weights").run()
@@ -195,3 +196,60 @@ def test_target_gap_balancing_is_default_for_selected_positions(rebalance_data):
     by_label(app.selectbox, "Distribution").set_value("Optimize rebalancing").run()
     assert any(item.label == "Maximum trades" for item in app.number_input)
     assert (rebalance_data / "holdings.csv").read_bytes() == original
+
+
+def test_purchase_intent_minimum_and_fewer_trade_comparison(rebalance_data):
+    before = (rebalance_data / "holdings.csv").read_bytes()
+    app = launch(rebalance_data)
+    by_label(app.selectbox, "Rebalancing mode").set_value(MODES[2]).run()
+    by_label(app.number_input, "New money (EUR)").set_value(70).run()
+    by_label(app.checkbox, "Limit buys to selected positions").check().run()
+    by_label(app.multiselect, "Positions eligible for buying").set_value(["position-0", "position-1", "position-2"]).run()
+    calculate(app)
+    assert any("at least €75.00" in item.value for item in app.error)
+    by_label(app.number_input, "Minimum purchase (EUR)").set_value(20).run()
+    calculate(app)
+    assert metrics(app)["Trades"] == "3"
+    by_label(app.selectbox, "Selection intent").set_value("Allow skipping positions").run()
+    assert "Trades" not in metrics(app)
+    assert by_label(app.checkbox, "Prefer fewer trades").value is False
+    assert not any(item.label == "Maximum trades" for item in app.number_input)
+    calculate(app)
+    assert metrics(app)["Trades"] == "2"
+    assert "RMS target gap" in metrics(app)
+    by_label(app.checkbox, "Prefer fewer trades").check().run()
+    by_label(app.number_input, "Maximum trades").set_value(2).run()
+    by_label(app.number_input, "Allowed extra target error (pp)").set_value(100).run()
+    calculate(app)
+    assert metrics(app)["Trades"] == "1"
+    comparison = next(item.value for item in app.dataframe if "RMS target gap (pp)" in item.value)
+    assert comparison.Trades.tolist() == [1, 2]
+    by_label(app.selectbox, "Plan to inspect").set_value(1).run()
+    assert metrics(app)["Trades"] == "2"
+    by_label(app.number_input, "Allowed extra target error (pp)").set_value(0).run()
+    assert "Trades" not in metrics(app)
+    calculate(app)
+    assert metrics(app)["Trades"] == "2"
+    by_label(app.number_input, "Maximum trades").set_value(1).run()
+    calculate(app)
+    assert metrics(app)["Trades"] == "1"
+    by_label(app.checkbox, "Prefer fewer trades").uncheck().run()
+    calculate(app)
+    assert metrics(app)["Trades"] == "2"  # Hidden trade cap no longer applies.
+    assert (rebalance_data / "holdings.csv").read_bytes() == before
+
+
+def test_buy_every_selection_explains_no_new_conflict(rebalance_data):
+    path = rebalance_data / "holdings.csv"
+    with path.open("a") as handle:
+        handle.write("d,Synthetic D,UNKNOWN,0,0\n")
+    app = launch(rebalance_data)
+    by_label(app.selectbox, "Rebalancing mode").set_value(MODES[2]).run()
+    by_label(app.checkbox, "Limit buys to selected positions").check().run()
+    by_label(app.multiselect, "Positions eligible for buying").set_value(["position-1", "position-3"]).run()
+    by_label(app.checkbox, "No new positions").check().run()
+    calculate(app)
+    assert any("conflicts with No new positions" in item.value for item in app.error)
+    by_label(app.selectbox, "Selection intent").set_value("Allow skipping positions").run()
+    calculate(app)
+    assert metrics(app)["Trades"] == "1"

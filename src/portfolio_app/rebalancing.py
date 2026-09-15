@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import Bounds, LinearConstraint, linprog, milp
 
+from portfolio_app.contributions import contribution_candidates
 from portfolio_app.holdings import DataError
 
 SOLVER_TOL = 2e-6
@@ -87,6 +88,11 @@ class RebalancePlan:
     deviation_before: float
     deviation_after: float
     within_bands: bool
+
+    @property
+    def target_rms(self) -> float:
+        """Root mean squared target gap across all position rows, in pp."""
+        return float(np.sqrt(np.mean(self.table["Gap (pp)"].to_numpy() ** 2)))
 
 
 def _result(problem: RebalanceInput, weights: np.ndarray, new_money: float, *, buys_only: bool,
@@ -280,8 +286,53 @@ def cash_tradeoffs(problem: RebalanceInput, new_money: float, *, max_trades: int
     return plans
 
 
+def balanced_cash_tradeoffs(problem: RebalanceInput, new_money: float, *, eligible_position_ids: Collection[str],
+                            minimum_purchase: float = .01, buy_all: bool = False,
+                            max_trades: int | None = None, no_new_positions: bool = False) -> list[RebalancePlan]:
+    """Best squared-gap plans under minimum purchases and selected-row intent."""
+    cents = _positive_cents(new_money, "contribution")
+    minimum = _positive_cents(minimum_purchase, "minimum purchase")
+    selected = _buy_eligibility(problem, eligible_position_ids, False)
+    allowed = selected & problem.held if no_new_positions else selected
+    if not allowed.any():
+        raise RebalanceError("No feasible buy: select at least one eligible position allowed by No new positions.")
+    if buy_all and (selected & ~allowed).any():
+        raise RebalanceError("Buy every selected position conflicts with No new positions. Deselect empty positions, allow skipping, or turn off No new positions.")
+    count = int(allowed.sum())
+    if max_trades is None:
+        max_trades = count
+    if not isinstance(max_trades, int) or isinstance(max_trades, bool) or not 1 <= max_trades <= len(problem.values):
+        raise RebalanceError("Maximum trades must be a whole number between one and the position count.")
+    if buy_all and max_trades < count:
+        raise RebalanceError(f"Buying every selected position requires {count} trades. Increase Maximum trades or allow skipping.")
+    required = minimum * (count if buy_all else 1)
+    if cents < required:
+        raise RebalanceError(f"This plan needs at least €{required / 100:,.2f} at the chosen minimum purchase. "
+                             f"Add €{(required - cents) / 100:,.2f}, lower the minimum purchase, or select fewer positions.")
+    deficits = (problem.targets[allowed] * (problem.total + new_money) - problem.values[allowed]) * 100
+    candidates = contribution_candidates(deficits, cents, minimum, buy_all=buy_all, max_trades=max_trades)
+    plans = []
+    for pennies in candidates:
+        delta = np.zeros(len(problem.values))
+        delta[allowed] = pennies / 100
+        plans.append(_result(problem, (problem.values + delta) / (problem.total + new_money), new_money,
+                             buys_only=True, no_new_positions=no_new_positions, require_bands=False, trade_amounts=delta))
+    return plans
+
+
+def _positive_cents(amount: float, label: str) -> int:
+    if not math.isfinite(amount) or amount <= 0 or not math.isfinite(amount * 100):
+        raise RebalanceError(f"Enter a positive {label}.")
+    cents = round(amount * 100)
+    if cents < 1 or not math.isclose(amount * 100, cents, abs_tol=1e-6, rel_tol=0):
+        raise RebalanceError(f"Enter the {label} in whole EUR cents.")
+    return cents
+
+
 def spread_new_money(problem: RebalanceInput, new_money: float, *, eligible_position_ids: Collection[str],
-                     method: Literal["balance", "target"] = "balance", no_new_positions: bool = False) -> RebalancePlan:
+                     method: Literal["balance", "target"] = "balance", no_new_positions: bool = False,
+                     minimum_purchase: float = .01, buy_all: bool = False,
+                     max_trades: int | None = None) -> RebalancePlan:
     """Balance final target gaps, or split the contribution by target weights.
 
     Balance minimizes sum((final_weight - target)**2), without a trade penalty.
@@ -289,31 +340,20 @@ def spread_new_money(problem: RebalanceInput, new_money: float, *, eligible_posi
     rows are constant in that objective. Bands only affect the reported status.
     Largest-remainder rounding also minimizes this quadratic over whole cents.
     """
-    if not math.isfinite(new_money) or new_money <= 0 or not math.isfinite(new_money * 100):
-        raise RebalanceError("Enter a positive contribution to spread across your selection.")
-    cents = round(new_money * 100)
-    if cents < 1 or not math.isclose(new_money * 100, cents, abs_tol=1e-6, rel_tol=0):
-        raise RebalanceError("Enter the contribution in whole EUR cents.")
+    if method == "balance":
+        return balanced_cash_tradeoffs(problem, new_money, eligible_position_ids=eligible_position_ids,
+                                       minimum_purchase=minimum_purchase, buy_all=buy_all,
+                                       max_trades=max_trades, no_new_positions=no_new_positions)[-1]
+    cents = _positive_cents(new_money, "contribution")
     allowed = _buy_eligibility(problem, eligible_position_ids, no_new_positions)
     if not allowed.any():
         raise RebalanceError("No feasible buy: select at least one eligible position allowed by No new positions.")
     if method not in {"balance", "target"}:
         raise RebalanceError("Choose target-gap balancing or target weights for the contribution.")
-    if method == "balance":
-        deficits = (problem.targets[allowed] * (problem.total + new_money) - problem.values[allowed]) * 100
-        # Translation leaves the projection unchanged and avoids cancellation
-        # when a small contribution is added to a large portfolio.
-        deficits -= deficits.max()
-        ordered = np.sort(deficits)[::-1]
-        thresholds = (np.cumsum(ordered) - cents) / np.arange(1, len(ordered) + 1)
-        active = np.flatnonzero(ordered > thresholds)
-        exact = np.zeros(len(problem.values))
-        exact[allowed] = np.maximum(deficits - thresholds[active[-1]], 0)
-    else:
-        weights = np.where(allowed, problem.targets, 0.)
-        if weights.sum() <= 0:
-            raise RebalanceError("The selected eligible targets are all zero. Set positive targets or choose Rebalance selected positions.")
-        exact = cents * weights / weights.sum()
+    weights = np.where(allowed, problem.targets, 0.)
+    if weights.sum() <= 0:
+        raise RebalanceError("The selected eligible targets are all zero. Set positive targets or choose Rebalance selected positions.")
+    exact = cents * weights / weights.sum()
     pennies = np.floor(exact)
     remainder = cents - int(pennies.sum())
     order = np.argsort(-(exact - pennies), kind="stable")

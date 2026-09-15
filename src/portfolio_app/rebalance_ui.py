@@ -8,7 +8,7 @@ import streamlit as st
 
 from portfolio_app.display_names import display_name
 from portfolio_app.rebalancing import (
-    RebalanceError, cash_tradeoffs, minimum_new_money, minimum_trades, prepare_rebalance, spread_new_money,
+    RebalanceError, balanced_cash_tradeoffs, cash_tradeoffs, minimum_new_money, minimum_trades, prepare_rebalance, spread_new_money,
 )
 
 MODES = ["Fewest trades (buys and sells)", "Minimum new money (no sells)", "Allocate new money"]
@@ -35,6 +35,7 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
         new_money = st.number_input("New money (EUR)", min_value=0., value=500., step=100., key="rebalance_cash") if mode == MODES[2] else 0.
     distribution = "Optimize rebalancing"
     eligible_ids = None
+    buy_all, prefer_fewer, minimum_purchase, extra_error = False, False, .01, 0.
     if mode == MODES[2] and st.checkbox("Limit buys to selected positions", key="rebalance_limit_buys"):
         identity_fields = [column for column in ("position_id", "id", "name", "ticker", "account", "portfolio") if column in valued]
         identity = sha256(valued[identity_fields].to_json().encode()).hexdigest()[:16]
@@ -55,16 +56,31 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
             st.caption("Choose buys that reduce whole-portfolio deviation. This can put the entire contribution into one position.")
         elif distribution == "Rebalance selected positions":
             st.caption("Use current holdings and targets to balance the remaining gaps across your selection. "
-                       "Larger shortfalls receive priority; sufficiently funded positions may receive nothing. "
-                       "Minimizes squared percentage-point gaps to exact targets, without a trade-count penalty or limit. "
+                       "Minimizes squared percentage-point gaps to exact targets under your purchase constraints. "
                        "Tolerance ranges affect the reported status, not this split. Buys sum to your contribution in whole cents.")
+            buy_all = st.selectbox("Selection intent", ["Buy every selected position", "Allow skipping positions"],
+                                   key="rebalance_buy_intent") == "Buy every selected position"
+            minimum_purchase = st.number_input("Minimum purchase (EUR)", min_value=.01, value=25., step=5.,
+                                                key="rebalance_minimum_purchase",
+                                                help="Every suggested buy must reach this amount. Applies to Rebalance selected positions.")
+            if buy_all:
+                st.caption(f"Buying all {len(eligible_ids)} selected positions requires at least €{len(eligible_ids) * minimum_purchase:,.2f}. "
+                           "This includes selected positions already above target. Empty selections or conflicting restrictions need to be resolved before calculating.")
+            else:
+                prefer_fewer = st.checkbox("Prefer fewer trades", key="rebalance_prefer_fewer",
+                                           help="Compare trade counts and choose the fewest trades within your allowed extra target error. Off finds the best allocation without a trade-count preference.")
+                if prefer_fewer:
+                    extra_error = st.number_input("Allowed extra target error (pp)", min_value=0., value=.1, step=.05,
+                                                   key="rebalance_extra_error",
+                                                   help="Additional root mean squared target gap permitted compared with the best plan under Maximum trades. This is separate from tolerance ranges.")
         else:
             st.caption("Split the new contribution across the eligible selection. Existing holdings are kept. "
                        "Target weights split the money in proportion to their targets, with zero targets receiving nothing. "
                        "This uses one trade per recipient, without a maximum-trade limit. Amounts are rounded to cents while preserving the total.")
     spreading = distribution != "Optimize rebalancing"
+    balancing = distribution == "Rebalance selected positions"
     max_trades = int(st.number_input("Maximum trades", min_value=1, max_value=max(1, len(valued)),
-                                     value=min(4, max(1, len(valued))), step=1, key=f"rebalance_max_trades_{len(valued)}")) if mode == MODES[2] and not spreading else len(valued)
+                                     value=min(4, max(1, len(valued))), step=1, key=f"rebalance_max_trades_{len(valued)}")) if mode == MODES[2] and (not spreading or prefer_fewer) else len(valued)
     st.caption("±0.5 pp gives a 10% target a 9.5–10.5% range. A 5% relative tolerance gives that same range; a zero target has a zero relative range. "
                "Plans allow fractional shares, fully invest new money, and exclude fees, taxes, spreads and lot-size rules. EUR amounts are rounded for display.")
     try:
@@ -73,7 +89,7 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
         st.info(str(exc))
         return
     fields = [column for column in ("position_id", "id", "name", "ticker", "account", "portfolio", "shares", "current_value_eur", "target_allocation") if column in valued]
-    fingerprint = sha256((valued[fields].to_json() + repr((mode, tolerance_type, tolerance, no_new, new_money, max_trades, distribution, None if eligible_ids is None else tuple(sorted(eligible_ids))))).encode()).hexdigest()
+    fingerprint = sha256((valued[fields].to_json() + repr((mode, tolerance_type, tolerance, no_new, new_money, max_trades, distribution, buy_all, minimum_purchase, prefer_fewer, extra_error, None if eligible_ids is None else tuple(sorted(eligible_ids))))).encode()).hexdigest()
     if st.button("Calculate rebalance", type="primary", key="rebalance_calculate"):
         st.session_state.pop("rebalance_result", None)
         try:
@@ -82,9 +98,15 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
                     plans = [minimum_trades(problem, no_new_positions=no_new)]
                 elif mode == MODES[1]:
                     plans = [minimum_new_money(problem, no_new_positions=no_new)]
+                elif balancing:
+                    plans = balanced_cash_tradeoffs(problem, new_money, eligible_position_ids=eligible_ids,
+                                                     minimum_purchase=minimum_purchase, buy_all=buy_all,
+                                                     max_trades=max_trades, no_new_positions=no_new)
+                    if not prefer_fewer:
+                        plans = plans[-1:]
                 elif spreading:
                     plans = [spread_new_money(problem, new_money, eligible_position_ids=eligible_ids,
-                                               method="balance" if distribution == "Rebalance selected positions" else "target", no_new_positions=no_new)]
+                                               method="target", no_new_positions=no_new)]
                 else:
                     bar = st.progress(0, text="Comparing trade counts")
                     try:
@@ -102,25 +124,35 @@ def render_rebalancing(valued: pd.DataFrame | None) -> None:
         return
     plans = cached[1]
     index = len(plans) - 1
+    if prefer_fewer:
+        best_error = min(plan.target_rms for plan in plans)
+        index = next(i for i, plan in enumerate(plans) if plan.target_rms <= best_error + extra_error + 1e-10)
+        st.caption(f"Suggested: {plans[index].trade_count} trades, allowing up to {extra_error:.3f} pp extra RMS target gap "
+                   "compared with the best plan under your trade limit. You can inspect any plan below.")
     if len(plans) > 1:
         st.caption("Compare how much each additional trade improves the allocation. Choose a lower-trade plan if the extra improvement is small.")
         frontier = pd.DataFrame({
             "Trades": [plan.trade_count for plan in plans],
+            **({"RMS target gap (pp)": [plan.target_rms for plan in plans]} if balancing else {}),
             "Deviation outside ranges (pp)": [plan.deviation_after for plan in plans],
             "Improvement (pp)": [plan.deviation_before - plan.deviation_after for plan in plans],
             "All positions in range": [plan.within_bands for plan in plans],
         })
         st.dataframe(frontier, hide_index=True, height="content", width="stretch", column_config={
-            name: st.column_config.NumberColumn(format="%.3f") for name in ("Deviation outside ranges (pp)", "Improvement (pp)")
+            name: st.column_config.NumberColumn(format="%.3f") for name in ("Deviation outside ranges (pp)", "Improvement (pp)", "RMS target gap (pp)")
         })
         index = st.selectbox("Plan to inspect", list(range(len(plans))), index=index,
-                             format_func=lambda i: f"{plans[i].trade_count} trades · {plans[i].deviation_after:.3f} pp outside ranges",
+                             format_func=lambda i: (f"{plans[i].trade_count} trades · {plans[i].target_rms:.3f} pp RMS target gap" if balancing else
+                                                    f"{plans[i].trade_count} trades · {plans[i].deviation_after:.3f} pp outside ranges"),
                              key=f"rebalance_plan_{fingerprint}")
     plan = plans[index]
     first, second, third = st.columns(3)
     first.metric("Trades", plan.trade_count, help=f"{plan.buy_count} buys and {plan.sell_count} sells")
     second.metric("Minimum new money" if mode == MODES[1] else "New money", f"€{plan.new_money:,.2f}")
     third.metric("Deviation outside ranges", f"{plan.deviation_after:.3f} pp")
+    if balancing:
+        st.metric("RMS target gap", f"{plan.target_rms:.3f} pp",
+                  help="Square root of the mean squared percentage-point gap to targets across all portfolio position rows. Lower is better; large gaps count more.")
     st.caption("Deviation is the sum of each position’s distance outside its allowed range. Zero means every position is within range; it does not require exact target weights. "
                "Targets are evaluated against the final portfolio value, including new money.")
     if plan.within_bands:
