@@ -3,36 +3,42 @@
 import pandas as pd
 import streamlit as st
 
-from portfolio_app.etf import FundSnapshot, fund_breakdown, matching_fund, resolve_constituent_asset, snapshot_age_days
+from portfolio_app.etf import FundSnapshot, fund_breakdown, matching_fund, constituent_resolver, snapshot_age_days
 from portfolio_app.display_names import display_name
 from portfolio_app.taxonomy import Classifications, describe, taxonomy_names
 from portfolio_app.vaneck import refresh_snapshot
+from portfolio_app.etf_sources import SOURCES, refresh_snapshot as refresh_provider_snapshot
 
 
 def render_snapshot_controls(funds: list[FundSnapshot], *, demo: bool = False) -> list[FundSnapshot]:
     updated = []
     for fund in funds:
-        if fund.isin == "IE00BMC38736":
-            if st.button("Update from VanEck", disabled=demo, key=f"refresh_etf_{fund.fund_id}"):
+        source = SOURCES.get(fund.isin)
+        if fund.isin == "IE00BMC38736" or source is not None:
+            provider = source.provider if source else 'VanEck'
+            label = f'Update from {provider}' + (' (proxy)' if fund.proxy_source else '')
+            if st.button(label, disabled=demo, key=f"refresh_etf_{fund.fund_id}"):
                 try:
-                    with st.spinner("Downloading and validating VanEck holdings…"):
-                        fund = refresh_snapshot(fund)
-                    st.success(f"VanEck holdings checked; snapshot as of {fund.as_of.isoformat()}.")
+                    with st.spinner(f"Downloading and validating {provider} holdings…"):
+                        fund = (refresh_provider_snapshot if source else refresh_snapshot)(fund)
+                    st.success(f"{provider} holdings checked; snapshot as of {fund.as_of.isoformat()}.")
                 except Exception as exc:
-                    st.warning(f"VanEck update failed; keeping the snapshot from {fund.as_of.isoformat()}: {exc}")
+                    st.warning(f"{provider} update failed; keeping the snapshot from {fund.as_of.isoformat()}: {exc}")
             age = snapshot_age_days(fund)
-            st.caption(f"VanEck holdings: {fund.as_of.isoformat()} · {age} day(s) old")
+            caption = display_name(fund.name) if source else 'VanEck holdings'
+            st.caption(f"{caption}: {fund.as_of.isoformat()} · {age} day(s) old")
             if age > 7:
-                st.warning(f"VanEck holdings are {age} days old. Update the snapshot before relying on current ETF weights.")
+                st.warning(f"{provider} holdings are {age} days old. Update the snapshot before relying on current ETF weights.")
             elif age < 0:
-                st.warning("VanEck snapshot date is in the future; check the data file date.")
+                st.warning(f"{provider} snapshot date is in the future; check the data file date.")
         updated.append(fund)
     return updated
 
 
 def classified_fund_table(fund: FundSnapshot, holdings: pd.DataFrame, classifications: Classifications) -> pd.DataFrame:
     table = fund_breakdown(fund)
-    asset_ids = [resolve_constituent_asset(row, holdings)[0] for row in table.to_dict("records")]
+    resolve = constituent_resolver(holdings)
+    asset_ids = [resolve(row)[0] for row in table.to_dict("records")]
     for name in taxonomy_names(classifications):
         table[f"classification:{name}"] = [describe(classifications, asset_id, name) for asset_id in asset_ids]
     return table.sort_values("weight", ascending=False, kind="stable", ignore_index=True)
@@ -43,8 +49,13 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
                         classification_names: list[str] | None = None) -> None:
     for fund in funds:
         with st.expander(f"ETF breakdown: {display_name(fund.name)}"):
+            if fund.proxy_source:
+                st.info(f'Approximate breakdown · {fund.proxy_source}')
             st.caption(f"ISIN {fund.isin} · Holdings as of {fund.as_of.isoformat()} · {snapshot_age_days(fund)} day(s) old")
-            st.markdown(f"[VanEck holdings download]({fund.source})")
+            st.markdown(f"[Holdings source]({fund.source})")
+            st.caption(f'{len(fund.constituents):,} components · {100 * fund.constituents.weight.sum():.2f}% covered')
+            if fund.notes:
+                st.caption(fund.notes)
             table = classified_fund_table(fund, selected if holdings is None else holdings, classifications or {})
             table["name"] = table["name"].map(display_name)
             table["Fund allocation %"] = table["weight"] * 100
@@ -61,7 +72,7 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
                 st.caption("No position in this ETF is selected. Fund percentages are available independently of your holdings.")
             columns += [column for column in table if column.startswith("classification:") and
                         (classification_names is None or column.removeprefix("classification:") in classification_names)]
-            st.dataframe(table[columns], hide_index=True, width="stretch", height="content", column_config={
+            st.dataframe(table[columns], hide_index=True, width="stretch", height=600 if len(table) > 100 else "content", column_config={
                 "name": "Holding", "ticker": "Ticker" if show_tickers else None,
                 "Fund allocation %": st.column_config.NumberColumn(format="%.2f %%"),
                 "Selected ETF exposure (EUR)": st.column_config.NumberColumn(format="€ %.2f"),

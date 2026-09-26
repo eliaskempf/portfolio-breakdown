@@ -48,7 +48,7 @@ def test_optional_smh_grouping_stock_choice_lookthrough_and_filters(grouped_data
     assert not app.exception
     assert set(by_label(app.multiselect, "Stocks in the SMH group").value) == {"nvda", "tsmc"}
     for representation in ("Instruments", "ETF look-through"):
-        by_label(app.radio, "Portfolio representation").set_value(representation).run()
+        by_label(app.toggle, "Break down ETFs").set_value(representation == "ETF look-through").run()
         assert not app.exception
         table = app.dataframe[0].value
         assert table["EUR value"].sum() == 944
@@ -76,7 +76,7 @@ def test_smh_group_uses_fund_labels_and_shows_original_members(grouped_data):
 
     app = launch(grouped_data)
     by_label(app.checkbox, "Group SMH with related stocks").check().run()
-    by_label(app.radio, "Portfolio representation").set_value("ETF look-through").run()
+    by_label(app.toggle, "Break down ETFs").set_value(True).run()
     assert not app.exception
     assert app.dataframe[0].value["EUR value"].sum() == 560
     root = (Label("labels", ("Group A",)).key,)
@@ -276,7 +276,7 @@ def test_etf_breakdown_and_look_through(tmp_path, sample_data_dir):
     assert not app.exception
     assert app.metric[0].value == "€1,800.00"
     assert any("ETF breakdown" in item.label for item in app.expander)
-    by_label(app.radio, "Portfolio representation").set_value("ETF look-through").run()
+    by_label(app.toggle, "Break down ETFs").set_value(True).run()
     assert not app.exception
     effective = next(table.value for table in app.dataframe if "ETF-derived (EUR)" in table.value.columns)
     nvidia = effective.loc[effective["Ticker"] == "NVDA"].iloc[0]
@@ -292,7 +292,7 @@ def test_etf_breakdown_and_look_through(tmp_path, sample_data_dir):
     assert app.dataframe[0].value.iloc[0]["EUR value"] == pytest.approx(800 + nvidia_indirect)
     by_label(app.selectbox, "Chart").set_value("Pie").run()
     assert not app.exception
-    by_label(app.radio, "Portfolio representation").set_value("Instruments").run()
+    by_label(app.toggle, "Break down ETFs").set_value(False).run()
     assert not app.exception
     assert not any("ETF-derived (EUR)" in table.value.columns for table in app.dataframe)
 
@@ -323,7 +323,7 @@ def test_show_tickers_preserves_merged_hierarchy_leaf_across_exchanges(tmp_path,
     )
     (tmp_path / "classifications.yaml").write_text("supplier:\n  classifications:\n    test:\n      - [Synthetic, Branch]\n")
     app = launch(tmp_path)
-    by_label(app.radio, "Portfolio representation").set_value("ETF look-through").run()
+    by_label(app.toggle, "Break down ETFs").set_value(True).run()
     by_label(app.selectbox, "Group by").set_value("taxonomy:test").run()
     by_label(app.checkbox, "Show holdings beneath labels").check().run()
     by_label(app.checkbox, "Show tickers").check().run()

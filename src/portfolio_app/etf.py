@@ -23,6 +23,8 @@ class FundSnapshot:
     constituents: pd.DataFrame
     manifest_path: Path | None = None
     equity_fund: bool = False
+    proxy_source: str = ''
+    notes: str = ''
 
 
 def snapshot_age_days(fund: FundSnapshot, today: date | None = None) -> int:
@@ -64,11 +66,14 @@ def load_funds(directory: Path) -> list[FundSnapshot]:
                 constituents=validate_constituents(frame),
                 manifest_path=manifest,
                 equity_fund=raw.get('equity_fund', False),
+                proxy_source=raw.get('proxy_source', ''), notes=raw.get('notes', ''),
             )
             if not fund.fund_id or not fund.name or len(fund.isin) != 12:
                 raise ValueError("Fund ID, name, and a 12-character ISIN are required")
             if not isinstance(fund.equity_fund, bool):
                 raise ValueError('equity_fund must be true or false')
+            if not isinstance(fund.proxy_source, str) or not isinstance(fund.notes, str):
+                raise ValueError('proxy_source and notes must be text')
             funds.append(fund)
         except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError) as exc:
             raise DataError(f"Invalid ETF snapshot {manifest.name}: {exc}") from exc
@@ -126,26 +131,53 @@ def fund_breakdown(fund: FundSnapshot) -> pd.DataFrame:
     return result
 
 
+def constituent_resolver(holdings: pd.DataFrame):
+    """Index source identities once for large fund snapshots."""
+    by_isin, by_ticker, ids = {}, {}, set()
+    for row in holdings.to_dict('records'):
+        ids.add(row['id'])
+        if row.get('isin'):
+            by_isin.setdefault(row['isin'], []).append(row)
+        if row.get('ticker'):
+            by_ticker.setdefault(row['ticker'], []).append(row)
+
+    def resolve(constituent):
+        isin, ticker = constituent['isin'], constituent['ticker']
+        matches = by_isin.get(isin, [])
+        if not matches and ticker:
+            matches = [r for r in by_ticker.get(ticker, []) if not isin or r.get('isin', '') in ('', isin)]
+        if len({r['id'] for r in matches}) > 1:
+            raise DataError(f"Several asset IDs match ETF constituent {ticker}; use one stable asset ID across its positions.")
+        if matches:
+            return matches[0]['id'], matches[0]['name']
+        if constituent['constituent_id'] in ids:
+            raise DataError(f"ETF constituent ID {constituent['constituent_id']} conflicts with another instrument; edit the constituent ID.")
+        return constituent['constituent_id'], constituent['name']
+
+    return resolve
+
+
 def resolve_constituent_asset(constituent: dict, holdings: pd.DataFrame) -> tuple[str, str]:
-    matches = holdings.iloc[:0]
-    if constituent["isin"]:
-        matches = holdings.loc[holdings["isin"] == constituent["isin"]]
-    if matches.empty and constituent["ticker"]:
-        matches = holdings.loc[holdings["ticker"] == constituent["ticker"]]
-        if constituent['isin']:
-            matches = matches.loc[matches['isin'].eq('') | matches['isin'].eq(constituent['isin'])]
-    if matches["id"].nunique() > 1:
-        raise DataError(f"Several asset IDs match ETF constituent {constituent['ticker']}; use one stable asset ID across its positions.")
-    if not matches.empty:
-        return str(matches.iloc[0]["id"]), str(matches.iloc[0]["name"])
-    # IDs attach classifications when the constituent is not directly held.
-    if constituent["constituent_id"] in set(holdings["id"]):
-        raise DataError(f"ETF constituent ID {constituent['constituent_id']} conflicts with another instrument; edit the constituent ID.")
-    return constituent["constituent_id"], constituent["name"]
+    return constituent_resolver(holdings)(constituent)
+
+
+def fund_classifications(classifications, funds, holdings):
+    """Provider sector/country paths are fallbacks; local taxonomies always win."""
+    result = {asset: dict(taxonomies) for asset, taxonomies in classifications.items()}
+    resolve = constituent_resolver(holdings)
+    for fund in funds:
+        for row in fund.constituents.to_dict('records'):
+            asset_id, _ = resolve(row)
+            for column, taxonomy in [('sector', 'sector'), ('country', 'geography')]:
+                label = row.get(column)
+                if isinstance(label, str) and label.strip() and label not in {'Unknown', '-'}:
+                    result.setdefault(asset_id, {}).setdefault(taxonomy, ((label.strip(),),))
+    return result
 
 
 def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd.DataFrame) -> pd.DataFrame:
     records = []
+    resolve = constituent_resolver(holdings)
     for exposure in exposures.to_dict("records"):
         fund = matching_fund(exposure, funds)
         if fund is None:
@@ -153,7 +185,7 @@ def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd
             continue
         for constituent in fund_breakdown(fund).to_dict("records"):
             row = exposure.copy()
-            row["asset_id"], row["asset_name"] = resolve_constituent_asset(constituent, holdings)
+            row["asset_id"], row["asset_name"] = resolve(constituent)
             row["value"] = exposure["value"] * constituent["weight"]
             row["ticker"], row["isin"] = constituent["ticker"], constituent["isin"]
             row["source_type"] = "etf_other" if constituent["constituent_id"].startswith("etf-other:") else "etf_constituent"

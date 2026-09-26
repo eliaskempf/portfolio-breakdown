@@ -27,7 +27,7 @@ def test_performance_summary_and_holdings_with_static_prices(tmp_path, sample_da
     assert not app.exception
     assert next(item.value for item in app.metric if item.label == "Cost basis (EUR)") == "€120.00"
     assert next(item.value for item in app.dataframe if "shares" in item.value).Performance.tolist() == [20]
-    by_label(app.radio, "Portfolio representation").set_value("ETF look-through").run()
+    by_label(app.toggle, "Break down ETFs").set_value(True).run()
     assert not app.exception
     assert next(item.value for item in app.metric if item.label == "Cost basis (EUR)") == "€120.00"
     assert path.read_bytes() == original

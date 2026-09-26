@@ -3,7 +3,7 @@
 A local CSV/YAML-backed portfolio explorer built with Python, Streamlit, and
 Plotly. It supports current EUR valuation, hierarchical classifications,
 filtering, allocation charts, optional position targets, and ETF look-through
-for the VanEck Semiconductor UCITS ETF.
+for configured fund snapshots.
 
 ## Run
 
@@ -366,7 +366,7 @@ and classifications in another account or sleeve. New instruments without
 classification metadata appear as `Unclassified`.
 
 The main tabs separate analysis, rebalancing and position maintenance.
-**Exposure settings** contains position filters, representation and ETF snapshots;
+**Exposure settings** contains position filters, ETF breakdown switches and snapshots;
 **Chart settings** contains grouping and hierarchy controls. Before strategic
 allocation is enabled, these analysis controls remain in **Overview**.
 **Show price details** exposes quote timestamps, FX status and valuation notes.
@@ -673,21 +673,24 @@ by Git. Cache read/write problems are reported without stopping valuation.
 
 ## VanEck Semiconductor UCITS breakdown
 
-The supported fund is **VanEck Semiconductor UCITS ETF**, ISIN
-**IE00BMC38736**. Local snapshots can be imported from
-[VanEck's complete holdings download](https://www.vaneck.com/no/en/investments/semiconductor-etf/downloads/holdings/)
-and remain private in your data directory. The offline demo includes explicitly
-synthetic weights, not a provider snapshot. For configured snapshots, the
-expandable **ETF breakdown** table is available even without a position in the
-fund. No ETF position or share count is added automatically.
+Supported provider integrations include VanEck Semiconductor UCITS, Xtrackers
+MSCI World 1C, and iShares Core MSCI EM IMI. Amundi MSCI Europe Momentum uses an
+explicitly labeled **same-index iShares proxy**, not its synthetic substitute
+basket. Proxy data approximates company allocation; it is not the actual
+Amundi portfolio or an exact index constituent file.
 
-Use **Portfolio representation → ETF look-through** to replace selected,
-valued UCITS positions with their effective constituent exposures. A position
-matches by ISIN or, when ISIN is blank, a supported qualified ticker:
-`VVSM.DE`, `SMH.L`, `SMGB.L`, `SMH.MI`, or `SMH.PA`. The London USD listing is
-`SMH.L`; the Xetra EUR listing is `VVSM.DE`.
-These are listings of the same fund; see
-[VanEck's trading information](https://www.vaneck.com/uk/en/library/fact-sheets/smh-fact-sheet.pdf).
+In **Exposure settings**, turn on **Break down ETFs**. Every supported fund in
+the portfolio starts enabled. Under **Individual ETFs**, turn off any fund to
+keep it as a single instrument. These session choices survive switching the
+master control off and back on. Newly supported funds start enabled. Unsupported
+funds remain visible with a missing-breakdown notice. The same selections apply
+to allocation, targets, performance coverage, and the stock-only exposure view;
+strategic ownership and tradable source positions stay intact.
+
+The expandable **ETF breakdown** tables show dates, source links, coverage,
+proxy status, and import notes. They are available even without a held position.
+Large snapshots use a scrollable table. No position or quantity is created.
+
 **Bare `SMH` is the US-listed ETF**, so it is never used as a UCITS ticker
 fallback. A UCITS ISIN paired with bare `SMH` produces a correction message
 before valuation, preventing use of the wrong fund's price.
@@ -735,11 +738,40 @@ source, listing aliases, and constituent CSV. Weights are fractions of the
 entire ETF. For partial snapshots, the remainder is explicitly retained as
 `Other`; named holdings are never scaled to 100%.
 
+### World-fund imports
+
+To install or refresh one supported snapshot in a private workspace:
+
+```bash
+uv run python -m portfolio_app.etf_sources <ISIN> --data-dir /path/to/private/workspace
+```
+
+The command accepts IE00BJ0KDQ92, IE00BKM4GZ66, and LU1681041460. It only writes
+snapshot files under `etfs/`; it never changes holdings, targets, or local labels.
+Xtrackers uses full-precision JSON percentage weights and ISINs. iShares uses
+the complete XML Spreadsheet **Holdings / All** export and derives weights from
+all market values, checking against published percentages. This preserves small
+holdings lost to two-decimal percentage rounding. Net cash includes cash
+liabilities, money-market holdings, collateral, and FX. Futures notional
+exposure is not assigned to companies. Unsupported signed equity or net
+borrowing fails validation instead of silently dropping liabilities.
+
+Provider sectors and countries supply fallback taxonomy paths, leaving local
+classifications in charge. Where iShares supplies only local tickers, they are
+retained as source metadata rather than treated as exchange-qualified symbols.
+No speculative ISIN or name matches are made, so overlap with other providers
+may remain separate until explicit identity mappings are supplied.
+
+The momentum proxy uses the iShares Europe Momentum fund's official holdings.
+MSCI's [constituent terms](https://www.msci.com/legal/index-constituents-disclaimer)
+prohibit software extraction of the index lookup; this integration does not
+retrieve that list. Proxy status is saved in the manifest and shown in the UI.
+
 ### Recency and updates
 
 **Exposure settings → ETF snapshots** displays the snapshot date and age.
-Snapshots **older than seven days** are flagged. Click **Update from VanEck** to
-download the provider's latest XLSX and refresh the snapshot. This control is
+Snapshots **older than seven days** are flagged. Use the provider update button
+to download and validate the latest holdings. This control is
 separate from price refresh and is disabled in offline demo mode. There is no
 background download schedule.
 

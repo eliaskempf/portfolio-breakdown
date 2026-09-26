@@ -11,8 +11,9 @@ import streamlit as st
 from portfolio_app.aggregation import aggregate, aggregate_dimension
 from portfolio_app.charts import bar_chart, hierarchy_chart, hierarchy_table, pie_chart, sort_allocation_nodes
 from portfolio_app.display_names import display_name
-from portfolio_app.etf import effective_exposure_table, expand_etfs, load_funds, validate_fund_listings
+from portfolio_app.etf import effective_exposure_table, expand_etfs, fund_classifications, load_funds, validate_fund_listings
 from portfolio_app.etf_ui import render_fund_details, render_snapshot_controls
+from portfolio_app.etf_selection import render_etf_selection
 from portfolio_app.exposures import normalize_exposures
 from portfolio_app.filtering import filter_holdings
 from portfolio_app.group_ui import render_group_members, smh_group_control
@@ -127,14 +128,16 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
 
 
 def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False):
-    names = taxonomy_names(classifications)
     dimensions = metadata_dimensions(holdings)
     with st.expander("Exposure settings"):
         show_tickers = st.checkbox("Show tickers", value=False, key="display_tickers")
         performance_percent = st.radio("Performance display", ["%", "Amount"], horizontal=True, key="display_performance") == "%"
         with st.expander("ETF snapshots"):
             funds = render_snapshot_controls(funds, demo=demo)
-        representation = st.radio("Portfolio representation", ["Instruments", "ETF look-through"])
+        classifications = fund_classifications(classifications, funds, holdings)
+        names = taxonomy_names(classifications)
+        lookthrough, expanded_funds = render_etf_selection(holdings, funds, data_dir)
+        representation = 'ETF look-through' if lookthrough else 'Instruments'
         display_group = smh_group_control(holdings, funds)
         with st.expander("Filter positions"):
             metadata = {}
@@ -212,7 +215,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     exposures = normalize_exposures(selected)
     if representation == "ETF look-through":
         try:
-            exposures = expand_etfs(exposures, funds, holdings)
+            exposures = expand_etfs(exposures, expanded_funds, holdings)
         except DataError as exc:
             st.error(str(exc))
             return valued
@@ -229,14 +232,14 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             return valued
     if "target_allocation" in valued and valued["target_allocation"].notna().any():
         try:
-            targets = target_exposures(selected, funds, lookthrough=representation == "ETF look-through", group=display_group, holdings=holdings)
+            targets = target_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group, holdings=holdings)
             for measure in (targets.known, targets.missing):
                 measure["asset_name"] = measure["asset_name"].map(display_name)
         except DataError as exc:
             st.error(str(exc))
             return valued
     try:
-        performance = performance_exposures(selected, funds, lookthrough=representation == "ETF look-through", group=display_group, holdings=holdings)
+        performance = performance_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group, holdings=holdings)
     except DataError as exc:
         st.error(str(exc))
         return valued
@@ -398,7 +401,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     } | {f"classification:{name}": (badge_column("Labels", taxonomy_colors(classifications, name)) if name == "labels" else
                                     "AI theme" if name == "ai" else name.replace("_", " ").title()) for name in names} | performance_column_config(percent=performance_percent, grouped=False))
     st.caption("Latest available daily close · Prices may be delayed")
-    render_stock_exposure(valued, funds, data_dir)
+    render_stock_exposure(valued, expanded_funds, data_dir)
     return valued
 
 

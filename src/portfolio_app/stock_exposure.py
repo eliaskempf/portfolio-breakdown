@@ -73,6 +73,8 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
         equity_universe = fund.equity_fund or declared == 'equity'
         for constituent in fund_breakdown(fund).to_dict('records'):
             amount = value * constituent['weight']
+            if amount == 0:
+                continue
             residual = constituent['constituent_id'].startswith('etf-other:')
             constituent_kind = constituent.get('instrument_type')
             if not isinstance(constituent_kind, str) or not constituent_kind:
