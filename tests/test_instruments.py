@@ -24,7 +24,7 @@ def test_search_retains_distinct_listings_and_excludes_other_asset_types():
         {"symbol": "NVDA-option", "quoteType": "OPTION"},
         {"quoteType": "EQUITY"}, None,
     ])
-    assert [item.ticker for item in results] == ["NVDA", "NVD.DE", "VVSM.DE"]
+    assert [item.ticker for item in results] == ["NVDA", "NVD.DE", "VVSM.DE", "BTC-USD"]
     assert "NASDAQ" in results[0].label
 
 

@@ -213,6 +213,10 @@ def save_purchase_batch(
 ) -> str:
     purchases = validate_purchases(rows)
     opening = read_opening(path, expected_revision, position_id)
+    if mode == 'add' and opening.get('balance_replaced_at'):
+        confirmed = opening.get('holdings_confirmed_on', '')
+        if not confirmed or any(not p.date or p.date <= confirmed for p in purchases):
+            raise DataError('These purchases may already be included in the replacement balance. Update balances, or enter only dated purchases after its holdings-confirmation date.')
     summary = summarize_purchases(purchases, currency, opening, mode=mode)
     if mode == "add" and repeated_batch(purchases, currency, opening) and not allow_repeat:
         raise DataError("This batch matches purchases saved earlier. Confirm they are additional purchases before saving again.")

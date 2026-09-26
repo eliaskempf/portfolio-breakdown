@@ -110,6 +110,8 @@ def save_position(
         values = {key: str(value).strip() for key, value in fields.items()}
         if "position_id" in values:
             raise DataError("Position identity cannot be entered as a CSV field.")
+        if "position_key" in values:
+            raise DataError("Persistent position identity cannot be edited.")
         for column in ("ticker", "isin", "acquisition_currency"):
             if column in values:
                 values[column] = values[column].upper()
@@ -129,6 +131,8 @@ def save_position(
                 raw[column] = ""
         if position_id is None:
             raw.loc[index] = {column: "" for column in raw.columns}
+            if "position_key" in raw:
+                raw.at[index, "position_key"] = uuid4().hex
         for column, value in values.items():
             raw.at[index, column] = value
         csv = raw.to_csv(index=False)
@@ -136,6 +140,8 @@ def save_position(
         selected = candidate.iloc[index]
         others = candidate.drop(index)
         duplicate = others["id"].eq(selected["id"]) & others["account"].eq(selected["account"]) & others["portfolio"].eq(selected["portfolio"])
+        if "bucket_id" in candidate:
+            duplicate &= others.bucket_id.eq(selected.bucket_id)
         if duplicate.any():
             raise DataError("A position for this instrument, account, and portfolio already exists. Edit its total shares instead of adding another position.")
         if validate:

@@ -77,7 +77,7 @@ def result_groups(results: list[Instrument]) -> list[dict]:
     for item in results:
         key = item.isin or item.ticker
         if key not in groups:
-            groups[key] = {"name": display_name(item.name), "kind": "ETF" if item.kind == "ETF" else "Equity",
+            groups[key] = {"name": display_name(item.name), "kind": {"ETF": "ETF", "CRYPTOCURRENCY": "Crypto"}.get(item.kind, "Equity"),
                            "isin": item.isin, "ucits": "UCITS" in item.name.upper(), "listings": []}
         groups[key]["listings"].append({"ticker": item.ticker, "exchange": item.exchange or "Exchange unavailable", "currency": item.currency})
     return list(groups.values())[:10]
@@ -103,7 +103,7 @@ def normalize_results(quotes: list[dict]) -> list[Instrument]:
             continue
         ticker = str(quote.get("symbol") or "").strip().upper()
         kind = str(quote.get("quoteType") or "").upper()
-        if not ticker or kind not in {"EQUITY", "ETF"} or ticker in results:
+        if not ticker or kind not in {"EQUITY", "ETF", "CRYPTOCURRENCY"} or ticker in results:
             continue
         results[ticker] = Instrument(
             ticker=ticker,
@@ -181,6 +181,8 @@ class InstrumentSearch:
         except Exception:
             info = {}
         result = replace(listing, currency=str(info.get("currency") or listing.currency))
+        if listing.kind == "CRYPTOCURRENCY":
+            return result
         if result.isin:
             return result
         for query in dict.fromkeys([listing.ticker, listing.name]):

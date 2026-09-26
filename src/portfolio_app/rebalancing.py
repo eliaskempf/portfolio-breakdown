@@ -137,7 +137,8 @@ class _AllocationModel:
     """Final weights, trade indicators and absolute-deviation auxiliary variables."""
 
     def __init__(self, problem: RebalanceInput, total: float, *, buys_only: bool, no_new: bool,
-                 hard_bands: bool, max_trades: int, buy_allowed: np.ndarray | None = None):
+                 hard_bands: bool, max_trades: int, buy_allowed: np.ndarray | None = None,
+                 sell_allowed: np.ndarray | None = None):
         n = len(problem.values)
         self.n = n
         # x: final weight, z: trade, q: turnover, e: outside-band error, r: target distance
@@ -151,6 +152,8 @@ class _AllocationModel:
             self.lower[self.x], self.upper[self.x] = problem.lower, problem.upper
         if buys_only:
             self.lower[self.x] = np.maximum(self.lower[self.x], current)
+        if sell_allowed is not None:
+            self.lower[:n][~sell_allowed] = np.maximum(self.lower[:n][~sell_allowed], current[~sell_allowed])
         if buy_allowed is not None:
             self.upper[:n][~buy_allowed] = current[~buy_allowed]
         if no_new:
@@ -198,13 +201,14 @@ class _AllocationModel:
 
 
 def minimum_trades(problem: RebalanceInput, *, no_new_positions: bool = False,
-                   new_money: float = 0., buys_only: bool = False) -> RebalancePlan:
+                   new_money: float = 0., buys_only: bool = False,
+                   sell_allowed: np.ndarray | None = None) -> RebalancePlan:
     """First minimize the number of changed positions, then total EUR turnover."""
     total = problem.total + new_money
     if not math.isfinite(new_money) or new_money < 0 or total <= 0:
         raise RebalanceError("This mode needs positive portfolio value and nonnegative new money.")
     model = _AllocationModel(problem, total, buys_only=buys_only, no_new=no_new_positions,
-                             hard_bands=True, max_trades=len(problem.values))
+                             hard_bands=True, max_trades=len(problem.values), sell_allowed=sell_allowed)
     result = model.solve(model.z)
     model.limit(model.z, round(result.fun))
     result = model.solve(model.q)

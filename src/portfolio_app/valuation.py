@@ -1,6 +1,7 @@
 """EUR valuation; unavailable prices are unknown, never zero or cost basis."""
 
 import math
+from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -21,6 +22,8 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
     for column in text_columns:
         result[column] = ""
     active = holdings.loc[holdings["shares"] > 0]
+    if 'manual_price' in active:
+        active = active.loc[active.manual_price.isna()]
     price_results = {ticker: prices.price(ticker, refresh=refresh) for ticker in active["ticker"].unique() if ticker}
     currencies = {item.quote.currency for item in price_results.values() if item.quote}
     fx_results = {currency: prices.fx(currency, refresh=refresh) for currency in currencies}
@@ -29,6 +32,28 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
             result.at[index, "current_value_eur"] = 0.
             result.at[index, "price_status"] = "not_held"
             result.at[index, "valuation_note"] = "Zero shares; target-only position."
+            continue
+        manual = position.get('manual_price', float('nan'))
+        if pd.notna(manual) and manual != '':
+            currency = position['manual_price_currency']
+            fx = prices.fx(currency, refresh=refresh)
+            result.at[index, 'current_price'] = float(manual)
+            result.at[index, 'quote_currency'] = currency
+            result.at[index, 'price_status'] = 'manual'
+            observed = datetime.fromisoformat(position['manual_price_date']).replace(tzinfo=timezone.utc)
+            result.at[index, 'price_observed_at'] = observed.isoformat()
+            result.at[index, 'price_age_hours'] = max(0, (prices.now() - observed).total_seconds() / 3600)
+            result.at[index, 'valuation_note'] = 'Manual unit price; update independently of confirmed quantity.'
+            result.at[index, 'fx_status'] = fx.status
+            if fx.quote is not None and fx.quote.currency == 'EUR':
+                result.at[index, 'fx_to_eur'] = fx.quote.price
+                result.at[index, 'fx_observed_at'] = fx.quote.observed_at.isoformat()
+                result.at[index, 'fx_age_hours'] = max(0, (prices.now() - fx.quote.observed_at).total_seconds() / 3600)
+                value = position['shares'] * float(manual) * fx.quote.price
+                if math.isfinite(value):
+                    result.at[index, 'current_value_eur'] = value
+            else:
+                result.at[index, 'valuation_note'] += ' Missing FX conversion.'
             continue
         if not position["ticker"]:
             result.at[index, "valuation_note"] = "Missing ticker"
@@ -47,6 +72,8 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
         fx = fx_results[quote.currency]
         result.at[index, "fx_status"] = fx.status
         notes = [f"Price refresh failed: {price.error}"] if price.error else []
+        if position.get('instrument_type') == 'crypto' and result.at[index, 'price_age_hours'] >= 24:
+            notes.append('Crypto quote is at least 24 hours old; markets trade continuously.')
         if fx.quote is None:
             notes.append(f"Missing {quote.currency}/EUR exchange rate: {fx.error}")
         elif fx.quote.currency != "EUR":
