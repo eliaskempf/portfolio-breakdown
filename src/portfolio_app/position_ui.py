@@ -10,6 +10,7 @@ from portfolio_app.display_names import display_name
 from portfolio_app.etf import FundSnapshot, validate_fund_listings
 from portfolio_app.holdings import DataError, metadata_dimensions
 from portfolio_app.instrument_ui import render_instrument_search
+from portfolio_app.position_list import list_context, render_position_list
 from portfolio_app.positions import HoldingsSnapshot, save_position
 from portfolio_app.purchase_ui import render_bulk_purchases, render_purchase_history
 
@@ -26,10 +27,25 @@ def _clear_editor() -> None:
 
 def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[FundSnapshot], *, demo: bool = False, embedded: bool = False, allocation=None) -> None:
     holdings = snapshot.holdings
+    if event := st.session_state.pop('position_edit_open_request', None):
+        if (event.get('context') == list_context(path) and event.get('revision') == snapshot.revision
+                and event.get('id') in set(holdings.position_id)):
+            _clear_editor()
+            st.session_state['position_edit_action'] = 'Edit position'
+            st.session_state['position_edit_selected'] = event['id']
+        else:
+            st.warning('The position list changed. Open the position again from the refreshed list.')
     if message := st.session_state.pop("position_saved_notice", None):
         st.success(message)
     with (st.container() if embedded else st.expander("Manage positions", expanded=holdings.empty)):
-        action = st.radio("Position action", ["Add position", "Edit position", "Bulk add purchases", "Update balances", "Strategic allocation"], index=3 if allocation else 0, horizontal=True, key="position_edit_action")
+        action = st.radio("Position action", ["Positions", "Add position", "Edit position", "Bulk add purchases", "Update balances", "Strategic allocation"], index=1 if holdings.empty else 0, horizontal=True, key="position_edit_action")
+        if action == 'Positions':
+            if holdings.empty:
+                st.info('Add a position to get started.')
+            else:
+                st.caption('Double-click a row to edit, or focus it and press Enter.')
+                render_position_list(path, snapshot, allocation)
+            return
         if action == 'Update balances':
             from portfolio_app.allocation_ui import render_balances
             render_balances(path, snapshot)
@@ -55,6 +71,11 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
             if holdings.empty:
                 st.info("Create your first position before editing.")
                 return
+            def back_to_positions():
+                _clear_editor()
+                st.session_state['position_edit_action'] = 'Positions'
+
+            st.button('Back to positions', on_click=back_to_positions)
             descriptions = {
                 row.position_id: f"{display_name(row.name)} ({row.ticker or row.id.upper()}) · {row.portfolio or 'No portfolio'} · {row.account or 'No account'}"
                 for row in holdings.itertuples()
@@ -92,7 +113,8 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
         with st.form(f"position_form_{action}_{position_id}_{identity}"):
             left, right = st.columns(2)
             with left:
-                name = st.text_input("Instrument name", value=row.get("name", ""), disabled=bool(identity), key=prefix + "name")
+                name = st.text_input("Instrument name", value=row.get("name", ""), disabled=bool(identity) and not editing,
+                                     help='Renaming applies to every position of this instrument.' if editing else None, key=prefix + "name")
                 ticker = st.text_input("Ticker", value=row.get("ticker", ""), disabled=bool(identity), help="Use an exchange-qualified ticker where needed, e.g. VVSM.DE for the EUR UCITS listing.", key=prefix + "ticker")
                 isin = st.text_input("ISIN (optional)", value=row.get("isin", ""), disabled=bool(identity), key=prefix + "isin")
                 shares = st.number_input("Quantity held (total)", min_value=0.0, value=float(row.get("shares", 0)), format="%.10f", key=prefix + "shares")

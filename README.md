@@ -412,8 +412,11 @@ successful save resets allocation filters so the new or updated position is
 visible. It does not require a live price lookup.
 
 Use **Edit position** to replace a position's total shares, portfolio/account,
-average buy-in, buy-in currency, or target. Instrument identity stays fixed;
-edit the CSV for instrument-wide ticker/name corrections. The app prevents
+buy-in, buy-in currency, or target. **Manage positions** opens with a searchable,
+sortable position list: double-click a row, press Enter on a focused row, or use
+its **Edit** button. **Back to positions** returns to the list.
+The instrument name is editable and a rename applies across its account rows;
+instrument IDs, tickers, and ISINs stay fixed. The app prevents
 adding a second summary row for the same instrument, account, and portfolio.
 For repeated purchases in that position, select it as the destination under
 **Bulk add purchases**, or update its total manually.

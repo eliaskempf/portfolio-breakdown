@@ -72,6 +72,7 @@ def test_empty_positions_hidden_targets_redistributed_editor_retains_original(re
     assert len(holdings) == 3
     assert holdings.target_allocation.sum() == pytest.approx(100)
     assert sorted(holdings.target_allocation) == pytest.approx([100 * (.2 + .2/3), 100 * (.3 + .2/3), 100 * (.3 + .2/3)])
+    by_label(app.radio, 'Position action').set_value('Edit position').run()
     assert any("Synthetic D" in str(item.options) for item in app.selectbox)
     calculate(app)
     assert "Trades" in metrics(app)

@@ -135,6 +135,10 @@ def save_position(
                 raw.at[index, "position_key"] = uuid4().hex
         for column, value in values.items():
             raw.at[index, column] = value
+        if position_id is not None and 'name' in values:
+            # The display name belongs to the instrument. Keep every account's
+            # row consistent while all other edits remain position-specific.
+            raw.loc[raw['id'] == current.at[index, 'id'], 'name'] = values['name']
         csv = raw.to_csv(index=False)
         candidate = parse_holdings(csv)
         selected = candidate.iloc[index]

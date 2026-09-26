@@ -129,10 +129,12 @@ def test_switching_workspaces_discards_unsubmitted_form_and_filters(tmp_path):
     demo = create_demo_data(tmp_path / "demo")
     app = launch_workspaces(tmp_path / "personal", demo, start_demo=True)
     by_label(app.multiselect, "Holdings").set_value([]).run()
+    by_label(app.radio, 'Position action').set_value('Add position').run()
     by_label(app.text_input, "Instrument name").set_value("Unsubmitted dummy edit")
     by_label(app.radio, "Portfolio workspace").set_value("My portfolio").run()
     assert not app.exception
     assert by_label(app.text_input, "Instrument name").value == ""
     by_label(app.radio, "Portfolio workspace").set_value("Demo portfolio").run()
+    by_label(app.radio, 'Position action').set_value('Add position').run()
     assert by_label(app.text_input, "Instrument name").value == ""
     assert len(by_label(app.multiselect, "Holdings").value) == 6

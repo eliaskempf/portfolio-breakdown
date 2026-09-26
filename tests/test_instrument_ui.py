@@ -7,14 +7,17 @@ from portfolio_app.search_widget import SEARCH_KEY
 from test_ui import by_label
 
 
-def launch_editor(path):
-    return AppTest.from_string(
+def launch_editor(path, action='Add position'):
+    app = AppTest.from_string(
         "from pathlib import Path\n"
         "from portfolio_app.positions import read_snapshot\n"
         "from portfolio_app.position_ui import render_position_editor\n"
         f"path = Path({str(path)!r})\n"
         "render_position_editor(path, read_snapshot(path), [])\n"
     ).run()
+    if by_label(app.radio, 'Position action').value != action:
+        by_label(app.radio, 'Position action').set_value(action).run()
+    return app
 
 
 def stub_search(monkeypatch):

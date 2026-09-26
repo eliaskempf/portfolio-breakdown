@@ -464,6 +464,7 @@ def test_new_position_is_visible_after_filters_were_cleared(tmp_path, sample_dat
     (tmp_path / "holdings.csv").write_text("id,name,ticker,shares,portfolio\nnvda,Nvidia,NVDA,10,AI\n")
     app = launch(tmp_path)
     by_label(app.multiselect, "Holdings").set_value([]).run()
+    by_label(app.radio, 'Position action').set_value('Add position').run()
     by_label(app.text_input, "Instrument name").set_value("Arista")
     by_label(app.text_input, "Ticker").set_value("anet")
     by_label(app.number_input, "Quantity held (total)").set_value(1.0)

@@ -34,6 +34,7 @@ def test_scoped_plans_balance_save_and_macro_overview(tmp_path, sample_data_dir)
     migrate(path, config, preview, expected_revision=snap.revision)
     app = launch(tmp_path)
     assert not app.exception
+    by_label(app.radio, 'Position action').set_value('Update balances').run()
     by_label(app.button, 'Save replacement balances').click().run()
     assert not app.exception
     by_label(app.button, 'Calculate portfolio contribution').click().run()

@@ -155,3 +155,33 @@ def test_custom_validation_runs_before_write(path):
     with pytest.raises(DataError, match="wrong ETF listing"):
         save_position(path, new_position(), expected_revision=read_snapshot(path).revision, validate=reject)
     assert path.read_bytes() == original
+
+
+def test_rename_updates_same_instrument_across_accounts_only(tmp_path):
+    path = tmp_path / 'holdings.csv'
+    path.write_text('position_key,id,name,ticker,shares,account,bucket_id,within_bucket_target,notes\n'
+                    'p1,token,Invented Token,TOKEN-EUR,0.25,First,alpha,0.4,keep one\n'
+                    'p2,token,Invented Token,TOKEN-EUR,0.5,Second,beta,0.6,keep two\n'
+                    'p3,other,Invented Token,OTHER-EUR,1,Third,alpha,0.6,keep other\n')
+    before = load_holdings(path)
+    original = path.read_bytes()
+    save_position(path, {'name': 'Custom token name', 'shares': '.3'},
+                  expected_revision=read_snapshot(path).revision, position_id='p1')
+    after = load_holdings(path)
+    assert after.name.tolist() == ['Custom token name', 'Custom token name', 'Invented Token']
+    assert after.shares.tolist() == [.3, .5, 1.]
+    pd.testing.assert_frame_equal(before.drop(columns=['name', 'shares']), after.drop(columns=['name', 'shares']))
+    assert next((tmp_path / '.backups').glob('*.csv')).read_bytes() == original
+    saved = path.read_bytes()
+    with pytest.raises(DataError, match='nonempty name'):
+        save_position(path, {'name': '   '}, expected_revision=read_snapshot(path).revision, position_id='p1')
+    assert path.read_bytes() == saved
+
+
+def test_stale_instrument_rename_is_rejected(path):
+    stale = read_snapshot(path)
+    save_position(path, {'name': 'New custom name'}, expected_revision=stale.revision, position_id='position-0')
+    saved = path.read_bytes()
+    with pytest.raises(DataError, match='Holdings changed'):
+        save_position(path, {'name': 'Older edit'}, expected_revision=stale.revision, position_id='position-0')
+    assert path.read_bytes() == saved
