@@ -99,7 +99,7 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     by_label(app.radio, "Portfolio workspace").set_value("Demo portfolio").run()
     assert app.metric[0].value == "€744.00"
     by_label(app.radio, "Position action").set_value("Edit position").run()
-    by_label(app.number_input, "Shares held (total)").set_value(9.)
+    by_label(app.number_input, "Quantity held (total)").set_value(9.)
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     assert load_holdings(demo / "holdings.csv").iloc[0]["shares"] == 9
@@ -111,7 +111,7 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     assert by_label(app.radio, "Position action").value == "Add position"
     assert by_label(app.text_input, "Instrument name").value == ""
     by_label(app.text_input, "Instrument name").set_value("Synthetic personal position")
-    by_label(app.number_input, "Shares held (total)").set_value(4.)
+    by_label(app.number_input, "Quantity held (total)").set_value(4.)
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     assert load_holdings(personal / "holdings.csv").iloc[0]["shares"] == 4

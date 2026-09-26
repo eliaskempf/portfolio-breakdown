@@ -43,7 +43,7 @@ def test_create_bulk_position_preview_save_reopen_and_history(tmp_path):
     by_label(reopened.radio, "Position action").set_value("Edit position").run()
     assert not reopened.exception
     assert any(item.label == "Saved purchase batches" for item in reopened.expander)
-    assert by_label(reopened.number_input, "Shares held (total)").value == 5
+    assert by_label(reopened.number_input, "Quantity held (total)").value == 5
     assert HISTORY_COLUMN not in [item.label for item in reopened.text_input]
 
 

@@ -22,6 +22,7 @@ class FundSnapshot:
     source: str
     constituents: pd.DataFrame
     manifest_path: Path | None = None
+    equity_fund: bool = False
 
 
 def snapshot_age_days(fund: FundSnapshot, today: date | None = None) -> int:
@@ -62,9 +63,12 @@ def load_funds(directory: Path) -> list[FundSnapshot]:
                 as_of=date.fromisoformat(str(raw["as_of"])), source=raw["source"],
                 constituents=validate_constituents(frame),
                 manifest_path=manifest,
+                equity_fund=raw.get('equity_fund', False),
             )
             if not fund.fund_id or not fund.name or len(fund.isin) != 12:
                 raise ValueError("Fund ID, name, and a 12-character ISIN are required")
+            if not isinstance(fund.equity_fund, bool):
+                raise ValueError('equity_fund must be true or false')
             funds.append(fund)
         except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError) as exc:
             raise DataError(f"Invalid ETF snapshot {manifest.name}: {exc}") from exc
@@ -128,6 +132,8 @@ def resolve_constituent_asset(constituent: dict, holdings: pd.DataFrame) -> tupl
         matches = holdings.loc[holdings["isin"] == constituent["isin"]]
     if matches.empty and constituent["ticker"]:
         matches = holdings.loc[holdings["ticker"] == constituent["ticker"]]
+        if constituent['isin']:
+            matches = matches.loc[matches['isin'].eq('') | matches['isin'].eq(constituent['isin'])]
     if matches["id"].nunique() > 1:
         raise DataError(f"Several asset IDs match ETF constituent {constituent['ticker']}; use one stable asset ID across its positions.")
     if not matches.empty:

@@ -33,6 +33,9 @@ from portfolio_app.taxonomy import branches, describe, load_classifications, tax
 from portfolio_app.valuation import portfolio_weights, value_holdings
 from portfolio_app.targets import add_target_columns, target_exposures, target_totals
 from portfolio_app.target_ui import target_caption, target_column_config
+from portfolio_app.allocation import load_allocation, analysis_targets, ignore_empty_by_bucket, macro_table
+from portfolio_app.scoped_ui import render_scoped_rebalancing
+from portfolio_app.stock_ui import render_stock_exposure
 
 
 def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None) -> None:
@@ -57,6 +60,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     try:
         snapshot = read_snapshot(data_dir / "holdings.csv")
         holdings = snapshot.holdings
+        allocation = load_allocation(data_dir / 'allocation.yaml', holdings)
         classifications_path = data_dir / "classifications.yaml"
         classifications = load_classifications(classifications_path) if classifications_path.exists() else {}
         funds = load_funds(data_dir / "etfs")
@@ -76,19 +80,25 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         "Ignore empty positions", key="ignore_empty_positions", on_change=reset_position_filters,
         help="Hide positions with zero shares from analysis and rebalancing. Distribute their targets equally among remaining assets, then equally among each asset’s account rows. Saved positions and targets stay unchanged. Switching this option resets position filters.",
     )
-    analysis_holdings = holdings
+    analysis_holdings = analysis_targets(holdings, allocation) if allocation else holdings
     analysis_error = None
     if ignore_empty:
         try:
-            analysis_holdings = ignore_empty_positions(holdings)
+            analysis_holdings = (analysis_targets(ignore_empty_by_bucket(analysis_holdings), allocation)
+                                 if allocation else ignore_empty_positions(holdings))
         except RebalanceError as exc:
             analysis_error = str(exc)
         st.sidebar.caption("Empty positions are hidden from analysis. Their targets are shared equally among remaining assets for this view only. Manage positions retains all saved rows.")
     overview, rebalance, positions = st.tabs(["Overview", "Rebalance", "Manage positions"], default="Manage positions" if holdings.empty else "Overview", key="main_tabs")
     with positions:
-        render_position_editor(data_dir / "holdings.csv", snapshot, funds, demo=demo, embedded=True)
+        render_position_editor(data_dir / "holdings.csv", snapshot, funds, demo=demo, embedded=True, allocation=allocation)
     valued = None
+    if allocation and price_service is None:
+        provider = StaticProvider(data_dir / 'demo_prices.json') if demo else YahooProvider(data_dir / '.cache' / 'yahoo')
+        price_service = PriceService(provider, None if demo else data_dir / '.cache' / 'prices.json')
     with overview:
+        if allocation:
+            macro_placeholder = st.container()
         if analysis_error:
             st.error(analysis_error)
         elif analysis_holdings.empty:
@@ -99,10 +109,23 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             if ignore_empty:
                 st.caption("Ignoring empty positions · Targets shown here include their equally redistributed allocations. Saved targets are unchanged.")
             valued = render_analysis(data_dir, analysis_holdings, classifications, funds, demo=demo, price_service=price_service)
+        if allocation:
+            # Render after a requested quote refresh, in the container above the
+            # detailed analysis, so both views use the same cached observations.
+            macro_valued = value_holdings(analysis_targets(holdings, allocation), price_service)
+            with macro_placeholder:
+                st.subheader('Strategic allocation')
+                st.dataframe(macro_table(macro_valued, allocation), hide_index=True, width='stretch')
+                st.caption('Parent rows include their descendants. Planned buckets retain their targets; unknown prices and targets are not zero.')
     with rebalance:
         if analysis_error:
             st.error(analysis_error)
-        render_rebalancing(valued)
+        if allocation:
+            if valued is None:
+                valued = value_holdings(analysis_holdings, price_service)
+            render_scoped_rebalancing(valued, allocation)
+        else:
+            render_rebalancing(valued)
 
 
 def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service):
@@ -334,6 +357,10 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     if representation == "ETF look-through":
         st.caption("Original instrument positions; allocation charts and the effective-exposure table above use ETF look-through.")
     table = selected.sort_values("portfolio_weight", ascending=False, kind="stable", na_position="last").copy()
+    if 'within_bucket_target' in table:
+        bucket_values = valued.groupby('bucket_id').current_value_eur.agg(lambda values: values.sum() if values.notna().all() else float('nan'))
+        table['Current bucket %'] = 100 * table.current_value_eur / table.bucket_id.map(bucket_values).replace(0, float('nan'))
+        table['Target bucket %'] = table.within_bucket_target * 100
     table["name"] = table["name"].map(display_name)
     for name in names:
         table[f"classification:{name}"] = table["id"].map(lambda asset_id: describe(classifications, asset_id, name))
@@ -353,22 +380,32 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         columns[columns.index("shares"):columns.index("shares")] = performance_columns
         columns += ["acquisition_price", "cost_basis", "performance_note"]
     columns += [f"classification:{name}" for name in displayed_classifications]
+    if 'within_bucket_target' in table:
+        columns += ['Current bucket %', 'Target bucket %']
+    if 'holdings_confirmed_on' in table:
+        columns += ['holdings_confirmed_on']
+    if 'quantity_unit' in table and table.quantity_unit.ne('').any():
+        columns += ['quantity_unit']
     if st.checkbox("Show price details", help="Quote timestamps, FX status and valuation notes"):
         columns += ["price_status", "price_observed_at", "price_age_hours", "fx_status", "fx_observed_at", "fx_age_hours", "valuation_note"]
     st.dataframe(table[columns], hide_index=True, width="stretch", height="content", column_config={
-        "id": None, "name": "Investment", "ticker": "Ticker" if show_tickers else None, "shares": "Shares",
+        "id": None, "name": "Investment", "ticker": "Ticker" if show_tickers else None, "shares": st.column_config.NumberColumn('Quantity', format='%.10f'),
+        'Current bucket %': st.column_config.NumberColumn('Current (% of bucket)', format='%.2f %%'),
+        'Target bucket %': st.column_config.NumberColumn('Target (% of bucket)', format='%.2f %%'),
+        'holdings_confirmed_on': 'Holdings last confirmed', 'quantity_unit': 'Quantity unit',
         "quote_currency": "Currency", "fx_to_eur": None,
         "current_value_eur": st.column_config.NumberColumn("Current value (EUR)", format="€ %.2f"),
         "portfolio_weight": st.column_config.NumberColumn("Selected weight (%)", format="%.2f %%"),
         "target_allocation": st.column_config.NumberColumn("Target allocation (% of whole portfolio)", format="%.2f %%"),
         "current_price": st.column_config.NumberColumn("Price (quote currency)", format="%.4f"),
-        "acquisition_price": st.column_config.NumberColumn("Average buy-in per share", format="%.6f"),
+        "acquisition_price": st.column_config.NumberColumn("Average buy-in per unit", format="%.6f"),
         "acquisition_currency": st.column_config.TextColumn("Buy-in currency"),
         "cost_basis": st.column_config.NumberColumn("Cost basis (buy-in currency)", format="%.2f"),
         "performance_note": st.column_config.TextColumn("Performance details"),
     } | {f"classification:{name}": (badge_column("Labels", taxonomy_colors(classifications, name)) if name == "labels" else
                                     "AI theme" if name == "ai" else name.replace("_", " ").title()) for name in names} | performance_column_config(percent=performance_percent, grouped=False))
     st.caption("Prices use the latest available daily unadjusted close, which may be delayed. Timestamps identify price bars; FX timestamps are separate. Performance uses your recorded average buy-in for the shares currently held.")
+    render_stock_exposure(valued, funds, data_dir)
     return valued
 
 

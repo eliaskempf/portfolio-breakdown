@@ -54,6 +54,7 @@ def parse_holdings(path: Path | BytesIO) -> tuple[str, pd.DataFrame]:
         records.append({
             "constituent_id": "tsmc" if ticker == "TSM" else ticker.lower(),
             "name": row["B"], "ticker": ticker, "isin": row["D"],
+            "instrument_type": "equity",
             "weight": float(Decimal(row["G"].removesuffix("%")) / 100),
         })
     return as_of, validate_constituents(pd.DataFrame(records))

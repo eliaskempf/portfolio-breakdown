@@ -86,6 +86,69 @@ into permitted source or documentation files. Never copy private data into
 those files or bypass the hook. Local data persists independently of Git;
 back it up separately if needed.
 
+## Strategic allocation and balance maintenance
+
+Open **Manage positions → Strategic allocation** to preview enabling the
+versioned bucket model. Review source-position assignments and within-bucket
+targets before saving. Existing whole-portfolio target cells remain preserved;
+no global percentages are automatically chosen. The migration adds persistent
+position keys and activates a private `allocation.yaml` only after the additive
+holdings update succeeds. Previous files are retained in private backups.
+
+Buckets form a non-overlapping parent tree. Each position belongs to one leaf;
+blank assignments remain visible as Unassigned. Bucket targets use their parent
+as denominator, while position targets use their owning bucket. Global position
+targets multiply these fractions. Missing targets remain unknown. Only sibling
+allocations needed for a calculation must be complete and total 100%.
+
+The macro overview displays portfolio and parent percentages independently of
+analytical labels and ETF look-through. Ignore empty positions redistributes
+position targets within each bucket only. An empty bucket retains its strategic
+target and appears as planned capacity. Saved targets do not change.
+
+**Rebalance → Planning scope** offers portfolio contributions and within-bucket
+planning. Portfolio contributions first minimize deviations from bucket ranges,
+then bucket target gaps, before allocating each budget internally. Position
+constraints and the shared trade limit can leave some reserved money unallocated;
+that cash stays visible in the final portfolio denominator. Within-bucket plans
+use that bucket's post-contribution value and display the macro impact. They do
+not require unrelated buckets' position targets. Protecting a bucket from selling
+also protects its descendants while allowing contributions. Temporary caps state
+whether their denominator is the whole portfolio or the selected bucket.
+
+**Manage positions → Update balances** replaces several quantities and optional
+broker average buy-ins in one atomic save. Confirm quantities separately from
+market-price timestamps. The operation preserves targets and classifications;
+repeating a snapshot does not add units. After replacement, retained purchase
+batches are historical context rather than a complete ledger. Additional
+purchase batches must have dates after the balance-confirmation date.
+
+Instrument type is independent of allocation ownership. The optional Underlying
+exposure field distinguishes an equity fund from a known non-equity vehicle;
+leave mixed or uncertain exposure unknown. Crypto search preserves
+exact provider identifiers and allows missing ISINs. Quantity inputs support
+fractions, and crypto prices older than 24 hours carry a continuous-market
+freshness note. Buy-in currency remains separate from quote currency. For assets
+without provider pricing, an optional manual unit price requires its currency,
+date, and explicit quantity unit; clearing it restores provider pricing.
+
+The optional **Show stock-only company exposure** view excludes selected source
+buckets before fund expansion. It reports direct and fund-derived contributions,
+selected-stock and whole-portfolio percentages, and unresolved coverage. A fund
+manifest may declare `equity_fund: true` when its snapshot represents an equity
+universe; constituent rows can additionally specify `instrument_type` to identify
+known non-equity components. Residual weights are retained as unresolved exposure.
+Unknown composition leaves the stock-universe percentage blank.
+
+Company merging uses exact security identifiers. Optional private
+`company-identities.yaml` maps `security:<ISIN>` or `instrument:<asset ID>` keys to
+explicit company IDs when separate share classes or ADRs should be combined.
+Names are never fuzzy-matched. Core fund snapshots use the existing manifest and
+CSV format; fund-specific adapters require the actual fund and listing identity.
+
+The legacy target and rebalancing instructions below apply to workspaces that
+have not enabled strategic allocation.
+
 ## Edit your data
 
 `holdings.csv` has one row per position. Required columns are `id`, `name`, and

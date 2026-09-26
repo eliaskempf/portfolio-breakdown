@@ -13,7 +13,7 @@ from portfolio_app.search_widget import SEARCH_KEY, render_search_box
 def render_instrument_search(prefix: str, holdings: pd.DataFrame, cache_dir: Path, *, disabled: bool = False) -> None:
     state = st.session_state.get(SEARCH_KEY, {})
     query = normalized_query(str(state.get("query") or ""))
-    kind = st.radio("Search for", ["All", "Equities", "ETFs"], horizontal=True, key="position_edit_search_kind", label_visibility="collapsed")
+    kind = st.radio("Search for", ["All", "Equities", "ETFs", "Crypto"], horizontal=True, key="position_edit_search_kind", label_visibility="collapsed")
     cache = st.session_state.setdefault("position_edit_search_cache", {})
     cache_key = (query, disabled)
     results, error = [], ""
@@ -35,7 +35,9 @@ def render_instrument_search(prefix: str, holdings: pd.DataFrame, cache_dir: Pat
             cache[cache_key] = (monotonic(), results, error)
         else:
             _, results, error = entry
-    results = [item for item in results if kind == "All" or item.kind == ("EQUITY" if kind == "Equities" else "ETF")]
+    results = [item for item in results if kind == "All" or item.kind == {"Equities": "EQUITY", "ETFs": "ETF", "Crypto": "CRYPTOCURRENCY"}.get(kind)]
+    if kind == "Crypto":
+        results.sort(key=lambda item: (not item.ticker.endswith('-EUR'), item.ticker))
     groups = result_groups(results)
     if len(query) < 2:
         message = "Search by name, theme, ticker or ISIN. Choose an exchange listing to fill the form."
@@ -65,6 +67,7 @@ def render_instrument_search(prefix: str, holdings: pd.DataFrame, cache_dir: Pat
                 st.rerun()
             for field in ("name", "ticker", "isin"):
                 st.session_state[prefix + field] = getattr(listing, field)
+            st.session_state[prefix + 'instrument_type'] = {'EQUITY': 'equity', 'ETF': 'etf', 'CRYPTOCURRENCY': 'crypto'}.get(listing.kind, 'unknown')
             st.session_state["position_edit_search_applied"] = listing.ticker
             notice = f"Selected {listing.ticker} · {listing.exchange}."
             if listing.currency:

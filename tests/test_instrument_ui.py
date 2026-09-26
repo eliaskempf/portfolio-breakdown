@@ -66,7 +66,7 @@ def test_search_fill_and_save_preserves_buy_in_currency_and_quantities(monkeypat
     path = tmp_path / "holdings.csv"
     app = launch_editor(path)
     assert provider.calls == []
-    by_label(app.number_input, "Shares held (total)").set_value(2.5)
+    by_label(app.number_input, "Quantity held (total)").set_value(2.5)
     by_label(app.text_input, "Buy-in currency").set_value("GBP")
     search(app, "Nvidia")
     assert any(item.value == "NASDAQ" for item in app.caption)
@@ -75,7 +75,7 @@ def test_search_fill_and_save_preserves_buy_in_currency_and_quantities(monkeypat
     assert by_label(app.text_input, "Ticker").value == "NVDA"
     assert by_label(app.text_input, "ISIN (optional)").value == "US67066G1040"
     assert by_label(app.text_input, "Buy-in currency").value == "GBP"
-    assert by_label(app.number_input, "Shares held (total)").value == 2.5
+    assert by_label(app.number_input, "Quantity held (total)").value == 2.5
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     stored = load_holdings(path).iloc[0]
@@ -109,7 +109,7 @@ def test_existing_exact_listing_reuses_identity(monkeypatch, tmp_path):
     assert by_label(app.selectbox, "Existing instrument").value == "existing"
     assert by_label(app.text_input, "Ticker").disabled
     by_label(app.text_input, "Account / broker").set_value("Demo B")
-    by_label(app.number_input, "Shares held (total)").set_value(2.)
+    by_label(app.number_input, "Quantity held (total)").set_value(2.)
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     assert load_holdings(path)["id"].tolist() == ["existing", "existing"]
@@ -124,7 +124,7 @@ def test_search_does_not_replace_a_different_exchange_listing(monkeypatch, tmp_p
     by_label(app.button, "Select NVDA").click().run()
     assert by_label(app.selectbox, "Existing instrument").value == ""
     assert by_label(app.text_input, "Ticker").value == "NVDA"
-    by_label(app.number_input, "Shares held (total)").set_value(2.)
+    by_label(app.number_input, "Quantity held (total)").set_value(2.)
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     assert load_holdings(path)["ticker"].tolist() == ["NVD.DE", "NVDA"]
