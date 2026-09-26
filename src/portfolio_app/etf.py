@@ -133,15 +133,20 @@ def fund_breakdown(fund: FundSnapshot) -> pd.DataFrame:
 
 def constituent_resolver(holdings: pd.DataFrame):
     """Index source identities once for large fund snapshots."""
-    by_isin, by_ticker, ids = {}, {}, set()
+    by_isin, by_ticker, by_id = {}, {}, {}
     for row in holdings.to_dict('records'):
-        ids.add(row['id'])
+        by_id[row['id']] = row
         if row.get('isin'):
             by_isin.setdefault(row['isin'], []).append(row)
         if row.get('ticker'):
             by_ticker.setdefault(row['ticker'], []).append(row)
 
     def resolve(constituent):
+        company_asset = constituent.get('company_asset_id')
+        if isinstance(company_asset, str) and company_asset:
+            if company_asset not in by_id:
+                raise DataError('A reviewed company link points to an unavailable asset')
+            return company_asset, by_id[company_asset]['name']
         isin, ticker = constituent['isin'], constituent['ticker']
         matches = by_isin.get(isin, [])
         if not matches and ticker:
@@ -150,7 +155,7 @@ def constituent_resolver(holdings: pd.DataFrame):
             raise DataError(f"Several asset IDs match ETF constituent {ticker}; use one stable asset ID across its positions.")
         if matches:
             return matches[0]['id'], matches[0]['name']
-        if constituent['constituent_id'] in ids:
+        if constituent['constituent_id'] in by_id:
             raise DataError(f"ETF constituent ID {constituent['constituent_id']} conflicts with another instrument; edit the constituent ID.")
         return constituent['constituent_id'], constituent['name']
 

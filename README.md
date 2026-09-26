@@ -671,7 +671,7 @@ by Git. Cache read/write problems are reported without stopping valuation.
   labels remain separate from downloaded snapshots; new constituents without
   labels appear as Unclassified.
 
-## VanEck Semiconductor UCITS breakdown
+## ETF breakdowns
 
 Supported provider integrations include VanEck Semiconductor UCITS, Xtrackers
 MSCI World 1C, and iShares Core MSCI EM IMI. Amundi MSCI Europe Momentum uses an
@@ -761,6 +761,14 @@ classifications in charge. Where iShares supplies only local tickers, they are
 retained as source metadata rather than treated as exchange-qualified symbols.
 No speculative ISIN or name matches are made, so overlap with other providers
 may remain separate until explicit identity mappings are supplied.
+
+Reviewed `company-identities.yaml` equivalences also connect ETF constituents
+to directly held equities in allocation charts, target breakdowns, and local
+classifications. ADRs and ordinary shares can share company exposure while
+retaining their original security identifiers and source positions. Only EUR
+values are combined; receipt ratios do not multiply exposure. Matching happens
+on every load and refresh, so mappings remain separate from provider files.
+Unmapped names and similarly named subsidiaries are never merged automatically.
 
 The momentum proxy uses the iShares Europe Momentum fund's official holdings.
 MSCI's [constituent terms](https://www.msci.com/legal/index-constituents-disclaimer)

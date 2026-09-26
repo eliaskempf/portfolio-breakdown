@@ -38,6 +38,7 @@ from portfolio_app.allocation import load_allocation, analysis_targets, ignore_e
 from portfolio_app.strategic_ui import render_strategic_overview
 from portfolio_app.scoped_ui import render_scoped_rebalancing
 from portfolio_app.stock_ui import render_stock_exposure
+from portfolio_app.stock_exposure import load_company_identities, link_fund_companies
 
 
 def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None) -> None:
@@ -134,6 +135,11 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         performance_percent = st.radio("Performance display", ["%", "Amount"], horizontal=True, key="display_performance") == "%"
         with st.expander("ETF snapshots"):
             funds = render_snapshot_controls(funds, demo=demo)
+        try:
+            funds = link_fund_companies(funds, holdings, load_company_identities(data_dir / 'company-identities.yaml'))
+        except DataError as exc:
+            st.error(str(exc))
+            return
         classifications = fund_classifications(classifications, funds, holdings)
         names = taxonomy_names(classifications)
         lookthrough, expanded_funds = render_etf_selection(holdings, funds, data_dir)

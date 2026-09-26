@@ -1,5 +1,5 @@
 """Company exposure with source-based exclusions and explicit coverage."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pandas as pd
@@ -30,6 +30,37 @@ def load_company_identities(path: Path) -> dict[str, str]:
         return raw
     except (OSError, ValueError, yaml.YAMLError) as exc:
         raise DataError(f'Invalid company identity mappings: {exc}') from exc
+
+
+def link_fund_companies(funds, holdings: pd.DataFrame, identities: dict[str, str]):
+    """Apply reviewed company equivalences without changing security identities.
+
+    The analytical asset ID may refer to a directly held depositary receipt;
+    the constituent's original ID, ISIN and ticker remain its own. Keeping the
+    mapping outside snapshots makes it survive provider refreshes.
+    """
+    held = {}
+    for row in holdings.to_dict('records'):
+        if row.get('instrument_type') != 'equity':
+            continue
+        key = f"security:{row['isin']}" if row.get('isin') else f"instrument:{row['id']}"
+        company = identities.get(key)
+        if company:
+            held.setdefault(company, []).append(row['id'])
+    result = []
+    for fund in funds:
+        frame = fund.constituents.copy()
+        links = []
+        for row in frame.to_dict('records'):
+            key = f"security:{row['isin']}" if row.get('isin') else f"instrument:{row['constituent_id']}"
+            candidates = held.get(identities.get(key), [])
+            kind = row.get('instrument_type')
+            if not isinstance(kind, str) or not kind:
+                kind = 'equity' if fund.equity_fund else 'unknown'
+            links.append(sorted(candidates)[0] if candidates and kind == 'equity' else '')
+        frame['company_asset_id'] = links
+        result.append(replace(fund, constituents=frame))
+    return result
 
 
 def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identities=None) -> StockExposure:

@@ -105,3 +105,25 @@ def test_proxy_status_and_newly_supported_funds_default_on(multi_fund_workspace)
     assert not app.exception
     assert by_label(app.toggle, 'New synthetic breakdown').value
     assert not by_label(app.toggle, 'Synthetic Emerging').value
+
+
+def test_reviewed_company_mapping_reaches_allocation_and_stock_ui(multi_fund_workspace):
+    directory = multi_fund_workspace / 'etfs'
+    for name in ['world', 'emerging']:
+        (directory / f'{name}.csv').write_text(
+            'constituent_id,name,ticker,isin,weight,instrument_type\n'
+            'invented-local-share,Invented local ordinary share,,,0.5,equity\n')
+    (multi_fund_workspace / 'company-identities.yaml').write_text(yaml.safe_dump({
+        'security:ZZ1111111111': 'reviewed-invented-issuer',
+        'instrument:invented-local-share': 'reviewed-invented-issuer',
+    }))
+    app = launch(multi_fund_workspace)
+    by_label(app.toggle, 'Break down ETFs').set_value(True).run()
+    assert not app.exception and not app.error
+    company = effective(app).loc[lambda x: x.Asset == 'Invented Alpha'].iloc[0]
+    assert company['Direct (EUR)'] == 100.
+    assert company['ETF-derived (EUR)'] == 100.
+    by_label(app.checkbox, 'Show stock-only company exposure').check().run()
+    assert not app.exception
+    companies = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total (EUR)' in item.value)
+    assert companies['Total (EUR)'].tolist() == [200.]

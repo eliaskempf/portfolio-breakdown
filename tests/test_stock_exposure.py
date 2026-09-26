@@ -107,3 +107,60 @@ def test_other_instrument_type_remains_unresolved():
     result = stock_exposure(rows, funds())
     assert result.stock_value is None
     assert result.unresolved['EUR value'].sum() == 325.
+
+
+def test_reviewed_receipt_link_merges_analysis_and_labels_without_changing_security():
+    from portfolio_app.etf import expand_etfs, fund_classifications, effective_exposure_table
+    from portfolio_app.exposures import normalize_exposures
+    from portfolio_app.stock_exposure import link_fund_companies
+    from portfolio_app.targets import target_exposures
+
+    rows = sources()
+    rows.loc[0, 'isin'] = 'TEST-ADR-001'
+    rows['target_allocation'] = [.2, .4, .2, .1, .1]
+    snapshots = funds()
+    # An invented provider supplies only a local ticker and company label.
+    for index, fund in enumerate(snapshots):
+        frame = fund.constituents.copy()
+        frame['isin'] = ''
+        frame['ticker'] = ''
+        frame['instrument_type'] = 'equity'
+        frame['sector'] = 'Provider category'
+        snapshots[index] = replace(fund, constituents=frame)
+    mappings = {'security:TEST-ADR-001': 'reviewed-issuer', 'instrument:company': 'reviewed-issuer'}
+    linked = link_fund_companies(snapshots, rows, mappings)
+    assert 'company_asset_id' not in snapshots[0].constituents
+    assert linked[0].constituents.iloc[0].constituent_id == 'company'
+    assert linked[0].constituents.iloc[0]['isin'] == ''
+    assert linked[0].constituents.iloc[0].company_asset_id == 'direct'
+    expanded = expand_etfs(normalize_exposures(rows), linked, rows)
+    merged = effective_exposure_table(expanded)
+    company = merged.loc[merged.Asset == 'Invented company'].iloc[0]
+    assert company['Direct (EUR)'] == 100.
+    assert company['ETF-derived (EUR)'] == 75.
+    assert merged['Total (EUR)'].sum() == 500.
+    assert expanded.loc[expanded.source_type == 'etf_constituent', 'isin'].eq('').all()
+    labels = {'direct': {'sector': (('My', 'Category'),)}}
+    assert fund_classifications(labels, linked, rows)['direct']['sector'] == (('My', 'Category'),)
+    targets = target_exposures(rows, linked, lookthrough=True, holdings=rows)
+    assert targets.known.loc[targets.known.asset_id == 'direct', 'value'].sum() == pytest.approx(.35)
+    assert targets.known.value.sum() == pytest.approx(1.)
+    companies = stock_exposure(rows, linked, identities=mappings)
+    assert companies.companies['Total (EUR)'].tolist() == [175.]
+    without_direct = rows.loc[rows.id != 'direct']
+    expanded_subset = expand_etfs(normalize_exposures(without_direct), linked, rows)
+    assert expanded_subset.loc[expanded_subset.asset_id == 'direct', 'value'].sum() == 75.
+    # Reapply after a fresh provider import; no manual snapshot edit is needed.
+    assert link_fund_companies(snapshots, rows, mappings)[0].constituents.equals(linked[0].constituents)
+    assert rows.loc[0, 'isin'] == 'TEST-ADR-001'
+
+
+def test_reviewed_links_do_not_match_names_or_reclassify_other_instruments():
+    from portfolio_app.stock_exposure import link_fund_companies
+    rows = sources()
+    empty = link_fund_companies(funds(), rows, {})
+    assert empty[0].constituents.company_asset_id.eq('').all()
+    rows.loc[0, 'instrument_type'] = 'other'
+    mapping = {'security:TEST-STOCK-1': 'reviewed-company'}
+    linked = link_fund_companies(funds(), rows, mapping)
+    assert linked[0].constituents.company_asset_id.eq('').all()
