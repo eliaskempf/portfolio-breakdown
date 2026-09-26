@@ -146,3 +146,22 @@ def test_verified_gold_etc_overrides_provider_mutualfund_category(monkeypatch, t
     results = InstrumentSearch(tmp_path).search("precious metals")
     assert [item.ticker for item in results] == ["EWG2.SG"]
     assert results[0].kind == "ETC"
+
+
+@pytest.mark.parametrize("symbol,name", [("ETH", "Ethereum"), ("BTC", "Bitcoin")])
+@pytest.mark.parametrize("by_name", [False, True])
+def test_crypto_search_includes_eur_when_provider_only_returns_usd(monkeypatch, tmp_path, symbol, name, by_name):
+    quotes = [{"symbol": f"{symbol}-USD", "shortname": f"{name} USD", "quoteType": "CRYPTOCURRENCY"}]
+    monkeypatch.setattr("portfolio_app.instruments.yf.Search", lambda *args, **kwargs: SimpleNamespace(quotes=quotes))
+    results = InstrumentSearch(tmp_path).search(name if by_name else symbol)
+    assert [item.ticker for item in results] == [f"{symbol}-EUR", f"{symbol}-USD"]
+    assert all(item.kind == "CRYPTOCURRENCY" and not item.isin for item in results)
+    assert [item.currency for item in results] == ["EUR", "USD"]
+
+
+def test_explicit_crypto_currency_and_token_identity_are_preserved():
+    assert [item.ticker for item in catalog_search("ETH-USD")] == ["ETH-USD"]
+    assert catalog_search("Ethereum Classic") == []
+    groups = result_groups(catalog_search("ETH"))
+    assert len(groups) == 2
+    assert [group["listings"][0]["currency"] for group in groups] == ["EUR", "USD"]

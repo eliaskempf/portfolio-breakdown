@@ -30,6 +30,13 @@ class Instrument:
 # Public listing metadata, not portfolio holdings. VanEck trading information:
 # https://www.vaneck.com/uk/en/library/fact-sheets/smh-fact-sheet.pdf
 CATALOG = (
+    # Yahoo's broad crypto search can omit EUR quotes; keep verified pairs
+    # discoverable by both name and symbol without guessing token identities.
+    # https://finance.yahoo.com/quote/ETH-EUR/
+    # https://finance.yahoo.com/quote/BTC-EUR/
+    *(Instrument(f"{symbol}-{currency}", f"{name} {currency}", "CCC", "CRYPTOCURRENCY", currency=currency)
+      for symbol, name in (("ETH", "Ethereum"), ("BTC", "Bitcoin"))
+      for currency in ("EUR", "USD")),
     # Issuer listing identifiers: https://www.euwax-gold.de/ewg2ld/
     Instrument("EWG2.SG", "EUWAX Gold II", "Stuttgart", "ETC", "DE000EWG2LD7", "EUR"),
     *(Instrument(ticker, "VanEck Semiconductor UCITS ETF", exchange, "ETF", "IE00BMC38736", currency)

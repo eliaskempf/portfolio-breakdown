@@ -193,3 +193,19 @@ def test_selecting_fund_after_gold_resets_underlying_exposure(monkeypatch, tmp_p
     by_label(app.button, "Select VVSM.DE").click().run()
     assert not app.exception
     assert by_label(app.selectbox, "Underlying exposure").value == "unknown"
+
+
+def test_eth_search_offers_eur_and_fills_crypto_form(monkeypatch, tmp_path):
+    provider = stub_search(monkeypatch)
+    monkeypatch.setattr(provider, "search", lambda self, query: catalog_search(query))
+    app = launch_editor(tmp_path / "holdings.csv")
+    by_label(app.radio, "Search for").set_value("Crypto").run()
+    search(app, "ETH")
+    choices = [item.label for item in app.button if item.label.startswith("Select ")]
+    assert choices == ["Select ETH-EUR", "Select ETH-USD"]
+    by_label(app.button, "Select ETH-EUR").click().run()
+    assert not app.exception
+    assert by_label(app.text_input, "Ticker").value == "ETH-EUR"
+    assert by_label(app.text_input, "ISIN (optional)").value == ""
+    assert by_label(app.selectbox, "Instrument type").value == "crypto"
+    assert by_label(app.selectbox, "Underlying exposure").value == "non_equity"
