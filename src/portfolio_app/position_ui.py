@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from portfolio_app.costs import average_from_total
 from portfolio_app.display_names import display_name
 from portfolio_app.etf import FundSnapshot, validate_fund_listings
 from portfolio_app.holdings import DataError, metadata_dimensions
@@ -86,6 +87,8 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
         prefix = f"position_edit_fields_{action}_{position_id}_{identity}_"
         if not editing and not identity:
             render_instrument_search(prefix, holdings, path.parent / ".cache" / "yahoo", disabled=demo)
+        total_buy_in = st.radio('Buy-in entry', ['Average per unit', 'Total buy-in'], horizontal=True,
+                               key=prefix + 'buy_in_mode') == 'Total buy-in'
         with st.form(f"position_form_{action}_{position_id}_{identity}"):
             left, right = st.columns(2)
             with left:
@@ -104,7 +107,14 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
                 portfolio = st.text_input("Portfolio / sleeve", value=row.get("portfolio", ""), key=prefix + "portfolio")
                 account = st.text_input("Account / broker", value=row.get("account", ""), key=prefix + "account")
             with right:
-                buy_in = st.number_input("Average buy-in per unit (optional)", min_value=0.0, value=_optional_number(row.get("acquisition_price")), format="%.6f", key=prefix + "buy_in")
+                initial_buy_in = _optional_number(row.get('acquisition_price'))
+                if total_buy_in:
+                    initial_total = None if initial_buy_in is None else initial_buy_in * float(row.get('shares', 0))
+                    buy_in = st.number_input('Total buy-in (optional)', min_value=0.0, value=initial_total,
+                                             format='%.8f', key=prefix + 'total_buy_in',
+                                             help='Total cost of the quantity currently held, including purchase fees. The average per unit is calculated when you save.')
+                else:
+                    buy_in = st.number_input("Average buy-in per unit (optional)", min_value=0.0, value=initial_buy_in, format="%.6f", key=prefix + "buy_in")
                 currency = st.text_input("Buy-in currency", value=row.get("acquisition_currency", "" if editing else "EUR"), help="Currency of your recorded purchase cost; it can differ from the live quote currency. Existing unlabeled buy-ins remain unspecified.", key=prefix + "currency")
                 target_field = 'within_bucket_target' if allocation else 'target_allocation'
                 initial_target = _optional_number(row.get(target_field))
@@ -120,7 +130,6 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
                 for column in metadata_dimensions(holdings):
                     if column not in {"portfolio", "account", "bucket_id", "instrument_type", "exposure_kind"}:
                         extras[column] = st.text_input(column.replace("_", " ").title(), value=row.get(column, ""), key=prefix + "extra_" + column)
-                st.caption("Enter current total quantity and optional average buy-in.")
             submitted = st.form_submit_button("Save position", type="primary")
         if submitted:
             values = {
@@ -135,6 +144,13 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
                 **({'bucket_id': bucket} if allocation else {}), **extras,
             }
             try:
+                if total_buy_in:
+                    # Preserve the original unit cost on an unchanged round trip,
+                    # including planned zero-quantity positions with a known cost.
+                    unchanged = editing and shares == row.get('shares') and buy_in == initial_total
+                    buy_in = initial_buy_in if unchanged else average_from_total(buy_in, shares)
+                    values['acquisition_price'] = '' if buy_in is None else str(buy_in)
+                    values['acquisition_currency'] = currency if buy_in is not None else ''
                 new_buy_in = not editing or buy_in != _optional_number(row.get("acquisition_price"))
                 if buy_in is not None and not currency.strip() and new_buy_in:
                     raise DataError("Enter the currency of the buy-in price, for example EUR.")

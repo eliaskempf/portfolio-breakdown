@@ -7,39 +7,41 @@ import streamlit as st
 
 from portfolio_app.allocation import (Allocation, Bucket, migrate, migration_preview, save_allocation,
                                      validate_allocation)
-from portfolio_app.balances import patch_holdings
+from portfolio_app.balances import patch_holdings, replacement_changes
 from portfolio_app.holdings import DataError
 from portfolio_app.storage import revision
 
 
 def render_balances(path, snapshot):
     st.subheader('Update balances')
-    st.caption('Replace current quantities and optional broker average buy-ins. Holdings confirmation is separate from quote freshness.')
+    st.caption('Replace current quantities and optional buy-ins. Holdings confirmation is separate from quote freshness.')
     if snapshot.holdings.empty:
         return
     rows = snapshot.holdings.copy()
     for column, default in [('holdings_confirmed_on', ''), ('acquisition_currency', '')]:
         if column not in rows:
             rows[column] = default
-    key = f'balance_editor_{path}_{snapshot.revision}'
-    fields = ['shares', 'acquisition_price', 'acquisition_currency', 'holdings_confirmed_on']
+    total_buy_in = st.radio('Buy-in entry', ['Average per unit', 'Total buy-in'], horizontal=True,
+                           key=f'balance_buy_in_mode_{path}') == 'Total buy-in'
+    cost_field = 'total_buy_in' if total_buy_in else 'acquisition_price'
+    if total_buy_in:
+        rows['total_buy_in'] = rows.shares * rows.acquisition_price
+    key = f'balance_editor_{path}_{snapshot.revision}_{cost_field}'
+    fields = ['shares', cost_field, 'acquisition_currency', 'holdings_confirmed_on']
     with st.form(key):
         edited = st.data_editor(rows[['position_id', 'name', 'account', *fields]], hide_index=True,
                                 disabled=['position_id', 'name', 'account'], width='stretch',
                                 column_config={'position_id': None, 'shares': st.column_config.NumberColumn('Quantity', min_value=0., format='%.10f'),
-                                               'acquisition_price': st.column_config.NumberColumn('Average buy-in (optional)', min_value=0., format='%.8f'),
+                                               cost_field: st.column_config.NumberColumn('Total buy-in (optional)' if total_buy_in else 'Average buy-in (optional)', min_value=0., format='%.8f',
+                                                                                        help='Cost of the quantity currently held, in the buy-in currency.' if total_buy_in else None),
                                                'acquisition_currency': 'Buy-in currency',
                                                'holdings_confirmed_on': 'Holdings confirmed (YYYY-MM-DD)'})
         confirm_today = st.checkbox('Confirm all displayed balances as of today')
         submit = st.form_submit_button('Save replacement balances')
     if submit:
-        changes = {}
-        for _, row in edited.iterrows():
-            values = {column: row[column] for column in fields}
-            if confirm_today:
-                values['holdings_confirmed_on'] = date.today().isoformat()
-            changes[row.position_id] = values
         try:
+            changes = replacement_changes(edited, rows, total_buy_in=total_buy_in,
+                                          confirmed_on=date.today().isoformat() if confirm_today else None)
             patch_holdings(path, changes, expected_revision=snapshot.revision, replacement=True)
         except (DataError, OSError) as exc:
             st.error(str(exc))

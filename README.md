@@ -134,7 +134,8 @@ also protects its descendants while allowing contributions. Temporary caps state
 whether their denominator is the whole portfolio or the selected bucket.
 
 **Manage positions → Update balances** replaces several quantities and optional
-broker average buy-ins in one atomic save. Confirm quantities separately from
+buy-ins in one atomic save. Choose **Average per unit** or **Total buy-in** above
+the table. Confirm quantities separately from
 market-price timestamps. The operation preserves targets and classifications;
 repeating a snapshot does not add units. After replacement, retained purchase
 batches are historical context rather than a complete ledger. Additional
@@ -484,6 +485,13 @@ quantity and average buy-in / Einstandskurs** for each instrument/account. You
 can update them monthly after a savings-plan execution, or record the purchases
 with **Bulk add purchases**. Buy-in is unnecessary
 for allocation analysis, so leave it blank when unknown.
+
+In **Add position**, **Edit position**, or **Update balances**, select
+**Buy-in entry → Total buy-in** to enter the total cost and its currency alongside
+the current quantity. The app calculates the average per unit, including for
+fractional crypto quantities. Use the cost of the quantity currently held,
+including purchase fees, rather than lifetime deposits after sales or withdrawals.
+Leave the amount blank when unknown. A positive total requires a positive quantity.
 
 For exact purchase details, use the broker's purchase confirmations: these
 record quantities, execution prices, fees, and settlement currency. Displayed
