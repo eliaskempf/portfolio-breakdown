@@ -1,7 +1,7 @@
 from streamlit.testing.v1 import AppTest
 
 from portfolio_app.holdings import load_holdings
-from portfolio_app.instruments import Instrument
+from portfolio_app.instruments import Instrument, catalog_search
 from portfolio_app.search_widget import SEARCH_KEY
 from test_ui import by_label
 
@@ -157,3 +157,39 @@ def test_search_cache_filter_and_stale_selection(monkeypatch, tmp_path):
     monkeypatch.setattr("portfolio_app.instrument_ui.render_search_box", lambda *args: {"query": "old query", "ticker": "NVDA"})
     app.run()
     assert by_label(app.text_input, "Ticker").value == ""
+
+
+def test_gold_search_filter_fills_and_saves_non_equity_security(monkeypatch, tmp_path):
+    # Public listing metadata with an invented empty position in temporary storage.
+    provider = stub_search(monkeypatch)
+    monkeypatch.setattr(provider, "search", lambda self, query: catalog_search(query))
+    path = tmp_path / "holdings.csv"
+    app = launch_editor(path)
+    search(app, "Euwax Gold 2")
+    by_label(app.radio, "Search for").set_value("Equities").run()
+    assert not any(item.label == "Select EWG2.SG" for item in app.button)
+    by_label(app.radio, "Search for").set_value("ETCs").run()
+    by_label(app.button, "Select EWG2.SG").click().run()
+    assert not app.exception
+    assert by_label(app.text_input, "Ticker").value == "EWG2.SG"
+    assert by_label(app.text_input, "ISIN (optional)").value == "DE000EWG2LD7"
+    assert by_label(app.selectbox, "Instrument type").value == "etc"
+    assert by_label(app.selectbox, "Underlying exposure").value == "non_equity"
+    by_label(app.button, "Save position").click().run()
+    assert not app.exception
+    stored = load_holdings(path).iloc[0]
+    assert stored["instrument_type"] == "etc"
+    assert stored["exposure_kind"] == "non_equity"
+    assert stored["shares"] == 0
+
+
+def test_selecting_fund_after_gold_resets_underlying_exposure(monkeypatch, tmp_path):
+    provider = stub_search(monkeypatch)
+    monkeypatch.setattr(provider, "search", lambda self, query: catalog_search(query))
+    app = launch_editor(tmp_path / "holdings.csv")
+    search(app, "EWG2.SG")
+    by_label(app.button, "Select EWG2.SG").click().run()
+    search(app, "VVSM.DE")
+    by_label(app.button, "Select VVSM.DE").click().run()
+    assert not app.exception
+    assert by_label(app.selectbox, "Underlying exposure").value == "unknown"

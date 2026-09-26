@@ -30,6 +30,8 @@ class Instrument:
 # Public listing metadata, not portfolio holdings. VanEck trading information:
 # https://www.vaneck.com/uk/en/library/fact-sheets/smh-fact-sheet.pdf
 CATALOG = (
+    # Issuer listing identifiers: https://www.euwax-gold.de/ewg2ld/
+    Instrument("EWG2.SG", "EUWAX Gold II", "Stuttgart", "ETC", "DE000EWG2LD7", "EUR"),
     *(Instrument(ticker, "VanEck Semiconductor UCITS ETF", exchange, "ETF", "IE00BMC38736", currency)
       for ticker, exchange, currency in (
           ("VVSM.DE", "Xetra", "EUR"), ("SMH.L", "London", "USD"),
@@ -40,6 +42,7 @@ CATALOG = (
     Instrument("TSM", "Taiwan Semiconductor Manufacturing Company ADR", "NYSE", isin="US8740391003", currency="USD"),
     Instrument("ANET", "Arista Networks", "NYSE", isin="US0404132054", currency="USD"),
 )
+CATALOG_BY_TICKER = {listing.ticker: listing for listing in CATALOG}
 
 
 def normalized_query(query: str) -> str:
@@ -58,6 +61,8 @@ def catalog_search(query: str) -> list[Instrument]:
         words = f"{listing.name} {listing.ticker} {listing.isin} {listing.exchange}".casefold()
         if listing.isin == "IE00BMC38736":
             words += " van eck semiconductors semiconductor chips chip smh ucits etf"
+        if listing.isin == "DE000EWG2LD7":
+            words += " euwax gold 2 etc"
         if all(token in words for token in tokens):
             matches.append(listing)
     return sorted(matches, key=lambda listing: listing.ticker.casefold() != query)
@@ -77,7 +82,7 @@ def result_groups(results: list[Instrument]) -> list[dict]:
     for item in results:
         key = item.isin or item.ticker
         if key not in groups:
-            groups[key] = {"name": display_name(item.name), "kind": {"ETF": "ETF", "CRYPTOCURRENCY": "Crypto"}.get(item.kind, "Equity"),
+            groups[key] = {"name": display_name(item.name), "kind": {"ETF": "ETF", "ETC": "ETC", "CRYPTOCURRENCY": "Crypto"}.get(item.kind, "Equity"),
                            "isin": item.isin, "ucits": "UCITS" in item.name.upper(), "listings": []}
         groups[key]["listings"].append({"ticker": item.ticker, "exchange": item.exchange or "Exchange unavailable", "currency": item.currency})
     return list(groups.values())[:10]
@@ -103,6 +108,11 @@ def normalize_results(quotes: list[dict]) -> list[Instrument]:
             continue
         ticker = str(quote.get("symbol") or "").strip().upper()
         kind = str(quote.get("quoteType") or "").upper()
+        # Verified listing metadata takes precedence over provider categories
+        # (Yahoo labels EUWAX Gold II as MUTUALFUND). Match exact symbols only.
+        if ticker in CATALOG_BY_TICKER:
+            results[ticker] = CATALOG_BY_TICKER[ticker]
+            continue
         if not ticker or kind not in {"EQUITY", "ETF", "CRYPTOCURRENCY"} or ticker in results:
             continue
         results[ticker] = Instrument(

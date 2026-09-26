@@ -119,3 +119,30 @@ def test_catalog_survives_provider_failure(monkeypatch, tmp_path):
 def test_punctuation_and_short_queries_do_not_match_every_listing():
     assert catalog_search("...") == []
     assert catalog_search("v") == []
+
+
+@pytest.mark.parametrize("query", ["DE000EWG2LD7", "EWG2LD", "EWG2.SG", "Euwax Gold II", "Euwax Gold 2"])
+def test_gold_etc_catalog_identifiers_and_alias_survive_outage(monkeypatch, tmp_path, query):
+    def fail(*args, **kwargs):
+        raise ConnectionError("offline")
+
+    monkeypatch.setattr("portfolio_app.instruments.yf.Search", fail)
+    results = InstrumentSearch(tmp_path).search(query)
+    assert len(results) == 1
+    listing = results[0]
+    assert (listing.ticker, listing.isin, listing.currency, listing.kind) == ("EWG2.SG", "DE000EWG2LD7", "EUR", "ETC")
+    assert result_groups(results)[0]["kind"] == "ETC"
+
+
+def test_verified_gold_etc_overrides_provider_mutualfund_category(monkeypatch, tmp_path):
+    quotes = [
+        {"symbol": "EWG2.SG", "shortname": "EUWAX Gold II", "quoteType": "MUTUALFUND"},
+        {"symbol": "INVENTED-FUND", "shortname": "EUWAX Gold II", "quoteType": "MUTUALFUND"},
+        {"symbol": "INVENTED-OPTION", "quoteType": "OPTION"},
+    ]
+    monkeypatch.setattr("portfolio_app.instruments.yf.Search", lambda *args, **kwargs: SimpleNamespace(quotes=quotes))
+    # No catalog keyword match: normalization must recognize the exact listing
+    # without treating arbitrary funds or similarly named securities as gold.
+    results = InstrumentSearch(tmp_path).search("precious metals")
+    assert [item.ticker for item in results] == ["EWG2.SG"]
+    assert results[0].kind == "ETC"

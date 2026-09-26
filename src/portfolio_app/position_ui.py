@@ -93,7 +93,7 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
                 ticker = st.text_input("Ticker", value=row.get("ticker", ""), disabled=bool(identity), help="Use an exchange-qualified ticker where needed, e.g. VVSM.DE for the EUR UCITS listing.", key=prefix + "ticker")
                 isin = st.text_input("ISIN (optional)", value=row.get("isin", ""), disabled=bool(identity), key=prefix + "isin")
                 shares = st.number_input("Quantity held (total)", min_value=0.0, value=float(row.get("shares", 0)), format="%.10f", key=prefix + "shares")
-                kinds = ['unknown', 'equity', 'etf', 'crypto', 'physical', 'cash', 'other']
+                kinds = ['unknown', 'equity', 'etf', 'etc', 'crypto', 'physical', 'cash', 'other']
                 instrument_type = st.selectbox('Instrument type', kinds, index=kinds.index(row.get('instrument_type')) if row.get('instrument_type') in kinds else 0, key=prefix + 'instrument_type')
                 exposure_kinds = ['unknown', 'equity', 'non_equity']
                 exposure_kind = st.selectbox('Underlying exposure', exposure_kinds,
