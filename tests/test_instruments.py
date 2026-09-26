@@ -148,7 +148,7 @@ def test_verified_gold_etc_overrides_provider_mutualfund_category(monkeypatch, t
     assert results[0].kind == "ETC"
 
 
-@pytest.mark.parametrize("symbol,name", [("ETH", "Ethereum"), ("BTC", "Bitcoin")])
+@pytest.mark.parametrize("symbol,name", [("ETH", "Ethereum"), ("BTC", "Bitcoin"), ("SOL", "Solana")])
 @pytest.mark.parametrize("by_name", [False, True])
 def test_crypto_search_includes_eur_when_provider_only_returns_usd(monkeypatch, tmp_path, symbol, name, by_name):
     quotes = [{"symbol": f"{symbol}-USD", "shortname": f"{name} USD", "quoteType": "CRYPTOCURRENCY"}]
