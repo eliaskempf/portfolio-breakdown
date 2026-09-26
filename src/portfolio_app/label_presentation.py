@@ -29,7 +29,7 @@ def color_label_chart(figure, nodes, colors: dict[str, str], *, detail_color: st
     rows = nodes if kind in {"sunburst", "treemap"} else nodes.loc[nodes["is_leaf"]]
     if kind == "bar":
         rows = rows.sort_values("value", ascending=True)
-    assigned = [colors.get(row.path[0], detail_color or "#f0f2f8") if row.path else "#f0f2f8"
+    assigned = [colors.get(row.path[0], detail_color or "rgba(127,127,127,0.12)") if row.path else "rgba(127,127,127,0.12)"
                 for row in rows.itertuples()]
     if kind == "bar":
         figure.update_traces(marker_color=assigned)

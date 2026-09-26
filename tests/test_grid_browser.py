@@ -85,7 +85,7 @@ def page(grid_url):
         page = browser.new_page(viewport={"width": 1400, "height": 800})
         page.goto(grid_url)
         page.wait_for_function("!!window.__portfolioGridInteractions")
-        page.get_by_test_id("stDataFrame").wait_for()
+        page.get_by_test_id("stDataFrame").first.wait_for()
         yield page
         browser.close()
 

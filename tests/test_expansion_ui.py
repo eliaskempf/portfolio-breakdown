@@ -65,3 +65,35 @@ def test_optional_stock_view_and_manual_position_entry(tmp_path, sample_data_dir
     assert not app.exception
     assert not app.error
     assert read_snapshot(tmp_path / 'holdings.csv').holdings.shares.iloc[-1] == 2.5
+
+
+def test_strategic_drill_down_planned_bucket_and_bulk_assignment(tmp_path, sample_data_dir):
+    path = workspace(tmp_path, sample_data_dir)
+    snap = read_snapshot(path)
+    _, preview = migration_preview(snap.holdings)
+    config = Allocation((Bucket('bucket-1', 'Active', target=.4),
+                         Bucket('bucket-2', 'Reserve', target=.5),
+                         Bucket('planned', 'Planned', target=.1)))
+    migrate(path, config, preview, expected_revision=snap.revision)
+    before = read_snapshot(path).holdings.copy()
+    app = launch(tmp_path)
+    assert not app.exception
+    assert [tab.label for tab in app.tabs] == ['Overview', 'Exposure', 'Rebalance', 'Manage positions']
+    by_label(app.selectbox, 'Category').set_value('bucket-1').run()
+    strategic_positions = next(table.value for table in app.dataframe if 'Category (%)' in table.value)
+    assert strategic_positions.Investment.tolist() == ['Invented A', 'Invented B']
+    assert strategic_positions['Category (%)'].sum() == 100
+    by_label(app.selectbox, 'Category').set_value('planned').run()
+    assert any('No current holdings' in item.value for item in app.info)
+    by_label(app.button, 'Back').click().run()
+    assert by_label(app.selectbox, 'Category').value == ''
+    by_label(app.radio, 'Position action').set_value('Strategic allocation').run()
+    by_label(app.button, 'Select all').click().run()
+    assert len(by_label(app.multiselect, 'Positions to assign').value) == 3
+    by_label(app.selectbox, 'Destination bucket').set_value('planned').run()
+    by_label(app.button, 'Assign 3 positions').click().run()
+    assert not app.exception
+    after = read_snapshot(path).holdings
+    assert after.bucket_id.eq('planned').all()
+    from pandas.testing import assert_frame_equal
+    assert_frame_equal(before.drop(columns='bucket_id'), after.drop(columns='bucket_id'))

@@ -23,7 +23,7 @@ from portfolio_app.holdings import DataError, metadata_dimensions
 from portfolio_app.position_ui import render_position_editor
 from portfolio_app.positions import read_snapshot
 from portfolio_app.performance import position_performance
-from portfolio_app.performance_ui import render_performance_summary, performance_column_config, label_performance_caption
+from portfolio_app.performance_ui import render_performance_summary, performance_column_config
 from portfolio_app.performance_allocation import performance_exposures, add_performance_column
 from portfolio_app.rebalancing import ignore_empty_positions, RebalanceError
 from portfolio_app.rebalance_ui import render_rebalancing
@@ -33,7 +33,8 @@ from portfolio_app.taxonomy import branches, describe, load_classifications, tax
 from portfolio_app.valuation import portfolio_weights, value_holdings
 from portfolio_app.targets import add_target_columns, target_exposures, target_totals
 from portfolio_app.target_ui import target_caption, target_column_config
-from portfolio_app.allocation import load_allocation, analysis_targets, ignore_empty_by_bucket, macro_table
+from portfolio_app.allocation import load_allocation, analysis_targets, ignore_empty_by_bucket
+from portfolio_app.strategic_ui import render_strategic_overview
 from portfolio_app.scoped_ui import render_scoped_rebalancing
 from portfolio_app.stock_ui import render_stock_exposure
 
@@ -49,14 +50,12 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         context = (str(data_dir.resolve()), demo)
         if st.session_state.get("portfolio_workspace_context") != context:
             for key in list(st.session_state):
-                if key.startswith(("position_edit_", "filter_", "label_compare_", "allocation_group_", "rebalance_")) or key in {"position_saved_notice", "ignore_empty_positions"}:
+                if key.startswith(("position_edit_", "filter_", "label_compare_", "allocation_group_", "rebalance_", "strategic_")) or key in {"position_saved_notice", "ignore_empty_positions"}:
                     del st.session_state[key]
             st.session_state["portfolio_workspace_context"] = context
     workspace_header(demo)
     if demo:
-        st.caption("Editable demo · Synthetic prices, FX and ETF weights. Edits reset when the app restarts; refreshes and workspace switches keep them.")
-    elif demo_dir is not None:
-        st.caption("My portfolio — your positions are saved locally and kept between app starts.")
+        st.caption("Demo · Synthetic data · Resets on restart")
     try:
         snapshot = read_snapshot(data_dir / "holdings.csv")
         holdings = snapshot.holdings
@@ -76,9 +75,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             if key.startswith("filter_"):
                 del st.session_state[key]
 
+    refresh = st.sidebar.button("Refresh prices", disabled=demo)
     ignore_empty = st.sidebar.checkbox(
         "Ignore empty positions", key="ignore_empty_positions", on_change=reset_position_filters,
-        help="Hide positions with zero shares from analysis and rebalancing. Distribute their targets equally among remaining assets, then equally among each asset’s account rows. Saved positions and targets stay unchanged. Switching this option resets position filters.",
+        help="Hide zero-quantity positions from Exposure and rebalancing, redistributing their targets within each bucket. Strategic overview retains planned categories. Saved targets stay unchanged. Switching this option resets exposure filters.",
     )
     analysis_holdings = analysis_targets(holdings, allocation) if allocation else holdings
     analysis_error = None
@@ -88,35 +88,33 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                                  if allocation else ignore_empty_positions(holdings))
         except RebalanceError as exc:
             analysis_error = str(exc)
-        st.sidebar.caption("Empty positions are hidden from analysis. Their targets are shared equally among remaining assets for this view only. Manage positions retains all saved rows.")
-    overview, rebalance, positions = st.tabs(["Overview", "Rebalance", "Manage positions"], default="Manage positions" if holdings.empty else "Overview", key="main_tabs")
+    pages = st.tabs(["Overview", *(["Exposure"] if allocation else []), "Rebalance", "Manage positions"],
+                    default="Manage positions" if holdings.empty else "Overview", key="main_tabs")
+    overview, rebalance, positions = pages[0], pages[-2], pages[-1]
+    exposure = pages[1] if allocation else overview
     with positions:
         render_position_editor(data_dir / "holdings.csv", snapshot, funds, demo=demo, embedded=True, allocation=allocation)
     valued = None
     if allocation and price_service is None:
         provider = StaticProvider(data_dir / 'demo_prices.json') if demo else YahooProvider(data_dir / '.cache' / 'yahoo')
         price_service = PriceService(provider, None if demo else data_dir / '.cache' / 'prices.json')
-    with overview:
-        if allocation:
-            macro_placeholder = st.container()
+    with exposure:
         if analysis_error:
             st.error(analysis_error)
         elif analysis_holdings.empty:
             empty_overview()
-            st.info("All positions have zero shares. Disable Ignore empty positions to include them." if not holdings.empty else
-                    "Add a position using Manage positions to start exploring your portfolio.")
+            if not holdings.empty:
+                st.info("All positions have zero shares. Disable Ignore empty positions to include them.")
         else:
             if ignore_empty:
                 st.caption("Ignoring empty positions · Targets shown here include their equally redistributed allocations. Saved targets are unchanged.")
-            valued = render_analysis(data_dir, analysis_holdings, classifications, funds, demo=demo, price_service=price_service)
-        if allocation:
-            # Render after a requested quote refresh, in the container above the
-            # detailed analysis, so both views use the same cached observations.
-            macro_valued = value_holdings(analysis_targets(holdings, allocation), price_service)
-            with macro_placeholder:
-                st.subheader('Strategic allocation')
-                st.dataframe(macro_table(macro_valued, allocation), hide_index=True, width='stretch')
-                st.caption('Parent rows include their descendants. Planned buckets retain their targets; unknown prices and targets are not zero.')
+            valued = render_analysis(data_dir, analysis_holdings, classifications, funds, demo=demo, price_service=price_service, refresh=refresh)
+    if allocation:
+        # Use the same refreshed observations, with all source positions and no
+        # exposure/label filters. Empty strategic buckets remain visible.
+        macro_valued = value_holdings(analysis_targets(holdings, allocation), price_service, refresh=refresh and valued is None)
+        with overview:
+            render_strategic_overview(macro_valued, allocation)
     with rebalance:
         if analysis_error:
             st.error(analysis_error)
@@ -128,15 +126,13 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             render_rebalancing(valued)
 
 
-def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service):
+def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False):
     names = taxonomy_names(classifications)
     dimensions = metadata_dimensions(holdings)
-    with st.sidebar:
-        st.header("Explore your allocation")
+    with st.expander("Exposure settings"):
         show_tickers = st.checkbox("Show tickers", value=False, key="display_tickers")
         performance_percent = st.radio("Performance display", ["%", "Amount"], horizontal=True, key="display_performance") == "%"
-        with st.expander("Market data"):
-            refresh = st.button("Refresh prices", disabled=demo)
+        with st.expander("ETF snapshots"):
             funds = render_snapshot_controls(funds, demo=demo)
         representation = st.radio("Portfolio representation", ["Instruments", "ETF look-through"])
         display_group = smh_group_control(holdings, funds)
@@ -206,10 +202,10 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     first.metric("Portfolio value", f"€{total:,.2f}")
     second.metric("Selected value", f"€{selected_total:,.2f}")
     third.metric("Awaiting a price", str(missing))
-    st.caption(f"{len(selected)} of {len(valued)} positions selected. {all_missing} unvalued across all positions. Percentages exclude unvalued positions.")
-    render_performance_summary(valued)
+    with st.expander("Performance"):
+        render_performance_summary(valued)
     if missing:
-        st.warning("Some selected positions could not be valued. Their values and weights remain blank; enable Show price details in the holdings table to see why.")
+        st.warning("Missing prices: allocation excludes unvalued positions. See Show price details for affected holdings.")
     if selected.empty:
         st.info("No holdings match the selected filters.")
         return valued
@@ -246,8 +242,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         return valued
     for measure in performance.measures():
         measure["asset_name"] = measure["asset_name"].map(display_name)
-    with st.sidebar:
-        st.header("Allocation view")
+    with st.expander("Chart settings"):
         options = [("holding", "Holding"), *[(f"metadata:{name}", name.replace("_", " ").title()) for name in dimensions],
                    *[(f"taxonomy:{name}", f"Taxonomy: {name}") for name in names]]
         label_option = [("selected_labels", "Selected labels")]
@@ -293,16 +288,16 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             if root_value <= 0 and targets is None:
                 st.info("The selected hierarchy root has no positive valued allocation.")
             else:
-                st.caption(f"Displayed root: €{root_value:,.2f}. Allocation percentages are relative to this root. Chart clicks explore the chart; use Hierarchy root to update both chart and table.")
+                st.caption("Allocation is relative to the selected category.")
                 if root_value > 0:
                     figure = bar_chart(nodes) if chart_type == "Bar" else pie_chart(nodes) if chart_type == "Pie" else hierarchy_chart(nodes, chart_type)
-                    st.plotly_chart(figure, width="stretch", height=figure.layout.height, theme=None, config={"responsive": True, "displaylogo": False})
+                    st.plotly_chart(figure, width="stretch", height=figure.layout.height, theme="streamlit", config={"responsive": True, "displaylogo": False})
                 else:
                     st.info("This selection has no current allocation. Its targets are shown below.")
                 show_paths = False
                 if view.startswith("taxonomy:"):
                     show_paths = st.checkbox("Show classification paths", help="The breadcrumb locating a category in the taxonomy, for example Technology › Semiconductors. This is not a file path.")
-                    st.caption("Indented rows show the hierarchy. Parent values include their children; these rows should not be added together.")
+                    st.caption("Parent rows include their descendants.")
                 total_label = f"{nodes.iloc[0]['label']} — total" if view.startswith("taxonomy:") else "Selected holdings — total"
                 allocation_total(total_label, root_value)
                 allocation = hierarchy_table(nodes, show_paths=show_paths)
@@ -327,7 +322,6 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                         performance_measures.append(aggregate_dimension(measure, "holding" if view == "holding" else view.removeprefix("metadata:")))
                 allocation = add_performance_column(allocation, nodes.loc[nodes["parent_id"] != "", "node_id"].tolist(),
                                                     performance_measures, key="node_id", percent=performance_percent)
-                label_performance_caption()
                 label_config = {}
                 if view == "holding" and names:
                     label_set = "labels" if "labels" in names else "sector" if "sector" in names else names[0]
@@ -345,7 +339,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         render_group_members(selected, display_group)
     if representation == "ETF look-through":
         st.subheader("Effective exposure")
-        st.caption("Direct and ETF-derived exposure share the selected portfolio denominator. Use the hierarchy root to explore constituent classifications. Unsupported ETFs remain instruments.")
+        st.caption("Direct + ETF exposure · % of selected portfolio")
         st.dataframe(effective_exposure_table(effective_exposures), hide_index=True, width="stretch", height="content", column_config={
             column: st.column_config.NumberColumn(format="€ %.2f")
             for column in ("Direct (EUR)", "ETF-derived (EUR)", "Total (EUR)")
@@ -355,7 +349,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                         classification_names=displayed_classifications)
     st.subheader("Holdings")
     if representation == "ETF look-through":
-        st.caption("Original instrument positions; allocation charts and the effective-exposure table above use ETF look-through.")
+        st.caption("Source positions · Before ETF look-through")
     table = selected.sort_values("portfolio_weight", ascending=False, kind="stable", na_position="last").copy()
     if 'within_bucket_target' in table:
         bucket_values = valued.groupby('bucket_id').current_value_eur.agg(lambda values: values.sum() if values.notna().all() else float('nan'))
@@ -371,7 +365,6 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     if "target_allocation" in table and table["target_allocation"].notna().any():
         table["target_allocation"] *= 100
         columns.insert(columns.index("portfolio_weight") + 1, "target_allocation")
-        st.caption("Target allocations are entered per position against the whole portfolio and stay unchanged when filtering. Missing targets remain blank.")
     if table["acquisition_price"].notna().any():
         table["Performance"] = table["return_pct" if performance_percent else "unrealized_gain"]
         performance_columns = ["Performance"]
@@ -404,7 +397,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         "performance_note": st.column_config.TextColumn("Performance details"),
     } | {f"classification:{name}": (badge_column("Labels", taxonomy_colors(classifications, name)) if name == "labels" else
                                     "AI theme" if name == "ai" else name.replace("_", " ").title()) for name in names} | performance_column_config(percent=performance_percent, grouped=False))
-    st.caption("Prices use the latest available daily unadjusted close, which may be delayed. Timestamps identify price bars; FX timestamps are separate. Performance uses your recorded average buy-in for the shares currently held.")
+    st.caption("Latest available daily close · Prices may be delayed")
     render_stock_exposure(valued, funds, data_dir)
     return valued
 

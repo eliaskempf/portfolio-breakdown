@@ -26,9 +26,9 @@ SUNBURST_PALETTE = ["#5470c6", "#9a6dd7", "#e5a04b", "#4aa9b3", "#d76e91", "#75a
 
 
 def style_figure(figure: go.Figure) -> go.Figure:
-    return figure.update_layout(colorway=PALETTE, paper_bgcolor="#ffffff", plot_bgcolor="#ffffff",
-                                font=dict(family="Inter, system-ui, sans-serif", color="#355348", size=12),
-                                hoverlabel=dict(bgcolor="#193e32", font_color="white"))
+    return figure.update_layout(colorway=PALETTE, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                font=dict(family="Inter, system-ui, sans-serif", size=12),
+                                hoverlabel=dict(bgcolor="#202632", font_color="white"))
 
 
 def hierarchy_chart(nodes: pd.DataFrame, chart_type: str) -> go.Figure:
@@ -38,12 +38,12 @@ def hierarchy_chart(nodes: pd.DataFrame, chart_type: str) -> go.Figure:
         values=nodes["value"], branchvalues="total", sort=False,
         customdata=nodes[["percentage"]].to_numpy(),
         hovertemplate="%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>",
-        marker=dict(line=dict(color="white", width=3)),
+        marker=dict(line=dict(color="rgba(127,127,127,0.25)", width=1)),
     )).update_layout(margin=dict(t=24, l=24, r=24, b=24), height=480, treemapcolorway=PALETTE))
     if chart_type == "Sunburst":
         text = ["<br>".join(escape(line) for line in wrap(label, width=18, max_lines=3, placeholder="…"))
                 for label in nodes["label"]]
-        figure.update_traces(text=text, textinfo="text", insidetextorientation="radial", root=dict(color="#f0f2f8"))
+        figure.update_traces(text=text, textinfo="text", insidetextorientation="radial", root=dict(color="rgba(127,127,127,0.12)"))
         figure.update_layout(height=640, sunburstcolorway=SUNBURST_PALETTE,
                              uniformtext=dict(minsize=11, mode="hide"))
     return figure
@@ -67,7 +67,7 @@ def pie_chart(nodes: pd.DataFrame) -> go.Figure:
     return style_figure(go.Figure(go.Pie(
         ids=leaves["node_id"], labels=labels, values=leaves["value"],
         customdata=leaves[["percentage"]].to_numpy(),
-        textinfo="percent", hole=.52, marker=dict(colors=PALETTE, line=dict(color="white", width=3)),
+        textinfo="percent", hole=.52, marker=dict(colors=PALETTE, line=dict(color="rgba(127,127,127,0.25)", width=1)),
         hovertemplate="%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>",
     )).update_layout(margin=dict(t=20, l=15, r=15, b=20), height=480, legend=dict(orientation="h", y=-.08)))
 

@@ -28,7 +28,6 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
     if message := st.session_state.pop("position_saved_notice", None):
         st.success(message)
     with (st.container() if embedded else st.expander("Manage positions", expanded=holdings.empty)):
-        st.caption("Add investments, update a holding, or record a batch of purchases.")
         action = st.radio("Position action", ["Add position", "Edit position", "Bulk add purchases", "Update balances", "Strategic allocation"], index=3 if allocation else 0, horizontal=True, key="position_edit_action")
         if action == 'Update balances':
             from portfolio_app.allocation_ui import render_balances
@@ -121,7 +120,7 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
                 for column in metadata_dimensions(holdings):
                     if column not in {"portfolio", "account", "bucket_id", "instrument_type", "exposure_kind"}:
                         extras[column] = st.text_input(column.replace("_", " ").title(), value=row.get(column, ""), key=prefix + "extra_" + column)
-                st.caption("Use Bulk add purchases to record savings-plan buys, or edit the total shares and average buy-in from your broker here. Buy-in is optional for allocation analysis.")
+                st.caption("Enter current total quantity and optional average buy-in.")
             submitted = st.form_submit_button("Save position", type="primary")
         if submitted:
             values = {
@@ -152,7 +151,6 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
                         del st.session_state[key]
                 st.session_state["position_saved_notice"] = f"Saved {name} ({asset_id}) to {path}."
                 st.rerun()
-        st.caption("Existing instruments reuse their classifications. New instruments appear as Unclassified until you add their asset ID to classifications.yaml.")
         with st.expander("Buy-in and savings-plan help"):
             st.caption(f"Local storage: {path}")
             st.markdown(

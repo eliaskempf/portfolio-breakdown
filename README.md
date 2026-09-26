@@ -101,8 +101,25 @@ as denominator, while position targets use their owning bucket. Global position
 targets multiply these fractions. Missing targets remain unknown. Only sibling
 allocations needed for a calculation must be complete and total 100%.
 
-The macro overview displays portfolio and parent percentages independently of
-analytical labels and ETF look-through. Ignore empty positions redistributes
+With strategic allocation enabled, **Overview** shows the source-position budget
+tree as a sunburst. Click a category to update the chart, allocation table, and
+positions together; use **Back** or **Category** to navigate. Current and target
+percentages use the selected category as denominator. Empty categories remain
+selectable and keep their targets without gaining artificial chart area. Missing
+prices leave full percentages blank and the chart shows only known value.
+
+**Exposure** contains the existing sector/label and ETF look-through analysis.
+Its filters do not change strategic ownership or the whole-portfolio overview.
+**Manage positions → Strategic allocation → Assign positions in bulk** offers
+**Select all**, a destination bucket, and an assignment button. Assignments keep
+quantities, buy-ins, classification labels, and within-bucket target percentages;
+review the destination's target total after moving positions.
+
+Use the top-right menu's **Light**, **Dark**, or **System** option for appearance.
+The browser remembers the choice. Charts, tables, editors and search use the same
+theme.
+
+Ignore empty positions redistributes
 position targets within each bucket only. An empty bucket retains its strategic
 target and appears as planned capacity. Saved targets do not change.
 
@@ -347,10 +364,11 @@ already present, select it under **Existing instrument** to reuse its identity
 and classifications in another account or sleeve. New instruments without
 classification metadata appear as `Unclassified`.
 
-The main tabs separate **Overview** from **Manage positions**. Overview provides
-value cards, allocation charts, and a compact holdings table. Open **Filter
-positions** or **Market data** in the sidebar for their controls. **Show price
-details** exposes quote timestamps, FX status, and valuation notes when needed.
+The main tabs separate analysis, rebalancing and position maintenance.
+**Exposure settings** contains position filters, representation and ETF snapshots;
+**Chart settings** contains grouping and hierarchy controls. Before strategic
+allocation is enabled, these analysis controls remain in **Overview**.
+**Show price details** exposes quote timestamps, FX status and valuation notes.
 
 For a new instrument, type a company name, ETF theme, ticker, or ISIN in **Find
 an investment**. Suggestions update after a 400 ms typing pause; Enter searches
@@ -500,14 +518,14 @@ purchase-input batches; it does not account for sales, tax lots, or realized gai
 
 ## Current performance
 
-Overview shows **Performance since buy-in**, including unrealized gain/loss,
+The **Performance** panel in the analysis view shows unrealized gain/loss,
 return on cost, and cost basis. The EUR summary uses only held positions with
 explicit EUR buy-ins and available EUR valuations, and reports its coverage.
 The return is total gain divided by total cost for those same positions, not
 an average of position returns. It always covers the whole portfolio; filters
 narrow only the holdings table.
 
-The sidebar’s **Performance display** switches the shared performance column
+**Exposure settings → Performance display** switches the shared performance column
 between **%** and **Amount** in holdings, label comparisons, label drill-downs,
 and hierarchy/allocation tables. Holdings use each position’s recorded buy-in
 currency; grouped amounts are EUR. The holdings table also shows cost basis. Cost basis is shares times average buy-in; unrealized
@@ -621,7 +639,7 @@ by Git. Cache read/write problems are reported without stopping valuation.
   compare `Compute` with `AI Infrastructure`. Flat bars show the terminal
   buckets at the chosen depth, including any shorter paths. Pies use the same
   depth and root selection.
-- Chart clicks navigate within the chart. The sidebar root control updates
+- Exposure chart clicks navigate within the chart. The root control updates
   both chart and table. Parent rows in the hierarchical table already include
   their children; do not sum every table row as though they were disjoint.
 - The displayed root total stays above the sortable allocation rows. Enable
@@ -682,7 +700,7 @@ unexpanded instruments.
 
 ### Combine the ETF with direct stocks
 
-Enable **Group SMH with related stocks** in the sidebar to show the held UCITS
+Enable **Group SMH with related stocks** in Exposure settings to show the held UCITS
 ETF and selected direct stocks as one **SMH + related stocks** allocation.
 **Stocks in the SMH group** starts with Nvidia and TSMC when held and present
 in the local snapshot; you can select other matching constituents or remove
@@ -708,7 +726,7 @@ entire ETF. For partial snapshots, the remainder is explicitly retained as
 
 ### Recency and updates
 
-The sidebar displays the snapshot date and calendar-day age on every rerun.
+**Exposure settings → ETF snapshots** displays the snapshot date and age.
 Snapshots **older than seven days** are flagged. Click **Update from VanEck** to
 download the provider's latest XLSX and refresh the snapshot. This control is
 separate from price refresh and is disabled in offline demo mode. There is no

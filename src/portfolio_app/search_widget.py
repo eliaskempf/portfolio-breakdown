@@ -14,19 +14,19 @@ HTML = """
 </section>
 """
 CSS = """
-:host{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#172b32}*{box-sizing:border-box}
-section{padding:4px 0 12px}label{display:block;font-size:18px;font-weight:650;letter-spacing:-.4px;margin-bottom:12px}
-.input-wrap{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #cbd7d7;border-radius:12px;padding:4px 16px;box-shadow:0 3px 12px #183d3d06}
-.input-wrap:focus-within{border-color:#187c72;box-shadow:0 0 0 3px #187c721a}.input-wrap>span{font-size:30px;color:#52736f}
-input{min-width:0;width:100%;border:0;outline:0;background:transparent;color:#172b32;padding:13px 0;font:inherit;font-size:16px}input::placeholder{color:#7b8e93}kbd{color:#7b8e93;font-size:14px}
-#status{font-size:12px;color:#647b81;min-height:18px;margin:10px 0}.suggestions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-button{font:inherit;cursor:pointer}.suggestions button{border:1px solid #dfe7e6;border-radius:20px;background:#f5f9f8;color:#3d6560;padding:6px 13px;font-size:12px}
-.results{display:grid;gap:10px;max-height:430px;overflow-y:auto;padding:2px}.result{border:1px solid #dfe7e6;background:#fff;border-radius:12px;padding:16px}
-.head{display:flex;gap:12px;align-items:flex-start}.monogram{background:#edf5f2;color:#2d7268;border-radius:10px;min-width:40px;height:40px;display:grid;place-items:center;font-weight:700;font-size:13px}
-h3{font-size:14px;line-height:1.45;font-weight:650;margin:0 0 5px}.meta{color:#698087;font-size:11px;display:flex;flex-wrap:wrap;gap:8px}.badge{background:#e6f2ed;color:#256f5d;padding:1px 6px;border-radius:4px;font-weight:600}
-.listings{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.listing{border:1px solid #d3e2dd;background:#fafcfb;color:#284f47;border-radius:8px;padding:8px 10px;text-align:left;font-size:12px}
-.listing strong{letter-spacing:.3px}.listing span{color:#617a73;padding-left:7px;font-size:11px}.listing:hover,.listing:focus-visible{background:#eaf4ef;border-color:#187c72;outline:2px solid #187c7240;outline-offset:1px}
-.listing.selected{background:#e2f0e9;border-color:#187c72}@media(max-width:600px){.result{padding:12px}.listing{width:100%}.input-wrap{padding:2px 10px}}
+:host{font-family:var(--st-font,system-ui,sans-serif);color:var(--st-text-color)}*{box-sizing:border-box}
+section{padding:4px 0 12px}label{display:block;font-size:16px;font-weight:600;margin-bottom:10px}
+.input-wrap{display:flex;align-items:center;gap:12px;background:var(--st-secondary-background-color);border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:5px;padding:4px 12px}
+.input-wrap:focus-within{outline:2px solid var(--st-primary-color);outline-offset:1px}.input-wrap>span{font-size:24px;opacity:.65}
+input{min-width:0;width:100%;border:0;outline:0;background:transparent;color:inherit;padding:10px 0;font:inherit}input::placeholder{color:inherit;opacity:.5}kbd{opacity:.6;font-size:12px}
+#status{font-size:12px;opacity:.7;min-height:18px;margin:8px 0}.suggestions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+button{font:inherit;cursor:pointer;color:inherit}.suggestions button{border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:4px;background:transparent;padding:5px 10px;font-size:12px}
+.results{display:grid;gap:8px;max-height:430px;overflow-y:auto;padding:2px}.result{border:1px solid color-mix(in srgb,currentColor 20%,transparent);background:var(--st-background-color);border-radius:5px;padding:14px}
+.head{display:flex;gap:10px;align-items:flex-start}.monogram{background:var(--st-secondary-background-color);border-radius:4px;min-width:34px;height:34px;display:grid;place-items:center;font-weight:600;font-size:12px}
+h3{font-size:14px;line-height:1.45;font-weight:600;margin:0 0 5px}.meta{opacity:.7;font-size:11px;display:flex;flex-wrap:wrap;gap:8px}.badge{background:var(--st-secondary-background-color);padding:1px 6px;border-radius:3px;font-weight:600}
+.listings{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.listing{border:1px solid color-mix(in srgb,currentColor 20%,transparent);background:var(--st-secondary-background-color);border-radius:4px;padding:8px 10px;text-align:left;font-size:12px}
+.listing span{opacity:.7;padding-left:7px;font-size:11px}.listing:hover,.listing:focus-visible{border-color:var(--st-primary-color);outline:2px solid var(--st-primary-color);outline-offset:1px}
+.listing.selected{border-color:var(--st-primary-color)}@media(max-width:600px){.result{padding:12px}.listing{width:100%}.input-wrap{padding:2px 10px}}
 """
 JS = """
 export default function(component) {

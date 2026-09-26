@@ -107,6 +107,7 @@ def render_allocation_editor(path: Path, snapshot, config):
             st.error(str(exc))
         else:
             st.rerun()
+    render_bulk_bucket_assignment(path, snapshot, config, stamp)
     positions = snapshot.holdings.copy()
     positions['bucket_id'] = positions.get('bucket_id', '')
     positions['within_bucket_target'] = positions.get('within_bucket_target', float('nan')) * 100
@@ -129,6 +130,36 @@ def render_allocation_editor(path: Path, snapshot, config):
             st.error(str(exc))
         else:
             st.rerun()
+
+
+def render_bulk_bucket_assignment(path, snapshot, config, stamp):
+    if snapshot.holdings.empty or not config.leaves():
+        return
+    with st.expander('Assign positions in bulk'):
+        labels = {r.position_id: f'{r["name"]} · {r.account}' if r.account else r['name']
+                  for _, r in snapshot.holdings.iterrows()}
+        key = f'bulk_bucket_positions_{path}_{snapshot.revision}'
+        all_button, clear_button, _ = st.columns([1, 1, 3])
+        all_button.button('Select all', on_click=lambda: st.session_state.update({key: list(labels)}))
+        clear_button.button('Clear selection', on_click=lambda: st.session_state.update({key: []}))
+        selected = st.multiselect('Positions to assign', list(labels), format_func=labels.get, key=key)
+        names = {b.id: b.name for b in config.buckets}
+        destination = st.selectbox('Destination bucket', sorted(config.leaves()),
+                                   format_func=lambda value: f'{names[value]} ({value})',
+                                   help='Only the bucket changes. Quantities, costs, labels and within-bucket target percentages stay unchanged.')
+        if st.button(f'Assign {len(selected)} positions', disabled=not selected, type='primary'):
+            try:
+                if revision(path.parent / 'allocation.yaml') != stamp:
+                    raise DataError('Bucket settings changed. Reload before assigning positions.')
+                candidate = snapshot.holdings.copy()
+                candidate.loc[candidate.position_id.isin(selected), 'bucket_id'] = destination
+                validate_allocation(config, candidate)
+                patch_holdings(path, {key: {'bucket_id': destination} for key in selected},
+                               expected_revision=snapshot.revision)
+            except (DataError, OSError) as exc:
+                st.error(str(exc))
+            else:
+                st.rerun()
 
 
 def _target_summary(positions):

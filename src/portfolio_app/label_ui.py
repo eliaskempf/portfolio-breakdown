@@ -11,7 +11,7 @@ from portfolio_app.label_comparison import (
 )
 from portfolio_app.presentation import allocation_total
 from portfolio_app.performance_allocation import PerformanceExposures, add_performance_column
-from portfolio_app.performance_ui import performance_column_config, label_performance_caption
+from portfolio_app.performance_ui import performance_column_config
 from portfolio_app.label_presentation import asset_badges, badge_column, color_label_chart, taxonomy_colors
 from portfolio_app.taxonomy import Classifications, UNCLASSIFIED, taxonomy_names
 from portfolio_app.targets import TargetExposures, add_target_columns, target_totals
@@ -26,7 +26,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
     if not names:
         st.info("Add classification labels to your investments to compare their allocation.")
         return
-    with st.sidebar:
+    with st.expander("Labels"):
         taxonomy = "labels" if "labels" in names else st.selectbox("Label set", names, key="label_compare_set")
         choices = available_labels(classifications, taxonomy)
         by_key = {label.key: label for label in choices}
@@ -48,7 +48,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             target_memberships = label_memberships(measure, classifications, labels)
             has_overlap |= any(row.value > 0 and len(target_memberships[row.asset_id]) > 1 for row in measure.itertuples())
     policy = "split"  # With disjoint labels, both policies give the same result.
-    with st.sidebar:
+    with st.container():
         if has_overlap:
             choice = st.radio("Assets matching multiple labels", ["Split equally", "Count in each label"], index=None,
                               key="label_compare_overlap",
@@ -62,8 +62,6 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                                   key=f"label_compare_chart_{policy}")
     comparison = compare_labels(exposures, classifications, labels, overlap=policy)
     performance_comparisons = [compare_labels(measure, classifications, labels, overlap=policy) for measure in performance.measures()] if performance else None
-    if performance is not None:
-        label_performance_caption()
     target_comparisons = None
     if targets is not None:
         target_comparisons = [compare_labels(measure, classifications, labels, overlap=policy)
@@ -73,14 +71,11 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         st.info("No positive valued assets match these labels in the current portfolio selection.")
     else:
         coverage = comparison.matched_value / comparison.portfolio_value
-        st.caption(f"These labels cover €{comparison.matched_value:,.2f} ({coverage:.1%}) of the filtered portfolio. "
-                   f"€{comparison.unmatched_value:,.2f} falls outside them. Unvalued assets are excluded.")
+        st.caption(f"Coverage: {coverage:.1%} of selected portfolio · €{comparison.unmatched_value:,.2f} falls outside these labels.")
         if has_overlap:
             st.caption(f"€{comparison.overlapping_value:,.2f} matches multiple selected labels. " +
                        ("Its value is split equally between those labels." if policy == "split" else
                         "Each matching label includes its full value. Label percentages can exceed 100% in total; bars show this overlap."))
-        else:
-            st.caption("Each selected label aggregates all matching assets, including their ETF exposure in look-through mode.")
         roots = sorted({path[:length] for path in comparison.allocations["path"] for length in range(1, len(path) + 1)})
         detail_key = "label_compare_detail_" + sha256(repr(roots).encode()).hexdigest()[:16]
         root = st.selectbox("Detail view", [(), *roots],
@@ -103,14 +98,12 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             figure.update_traces(maxdepth=3,
                                  hovertemplate="%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of " +
                                  ("detail total" if root else "selected labels") + "<extra></extra>")
-            st.caption("Click a category to open its subcategories and assets. Click the centre (sunburst) or breadcrumb (treemap) to go back. "
-                       "Chart zoom keeps the table unchanged; use Detail view to inspect a branch’s asset table.")
         else:
             figure = bar_chart(nodes) if chart_type == "Bar" else pie_chart(nodes)
         color_label_chart(figure, tree if chart_type in {"Sunburst", "Treemap"} else nodes, colors,
                           detail_color=colors[by_key[root[0]].title] if root else None)
         if float(tree.iloc[0]["value"]) > 0:
-            st.plotly_chart(figure, width="stretch", height=figure.layout.height, theme=None,
+            st.plotly_chart(figure, width="stretch", height=figure.layout.height, theme="streamlit",
                             config={"responsive": True, "displaylogo": False})
         else:
             st.info("This branch has no current allocation. Its targets are shown below.")

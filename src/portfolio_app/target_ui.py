@@ -14,8 +14,5 @@ def target_column_config() -> dict:
 
 
 def target_caption(*, valuation_complete: bool) -> None:
-    st.caption("Targets sum the selected positions’ saved targets, using the same label splits, ETF weights and display groups. "
-               "Targets and gaps use the whole portfolio, without renormalizing after filters. "
-               "Incomplete targets show their known subtotal and no gap; set missing position targets to complete them.")
     if not valuation_complete:
-        st.caption("Some portfolio prices are missing. Targets remain available; whole-portfolio current percentages and gaps are blank until valuation is complete.")
+        st.caption("Missing prices: whole-portfolio current percentages and gaps are unavailable.")
