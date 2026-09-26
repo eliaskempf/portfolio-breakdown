@@ -49,6 +49,7 @@ def render_balances(path, snapshot):
 
 
 def _bucket_editor(config, key):
+    st.caption('Keyboard: Enter edits a cell or toggles sell protection; Tab / Shift+Tab move forward / back; Escape cancels. The editor stays attached to its cell while scrolling.')
     frame = pd.DataFrame([{'ID': b.id, 'Name': b.name, 'Parent ID': b.parent,
                            'Target (% of parent)': None if b.target is None else 100 * b.target,
                            'Protect from selling': b.sell_protected} for b in config.buckets],

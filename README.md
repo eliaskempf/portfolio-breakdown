@@ -751,6 +751,15 @@ uv run pytest
 uv run portfolio-app --demo --server.headless=true
 ```
 
+Table editors stay attached to their cells while scrolling. While editing,
+Tab saves and opens the next editable field; Shift+Tab moves back. Escape cancels
+the current edit. Enter edits a selected cell or toggles a selected checkbox.
+
+Optional browser regressions exercise these interactions in an isolated,
+synthetic Streamlit app. Install Chromium with
+`uv run --with playwright playwright install chromium`, then run
+`uv run --with playwright pytest tests/test_grid_browser.py`.
+
 Tests use generated synthetic fixtures, injected prices, FX, search responses,
 and clocks, with no live network required.
 They cover valuation, persistent cache fallback, parent/child conservation,

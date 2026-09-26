@@ -4,6 +4,8 @@ from html import escape
 
 import streamlit as st
 
+from portfolio_app.grid_interactions import install_grid_interactions
+
 CSS = """
 <style>
 .stApp {background:#f5f7f5;color:#1a3034;font-family:Inter,ui-sans-serif,system-ui,sans-serif;}
@@ -47,6 +49,7 @@ button[kind="primary"],button[kind="primaryFormSubmit"] {background:#276c50!impo
 
 def apply_style() -> None:
     st.html(CSS)
+    install_grid_interactions()
     st.sidebar.html('<div class="brand"><span class="brand-icon">◈</span> Portfolio</div>')
 
 
