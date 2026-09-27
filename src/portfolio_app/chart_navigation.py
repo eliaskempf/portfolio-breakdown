@@ -3,40 +3,64 @@
 import streamlit as st
 
 JS = """
-export default function({data, setTriggerValue}) {
+export default function({parentElement, data, setTriggerValue}) {
+  parentElement.disposeChartNavigation?.();
+  const owners = window.__portfolioChartNavigation ??= new Map();
+  owners.get(data.controlKey)?.();
   let plot;
   const clicked = event => {
-    const node = event.nextLevel ?? event.points?.[0]?.id;
-    if (Object.hasOwn(data.categories, node)) {
-      setTriggerValue('category', {id: data.categories[node]});
+    const point = event.points?.[0]?.id;
+    if (Object.hasOwn(data.positions, point)) {
+      setTriggerValue('position', {id: data.positions[point]});
+      return false;
     }
+    // The server maps the current center to its parent. Plotly's nextLevel
+    // describes its own zoom state, which we suppress in favour of app scope.
+    const node = point ?? event.nextLevel;
+    if (Object.hasOwn(data.categories, node)) {
+      setTriggerValue('category', {node});
+      return false;
+    }
+    return false;
   };
   const attach = () => {
     const candidate = document.querySelector('.st-key-' + CSS.escape(data.chartKey) + ' .js-plotly-plot');
-    if (candidate === plot || !candidate?.on) return;
-    plot?.removeListener('plotly_sunburstclick', clicked);
+    if (!candidate?.on) return;
+    if (candidate !== plot) plot?.removeListener?.(data.eventName, clicked);
     plot = candidate;
-    plot.on('plotly_sunburstclick', clicked);
+    // Plotly can reset its emitter while reusing the same DOM node. Rebind
+    // our own handler after DOM updates instead of assuming it survived.
+    plot.removeListener?.(data.eventName, clicked);
+    plot.on(data.eventName, clicked);
   };
   const observer = new MutationObserver(attach);
   observer.observe(document.body, {childList: true, subtree: true});
   attach();
-  return () => {
+  const dispose = () => {
     observer.disconnect();
-    plot?.removeListener('plotly_sunburstclick', clicked);
+    plot?.removeListener?.(data.eventName, clicked);
+    if (owners.get(data.controlKey) === dispose) owners.delete(data.controlKey);
   };
+  parentElement.disposeChartNavigation = dispose;
+  owners.set(data.controlKey, dispose);
+  return dispose;
 }
 """
 
 
-def sync_chart_category(chart_key: str, categories: dict[str, str], control_key: str) -> None:
+def sync_chart_category(chart_key: str, categories: dict, control_key: str, *, positions=None, open_position=None, event_name='plotly_sunburstclick') -> None:
     component = st.components.v2.component("strategic_chart_navigation", js=JS)
     bridge_key = f"strategic_navigation_{control_key}"
 
     def navigate():
         event = st.session_state.get(bridge_key, {}).get("category")
-        if event and event.get("id") in categories.values():
-            st.session_state[control_key] = event["id"]
+        if event and event.get('node') in categories:
+            st.session_state[control_key] = categories[event['node']]
 
-    component(key=bridge_key, data={"chartKey": chart_key, "categories": categories},
-              on_category_change=navigate)
+    def show_position():
+        event = st.session_state.get(bridge_key, {}).get('position')
+        if open_position and event and event.get('id') in (positions or {}).values():
+            open_position(event['id'])
+
+    component(key=bridge_key, data={"chartKey": chart_key, 'controlKey': control_key, "categories": categories, 'positions': positions or {}, 'eventName': event_name},
+              on_category_change=navigate, on_position_change=show_position)

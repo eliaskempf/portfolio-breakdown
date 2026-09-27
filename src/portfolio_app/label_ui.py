@@ -1,11 +1,13 @@
 """A direct comparison of selected labels, alongside the advanced tree views."""
 
 from hashlib import sha256
+import json
 
 import pandas as pd
 import streamlit as st
 
 from portfolio_app.charts import bar_chart, hierarchy_chart, pie_chart, sort_allocation_nodes
+from portfolio_app.chart_navigation import sync_chart_category
 from portfolio_app.label_comparison import (
     available_labels, compare_labels, comparison_assets, comparison_tree, immediate_children, label_memberships,
 )
@@ -13,7 +15,7 @@ from portfolio_app.presentation import allocation_total
 from portfolio_app.performance_allocation import PerformanceExposures, add_performance_column
 from portfolio_app.performance_ui import performance_column_config
 from portfolio_app.label_presentation import asset_badges, badge_column, color_label_chart, taxonomy_colors
-from portfolio_app.taxonomy import Classifications, UNCLASSIFIED, taxonomy_names
+from portfolio_app.taxonomy import Classifications, UNCLASSIFIED, paths_for, taxonomy_names
 from portfolio_app.targets import TargetExposures, add_target_columns, target_totals
 from portfolio_app.target_ui import target_caption, target_column_config
 
@@ -21,16 +23,21 @@ from portfolio_app.target_ui import target_caption, target_column_config
 def render_label_comparison(exposures: pd.DataFrame, classifications: Classifications, *,
                             targets: TargetExposures | None = None, portfolio_value: float = 0., valuation_complete: bool = True,
                             performance: PerformanceExposures | None = None, performance_percent: bool = True) -> None:
-    st.subheader("Allocation across labels")
+    st.subheader("Themes & sectors")
+    choose, navigation, options = st.columns([1.2, 3, 1.2], vertical_alignment='bottom')
+    controls = options.popover('Chart options')
+    with st.container(key="exposure_theme_results"):
+        chart_area, table_area = st.columns([1, 1.3], gap="large", vertical_alignment="center")
     names = taxonomy_names(classifications)
     if not names:
         st.info("Add classification labels to your investments to compare their allocation.")
         return
-    with st.expander("Labels"):
+    with choose.popover("Choose labels"):
         taxonomy = "labels" if "labels" in names else st.selectbox("Label set", names, key="label_compare_set")
         choices = available_labels(classifications, taxonomy)
         by_key = {label.key: label for label in choices}
-        defaults = [label.key for label in choices if len(label.path) == 1 and label.path != UNCLASSIFIED]
+        unclassified = any(paths_for(classifications, asset, taxonomy) == (UNCLASSIFIED,) for asset in exposures.asset_id.unique())
+        defaults = [label.key for label in choices if len(label.path) == 1 and (label.path != UNCLASSIFIED or unclassified)]
         signature = sha256(repr(list(by_key)).encode()).hexdigest()[:16]
         selected = st.multiselect("Labels to compare", list(by_key), default=defaults,
                                   format_func=lambda key: by_key[key].title,
@@ -48,7 +55,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             target_memberships = label_memberships(measure, classifications, labels)
             has_overlap |= any(row.value > 0 and len(target_memberships[row.asset_id]) > 1 for row in measure.itertuples())
     policy = "split"  # With disjoint labels, both policies give the same result.
-    with st.container():
+    with controls:
         if has_overlap:
             choice = st.radio("Assets matching multiple labels", ["Split equally", "Count in each label"], index=None,
                               key="label_compare_overlap",
@@ -61,6 +68,8 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         chart_type = st.selectbox("Chart", chart_types, index=chart_types.index("Sunburst") if "Sunburst" in chart_types else 0,
                                   key=f"label_compare_chart_{policy}")
     comparison = compare_labels(exposures, classifications, labels, overlap=policy)
+    if comparison.unmatched_value:
+        st.caption(f'Outside selected labels: €{comparison.unmatched_value:,.2f} · These assets remain in the Assets view.')
     performance_comparisons = [compare_labels(measure, classifications, labels, overlap=policy) for measure in performance.measures()] if performance else None
     target_comparisons = None
     if targets is not None:
@@ -77,14 +86,16 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                        ("Its value is split equally between those labels." if policy == "split" else
                         "Each matching label includes its full value. Label percentages can exceed 100% in total; bars show this overlap."))
         roots = sorted({path[:length] for path in comparison.allocations["path"] for length in range(1, len(path) + 1)})
-        detail_key = "label_compare_detail_" + sha256(repr(roots).encode()).hexdigest()[:16]
-        root = st.selectbox("Detail view", [(), *roots],
+        detail_key = f'label_compare_detail_{taxonomy}'
+        if st.session_state.get(detail_key, ()) not in [(), *roots]:
+            st.session_state[detail_key] = ()
+        root = navigation.selectbox("Detail view", [(), *roots],
                             format_func=lambda path: "All selected labels" if not path else " › ".join((by_key[path[0]].title, *path[1:])),
                             key=detail_key,
                             help="Choose a label or subcategory to update both the chart and its individual-assets table.")
         if root:
-            st.button("Back to overview", on_click=lambda: st.session_state.update({detail_key: ()}))
-        assets_only = (st.checkbox("Show individual assets directly", key="label_compare_assets_only")
+            navigation.button("Back to overview", on_click=lambda: st.session_state.update({detail_key: ()}))
+        assets_only = (controls.checkbox("Show individual assets directly", key="label_compare_assets_only")
                        if root or chart_type in {"Sunburst", "Treemap"} else False)
         tree = sort_allocation_nodes(comparison_tree(comparison, labels, root=root, assets_only=assets_only))
         if root:
@@ -103,8 +114,14 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         color_label_chart(figure, tree if chart_type in {"Sunburst", "Treemap"} else nodes, colors,
                           detail_color=colors[by_key[root[0]].title] if root else None)
         if float(tree.iloc[0]["value"]) > 0:
-            st.plotly_chart(figure, width="stretch", height=figure.layout.height, theme="streamlit",
-                            config={"responsive": True, "displaylogo": False})
+            figure.update_layout(height=400, uniformtext=None, margin=dict(t=12, b=12, l=12, r=12))
+            chart_key = f'exposure_label_chart_{detail_key}_{sha256(repr(root).encode()).hexdigest()[:10]}'
+            with chart_area:
+                st.plotly_chart(figure, width='stretch', key=chart_key, config={'displayModeBar': False})
+                if chart_type in {'Sunburst', 'Treemap'}:
+                    categories = {row.node_id: tuple(json.loads(row.node_id)[1]) for row in tree.itertuples() if row.kind == 'category'}
+                    categories[tree.iloc[0].node_id] = root[:-1] if root else ()
+                    sync_chart_category(chart_key, categories, detail_key, event_name=f'plotly_{chart_type.lower()}click')
         else:
             st.info("This branch has no current allocation. Its targets are shown below.")
         if root:
@@ -127,7 +144,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                                        for item in performance_comparisons]
                 assets = add_performance_column(assets, assets.asset_id.tolist(), performance_details, key="asset_id", percent=performance_percent)
             assets["Labels"] = assets.pop("asset_id").map(lambda asset: asset_badges(classifications, asset, taxonomy))
-            st.dataframe(assets, hide_index=True, height="content", width="stretch", column_config={
+            table_area.dataframe(assets, column_order=['Investment', 'EUR value', 'Allocation %', 'Labels'], hide_index=True, height="content", width="stretch", column_config={
                 "Labels": badge_column("Labels", colors),
                 "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
                 "Allocation %": st.column_config.NumberColumn("Within this detail (%)", format="%.2f %%"),
@@ -143,11 +160,11 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         table = add_performance_column(table, table.Label.tolist(), [item.table for item in performance_comparisons],
                                        key="Label", value="EUR value", percent=performance_percent)
     table["Label"] = table["Label"].map(lambda label: [label])
-    st.dataframe(table, hide_index=True, height="content", width="stretch", column_config={
+    table_area.dataframe(table, column_order=['Label', 'EUR value', 'Portfolio %', 'Selected labels %'], hide_index=True, height="content", width="stretch", column_config={
         "Label": badge_column("Label", colors),
         "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
-        "Selected labels %": st.column_config.NumberColumn("Within selected labels (%)", format="%.2f %%",
+        "Selected labels %": st.column_config.NumberColumn("% of labels", format="%.2f %%",
                                                            help="Share of the unique value matching any selected label."),
-        "Portfolio %": st.column_config.NumberColumn("Of filtered portfolio (%)", format="%.2f %%"),
+        "Portfolio %": st.column_config.NumberColumn("% of scope", format="%.2f %%"),
         "Assets": st.column_config.NumberColumn(help="Unique matching assets; direct and ETF-derived exposure to the same asset count once."),
     } | target_column_config() | performance_column_config(percent=performance_percent))

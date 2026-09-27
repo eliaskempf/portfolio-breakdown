@@ -5,10 +5,10 @@ from portfolio_app.stock_exposure import load_company_identities, stock_exposure
 
 
 def render_stock_exposure(valued, funds, data_dir):
-    if not st.checkbox('Show stock-only company exposure'):
+    if not st.checkbox('Show stock-only company exposure', key='exposure_stock_enabled'):
         return
     buckets = sorted(set(valued.get('bucket_id', [])) - {''})
-    excluded = st.multiselect('Exclude source buckets from stock exposure', buckets)
+    excluded = st.multiselect('Exclude source buckets from stock exposure', buckets, key='exposure_stock_excluded')
     st.caption('Exclusions apply to source positions before looking through funds. Companies held through included funds remain visible regardless of their theme labels.')
     try:
         result = stock_exposure(valued, funds, excluded_buckets=excluded,
@@ -16,11 +16,11 @@ def render_stock_exposure(valued, funds, data_dir):
     except DataError as exc:
         st.error(str(exc))
         return
-    st.dataframe(result.companies, hide_index=True, width='stretch', column_config={'Company ID': None})
+    st.dataframe(result.companies, hide_index=True, width='stretch', column_config={'Company ID': None, 'Whole-portfolio %': '% of selected portfolio'})
     if result.stock_value is None:
         st.info('The selected stock-universe total is unknown because some values or composition are unresolved. Its percentages are blank; unknown exposure is not zero.')
     else:
-        st.caption(f'Selected stock universe: €{result.stock_value:,.2f}, including unresolved equity residuals. Whole-portfolio percentages retain the full loaded portfolio denominator.')
+        st.caption(f'Selected stock universe: €{result.stock_value:,.2f}, including unresolved equity residuals. Portfolio percentages use the selected source scope before these additional exclusions.')
     if not result.unresolved.empty:
         st.subheader('Unresolved exposure and fund residuals')
         st.dataframe(result.unresolved, hide_index=True, width='stretch')

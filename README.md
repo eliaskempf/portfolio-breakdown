@@ -17,7 +17,7 @@ uv run portfolio-app
 `uv` manages Python 3.12 and the project environment. Open the local URL printed
 by Streamlit. The default launch uses live market data and your private local
 data directory, `data/portfolio/`. A fresh portfolio starts empty; create positions
-under **Manage positions**. They remain saved when you stop and restart the app.
+under **Positions**. They remain saved when you stop and restart the app.
 
 The sidebar's **Portfolio workspace** switch opens **My portfolio** or the
 editable **Demo portfolio**. Switching clears position forms and filters so an
@@ -88,7 +88,7 @@ back it up separately if needed.
 
 ## Strategic allocation and balance maintenance
 
-Open **Manage positions → Strategic allocation** to preview enabling the
+Open **Rebalance → Targets** to preview enabling the
 versioned bucket model. Review source-position assignments and within-bucket
 targets before saving. Existing whole-portfolio target cells remain preserved;
 no global percentages are automatically chosen. The migration adds persistent
@@ -110,7 +110,7 @@ prices leave full percentages blank and the chart shows only known value.
 
 **Exposure** contains the existing sector/label and ETF look-through analysis.
 Its filters do not change strategic ownership or the whole-portfolio overview.
-**Manage positions → Strategic allocation → Assign positions in bulk** offers
+**Rebalance → Targets → Assign positions in bulk** offers
 **Select all**, a destination bucket, and an assignment button. Assignments keep
 quantities, buy-ins, classification labels, and within-bucket target percentages;
 review the destination's target total after moving positions.
@@ -119,7 +119,7 @@ Use the top-right menu's **Light**, **Dark**, or **System** option for appearanc
 The browser remembers the choice. Charts, tables, editors and search use the same
 theme.
 
-Ignore empty positions redistributes
+The Rebalance option **Exclude empty positions and redistribute their planning targets** redistributes
 position targets within each bucket only. An empty bucket retains its strategic
 target and appears as planned capacity. Saved targets do not change.
 
@@ -133,7 +133,7 @@ not require unrelated buckets' position targets. Protecting a bucket from sellin
 also protects its descendants while allowing contributions. Temporary caps state
 whether their denominator is the whole portfolio or the selected bucket.
 
-**Manage positions → Update balances** replaces several quantities and optional
+**Positions → Update balances** replaces several quantities and optional
 buy-ins in one atomic save. Choose **Average per unit** or **Total buy-in** above
 the table. Confirm quantities separately from
 market-price timestamps. The operation preserves targets and classifications;
@@ -220,13 +220,14 @@ investment. Its current value is zero without requiring a quote, and its target
 contributes to its labels immediately. Add classification labels for new assets
 in the private YAML file; otherwise they appear under Unclassified.
 
-The sidebar’s **Ignore empty positions** hides zero-share rows from analysis
-and the rebalancing calculator. Their combined target is divided equally among
+The sidebar’s **Hide empty positions** changes only visibility in Positions and Exposure.
+The separate Rebalance option **Exclude empty positions and redistribute their planning targets**
+removes zero-share rows from the planning calculation. Their combined target is divided equally among
 remaining unique asset IDs, then equally among each asset’s held account rows.
 This is an equal percentage-point increment, not a proportional scaling. For
 example, removing an invented 20% planned target adds 10 pp to each of two
 remaining assets. Saved positions and targets remain unchanged and editable in
-**Manage positions**. Switching the option resets position filters. Redistribution
+**Positions**. Visibility never changes targets. Redistribution
 requires complete targets if any targets have been entered; it never treats an
 unknown target as zero. With no targets, the option simply hides empty positions.
 
@@ -313,7 +314,7 @@ Rebalancing uses whole-portfolio position targets totaling 100%, complete EUR
 valuations, and final weights including the contribution. Overview filters,
 label selections and ETF display groups do not alter the tradable positions.
 **No new positions** forbids buying zero-share account rows while retaining
-their targets; **Ignore empty positions** instead removes and redistributes
+their targets; **Exclude empty positions and redistribute their planning targets** instead removes and redistributes
 them before calculation. Infeasible restrictions produce an explanation.
 
 Amounts assume fractional shares and exclude fees, taxes, spreads and lot-size
@@ -352,13 +353,13 @@ stay separate. When an internal category also has its own allocation, an
 `Assigned here` leaf preserves that value in the visualization. At a truncated
 depth, short paths remain visible instead of disappearing.
 
-Use **Manage positions** in the app to create and edit positions, or edit the
+Use **Positions** in the app to create and edit positions, or edit the
 CSV outside the app and reload the page. Classification trees remain editable
 in YAML. File data is read on each Streamlit rerun.
 
 ## Create and maintain positions in the app
 
-Open **Manage positions → Add position**, enter the instrument, total shares,
+Open **Positions → Add position**, enter the instrument, total shares,
 portfolio, and account, and click **Save position**. Buy-in and target allocation
 are optional. New instrument IDs are generated automatically. For an instrument
 already present, select it under **Existing instrument** to reuse its identity
@@ -366,7 +367,7 @@ and classifications in another account or sleeve. New instruments without
 classification metadata appear as `Unclassified`.
 
 The main tabs separate analysis, rebalancing and position maintenance.
-**Exposure settings** contains position filters, ETF breakdown switches and snapshots;
+**Exposure** has source filters in **Filters**, with ETF controls and snapshots in **Data & settings**;
 **Chart settings** contains grouping and hierarchy controls. Before strategic
 allocation is enabled, these analysis controls remain in **Overview**.
 **Show price details** exposes quote timestamps, FX status and valuation notes.
@@ -411,10 +412,13 @@ save, and a missing classifications file means no classifications yet. A
 successful save resets allocation filters so the new or updated position is
 visible. It does not require a live price lookup.
 
-Use **Edit position** to replace a position's total shares, portfolio/account,
-buy-in, buy-in currency, or target. **Manage positions** opens with a searchable,
-sortable position list: double-click a row, press Enter on a focused row, or use
-its **Edit** button. **Back to positions** returns to the list.
+**Positions** opens a searchable, sortable list of quantities, values, allocations and gains.
+Click a row (or press Enter) for position details and market-price history. Use its
+pencil button to edit directly. **Add position** opens a dialog above the list.
+Save and Cancel return to the same filter and sort order. Closing an unfinished
+edit with Escape or the close button retains a resumable draft in that workspace;
+Cancel, Save and switching portfolio workspaces clear it. Bulk purchases and
+balance updates remain full-width workflows under **Position tools**.
 The instrument name is editable and a rename applies across its account rows;
 instrument IDs, tickers, and ISINs stay fixed. The app prevents
 adding a second summary row for the same instrument, account, and portfolio.
@@ -430,7 +434,7 @@ directory if you need protection against loss of the drive itself.
 
 ### Bulk purchases
 
-Open **Manage positions → Bulk add purchases**. Each batch belongs to one
+Open **Positions → Bulk add purchases**. Each batch belongs to one
 instrument, account, and portfolio. Select an existing position or create a new
 one, using instrument search where useful, then choose the purchase currency.
 
@@ -529,24 +533,39 @@ purchase-input batches; it does not account for sales, tax lots, or realized gai
 
 ## Current performance
 
-The **Performance** panel in the analysis view shows unrealized gain/loss,
-return on cost, and cost basis. The EUR summary uses only held positions with
-explicit EUR buy-ins and available EUR valuations, and reports its coverage.
-The return is total gain divided by total cost for those same positions, not
-an average of position returns. It always covers the whole portfolio; filters
-narrow only the holdings table.
+**Overview** shows value and unrealized performance for the selected category.
+Its **Allocation / Performance** switch changes between the allocation sunburst
+and a signed bar chart with a category comparison table. Category clicks,
+breadcrumbs and Back update the chart, percentages and positions together.
+Clicking the sunburst center returns to its parent category. Labels below 1% of
+the selected view are hidden; their proportional slices and hover details remain.
+Unrealized performance appears beside the value inside its card, green for gains
+and red for losses. Position details retain separate value, gain and return cards.
+The sunburst and allocation table sit side by side on wide screens and stack on
+narrow screens.
+Performance is aggregated from owned source positions, independent of ETF
+look-through or overlapping exposure labels. Empty categories remain selectable.
 
-**Exposure settings → Performance display** switches the shared performance column
-between **%** and **Amount** in holdings, label comparisons, label drill-downs,
-and hierarchy/allocation tables. Holdings use each position’s recorded buy-in
-currency; grouped amounts are EUR. The holdings table also shows cost basis. Cost basis is shares times average buy-in; unrealized
-gain is current value in that currency minus cost basis. Foreign quotes are
-converted into the buy-in currency at current FX. Historical costs are never
-converted using current FX, and foreign-currency costs are excluded from the
-EUR summary because purchase-date FX is unknown. Missing costs, currencies,
-prices or required FX leave performance unavailable with an explanation.
-Zero-share positions have no performance; zero-cost positions can have a gain
-but no percentage return.
+The sidebar’s **Performance display** switches **€ / %** across Overview,
+Positions and Exposure, defaulting to EUR gains. The choice is remembered per
+workspace. EUR totals include only held positions with recorded EUR costs and
+available valuations. Category return is total gain divided by those same
+positions’ total cost, not an average of percentages. Coverage is explicit.
+Missing costs, currencies or prices remain unknown; zero-cost positions can
+have absolute gains but no percentage return. Historical foreign-currency costs
+are never converted using today’s FX. Native-currency returns remain available
+in position details when they can be calculated.
+
+Position details show full instrument identity, quantity, average and total buy-in,
+value and gains, plus a separate **Market-price history** chart. Its 1M, 6M, 1Y,
+5Y and Max ranges show closing prices in the listing’s quote currency without
+dividend reinvestment. This is instrument history, not personal return history.
+History loads automatically in the background when a position is opened, uses a
+private one-hour cache, and labels saved results with their retrieval time.
+Details and both close controls remain usable during loading. Failed attempts
+wait 60 seconds before an automatic retry; **Retry history** bypasses that wait.
+Manual or unsupported instruments show an unavailable state. Demo
+history is explicitly synthetic and never requests live prices.
 
 Label performance sums matching current values and costs, then calculates
 (total current value − total cost) / total cost. It follows the same overlap
@@ -565,7 +584,7 @@ including when other instruments are shown in look-through mode.
 These figures cover shares currently held and use the latest available prices.
 They exclude dividends and realized gains. Fees count only if already included
 in the recorded buy-in. After sales or corporate actions, update the shares
-and average cost of the remaining position in Manage positions.
+and average cost of the remaining position in Positions.
 
 ## Valuation and price status
 
@@ -594,19 +613,43 @@ timestamps and ages are shown separately. Cached data may be old, including
 over market closures; consult its age when interpreting values. Without a
 usable cached quote, the affected position remains unvalued.
 
+Quote and FX retrieval runs in the background. Navigation and saves use available
+cached values immediately while an update is pending; new results appear
+automatically. Only the selected main tab and Rebalance subtab are computed.
+Filters, planning controls, and category/target editor drafts survive tab changes.
+Parsed files are reused until their file revisions change, including externally
+edited inputs and refreshed ETF holdings. Calculation results still use current
+holdings, targets, and available prices.
+
 The cache survives restarts; deleting `.cache` forces retrieval again. Provider
 cookie/timezone cache files also live there. These runtime files are ignored
 by Git. Cache read/write problems are reported without stopping valuation.
 
 ## Explore allocations
 
+**Exposure** opens on **Assets**, with ETF breakdown enabled and all source
+positions included. The main table combines direct and ETF-derived exposure,
+includes unlabeled assets and ETF residuals, and sorts by total EUR exposure.
+Select a row for contributing positions, accounts, and ETF snapshot details.
+Unpriced positions remain visible; full selection percentages stay blank when
+some source values are unknown. Search narrows visible rows without changing
+the percentage denominator.
+
+The toolbar contains **Source scope**, search, **Break down ETFs**, **Filters**,
+and **Data & settings**. Scope and source filters apply before ETF expansion.
+**Data & settings** contains individual ETF choices, refresh preferences,
+company-match review, optional charts, display groups, and source-price details.
+**Themes & sectors** is an explicit alternative view, with its chart beside its
+table. Both views share the selected source scope.
+
 - **Group by → Selected labels** compares any labels you choose. Assets assigned
   beneath a selected label are included automatically. Each row shows the
   combined EUR value, its share within the selected labels, and its share of the
   filtered portfolio. The coverage caption shows value outside those labels.
   A local taxonomy named `labels` supplies the primary comparison choices; this
-  view opens by default when that taxonomy is present. Other hierarchy views
-  remain available through Group by.
+  comparison is available in Themes & sectors. Unclassified is included by
+  default when the selection contains unlabeled assets. Other hierarchy views
+  remain available through Group by in that view.
 - Selecting a label includes the **full value** of matching assets, independently
   of their memberships in unselected labels. If an asset matches multiple
   selected labels, explicitly choose equal splitting or full overlapping counts.
@@ -624,8 +667,8 @@ by Git. Cache read/write problems are reported without stopping valuation.
   In a label comparison, click a sunburst or treemap category to open its
   subcategories and individual assets. Click the sunburst centre or treemap
   breadcrumb to go back. **Detail view** updates both the chart and the asset
-  table for any branch; **Back to overview** restores the comparison. Chart-only
-  zoom leaves the table unchanged. **Show individual assets directly** skips
+  table for any branch; **Back to overview** restores the comparison. Chart
+  clicks synchronize the selected branch and table. **Show individual assets directly** skips
   intermediate subcategories. Drilling preserves the label's assigned value;
   multiple matching paths within that label share it equally. The detail table
   combines the same asset across paths and direct/ETF sources, and percentages
@@ -650,8 +693,8 @@ by Git. Cache read/write problems are reported without stopping valuation.
   compare `Compute` with `AI Infrastructure`. Flat bars show the terminal
   buckets at the chosen depth, including any shorter paths. Pies use the same
   depth and root selection.
-- Exposure chart clicks navigate within the chart. The root control updates
-  both chart and table. Parent rows in the hierarchical table already include
+- Exposure chart clicks and the root control update both chart and table.
+  Parent rows in the hierarchical table already include
   their children; do not sum every table row as though they were disjoint.
 - The displayed root total stays above the sortable allocation rows. Enable
   **Show classification paths** for taxonomy breadcrumbs; flat views omit this
@@ -661,7 +704,12 @@ by Git. Cache read/write problems are reported without stopping valuation.
   parents. **Show tickers** restores symbols in overview charts and tables;
   symbols remain visible when choosing or editing an exchange listing.
 - Display names tidy capitalization, whitespace and trailing legal suffixes.
-  Share classes, ADR/UCITS labels and fund currency qualifiers are retained.
+  Compact fund labels omit regulatory “UCITS ETF” text, trailing share-class codes,
+  listing currencies and Acc/Dist suffixes, and repeated issuer wrappers. Hedging
+  and leverage qualifiers remain visible; full names and share-class information
+  remain in position details. An optional `short_name` overrides the
+  display label across every account for that instrument. Full names remain in details.
+  `short_name` is not an allocation dimension.
   Stored names, tickers, ISINs and the identities used for calculations are
   unchanged; the position editor continues to show the original name.
 - Common company aliases shorten long provider labels, for example TSMC and
@@ -679,16 +727,16 @@ explicitly labeled **same-index iShares proxy**, not its synthetic substitute
 basket. Proxy data approximates company allocation; it is not the actual
 Amundi portfolio or an exact index constituent file.
 
-In **Exposure settings**, turn on **Break down ETFs**. Every supported fund in
-the portfolio starts enabled. Under **Individual ETFs**, turn off any fund to
+In **Exposure**, **Break down ETFs** starts enabled. Every supported fund in
+the portfolio starts enabled. Under **Data & settings → Individual ETFs**, turn off any fund to
 keep it as a single instrument. These session choices survive switching the
 master control off and back on. Newly supported funds start enabled. Unsupported
 funds remain visible with a missing-breakdown notice. The same selections apply
 to allocation, targets, performance coverage, and the stock-only exposure view;
 strategic ownership and tradable source positions stay intact.
 
-The expandable **ETF breakdown** tables show dates, source links, coverage,
-proxy status, and import notes. They are available even without a held position.
+Select an asset to open its contributing positions and expandable **ETF breakdown**
+tables, with dates, source links, coverage, proxy status, and import notes.
 Large snapshots use a scrollable table. No position or quantity is created.
 
 **Bare `SMH` is the US-listed ETF**, so it is never used as a UCITS ticker
@@ -714,7 +762,7 @@ unexpanded instruments.
 
 ### Combine the ETF with direct stocks
 
-Enable **Group SMH with related stocks** in Exposure settings to show the held UCITS
+Enable **Group SMH with related stocks** in Exposure → Data & settings to show the held UCITS
 ETF and selected direct stocks as one **SMH + related stocks** allocation.
 **Stocks in the SMH group** starts with Nvidia and TSMC when held and present
 in the local snapshot; you can select other matching constituents or remove
@@ -762,7 +810,7 @@ retained as source metadata rather than treated as exchange-qualified symbols.
 Provider parsers do not infer missing ISINs. Company-level overlap is handled
 separately by the reviewable matching described below.
 
-**Exposure settings → Company merges** groups the same company across ETFs,
+**Exposure → Data & settings → Company merges** groups the same company across ETFs,
 including companies without a direct position. Matching uses shared security
 identities and reviewed `company-identities.yaml` equivalences first. Missing
 identities can use an **estimated full-name match**, marked **`*`** in charts
@@ -801,11 +849,22 @@ retrieve that list. Proxy status is saved in the manifest and shown in the UI.
 
 ### Recency and updates
 
-**Exposure settings → ETF snapshots** displays the snapshot date and age.
-Snapshots **older than seven days** are flagged. Use the provider update button
-to download and validate the latest holdings. This control is
-separate from price refresh and is disabled in offline demo mode. There is no
-background download schedule.
+**Exposure → Data & settings → ETF refresh & snapshots** displays provider dates,
+last attempts and successful checks. The app automatically checks held, supported
+funds when a portfolio is opened and on subsequent interactions. By default,
+snapshots at least **one day old** qualify, with at most one attempt per fund per
+24 hours. The age threshold is configurable from 1–30 days; automatic updates can
+be disabled. Attempts are stored privately so restarting does not trigger repeated
+downloads. A manual **Refresh ETF holdings now** bypasses the daily throttle.
+
+Downloads run in a background thread while the UI uses saved snapshots. A small
+status polls for completion and reloads the analysis automatically. A workspace
+lock prevents concurrent refresh writers, including across app instances. Failed
+updates keep the prior snapshot and can be retried manually. Snapshots older than
+seven days still get a recency notice; a fresh check need not mean fresh holdings.
+Refresh is separate from market-price refresh and is always disabled in demo mode.
+It runs inside the portfolio app, with no Codex session required. The app must be
+running; this is not an operating-system scheduler.
 
 Updates validate the file structure, weights, and date before saving. Older or
 future-dated downloads are rejected. Existing constituent IDs are preserved by
@@ -865,3 +924,34 @@ endpoint is `/_stcore/health`.
 
 Manually overridden hierarchy-node targets, realized P&L, and historical analysis
 remain deferred.
+
+
+## Shared list presentation
+
+`src/portfolio_app/list_ui.py` defines the shared read-only list component,
+column formatting, taxonomy badges, sorting, row actions and scrolling policy.
+Overview allocations/performance, position lists, Exposure assets and source
+contributions, and ETF constituent lists use it. Keep presentation changes here
+instead of copying table CSS or row-selection controls into individual pages.
+Use `ListColumn` for column labels, numeric precision and signed values.
+
+Lists grow with the page by default. Exposure enables the shared
+`BOUNDED_LIST_HEIGHT` only when ETF breakdown is enabled; ETF constituent details
+also use that limit. Narrow screens retain horizontal scrolling. Editable
+spreadsheet forms and analytical diagnostic tables retain their native grid
+controls. Search within a displayed list does not recalculate allocation weights.
+
+Exposure's main list shows how many source positions contribute to each asset.
+Opening an asset shows each direct or ETF position's euro contribution and its
+percentage of that asset's exposure, with separate account positions preserved.
+Missing source valuations leave contribution percentages unavailable.
+
+## Parallel development
+
+Use a separate Git worktree and branch for each coding session, with one session
+responsible for integrating shared UI changes. Run each demo on a different port
+and use generated synthetic data. Personal data and the private handoff remain
+outside Git; consult the original handoff read-only when working in a worktree.
+Run `uv run pytest` after integration. Browser checks are optional locally:
+`uv run --with playwright pytest tests/test_ux_browser.py tests/test_dashboard_browser.py`.
+Set `PORTFOLIO_TEST_CHROMIUM` to an available Chromium binary if needed.

@@ -1,12 +1,14 @@
 """Strategic chart data from source positions, independent of exposure labels."""
 
 import json
+from collections import Counter
 
 import pandas as pd
 
 from portfolio_app.aggregation import ALLOCATION_COLUMNS, build_tree
 from portfolio_app.allocation import Allocation
-from portfolio_app.display_names import display_name
+from portfolio_app.display_names import instrument_name
+from portfolio_app.performance import summarize_performance
 
 
 def bucket_paths(config: Allocation) -> dict[str, tuple[str, ...]]:
@@ -20,6 +22,23 @@ def bucket_paths(config: Allocation) -> dict[str, tuple[str, ...]]:
             parent = by_id[parent].parent
         paths[bucket.id] = path
     return paths
+
+
+def category_labels(config):
+    paths = bucket_paths(config)
+    names = {b.id: b.name for b in config.buckets}
+    labels = {b.id: ' › '.join(names[key] for key in paths[b.id]) for b in config.buckets}
+    used = {'Portfolio', 'Unassigned'}
+    result = {}
+    for key, label in labels.items():
+        candidate, suffix = label, 1
+        while candidate in used:
+            candidate = f'{label} (category {suffix})'
+            suffix += 1
+        result[key] = candidate
+        used.add(candidate)
+    return result
+
 
 
 def bucket_positions(valued: pd.DataFrame, config: Allocation, bucket: str = "") -> pd.DataFrame:
@@ -38,7 +57,7 @@ def strategic_tree(valued: pd.DataFrame, config: Allocation, bucket: str = "") -
     """
     paths = bucket_paths(config)
     names = {item.id: item.name for item in config.buckets} | {"unassigned": "Unassigned"}
-    records = [dict(asset_id=row.position_id, asset_name=display_name(row.name),
+    records = [dict(asset_id=row.position_id, asset_name=instrument_name(row),
                     path=paths[row.bucket_id or "unassigned"],
                     value=0. if pd.isna(row.current_value_eur) else row.current_value_eur)
                for row in valued.itertuples()]
@@ -77,7 +96,7 @@ def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = ""
     if not bucket and valued.bucket_id.eq("").any():
         choices.append(("unassigned", "Unassigned", None))
     if not choices:
-        choices = [(row.position_id, display_name(row.name), row.within_bucket_target)
+        choices = [(row.position_id, instrument_name(row), row.within_bucket_target)
                    for row in selected.itertuples()]
         positions = True
     else:
@@ -94,3 +113,35 @@ def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = ""
                         "Status": "Missing price" if not known else "Empty" if not len(rows) or rows.shares.eq(0).all() else ""})
     return pd.DataFrame(records, columns=["Category", "Value (EUR)", "Current (%)", "Target (%)", "Gap (pp)", "Status"]).sort_values(
         ["Value (EUR)", "Category"], ascending=[False, True], na_position="last", ignore_index=True)
+
+
+def strategic_performance(valued, config, bucket=""):
+    """Disjoint child totals from owned positions, never look-through holdings."""
+    selected = bucket_positions(valued, config, bucket)
+    children = config.children(bucket) if bucket != "unassigned" else []
+    choices = [(b.name, bucket_positions(selected, config, b.id)) for b in children]
+    if not bucket and selected.bucket_id.eq("").any():
+        choices.append(("Unassigned", bucket_positions(selected, config, "unassigned")))
+    if not choices:
+        labels = [instrument_name(row) for row in selected.itertuples()]
+        counts = Counter(labels)
+        choices = [(label + (' · ' + (getattr(row, 'account', '') or getattr(row, 'portfolio', '') or f'Position {index + 1}')
+                            if counts[label] > 1 else ''), selected.loc[selected.position_id.eq(row.position_id)])
+                   for index, (label, row) in enumerate(zip(labels, selected.itertuples()))]
+    # Plotly uses category labels as coordinates. Never place distinct positions
+    # or same-named sibling categories on top of each other.
+    counts = Counter(name for name, _ in choices)
+    choices = [(name + (f' ({index + 1})' if counts[name] > 1 else ''), positions)
+               for index, (name, positions) in enumerate(choices)]
+    rows = []
+    for name, positions in choices:
+        summary = summarize_performance(positions)
+        rows.append({"Category": name, "Cost (EUR)": summary.cost_eur,
+                     "Gain (EUR)": summary.gain_eur, "Return (%)": summary.return_pct,
+                     "Coverage": f"{summary.covered_count} of {summary.held_count}",
+                     "Status": "Complete" if summary.covered_count == summary.held_count and summary.held_count else
+                               "Partial" if summary.covered_count else "Unavailable"})
+    result = pd.DataFrame(rows, columns=["Category", "Cost (EUR)", "Gain (EUR)", "Return (%)", "Coverage", "Status"])
+    for column in ("Cost (EUR)", "Gain (EUR)", "Return (%)"):
+        result[column] = pd.to_numeric(result[column], errors="coerce")
+    return result

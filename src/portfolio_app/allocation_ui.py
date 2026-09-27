@@ -1,9 +1,12 @@
 """Strategic allocation setup and balance replacement controls."""
 from datetime import date
+from uuid import uuid4
+from portfolio_app.strategic import category_labels
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from portfolio_app.view_state import persistent_editor
 
 from portfolio_app.allocation import (Allocation, Bucket, migrate, migration_preview, save_allocation,
                                      validate_allocation)
@@ -29,7 +32,7 @@ def render_balances(path, snapshot):
     key = f'balance_editor_{path}_{snapshot.revision}_{cost_field}'
     fields = ['shares', cost_field, 'acquisition_currency', 'holdings_confirmed_on']
     with st.form(key):
-        edited = st.data_editor(rows[['position_id', 'name', 'account', *fields]], hide_index=True,
+        edited = persistent_editor(rows[['position_id', 'name', 'account', *fields]], key=key + '_rows', hide_index=True,
                                 disabled=['position_id', 'name', 'account'], width='stretch',
                                 column_config={'position_id': None, 'shares': st.column_config.NumberColumn('Quantity', min_value=0., format='%.10f'),
                                                cost_field: st.column_config.NumberColumn('Total buy-in (optional)' if total_buy_in else 'Average buy-in (optional)', min_value=0., format='%.8f',
@@ -50,49 +53,65 @@ def render_balances(path, snapshot):
             st.rerun()
 
 
+
 def _bucket_editor(config, key):
-    st.caption('Keyboard: Enter edits a cell or toggles sell protection; Tab / Shift+Tab move forward / back; Escape cancels. The editor stays attached to its cell while scrolling.')
-    frame = pd.DataFrame([{'ID': b.id, 'Name': b.name, 'Parent ID': b.parent,
+    labels = category_labels(config)
+    st.caption('Edit Target (% of parent) to change a category’s allocation. Use the + row at the bottom to add a category, then save. Save new categories before choosing them as parents.')
+    frame = pd.DataFrame([{'ID': b.id, 'Name': b.name, 'Parent': labels.get(b.parent, 'Portfolio'),
                            'Target (% of parent)': None if b.target is None else 100 * b.target,
                            'Protect from selling': b.sell_protected} for b in config.buckets],
-                         columns=['ID', 'Name', 'Parent ID', 'Target (% of parent)', 'Protect from selling'])
+                         columns=['ID', 'Name', 'Parent', 'Target (% of parent)', 'Protect from selling'])
     frame['Target (% of parent)'] = pd.to_numeric(frame['Target (% of parent)'])
-    return st.data_editor(frame, num_rows='dynamic', hide_index=True, width='stretch', key=key,
-                          column_config={'Target (% of parent)': st.column_config.NumberColumn(min_value=0., max_value=100.),
-                                         'Protect from selling': st.column_config.CheckboxColumn()})
+    return persistent_editor(frame, num_rows='dynamic', hide_index=True, width='stretch', key=key,
+        column_config={'ID': None, 'Parent': st.column_config.SelectboxColumn(options=['Portfolio', *labels.values()]),
+                       'Target (% of parent)': st.column_config.NumberColumn(min_value=0., max_value=100.),
+                       'Protect from selling': st.column_config.CheckboxColumn()})
 
 
-def _config_from_rows(rows):
+def _config_from_rows(rows, config):
+    labels = {value: key for key, value in category_labels(config).items()}
     def text(value):
         return '' if pd.isna(value) else str(value).strip()
-    return Allocation(tuple(Bucket(text(r['ID']), text(r['Name']), text(r['Parent ID']),
-                                   None if pd.isna(r['Target (% of parent)']) else float(r['Target (% of parent)']) / 100,
-                                   False if pd.isna(r['Protect from selling']) else bool(r['Protect from selling']))
-                            for _, r in rows.iterrows() if text(r['ID']) or text(r['Name'])))
+    return Allocation(tuple(Bucket(text(r['ID']) or uuid4().hex, text(r['Name']), labels.get(text(r['Parent']), ''),
+        None if pd.isna(r['Target (% of parent)']) else float(r['Target (% of parent)']) / 100,
+        False if pd.isna(r['Protect from selling']) else bool(r['Protect from selling']))
+        for _, r in rows.iterrows() if text(r['Name'])))
+
+
+def category_position_editor(positions, config, *, key, extra=()):
+    labels = category_labels(config)
+    choices = {label: identity for identity, label in labels.items() if identity in config.leaves()}
+    display = positions.copy()
+    display['Category'] = display.bucket_id.map(labels).fillna('Unassigned')
+    columns = ['position_id', 'name', *extra, 'Category', 'within_bucket_target']
+    edited = persistent_editor(display[columns], hide_index=True, width='stretch',
+        disabled=['position_id', 'name', *extra], key=key,
+        column_config={'position_id': None, 'name': 'Investment',
+            'Category': st.column_config.SelectboxColumn(options=['Unassigned', *choices]),
+            'within_bucket_target': st.column_config.NumberColumn('Target (% of category)', min_value=0., max_value=100.)})
+    edited['bucket_id'] = edited.Category.map(choices).fillna('')
+    return edited
 
 
 def render_allocation_editor(path: Path, snapshot, config):
-    st.subheader('Strategic buckets and targets')
-    st.caption('One source position belongs to one leaf bucket. Bucket targets use their parent; position targets use their bucket. Blank targets are unknown, zero is explicit.')
+    st.subheader('Categories and targets')
+    st.caption('Set meta allocation targets and create categories here. Each position belongs to one category with no subcategories. Category targets use their parent; position targets use their category. A blank target is unspecified; zero is an explicit target.')
     config_path = path.parent / 'allocation.yaml'
     stamp = revision(config_path)
     if config is None:
         proposed, preview = migration_preview(snapshot.holdings)
         st.info('Enable strategic allocation with a reviewed migration. Existing whole-portfolio targets stay preserved in the CSV. No macro percentages are prefilled.')
         rows = _bucket_editor(proposed, f'migration_buckets_{snapshot.revision}')
-        st.caption('Use existing sleeve assignments below or enter new bucket IDs above. Parent IDs allow nested buckets; leave Parent ID blank for top-level buckets.')
+        st.caption('Review the proposed categories and position assignments before enabling strategic allocation.')
         preview = preview.copy()
         preview['Legacy target (% of portfolio)'] = preview.get('target_allocation', float('nan')) * 100
         preview['within_bucket_target'] *= 100
-        edited = st.data_editor(preview[['position_id', 'name', 'portfolio', 'Legacy target (% of portfolio)', 'bucket_id', 'within_bucket_target']],
-                                hide_index=True, disabled=['position_id', 'name', 'portfolio', 'Legacy target (% of portfolio)'],
-                                column_config={'position_id': None, 'within_bucket_target': st.column_config.NumberColumn('Target (% of bucket)', min_value=0., max_value=100.)},
-                                key=f'migration_positions_{snapshot.revision}')
+        edited = category_position_editor(preview, proposed, key=f'migration_positions_{snapshot.revision}', extra=['portfolio', 'Legacy target (% of portfolio)'])
         st.caption('Existing target numbers are copied without normalization. Review each bucket total before enabling; incomplete totals remain visible and block only calculations that require them.')
-        _target_summary(edited)
+        _target_summary(edited, proposed)
         if st.button('Enable reviewed allocation', type='primary'):
             try:
-                candidate = _config_from_rows(rows)
+                candidate = _config_from_rows(rows, proposed)
                 preview['bucket_id'] = edited.bucket_id.fillna('')
                 preview['within_bucket_target'] = edited.within_bucket_target / 100
                 migrate(path, candidate, preview, expected_revision=snapshot.revision)
@@ -102,9 +121,9 @@ def render_allocation_editor(path: Path, snapshot, config):
                 st.rerun()
         return
     rows = _bucket_editor(config, f'bucket_editor_{stamp}')
-    if st.button('Save bucket settings'):
+    if st.button('Save category settings'):
         try:
-            save_allocation(config_path, _config_from_rows(rows), snapshot.holdings, stamp)
+            save_allocation(config_path, _config_from_rows(rows, config), snapshot.holdings, stamp)
         except (DataError, OSError, ValueError) as exc:
             st.error(str(exc))
         else:
@@ -113,11 +132,8 @@ def render_allocation_editor(path: Path, snapshot, config):
     positions = snapshot.holdings.copy()
     positions['bucket_id'] = positions.get('bucket_id', '')
     positions['within_bucket_target'] = positions.get('within_bucket_target', float('nan')) * 100
-    edited = st.data_editor(positions[['position_id', 'name', 'account', 'bucket_id', 'within_bucket_target']], hide_index=True,
-                            disabled=['position_id', 'name', 'account'], key=f'position_targets_{snapshot.revision}_{stamp}',
-                            column_config={'position_id': None, 'bucket_id': st.column_config.SelectboxColumn('Bucket', options=['', *sorted(config.leaves())]),
-                                           'within_bucket_target': st.column_config.NumberColumn('Target (% of bucket)', min_value=0., max_value=100.)})
-    _target_summary(edited)
+    edited = category_position_editor(positions, config, key=f'position_targets_{snapshot.revision}_{stamp}', extra=['account'])
+    _target_summary(edited, config)
     if st.button('Save position targets and buckets'):
         try:
             if revision(config_path) != stamp:
@@ -145,9 +161,9 @@ def render_bulk_bucket_assignment(path, snapshot, config, stamp):
         all_button.button('Select all', on_click=lambda: st.session_state.update({key: list(labels)}))
         clear_button.button('Clear selection', on_click=lambda: st.session_state.update({key: []}))
         selected = st.multiselect('Positions to assign', list(labels), format_func=labels.get, key=key)
-        names = {b.id: b.name for b in config.buckets}
+        names = category_labels(config)
         destination = st.selectbox('Destination bucket', sorted(config.leaves()),
-                                   format_func=lambda value: f'{names[value]} ({value})',
+                                   format_func=lambda value: names[value],
                                    help='Only the bucket changes. Quantities, costs, labels and within-bucket target percentages stay unchanged.')
         if st.button(f'Assign {len(selected)} positions', disabled=not selected, type='primary'):
             try:
@@ -164,12 +180,13 @@ def render_bulk_bucket_assignment(path, snapshot, config, stamp):
                 st.rerun()
 
 
-def _target_summary(positions):
+def _target_summary(positions, config):
+    names = category_labels(config)
     records = []
     for bucket, rows in positions.groupby('bucket_id', dropna=False, sort=False):
         missing = int(rows.within_bucket_target.isna().sum())
         total = float(rows.within_bucket_target.sum())
-        records.append({'Bucket': bucket or 'Unassigned', 'Known target subtotal (%)': total,
+        records.append({'Category': names.get(bucket, 'Unassigned'), 'Known target subtotal (%)': total,
                         'Missing targets': missing,
                         'Status': 'Complete' if missing == 0 and abs(total - 100) < 1e-7 else 'Needs targets totaling 100%'})
     if records:

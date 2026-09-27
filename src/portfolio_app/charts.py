@@ -2,6 +2,7 @@
 
 from html import escape
 from textwrap import wrap
+import colorsys
 
 import plotly.graph_objects as go
 import pandas as pd
@@ -38,15 +39,41 @@ def hierarchy_chart(nodes: pd.DataFrame, chart_type: str) -> go.Figure:
         values=nodes["value"], branchvalues="total", sort=False,
         customdata=nodes[["percentage"]].to_numpy(),
         hovertemplate="%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>",
-        marker=dict(line=dict(color="rgba(127,127,127,0.25)", width=1)),
+        marker=dict(line=dict(color="rgba(127,127,127,0.7)", width=2)),
     )).update_layout(margin=dict(t=24, l=24, r=24, b=24), height=480, treemapcolorway=PALETTE))
     if chart_type == "Sunburst":
-        text = ["<br>".join(escape(line) for line in wrap(label, width=18, max_lines=3, placeholder="…"))
-                for label in nodes["label"]]
+        # Keep the actual areas and hover data; suppress only tiny labels.
+        text = ["<br>".join(escape(line) for line in wrap(row.label, width=18, max_lines=3, placeholder="…"))
+                if row.percentage >= .01 or row.parent_id == '' else ''
+                for row in nodes.itertuples()]
         figure.update_traces(text=text, textinfo="text", insidetextorientation="radial", root=dict(color="rgba(127,127,127,0.12)"))
         figure.update_layout(height=640, sunburstcolorway=SUNBURST_PALETTE,
                              uniformtext=dict(minsize=11, mode="hide"))
     return figure
+
+
+def strategic_colors(nodes, config):
+    """Stable identity-based colours, with distinct shades for siblings."""
+    top = sorted(b.id for b in config.children())
+    palettes = {key: SUNBURST_PALETTE[i % len(SUNBURST_PALETTE)] for i, key in enumerate(top)}
+    sibling_indices = {node: (i, len(group)) for _, group in nodes.groupby('parent_id')
+                       for i, node in enumerate(sorted(group.node_id))}
+    colors = []
+    for row in nodes.itertuples():
+        if not row.path:
+            colors.append('rgba(127,127,127,0.12)')
+            continue
+        base = palettes.get(row.path[0], '#7b8493')
+        rgb = tuple(int(base[i:i+2], 16) / 255 for i in (1, 3, 5))
+        hue, light, saturation = colorsys.rgb_to_hls(*rgb)
+        if len(row.path) > 1 or row.kind == 'holding':
+            index, count = sibling_indices[row.node_id]
+            fraction = index / max(1, count - 1)
+            hue = (hue + (fraction - .5) * .09) % 1
+            light = .36 + fraction * .34
+        rgb = colorsys.hls_to_rgb(hue, light, saturation)
+        colors.append('#' + ''.join(f'{round(v * 255):02x}' for v in rgb))
+    return colors
 
 
 def bar_chart(nodes: pd.DataFrame) -> go.Figure:

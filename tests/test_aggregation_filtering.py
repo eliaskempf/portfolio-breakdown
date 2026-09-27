@@ -144,6 +144,20 @@ def test_sunburst_has_distinct_palette_and_room_for_complete_circle(exposures, t
     assert sunburst.layout.uniformtext.mode == "hide"
 
 
+def test_sunburst_hides_only_labels_below_one_percent():
+    nodes = pd.DataFrame([
+        dict(node_id='root', parent_id='', label='Portfolio', value=1000., percentage=1.),
+        dict(node_id='small', parent_id='root', label='Invented Small', value=4., percentage=.004),
+        dict(node_id='edge', parent_id='root', label='Invented Boundary', value=10., percentage=.01),
+        dict(node_id='large', parent_id='root', label='Invented Large', value=986., percentage=.986),
+    ])
+    trace = hierarchy_chart(nodes, 'Sunburst').data[0]
+    assert list(trace.text) == ['Portfolio', '', 'Invented Boundary', 'Invented Large']
+    assert list(trace.values) == [1000., 4., 10., 986.]
+    assert trace.labels[1] == 'Invented Small'  # Hover identity is retained.
+    assert trace.customdata[1][0] == .004
+
+
 def test_default_sort_orders_siblings_without_detaching_descendants(exposures, taxonomy):
     original = aggregate(exposures, taxonomy, taxonomy="ai", include_holdings=True)
     ordered = sort_allocation_nodes(original)

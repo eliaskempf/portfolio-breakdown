@@ -1,3 +1,4 @@
+from test_ui import position_action
 import pandas as pd
 import shutil
 from types import SimpleNamespace
@@ -13,7 +14,7 @@ CSV = "date,shares,price,fees\n2026-01-01,2,100,1\n2026-02-01,3,120,2\n"
 
 
 def bulk(app):
-    by_label(app.radio, "Position action").set_value("Bulk add purchases").run()
+    position_action(app, "Bulk add purchases")
     assert not app.exception
     return app
 
@@ -40,7 +41,7 @@ def test_create_bulk_position_preview_save_reopen_and_history(tmp_path):
     assert any("Saved 2 purchases" in item.value for item in app.success)
     assert not app.text_area
     reopened = launch_editor(path)
-    by_label(reopened.radio, "Position action").set_value("Edit position").run()
+    position_action(reopened, "Edit position")
     assert not reopened.exception
     assert any(item.label == "Saved purchase batches" for item in reopened.expander)
     assert by_label(reopened.number_input, "Quantity held (total)").value == 5

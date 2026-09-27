@@ -6,12 +6,13 @@ import pandas as pd
 import streamlit as st
 
 from portfolio_app.costs import average_from_total
-from portfolio_app.display_names import display_name
+from portfolio_app.display_names import display_name, instrument_name
 from portfolio_app.etf import FundSnapshot, validate_fund_listings
 from portfolio_app.holdings import DataError, metadata_dimensions
 from portfolio_app.instrument_ui import render_instrument_search
 from portfolio_app.position_list import list_context, render_position_list
-from portfolio_app.positions import HoldingsSnapshot, save_position
+from portfolio_app.strategic import category_labels
+from portfolio_app.positions import HoldingsSnapshot, save_position, read_snapshot
 from portfolio_app.purchase_ui import render_bulk_purchases, render_purchase_history
 
 
@@ -23,101 +24,173 @@ def _clear_editor() -> None:
     for key in list(st.session_state):
         if key.startswith("position_edit_"):
             del st.session_state[key]
+    st.session_state.pop('position_draft', None)
+    st.session_state.pop('strategic_last_position', None)
 
 
-def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[FundSnapshot], *, demo: bool = False, embedded: bool = False, allocation=None) -> None:
-    holdings = snapshot.holdings
+def request_position(position_id, *, editing=False):
+    if st.session_state.get('position_edit_selected') != position_id:
+        _clear_editor()
+    st.session_state.update(position_edit_selected=position_id,
+        position_edit_action='Edit position' if editing else 'Details', position_edit_dialog=True)
+
+
+def _consume_position_event(path, snapshot):
     if event := st.session_state.pop('position_edit_open_request', None):
         if (event.get('context') == list_context(path) and event.get('revision') == snapshot.revision
-                and event.get('id') in set(holdings.position_id)):
-            _clear_editor()
-            st.session_state['position_edit_action'] = 'Edit position'
-            st.session_state['position_edit_selected'] = event['id']
+                and event.get('id') in set(snapshot.holdings.position_id)):
+            request_position(event['id'], editing=event.get('action', 'edit') == 'edit')
         else:
             st.warning('The position list changed. Open the position again from the refreshed list.')
-    if message := st.session_state.pop("position_saved_notice", None):
-        st.success(message)
-    with (st.container() if embedded else st.expander("Manage positions", expanded=holdings.empty)):
-        action = st.radio("Position action", ["Positions", "Add position", "Edit position", "Bulk add purchases", "Update balances", "Strategic allocation"], index=1 if holdings.empty else 0, horizontal=True, key="position_edit_action")
-        if action == 'Positions':
-            if holdings.empty:
-                st.info('Add a position to get started.')
-            else:
-                st.caption('Double-click a row to edit, or focus it and press Enter.')
-                render_position_list(path, snapshot, allocation)
-            return
-        if action == 'Update balances':
-            from portfolio_app.allocation_ui import render_balances
-            render_balances(path, snapshot)
-            return
-        if action == 'Strategic allocation':
-            from portfolio_app.allocation_ui import render_allocation_editor
-            render_allocation_editor(path, snapshot, allocation)
-            return
-        if action == "Bulk add purchases":
-            notice = render_bulk_purchases(path, snapshot, funds, demo=demo)
-            if notice is not None:
-                _clear_editor()
-                if notice:
-                    for key in list(st.session_state):
-                        if key.startswith("filter_"):
-                            del st.session_state[key]
-                    st.session_state["position_saved_notice"] = notice
-                st.rerun()
-            return
-        editing = action == "Edit position"
-        position_id = None
-        if editing:
-            if holdings.empty:
-                st.info("Create your first position before editing.")
-                return
-            def back_to_positions():
-                _clear_editor()
-                st.session_state['position_edit_action'] = 'Positions'
 
-            st.button('Back to positions', on_click=back_to_positions)
-            descriptions = {
-                row.position_id: f"{display_name(row.name)} ({row.ticker or row.id.upper()}) · {row.portfolio or 'No portfolio'} · {row.account or 'No account'}"
-                for row in holdings.itertuples()
-            }
-            position_id = st.selectbox("Position to edit", list(descriptions), format_func=descriptions.get, key="position_edit_selected")
-            row = holdings.loc[holdings["position_id"] == position_id].iloc[0].to_dict()
-            identity = row["id"]
-            render_purchase_history(row)
-            if row.get('balance_replaced_at'):
-                st.caption('The current quantity was replaced from a balance snapshot. Retained purchase batches are not a complete ledger.')
+
+def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False, allocation=None,
+                           valued=None, percent=False, defer_dialog=False):
+    _consume_position_event(path, snapshot)
+    if warning := st.session_state.pop('position_stale_notice', None):
+        st.warning(warning)
+    if message := st.session_state.pop('position_saved_notice', None):
+        st.success(message)
+    action, secondary = st.columns([1, 3])
+    if action.button('Add position', type='primary', icon=':material/add:'):
+        _clear_editor()
+        st.session_state.update(position_edit_action='Add position', position_edit_dialog=True)
+    if st.session_state.get('position_draft') or st.session_state.get('position_edit_action') in {'Edit position', 'Add position'}:
+        if secondary.button('Resume unsaved edit'):
+            st.session_state['position_edit_dialog'] = True
+    workflow = st.segmented_control('Position tools', ['Positions', 'Bulk add purchases', 'Update balances'],
+                                    default='Positions', key='positions_workflow', on_change=_dismiss)
+    if workflow == 'Update balances':
+        from portfolio_app.allocation_ui import render_balances
+        render_balances(path, snapshot)
+    elif workflow == 'Bulk add purchases':
+        notice = render_bulk_purchases(path, snapshot, funds, demo=demo)
+        if notice is not None:
+            _clear_editor()
+            if notice:
+                st.session_state['position_saved_notice'] = notice
+            st.rerun()
+    else:
+        if snapshot.holdings.empty:
+            st.info('Add your first position to see its value, allocation and performance.')
         else:
-            labels = {row.id: f"{display_name(row.name)} ({row.ticker or row.id.upper()})" for row in holdings.itertuples()}
-            if pending := st.session_state.pop("position_edit_pending_instrument", None):
-                if pending in labels:
-                    st.session_state["position_edit_instrument"] = pending
-            identity = st.selectbox("Existing instrument", ["", *labels], format_func=lambda value: labels[value] if value else "New instrument", key="position_edit_instrument")
-            row = holdings.loc[holdings["id"] == identity].iloc[0].to_dict() if identity else {}
-            row = {column: row.get(column, "") for column in ("id", "name", "ticker", "isin", "instrument_type", "exposure_kind", "quantity_unit")}
-        context = (str(path.resolve()), action, position_id, identity)
-        if st.session_state.get("position_edit_context") != context:
-            st.session_state["position_edit_context"] = context
-            st.session_state["position_edit_revision"] = snapshot.revision
-        if st.session_state["position_edit_revision"] != snapshot.revision:
-            st.warning("Holdings changed while this form was open. Reload the form to edit the latest data.")
-            if st.button("Reload position form"):
+            st.caption('Select a position for details and price history. Use the pencil to edit.')
+            render_position_list(path, snapshot, allocation, valued=valued, percent=percent)
+    if not defer_dialog:
+        render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=valued)
+
+
+def _remember_draft():
+    if st.session_state.get('position_edit_action') in {'Edit position', 'Add position'}:
+        fields = {k: v for k, v in st.session_state.items()
+                  if k.startswith('position_edit_fields_') or k == 'position_edit_instrument'}
+        # On a dismiss callback Streamlit may already have detached the dialog's
+        # widget state. Don't replace its last complete draft with an empty one.
+        if fields:
+            st.session_state['position_draft'] = fields
+
+
+def _dismiss():
+    _remember_draft()
+    st.session_state['position_edit_dialog'] = False
+
+
+def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None, valued=None):
+    _consume_position_event(path, snapshot)
+    if not st.session_state.get('position_edit_dialog'):
+        return
+
+    @st.dialog('Position', width='large', on_dismiss=_dismiss)
+    def dialog():
+        # Button callbacks run before the dialog body. Never execute its data
+        # loaders again when the user has already requested dismissal.
+        if not st.session_state.get('position_edit_dialog'):
+            st.rerun()
+        current = read_snapshot(path)
+        for key, value in st.session_state.get('position_draft', {}).items():
+            if key not in st.session_state:
+                st.session_state[key] = value
+        action = st.session_state.get('position_edit_action', 'Details')
+        if action == 'Details':
+            selected = current.holdings.loc[current.holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
+            if selected.empty:
+                st.warning('This position no longer exists.')
+            else:
+                row = selected.iloc[0]
+                if valued is not None and current.revision == snapshot.revision:
+                    matches = valued.loc[valued.position_id.eq(row.position_id)]
+                    if not matches.empty:
+                        row = matches.iloc[0]
+                if st.button('Edit position', icon=':material/edit:'):
+                    st.session_state['position_edit_action'] = 'Edit position'
+                    st.rerun()
+                from portfolio_app.position_detail import render_position_detail
+                render_position_detail(row, path.parent, demo=demo, allocation=allocation)
+            st.button('Close', on_click=_dismiss)
+        else:
+            st.subheader(action)
+            rendered = render_position_form(path, current, funds, demo=demo, allocation=allocation, action=action)
+            _remember_draft()
+            if not rendered and st.button('Cancel'):
                 _clear_editor()
                 st.rerun()
+    dialog()
+
+
+def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, action='Add position'):
+    holdings = snapshot.holdings
+    editing = action == "Edit position"
+    position_id = None
+    if editing:
+        if holdings.empty:
+            st.info("Create your first position before editing.")
             return
-        # Separate keys keep values tied to the selected position, not another row.
-        prefix = f"position_edit_fields_{action}_{position_id}_{identity}_"
-        if not editing and not identity:
-            render_instrument_search(prefix, holdings, path.parent / ".cache" / "yahoo", disabled=demo)
-        total_buy_in = st.radio('Buy-in entry', ['Average per unit', 'Total buy-in'], horizontal=True,
-                               key=prefix + 'buy_in_mode') == 'Total buy-in'
-        with st.form(f"position_form_{action}_{position_id}_{identity}"):
-            left, right = st.columns(2)
-            with left:
-                name = st.text_input("Instrument name", value=row.get("name", ""), disabled=bool(identity) and not editing,
-                                     help='Renaming applies to every position of this instrument.' if editing else None, key=prefix + "name")
-                ticker = st.text_input("Ticker", value=row.get("ticker", ""), disabled=bool(identity), help="Use an exchange-qualified ticker where needed, e.g. VVSM.DE for the EUR UCITS listing.", key=prefix + "ticker")
-                isin = st.text_input("ISIN (optional)", value=row.get("isin", ""), disabled=bool(identity), key=prefix + "isin")
-                shares = st.number_input("Quantity held (total)", min_value=0.0, value=float(row.get("shares", 0)), format="%.10f", key=prefix + "shares")
+        position_id = st.session_state.get('position_edit_selected')
+        if position_id not in set(holdings.position_id):
+            st.warning('This position no longer exists. Close and reopen the list.')
+            return
+        row = holdings.loc[holdings["position_id"] == position_id].iloc[0].to_dict()
+        identity = row["id"]
+        render_purchase_history(row)
+        if row.get('balance_replaced_at'):
+            st.caption('The current quantity was replaced from a balance snapshot. Retained purchase batches are not a complete ledger.')
+    else:
+        labels = {row.id: f"{display_name(row.name)} ({row.ticker or row.id.upper()})" for row in holdings.itertuples()}
+        if pending := st.session_state.pop("position_edit_pending_instrument", None):
+            if pending in labels:
+                st.session_state["position_edit_instrument"] = pending
+        identity = st.selectbox("Existing instrument", ["", *labels], format_func=lambda value: labels[value] if value else "New instrument", key="position_edit_instrument")
+        row = holdings.loc[holdings["id"] == identity].iloc[0].to_dict() if identity else {}
+        row = {column: row.get(column, "") for column in ("id", "name", "ticker", "isin", "instrument_type", "exposure_kind", "quantity_unit", "short_name")}
+    context = (str(path.resolve()), action, position_id, identity)
+    if st.session_state.get("position_edit_context") != context:
+        st.session_state["position_edit_context"] = context
+        st.session_state["position_edit_revision"] = snapshot.revision
+    if st.session_state["position_edit_revision"] != snapshot.revision:
+        st.warning("Holdings changed while this form was open. Reload the form to edit the latest data.")
+        if st.button("Reload position form"):
+            selected = st.session_state.get('position_edit_selected')
+            _clear_editor()
+            st.session_state.update(position_edit_selected=selected, position_edit_action=action, position_edit_dialog=True)
+            st.rerun()
+        return
+    # Separate keys keep values tied to the selected position, not another row.
+    prefix = f"position_edit_fields_{action}_{position_id}_{identity}_"
+    if not editing and not identity:
+        render_instrument_search(prefix, holdings, path.parent / ".cache" / "yahoo", disabled=demo)
+    total_buy_in = st.radio('Buy-in entry', ['Average per unit', 'Total buy-in'], horizontal=True,
+                           key=prefix + 'buy_in_mode') == 'Total buy-in'
+    with st.container():
+        left, right = st.columns(2)
+        with left:
+            name = st.text_input("Instrument name", value=row.get("name", ""), disabled=bool(identity) and not editing,
+                                 help='Renaming applies to every position of this instrument.' if editing else None, key=prefix + "name")
+            short_name = st.text_input('Short display name (optional)', value=row.get('short_name', ''),
+                                       key=prefix + 'short_name', help='Used across charts and lists; the full instrument name stays available.')
+            ticker = st.text_input("Ticker", value=row.get("ticker", ""), disabled=bool(identity), help="Use an exchange-qualified ticker where needed, e.g. VVSM.DE for the EUR UCITS listing.", key=prefix + "ticker")
+            isin = st.text_input("ISIN (optional)", value=row.get("isin", ""), disabled=bool(identity), key=prefix + "isin")
+            shares = st.number_input("Quantity held (total)", min_value=0.0, value=float(row.get("shares", 0)), format="%.10f", key=prefix + "shares")
+            with st.expander('Instrument details'):
                 kinds = ['unknown', 'equity', 'etf', 'etc', 'crypto', 'physical', 'cash', 'other']
                 instrument_type = st.selectbox('Instrument type', kinds, index=kinds.index(row.get('instrument_type')) if row.get('instrument_type') in kinds else 0, key=prefix + 'instrument_type')
                 exposure_kinds = ['unknown', 'equity', 'non_equity']
@@ -126,69 +199,34 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
                                              format_func=lambda value: {'unknown': 'Unknown / mixed', 'equity': 'Equity', 'non_equity': 'Non-equity'}[value],
                                              key=prefix + 'exposure_kind', help='An ETF wrapper can hold equities or non-equity assets. Leave mixed or uncertain composition unknown.')
                 quantity_unit = st.text_input('Quantity unit', value=row.get('quantity_unit', ''), key=prefix + 'quantity_unit', help='For physical holdings, specify the unit explicitly, such as grams.')
-                portfolio = st.text_input("Portfolio / sleeve", value=row.get("portfolio", ""), key=prefix + "portfolio")
-                account = st.text_input("Account / broker", value=row.get("account", ""), key=prefix + "account")
-            with right:
-                initial_buy_in = _optional_number(row.get('acquisition_price'))
-                if total_buy_in:
-                    initial_total = None if initial_buy_in is None else initial_buy_in * float(row.get('shares', 0))
-                    buy_in = st.number_input('Total buy-in (optional)', min_value=0.0, value=initial_total,
-                                             format='%.8f', key=prefix + 'total_buy_in',
-                                             help='Total cost of the quantity currently held, including purchase fees. The average per unit is calculated when you save.')
-                else:
-                    buy_in = st.number_input("Average buy-in per unit (optional)", min_value=0.0, value=initial_buy_in, format="%.6f", key=prefix + "buy_in")
-                currency = st.text_input("Buy-in currency", value=row.get("acquisition_currency", "" if editing else "EUR"), help="Currency of your recorded purchase cost; it can differ from the live quote currency. Existing unlabeled buy-ins remain unspecified.", key=prefix + "currency")
-                target_field = 'within_bucket_target' if allocation else 'target_allocation'
-                initial_target = _optional_number(row.get(target_field))
-                target = st.number_input("Target (% of bucket)" if allocation else "Target allocation % (optional)", min_value=0.0, max_value=100.0, value=None if initial_target is None else initial_target * 100, key=prefix + "target")
-                bucket = ''
-                if allocation:
-                    bucket_ids = ['', *sorted(allocation.leaves())]
-                    bucket = st.selectbox('Allocation bucket', bucket_ids, index=bucket_ids.index(row.get('bucket_id', '')), key=prefix + 'bucket')
+            portfolio = st.text_input("Portfolio / sleeve", value=row.get("portfolio", ""), key=prefix + "portfolio")
+            account = st.text_input("Account / broker", value=row.get("account", ""), key=prefix + "account")
+        with right:
+            initial_buy_in = _optional_number(row.get('acquisition_price'))
+            if total_buy_in:
+                initial_total = None if initial_buy_in is None else initial_buy_in * float(row.get('shares', 0))
+                buy_in = st.number_input('Total buy-in (optional)', min_value=0.0, value=initial_total,
+                                         format='%.8f', key=prefix + 'total_buy_in',
+                                         help='Total cost of the quantity currently held, including purchase fees. The average per unit is calculated when you save.')
+            else:
+                buy_in = st.number_input("Average buy-in per unit (optional)", min_value=0.0, value=initial_buy_in, format="%.6f", key=prefix + "buy_in")
+            currency = st.text_input("Buy-in currency", value=row.get("acquisition_currency", "" if editing else "EUR"), help="Currency of your recorded purchase cost; it can differ from the live quote currency. Existing unlabeled buy-ins remain unspecified.", key=prefix + "currency")
+            target_field = 'within_bucket_target' if allocation else 'target_allocation'
+            initial_target = _optional_number(row.get(target_field))
+            target = st.number_input("Target (% of bucket)" if allocation else "Target allocation % (optional)", min_value=0.0, max_value=100.0, value=None if initial_target is None else initial_target * 100, key=prefix + "target")
+            bucket = ''
+            if allocation:
+                bucket_ids = ['', *sorted(allocation.leaves())]
+                bucket_names = category_labels(allocation)
+                bucket = st.selectbox('Allocation bucket', bucket_ids, index=bucket_ids.index(row.get('bucket_id', '')), key=prefix + 'bucket', format_func=lambda value: bucket_names.get(value, 'Unassigned'))
+            with st.expander('Manual pricing'):
                 manual_price = st.number_input('Manual unit price (optional)', min_value=0., value=_optional_number(row.get('manual_price')), key=prefix + 'manual_price', help='Overrides market quotes. Clear to return to provider pricing.')
                 manual_currency = st.text_input('Manual price currency', value=row.get('manual_price_currency', ''), key=prefix + 'manual_currency')
                 manual_date = st.text_input('Manual price date (YYYY-MM-DD)', value=row.get('manual_price_date', ''), key=prefix + 'manual_date')
-                extras = {}
-                for column in metadata_dimensions(holdings):
-                    if column not in {"portfolio", "account", "bucket_id", "instrument_type", "exposure_kind"}:
-                        extras[column] = st.text_input(column.replace("_", " ").title(), value=row.get(column, ""), key=prefix + "extra_" + column)
-            submitted = st.form_submit_button("Save position", type="primary")
-        if submitted:
-            values = {
-                "id": identity, "name": name, "ticker": ticker, "isin": isin,
-                "shares": str(shares), "portfolio": portfolio, "account": account,
-                "acquisition_price": "" if buy_in is None else str(buy_in),
-                "acquisition_currency": currency if buy_in is not None else "",
-                target_field: "" if target is None else str(target / 100),
-                'instrument_type': instrument_type, 'exposure_kind': exposure_kind, 'quantity_unit': quantity_unit,
-                'manual_price': '' if manual_price is None else str(manual_price),
-                'manual_price_currency': manual_currency.upper(), 'manual_price_date': manual_date,
-                **({'bucket_id': bucket} if allocation else {}), **extras,
-            }
-            try:
-                if total_buy_in:
-                    # Preserve the original unit cost on an unchanged round trip,
-                    # including planned zero-quantity positions with a known cost.
-                    unchanged = editing and shares == row.get('shares') and buy_in == initial_total
-                    buy_in = initial_buy_in if unchanged else average_from_total(buy_in, shares)
-                    values['acquisition_price'] = '' if buy_in is None else str(buy_in)
-                    values['acquisition_currency'] = currency if buy_in is not None else ''
-                new_buy_in = not editing or buy_in != _optional_number(row.get("acquisition_price"))
-                if buy_in is not None and not currency.strip() and new_buy_in:
-                    raise DataError("Enter the currency of the buy-in price, for example EUR.")
-                asset_id = save_position(
-                    path, values, expected_revision=st.session_state["position_edit_revision"], position_id=position_id,
-                    validate=lambda frame: validate_fund_listings(frame, funds),
-                )
-            except (DataError, OSError, UnicodeError) as exc:
-                st.error(f"Position was not saved: {exc}")
-            else:
-                _clear_editor()
-                for key in list(st.session_state):
-                    if key.startswith("filter_"):
-                        del st.session_state[key]
-                st.session_state["position_saved_notice"] = f"Saved {name} ({asset_id}) to {path}."
-                st.rerun()
+            extras = {}
+            for column in metadata_dimensions(holdings):
+                if column not in {"portfolio", "account", "bucket_id", "instrument_type", "exposure_kind"}:
+                    extras[column] = st.text_input(column.replace("_", " ").title(), value=row.get(column, ""), key=prefix + "extra_" + column)
         with st.expander("Buy-in and savings-plan help"):
             st.caption(f"Local storage: {path}")
             st.markdown(
@@ -204,3 +242,45 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
                 "Record costs in their original currency rather than converting historical purchases with today's FX rate.\n\n"
                 "[Trade Republic: buy-in and purchase confirmations](https://support.traderepublic.com/de-de/1619)"
             )
+        save, cancel = st.columns([1, 1])
+        submitted = save.button("Save position", type="primary", width='stretch')
+        if cancel.button('Cancel', width='stretch'):
+            _clear_editor()
+            st.rerun()
+    if submitted:
+        values = {
+            "id": identity, "name": name, "short_name": short_name, "ticker": ticker, "isin": isin,
+            "shares": str(shares), "portfolio": portfolio, "account": account,
+            "acquisition_price": "" if buy_in is None else str(buy_in),
+            "acquisition_currency": currency if buy_in is not None else "",
+            target_field: "" if target is None else str(target / 100),
+            'instrument_type': instrument_type, 'exposure_kind': exposure_kind, 'quantity_unit': quantity_unit,
+            'manual_price': '' if manual_price is None else str(manual_price),
+            'manual_price_currency': manual_currency.upper(), 'manual_price_date': manual_date,
+            **({'bucket_id': bucket} if allocation else {}), **extras,
+        }
+        try:
+            if total_buy_in:
+                # Preserve the original unit cost on an unchanged round trip,
+                # including planned zero-quantity positions with a known cost.
+                unchanged = editing and shares == row.get('shares') and buy_in == initial_total
+                buy_in = initial_buy_in if unchanged else average_from_total(buy_in, shares)
+                values['acquisition_price'] = '' if buy_in is None else str(buy_in)
+                values['acquisition_currency'] = currency if buy_in is not None else ''
+            new_buy_in = not editing or buy_in != _optional_number(row.get("acquisition_price"))
+            if buy_in is not None and not currency.strip() and new_buy_in:
+                raise DataError("Enter the currency of the buy-in price, for example EUR.")
+            asset_id = save_position(
+                path, values, expected_revision=st.session_state["position_edit_revision"], position_id=position_id,
+                validate=lambda frame: validate_fund_listings(frame, funds),
+            )
+        except (DataError, OSError, UnicodeError) as exc:
+            st.error(f"Position was not saved: {exc}")
+        else:
+            _clear_editor()
+            for key in list(st.session_state):
+                if key.startswith("filter_"):
+                    del st.session_state[key]
+            st.session_state["position_saved_notice"] = f"Saved {name}."
+            st.rerun()
+    return True

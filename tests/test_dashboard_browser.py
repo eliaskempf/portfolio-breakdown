@@ -74,10 +74,12 @@ def test_chart_click_updates_category_positions_and_back(page):
     bounds = label.bounding_box()
     page.mouse.click(bounds["x"] + bounds["width"] / 2, bounds["y"] + bounds["height"] / 2)
     page.wait_for_function("document.querySelector('.js-plotly-plot')?.data[0].labels[0] === 'First category'")
-    # Both the allocation and position tables now describe only this branch.
-    for table in page.get_by_test_id("stDataFrame").all():
-        playwright.expect(table.locator('[role="gridcell"]', has_text="Invented Beta")).to_have_count(0)
-        playwright.expect(table.locator('[role="gridcell"]', has_text="Invented Alpha")).to_have_count(1)
+    allocation = page.get_by_role('table', name='Allocation', exact=True)
+    playwright.expect(allocation.get_by_text('Invented Alpha', exact=True)).to_have_count(1)
+    playwright.expect(allocation.get_by_text('Invented Beta', exact=True)).to_have_count(0)
+    positions = page.get_by_role('table', name='Positions', exact=True)
+    playwright.expect(positions.get_by_text('Invented Alpha', exact=True)).to_have_count(1)
+    playwright.expect(positions.get_by_text('Invented Beta', exact=True)).to_have_count(0)
     page.get_by_role("button", name="Back", exact=True).click()
     page.wait_for_function("document.querySelector('.js-plotly-plot')?.data[0].labels[0] === 'Portfolio'")
     page.get_by_role("combobox", name="Category", exact=True).click()
@@ -92,11 +94,11 @@ def test_dark_mode_reaches_chart_and_search_and_survives_reload(page):
     page.keyboard.press("Escape")
     background = page.get_by_test_id("stApp").evaluate("el => getComputedStyle(el).backgroundColor")
     assert sum(int(c) for c in background.removeprefix("rgb(").removesuffix(")").split(",")) < 200
-    search_color = page.locator('input[type="search"]').evaluate("el => getComputedStyle(el).color")
+    search_color = page.get_by_role('searchbox', name='Filter positions').evaluate("el => getComputedStyle(el).color")
     assert sum(int(c) for c in search_color.removeprefix("rgb(").removesuffix(")").split(",")) > 500
     chart = page.locator(".js-plotly-plot").first
     playwright.expect(chart).to_be_visible()
     assert chart.evaluate("el => el._fullLayout.paper_bgcolor") == "rgba(0, 0, 0, 0)"
     page.reload()
-    page.get_by_test_id("stDataFrame").first.wait_for()
+    page.get_by_role('table', name='Allocation', exact=True).wait_for()
     assert page.get_by_test_id("stApp").evaluate("el => getComputedStyle(el).backgroundColor") == background

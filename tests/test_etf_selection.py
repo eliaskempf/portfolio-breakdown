@@ -6,7 +6,9 @@ import pytest
 import yaml
 from streamlit.testing.v1 import AppTest
 
-from test_ui import by_label, launch
+from test_ui import by_label, launch, theme_view
+from list_helpers import list_frame
+from test_ui import activate
 
 
 @pytest.fixture
@@ -40,7 +42,7 @@ def multi_fund_workspace(tmp_path):
 
 
 def effective(app):
-    return next(item.value for item in app.dataframe if 'ETF-derived (EUR)' in item.value)
+    return list_frame(app, 'Exposure assets')
 
 
 def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(multi_fund_workspace):
@@ -48,7 +50,7 @@ def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(mul
     before = path.read_bytes()
     app = launch(multi_fund_workspace)
     assert not app.exception
-    assert not by_label(app.toggle, 'Break down ETFs').value
+    assert by_label(app.toggle, 'Break down ETFs').value
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     assert not app.exception and not app.error
     assert by_label(app.toggle, 'Synthetic World').value
@@ -65,6 +67,7 @@ def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(mul
     assert table['Total (EUR)'].sum() == 300.
     # Targets follow the same selective expansion, and the intact fund retains
     # its own performance instead of inheriting missing constituent history.
+    theme_view(app)
     chart = next(item.value for item in app.dataframe if 'Category' in item.value and 'Target portfolio %' in item.value)
     world = chart.loc[chart.Category == 'Synthetic World'].iloc[0]
     assert world['Target portfolio %'] == 40.
@@ -98,13 +101,13 @@ def test_proxy_status_and_newly_supported_funds_default_on(multi_fund_workspace)
     app = launch(multi_fund_workspace)
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     assert by_label(app.toggle, 'Synthetic World (proxy)').value
-    assert any('Approximate breakdown' in item.value for item in app.info)
+    assert any('Proxy:' in item.value for item in app.info)
     by_label(app.toggle, 'Synthetic Emerging').set_value(False).run()
     manifest.update(fund_id='new', name='New synthetic breakdown', isin='ZZ4444444444', tickers=['FUND-C'], proxy_source='')
     (directory / 'new.yaml').write_text(yaml.safe_dump(manifest))
     app.run()
     assert not app.exception
-    assert by_label(app.toggle, 'New synthetic breakdown').value
+    assert by_label(app.toggle, 'Unsupported Fund').value
     assert not by_label(app.toggle, 'Synthetic Emerging').value
 
 
@@ -175,6 +178,7 @@ def test_interrupted_render_restores_missing_filter_widget_state(multi_fund_work
     app.session_state['filter_holdings_selection'] = ['world', 'emerging']
     app.run()
     assert not app.exception
+    activate(app, 'Exposure')
     assert set(by_label(app.multiselect, 'Holdings').value) == {'world', 'emerging'}
     # An intentional empty selection remains empty.
     by_label(app.multiselect, 'Holdings').set_value([]).run()

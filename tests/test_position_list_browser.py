@@ -62,7 +62,7 @@ render_position_editor(path, read_snapshot(path), [], demo=True, embedded=True)
         process.wait(timeout=10)
 
 
-def test_double_click_after_sort_and_filter_opens_exact_account_and_renames(position_page):
+def test_pencil_after_sort_and_filter_opens_exact_account_and_renames(position_page):
     page, path = position_page
     table = page.get_by_role('table', name='Positions', exact=True)
     # Names are plain text, never markup, and identity survives client sorting.
@@ -72,7 +72,7 @@ def test_double_click_after_sort_and_filter_opens_exact_account_and_renames(posi
     page.get_by_role('searchbox', name='Filter positions').fill('Second')
     rows = table.locator('tbody tr')
     playwright.expect(rows).to_have_count(1)
-    rows.get_by_role('cell').first.dblclick()
+    rows.get_by_role('button', name='Edit Invented <b>Token</b> · Second', exact=True).click()
     account = page.get_by_role('textbox', name='Account / broker', exact=True)
     playwright.expect(account).to_have_value('Second')
     assert float(page.get_by_role('spinbutton', name='Quantity held (total)', exact=True).input_value()) == 2.
@@ -80,6 +80,7 @@ def test_double_click_after_sort_and_filter_opens_exact_account_and_renames(posi
     playwright.expect(name).to_be_enabled()
     name.fill('Custom browser name')
     page.get_by_role('button', name='Save position', exact=True).click()
+    playwright.expect(page.get_by_role('dialog')).to_have_count(0)
     table.wait_for()
     stored = load_holdings(path)
     assert stored.name.tolist() == ['Custom browser name', 'Custom browser name', 'Other invented token']
@@ -93,8 +94,9 @@ def test_keyboard_and_edit_button_open_rows_and_back_returns_to_list(position_pa
     table.locator('tbody tr').first.focus()
     page.keyboard.press('ArrowDown')
     page.keyboard.press('Enter')
+    page.get_by_role('dialog').get_by_role('button', name='Edit position').click()
     playwright.expect(page.get_by_role('textbox', name='Account / broker', exact=True)).to_have_value('Second')
-    page.get_by_role('button', name='Back to positions', exact=True).click()
+    page.get_by_role('button', name='Cancel', exact=True).click()
     table.wait_for()
     table.get_by_role('button', name='Edit Other invented token · Third', exact=True).click()
     playwright.expect(page.get_by_role('textbox', name='Account / broker', exact=True)).to_have_value('Third')

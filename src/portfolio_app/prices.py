@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 import json
 import math
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+from threading import RLock
 from typing import Callable, Protocol
 
 UTC = timezone.utc
@@ -47,6 +49,15 @@ class MarketDataProvider(Protocol):
     def price(self, ticker: str) -> Quote: ...
 
     def fx(self, currency: str) -> Quote: ...
+
+
+class UnavailableProvider:
+    """Allow editing when an explicitly offline demo has no price fixture."""
+    def price(self, ticker: str) -> Quote:
+        raise ValueError('No offline price fixture is available.')
+
+    def fx(self, currency: str) -> Quote:
+        raise ValueError('No offline FX fixture is available.')
 
 
 class YahooProvider:
@@ -115,6 +126,7 @@ class PriceService:
         self.now = now
         self.ttl = ttl
         self.cache_warning = ""
+        self._lock = RLock()
         self._entries: dict = {}
         if cache_path and cache_path.exists():
             try:
@@ -125,19 +137,35 @@ class PriceService:
             except (OSError, ValueError) as exc:
                 self.cache_warning = f"Price cache could not be read; fetching fresh data: {exc}"
 
-    def _save(self) -> None:
+    def _save(self, key: str) -> None:
         if self.cache_path is None:
             return
+        temporary = None
         try:
+            from portfolio_app.positions import _write_lock
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = self.cache_path.with_suffix(".tmp")
-            temporary.write_text(json.dumps(self._entries), encoding="utf-8")
-            temporary.replace(self.cache_path)
+            with _write_lock(self.cache_path.with_suffix('.lock')):
+                try:
+                    saved = json.loads(self.cache_path.read_text())
+                    if not isinstance(saved, dict):
+                        saved = {}
+                except (OSError, ValueError):
+                    saved = {}
+                saved[key] = self._entries[key]
+                with NamedTemporaryFile(mode='w', dir=self.cache_path.parent, delete=False) as stream:
+                    temporary = Path(stream.name)
+                    json.dump(saved, stream)
+                temporary.replace(self.cache_path)
         except OSError as exc:
             self.cache_warning = f"Price cache could not be saved: {exc}"
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
-    def _get(self, key: str, fetch: Callable[[], Quote], refresh: bool) -> PriceResult:
-        entry = self._entries.get(key, {})
+    def cached(self, key: str) -> tuple[PriceResult, bool]:
+        """Read without network access; the boolean indicates a refresh is due."""
+        with self._lock:
+            entry = self._entries.get(key, {})
         cached = None
         attempted_at = None
         error = ""
@@ -149,13 +177,20 @@ class PriceService:
             error = str(entry.get("error", ""))
         except (KeyError, TypeError, ValueError, AttributeError):
             pass
-        if not refresh and attempted_at and timedelta(0) <= self.now() - attempted_at < self.ttl:
-            return PriceResult(cached, "cached fallback" if cached and error else "cached" if cached else "missing", error)
+        due = not (attempted_at and timedelta(0) <= self.now() - attempted_at < self.ttl)
+        status = 'cached fallback' if cached and error else 'stale' if cached and due else 'cached' if cached else 'missing'
+        return PriceResult(cached, status, error), bool(due)
+
+    def _get(self, key: str, fetch: Callable[[], Quote], refresh: bool) -> PriceResult:
+        previous, due = self.cached(key)
+        if not refresh and not due:
+            return previous
+        cached = previous.quote
         try:
             quote = fetch()
             record = asdict(quote)
             record["observed_at"] = quote.observed_at.isoformat()
-            self._entries[key] = {"quote": record, "attempted_at": self.now().isoformat(), "error": ""}
+            entry = {"quote": record, "attempted_at": self.now().isoformat(), "error": ""}
             result = PriceResult(quote, "fresh")
         except Exception as exc:
             # Market providers raise several exception types. Failure is isolated per instrument.
@@ -163,9 +198,13 @@ class PriceService:
             record = asdict(cached) if cached else None
             if record:
                 record["observed_at"] = cached.observed_at.isoformat()
-            self._entries[key] = {"quote": record, "attempted_at": self.now().isoformat(), "error": error}
+            entry = {"quote": record, "attempted_at": self.now().isoformat(), "error": error}
             result = PriceResult(cached, "cached fallback" if cached else "missing", error)
-        self._save()
+        with self._lock:
+            self._entries[key] = entry
+        # Persistence may wait on another process's writer; cached UI reads
+        # must stay available while that happens.
+        self._save(key)
         return result
 
     def price(self, ticker: str, *, refresh: bool = False) -> PriceResult:

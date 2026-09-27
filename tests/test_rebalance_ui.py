@@ -1,10 +1,14 @@
+from test_ui import position_action
 """UI checks use deliberately invented positions and static prices in temp files."""
 
 import shutil
 
 import pytest
 
-from test_ui import by_label, launch
+from test_ui import by_label, launch as launch_app, activate
+
+def launch(path):
+    return launch_app(path, tab="Rebalance", subtab="Plan")
 from portfolio_app.rebalance_ui import MODES
 
 
@@ -24,6 +28,7 @@ def metrics(app):
 
 
 def calculate(app):
+    activate(app, "Rebalance", "Plan")
     by_label(app.button, "Calculate rebalance").click().run()
     assert not app.exception
 
@@ -32,7 +37,7 @@ def test_modes_tradeoff_selection_and_stale_plan_invalidation(rebalance_data):
     before = (rebalance_data / "holdings.csv").read_bytes()
     app = launch(rebalance_data)
     assert not app.exception
-    assert [tab.label for tab in app.tabs][:3] == ["Overview", "Rebalance", "Manage positions"]
+    assert [tab.label for tab in app.tabs][:4] == ["Overview", "Exposure", "Positions", "Rebalance"]
     by_label(app.number_input, "Allowed deviation (pp)").set_value(0).run()
     calculate(app)
     assert metrics(app)["Trades"] == "3"
@@ -66,30 +71,44 @@ def test_empty_positions_hidden_targets_redistributed_editor_retains_original(re
     by_label(app.checkbox, "No new positions").check().run()
     calculate(app)
     assert any("feasible" in item.value for item in app.error)
-    by_label(app.checkbox, "Ignore empty positions").check().run()
+    by_label(app.checkbox, "Exclude empty positions and redistribute their planning targets").check().run()
     assert not app.exception
+    activate(app, "Exposure")
     holdings = next(item.value for item in app.dataframe if "shares" in item.value)
-    assert len(holdings) == 3
+    activate(app, "Rebalance", "Plan")
+    assert len(holdings) == 4  # Planning controls do not filter Exposure.
     assert holdings.target_allocation.sum() == pytest.approx(100)
-    assert sorted(holdings.target_allocation) == pytest.approx([100 * (.2 + .2/3), 100 * (.3 + .2/3), 100 * (.3 + .2/3)])
-    by_label(app.radio, 'Position action').set_value('Edit position').run()
-    assert any("Synthetic D" in str(item.options) for item in app.selectbox)
+    assert sorted(holdings.target_allocation) == [20, 20, 30, 30]
+    by_label(app.checkbox, 'Hide empty positions').check().run()
+    activate(app, 'Exposure')
+    holdings = next(item.value for item in app.tabs[1].dataframe if 'shares' in item.value)
+    assert len(holdings) == 3
+    assert sorted(holdings.target_allocation) == [20, 30, 30]  # Hiding doesn't redistribute.
+    position_action(app, 'Edit position', position_id='position-3')
+    assert by_label(app.text_input, 'Instrument name').value == 'Synthetic D'
+    by_label(app.button, 'Cancel').click().run()
     calculate(app)
     assert "Trades" in metrics(app)
     assert not app.error
-    by_label(app.checkbox, "Ignore empty positions").uncheck().run()
+    by_label(app.checkbox, "Exclude empty positions and redistribute their planning targets").uncheck().run()
+    activate(app, "Exposure")
     holdings = next(item.value for item in app.dataframe if "shares" in item.value)
-    assert len(holdings) == 4
+    activate(app, "Rebalance", "Plan")
+    assert len(holdings) == 3  # Visibility is controlled separately.
     assert "Trades" not in metrics(app)
     assert path.read_bytes() == before
 
 
 def test_overview_filter_does_not_change_trade_universe(rebalance_data):
     app = launch(rebalance_data)
+    activate(app, "Exposure")
     by_label(app.multiselect, "Holdings").set_value([]).run()
+    activate(app, "Rebalance", "Plan")
     calculate(app)
     assert metrics(app)["Trades"] == "3"
+    activate(app, "Exposure")
     assert any("No holdings match" in item.value for item in app.info)
+    activate(app, "Rebalance", "Plan")
     plan = next(item.value for item in app.dataframe if "After (EUR)" in item.value)
     assert len(plan) == 3
     assert plan["After (EUR)"].sum() == pytest.approx(100)
@@ -104,7 +123,7 @@ def test_missing_targets_and_incomplete_redistribution_are_explained(rebalance_d
     with path.open("a") as file:
         file.write("d,Synthetic D,UNQUOTED,0,0.2\n")
     app = launch(rebalance_data)
-    by_label(app.checkbox, "Ignore empty positions").check().run()
+    by_label(app.checkbox, "Exclude empty positions and redistribute their planning targets").check().run()
     assert not app.exception
     assert any("missing targets are unknown" in item.value for item in app.error)
 
@@ -113,10 +132,10 @@ def test_all_empty_positions_have_useful_message_and_can_allocate_cash(rebalance
     path = rebalance_data / "holdings.csv"
     path.write_text("id,name,ticker,shares,target_allocation\na,Synthetic A,NVDA,0,0.4\nb,Synthetic B,TSM,0,0.6\n")
     app = launch(rebalance_data)
-    by_label(app.checkbox, "Ignore empty positions").check().run()
+    by_label(app.checkbox, "Exclude empty positions and redistribute their planning targets").check().run()
     assert not app.exception
     assert any("All positions have zero shares" in item.value for item in app.info)
-    by_label(app.checkbox, "Ignore empty positions").uncheck().run()
+    by_label(app.checkbox, "Exclude empty positions and redistribute their planning targets").uncheck().run()
     by_label(app.selectbox, "Rebalancing mode").set_value(MODES[2]).run()
     by_label(app.number_input, "New money (EUR)").set_value(100).run()
     calculate(app)
@@ -141,7 +160,9 @@ def test_buy_selection_constrains_cash_and_invalidates_previous_plan(rebalance_d
     assert plan["Trade (EUR)"].tolist() == pytest.approx([100])
     by_label(app.multiselect, "Positions eligible for buying").set_value(["position-1", "position-2"]).run()
     assert "Trades" not in metrics(app)
+    activate(app, "Exposure")
     by_label(app.multiselect, "Holdings").set_value([]).run()
+    activate(app, "Rebalance", "Plan")
     calculate(app)
     assert metrics(app)["Trades"] == "2"
     assert metrics(app)["Deviation outside ranges"] == "0.000 pp"
@@ -163,7 +184,7 @@ def test_buy_selection_empty_positions_and_changed_universe_fail_closed(rebalanc
     by_label(app.checkbox, "No new positions").check().run()
     calculate(app)
     assert any("No feasible buy" in item.value for item in app.error)
-    by_label(app.checkbox, "Ignore empty positions").check().run()
+    by_label(app.checkbox, "Exclude empty positions and redistribute their planning targets").check().run()
     assert not app.exception
     assert by_label(app.multiselect, "Positions eligible for buying").value == []
     assert len(by_label(app.multiselect, "Positions eligible for buying").options) == 3

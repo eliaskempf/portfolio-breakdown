@@ -85,7 +85,8 @@ def page(grid_url):
         page = browser.new_page(viewport={"width": 1400, "height": 800})
         page.goto(grid_url)
         page.wait_for_function("!!window.__portfolioGridInteractions")
-        page.get_by_test_id("stDataFrame").first.wait_for()
+        # The dashboard uses the shared read-only table; editor tests use Glide.
+        page.locator('[data-testid="stDataFrame"], table[aria-label="Allocation"]').first.wait_for()
         yield page
         browser.close()
 
