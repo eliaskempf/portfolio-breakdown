@@ -1149,3 +1149,21 @@ For a separate preview, run `uv run portfolio-app --data-dir /path/to/private/da
 directory explicitly when launching from a worktree. Restart that preview if
 imported modules remain stale; do not restart another session's app. Check the
 port before assuming which version a browser tab displays.
+
+### Concurrent integration checkpoint
+
+At this handoff, `main` was still being edited by another session. Its changes
+included lazy tab rendering, a shared positions table, and background market-data
+loading. Analytics and these newer changes were reconciled in the isolated
+`codex/analytics-main-integration` worktree at `/tmp/portfolio-main-integration`;
+the reconciliation remains uncommitted there. No changes were written into the
+main workspace, and the analytics branch has not yet been merged into main.
+
+The first isolated snapshot passed 635 tests. After incorporating a later,
+still-changing snapshot, the five analytics UI tests and four selected browser
+tests passed. Its full suite reported 619 passed, 22 failed, and 7 skipped;
+failures involve view/widget expectations during the lazy-navigation transition.
+Do not treat that intermediate snapshot as a finished integration or overwrite
+newer work with it. Obtain a stable handoff from the other session, compare the
+latest source and tests again, reconcile remaining changes, and rerun validation
+before merging. Preserve all uncommitted work and private data.
