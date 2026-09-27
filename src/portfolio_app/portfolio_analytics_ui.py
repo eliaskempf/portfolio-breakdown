@@ -1,11 +1,10 @@
 """Analytics within Overview's existing category navigation and visual style."""
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 from portfolio_app.analytics import snapshot_analytics
 from portfolio_app.analytics_ui import context_key, data_quality_caption, display_value, load_metrics, load_risk, render_sources, risk_settings
-from portfolio_app.charts import style_figure
+from portfolio_app.charts import correlation_chart
 from portfolio_app.company_merges import build_plan, load_company_names, load_settings
 from portfolio_app.display_names import instrument_name
 from portfolio_app.fundamentals import Metric
@@ -34,6 +33,23 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
         st.info('No held positions in this category and account selection.')
         return
     st.caption(f'{scope} · {len(selected)} held positions' + (' · Account filter active' if set(selected_accounts) != set(accounts) else ''))
+    heading, action = st.columns([4, 1], vertical_alignment='center')
+    heading.markdown('**Historical risk**')
+    heading.caption(f'{benchmark or "Choose a benchmark in Options"} · {years} years · Weekly EUR returns')
+    loaded = st.session_state.get(key + '_risk_loaded', False)
+    calculate = action.button('Refresh risk' if loaded else 'Calculate risk', icon=':material/refresh:' if loaded else ':material/analytics:',
+                              type='secondary', disabled=not benchmark, key=key + '_risk_calculate', width='stretch')
+    if calculate:
+        st.session_state[key + '_risk_loaded'] = True
+        loaded = True
+    if loaded and benchmark:
+        with st.spinner('Calculating historical risk…'):
+            risk, status = load_risk(selected, data_dir, demo, benchmark, years, calculate and not demo)
+        render_risk_dashboard(risk, status, selected)
+    else:
+        st.caption('Estimate beta, volatility and diversification for today’s allocation. Uses market-price history; not personal historical returns.')
+    st.divider()
+    st.markdown('**Valuation & income**')
     try:
         with st.spinner('Loading analytics…'):
             snapshots = load_metrics(selected, data_dir, demo=demo, refresh=refresh)
@@ -79,22 +95,6 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
         st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch')
         st.caption('Missing metrics stay unavailable. Loss-making equities are excluded from P/E. Fees are already reflected in prices; '
                    'trailing distributions are not a forecast. Buy-in performance is available in the Performance view.')
-    st.divider()
-    heading, action = st.columns([4, 1], vertical_alignment='center')
-    heading.markdown('**Historical risk**')
-    heading.caption(f'{benchmark or "Choose a benchmark in Options"} · {years} years · Weekly EUR returns')
-    loaded = st.session_state.get(key + '_risk_loaded', False)
-    calculate = action.button('Refresh risk' if loaded else 'Calculate risk', icon=':material/refresh:' if loaded else ':material/analytics:',
-                              type='secondary', disabled=not benchmark, key=key + '_risk_calculate', width='stretch')
-    if calculate:
-        st.session_state[key + '_risk_loaded'] = True
-        loaded = True
-    if loaded and benchmark:
-        with st.spinner('Calculating historical risk…'):
-            risk, status = load_risk(selected, data_dir, demo, benchmark, years, calculate and not demo)
-        render_risk_dashboard(risk, status, selected)
-    else:
-        st.caption('Estimate beta, volatility and diversification for today’s allocation. Uses market-price history; not personal historical returns.')
     with st.expander('Fundamental sources & data quality'):
         render_sources(snapshots)
 
@@ -144,9 +144,7 @@ def render_risk_dashboard(result, status, holdings):
         st.dataframe(frame, hide_index=True, width='stretch', column_config={label: st.column_config.NumberColumn(format='%.2f') for label in labels.values()})
         st.caption('Contributions sum to portfolio volatility. Negative contributions indicate diversification; cash correlations are undefined.')
         with st.expander('Holding correlations'):
-            correlation = result.correlations.rename(index=lambda key: f'{names.get(key, key)} [{key}]', columns=lambda key: f'{names.get(key, key)} [{key}]')
-            figure = style_figure(px.imshow(correlation, zmin=-1, zmax=1, color_continuous_scale='RdBu_r'))
-            figure.update_layout(height=max(340, min(700, 45 * len(correlation))))
+            figure = correlation_chart(result.correlations, names)
             st.plotly_chart(figure, width='stretch', config={'displayModeBar': False})
     if status.Status.eq('stale').any():
         st.warning('Risk estimates include cached fallback market or FX histories.')

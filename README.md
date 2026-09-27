@@ -44,7 +44,8 @@ distributions. Fund costs use current value times the annual fee rate; these cos
 are already reflected in fund prices and are not deducted again from gains.
 Every aggregate reports coverage; missing values are never assumed to be zero.
 
-**Calculate risk** adds beta, annualized volatility, benchmark correlation,
+Analytics leads with **Historical risk**, followed by valuation, income and
+concentration. **Calculate risk** adds beta, annualized volatility, benchmark correlation,
 holding correlations, and contributions to volatility. Defaults are three years
 and `IUSQ.DE`, a EUR-listed MSCI ACWI ETF benchmark proxy. Both are configurable;
 one- and five-year windows are also available. Risk describes today's weights
