@@ -179,3 +179,25 @@ def test_interrupted_render_restores_missing_filter_widget_state(multi_fund_work
     # An intentional empty selection remains empty.
     by_label(app.multiselect, 'Holdings').set_value([]).run()
     assert by_label(app.multiselect, 'Holdings').value == []
+
+
+def test_reviewed_company_name_reaches_chart_and_merge_review(multi_fund_workspace):
+    (multi_fund_workspace / 'company-identities.yaml').write_text('security:ZZ1111111111: invented-issuer\n')
+    (multi_fund_workspace / 'company-names.yaml').write_text('invented-issuer: Invented issuer display name\n')
+    app = launch(multi_fund_workspace)
+    by_label(app.toggle, 'Break down ETFs').set_value(True).run()
+    assert not app.exception and not app.error
+    assert 'Invented issuer display name' in effective(app).Asset.tolist()
+    provenance = next(item.value for item in app.dataframe if 'Original asset' in item.value)
+    assert set(provenance['Original asset']) == {'Invented Alpha'}
+
+
+def test_fund_selection_survives_master_hiding_it_in_the_same_rerun(multi_fund_workspace):
+    app = launch(multi_fund_workspace)
+    by_label(app.toggle, 'Break down ETFs').set_value(True).run()
+    by_label(app.toggle, 'Synthetic World').set_value(False)
+    by_label(app.toggle, 'Break down ETFs').set_value(False).run()
+    by_label(app.toggle, 'Break down ETFs').set_value(True).run()
+    assert not app.exception and not app.error
+    assert not by_label(app.toggle, 'Synthetic World').value
+    assert by_label(app.toggle, 'Synthetic Emerging').value

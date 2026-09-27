@@ -44,6 +44,20 @@ def save_settings(path: Path, settings: MergeSettings) -> None:
     save_document(path, yaml.safe_dump({'disabled': sorted(settings.disabled)}), settings.revision)
 
 
+def load_company_names(path: Path) -> dict[str, str]:
+    """Optional reviewed issuer labels, distinct from original security names."""
+    if not path.exists():
+        return {}
+    try:
+        names = yaml.safe_load(path.read_text())
+        if not isinstance(names, dict) or any(not isinstance(k, str) or not k.strip()
+                                             or not isinstance(v, str) or not v.strip() for k, v in names.items()):
+            raise ValueError('Expected company IDs and nonempty company names')
+        return names
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        raise DataError(f'Invalid company names: {exc}') from exc
+
+
 def normalized_name(name: str) -> str:
     name = unicodedata.normalize('NFKC', name).casefold().replace('&', ' and ')
     name = re.sub(r'[^\w\s]', ' ', name)
@@ -130,7 +144,7 @@ class MergePlan:
 
 
 def build_plan(holdings: pd.DataFrame, funds: list[FundSnapshot], reviewed: dict, settings: MergeSettings,
-               classifications: dict | None = None) -> MergePlan:
+               classifications: dict | None = None, company_names: dict[str, str] | None = None) -> MergePlan:
     items = inventory(holdings, funds, reviewed)
     parents = list(range(len(items)))
     def root(i):
@@ -187,5 +201,8 @@ def build_plan(holdings: pd.DataFrame, funds: list[FundSnapshot], reviewed: dict
         basis = 'Estimated name match' if is_estimate else 'Reviewed company mapping' if has_review else 'Same security identity'
         enabled = not any(m['node'] in settings.disabled for m in members)
         key = sha256('\0'.join(sorted(m['node'] for m in members)).encode()).hexdigest()[:20]
-        result.append(CompanyGroup(key, display_name(canonical['name']), members, canonical['asset_id'], basis, enabled))
+        issuers = {reviewed[identity(m['asset_id'], m['isin'])] for m in members
+                   if identity(m['asset_id'], m['isin']) in reviewed}
+        issuer_name = (company_names or {}).get(next(iter(issuers)), '') if len(issuers) == 1 else ''
+        result.append(CompanyGroup(key, issuer_name or display_name(canonical['name']), members, canonical['asset_id'], basis, enabled))
     return MergePlan(sorted(result, key=lambda g: (g.name.casefold(), g.key)))

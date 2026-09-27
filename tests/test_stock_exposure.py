@@ -82,6 +82,19 @@ def test_known_non_equity_component_is_excluded_from_stock_denominator():
     assert result.companies['Total (EUR)'].sum() == 285.
 
 
+def test_nested_equity_fund_keeps_value_but_is_not_a_company():
+    snapshots = funds()
+    nested = snapshots[0].constituents.copy()
+    nested['instrument_type'], nested['exposure_kind'] = 'etf', 'equity'
+    snapshots[0] = replace(snapshots[0], constituents=nested)
+    result = stock_exposure(sources(), snapshots)
+    assert result.stock_value == 400.
+    assert result.companies['Total (EUR)'].tolist() == [125.]
+    unresolved_fund = result.unresolved.loc[result.unresolved.Status == 'Unresolved equity fund']
+    assert unresolved_fund['EUR value'].sum() == 50.
+    assert result.companies['Total (EUR)'].sum() + result.unresolved['EUR value'].sum() == 400.
+
+
 def test_zero_value_unknown_positions_do_not_reduce_coverage():
     rows = sources()
     rows.loc[0, 'instrument_type'] = 'unknown'

@@ -787,6 +787,13 @@ are combined; receipt ratios do not multiply exposure. Saved positions, strategi
 bucket ownership, costs, and targets remain unchanged. An estimated grouping is
 an analytical convenience, not a verified security equivalence.
 
+Optional private `company-names.yaml` labels reviewed company IDs independently
+of their source securities. This keeps a company combining ordinary and preferred
+shares from being labelled as only one share class. Undo restores each original
+security's display name. Reviewed nested equity funds in provider exports remain
+unresolved fund exposure in the stock-only view, rather than being counted as
+individual companies; their value remains in the equity denominator.
+
 The momentum proxy uses the iShares Europe Momentum fund's official holdings.
 MSCI's [constituent terms](https://www.msci.com/legal/index-constituents-disclaimer)
 prohibit software extraction of the index lookup; this integration does not

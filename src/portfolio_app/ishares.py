@@ -19,6 +19,14 @@ from portfolio_app.holdings import DataError
 NS = 'urn:schemas-microsoft-com:office:spreadsheet'
 CASH_CLASSES = {'Cash', 'Money Market', 'Cash Collateral and Margins', 'FX'}
 
+# These fund securities appear as "Equity" in the provider's export. Keep
+# their fund wrappers visible rather than count them as individual companies.
+# Public issuer metadata: ishares.com product pages for these two ISINs.
+NESTED_EQUITY_FUNDS = {
+    ('4BRZ', 'ISHARES MSCI BRAZIL UCITS ET USDHA', 'USD'): 'DE000A0Q4R85',
+    ('IKSA', 'ISHARES MSCI SAUDI ARABIA CAPPED', 'USD'): 'IE00BYYR0489',
+}
+
 
 def download_url(product_id: str) -> str:
     return ('https://www.blackrock.com/varnish-api/uk-retail01-product-data/product-data/api/v1/get-fund-document'
@@ -94,9 +102,11 @@ def parse_holdings(content: bytes) -> tuple[date, pd.DataFrame, str]:
             # Local ticker alone does not identify an exchange listing. Keep it
             # as source metadata, never as a Yahoo ticker / implicit merge key.
             identity = '\0'.join((row[0], row[1], row[8]))
+            nested_isin = NESTED_EQUITY_FUNDS.get((row[0], row[1], row[8]), '')
             records.append({'constituent_id': 'ishares:' + sha256(identity.encode()).hexdigest()[:24],
-                            'name': row[1], 'ticker': '', 'isin': '', 'weight': float(weight),
-                            'instrument_type': 'equity', 'source_ticker': row[0],
+                            'name': row[1], 'ticker': '', 'isin': nested_isin, 'weight': float(weight),
+                            'instrument_type': 'etf' if nested_isin else 'equity',
+                            'exposure_kind': 'equity', 'source_ticker': row[0],
                             'market_currency': row[8], 'sector': row[2]})
         if net_cash < 0:
             raise ValueError('Net cash borrowing requires a signed exposure model')
@@ -104,7 +114,8 @@ def parse_holdings(content: bytes) -> tuple[date, pd.DataFrame, str]:
                         'ticker': '', 'isin': '', 'weight': float(net_cash / total), 'instrument_type': 'cash'})
         notes = ('Weights calculated from all exported market values, including net cash, to avoid rounded-percentage losses. '
                  'Cash, money-market instruments, collateral and FX are netted. Futures notional exposure is not allocated to companies. '
-                 'Source local tickers have no ISIN or exchange; no name-based matching to other securities is performed.')
+                 'Reviewed nested equity funds remain unresolved fund exposure. Other source local tickers have no '
+                 'ISIN or exchange; no name-based matching to other securities is performed.')
         return as_of, validate_constituents(pd.DataFrame(records)), notes
     except (ET.ParseError, KeyError, ValueError, TypeError, IndexError, StopIteration, InvalidOperation) as exc:
         raise DataError(f'Invalid iShares holdings export: {exc}') from exc

@@ -5,7 +5,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from portfolio_app.company_merges import MergeSettings, build_plan, load_settings, save_settings
+from portfolio_app.company_merges import MergeSettings, build_plan, load_company_names, load_settings, save_settings
 from portfolio_app.etf import FundSnapshot, expand_etfs, effective_exposure_table, fund_classifications
 from portfolio_app.exposures import normalize_exposures
 from portfolio_app.holdings import DataError, parse_holdings
@@ -136,3 +136,36 @@ def test_cash_never_participates_and_invalid_preferences_fail(tmp_path):
     path.write_text('disabled: definitely-not-a-list\n')
     with pytest.raises(DataError):
         load_settings(path)
+
+
+def test_reviewed_issuer_name_does_not_label_whole_company_as_one_share_class(tmp_path):
+    rows, funds = universe(names=('Invented Photon Preferred', 'Invented Photon Ordinary'))
+    reviewed = {'security:ZZ1111111111': 'invented-issuer', 'instrument:provider-1': 'invented-issuer'}
+    path = tmp_path / 'company-names.yaml'
+    assert load_company_names(path) == {}
+    path.write_text('invented-issuer: Invented Photon\n')
+    plan = build_plan(rows, funds, reviewed, MergeSettings(set()), company_names=load_company_names(path))
+    assert plan.groups[0].name == 'Invented Photon'
+    assert {m['name'] for m in plan.groups[0].members} == {'Invented Photon Preferred', 'Invented Photon Ordinary'}
+    disabled = {m['node'] for m in plan.groups[0].members}
+    split = build_plan(rows, funds, reviewed, MergeSettings(disabled), company_names=load_company_names(path))
+    linked, snapshots, _ = split.apply(rows, funds, {})
+    assert set(stock_exposure(linked, snapshots).companies.Company) == {'Invented Photon Preferred', 'Invented Photon Ordinary'}
+    path.write_text('invented-issuer: []\n')
+    with pytest.raises(DataError, match='company names'):
+        load_company_names(path)
+
+
+def test_reviewed_links_survive_identifier_enrichment_and_plain_provider_refresh():
+    rows, original = universe()
+    reviewed = {'security:ZZ1111111111': 'invented-issuer', 'instrument:provider-1': 'invented-issuer'}
+    enriched = [replace(f, constituents=f.constituents.copy()) for f in original]
+    enriched[1].constituents['isin'] = 'ZZ1111111111'
+    disabled = set()
+    for snapshots in [original, enriched, original]:
+        plan = build_plan(rows, snapshots, reviewed, MergeSettings(set()))
+        assert plan.groups[0].basis == 'Reviewed company mapping'
+        linked, funds, _ = plan.apply(rows, snapshots, {})
+        assert stock_exposure(linked, funds).companies['Total (EUR)'].tolist() == [150.]
+        disabled.update(m['node'] for m in plan.groups[0].members)
+        assert not build_plan(rows, snapshots, reviewed, MergeSettings(disabled)).groups[0].enabled

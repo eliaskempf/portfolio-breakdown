@@ -107,6 +107,21 @@ def test_local_ticker_never_causes_cross_market_merge():
     assert frame.constituent_id.is_unique and frame.ticker.eq('').all()
 
 
+def test_reviewed_nested_fund_is_not_imported_as_a_company(monkeypatch):
+    monkeypatch.setattr(ishares, 'NESTED_EQUITY_FUNDS', {
+        ('ABC', 'Invented share', 'AAA'): 'ZZ7777777777',
+    })
+    _, frame, _ = ishares.parse_holdings(xml_export())
+    assert frame.weight.tolist() == pytest.approx([.99, .01])
+    assert frame.iloc[0].instrument_type == 'etf'
+    assert frame.iloc[0].exposure_kind == 'equity'
+    assert frame.iloc[0]['isin'] == 'ZZ7777777777'
+    # The same local ticker in another currency must not inherit the override.
+    _, other, _ = ishares.parse_holdings(xml_export().replace(b'>AAA<', b'>BBB<'))
+    assert other.iloc[0].instrument_type == 'equity'
+    assert other.iloc[0]['isin'] == ''
+
+
 @pytest.fixture
 def synthetic_source(monkeypatch):
     isin = 'ZZ9999999999'

@@ -116,6 +116,11 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
                 constituent_kind = 'equity' if equity_universe else 'unknown'
             if constituent_kind in {'cash', 'crypto', 'physical', 'non_equity'}:
                 continue
+            if constituent_kind == 'etf' and constituent.get('exposure_kind') == 'equity':
+                stock_total += amount
+                unknown.append({**common, 'Exposure': constituent['name'], 'EUR value': amount,
+                                'Status': 'Unresolved equity fund'})
+                continue
             if constituent_kind == 'equity':
                 stock_total += amount
             else:

@@ -39,7 +39,7 @@ from portfolio_app.strategic_ui import render_strategic_overview
 from portfolio_app.scoped_ui import render_scoped_rebalancing
 from portfolio_app.stock_ui import render_stock_exposure
 from portfolio_app.stock_exposure import load_company_identities
-from portfolio_app.company_merges import build_plan, load_settings
+from portfolio_app.company_merges import build_plan, load_company_names, load_settings
 from portfolio_app.company_merge_ui import render_company_merges
 
 
@@ -141,7 +141,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         representation = 'ETF look-through' if lookthrough else 'Instruments'
         try:
             settings = load_settings(data_dir / 'company-merges.yaml')
-            plan = build_plan(holdings, funds, load_company_identities(data_dir / 'company-identities.yaml'), settings, classifications)
+            plan = build_plan(holdings, funds, load_company_identities(data_dir / 'company-identities.yaml'), settings, classifications,
+                              load_company_names(data_dir / 'company-names.yaml'))
             render_company_merges(plan, settings, data_dir / 'company-merges.yaml')
             if lookthrough:
                 holdings, funds, classifications = plan.apply(holdings, funds, classifications)

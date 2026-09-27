@@ -21,11 +21,23 @@ def render_etf_selection(holdings: pd.DataFrame, funds: list[FundSnapshot], data
     excluded = set(st.session_state.get(excluded_key, []))
     if not enabled:
         return False, []
+
+    def remember_fund(isin: str, widget_key: str) -> None:
+        # Persist before rendering: another control can interrupt a rerun before
+        # it reaches the end of this expander or hide these widgets entirely.
+        saved = set(st.session_state.get(excluded_key, []))
+        if st.session_state[widget_key]:
+            saved.discard(isin)
+        else:
+            saved.add(isin)
+        st.session_state[excluded_key] = sorted(saved)
+
     with st.expander('Individual ETFs', expanded=True):
         for fund in known:
             label = display_name(fund.name) + (' (proxy)' if fund.proxy_source else '')
+            widget_key = f'etf_expand_{context}_{fund.isin}'
             expand = st.toggle(label, value=fund.isin not in excluded,
-                               key=f'etf_expand_{context}_{fund.isin}',
+                               key=widget_key, on_change=remember_fund, args=(fund.isin, widget_key),
                                help=f'{fund.isin} · Snapshot {fund.as_of.isoformat()}')
             if fund.proxy_source:
                 st.caption(f'Proxy: {fund.proxy_source} · {fund.as_of.isoformat()}')
