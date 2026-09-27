@@ -637,8 +637,11 @@ Position details show full instrument identity, quantity, average and total buy-
 value and gains, plus a separate **Market-price history** chart. Its 1M, 6M, 1Y,
 5Y and Max ranges show closing prices in the listing’s quote currency without
 dividend reinvestment. This is instrument history, not personal return history.
-History loads on demand, uses a private one-hour cache, and labels stale fallback
-results. Manual or unsupported instruments show an unavailable state. Demo
+History loads automatically in the background when a position is opened, uses a
+private one-hour cache, and labels saved results with their retrieval time.
+Details and both close controls remain usable during loading. Failed attempts
+wait 60 seconds before an automatic retry; **Retry history** bypasses that wait.
+Manual or unsupported instruments show an unavailable state. Demo
 history is explicitly synthetic and never requests live prices.
 
 Label performance sums matching current values and costs, then calculates
@@ -686,6 +689,14 @@ old quotes are not silently presented as freshly downloaded data. Price and FX
 timestamps and ages are shown separately. Cached data may be old, including
 over market closures; consult its age when interpreting values. Without a
 usable cached quote, the affected position remains unvalued.
+
+Quote and FX retrieval runs in the background. Navigation and saves use available
+cached values immediately while an update is pending; new results appear
+automatically. Only the selected main tab and Rebalance subtab are computed.
+Filters, planning controls, and category/target editor drafts survive tab changes.
+Parsed files are reused until their file revisions change, including externally
+edited inputs and refreshed ETF holdings. Calculation results still use current
+holdings, targets, and available prices.
 
 The cache survives restarts; deleting `.cache` forces retrieval again. Provider
 cookie/timezone cache files also live there. These runtime files are ignored
@@ -992,6 +1003,26 @@ Manually overridden hierarchy-node targets, realized P&L, and historical analysi
 remain deferred.
 
 
+## Shared list presentation
+
+`src/portfolio_app/list_ui.py` defines the shared read-only list component,
+column formatting, taxonomy badges, sorting, row actions and scrolling policy.
+Overview allocations/performance, position lists, Exposure assets and source
+contributions, and ETF constituent lists use it. Keep presentation changes here
+instead of copying table CSS or row-selection controls into individual pages.
+Use `ListColumn` for column labels, numeric precision and signed values.
+
+Lists grow with the page by default. Exposure enables the shared
+`BOUNDED_LIST_HEIGHT` only when ETF breakdown is enabled; ETF constituent details
+also use that limit. Narrow screens retain horizontal scrolling. Editable
+spreadsheet forms and analytical diagnostic tables retain their native grid
+controls. Search within a displayed list does not recalculate allocation weights.
+
+Exposure's main list shows how many source positions contribute to each asset.
+Opening an asset shows each direct or ETF position's euro contribution and its
+percentage of that asset's exposure, with separate account positions preserved.
+Missing source valuations leave contribution percentages unavailable.
+
 ## Parallel development
 
 Use a separate Git worktree and branch for each coding session, with one session
@@ -1133,37 +1164,30 @@ Use `uv run pytest`. Focused analytics tests are `tests/test_analytics.py`,
 `tests/test_ux_browser.py`. Tests must never read the working portfolio or require
 live market-data access. Browser screenshots must remain in temporary directories.
 
-Before the final integration, the feature branch had 635 core tests passing;
-the latest presentation change passed all five analytics UI tests and its browser
-check, including dark-mode inspection. Re-run against the current tree because
-other UI and price-loading work may have advanced independently.
+The final integration preserves the completed UI refactor and background
+market-data implementation checkpointed in `83b3f11`. Analytics uses the shared
+`ListColumn` renderer, including numeric sorting and optional display text, and
+its presets and benchmark settings survive lazy tab changes. The earlier
+in-progress integration snapshot and its failing lazy-view tests are obsolete.
+Integration validation: 651 core tests passed (8 optional browser modules skipped),
+and all 15 selected browser checks passed across analytics, shared position lists,
+navigation, background market-data loading, and exposure. The background-loading
+test waits for the synthetic worker to acknowledge startup before inspecting its
+call log. Re-run validation against the current tree when continuing development.
 
-The analytics branch is `codex/portfolio-analytics`. Earlier commits include a
-source-only snapshot of the UI refactor; they are not based solely on the older
-UI. Inspect `git status`, `git worktree list`, and the actual diff before merging
-or cleaning up. Main may intentionally retain another session's uncommitted work.
-Do not reset, stash, delete, or commit that work just to make the tree clean.
+Continue new work from `main` after this integration. The original feature branch
+is `codex/portfolio-analytics`; the final reconciliation was prepared separately
+on `codex/analytics-final-merge`. Earlier temporary integration worktrees may
+contain obsolete attempts. Inspect `git status`, `git worktree list`, and the
+actual diff before merging or cleaning up. Future sessions may have uncommitted
+work: do not reset, stash, delete, or commit it just to make a tree clean.
 
-For a separate preview, run `uv run portfolio-app --data-dir /path/to/private/data
---server.port 8502 --server.runOnSave true`. Use the intended persistent data
-directory explicitly when launching from a worktree. Restart that preview if
-imported modules remain stale; do not restart another session's app. Check the
+For a separate preview:
+
+```bash
+uv run portfolio-app --data-dir /path/to/private/data --server.port 8502 --server.runOnSave true
+```
+
+Use the intended persistent data directory explicitly when launching from a
+worktree. Restart that preview if imported modules remain stale; do not restart another session's app. Check the
 port before assuming which version a browser tab displays.
-
-### Concurrent integration checkpoint
-
-At this handoff, `main` was still being edited by another session. Its changes
-included lazy tab rendering, a shared positions table, and background market-data
-loading. Analytics and these newer changes were reconciled in the isolated
-`codex/analytics-main-integration` worktree at `/tmp/portfolio-main-integration`;
-the reconciliation remains uncommitted there. No changes were written into the
-main workspace, and the analytics branch has not yet been merged into main.
-
-The first isolated snapshot passed 635 tests. After incorporating a later,
-still-changing snapshot, the five analytics UI tests and four selected browser
-tests passed. Its full suite reported 619 passed, 22 failed, and 7 skipped;
-failures involve view/widget expectations during the lazy-navigation transition.
-Do not treat that intermediate snapshot as a finished integration or overwrite
-newer work with it. Obtain a stable handoff from the other session, compare the
-latest source and tests again, reconcile remaining changes, and rerun validation
-before merging. Preserve all uncommitted work and private data.

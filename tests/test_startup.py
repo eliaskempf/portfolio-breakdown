@@ -9,7 +9,7 @@ from portfolio_app.app import main
 from portfolio_app.demo import create_demo_data
 from portfolio_app.holdings import load_holdings
 from portfolio_app.positions import read_snapshot, save_position
-from test_ui import by_label
+from test_ui import by_label, activate
 
 
 def test_each_launch_gets_editable_fresh_demo_and_preserves_personal_data(tmp_path, monkeypatch):
@@ -123,23 +123,28 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     assert not restarted.exception
     assert restarted.metric[0].value == "€744.00"
     by_label(restarted.radio, "Portfolio workspace").set_value("My portfolio").run()
+    restarted.session_state['exposure_sources_open'] = True
+    activate(restarted, 'Exposure')
     assert next(item.value for item in restarted.tabs[1].dataframe if "shares" in item.value).iloc[0]["shares"] == 4
 
 
 def test_breakdown_choice_survives_workspace_widget_cleanup(tmp_path):
     demo = create_demo_data(tmp_path / 'demo')
     app = launch_workspaces(tmp_path / 'personal', demo, start_demo=True)
+    activate(app, 'Exposure')
     assert by_label(app.toggle, 'Break down ETFs').value
     by_label(app.toggle, 'Break down ETFs').set_value(False).run()
     by_label(app.radio, 'Portfolio workspace').set_value('My portfolio').run()
     by_label(app.radio, 'Portfolio workspace').set_value('Demo portfolio').run()
     assert not app.exception
+    activate(app, 'Exposure')
     assert not by_label(app.toggle, 'Break down ETFs').value
 
 
 def test_switching_workspaces_discards_unsubmitted_form_and_filters(tmp_path):
     demo = create_demo_data(tmp_path / "demo")
     app = launch_workspaces(tmp_path / "personal", demo, start_demo=True)
+    activate(app, "Exposure")
     by_label(app.multiselect, "Holdings").set_value([]).run()
     position_action(app, 'Add position')
     by_label(app.text_input, "Instrument name").set_value("Unsubmitted dummy edit")
@@ -150,6 +155,8 @@ def test_switching_workspaces_discards_unsubmitted_form_and_filters(tmp_path):
     by_label(app.radio, "Portfolio workspace").set_value("Demo portfolio").run()
     position_action(app, 'Add position')
     assert by_label(app.text_input, "Instrument name").value == ""
+    by_label(app.button, "Cancel").click().run()
+    activate(app, "Exposure")
     assert len(by_label(app.multiselect, "Holdings").value) == 6
 
 

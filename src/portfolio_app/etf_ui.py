@@ -8,6 +8,7 @@ from portfolio_app.display_names import display_name, compact_fund_name, instrum
 from portfolio_app.taxonomy import Classifications, describe, taxonomy_names
 from portfolio_app.vaneck import refresh_snapshot
 from portfolio_app.etf_sources import SOURCES, refresh_snapshot as refresh_provider_snapshot
+from portfolio_app.list_ui import BOUNDED_LIST_HEIGHT, ListColumn, frame_rows, render_list
 
 
 def render_snapshot_controls(funds: list[FundSnapshot], *, demo: bool = False) -> list[FundSnapshot]:
@@ -51,7 +52,10 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
         source = selected if holdings is None else holdings
         position = next((row for row in source.to_dict('records') if matching_fund(row, [fund]) is not None), None)
         label = instrument_name(position) if position else compact_fund_name(fund.name)
-        with st.expander(f"ETF breakdown: {label}"):
+        panel = st.expander(f"ETF breakdown: {label}", key=f'etf_detail_{fund.fund_id}', on_change='rerun')
+        if not panel.open:
+            continue
+        with panel:
             if fund.proxy_source:
                 st.info(f'Approximate breakdown · {fund.proxy_source}')
             st.caption(f"ISIN {fund.isin} · Holdings as of {fund.as_of.isoformat()} · {snapshot_age_days(fund)} day(s) old")
@@ -75,9 +79,12 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
                 st.caption("No position in this ETF is selected. Fund percentages are available independently of your holdings.")
             columns += [column for column in table if column.startswith("classification:") and
                         (classification_names is None or column.removeprefix("classification:") in classification_names)]
-            st.dataframe(table[columns], hide_index=True, width="stretch", height=600 if len(table) > 100 else "content", column_config={
-                "name": "Holding", "ticker": "Ticker" if show_tickers else None,
-                "Fund allocation %": st.column_config.NumberColumn(format="%.2f %%"),
-                "Selected ETF exposure (EUR)": st.column_config.NumberColumn(format="€ %.2f"),
-            } | {column: column.removeprefix("classification:").replace("_", " ").title() for column in columns if column.startswith("classification:")})
+            labels = {'name': 'Holding', 'ticker': 'Ticker'}
+            specs = [ListColumn(column, labels.get(column, column.removeprefix('classification:').replace('_', ' ').title()
+                                if column.startswith('classification:') else column),
+                                numeric=column in {'Fund allocation %', 'Selected ETF exposure (EUR)'})
+                     for column in columns if column != 'ticker' or show_tickers]
+            render_list(frame_rows(table[columns]), specs, key=f'etf_holdings_{fund.fund_id}',
+                        context=f'etf_holdings_{fund.fund_id}', title=f'{label} holdings', max_height=BOUNDED_LIST_HEIGHT,
+                        default_sort='Fund allocation %', search_label='Filter ETF holdings', search_fields=['name', 'ticker'])
             st.caption("Other retains the weight not assigned to named constituents, including cash and rounding residuals. Partial holdings are never scaled up to 100%.")

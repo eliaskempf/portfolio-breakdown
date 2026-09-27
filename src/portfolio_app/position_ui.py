@@ -57,8 +57,7 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
         st.session_state.update(position_edit_action='Add position', position_edit_dialog=True)
     if st.session_state.get('position_draft') or st.session_state.get('position_edit_action') in {'Edit position', 'Add position'}:
         if secondary.button('Resume unsaved edit'):
-            # Explicit assignment reattaches detached dialog widget values to
-            # the frontend, even when their keys still exist in session state.
+            # Reattach detached widget values even when their state keys remain.
             for key, value in st.session_state.get('position_draft', {}).items():
                 st.session_state[key] = value
             st.session_state['position_edit_dialog'] = True
@@ -106,6 +105,10 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
 
     @st.dialog('Position', width='large', on_dismiss=_dismiss)
     def dialog():
+        # Button callbacks run before the dialog body. Never execute its data
+        # loaders again when the user has already requested dismissal.
+        if not st.session_state.get('position_edit_dialog'):
+            st.rerun()
         current = read_snapshot(path)
         for key, value in st.session_state.get('position_draft', {}).items():
             if key not in st.session_state:
@@ -126,9 +129,7 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
                     st.rerun()
                 from portfolio_app.position_detail import render_position_detail
                 render_position_detail(row, path.parent, demo=demo, allocation=allocation)
-            if st.button('Close'):
-                _dismiss()
-                st.rerun()
+            st.button('Close', on_click=_dismiss)
         else:
             st.subheader(action)
             rendered = render_position_form(path, current, funds, demo=demo, allocation=allocation, action=action)

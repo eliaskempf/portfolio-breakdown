@@ -8,13 +8,14 @@ import streamlit as st
 
 from portfolio_app.charts import hierarchy_chart, sort_allocation_nodes, strategic_colors, style_figure
 from portfolio_app.chart_navigation import sync_chart_category
-from portfolio_app.display_names import instrument_name
+from portfolio_app.position_list import render_overview_positions
+from portfolio_app.list_ui import ListColumn, frame_rows, render_list
 from portfolio_app.metric_interactions import toggle_gain_unit
 from portfolio_app.performance import position_performance, summarize_performance
 from portfolio_app.strategic import bucket_paths, category_labels, bucket_positions, strategic_summary, strategic_tree, strategic_performance
 
 
-def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, analytics=None):
+def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None):
     if 'unrealized_gain_eur' not in valued:
         valued = position_performance(valued)
     paths = bucket_paths(config)
@@ -64,7 +65,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
     if mode == 'Analytics':
         analytics(selected, scope)
         return
-    elif mode == 'Performance':
+    if mode == 'Performance':
         table = strategic_performance(valued, config, bucket)
         measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain (EUR)'],
             default='Return (%)', key='strategic_performance_measure') or 'Return (%)'
@@ -85,9 +86,11 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             st.info('Percentage return is unavailable for zero buy-in cost. Choose Gain (EUR) to see the euro amounts.')
         else:
             st.info('Add EUR buy-ins to see performance for this category.')
-        st.dataframe(table, hide_index=True, width='stretch', column_config={
-            c: st.column_config.NumberColumn(format='%.2f %%' if c == 'Return (%)' else '€ %.2f')
-            for c in ['Cost (EUR)', 'Gain (EUR)', 'Return (%)']})
+        render_list(frame_rows(table), [ListColumn(column, column,
+                    numeric=column in {'Cost (EUR)', 'Gain (EUR)', 'Return (%)'},
+                    signed=column in {'Gain (EUR)', 'Return (%)'}) for column in table],
+                    key='strategic_performance_table', context=f'{position_context}_{bucket}_performance',
+                    title='Category performance', default_sort=measure)
     else:
         with st.container(key='overview_allocation'):
             chart_column, table_column = st.columns([1, 1.3], gap='large', vertical_alignment='center')
@@ -119,26 +122,12 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     table[col] = pd.to_numeric(table[col], errors='coerce')
                 if table['Status'].eq('').all():
                     table = table.drop(columns='Status')
-                st.dataframe(table, hide_index=True, width='stretch', height=min(420, 36 + 35 * len(table)), column_config={
-                    'Value (EUR)': st.column_config.NumberColumn(format='€ %.2f'),
-                    'Current (%)': st.column_config.NumberColumn(f'% of {scope}', format='%.2f %%'),
-                    'Target (%)': st.column_config.NumberColumn(format='%.2f %%'),
-                    'Gap (pp)': st.column_config.NumberColumn(format='%+.2f')})
+                render_list(frame_rows(table), [ListColumn(column, f'% of {scope}' if column == 'Current (%)' else column,
+                            numeric=column in {'Value (EUR)', 'Current (%)', 'Target (%)', 'Gap (pp)'},
+                            signed=column == 'Gap (pp)') for column in table],
+                            key='strategic_allocation_table', context=f'{position_context}_{bucket}_allocation',
+                            title='Allocation', default_sort='Value (EUR)')
     st.subheader('Positions')
-    table = selected.sort_values('current_value_eur', ascending=False, na_position='last').copy()
-    table['Investment'] = [instrument_name(row) for _, row in table.iterrows()]
-    table['Allocation (%)'] = table.current_value_eur * 100 / subtotal if not missing and subtotal else float('nan')
-    table['Return (%)'] = table.return_pct.where(table.unrealized_gain_eur.notna())
-    table['Gain (EUR)'] = table.unrealized_gain_eur
-    table_key = f'strategic_positions_{bucket}'
-    def select_position():
-        rows = st.session_state.get(table_key, {}).get('selection', {}).get('rows', [])
-        if open_position and rows and rows[0] < len(table):
-            open_position(table.iloc[rows[0]].position_id)
-    st.dataframe(table[['Investment', 'current_value_eur', 'Allocation (%)', 'Return (%)', 'Gain (EUR)']],
-        hide_index=True, width='stretch', on_select=select_position if open_position else 'ignore', selection_mode='single-row',
-        key=f'strategic_positions_{bucket}', column_config={
-        'current_value_eur': st.column_config.NumberColumn('Value (EUR)', format='€ %.2f'),
-        'Allocation (%)': st.column_config.NumberColumn(f'% of {scope}', format='%.2f %%'),
-        'Return (%)': st.column_config.NumberColumn(format='%+.2f %%'),
-        'Gain (EUR)': st.column_config.NumberColumn(format='€ %+.2f')})
+    st.caption('Select a position for details and price history. Use the pencil to edit.')
+    render_overview_positions(selected, config, context=f'overview_{position_context}_{bucket}', scope=scope,
+                              open_position=open_position, edit_position=edit_position)

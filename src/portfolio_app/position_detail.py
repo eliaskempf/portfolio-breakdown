@@ -4,7 +4,8 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from portfolio_app.display_names import instrument_name
-from portfolio_app.history import HistoryService, YahooHistoryProvider, DemoHistoryProvider, PERIODS
+from portfolio_app.history import HistoryService, DemoHistoryProvider, PERIODS
+from portfolio_app.market_data import history_for
 from portfolio_app.charts import style_figure
 from portfolio_app.presentation import performance_metric
 
@@ -38,22 +39,37 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None):
     if row.get('valuation_note'):
         st.caption(row.valuation_note)
     view = st.segmented_control('Position detail view', ['Price history', 'Key metrics'], default='Price history',
-                                 key=f'position_edit_detail_view_{row.position_id}', label_visibility='collapsed') or 'Price history'
+                                key=f'position_edit_detail_view_{row.position_id}', label_visibility='collapsed') or 'Price history'
     if view == 'Key metrics':
         from portfolio_app.position_metrics_ui import render_instrument_metrics
         render_instrument_metrics(row, data_dir, demo=demo)
         return
     st.markdown('**Market-price history**')
     period = st.segmented_control('Period', list(PERIODS), default='1Y', key=f'position_edit_history_{row.position_id}') or '1Y'
-    service = HistoryService(DemoHistoryProvider() if demo else YahooHistoryProvider(), data_dir / '.cache' / 'history')
+    service = HistoryService(DemoHistoryProvider(), data_dir / '.cache' / 'history') if demo else history_for(data_dir)
     manual = pd.notna(row.get('manual_price', float('nan')))
-    with st.spinner('Loading market prices…'):
-        result = service.get(row.ticker, period, manual=manual)
+    result = service.get(row.ticker, period, manual=manual)
+    pending = not demo and service.pending(row.ticker, period)
+
+    @st.fragment(run_every=.5 if pending else None)
+    def progress():
+        if not st.session_state.get('position_edit_dialog'):
+            return
+        if pending and not service.pending(row.ticker, period):
+            st.rerun()
+        if pending:
+            st.caption('Updating market-price history in the background…')
+    progress()
     if result.prices:
         figure = style_figure(go.Figure(go.Scatter(x=result.dates, y=result.prices, mode='lines',
             line=dict(color='#5470c6', width=2), hovertemplate='%{x}<br>%{y:,.2f} '+result.currency+'<extra></extra>')))
         figure.update_layout(height=300, yaxis_title=result.currency, margin=dict(l=12, r=12, t=12, b=30))
         st.plotly_chart(figure, width='stretch', config={'displayModeBar': False})
         st.caption(f'Instrument closing prices in {result.currency} · Excludes dividend reinvestment · Not your personal return history')
+        st.caption(f'History last retrieved: {result.fetched_at}')
     if result.note:
         (st.warning if result.status == 'stale' else st.info)(result.note)
+    if not demo and not pending and result.status in {'stale', 'unavailable'} and row.ticker and not manual:
+        if st.button('Retry history'):
+            service.get(row.ticker, period, refresh=True)
+            st.rerun()

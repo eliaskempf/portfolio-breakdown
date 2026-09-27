@@ -22,6 +22,7 @@ class HistoryResult:
     status: str = "unavailable"
     fetched_at: str = ""
     note: str = ""
+    attempted_at: str = ""
 
 
 class HistoryProvider(Protocol):
@@ -65,31 +66,54 @@ class HistoryService:
     def __init__(self, provider: HistoryProvider, cache_dir: Path | None = None, *, now=None):
         self.provider, self.cache_dir = provider, cache_dir
         self.now = now or (lambda: datetime.now(timezone.utc))
+        self._memory = {}
 
-    def get(self, ticker: str, period: str = "1Y", *, manual=False) -> HistoryResult:
+    def _path(self, ticker, period):
+        return self.cache_dir / (sha256(f"{ticker}:{period}:close-v1".encode()).hexdigest() + ".json") if self.cache_dir else None
+
+    def cached(self, ticker: str, period: str = "1Y", *, manual=False) -> tuple[HistoryResult, bool]:
+        """Read saved history immediately, including a short failed-attempt cooldown."""
         if not ticker or manual:
-            return HistoryResult(note="Market-price history is unavailable for this instrument.")
+            return HistoryResult(note="Market-price history is unavailable for this instrument."), False
         if period not in PERIODS:
             raise ValueError("Unsupported history period.")
-        path = self.cache_dir / (sha256(f"{ticker}:{period}:close-v1".encode()).hexdigest() + ".json") if self.cache_dir else None
-        cached = None
+        path = self._path(ticker, period)
+        cached = self._memory.get((ticker, period))
         try:
-            if path and path.exists():
+            if cached is None and path and path.exists():
                 raw = json.loads(path.read_text())
+                raw['dates'] = tuple(raw['dates'])
+                raw['prices'] = tuple(raw['prices'])
                 cached = HistoryResult(**raw)
-                if (not cached.dates or len(cached.dates) != len(cached.prices)
-                        or any(not math.isfinite(v) or v <= 0 for v in cached.prices)):
-                    raise ValueError("Invalid history cache")
-                if self.now() - datetime.fromisoformat(cached.fetched_at) < timedelta(hours=1):
-                    return replace(cached, status="cached")
-        except (OSError, ValueError, TypeError):
-            cached = None
-        try:
-            result = replace(self.provider.history(ticker, PERIODS[period]), fetched_at=self.now().isoformat())
-        except Exception:
             if cached:
-                return replace(cached, status="stale", note="Refresh failed; showing cached market prices.")
-            return HistoryResult(note="Market-price history could not be loaded. Try again later.")
+                if (len(cached.dates) != len(cached.prices)
+                        or any(not math.isfinite(v) or v <= 0 for v in cached.prices)):
+                    raise ValueError('Invalid history cache')
+                if cached.attempted_at and cached.status in {'stale', 'unavailable'}:
+                    age = self.now() - datetime.fromisoformat(cached.attempted_at)
+                    if timedelta(0) <= age < timedelta(seconds=60):
+                        return cached, False
+                if cached.prices:
+                    age = self.now() - datetime.fromisoformat(cached.fetched_at)
+                    if timedelta(0) <= age < timedelta(hours=1):
+                        return replace(cached, status='cached'), False
+        except (OSError, ValueError, TypeError, AttributeError, KeyError):
+            cached = None
+        if cached and cached.prices:
+            return replace(cached, status='stale', note='Showing saved market prices while refreshing.'), True
+        return HistoryResult(note='Loading market prices…'), True
+
+    def get(self, ticker: str, period: str = "1Y", *, manual=False, refresh=False) -> HistoryResult:
+        cached, due = self.cached(ticker, period, manual=manual)
+        if not ticker or manual or (not due and not refresh):
+            return cached
+        path = self._path(ticker, period)
+        try:
+            result = replace(self.provider.history(ticker, PERIODS[period]), fetched_at=self.now().isoformat(), attempted_at=self.now().isoformat())
+        except Exception:
+            result = replace(cached, status='stale' if cached.prices else 'unavailable', attempted_at=self.now().isoformat(),
+                             note='Refresh failed; showing cached market prices.' if cached.prices else 'Market-price history could not be loaded. Try again later.')
+        self._memory[ticker, period] = result
         if path:
             temporary = None
             try:
@@ -103,4 +127,5 @@ class HistoryService:
             finally:
                 if temporary:
                     temporary.unlink(missing_ok=True)
+        self._memory[ticker, period] = result
         return result

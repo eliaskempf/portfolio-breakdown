@@ -1,7 +1,11 @@
+import json
 from test_ui import position_action
 """Synthetic Streamlit smoke tests for allocation setup and scoped workflows."""
 import shutil
-from test_ui import launch, by_label
+from test_ui import launch as launch_app, by_label, activate
+
+def launch(path):
+    return launch_app(path, tab="Rebalance", subtab="Targets")
 from portfolio_app.allocation import Allocation, Bucket, migrate, migration_preview
 from portfolio_app.positions import read_snapshot
 
@@ -38,6 +42,7 @@ def test_scoped_plans_balance_save_and_macro_overview(tmp_path, sample_data_dir)
     position_action(app, 'Update balances')
     by_label(app.button, 'Save replacement balances').click().run()
     assert not app.exception
+    activate(app, 'Rebalance', 'Plan')
     by_label(app.button, 'Calculate portfolio contribution').click().run()
     assert not app.exception
     assert not app.error
@@ -52,6 +57,7 @@ def test_scoped_plans_balance_save_and_macro_overview(tmp_path, sample_data_dir)
 def test_optional_stock_view_and_manual_position_entry(tmp_path, sample_data_dir):
     workspace(tmp_path, sample_data_dir)
     app = launch(tmp_path)
+    activate(app, 'Exposure')
     by_label(app.checkbox, 'Show stock-only company exposure').check().run()
     assert not app.exception
     assert any('stock-universe total is unknown' in item.value for item in app.info)
@@ -81,10 +87,12 @@ def test_strategic_drill_down_planned_bucket_and_bulk_assignment(tmp_path, sampl
     app = launch(tmp_path)
     assert not app.exception
     assert [tab.label for tab in app.tabs][:4] == ['Overview', 'Exposure', 'Positions', 'Rebalance']
+    activate(app, 'Overview')
     by_label(app.selectbox, 'Category').set_value('bucket-1').run()
-    strategic_positions = next(table.value for table in app.dataframe if 'Allocation (%)' in table.value)
-    assert strategic_positions.Investment.tolist() == ['Invented A', 'Invented B']
-    assert strategic_positions['Allocation (%)'].sum() == 100
+    strategic_positions = next(json.loads(item.proto.json)['rows'] for item in app.tabs[0].get('bidi_component')
+                               if item.proto.component_name == 'portfolio_data_list' and json.loads(item.proto.json)['title'] == 'Positions')
+    assert [row['name'] for row in strategic_positions] == ['Invented A', 'Invented B']
+    assert sum(row['allocation'] for row in strategic_positions) == 100
     by_label(app.selectbox, 'Category').set_value('planned').run()
     assert any('No current holdings' in item.value for item in app.info)
     by_label(app.button, 'Back').click().run()

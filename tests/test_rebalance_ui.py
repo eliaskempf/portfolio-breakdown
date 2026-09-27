@@ -5,7 +5,10 @@ import shutil
 
 import pytest
 
-from test_ui import by_label, launch
+from test_ui import by_label, launch as launch_app, activate
+
+def launch(path):
+    return launch_app(path, tab="Rebalance", subtab="Plan")
 from portfolio_app.rebalance_ui import MODES
 
 
@@ -25,6 +28,7 @@ def metrics(app):
 
 
 def calculate(app):
+    activate(app, "Rebalance", "Plan")
     by_label(app.button, "Calculate rebalance").click().run()
     assert not app.exception
 
@@ -69,11 +73,14 @@ def test_empty_positions_hidden_targets_redistributed_editor_retains_original(re
     assert any("feasible" in item.value for item in app.error)
     by_label(app.checkbox, "Exclude empty positions and redistribute their planning targets").check().run()
     assert not app.exception
+    activate(app, "Exposure")
     holdings = next(item.value for item in app.dataframe if "shares" in item.value)
+    activate(app, "Rebalance", "Plan")
     assert len(holdings) == 4  # Planning controls do not filter Exposure.
     assert holdings.target_allocation.sum() == pytest.approx(100)
     assert sorted(holdings.target_allocation) == [20, 20, 30, 30]
     by_label(app.checkbox, 'Hide empty positions').check().run()
+    activate(app, 'Exposure')
     holdings = next(item.value for item in app.tabs[1].dataframe if 'shares' in item.value)
     assert len(holdings) == 3
     assert sorted(holdings.target_allocation) == [20, 30, 30]  # Hiding doesn't redistribute.
@@ -84,7 +91,9 @@ def test_empty_positions_hidden_targets_redistributed_editor_retains_original(re
     assert "Trades" in metrics(app)
     assert not app.error
     by_label(app.checkbox, "Exclude empty positions and redistribute their planning targets").uncheck().run()
+    activate(app, "Exposure")
     holdings = next(item.value for item in app.dataframe if "shares" in item.value)
+    activate(app, "Rebalance", "Plan")
     assert len(holdings) == 3  # Visibility is controlled separately.
     assert "Trades" not in metrics(app)
     assert path.read_bytes() == before
@@ -92,10 +101,14 @@ def test_empty_positions_hidden_targets_redistributed_editor_retains_original(re
 
 def test_overview_filter_does_not_change_trade_universe(rebalance_data):
     app = launch(rebalance_data)
+    activate(app, "Exposure")
     by_label(app.multiselect, "Holdings").set_value([]).run()
+    activate(app, "Rebalance", "Plan")
     calculate(app)
     assert metrics(app)["Trades"] == "3"
+    activate(app, "Exposure")
     assert any("No holdings match" in item.value for item in app.info)
+    activate(app, "Rebalance", "Plan")
     plan = next(item.value for item in app.dataframe if "After (EUR)" in item.value)
     assert len(plan) == 3
     assert plan["After (EUR)"].sum() == pytest.approx(100)
@@ -147,7 +160,9 @@ def test_buy_selection_constrains_cash_and_invalidates_previous_plan(rebalance_d
     assert plan["Trade (EUR)"].tolist() == pytest.approx([100])
     by_label(app.multiselect, "Positions eligible for buying").set_value(["position-1", "position-2"]).run()
     assert "Trades" not in metrics(app)
+    activate(app, "Exposure")
     by_label(app.multiselect, "Holdings").set_value([]).run()
+    activate(app, "Rebalance", "Plan")
     calculate(app)
     assert metrics(app)["Trades"] == "2"
     assert metrics(app)["Deviation outside ranges"] == "0.000 pp"

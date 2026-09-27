@@ -1,3 +1,4 @@
+from list_helpers import list_frame
 from pathlib import Path
 import shutil
 import sys
@@ -5,7 +6,14 @@ import sys
 import pytest
 from streamlit.testing.v1 import AppTest
 
-def launch(data_dir):
+def activate(app, tab, subtab=None):
+    app.session_state["main_tabs"] = tab
+    if subtab:
+        app.session_state["rebalance_tabs"] = subtab
+    return app.run()
+
+
+def launch(data_dir, tab="Exposure", subtab=None):
     app = AppTest.from_string(
         "from pathlib import Path\n"
         "from portfolio_app.ui import render_app\n"
@@ -13,6 +21,11 @@ def launch(data_dir):
         default_timeout=15,
     ).run()
 
+    if not app.exception and (data_dir / 'holdings.csv').exists():
+        app.session_state['exposure_sources_open'] = True
+        app.session_state['exposure_stock_open'] = True
+        app.session_state['exposure_merges_open'] = True
+        activate(app, tab, subtab)
     if not (data_dir / 'holdings.csv').exists():
         by_label(app.button, 'Add position').click().run()
     return app
@@ -21,11 +34,13 @@ def launch(data_dir):
 def position_action(app, action, position_id='position-0'):
     """Drive the new toolbar or simulate the stable-ID row event boundary."""
     if action == 'Add position':
+        activate(app, 'Positions')
         return by_label(app.button, 'Add position').click().run()
     if action in {'Positions', 'Update balances', 'Bulk add purchases'}:
+        activate(app, 'Positions')
         return by_label(app.get('button_group'), 'Position tools').set_value(action).run()
     if action == 'Strategic allocation':
-        return app  # Targets are rendered in Rebalance → Targets.
+        return activate(app, 'Rebalance', 'Targets')
     app.session_state['position_edit_selected'] = position_id
     app.session_state['position_edit_action'] = 'Edit position'
     app.session_state['position_edit_dialog'] = True
@@ -37,11 +52,14 @@ def by_label(elements, label):
 
 
 def theme_view(app, group='holding'):
+    activate(app, 'Exposure')
     by_label(app.get('button_group'), 'Exposure view').set_value('Themes & sectors').run()
     return by_label(app.selectbox, 'Group by').set_value(group).run()
 
 
 def exposure_summary(app):
+    if app.session_state['main_tabs'] != 'Exposure':
+        activate(app, 'Exposure')
     return next(item.value for item in app.tabs[1].caption if 'source positions' in item.value)
 
 
@@ -94,7 +112,7 @@ def test_optional_smh_grouping_stock_choice_lookthrough_and_filters(grouped_data
         assert table.loc[table.Category == "SMH + related stocks", "EUR value"].tolist() == [560]
         assert table["Allocation %"].sum() == pytest.approx(100)
     by_label(app.get('button_group'), 'Exposure view').set_value('Assets').run()
-    effective = next(item.value for item in app.dataframe if "ETF-derived (EUR)" in item.value)
+    effective = list_frame(app, 'Exposure assets')
     assert effective.loc[effective.Asset == "Nvidia", "Total (EUR)"].tolist() == [256]
     theme_view(app)
     by_label(app.checkbox, "Show tickers").check().run()
@@ -150,7 +168,7 @@ def test_allocations_and_holdings_default_to_decreasing_weight(sample_data_dir):
     app = launch(sample_data_dir)
     assert not app.exception
     assert by_label(app.checkbox, "Show tickers").value is False
-    assert app.tabs[1].dataframe[-1].value["Allocation %"].dropna().is_monotonic_decreasing
+    assert list_frame(app, "Exposure assets")["Allocation %"].dropna().is_monotonic_decreasing
     assert next(item for item in app.tabs[1].dataframe if "shares" in item.value).value["portfolio_weight"].dropna().is_monotonic_decreasing
 
 
@@ -164,7 +182,7 @@ def test_ticker_display_toggle_preserves_selected_instrument_ids(sample_data_dir
         assert by_label(app.multiselect, "Holdings").value == ["nvda", "tsmc"]
         assert selected_value(app) == initial
     by_label(app.multiselect, "Portfolio").set_value(["AI Sleeve"]).run()
-    assert app.tabs[1].dataframe[-1].value["Allocation %"].dropna().is_monotonic_decreasing
+    assert list_frame(app, "Exposure assets")["Allocation %"].dropna().is_monotonic_decreasing
     assert next(item for item in app.tabs[1].dataframe if "shares" in item.value).value["portfolio_weight"].dropna().is_monotonic_decreasing
 
 
@@ -176,9 +194,9 @@ def test_names_are_cleaned_for_display_without_changing_saved_holdings(tmp_path,
     app = launch(tmp_path)
     assert not app.exception
     assert next(item for item in app.tabs[1].dataframe if "shares" in item.value).value.iloc[0]["name"] == "Synthetic Systems"
-    assert app.tabs[1].dataframe[-1].value.iloc[0]["Asset"] == "Synthetic Systems"
+    assert list_frame(app, "Exposure assets").iloc[0]["Asset"] == "Synthetic Systems"
     by_label(app.checkbox, "Show tickers").check().run()
-    assert app.tabs[1].dataframe[-1].value.iloc[0]["Ticker"] == "NVDA"
+    assert list_frame(app, "Exposure assets").iloc[0]["Ticker"] == "NVDA"
     position_action(app, "Edit position")
     assert by_label(app.text_input, "Instrument name").value == "SYNTHETIC SYSTEMS INC"
     assert path.read_text() == source
@@ -238,7 +256,8 @@ def test_empty_holdings(tmp_path):
     (tmp_path / "classifications.yaml").write_text("")
     app = launch(tmp_path)
     assert not app.exception
-    assert "Add position" in app.info[0].value
+    activate(app, 'Positions')
+    assert any('Add your first position' in item.value for item in app.info)
 
 
 def test_provider_failures_do_not_crash_app(sample_data_dir):
@@ -255,6 +274,7 @@ def test_provider_failures_do_not_crash_app(sample_data_dir):
         default_timeout=15,
     ).run()
     assert not app.exception
+    app.session_state['exposure_sources_open'] = True
     assert missing_prices(app) == "7"
     assert len(next(item for item in app.tabs[1].dataframe if "shares" in item.value).value) == 7
 
@@ -317,11 +337,13 @@ def test_etf_breakdown_and_look_through(tmp_path, sample_data_dir):
     )
     app = launch(tmp_path)
     assert not app.exception
+    activate(app, 'Overview')
     assert by_label(app.metric, 'Current value').value == "€1,800.00"
+    activate(app, 'Exposure')
     assert not any("ETF breakdown" in item.label for item in app.expander)  # Details are on demand.
     by_label(app.toggle, "Break down ETFs").set_value(True).run()
     assert not app.exception
-    effective = next(table.value for table in app.dataframe if "ETF-derived (EUR)" in table.value.columns)
+    effective = list_frame(app, 'Exposure assets')
     nvidia = effective.loc[effective["Ticker"] == "NVDA"].iloc[0]
     assert nvidia["Direct (EUR)"] == 800
     assert nvidia["ETF-derived (EUR)"] == pytest.approx(nvidia_indirect)
@@ -514,6 +536,7 @@ def test_new_position_is_visible_after_filters_were_cleared(tmp_path, sample_dat
     by_label(app.number_input, "Quantity held (total)").set_value(1.0)
     by_label(app.button, "Save position").click().run()
     assert not app.exception
+    activate(app, 'Exposure')
     assert len(next(item for item in app.tabs[1].dataframe if "shares" in item.value).value) == 2
     assert "ANET" in next(item for item in app.tabs[1].dataframe if "shares" in item.value).value["ticker"].tolist()
 

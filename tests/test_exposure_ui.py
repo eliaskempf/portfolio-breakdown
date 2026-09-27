@@ -3,6 +3,7 @@ import pytest
 
 from test_etf_selection import multi_fund_workspace as multi_fund_workspace, effective
 from test_ui import launch, by_label, selected_value
+from list_helpers import list_data
 
 
 def test_default_exposure_is_all_assets_without_chart_or_label_requirement(multi_fund_workspace):
@@ -16,10 +17,13 @@ def test_default_exposure_is_all_assets_without_chart_or_label_requirement(multi
     assert table.loc[table.Asset.eq('Invented Alpha'), 'Total (EUR)'].tolist() == [175]
     assert len(app.tabs[1].get('plotly_chart')) == 0
     assert len(app.tabs[1].metric) == 0
+    assert list_data(app, 'Exposure assets')['maxHeight'] == 620
+    assert 'Direct (EUR)' not in {column['key'] for column in list_data(app, 'Exposure assets')['columns']}
     by_label(app.toggle, 'Break down ETFs').set_value(False).run()
     table = effective(app)
     assert table['Total (EUR)'].sum() == 300
     assert table['ETF-derived (EUR)'].sum() == 0
+    assert list_data(app, 'Exposure assets')['maxHeight'] is None
 
 
 def test_source_scope_filters_before_expansion_search_retains_denominator(multi_fund_workspace):

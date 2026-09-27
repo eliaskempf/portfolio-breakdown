@@ -11,7 +11,10 @@ from portfolio_app.holdings import DataError
 
 
 def render_company_merges(plan: MergePlan, settings: MergeSettings, path: Path) -> None:
-    with st.expander('Company merges'):
+    panel = st.expander('Company merges', key='exposure_merges_open', on_change='rerun')
+    if not panel.open:
+        return
+    with panel:
         st.caption('* marks an estimated company match. Review the original holdings below; undo keeps their exposures separate.')
         if not plan.groups:
             st.caption('No overlapping company holdings found.')

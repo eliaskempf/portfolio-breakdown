@@ -103,15 +103,21 @@ def test_keyboard_and_edit_button_open_rows_and_back_returns_to_list(position_pa
 
 
 def test_metric_columns_sort_numerically_keep_missing_last_and_preserve_identity(position_page):
-    from portfolio_app.position_list import HTML, JS
+    from dataclasses import asdict
+    from portfolio_app.list_ui import HTML, JS, ListColumn
     page, _ = position_page
     # Execute the actual component renderer with invented metric values. AppTest
     # separately verifies that the controls supply these columns and row values.
-    data = {'context': 'synthetic-metrics', 'revision': 'synthetic-revision', 'hasBuckets': False,
-            'metricView': 'Valuation',
-            'metricColumns': [['metric_trailing_pe', 'P/E (trailing)']],
+    data = {'context': 'synthetic-metrics', 'revision': 'synthetic-revision',
+            'title': 'Synthetic metrics', 'interactive': True, 'editable': False,
+            'searchLabel': 'Filter metrics', 'searchFields': ['name'], 'defaultSort': 'value',
+            'columns': [asdict(column) for column in [ListColumn('name', 'Investment'),
+                ListColumn('value', 'Value', numeric=True),
+                ListColumn('metric_trailing_pe', 'P/E (trailing)', numeric=True,
+                           display='metric_trailing_pe_display', tooltip='metric_trailing_pe_note')]],
             'rows': [dict(id=identity, name=name, quantity=1, account='Invented', portfolio='',
-                          metric_trailing_pe=value, metric_trailing_pe_note='Invented metric source')
+                          metric_trailing_pe=value, metric_trailing_pe_note='Invented metric source',
+                          metric_trailing_pe_display='N/M' if value is None else None)
                      for identity, name, value in [('large', 'Invented large', 100),
                          ('missing', 'Invented missing', None), ('small', 'Invented small', 20)]]}
     page.evaluate('''([html, js, data]) => {
@@ -126,7 +132,7 @@ def test_metric_columns_sort_numerically_keep_missing_last_and_preserve_identity
     assert root.locator('tbody tr').evaluate_all('(rows) => rows.map(r => r.dataset.positionId)') == ['small', 'large', 'missing']
     root.get_by_role('button', name='P/E (trailing) ↑', exact=True).click()
     assert root.locator('tbody tr').evaluate_all('(rows) => rows.map(r => r.dataset.positionId)') == ['large', 'small', 'missing']
-    playwright.expect(root.locator('tbody tr').last.locator('td').nth(2)).to_have_text('—')
+    playwright.expect(root.locator('tbody tr').last.locator('td').nth(2)).to_have_text('N/M')
     root.get_by_role('searchbox').fill('small')
     root.locator('tbody tr').dblclick()
     assert page.evaluate('window.syntheticMetricEvent.id') == 'small'

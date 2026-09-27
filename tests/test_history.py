@@ -35,7 +35,7 @@ def test_history_cache_expiry_failure_and_manual_instruments(tmp_path):
     now += timedelta(hours=2)
     provider.fail = True
     result = service.get('SYNTHETIC')
-    assert result.status == 'stale' and result.prices == [42.]
+    assert result.status == 'stale' and result.prices == (42.,)
     assert service.get('SYNTHETIC', manual=True).status == 'unavailable'
     assert service.get('').status == 'unavailable'
     assert provider.calls == 2

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from portfolio_app.view_state import persistent_editor
 
 from portfolio_app.allocation import (Allocation, Bucket, migrate, migration_preview, save_allocation,
                                      validate_allocation)
@@ -31,7 +32,7 @@ def render_balances(path, snapshot):
     key = f'balance_editor_{path}_{snapshot.revision}_{cost_field}'
     fields = ['shares', cost_field, 'acquisition_currency', 'holdings_confirmed_on']
     with st.form(key):
-        edited = st.data_editor(rows[['position_id', 'name', 'account', *fields]], hide_index=True,
+        edited = persistent_editor(rows[['position_id', 'name', 'account', *fields]], key=key + '_rows', hide_index=True,
                                 disabled=['position_id', 'name', 'account'], width='stretch',
                                 column_config={'position_id': None, 'shares': st.column_config.NumberColumn('Quantity', min_value=0., format='%.10f'),
                                                cost_field: st.column_config.NumberColumn('Total buy-in (optional)' if total_buy_in else 'Average buy-in (optional)', min_value=0., format='%.8f',
@@ -61,7 +62,7 @@ def _bucket_editor(config, key):
                            'Protect from selling': b.sell_protected} for b in config.buckets],
                          columns=['ID', 'Name', 'Parent', 'Target (% of parent)', 'Protect from selling'])
     frame['Target (% of parent)'] = pd.to_numeric(frame['Target (% of parent)'])
-    return st.data_editor(frame, num_rows='dynamic', hide_index=True, width='stretch', key=key,
+    return persistent_editor(frame, num_rows='dynamic', hide_index=True, width='stretch', key=key,
         column_config={'ID': None, 'Parent': st.column_config.SelectboxColumn(options=['Portfolio', *labels.values()]),
                        'Target (% of parent)': st.column_config.NumberColumn(min_value=0., max_value=100.),
                        'Protect from selling': st.column_config.CheckboxColumn()})
@@ -83,7 +84,7 @@ def category_position_editor(positions, config, *, key, extra=()):
     display = positions.copy()
     display['Category'] = display.bucket_id.map(labels).fillna('Unassigned')
     columns = ['position_id', 'name', *extra, 'Category', 'within_bucket_target']
-    edited = st.data_editor(display[columns], hide_index=True, width='stretch',
+    edited = persistent_editor(display[columns], hide_index=True, width='stretch',
         disabled=['position_id', 'name', *extra], key=key,
         column_config={'position_id': None, 'name': 'Investment',
             'Category': st.column_config.SelectboxColumn(options=['Unassigned', *choices]),

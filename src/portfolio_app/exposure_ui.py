@@ -36,6 +36,7 @@ from portfolio_app.stock_ui import render_stock_exposure
 from portfolio_app.stock_exposure import load_company_identities
 from portfolio_app.company_merges import build_plan, load_company_names, load_settings
 from portfolio_app.company_merge_ui import render_company_merges
+from portfolio_app.input_cache import cached_input
 
 
 def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False, source_valued=None, performance_percent=False, allocation=None, etf_revision=0):
@@ -73,8 +74,14 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         display_group = smh_group_control(holdings, funds)
         try:
             settings = load_settings(data_dir / 'company-merges.yaml')
-            plan = build_plan(holdings, funds, load_company_identities(data_dir / 'company-identities.yaml'), settings, classifications,
-                              load_company_names(data_dir / 'company-names.yaml'))
+            identities = load_company_identities(data_dir / 'company-identities.yaml')
+            company_names = load_company_names(data_dir / 'company-names.yaml')
+            signature = sha256((str(data_dir.resolve()) + holdings.to_json()
+                + repr((settings, identities, company_names, classifications))
+                + ''.join(repr((f.isin, f.name, f.as_of, f.equity_fund, f.proxy_source)) + f.constituents.to_json()
+                          for f in funds)).encode()).hexdigest()
+            plan = cached_input('company_plan', signature,
+                lambda: build_plan(holdings, funds, identities, settings, classifications, company_names))
             render_company_merges(plan, settings, data_dir / 'company-merges.yaml')
             if lookthrough:
                 holdings, funds, classifications = plan.apply(holdings, funds, classifications)
@@ -220,17 +227,22 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     with results_area:
         if mode != 'Themes & sectors':
             render_assets(complete_exposures(effective_exposures, selected), selected, holdings, funds, saved_classifications,
-                          query=query, show_tickers=show_tickers, show_chart=show_chart, complete=missing == 0)
+                          query=query, show_tickers=show_tickers, show_chart=show_chart, complete=missing == 0,
+                          breakdown=lookthrough, context=str(data_dir.resolve()))
         else:
             render_theme_view(exposures, selected, holdings, classifications, names, dimensions, targets, performance,
                               total, all_missing, selected_total, show_tickers, performance_percent, query)
     with settings_panel:
         if display_group is not None:
             render_group_members(selected, display_group)
-        with st.expander('Source positions & price details'):
-            render_source_positions(selected, valued, names, saved_classifications, show_tickers, performance_percent, dimensions)
-        with st.expander('Stock-only company analysis'):
-            render_stock_exposure(selected, expanded_funds, data_dir)
+        source_panel = st.expander('Source positions & price details', key='exposure_sources_open', on_change='rerun')
+        if source_panel.open:
+            with source_panel:
+                render_source_positions(selected, valued, names, saved_classifications, show_tickers, performance_percent, dimensions)
+        stock_panel = st.expander('Stock-only company analysis', key='exposure_stock_open', on_change='rerun')
+        if stock_panel.open:
+            with stock_panel:
+                render_stock_exposure(selected, expanded_funds, data_dir)
     return valued
 
 
@@ -241,7 +253,7 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                *[(f'metadata:{name}', name.replace('_', ' ').title()) for name in dimensions],
                ('holding', 'Investment')]
     view_col, root_col, options_col = st.columns([2, 3, 1.4], vertical_alignment='bottom')
-    view = view_col.selectbox('Group by', [key for key, _ in options], format_func=dict(options).get)
+    view = view_col.selectbox('Group by', [key for key, _ in options], format_func=dict(options).get, key='exposure_group')
     root, depth, include_holdings = (), None, False
     show_paths = False
     chart_settings = options_col.popover('Chart options') if view != 'selected_labels' else None
@@ -260,11 +272,11 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
         with chart_settings:
             max_depth = max((len(path) - len(root) for path in roots if path[:len(root)] == root), default=0)
             depth = st.selectbox('View depth', [None, *range(1, max_depth + 1)], format_func=lambda value: 'Full tree' if value is None else f'{value} level(s) below root', key=f'depth_{taxonomy}_{root}')
-            include_holdings = st.checkbox('Show holdings beneath labels')
-            show_paths = st.checkbox('Show classification paths', help='Show the taxonomy breadcrumb for each category.')
+            include_holdings = st.checkbox('Show holdings beneath labels', key='exposure_control_holdings')
+            show_paths = st.checkbox('Show classification paths', key='exposure_control_paths', help='Show the taxonomy breadcrumb for each category.')
     if view != 'selected_labels':
         with chart_settings:
-            chart_type = st.selectbox('Chart', ['Sunburst', 'Treemap', 'Bar', 'Pie'])
+            chart_type = st.selectbox('Chart', ['Sunburst', 'Treemap', 'Bar', 'Pie'], key='exposure_control_chart')
     if query:
         st.caption('Search applies in Assets. Theme percentages cover the selected source scope.')
     chart_exposures = exposures.copy()
@@ -377,7 +389,7 @@ def render_source_positions(selected, valued, names, classifications, show_ticke
         columns += ['holdings_confirmed_on']
     if 'quantity_unit' in table and table.quantity_unit.ne('').any():
         columns += ['quantity_unit']
-    if st.checkbox("Show price details", help="Quote timestamps, FX status and valuation notes"):
+    if st.checkbox("Show price details", key="exposure_show_price_details", help="Quote timestamps, FX status and valuation notes"):
         columns += ["price_status", "price_observed_at", "price_age_hours", "fx_status", "fx_observed_at", "fx_age_hours", "valuation_note"]
     st.dataframe(table[columns], hide_index=True, width="stretch", height="content", column_config={
         "id": None, "name": "Investment", "ticker": "Ticker" if show_tickers else None, "shares": st.column_config.NumberColumn('Quantity', format='%.10f'),

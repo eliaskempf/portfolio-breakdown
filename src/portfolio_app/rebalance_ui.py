@@ -6,6 +6,7 @@ from hashlib import sha256
 import pandas as pd
 import numpy as np
 import streamlit as st
+from portfolio_app.view_state import persistent_editor
 
 from portfolio_app.display_names import display_name
 from portfolio_app.rebalancing import (
@@ -80,7 +81,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
                                                        help="Additional root mean squared target gap permitted compared with the best plan under Maximum trades. This is separate from tolerance ranges.")
                 if st.checkbox("Limit allocations for this rebalance", key="rebalance_limit_allocations"):
                     if scope:
-                        cap_scope = st.selectbox('Cap denominator', ['portfolio', 'bucket'], format_func=lambda v: '% of whole portfolio' if v == 'portfolio' else '% of selected bucket')
+                        cap_scope = st.selectbox('Cap denominator', ['portfolio', 'bucket'], key='rebalance_cap_scope', format_func=lambda v: '% of whole portfolio' if v == 'portfolio' else '% of selected bucket')
                     st.caption("Enter a maximum percentage using the selected denominator after adding the contribution, including unallocated cash. "
                                "Blank means no cap. Saved targets still guide buying. A position already above its cap receives no further buys. "
                                "These limits apply only to this calculation and reset when the selected positions change.")
@@ -89,7 +90,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
                     cap_rows["Target %"] = cap_rows.target_allocation * 100
                     cap_rows["Max allocation %"] = pd.Series([None] * len(cap_rows), dtype="float64")
                     cap_key = sha256(repr((identity, tuple(active.position_id))).encode()).hexdigest()[:16]
-                    cap_rows = st.data_editor(cap_rows.drop(columns="target_allocation"), hide_index=True, width="stretch",
+                    cap_rows = persistent_editor(cap_rows.drop(columns="target_allocation"), hide_index=True, width="stretch",
                                               disabled=["position_id", "Investment", "Target %"], key=f"rebalance_caps_{cap_key}",
                                               column_config={"position_id": None,
                                                              "Target %": st.column_config.NumberColumn("Target", format="%.2f %%"),

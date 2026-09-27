@@ -7,6 +7,8 @@ import yaml
 from streamlit.testing.v1 import AppTest
 
 from test_ui import by_label, launch, theme_view
+from list_helpers import list_frame
+from test_ui import activate
 
 
 @pytest.fixture
@@ -40,7 +42,7 @@ def multi_fund_workspace(tmp_path):
 
 
 def effective(app):
-    return next(item.value for item in app.dataframe if 'ETF-derived (EUR)' in item.value)
+    return list_frame(app, 'Exposure assets')
 
 
 def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(multi_fund_workspace):
@@ -176,6 +178,7 @@ def test_interrupted_render_restores_missing_filter_widget_state(multi_fund_work
     app.session_state['filter_holdings_selection'] = ['world', 'emerging']
     app.run()
     assert not app.exception
+    activate(app, 'Exposure')
     assert set(by_label(app.multiselect, 'Holdings').value) == {'world', 'emerging'}
     # An intentional empty selection remains empty.
     by_label(app.multiselect, 'Holdings').set_value([]).run()

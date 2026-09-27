@@ -1,7 +1,6 @@
 """The running app refreshes its tables after an offline background update."""
 import json
 import os
-import re
 import socket
 import subprocess
 import sys
@@ -76,12 +75,12 @@ render_app(directory, price_service=PriceService(StaticProvider(directory / 'pri
             summary = page.locator('.st-key-exposure_summary')
             results = page.locator('.st-key-exposure_results')
             playwright.expect(summary).to_contain_text('Updating ETF holdings in the background', timeout=15000)
-            playwright.expect(results.locator('[role="gridcell"]').filter(has_text=re.compile('^70$'))).to_have_count(1)
+            playwright.expect(results.get_by_role('cell', name='70.00', exact=True)).to_have_count(1)
             page.get_by_role('textbox', name='Search exposure').fill('Alpha')
             page.get_by_role('textbox', name='Search exposure').press('Enter')
             playwright.expect(results).to_contain_text('1 matching assets')
             (tmp_path / 'release').touch()
-            playwright.expect(results.locator('[role="gridcell"]').filter(has_text=re.compile('^100$'))).to_have_count(1, timeout=15000)
+            playwright.expect(results.get_by_role('table', name='Exposure assets').get_by_role('cell', name='100.00', exact=True)).to_have_count(1, timeout=15000)
             playwright.expect(summary).not_to_contain_text('Updating ETF holdings in the background')
             playwright.expect(page.get_by_role('textbox', name='Search exposure')).to_have_value('Alpha')
             playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

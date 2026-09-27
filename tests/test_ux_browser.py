@@ -56,6 +56,7 @@ def ux_page(tmp_path):
 
 def click_slice(page, label):
     chart = page.locator('.js-plotly-plot').first
+    page.wait_for_function("!!document.querySelector('.js-plotly-plot')?._ev?._events?.plotly_sunburstclick")
     text = chart.locator('text.slicetext').filter(has_text=re.compile(r'\s*'.join(map(re.escape, label.split()))))
     text.scroll_into_view_if_needed()
     bounds = text.bounding_box()
@@ -95,7 +96,7 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     page.get_by_role('tab', name='Overview', exact=True).click()
     initial_colors = page.locator('.js-plotly-plot').first.evaluate('el => Object.fromEntries(el.data[0].ids.map((id,i) => [id,el.data[0].marker.colors[i]]))')
     click_slice(page, 'ETF core')
-    page.wait_for_function("document.querySelector('.js-plotly-plot')?.data[0].labels[0] === 'ETF core'")
+    page.wait_for_function("document.querySelector('.js-plotly-plot')?.data?.[0]?.labels?.[0] === 'ETF core'")
     chart = page.locator('.js-plotly-plot').first
     assert chart.evaluate('el => el._fullData[0].customdata.slice(1).map(r => r[0]).sort()') == [.2, .8]
     colors = chart.evaluate('el => el.data[0].marker.colors.slice(1)')
@@ -128,7 +129,7 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     page.screenshot(path=str(directory / 'performance.png'))
     page.get_by_role('radio', name='Allocation', exact=True).click()
     page.get_by_role('button', name='Back', exact=True).click()
-    page.wait_for_function("document.querySelector('.js-plotly-plot')?.data[0].labels[0] === 'Portfolio'")
+    page.wait_for_function("document.querySelector('.js-plotly-plot')?.data?.[0]?.labels?.[0] === 'Portfolio'")
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     page.screenshot(path=str(directory / 'overview.png'))
     page.set_viewport_size({'width': 700, 'height': 1000})
@@ -136,8 +137,10 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     if collapse.is_visible():
         collapse.click()
     page.wait_for_function("document.querySelector('[data-testid=stSidebar]')?.getBoundingClientRect().right <= 0")
-    playwright.expect(allocation.get_by_test_id('stDataFrame')).to_be_visible()
-    page.wait_for_function("(() => { const p=document.querySelector('.st-key-overview_allocation'); const c=p.querySelector('[data-testid=stPlotlyChart]').getBoundingClientRect(); const t=p.querySelector('[data-testid=stDataFrame]').getBoundingClientRect(); return t.top >= c.bottom; })()")
+    playwright.expect(allocation.get_by_role('table', name='Allocation', exact=True)).to_be_visible()
+    page.wait_for_function("({chart, table}) => table.getBoundingClientRect().top >= chart.getBoundingClientRect().bottom",
+                           arg={'chart': allocation.get_by_test_id('stPlotlyChart').element_handle(),
+                                'table': allocation.get_by_role('table', name='Allocation', exact=True).element_handle()})
     page.screenshot(path=str(directory / 'overview-narrow.png'))
     assert page.get_by_test_id('stException').count() == 0
 
@@ -180,6 +183,50 @@ def test_position_details_edit_cancel_and_preserved_filter(ux_page):
     if collapse.is_visible():
         collapse.click()
     page.screenshot(path=str(directory / 'positions-narrow.png'))
+
+
+def test_overview_list_matches_positions_and_opens_sorted_filtered_rows(ux_page):
+    page, directory = ux_page
+    click_slice(page, 'ETF core')
+    playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('ETF core')
+    table = page.get_by_role('table', name='Positions', exact=True)
+    playwright.expect(table.get_by_role('columnheader', name='Return (%)')).to_have_count(1)
+    playwright.expect(table.get_by_role('columnheader', name='Gain (EUR)')).to_have_count(1)
+    playwright.expect(table.get_by_role('checkbox')).to_have_count(0)
+    playwright.expect(table.get_by_role('radio')).to_have_count(0)
+    table.get_by_role('button', name='Return (%)', exact=True).click()
+    playwright.expect(table.locator('tbody tr').first).to_contain_text('Invented Regional')
+    page.get_by_role('searchbox', name='Filter positions').fill('Regional')
+    row = table.locator('tbody tr')
+    playwright.expect(row).to_have_count(1)
+    playwright.expect(row).to_contain_text('20.00')  # Category allocation, not portfolio allocation.
+    playwright.expect(row.locator('td.negative')).to_have_count(2)
+    row.press('Enter')
+    dialog = page.get_by_role('dialog')
+    playwright.expect(dialog).to_contain_text('Invented Regional')
+    dialog.get_by_role('button', name='Close', exact=True).filter(has_text='Close').click()
+    playwright.expect(dialog).to_have_count(0)
+    row.get_by_role('button', name='Edit Invented Regional · Second', exact=True).click()
+    quantity = dialog.get_by_role('spinbutton', name='Quantity held (total)', exact=True)
+    playwright.expect(quantity).to_have_value('1.0000000000')
+    quantity.fill('2')
+    quantity.press('Tab')
+    dialog.get_by_role('button', name='Save position', exact=True).click()
+    playwright.expect(dialog).to_have_count(0)
+    playwright.expect(page.get_by_role('searchbox', name='Filter positions')).to_have_value('Regional')
+    playwright.expect(row).to_contain_text('33.33')
+    # Opening the same position again needs no checkbox deselection.
+    row.click()
+    playwright.expect(dialog).to_contain_text('Invented Regional')
+    dialog.get_by_role('button', name='Close', exact=True).filter(has_text='Close').click()
+    page.get_by_role('tab', name='Positions', exact=True).click()
+    playwright.expect(page.get_by_role('searchbox', name='Filter positions')).to_have_value('')
+    page.get_by_role('tab', name='Overview', exact=True).click()
+    playwright.expect(page.get_by_role('searchbox', name='Filter positions')).to_have_value('Regional')
+    table.scroll_into_view_if_needed()
+    page.wait_for_function("table => table.getBoundingClientRect().width > 300",
+                           arg=page.get_by_role('table', name='Allocation', exact=True).element_handle())
+    page.screenshot(path=str(directory / 'overview-positions.png'))
     assert page.get_by_test_id('stException').count() == 0
 
 
@@ -246,14 +293,14 @@ def test_tiny_labels_reappear_when_scoped_and_losses_are_red(ux_page):
     prices['prices']['SYNTH-C']['price'] = 1
     path.write_text(json.dumps(prices))
     page.reload()
-    page.wait_for_function("document.querySelector('.js-plotly-plot')?.data[0].labels.includes('Invented Satellite')")
+    page.wait_for_function("document.querySelector('.js-plotly-plot')?.data?.[0].labels.includes('Invented Satellite')")
     chart = page.locator('.js-plotly-plot').first
     assert chart.evaluate("el => el.data[0].text[el.data[0].labels.indexOf('Invented Satellite')]") == ''
     assert chart.evaluate("el => el._fullData[0].values[el.data[0].labels.indexOf('Invented Satellite')]") == 1
     # Choose the tiny category with the dropdown; its own view has a 100% holding.
     page.get_by_role('combobox', name='Category', exact=True).click()
     page.get_by_role('option', name='Satellites', exact=True).click()
-    page.wait_for_function("document.querySelector('.js-plotly-plot')?.data[0].labels[0] === 'Satellites'")
+    page.wait_for_function("document.querySelector('.js-plotly-plot')?.data?.[0]?.labels?.[0] === 'Satellites'")
     assert chart.evaluate("el => el.data[0].text[el.data[0].labels.indexOf('Invented Satellite')]")
     card = page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))
     playwright.expect(card.get_by_test_id('stMetricDelta')).to_contain_text('-€49.00')

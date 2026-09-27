@@ -8,6 +8,9 @@ export default function({parentElement, data, setTriggerValue}) {
   // Streamlit invokes this again when data changes, keeping the component host.
   // Dispose the prior listeners before attaching the updated unit toggle.
   parentElement.disposeGainToggle?.();
+  // Lazy tabs can briefly retain the outgoing component host while mounting
+  // its replacement. Only one host may own the metric's DOM listeners.
+  window.__portfolioGainToggle?.();
   let target;
   const activate = () => setTriggerValue('toggle', {nonce: crypto.randomUUID()});
   const keydown = event => {
@@ -21,6 +24,7 @@ export default function({parentElement, data, setTriggerValue}) {
     target.removeEventListener('click', activate);
     target.removeEventListener('keydown', keydown);
     for (const name of ['role', 'tabindex', 'aria-label', 'title']) target.removeAttribute(name);
+    target = undefined;
   };
   const attach = () => {
     const candidate = document.querySelector('.st-key-overview_value [data-testid="stMetricDelta"]');
@@ -37,8 +41,12 @@ export default function({parentElement, data, setTriggerValue}) {
   const observer = new MutationObserver(attach);
   observer.observe(document.body, {childList: true, subtree: true});
   attach();
-  const dispose = () => { observer.disconnect(); detach(); };
+  const dispose = () => {
+    observer.disconnect(); detach();
+    if (window.__portfolioGainToggle === dispose) delete window.__portfolioGainToggle;
+  };
   parentElement.disposeGainToggle = dispose;
+  window.__portfolioGainToggle = dispose;
   return dispose;
 }
 """

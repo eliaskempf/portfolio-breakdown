@@ -3,7 +3,10 @@
 import streamlit as st
 
 JS = """
-export default function({data, setTriggerValue}) {
+export default function({parentElement, data, setTriggerValue}) {
+  parentElement.disposeChartNavigation?.();
+  const owners = window.__portfolioChartNavigation ??= new Map();
+  owners.get(data.controlKey)?.();
   let plot;
   const clicked = event => {
     const point = event.points?.[0]?.id;
@@ -22,18 +25,25 @@ export default function({data, setTriggerValue}) {
   };
   const attach = () => {
     const candidate = document.querySelector('.st-key-' + CSS.escape(data.chartKey) + ' .js-plotly-plot');
-    if (candidate === plot || !candidate?.on) return;
-    plot?.removeListener(data.eventName, clicked);
+    if (!candidate?.on) return;
+    if (candidate !== plot) plot?.removeListener?.(data.eventName, clicked);
     plot = candidate;
+    // Plotly can reset its emitter while reusing the same DOM node. Rebind
+    // our own handler after DOM updates instead of assuming it survived.
+    plot.removeListener?.(data.eventName, clicked);
     plot.on(data.eventName, clicked);
   };
   const observer = new MutationObserver(attach);
   observer.observe(document.body, {childList: true, subtree: true});
   attach();
-  return () => {
+  const dispose = () => {
     observer.disconnect();
-    plot?.removeListener(data.eventName, clicked);
+    plot?.removeListener?.(data.eventName, clicked);
+    if (owners.get(data.controlKey) === dispose) owners.delete(data.controlKey);
   };
+  parentElement.disposeChartNavigation = dispose;
+  owners.set(data.controlKey, dispose);
+  return dispose;
 }
 """
 
@@ -52,5 +62,5 @@ def sync_chart_category(chart_key: str, categories: dict, control_key: str, *, p
         if open_position and event and event.get('id') in (positions or {}).values():
             open_position(event['id'])
 
-    component(key=bridge_key, data={"chartKey": chart_key, "categories": categories, 'positions': positions or {}, 'eventName': event_name},
+    component(key=bridge_key, data={"chartKey": chart_key, 'controlKey': control_key, "categories": categories, 'positions': positions or {}, 'eventName': event_name},
               on_category_change=navigate, on_position_change=show_position)

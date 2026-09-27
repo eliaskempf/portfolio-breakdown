@@ -6,7 +6,7 @@ from streamlit.testing.v1 import AppTest
 
 from portfolio_app.analytics_ui import load_metrics
 from portfolio_app.holdings import load_holdings
-from test_ui import by_label, launch
+from test_ui import activate, by_label, launch
 
 
 @pytest.fixture(autouse=True)
@@ -23,6 +23,7 @@ def no_live_analytics(monkeypatch):
 
 def test_position_presets_details_and_risk(sample_data_dir):
     app = launch(sample_data_dir)
+    activate(app, 'Positions')
     assert by_label(app.get('button_group'), 'Position view').value == 'Holdings'
     assert not any(c.label == 'Show instrument metrics' for c in app.checkbox)
     by_label(app.get('button_group'), 'Position view').set_value('Valuation').run()
@@ -43,11 +44,21 @@ def test_position_presets_details_and_risk(sample_data_dir):
     assert by_label(app.text_input, 'Benchmark ticker').value == 'IUSQ.DE'
     by_label(app.selectbox, 'History window').set_value(1).run()
     assert not app.exception
+    activate(app, 'Overview')
+    activate(app, 'Positions')
+    assert by_label(app.get('button_group'), 'Position view').value == 'Risk'
+    assert by_label(app.selectbox, 'History window').value == 1
+    by_label(app.get('button_group'), 'Position view').set_value('Valuation').run()
+    by_label(app.multiselect, 'Visible metrics').set_value(['forward_pe']).run()
+    by_label(app.get('button_group'), 'Position view').set_value('Income & fees').run()
+    by_label(app.get('button_group'), 'Position view').set_value('Valuation').run()
+    assert by_label(app.multiselect, 'Visible metrics').value == ['forward_pe']
 
 
 def test_portfolio_analytics_uses_overview_scope_and_risk(sample_data_dir):
     from portfolio_app.allocation import migration_preview
     app = launch(sample_data_dir)
+    activate(app, 'Overview')
     by_label(app.get('button_group'), 'Overview view').set_value('Analytics').run()
     assert not app.exception
     assert not any(c.label in {'Show portfolio analytics', 'Load portfolio fundamentals', 'Load historical risk'} for c in app.checkbox)
@@ -58,6 +69,10 @@ def test_portfolio_analytics_uses_overview_scope_and_risk(sample_data_dir):
     assert by_label(app.metric, 'Beta').value != '—'
     by_label(app.text_input, 'Benchmark ticker').set_value('SYNTHETIC-BENCHMARK').run()
     assert not app.exception
+    activate(app, 'Positions')
+    activate(app, 'Overview')
+    assert by_label(app.get('button_group'), 'Overview view').value == 'Analytics'
+    assert by_label(app.text_input, 'Benchmark ticker').value == 'SYNTHETIC-BENCHMARK'
     config, _ = migration_preview(load_holdings(sample_data_dir / 'holdings.csv'))
     category = config.buckets[0].id
     by_label(app.selectbox, 'Category').set_value(category).run()
