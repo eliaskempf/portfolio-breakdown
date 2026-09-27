@@ -33,7 +33,7 @@ def parse_holdings(content: str) -> pd.DataFrame:
         raise DataError("position_id is reserved for internal position identity.")
     for column in frame.columns:
         frame[column] = frame[column].str.strip()
-    for column in ("ticker", "isin", "portfolio", "account", "acquisition_price"):
+    for column in ("ticker", "isin", "portfolio", "account", "acquisition_price", "short_name"):
         if column not in frame:
             frame[column] = ""
     frame["ticker"] = frame["ticker"].str.upper()
@@ -86,7 +86,7 @@ def parse_holdings(content: str) -> pd.DataFrame:
             raise DataError(f"{column} must be a finite nonnegative number (CSV rows {rows}).")
         frame[column] = numeric.astype(float)
     for asset_id, positions in frame.groupby("id", sort=False):
-        for column in ("name", "ticker", "isin"):
+        for column in ("name", "ticker", "isin", "short_name"):
             if positions[column].nunique() > 1:
                 raise DataError(f"Asset {asset_id!r} has inconsistent {column}; use distinct IDs for distinct instruments.")
     if "position_key" in frame:
@@ -100,5 +100,5 @@ def parse_holdings(content: str) -> pd.DataFrame:
 
 
 def metadata_dimensions(holdings: pd.DataFrame) -> list[str]:
-    excluded = {"position_id", "position_key", "id", "name", "ticker", "isin", "shares", "acquisition_price", "acquisition_currency", "target_allocation", "within_bucket_target", "purchase_history", "holdings_confirmed_on", "balance_replaced_at", "manual_price", "manual_price_currency", "manual_price_date", "quantity_unit"}
+    excluded = {"position_id", "position_key", "id", "name", "short_name", "ticker", "isin", "shares", "acquisition_price", "acquisition_currency", "target_allocation", "within_bucket_target", "purchase_history", "holdings_confirmed_on", "balance_replaced_at", "manual_price", "manual_price_currency", "manual_price_date", "quantity_unit"}
     return [column for column in holdings.columns if column not in excluded]

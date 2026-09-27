@@ -1,3 +1,4 @@
+from test_ui import position_action
 """Synthetic Streamlit smoke tests for allocation setup and scoped workflows."""
 import shutil
 from test_ui import launch, by_label
@@ -15,7 +16,7 @@ def workspace(tmp_path, sample_data_dir):
 def test_review_enable_and_reopen_allocation(tmp_path, sample_data_dir):
     path = workspace(tmp_path, sample_data_dir)
     app = launch(tmp_path)
-    by_label(app.radio, 'Position action').set_value('Strategic allocation').run()
+    position_action(app, 'Strategic allocation')
     assert not app.exception
     by_label(app.button, 'Enable reviewed allocation').click().run()
     assert not app.exception
@@ -23,7 +24,7 @@ def test_review_enable_and_reopen_allocation(tmp_path, sample_data_dir):
     assert 'position_key' in read_snapshot(path).holdings
     reopened = launch(tmp_path)
     assert not reopened.exception
-    assert any(item.value == 'Strategic allocation' for item in reopened.subheader)
+    assert any(item.value == 'Categories and targets' for item in reopened.subheader)
 
 
 def test_scoped_plans_balance_save_and_macro_overview(tmp_path, sample_data_dir):
@@ -34,7 +35,7 @@ def test_scoped_plans_balance_save_and_macro_overview(tmp_path, sample_data_dir)
     migrate(path, config, preview, expected_revision=snap.revision)
     app = launch(tmp_path)
     assert not app.exception
-    by_label(app.radio, 'Position action').set_value('Update balances').run()
+    position_action(app, 'Update balances')
     by_label(app.button, 'Save replacement balances').click().run()
     assert not app.exception
     by_label(app.button, 'Calculate portfolio contribution').click().run()
@@ -54,7 +55,7 @@ def test_optional_stock_view_and_manual_position_entry(tmp_path, sample_data_dir
     by_label(app.checkbox, 'Show stock-only company exposure').check().run()
     assert not app.exception
     assert any('stock-universe total is unknown' in item.value for item in app.info)
-    by_label(app.radio, 'Position action').set_value('Add position').run()
+    position_action(app, 'Add position')
     by_label(app.text_input, 'Instrument name').set_value('Invented physical holding')
     by_label(app.number_input, 'Quantity held (total)').set_value(2.5)
     by_label(app.selectbox, 'Instrument type').set_value('physical')
@@ -79,16 +80,16 @@ def test_strategic_drill_down_planned_bucket_and_bulk_assignment(tmp_path, sampl
     before = read_snapshot(path).holdings.copy()
     app = launch(tmp_path)
     assert not app.exception
-    assert [tab.label for tab in app.tabs] == ['Overview', 'Exposure', 'Rebalance', 'Manage positions']
+    assert [tab.label for tab in app.tabs][:4] == ['Overview', 'Exposure', 'Positions', 'Rebalance']
     by_label(app.selectbox, 'Category').set_value('bucket-1').run()
-    strategic_positions = next(table.value for table in app.dataframe if 'Category (%)' in table.value)
+    strategic_positions = next(table.value for table in app.dataframe if 'Allocation (%)' in table.value)
     assert strategic_positions.Investment.tolist() == ['Invented A', 'Invented B']
-    assert strategic_positions['Category (%)'].sum() == 100
+    assert strategic_positions['Allocation (%)'].sum() == 100
     by_label(app.selectbox, 'Category').set_value('planned').run()
     assert any('No current holdings' in item.value for item in app.info)
     by_label(app.button, 'Back').click().run()
     assert by_label(app.selectbox, 'Category').value == ''
-    by_label(app.radio, 'Position action').set_value('Strategic allocation').run()
+    position_action(app, 'Strategic allocation')
     by_label(app.button, 'Select all').click().run()
     assert len(by_label(app.multiselect, 'Positions to assign').value) == 3
     by_label(app.selectbox, 'Destination bucket').set_value('planned').run()

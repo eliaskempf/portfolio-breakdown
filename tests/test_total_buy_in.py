@@ -1,3 +1,4 @@
+from test_ui import position_action
 """Invented balances and costs; never read the working portfolio."""
 
 import pandas as pd
@@ -49,7 +50,7 @@ def test_add_fractional_position_with_total_cost_and_reopen(tmp_path):
     performance = position_performance(stored.assign(quote_currency='EUR', current_price=4800., current_value_eur=150.))
     assert performance.cost_basis.iloc[0] == pytest.approx(123.45)
     assert performance.unrealized_gain.iloc[0] == pytest.approx(26.55)
-    by_label(app.radio, 'Position action').set_value('Edit position').run()
+    position_action(app, 'Edit position')
     total_mode(app)
     assert by_label(app.number_input, 'Total buy-in (optional)').value == pytest.approx(123.45)
     # Replacement quantity, same total cost: recompute the unit average.
@@ -108,7 +109,7 @@ def test_balance_editor_saves_total_cost_and_clears_missing_cost(monkeypatch, tm
     path = tmp_path / 'holdings.csv'
     sample_balances(path)
     app = launch_editor(path)
-    by_label(app.radio, 'Position action').set_value('Update balances').run()
+    position_action(app, 'Update balances')
     total_mode(app)
 
     def edit(frame, **kwargs):
@@ -131,7 +132,7 @@ def test_invalid_total_balance_update_is_atomic(monkeypatch, tmp_path):
     sample_balances(path)
     before = path.read_bytes()
     app = launch_editor(path)
-    by_label(app.radio, 'Position action').set_value('Update balances').run()
+    position_action(app, 'Update balances')
     total_mode(app)
 
     def edit(frame, **kwargs):

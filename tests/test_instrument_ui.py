@@ -4,7 +4,7 @@ import pytest
 from portfolio_app.holdings import load_holdings
 from portfolio_app.instruments import Instrument, catalog_search
 from portfolio_app.search_widget import SEARCH_KEY
-from test_ui import by_label
+from test_ui import by_label, position_action
 
 
 def launch_editor(path, action='Add position'):
@@ -15,8 +15,7 @@ def launch_editor(path, action='Add position'):
         f"path = Path({str(path)!r})\n"
         "render_position_editor(path, read_snapshot(path), [])\n"
     ).run()
-    if by_label(app.radio, 'Position action').value != action:
-        by_label(app.radio, 'Position action').set_value(action).run()
+    position_action(app, action)
     return app
 
 

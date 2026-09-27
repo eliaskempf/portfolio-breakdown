@@ -57,3 +57,44 @@ def display_name(name: str) -> str:
                           else match[0].capitalize(), word)
         words.append(word)
     return " ".join(words)
+
+
+def instrument_name(row) -> str:
+    """A presentation-only label; full source names and identities are retained."""
+    get = row.get if hasattr(row, "get") else lambda key, default="": getattr(row, key, default)
+    short = get("short_name", "")
+    if isinstance(short, str) and short.strip():
+        return short.strip()
+    return compact_fund_name(get("name", ""))
+
+
+def compact_fund_name(name: str) -> str:
+    """Short chart labels; full share-class information stays in position details.
+
+    Only compact explicitly named funds. Do not guess truncated provider names,
+    or remove currency from a hedging qualifier or leverage from an index.
+    """
+    original = display_name(name)
+    original = re.sub(r"\b(MSCI Europe Momentum)\s+Factor\b", r"\1", original, flags=re.I)
+    if not re.search(r"\b(?:UCITS|ETF)\b", original, flags=re.I):
+        return original
+    clean = re.sub(r"^Amundi Index Solutions\s*[-–—]\s*(?=Amundi\b)", "", original, flags=re.I)
+    clean = re.sub(r"\b(?:UCITS\s+ETF|UCITS|ETF)\b", "", clean, flags=re.I)
+    # Peel off trailing listing currency, distribution policy and share codes.
+    # A suffix such as 'EUR Hedged' stops the loop and remains intact.
+    suffix = re.compile(
+        r"(?:[\s(]+|[-–—]\s*)(?:USD|EUR|GBP|CHF|JPY|CAD|AUD|"
+        r"Acc(?:umulating|umulation)?|Dist(?:ributing|ribution)?|[1-9][CD]|[ACDI])\)?\.?$",
+        re.I,
+    )
+    clean = clean.strip()
+    while (shorter := suffix.sub("", clean).strip()) != clean:
+        clean = shorter
+    clean = re.sub(r"\(\s*\)", "", clean)
+    return " ".join(clean.strip(" -–—").split()) or original
+
+
+def named_holdings(holdings):
+    result = holdings.copy()
+    result["name"] = [instrument_name(row) for _, row in result.iterrows()]
+    return result

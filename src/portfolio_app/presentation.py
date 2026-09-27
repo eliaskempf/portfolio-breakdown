@@ -19,6 +19,26 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 [data-testid="stMetric"] {border:1px solid color-mix(in srgb,currentColor 14%,transparent);border-radius:6px;padding:16px 18px;}
 [data-testid="stMetricValue"] {font-size:1.7rem;font-weight:600;font-variant-numeric:tabular-nums;}
 [data-testid="stMetricLabel"] {font-size:.8rem;opacity:.75;}
+.st-key-overview_value [data-testid="stMetric"] > div {display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:16px;align-items:center;}
+.st-key-overview_value [data-testid="stMetricLabel"] {grid-column:1 / -1;}
+.st-key-overview_value [data-testid="stMetricValue"] {grid-column:1;grid-row:2;}
+.st-key-overview_value [data-testid="stMetric"] > div > div:has(> [data-testid="stMetricDelta"]) {grid-column:2;grid-row:2;margin-top:0;flex-wrap:wrap;}
+.st-key-overview_allocation {container-type:inline-size;}
+.st-key-overview_allocation_summary {transform:translateY(-24px);}
+.st-key-overview_value [data-testid="stMetricDelta"][role="button"] {cursor:pointer;}
+.st-key-overview_value [data-testid="stMetricDelta"][role="button"]:hover {filter:brightness(.85);}
+.st-key-overview_value [data-testid="stMetricDelta"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
+.st-key-exposure_theme_results {container-type:inline-size;}
+.st-key-exposure_toolbar [data-testid="stColumn"] {min-width:0;}
+@container(max-width:860px) {
+  .st-key-overview_allocation_summary {transform:none;}
+  .st-key-overview_allocation [data-testid="stHorizontalBlock"] {flex-direction:column;align-items:stretch;}
+  .st-key-overview_allocation [data-testid="stColumn"] {width:100%!important;flex:1 1 100%;min-width:0;}
+  .st-key-exposure_theme_results [data-testid="stHorizontalBlock"] {flex-direction:column;align-items:stretch;}
+  .st-key-exposure_theme_results [data-testid="stColumn"] {width:100%!important;flex:1 1 100%;min-width:0;}
+}
+[class*="st-key-gain_positive_"] [data-testid="stMetricValue"] {color:var(--st-green-text-color,#27836c);}
+[class*="st-key-gain_negative_"] [data-testid="stMetricValue"] {color:var(--st-red-text-color,#b84655);}
 [data-testid="stTabs"] [role="tablist"] {gap:24px;border-bottom:1px solid color-mix(in srgb,currentColor 14%,transparent);margin:4px 0 20px;}
 [data-testid="stTabs"] [role="tab"] {padding:10px 0;font-size:.9rem;font-weight:500;}
 [data-testid="stForm"] {border-radius:6px;padding:20px;}
@@ -30,7 +50,7 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 .brand {font-size:1.1rem;font-weight:650;letter-spacing:-.25px;padding:4px 0 16px;}
 .empty-state {border:1px solid color-mix(in srgb,currentColor 14%,transparent);border-radius:6px;padding:32px;}
 [data-testid="stAppDeployButton"] {display:none;}
-@media(max-width:700px) {.block-container{padding:3.5rem 1rem 2rem}h1{font-size:1.5rem!important}[data-testid="stMetric"]{padding:10px}}
+@media(max-width:700px) {[data-testid="stHorizontalBlock"]{flex-wrap:wrap}[data-testid="stColumn"]{min-width:min(100%,260px)}.block-container{padding:3.5rem 1rem 2rem}h1{font-size:1.5rem!important}[data-testid="stMetric"]{padding:10px}}
 </style>
 """
 
@@ -46,8 +66,15 @@ def workspace_header(demo: bool) -> None:
 
 
 def empty_overview() -> None:
-    st.info("Add a position in Manage positions to get started.")
+    st.info("Open Positions and choose Add position to get started.")
 
 
 def allocation_total(label: str, value: float) -> None:
     st.html(f'<div class="allocation-total"><span>{escape(label)}</span><span>€{value:,.2f} · 100%</span></div>')
+
+
+def performance_metric(label: str, value: str, amount, *, key: str) -> None:
+    """Keep signed performance readable even without colour or a known cost."""
+    tone = 'positive' if amount is not None and amount > 0 else 'negative' if amount is not None and amount < 0 else 'neutral'
+    with st.container(key=f'gain_{tone}_{key}'):
+        st.metric(label, value)

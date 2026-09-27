@@ -118,6 +118,9 @@ def save_position(
         if position_id is None:
             if not values.get("id"):
                 values["id"] = _new_asset_id(values, current)
+            existing = current.loc[current.id.eq(values['id'])]
+            if not existing.empty and 'short_name' not in values:
+                values['short_name'] = existing.iloc[0].short_name
             index = len(raw)
         else:
             matches = current.index[current["position_id"] == position_id]
@@ -135,10 +138,10 @@ def save_position(
                 raw.at[index, "position_key"] = uuid4().hex
         for column, value in values.items():
             raw.at[index, column] = value
-        if position_id is not None and 'name' in values:
-            # The display name belongs to the instrument. Keep every account's
-            # row consistent while all other edits remain position-specific.
-            raw.loc[raw['id'] == current.at[index, 'id'], 'name'] = values['name']
+        instrument_id = current.at[index, 'id'] if position_id is not None else values['id']
+        for column in ('name', 'short_name'):
+            if column in values and (position_id is not None or column == 'short_name'):
+                raw.loc[raw['id'] == instrument_id, column] = values[column]
         csv = raw.to_csv(index=False)
         candidate = parse_holdings(csv)
         selected = candidate.iloc[index]
