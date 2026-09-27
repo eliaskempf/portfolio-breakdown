@@ -38,7 +38,9 @@ from portfolio_app.allocation import load_allocation, analysis_targets, ignore_e
 from portfolio_app.strategic_ui import render_strategic_overview
 from portfolio_app.scoped_ui import render_scoped_rebalancing
 from portfolio_app.stock_ui import render_stock_exposure
-from portfolio_app.stock_exposure import load_company_identities, link_fund_companies
+from portfolio_app.stock_exposure import load_company_identities
+from portfolio_app.company_merges import build_plan, load_settings
+from portfolio_app.company_merge_ui import render_company_merges
 
 
 def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None) -> None:
@@ -135,15 +137,21 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         performance_percent = st.radio("Performance display", ["%", "Amount"], horizontal=True, key="display_performance") == "%"
         with st.expander("ETF snapshots"):
             funds = render_snapshot_controls(funds, demo=demo)
+        lookthrough, expanded_funds = render_etf_selection(holdings, funds, data_dir)
+        representation = 'ETF look-through' if lookthrough else 'Instruments'
         try:
-            funds = link_fund_companies(funds, holdings, load_company_identities(data_dir / 'company-identities.yaml'))
+            settings = load_settings(data_dir / 'company-merges.yaml')
+            plan = build_plan(holdings, funds, load_company_identities(data_dir / 'company-identities.yaml'), settings, classifications)
+            render_company_merges(plan, settings, data_dir / 'company-merges.yaml')
+            if lookthrough:
+                holdings, funds, classifications = plan.apply(holdings, funds, classifications)
+                active_isins = {fund.isin for fund in expanded_funds}
+                expanded_funds = [fund for fund in funds if fund.isin in active_isins]
         except DataError as exc:
             st.error(str(exc))
             return
         classifications = fund_classifications(classifications, funds, holdings)
         names = taxonomy_names(classifications)
-        lookthrough, expanded_funds = render_etf_selection(holdings, funds, data_dir)
-        representation = 'ETF look-through' if lookthrough else 'Instruments'
         display_group = smh_group_control(holdings, funds)
         with st.expander("Filter positions"):
             metadata = {}
@@ -161,10 +169,11 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             # A changed display mode needs a fresh widget while selections stay
             # tied to stable asset IDs, not the previous display strings.
             filter_key = "filter_holdings_" + sha256(repr(labels).encode()).hexdigest()[:16]
-            if st.session_state.get("filter_holdings_widget") != filter_key:
-                st.session_state[filter_key] = [asset for asset in st.session_state.get("filter_holdings_selection", ids) if asset in ids]
-                st.session_state["filter_holdings_widget"] = filter_key
-            selected_ids = st.multiselect("Holdings", ids, format_func=labels.get, key=filter_key,
+            defaults = [asset for asset in st.session_state.get("filter_holdings_selection", ids) if asset in ids]
+            st.session_state["filter_holdings_widget"] = filter_key
+            # Send the remembered selection as the widget default too, so a
+            # remounted browser control cannot publish an unintended empty list.
+            selected_ids = st.multiselect("Holdings", ids, default=defaults, format_func=labels.get, key=filter_key,
                                          help="Enable Show tickers to distinguish exchange listings with the same name.")
             st.session_state["filter_holdings_selection"] = selected_ids
             taxonomy_filters = {}
@@ -251,6 +260,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         return valued
     for measure in performance.measures():
         measure["asset_name"] = measure["asset_name"].map(display_name)
+    if lookthrough and any(group.enabled and group.basis == 'Estimated name match' for group in plan.groups):
+        st.caption('* Estimated company match · Review or undo in Exposure settings → Company merges')
     with st.expander("Chart settings"):
         options = [("holding", "Holding"), *[(f"metadata:{name}", name.replace("_", " ").title()) for name in dimensions],
                    *[(f"taxonomy:{name}", f"Taxonomy: {name}") for name in names]]

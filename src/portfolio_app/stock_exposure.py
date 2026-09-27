@@ -91,8 +91,8 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
         if fund is None:
             if kind == 'equity':
                 stock_total += value
-                known.append({**common, 'Company ID': identity(position['id'], position.get('isin', '')),
-                              'Company': position['name'], 'EUR value': value, 'Origin': 'Direct'})
+                known.append({**common, 'Company ID': position.get('analysis_asset_id') or identity(position['id'], position.get('isin', '')),
+                              'Company': position.get('analysis_asset_name') or position['name'], 'EUR value': value, 'Origin': 'Direct'})
             else:
                 if declared == 'equity':
                     stock_total += value
@@ -109,7 +109,9 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
             residual = constituent['constituent_id'].startswith('etf-other:')
             constituent_kind = constituent.get('instrument_type')
             if not isinstance(constituent_kind, str) or not constituent_kind:
-                constituent_kind = 'equity' if equity_universe else 'unknown'
+                analysis_asset = constituent.get('analysis_asset_id')
+                linked_equity = isinstance(analysis_asset, str) and bool(analysis_asset)
+                constituent_kind = 'equity' if equity_universe or linked_equity else 'unknown'
             if residual:
                 constituent_kind = 'equity' if equity_universe else 'unknown'
             if constituent_kind in {'cash', 'crypto', 'physical', 'non_equity'}:
@@ -122,8 +124,8 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
                 unknown.append({**common, 'Exposure': constituent['name'], 'EUR value': amount,
                                 'Status': 'Unresolved equity' if constituent_kind == 'equity' else 'Unknown composition'})
             else:
-                known.append({**common, 'Company ID': identity(constituent['constituent_id'], constituent['isin']),
-                              'Company': constituent['name'], 'EUR value': amount, 'Origin': 'ETF-derived'})
+                known.append({**common, 'Company ID': constituent.get('analysis_asset_id') or identity(constituent['constituent_id'], constituent['isin']),
+                              'Company': constituent.get('analysis_asset_name') or constituent['name'], 'EUR value': amount, 'Origin': 'ETF-derived'})
     sources = pd.DataFrame(known, columns=['Source position', 'Source instrument', 'Bucket', 'Account', 'Company ID', 'Company', 'EUR value', 'Origin'])
     records = []
     for key, rows in sources.groupby('Company ID', sort=False):

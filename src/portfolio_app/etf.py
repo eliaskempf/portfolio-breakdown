@@ -142,6 +142,9 @@ def constituent_resolver(holdings: pd.DataFrame):
             by_ticker.setdefault(row['ticker'], []).append(row)
 
     def resolve(constituent):
+        analysis_asset = constituent.get('analysis_asset_id')
+        if isinstance(analysis_asset, str) and analysis_asset:
+            return analysis_asset, constituent['analysis_asset_name']
         company_asset = constituent.get('company_asset_id')
         if isinstance(company_asset, str) and company_asset:
             if company_asset not in by_id:

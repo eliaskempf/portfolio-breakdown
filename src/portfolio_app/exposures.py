@@ -13,4 +13,8 @@ def normalize_exposures(valued_holdings: pd.DataFrame) -> pd.DataFrame:
     result["source_type"] = "instrument"
     result["source_instrument"] = result["asset_id"]
     result["direct_or_indirect"] = "direct"
+    if 'analysis_asset_id' in result:
+        linked = result.analysis_asset_id.fillna('').ne('')
+        result.loc[linked, 'asset_id'] = result.loc[linked, 'analysis_asset_id']
+        result.loc[linked, 'asset_name'] = result.loc[linked, 'analysis_asset_name']
     return result

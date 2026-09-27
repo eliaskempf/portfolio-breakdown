@@ -4,6 +4,7 @@ import json
 
 import pytest
 import yaml
+from streamlit.testing.v1 import AppTest
 
 from test_ui import by_label, launch
 
@@ -64,7 +65,7 @@ def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(mul
     assert table['Total (EUR)'].sum() == 300.
     # Targets follow the same selective expansion, and the intact fund retains
     # its own performance instead of inheriting missing constituent history.
-    chart = app.dataframe[0].value
+    chart = next(item.value for item in app.dataframe if 'Category' in item.value and 'Target portfolio %' in item.value)
     world = chart.loc[chart.Category == 'Synthetic World'].iloc[0]
     assert world['Target portfolio %'] == 40.
     assert world['Performance coverage'] == 'Complete'
@@ -127,3 +128,54 @@ def test_reviewed_company_mapping_reaches_allocation_and_stock_ui(multi_fund_wor
     assert not app.exception
     companies = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total (EUR)' in item.value)
     assert companies['Total (EUR)'].tolist() == [200.]
+
+
+def test_estimated_merge_review_undo_restore_and_reload(multi_fund_workspace):
+    directory = multi_fund_workspace / 'etfs'
+    for index, name in enumerate(['world', 'emerging']):
+        label = 'Invented Photon NV' if index == 0 else 'INVENTED PHOTON'
+        (directory / f'{name}.csv').write_text(
+            'constituent_id,name,ticker,isin,weight,instrument_type\n'
+            f'provider-{index},{label},,,0.5,equity\n')
+    protected = {path: path.read_bytes() for path in [multi_fund_workspace / 'holdings.csv', *directory.iterdir()]}
+    app = launch(multi_fund_workspace)
+    by_label(app.toggle, 'Break down ETFs').set_value(True).run()
+    assert not app.exception and not app.error
+    assert effective(app).loc[lambda x: x.Asset.str.endswith(' *'), 'Total (EUR)'].tolist() == [100.]
+    assert any('Estimated name match' in item.value for item in app.caption)
+    provenance = next(item.value for item in app.dataframe if 'Original asset' in item.value)
+    assert set(provenance.Source) == {'Synthetic World', 'Synthetic Emerging'}
+    by_label(app.button, 'Undo merge').click().run()
+    assert not app.exception and not app.error
+    assert not effective(app).Asset.str.endswith(' *').any()
+    assert len(effective(app).loc[lambda x: x.Asset.str.contains('Photon')]) == 2
+    by_label(app.checkbox, 'Show stock-only company exposure').check().run()
+    stock = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total (EUR)' in item.value)
+    assert len(stock) == 3  # The original direct stock plus two separate fund stocks.
+    reloaded = launch(multi_fund_workspace)
+    by_label(reloaded.toggle, 'Break down ETFs').set_value(True).run()
+    assert not effective(reloaded).Asset.str.endswith(' *').any()
+    by_label(reloaded.button, 'Restore merge').click().run()
+    assert not reloaded.exception and not reloaded.error
+    assert effective(reloaded).loc[lambda x: x.Asset.str.endswith(' *'), 'Total (EUR)'].tolist() == [100.]
+    assert all(path.read_bytes() == content for path, content in protected.items())
+
+
+def test_interrupted_render_restores_missing_filter_widget_state(multi_fund_workspace):
+    app = launch(multi_fund_workspace)
+    by_label(app.multiselect, 'Holdings').set_value(['world', 'emerging']).run()
+    key = app.session_state['filter_holdings_widget']
+    # Recreate a session whose remembered selection survived widget cleanup.
+    app = AppTest.from_string(
+        'from pathlib import Path\nfrom portfolio_app.ui import render_app\n'
+        f'render_app(Path({str(multi_fund_workspace)!r}), demo=True)\n',
+        default_timeout=15,
+    )
+    app.session_state['filter_holdings_widget'] = key
+    app.session_state['filter_holdings_selection'] = ['world', 'emerging']
+    app.run()
+    assert not app.exception
+    assert set(by_label(app.multiselect, 'Holdings').value) == {'world', 'emerging'}
+    # An intentional empty selection remains empty.
+    by_label(app.multiselect, 'Holdings').set_value([]).run()
+    assert by_label(app.multiselect, 'Holdings').value == []

@@ -759,16 +759,33 @@ borrowing fails validation instead of silently dropping liabilities.
 Provider sectors and countries supply fallback taxonomy paths, leaving local
 classifications in charge. Where iShares supplies only local tickers, they are
 retained as source metadata rather than treated as exchange-qualified symbols.
-No speculative ISIN or name matches are made, so overlap with other providers
-may remain separate until explicit identity mappings are supplied.
+Provider parsers do not infer missing ISINs. Company-level overlap is handled
+separately by the reviewable matching described below.
 
-Reviewed `company-identities.yaml` equivalences also connect ETF constituents
-to directly held equities in allocation charts, target breakdowns, and local
-classifications. ADRs and ordinary shares can share company exposure while
-retaining their original security identifiers and source positions. Only EUR
-values are combined; receipt ratios do not multiply exposure. Matching happens
-on every load and refresh, so mappings remain separate from provider files.
-Unmapped names and similarly named subsidiaries are never merged automatically.
+**Exposure settings → Company merges** groups the same company across ETFs,
+including companies without a direct position. Matching uses shared security
+identities and reviewed `company-identities.yaml` equivalences first. Missing
+identities can use an **estimated full-name match**, marked **`*`** in charts
+and exposure tables. Case, punctuation and trailing legal suffixes are normalized;
+share classes, country qualifiers and subsidiary names are retained. There is
+no substring or fuzzy matching. Conflicting reviewed identities or ambiguous
+multiple entries within one source block a name estimate.
+
+Select a company in the review menu to see every original asset name, source
+fund (including proxy status), identifier, ticker and snapshot date, plus the
+match method. **Undo merge** keeps its source holdings separate; **Restore
+merge** combines them again. Choices are saved privately in `company-merges.yaml`,
+with revision checks and backups. Undo survives app restarts and refreshed
+snapshots with the same source identities; adding a new group member does not
+silently restore a split.
+
+The same grouping reaches allocation, ETF targets, performance coverage, local
+classifications, and stock-only exposure. Existing direct/local classifications
+are preferred when choosing a shared display identity. ADRs and ordinary shares
+retain their original security identifiers and source positions. Only EUR values
+are combined; receipt ratios do not multiply exposure. Saved positions, strategic
+bucket ownership, costs, and targets remain unchanged. An estimated grouping is
+an analytical convenience, not a verified security equivalence.
 
 The momentum proxy uses the iShares Europe Momentum fund's official holdings.
 MSCI's [constituent terms](https://www.msci.com/legal/index-constituents-disclaimer)
