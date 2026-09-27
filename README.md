@@ -5,6 +5,72 @@ Plotly. It supports current EUR valuation, hierarchical classifications,
 filtering, allocation charts, optional position targets, and ETF look-through
 for configured fund snapshots.
 
+## Position metrics and portfolio analytics
+
+Under **Manage positions → Positions**, select a **Position metrics** preset:
+**Valuation**, **Income & fees**, or **Risk**. Choose the metric columns to show;
+numeric columns sort numerically and unavailable values sort last. Enable
+**Show instrument metrics** for definitions, source links, units, retrieval dates,
+and fund-fee maintenance. The default list does not fetch fundamentals or history.
+
+Stock fundamentals include trailing/forward P/E, price/book, price/sales, market
+capitalization, trailing cash dividend yield, payout ratio, growth, profit margin,
+and return on equity. ETF metrics include annual fees, cash distribution yield,
+assets, and separately labeled fund valuation ratios when the provider supplies
+them. Unavailable values are blank; nonpositive P/E is not meaningful. Monetary
+fundamentals retain their reported currency rather than being silently added or
+converted across listings.
+
+In **Overview**, enable **Show portfolio analytics**. Its account/category scope
+is independent of exposure filters and position-list search. It shows instrument
+concentration (including repeated instruments across accounts), effective number
+of holdings, underlying company concentration using existing ETF snapshots and
+company mappings, estimated annual fund costs, and recorded-cost gain contributors.
+**Load portfolio fundamentals** adds valuation and cash-yield aggregates.
+
+Aggregate P/E uses `sum(value) / sum(value / PE)` for covered profitable direct
+equities. Fund ratios are not blended into this statistic. Trailing distribution
+estimates use current value times reported cash yield; these are neither a forecast
+nor dividends actually received. Known accumulating share classes have zero cash
+distributions. Fund costs use current value times the annual fee rate; these costs
+are already reflected in fund prices and are not deducted again from gains.
+Every aggregate reports coverage; missing values are never assumed to be zero.
+
+**Load historical risk** adds beta, annualized volatility, benchmark correlation,
+holding correlations, and contributions to volatility. Defaults are three years
+and `IUSQ.DE`, a EUR-listed MSCI ACWI ETF benchmark proxy. Both are configurable;
+one- and five-year windows are also available. Risk describes today's weights
+held constant across historical weekly returns, **not personal historical returns**.
+It does not require transaction history and does not reconstruct purchases or sales.
+
+Risk uses dividend/split-adjusted daily prices and historical FX to EUR, then the
+last available observation in each completed Friday-ending week. Missing weeks
+are not forward-filled, and returns never bridge missing weekly endpoints. All
+included holdings and the benchmark share one sample of at least 52 weekly returns.
+Volatility is annualized with `sqrt(52)`; beta is covariance with the benchmark
+divided by benchmark variance. Explicit EUR cash has zero return. Manual/unlisted
+assets without suitable histories are excluded. Partial estimates renormalize
+covered holdings and show exclusions; missing valuations prevent reporting
+whole-portfolio coverage. Negative risk contributions indicate diversification.
+These estimates do not include Sharpe ratios, forecasts, or an actual portfolio
+return history.
+
+Fundamentals and adjusted histories use separate private caches under the selected
+workspace's `.cache/`, with a 24-hour lifetime and a 15-minute failed-request
+cooldown. Explicit refresh retries immediately. Failures retain visibly stale
+cached data and never block ordinary portfolio calculations. Unadjusted chart
+histories, where available, are separate from risk histories. Demo analytics are
+explicitly invented and never fetch live market data.
+
+Issuer fee observations in the public metadata catalog are dated, not automatically
+refreshed. They match exact ISINs; holdings proxies never supply another fund's fee.
+Provider annual expense ratios are a labeled fallback. **Maintain fund fee** saves
+optional overrides to private `fund-fees.json` with exact share-class identity,
+annual rate, source, verification date, and verified accumulation policy. Rates
+are entered as percentages in the UI and stored as fractions. Verification older
+than 90 days is flagged. Removing an override restores the issuer/provider value.
+Holdings, classifications, and targets require no migration.
+
 ## Run
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:

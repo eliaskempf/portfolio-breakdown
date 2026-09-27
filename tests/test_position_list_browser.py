@@ -98,3 +98,32 @@ def test_keyboard_and_edit_button_open_rows_and_back_returns_to_list(position_pa
     table.wait_for()
     table.get_by_role('button', name='Edit Other invented token · Third', exact=True).click()
     playwright.expect(page.get_by_role('textbox', name='Account / broker', exact=True)).to_have_value('Third')
+
+
+def test_metric_columns_sort_numerically_keep_missing_last_and_preserve_identity(position_page):
+    from portfolio_app.position_list import HTML, JS
+    page, _ = position_page
+    # Execute the actual component renderer with invented metric values. AppTest
+    # separately verifies that the controls supply these columns and row values.
+    data = {'context': 'synthetic-metrics', 'revision': 'synthetic-revision', 'hasBuckets': False,
+            'metricColumns': [['metric_trailing_pe', 'P/E (trailing)']],
+            'rows': [dict(id=identity, name=name, quantity=1, account='Invented', portfolio='',
+                          metric_trailing_pe=value, metric_trailing_pe_note='Invented metric source')
+                     for identity, name, value in [('large', 'Invented large', 100),
+                         ('missing', 'Invented missing', None), ('small', 'Invented small', 20)]]}
+    page.evaluate('''([html, js, data]) => {
+        const root = document.createElement('div'); root.id = 'synthetic-metrics';
+        root.style.cssText = 'position:fixed;top:100px;left:20px;z-index:2147483647;background:white;padding:20px';
+        root.innerHTML = html; document.body.appendChild(root);
+        const render = new Function('return (' + js.replace('export default', '') + ')')();
+        render({parentElement: root, data, setTriggerValue: (key, value) => {window.syntheticMetricEvent = value;}});
+    }''', [HTML, JS, data])
+    root = page.locator('#synthetic-metrics')
+    root.get_by_role('button', name='P/E (trailing)', exact=True).click()
+    assert root.locator('tbody tr').evaluate_all('(rows) => rows.map(r => r.dataset.positionId)') == ['small', 'large', 'missing']
+    root.get_by_role('button', name='P/E (trailing) ↑', exact=True).click()
+    assert root.locator('tbody tr').evaluate_all('(rows) => rows.map(r => r.dataset.positionId)') == ['large', 'small', 'missing']
+    playwright.expect(root.locator('tbody tr').last.locator('td').nth(4)).to_have_text('—')
+    root.get_by_role('searchbox').fill('small')
+    root.locator('tbody tr').dblclick()
+    assert page.evaluate('window.syntheticMetricEvent.id') == 'small'

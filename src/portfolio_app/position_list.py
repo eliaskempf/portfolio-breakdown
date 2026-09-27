@@ -35,18 +35,22 @@ export default function({parentElement:root,data,setTriggerValue}) {
   // Keep sort/filter through harmless reruns, but not workspace changes.
   if(root.listContext!==data.context){root.listContext=data.context;root.listSort={key:'',direction:1};input.value='';}
   const columns=[['name','Investment'],['account','Account'],['portfolio','Portfolio / sleeve'],
-    ...(data.hasBuckets?[['bucket','Category']]:[]),['quantity','Quantity']];
+    ...(data.hasBuckets?[['bucket','Category']]:[]),['quantity','Quantity'],...(data.metricColumns||[])];
+  const numeric=new Set(['quantity',...(data.metricColumns||[]).map(c=>c[0])]);
   const element=(tag,text)=>{const node=document.createElement(tag);node.textContent=text;return node;};
   const open=row=>setTriggerValue('open',{id:row.id,revision:data.revision,context:data.context});
   const render=()=>{
     const query=input.value.trim().toLocaleLowerCase();
     const rows=data.rows.filter(row=>[row.name,row.ticker,row.account,row.portfolio,row.bucket].some(value=>(value||'').toLocaleLowerCase().includes(query)));
     const {key,direction}=root.listSort;
-    if(key)rows.sort((a,b)=>direction*(key==='quantity'?a.quantity-b.quantity:String(a[key]||'').localeCompare(String(b[key]||''))));
+    if(key)rows.sort((a,b)=>{
+      if(a[key]==null)return b[key]==null?0:1;if(b[key]==null)return -1;
+      return direction*(numeric.has(key)?a[key]-b[key]:String(a[key]||'').localeCompare(String(b[key]||'')));
+    });
     head.replaceChildren();body.replaceChildren();
     for(const [field,label] of columns){
       const th=element('th',''),button=element('button',label+(key===field?(direction===1?' ↑':' ↓'):''));
-      th.scope='col';if(field==='quantity')th.className='number';
+      th.scope='col';if(numeric.has(field))th.className='number';
       if(key===field)th.setAttribute('aria-sort',direction===1?'ascending':'descending');
       button.type='button';button.onclick=()=>{root.listSort={key:field,direction:key===field?-direction:1};render();head.querySelectorAll('button')[columns.findIndex(c=>c[0]===field)].focus();};
       th.appendChild(button);head.appendChild(th);
@@ -61,8 +65,11 @@ export default function({parentElement:root,data,setTriggerValue}) {
         if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();(event.key==='ArrowDown'?tr.nextElementSibling:tr.previousElementSibling)?.focus();}
       };
       for(const [field] of columns){
-        const td=element('td',field==='quantity'?String(row.quantity):(row[field]||'—'));
-        if(field==='quantity')td.className='number';tr.appendChild(td);
+        const value=row[field];
+        const td=element('td',numeric.has(field)?(value==null?(row[field+'_display']||'—'):Number(value).toLocaleString(undefined,{maximumFractionDigits:field==='quantity'?10:2})):(value||'—'));
+        if(numeric.has(field))td.className='number';
+        if(row[field+'_note'])td.title=row[field+'_note'];
+        tr.appendChild(td);
       }
       const td=element('td',''),button=element('button','Edit');button.type='button';
       button.setAttribute('aria-label','Edit '+row.name+(row.account?' · '+row.account:''));
@@ -79,11 +86,13 @@ def list_context(path) -> str:
     return sha256(str(path.resolve()).encode()).hexdigest()[:16]
 
 
-def render_position_list(path, snapshot, allocation=None) -> None:
+def render_position_list(path, snapshot, allocation=None, *, demo=False) -> None:
+    from portfolio_app.analytics_ui import position_metric_controls
+    metric_columns, metrics = position_metric_controls(snapshot.holdings, path.parent, demo=demo)
     buckets = {bucket.id: bucket.name for bucket in allocation.buckets} if allocation else {}
     rows = [dict(id=row.position_id, name=row.name, ticker=row.ticker, account=row.account,
                  portfolio=row.portfolio, bucket=buckets.get(getattr(row, 'bucket_id', ''), getattr(row, 'bucket_id', '')),
-                 quantity=row.shares) for row in snapshot.holdings.itertuples()]
+                 quantity=row.shares, **metrics.get(row.id, {})) for row in snapshot.holdings.itertuples()]
     context = list_context(path)
     key = f'position_list_{context}'
 
@@ -94,4 +103,4 @@ def render_position_list(path, snapshot, allocation=None) -> None:
 
     component = st.components.v2.component('portfolio_position_list', html=HTML, css=CSS, js=JS)
     component(key=key, data={'rows': rows, 'revision': snapshot.revision, 'context': context,
-                             'hasBuckets': bool(allocation)}, on_open_change=open_position)
+                             'hasBuckets': bool(allocation), 'metricColumns': metric_columns}, on_open_change=open_position)

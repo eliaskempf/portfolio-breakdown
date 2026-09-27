@@ -44,7 +44,7 @@ def render_position_editor(path: Path, snapshot: HoldingsSnapshot, funds: list[F
                 st.info('Add a position to get started.')
             else:
                 st.caption('Double-click a row to edit, or focus it and press Enter.')
-                render_position_list(path, snapshot, allocation)
+                render_position_list(path, snapshot, allocation, demo=demo)
             return
         if action == 'Update balances':
             from portfolio_app.allocation_ui import render_balances

@@ -119,6 +119,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         macro_valued = value_holdings(analysis_targets(holdings, allocation), price_service, refresh=refresh and valued is None)
         with overview:
             render_strategic_overview(macro_valued, allocation)
+    with overview:
+        from portfolio_app.analytics_ui import render_portfolio_analytics
+        render_portfolio_analytics(holdings, data_dir, funds, allocation=allocation, demo=demo, price_service=price_service)
     with rebalance:
         if analysis_error:
             st.error(analysis_error)
