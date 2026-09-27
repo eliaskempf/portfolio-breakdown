@@ -7,6 +7,8 @@ for configured fund snapshots.
 
 ## Position metrics and portfolio analytics
 
+For future development, see [analytics state and open design choices](#analytics-development-notes).
+
 Under **Positions**, switch between **Holdings**, **Valuation**, **Income & fees**,
 and **Risk** using the compact view selector. **Options** contains additional
 columns, risk settings, and refresh. Metric views keep the instrument and
@@ -999,3 +1001,151 @@ outside Git; consult the original handoff read-only when working in a worktree.
 Run `uv run pytest` after integration. Browser checks are optional locally:
 `uv run --with playwright pytest tests/test_ux_browser.py tests/test_dashboard_browser.py`.
 Set `PORTFOLIO_TEST_CHROMIUM` to an available Chromium binary if needed.
+
+## Analytics development notes
+
+Source-only continuation notes, updated 2026-09-27. See the sections above
+for application usage and formulas, and [AGENTS.md](AGENTS.md) for privacy and
+development requirements. These notes contain no working portfolio data.
+
+### Current product state
+
+- Navigation follows the UI refactor: Overview, Exposure, Positions, Rebalance.
+- Overview → Analytics shares the existing category selection, including its
+  descendants. Accounts can be narrowed in Options. Exposure filters and position
+  search do not change this scope.
+- Historical risk comes first. Calculate risk loads the estimates; subsequent
+  refreshes are explicit. Benchmark and history window are in Options.
+- Risk shows beta, annualized volatility, benchmark correlation, per-holding
+  beta and volatility contributions, and data coverage. The expandable correlation
+  matrix uses display names without appended identifiers, a purple–teal diverging
+  scale fixed at −1 to +1, a nearby color bar, and a larger responsive plot.
+- Valuation and income follow risk. Direct-stock P/E excludes ETFs and
+  nonpositive ratios. Fund fees and cash distribution yields do include eligible
+  ETFs. Concentration and underlying company exposure are separate views of risk.
+- Positions has Holdings, Valuation, Income & fees, and Risk views. Optional
+  columns and settings live in Options. Selecting a row opens its existing
+  details dialog; Key metrics contains fundamentals, definitions, provenance,
+  and a private fund-fee editor. Holdings does not request analytics data.
+- Preserve the refactor's shared table interactions, short names, search, sort,
+  keyboard access, row details, and separate pencil editing when extending views.
+
+### Calculation contracts
+
+- Snapshot weights use current EUR market values and combine repeated instrument
+  IDs across accounts. Buy-in performance belongs to Overview → Performance.
+- P/E is the inverse of value-weighted earnings yield among covered profitable
+  direct equities. It is not an arithmetic average, and fund-reported P/E is not
+  blended into it. Coverage is essential to interpreting this subset statistic.
+- Fees are current fund values × annual fee rates. They are already reflected
+  in prices and must not be deducted from gains a second time. Public fee metadata
+  is matched by exact share class, not an ETF look-through proxy.
+- Cash yield is a trailing distribution estimate, not a forecast or actual
+  dividends received. Verified accumulating share classes have zero cash yield.
+- Risk uses adjusted market-price histories, converted with historical FX to
+  EUR. The latest available price within each completed Friday-ending week is
+  used. Empty weeks are not filled, and returns do not bridge missing endpoints.
+- Default benchmark is IUSQ.DE, a global equity ETF proxy; windows are 1, 3, or
+  5 years, default 3. All included holdings and the benchmark share the same
+  sample of at least 52 weekly returns. Provider-supplied betas are not used.
+- Portfolio weekly return is the sum of holding weekly returns × today's
+  weights. Beta is covariance with the benchmark / benchmark variance.
+  Annualized covariance is weekly covariance × 52. Contributions to volatility
+  sum to portfolio volatility; negative contributions are possible.
+- This is a hypothetical constant-weight allocation, not the user's historical
+  return series. It requires no transaction history and does not use buy-in prices.
+- EUR cash has zero returns. Manual/unlisted positions without supported history
+  are excluded. Covered weights are renormalized, and partial coverage is shown.
+  Missing valuations prevent claiming whole-portfolio coverage.
+- ETFs use their own adjusted price histories for risk, not constituent expansion.
+  Category beta is computed in exactly the same way within the selected category;
+  its benchmark remains the selected benchmark, even for a non-equity category.
+- Borrowing, liabilities, derivative notionals, and net-equity leverage are not
+  modeled. Asset-normalized beta must not be presented as levered equity beta.
+
+### Code map
+
+| Module | Responsibility |
+| --- | --- |
+| `fundamentals.py` | Metric definitions, provider normalization, dated public fees, private overrides |
+| `analytics_cache.py` | Atomic optional-analytics cache, expiry, failed-request cooldown |
+| `analytics.py` | Pure snapshot aggregation and concentration |
+| `risk_data.py` | Adjusted price histories and historical EUR conversion |
+| `risk.py` | Pure common-sample weekly risk calculations |
+| `analytics_ui.py` | Shared loading, formatting, sources, benchmark settings |
+| `portfolio_analytics_ui.py` | Overview analytics presentation |
+| `position_metrics_ui.py` | Position metric presets, details, fee maintenance |
+| `charts.py` → `correlation_chart` | Correlation matrix rendering |
+| `position_list.py`, `position_detail.py`, `strategic_ui.py` | Integration with the existing UX |
+
+Keep analytics outside the holdings → valuation → optional ETF expansion →
+normalized exposures → classifications → aggregation pipeline. Reuse the valued
+positions already prepared by the app instead of fetching valuations again.
+Company concentration reuses the existing company mapping and ETF exposure logic.
+
+Analytics caches are private and separate from the ordinary price/chart caches.
+Their normal lifetime is 24 hours; failed requests have a 15-minute cooldown.
+Failures can retain visibly stale data. Explicit refresh retries immediately.
+Fee overrides are private `fund-fees.json` data. Do not commit overrides, caches,
+generated screenshots, diagnostics, or real portfolio examples.
+
+### Potential extensions and decisions to make first
+
+These are ideas, not promises or already implemented features.
+
+1. **Compare categories side by side.** Show beta, volatility, value share, and
+   coverage for sibling categories. Decide whether all categories must share a
+   single common sample; independently estimated betas are less comparable.
+   Distinguish category beta from its contribution to whole-portfolio beta.
+2. **Current versus proposed allocation.** Preview hypothetical target weights
+   with beta, volatility, concentration, and coverage. Reuse a single historical
+   sample and covariance matrix for both scenarios. Decide how this connects to
+   Rebalance and how infeasible targets or missing histories are displayed.
+3. **Beta stability.** Add rolling beta or comparisons across windows, confidence
+   intervals, and benchmark explanatory power. A point estimate alone should not
+   imply a stable forecast. Do not confuse beta with total volatility.
+4. **Leverage-aware planning.** Requires an explicit liabilities/net-equity model,
+   financing costs, exposure definitions, and rebalancing assumptions. A leveraged
+   ETF's advertised daily multiple is not a guaranteed multiyear return multiple
+   or its beta against an arbitrary benchmark. This needs domain design before code.
+5. **Downside scenarios.** Separate simple beta-based shocks from historical
+   constant-weight scenarios. Neither reconstructs personal performance or sets
+   a worst-case loss bound. Define treatment of missing assets and costs first.
+6. **Fund valuation coverage.** Keep fund-reported P/E separate for now. Combining
+   direct stocks and look-through fund earnings requires compatible earnings,
+   dates, loss treatment, and coverage; do not silently average unlike ratios.
+7. **Metric loading UX.** Risk currently needs Calculate risk; fundamentals load
+   when Analytics is selected. Decide whether to load risk automatically, retain
+   results across scope changes, or add progress/background loading. Preserve
+   clear freshness and partial-data reporting and avoid repeated network requests.
+8. **Benchmark presets and persistence.** Currently a ticker field and a shared
+   benchmark per analytics view. Category-specific defaults, saved preferences,
+   or named presets would require explicit scope and persistence choices.
+9. **Large heatmaps.** Consider top-N selection, ordering/clustering, and duplicate
+   display-name disambiguation without reintroducing noisy ticker suffixes.
+   Numeric axis coordinates already preserve distinct cells for duplicate names.
+
+### Validation and resuming work
+
+Use `uv run pytest`. Focused analytics tests are `tests/test_analytics.py`,
+`tests/test_risk.py`, and `tests/test_analytics_ui.py`. Browser coverage is in
+`tests/test_analytics_browser.py`, with shared synthetic fixtures from
+`tests/test_ux_browser.py`. Tests must never read the working portfolio or require
+live market-data access. Browser screenshots must remain in temporary directories.
+
+Before the final integration, the feature branch had 635 core tests passing;
+the latest presentation change passed all five analytics UI tests and its browser
+check, including dark-mode inspection. Re-run against the current tree because
+other UI and price-loading work may have advanced independently.
+
+The analytics branch is `codex/portfolio-analytics`. Earlier commits include a
+source-only snapshot of the UI refactor; they are not based solely on the older
+UI. Inspect `git status`, `git worktree list`, and the actual diff before merging
+or cleaning up. Main may intentionally retain another session's uncommitted work.
+Do not reset, stash, delete, or commit that work just to make the tree clean.
+
+For a separate preview, run `uv run portfolio-app --data-dir /path/to/private/data
+--server.port 8502 --server.runOnSave true`. Use the intended persistent data
+directory explicitly when launching from a worktree. Restart that preview if
+imported modules remain stale; do not restart another session's app. Check the
+port before assuming which version a browser tab displays.
