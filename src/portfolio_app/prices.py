@@ -49,6 +49,15 @@ class MarketDataProvider(Protocol):
     def fx(self, currency: str) -> Quote: ...
 
 
+class UnavailableProvider:
+    """Allow editing when an explicitly offline demo has no price fixture."""
+    def price(self, ticker: str) -> Quote:
+        raise ValueError('No offline price fixture is available.')
+
+    def fx(self, currency: str) -> Quote:
+        raise ValueError('No offline FX fixture is available.')
+
+
 class YahooProvider:
     """Provider details stay here; FX quotes mean EUR per foreign currency unit."""
 

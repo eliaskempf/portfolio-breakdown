@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from portfolio_app.allocation import macro_table
+from portfolio_app.strategic import category_labels
 from portfolio_app.rebalance_ui import render_rebalancing
 from portfolio_app.rebalancing import RebalanceError
 from portfolio_app.scoped_rebalancing import portfolio_contribution, sleeve_positions
@@ -17,7 +18,7 @@ def render_scoped_rebalancing(valued, config):
         return
     total = float(valued.current_value_eur.sum()) if valued.current_value_eur.notna().all() else None
     if workflow == 'Within a bucket':
-        names = {b.id: b.name for b in config.buckets}
+        names = category_labels(config)
         leaves = sorted(config.leaves())
         if not leaves:
             st.info('Configure a bucket first.')
@@ -43,23 +44,24 @@ def render_scoped_rebalancing(valued, config):
         return
     st.caption('Route new money by strategic bucket targets first, then optimize each internal mix. Budgets stay fixed during trade-count comparisons. All orders refer to source instruments.')
     amount = st.number_input('Portfolio contribution (EUR)', min_value=.01, value=500., step=50.)
-    macro_tolerance = st.number_input('Bucket tolerance (pp of parent)', min_value=0., max_value=100., value=.5)
-    position_tolerance = st.number_input('Position tolerance (pp of bucket)', min_value=0., max_value=100., value=.5)
-    labels = {r.position_id: f'{r["name"]} · {r.get("account", "")} · {r.bucket_id}' for _, r in valued.iterrows()}
-    ids = st.multiselect('Positions eligible for portfolio contribution', list(labels), default=list(labels), format_func=labels.get)
-    buy_all = st.radio('Portfolio purchase intent', ['Allow skipping positions', 'Buy every selected position']) == 'Buy every selected position'
-    minimum = st.number_input('Minimum portfolio purchase (EUR)', min_value=.01, value=25.)
-    no_new = st.checkbox('No new positions in portfolio contribution')
-    max_trades = int(st.number_input('Maximum portfolio trades', min_value=1, max_value=max(1, len(valued)), value=max(1, len(valued))))
-    fewer = st.checkbox('Compare fewer portfolio trades')
-    cap_scope = st.selectbox('Portfolio plan cap denominator', ['portfolio', 'bucket'])
-    caps = {}
-    if st.checkbox('Temporary allocation caps'):
-        rows = pd.DataFrame({'position_id': ids, 'Position': [labels[k] for k in ids], 'Maximum %': [float('nan')] * len(ids)})
-        edited = st.data_editor(rows, disabled=['position_id', 'Position'], hide_index=True,
-                                key='portfolio_caps_' + sha256(repr(ids).encode()).hexdigest(),
-                                column_config={'position_id': None, 'Maximum %': st.column_config.NumberColumn(min_value=0., max_value=100.)})
-        caps = {r.position_id: r['Maximum %'] / 100 for _, r in edited.iterrows() if pd.notna(r['Maximum %'])}
+    with st.expander('Advanced planning settings'):
+        macro_tolerance = st.number_input('Bucket tolerance (pp of parent)', min_value=0., max_value=100., value=.5)
+        position_tolerance = st.number_input('Position tolerance (pp of bucket)', min_value=0., max_value=100., value=.5)
+        labels = {r.position_id: f'{r["name"]} · {r.get("account", "")} · {next((b.name for b in config.buckets if b.id == r.bucket_id), "Unassigned")}' for _, r in valued.iterrows()}
+        ids = st.multiselect('Positions eligible for portfolio contribution', list(labels), default=list(labels), format_func=labels.get)
+        buy_all = st.radio('Portfolio purchase intent', ['Allow skipping positions', 'Buy every selected position']) == 'Buy every selected position'
+        minimum = st.number_input('Minimum portfolio purchase (EUR)', min_value=.01, value=25.)
+        no_new = st.checkbox('No new positions in portfolio contribution')
+        max_trades = int(st.number_input('Maximum portfolio trades', min_value=1, max_value=max(1, len(valued)), value=max(1, len(valued))))
+        fewer = st.checkbox('Compare fewer portfolio trades')
+        cap_scope = st.selectbox('Portfolio plan cap denominator', ['portfolio', 'bucket'], format_func=lambda value: '% of whole portfolio' if value == 'portfolio' else '% of selected category')
+        caps = {}
+        if st.checkbox('Temporary allocation caps'):
+            rows = pd.DataFrame({'position_id': ids, 'Position': [labels[k] for k in ids], 'Maximum %': [float('nan')] * len(ids)})
+            edited = st.data_editor(rows, disabled=['position_id', 'Position'], hide_index=True,
+                                    key='portfolio_caps_' + sha256(repr(ids).encode()).hexdigest(),
+                                    column_config={'position_id': None, 'Maximum %': st.column_config.NumberColumn(min_value=0., max_value=100.)})
+            caps = {r.position_id: r['Maximum %'] / 100 for _, r in edited.iterrows() if pd.notna(r['Maximum %'])}
     fingerprint = sha256((valued.to_json() + repr((config, amount, ids, buy_all, minimum, no_new, max_trades, macro_tolerance, position_tolerance, caps, cap_scope, fewer))).encode()).hexdigest()
     if st.button('Calculate portfolio contribution', type='primary'):
         st.session_state.pop('portfolio_contribution_result', None)

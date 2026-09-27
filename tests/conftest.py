@@ -9,6 +9,14 @@ from portfolio_app.taxonomy import load_classifications
 from portfolio_app.valuation import value_holdings
 
 
+@pytest.fixture(autouse=True)
+def no_background_network(monkeypatch):
+    # UI tests use synthetic workspaces even when exercising the live-mode UI.
+    # Background refresh is tested separately with injected offline providers.
+    from portfolio_app.etf_refresh import coordinator
+    monkeypatch.setattr(coordinator, 'schedule', lambda *args, **kwargs: False)
+
+
 @pytest.fixture(scope="session")
 def sample_data_dir(tmp_path_factory):
     return create_demo_data(tmp_path_factory.mktemp("synthetic-portfolio"))

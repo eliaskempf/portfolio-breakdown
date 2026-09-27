@@ -1,81 +1,144 @@
-"""Strategic allocation overview and bucket navigation."""
-
+"""Overview with a single authoritative category scope."""
 from hashlib import sha256
+import json
 
+import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
-from portfolio_app.charts import SUNBURST_PALETTE, hierarchy_chart, sort_allocation_nodes
+from portfolio_app.charts import hierarchy_chart, sort_allocation_nodes, strategic_colors, style_figure
 from portfolio_app.chart_navigation import sync_chart_category
-from portfolio_app.display_names import display_name
-from portfolio_app.strategic import bucket_paths, bucket_positions, strategic_summary, strategic_tree
+from portfolio_app.display_names import instrument_name
+from portfolio_app.metric_interactions import toggle_gain_unit
+from portfolio_app.performance import position_performance, summarize_performance
+from portfolio_app.strategic import bucket_paths, category_labels, bucket_positions, strategic_summary, strategic_tree, strategic_performance
 
 
-def render_strategic_overview(valued, config):
+def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, analytics=None):
+    if 'unrealized_gain_eur' not in valued:
+        valued = position_performance(valued)
     paths = bucket_paths(config)
-    names = {b.id: b.name for b in config.buckets} | {"unassigned": "Unassigned"}
-    options = ["", *[b.id for b in config.buckets]]
-    if valued.bucket_id.eq("").any():
-        options.append("unassigned")
-    signature = sha256(repr((config, list(valued.position_id))).encode()).hexdigest()[:16]
-    key = f"strategic_category_{signature}"
-    st.subheader("Strategic allocation")
-    navigation, back = st.columns([5, 1], vertical_alignment="bottom")
-    with navigation:
-        bucket = st.selectbox("Category", options, key=key,
-                              format_func=lambda value: "Portfolio" if not value else " › ".join(names[item] for item in paths[value]),
-                              help="Select a category here or click a chart segment to update the chart and tables.")
-    with back:
-        st.button("Back", disabled=not bucket, width="stretch",
-                  on_click=lambda: st.session_state.update({key: paths[bucket][-2] if len(paths[bucket]) > 1 else ""}))
+    names = {b.id: b.name for b in config.buckets} | {'unassigned': 'Unassigned'}
+    labels = category_labels(config) | {'': 'Portfolio', 'unassigned': 'Unassigned'}
+    options = ['', *[b.id for b in config.buckets]]
+    if valued.bucket_id.eq('').any():
+        options.append('unassigned')
+    key = 'strategic_category'
+    if st.session_state.get(key, '') not in options:
+        st.session_state[key] = ''
+    bucket = st.session_state.get(key, '')
+    crumbs = ['', *paths[bucket]]
+    if bucket:
+        with st.container(horizontal=True, vertical_alignment='center', gap='small'):
+            for index, node in enumerate(crumbs):
+                if index:
+                    st.caption('›')
+                st.button(names.get(node, 'Portfolio'), key=f'strategic_crumb_{node}', type='tertiary',
+                          disabled=node == bucket, on_click=lambda node=node: st.session_state.update({key: node}))
+    navigation, back = st.columns([5, 1], vertical_alignment='bottom')
+    bucket = navigation.selectbox('Category', options, key=key,
+        format_func=labels.get)
+    back.button('Back', disabled=not bucket, width='stretch',
+                on_click=lambda: st.session_state.update({key: paths[bucket][-2] if len(paths[bucket]) > 1 else ''}))
+    scope = names.get(bucket, 'Portfolio')
     selected = bucket_positions(valued, config, bucket)
     subtotal = float(selected.current_value_eur.sum())
     missing = int(selected.current_value_eur.isna().sum())
     whole = float(valued.current_value_eur.sum())
-    first, second, third = st.columns(3)
-    first.metric("Priced value" if missing else "Current value", f"€{subtotal:,.2f}")
-    second.metric("Portfolio share", f"{100 * subtotal / whole:.1f}%" if not missing and valued.current_value_eur.notna().all() and whole else "—")
-    third.metric("Positions", str(len(selected)))
+    performance = summarize_performance(selected)
+    first, second = st.columns([2, 1])
+    gain = performance.return_pct if percent else performance.gain_eur
+    gain_text = 'Unavailable' if gain is None else f'{gain:+,.2f}%' if percent else f'{"-" if gain < 0 else "+"}€{abs(gain):,.2f}'
+    with first.container(key='overview_value'):
+        st.metric('Priced value' if missing else 'Current value', f'€{subtotal:,.2f}',
+                  delta=gain_text, delta_color='normal' if gain else 'off', delta_arrow='off',
+                  delta_description='Return on cost' if percent else 'Unrealized gain / loss',
+                  help='Performance uses positions with recorded EUR buy-ins and available prices; coverage is shown below.')
+    if on_toggle_gain:
+        toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain)
+    second.metric('Portfolio share', f'{100 * subtotal / whole:.1f}%' if not missing and valued.current_value_eur.notna().all() and whole else '—')
+    st.caption(f'{scope} · {len(selected)} positions · Performance coverage: {performance.covered_count} of {performance.held_count} held positions · EUR buy-ins · Excludes dividends and realized gains')
     if missing:
-        st.warning(f"{missing} position(s) missing prices. The chart shows priced value only; full allocation percentages are unavailable.")
-    chart, summary = st.columns([3, 2], gap="large")
-    with chart:
-        tree = sort_allocation_nodes(strategic_tree(valued, config, bucket))
-        if not tree.empty and subtotal > 0:
-            figure = hierarchy_chart(tree, "Sunburst")
-            colors = {b.id: SUNBURST_PALETTE[i % len(SUNBURST_PALETTE)]
-                      for i, b in enumerate(config.children())} | {"unassigned": "#7b8493"}
-            figure.update_traces(
-                maxdepth=3,
-                marker_colors=[colors.get(row.path[0], "rgba(127,127,127,0.12)") if row.path else "rgba(127,127,127,0.12)" for row in tree.itertuples()],
-                hovertemplate="%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of " + ("priced value" if missing else "category") + "<extra></extra>",
-            )
-            figure.update_layout(height=510, margin=dict(t=12, b=12, l=12, r=12))
-            chart_key = f"strategic_chart_{signature}_{sha256(bucket.encode()).hexdigest()[:12]}"
-            st.plotly_chart(figure, width="stretch", height=510, theme="streamlit", key=chart_key,
-                            config={"displaylogo": False, "displayModeBar": False})
-            categories = {row.node_id: row.path[-1] if row.path else "" for row in tree.itertuples() if row.kind == "category"}
-            categories[""] = paths[bucket][-2] if len(paths[bucket]) > 1 else ""
-            sync_chart_category(chart_key, categories, key)
+        st.warning(f'{missing} position(s) missing prices. Chart areas use priced value; full allocation percentages are unavailable.')
+    mode = st.segmented_control('Overview view', ['Allocation', 'Performance', *(['Analytics'] if analytics else [])], default='Allocation', key='strategic_view', selection_mode='single', label_visibility='collapsed')
+    if mode == 'Analytics':
+        analytics(selected, scope)
+        return
+    elif mode == 'Performance':
+        table = strategic_performance(valued, config, bucket)
+        measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain (EUR)'],
+            default='Return (%)', key='strategic_performance_measure') or 'Return (%)'
+        chart_percent = measure == 'Return (%)'
+        st.caption('Return compares unrealized gain with recorded buy-in cost. Euro gain shows the amount gained or lost. Both are shown in the tables and on hover.')
+        available = table.dropna(subset=[measure]).sort_values(measure)
+        if not available.empty:
+            hover = [[f'€{row["Cost (EUR)"]:,.2f}', f'{row["Gain (EUR)"]:+,.2f} EUR',
+                      f'{row["Return (%)"]:+,.2f}%' if pd.notna(row['Return (%)']) else 'Unavailable',
+                      row['Coverage'], row['Status']] for _, row in available.iterrows()]
+            figure = style_figure(go.Figure(go.Bar(x=available[measure], y=available.Category, orientation='h',
+                marker_color=['#b84655' if value < 0 else '#27836c' for value in available[measure]],
+                text=[f'{value:+,.2f}' + ('%' if chart_percent else ' €') for value in available[measure]], textposition='auto',
+                customdata=hover, hovertemplate='%{y}<br>Return: %{customdata[2]}<br>Gain: %{customdata[1]}<br>Buy-in cost: %{customdata[0]}<br>Coverage: %{customdata[3]} · %{customdata[4]}<extra></extra>')))
+            figure.update_layout(height=max(260, 36 * len(available)), xaxis_title=measure, margin=dict(l=12, r=12, t=12, b=30))
+            st.plotly_chart(figure, width='stretch', config={'displayModeBar': False})
+        elif chart_percent and table['Gain (EUR)'].notna().any():
+            st.info('Percentage return is unavailable for zero buy-in cost. Choose Gain (EUR) to see the euro amounts.')
         else:
-            st.info("No priced holdings in this category." if missing else "No current holdings in this category.")
-    with summary:
-        st.markdown("**Allocation**")
-        st.dataframe(strategic_summary(valued, config, bucket), hide_index=True, width="stretch", height="content",
-                     column_config={
-                         "Value (EUR)": st.column_config.NumberColumn(format="€ %.2f"),
-                         "Current (%)": st.column_config.NumberColumn(format="%.2f %%", help="Share of the selected category's current value."),
-                         "Target (%)": st.column_config.NumberColumn(format="%.2f %%", help="Target within the selected category. Blank means unset."),
-                         "Gap (pp)": st.column_config.NumberColumn(format="%+.2f", help="Current minus target, in percentage points."),
-                     })
-    st.subheader("Positions")
-    table = selected.copy()
-    table["Investment"] = table["name"].map(display_name)
-    table["Category"] = table.bucket_id.map(names).fillna("Unassigned")
-    table["Category (%)"] = table.current_value_eur * 100 / subtotal if not missing and subtotal else float("nan")
-    table = table.sort_values("current_value_eur", ascending=False, na_position="last")
-    columns = ["Investment", "Category", "account", "current_value_eur", "Category (%)"]
-    st.dataframe(table[columns], hide_index=True, width="stretch", height="content", column_config={
-        "account": st.column_config.TextColumn("Account") if table.account.ne("").any() else None,
-        "current_value_eur": st.column_config.NumberColumn("Value (EUR)", format="€ %.2f"),
-        "Category (%)": st.column_config.NumberColumn(format="%.2f %%"),
-    })
+            st.info('Add EUR buy-ins to see performance for this category.')
+        st.dataframe(table, hide_index=True, width='stretch', column_config={
+            c: st.column_config.NumberColumn(format='%.2f %%' if c == 'Return (%)' else '€ %.2f')
+            for c in ['Cost (EUR)', 'Gain (EUR)', 'Return (%)']})
+    else:
+        with st.container(key='overview_allocation'):
+            chart_column, table_column = st.columns([1, 1.3], gap='large', vertical_alignment='center')
+            with chart_column:
+                tree = sort_allocation_nodes(strategic_tree(valued, config, bucket))
+                if not tree.empty and subtotal > 0:
+                    figure = hierarchy_chart(tree, 'Sunburst')
+                    reference = strategic_tree(valued, config) if bucket else tree
+                    colors = dict(zip(reference.node_id, strategic_colors(reference, config)))
+                    figure.update_traces(maxdepth=3, insidetextorientation='auto', marker_colors=[colors[node] for node in tree.node_id],
+                        hovertemplate='%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of ' + ('priced value' if missing else scope.replace('<', '&lt;')) + '<extra></extra>')
+                    figure.update_layout(height=420, uniformtext=None, margin=dict(t=10, b=10, l=10, r=10))
+                    signature = sha256(repr((config, list(valued.position_id), bucket)).encode()).hexdigest()[:16]
+                    chart_key = f'strategic_chart_{signature}'
+                    st.plotly_chart(figure, width='stretch', height=420, theme='streamlit', key=chart_key, config={'displayModeBar': False})
+                    categories = {row.node_id: row.path[-1] if row.path else '' for row in tree.itertuples() if row.kind == 'category'}
+                    parent = paths[bucket][-2] if len(paths[bucket]) > 1 else ''
+                    categories[tree.loc[tree.parent_id.eq(''), 'node_id'].iloc[0]] = parent
+                    categories[''] = parent
+                    positions = {row.node_id: json.loads(row.node_id)[2] for row in tree.itertuples() if row.kind == 'holding'}
+                    sync_chart_category(chart_key, categories, key, positions=positions, open_position=open_position)
+                else:
+                    st.info('No priced holdings in this category.' if missing else 'No current holdings in this category.')
+            with table_column, st.container(key='overview_allocation_summary'):
+                st.markdown('**Allocation**')
+                st.caption(f'Current and target percentages are relative to {scope}.')
+                table = strategic_summary(valued, config, bucket)
+                for col in ['Value (EUR)', 'Current (%)', 'Target (%)', 'Gap (pp)']:
+                    table[col] = pd.to_numeric(table[col], errors='coerce')
+                if table['Status'].eq('').all():
+                    table = table.drop(columns='Status')
+                st.dataframe(table, hide_index=True, width='stretch', height=min(420, 36 + 35 * len(table)), column_config={
+                    'Value (EUR)': st.column_config.NumberColumn(format='€ %.2f'),
+                    'Current (%)': st.column_config.NumberColumn(f'% of {scope}', format='%.2f %%'),
+                    'Target (%)': st.column_config.NumberColumn(format='%.2f %%'),
+                    'Gap (pp)': st.column_config.NumberColumn(format='%+.2f')})
+    st.subheader('Positions')
+    table = selected.sort_values('current_value_eur', ascending=False, na_position='last').copy()
+    table['Investment'] = [instrument_name(row) for _, row in table.iterrows()]
+    table['Allocation (%)'] = table.current_value_eur * 100 / subtotal if not missing and subtotal else float('nan')
+    table['Return (%)'] = table.return_pct.where(table.unrealized_gain_eur.notna())
+    table['Gain (EUR)'] = table.unrealized_gain_eur
+    table_key = f'strategic_positions_{bucket}'
+    def select_position():
+        rows = st.session_state.get(table_key, {}).get('selection', {}).get('rows', [])
+        if open_position and rows and rows[0] < len(table):
+            open_position(table.iloc[rows[0]].position_id)
+    st.dataframe(table[['Investment', 'current_value_eur', 'Allocation (%)', 'Return (%)', 'Gain (EUR)']],
+        hide_index=True, width='stretch', on_select=select_position if open_position else 'ignore', selection_mode='single-row',
+        key=f'strategic_positions_{bucket}', column_config={
+        'current_value_eur': st.column_config.NumberColumn('Value (EUR)', format='€ %.2f'),
+        'Allocation (%)': st.column_config.NumberColumn(f'% of {scope}', format='%.2f %%'),
+        'Return (%)': st.column_config.NumberColumn(format='%+.2f %%'),
+        'Gain (EUR)': st.column_config.NumberColumn(format='€ %+.2f')})

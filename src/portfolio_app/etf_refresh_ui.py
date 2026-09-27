@@ -1,0 +1,76 @@
+"""Lightweight status and preferences for the app-owned background updater."""
+from pathlib import Path
+import streamlit as st
+
+from portfolio_app.display_names import compact_fund_name
+from portfolio_app.etf import snapshot_age_days, matching_fund
+from portfolio_app.etf_refresh import coordinator, preferences, save_preferences, read_json, supported
+
+
+def refresh_revision(data_dir):
+    try:
+        return (Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json').stat().st_mtime_ns
+    except OSError:
+        return 0
+
+
+def render_refresh_status(data_dir, funds, revision, *, demo=False):
+    running = not demo and coordinator.running(data_dir)
+
+    @st.fragment(run_every=2 if running else None)
+    def status():
+        pending = not demo and coordinator.running(data_dir)
+        if not pending and (running or refresh_revision(data_dir) != revision):
+            st.rerun()
+        if pending:
+            st.caption('Updating ETF holdings in the background · Using saved snapshots')
+        else:
+            records = read_json(Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json') if not demo else {}
+            failed = sum(records.get(f.isin, {}).get('status') == 'failed' for f in funds)
+            old = sum(snapshot_age_days(f) > 7 for f in funds)
+            proxies = sum(bool(f.proxy_source) for f in funds)
+            parts = ([f'{old} outdated ETF snapshot(s)'] if old else []) + ([f'{failed} refresh(es) failed; saved data retained'] if failed else [])
+            if proxies:
+                parts.append(f'{proxies} ETF breakdown(s) use a proxy')
+            if coordinator.error(data_dir) and not demo:
+                parts.append('ETF refresh unavailable')
+            if parts:
+                st.caption(' · '.join(parts) + ' · Details in Data & settings')
+    status()
+
+
+def render_refresh_controls(data_dir, holdings, funds, *, demo=False):
+    prefs = preferences(data_dir)
+    context = str(Path(data_dir).resolve())
+    enabled = st.checkbox('Automatically refresh ETF holdings', value=prefs['enabled'], disabled=demo,
+                          key=f'etf_auto_{context}')
+    days = st.number_input('Refresh snapshots at least this many days old', min_value=1, max_value=30,
+                           value=prefs['minimum_age_days'], disabled=demo, key=f'etf_age_{context}')
+    if not demo and (enabled != prefs['enabled'] or days != prefs['minimum_age_days']):
+        try:
+            save_preferences(data_dir, enabled=enabled, minimum_age_days=days)
+            coordinator.schedule(data_dir, holdings, funds)
+        except OSError as exc:
+            st.error(f'Could not save refresh preferences: {exc}')
+    st.caption('Checked at startup and while the app is in use; at most once per fund per 24 hours. No Codex session is needed. Demo stays offline.')
+    refreshable = [f for f in funds if supported(f) and any(row.get('shares', 0) > 0 and matching_fund(row, [f]) for row in holdings.to_dict('records'))]
+    if st.button('Refresh ETF holdings now', disabled=demo or coordinator.running(data_dir) or not refreshable):
+        coordinator.schedule(data_dir, holdings, funds, force=True)
+        st.rerun()
+    records = read_json(Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json') if not demo else {}
+    for fund in funds:
+        record = records.get(fund.isin, {})
+        st.markdown(f'**{compact_fund_name(fund.name)}**')
+        st.caption(f'Provider holdings date: {fund.as_of} · {snapshot_age_days(fund)} day(s) old')
+        if record.get('checked_at'):
+            st.caption(f'Last successful check: {record["checked_at"]}')
+        if record.get('attempted_at'):
+            st.caption(f'Last attempt: {record["attempted_at"]}')
+        if record.get('error'):
+            st.warning(f'Update failed; saved holdings retained. {record["error"]}')
+        if fund.proxy_source:
+            st.info(f'Proxy: {fund.proxy_source}')
+        if not supported(fund):
+            st.caption('Manual snapshot · No automatic provider configured')
+    if error := coordinator.error(data_dir):
+        st.warning(error)

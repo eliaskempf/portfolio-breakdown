@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from portfolio_app.etf import FundSnapshot, fund_breakdown, matching_fund, constituent_resolver, snapshot_age_days
-from portfolio_app.display_names import display_name
+from portfolio_app.display_names import display_name, compact_fund_name, instrument_name
 from portfolio_app.taxonomy import Classifications, describe, taxonomy_names
 from portfolio_app.vaneck import refresh_snapshot
 from portfolio_app.etf_sources import SOURCES, refresh_snapshot as refresh_provider_snapshot
@@ -25,7 +25,7 @@ def render_snapshot_controls(funds: list[FundSnapshot], *, demo: bool = False) -
                 except Exception as exc:
                     st.warning(f"{provider} update failed; keeping the snapshot from {fund.as_of.isoformat()}: {exc}")
             age = snapshot_age_days(fund)
-            caption = display_name(fund.name) if source else 'VanEck holdings'
+            caption = compact_fund_name(fund.name) if source else 'VanEck holdings'
             st.caption(f"{caption}: {fund.as_of.isoformat()} · {age} day(s) old")
             if age > 7:
                 st.warning(f"{provider} holdings are {age} days old. Update the snapshot before relying on current ETF weights.")
@@ -48,7 +48,10 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
                         classifications: Classifications | None = None, show_tickers: bool = False,
                         classification_names: list[str] | None = None) -> None:
     for fund in funds:
-        with st.expander(f"ETF breakdown: {display_name(fund.name)}"):
+        source = selected if holdings is None else holdings
+        position = next((row for row in source.to_dict('records') if matching_fund(row, [fund]) is not None), None)
+        label = instrument_name(position) if position else compact_fund_name(fund.name)
+        with st.expander(f"ETF breakdown: {label}"):
             if fund.proxy_source:
                 st.info(f'Approximate breakdown · {fund.proxy_source}')
             st.caption(f"ISIN {fund.isin} · Holdings as of {fund.as_of.isoformat()} · {snapshot_age_days(fund)} day(s) old")

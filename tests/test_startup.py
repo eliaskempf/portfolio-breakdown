@@ -1,3 +1,4 @@
+from test_ui import position_action
 from pathlib import Path
 import sys
 
@@ -98,7 +99,7 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     assert by_label(app.radio, "Portfolio workspace").value == "My portfolio"
     by_label(app.radio, "Portfolio workspace").set_value("Demo portfolio").run()
     assert app.metric[0].value == "€744.00"
-    by_label(app.radio, "Position action").set_value("Edit position").run()
+    position_action(app, "Edit position")
     by_label(app.number_input, "Quantity held (total)").set_value(9.)
     by_label(app.button, "Save position").click().run()
     assert not app.exception
@@ -108,7 +109,7 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     assert app.metric[0].value == edited_total
     by_label(app.radio, "Portfolio workspace").set_value("My portfolio").run()
     assert not app.exception
-    assert by_label(app.radio, "Position action").value == "Add position"
+    position_action(app, "Add position")
     assert by_label(app.text_input, "Instrument name").value == ""
     by_label(app.text_input, "Instrument name").set_value("Synthetic personal position")
     by_label(app.number_input, "Quantity held (total)").set_value(4.)
@@ -122,19 +123,41 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     assert not restarted.exception
     assert restarted.metric[0].value == "€744.00"
     by_label(restarted.radio, "Portfolio workspace").set_value("My portfolio").run()
-    assert restarted.dataframe[-1].value.iloc[0]["shares"] == 4
+    assert next(item.value for item in restarted.tabs[1].dataframe if "shares" in item.value).iloc[0]["shares"] == 4
+
+
+def test_breakdown_choice_survives_workspace_widget_cleanup(tmp_path):
+    demo = create_demo_data(tmp_path / 'demo')
+    app = launch_workspaces(tmp_path / 'personal', demo, start_demo=True)
+    assert by_label(app.toggle, 'Break down ETFs').value
+    by_label(app.toggle, 'Break down ETFs').set_value(False).run()
+    by_label(app.radio, 'Portfolio workspace').set_value('My portfolio').run()
+    by_label(app.radio, 'Portfolio workspace').set_value('Demo portfolio').run()
+    assert not app.exception
+    assert not by_label(app.toggle, 'Break down ETFs').value
 
 
 def test_switching_workspaces_discards_unsubmitted_form_and_filters(tmp_path):
     demo = create_demo_data(tmp_path / "demo")
     app = launch_workspaces(tmp_path / "personal", demo, start_demo=True)
     by_label(app.multiselect, "Holdings").set_value([]).run()
-    by_label(app.radio, 'Position action').set_value('Add position').run()
+    position_action(app, 'Add position')
     by_label(app.text_input, "Instrument name").set_value("Unsubmitted dummy edit")
     by_label(app.radio, "Portfolio workspace").set_value("My portfolio").run()
     assert not app.exception
-    assert by_label(app.text_input, "Instrument name").value == ""
+    assert not app.session_state.filtered_state.get("position_edit_dialog")
+    assert "position_draft" not in app.session_state.filtered_state
     by_label(app.radio, "Portfolio workspace").set_value("Demo portfolio").run()
-    by_label(app.radio, 'Position action').set_value('Add position').run()
+    position_action(app, 'Add position')
     assert by_label(app.text_input, "Instrument name").value == ""
     assert len(by_label(app.multiselect, "Holdings").value) == 6
+
+
+def test_performance_unit_is_remembered_per_workspace(tmp_path):
+    demo = create_demo_data(tmp_path / 'demo')
+    app = launch_workspaces(tmp_path / 'personal', demo, start_demo=True)
+    by_label(app.get('button_group'), 'Performance display').set_value('%').run()
+    by_label(app.radio, 'Portfolio workspace').set_value('My portfolio').run()
+    assert by_label(app.get('button_group'), 'Performance display').value == '€'
+    by_label(app.radio, 'Portfolio workspace').set_value('Demo portfolio').run()
+    assert by_label(app.get('button_group'), 'Performance display').value == '%'

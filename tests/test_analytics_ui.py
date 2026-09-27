@@ -23,38 +23,48 @@ def no_live_analytics(monkeypatch):
 
 def test_position_presets_details_and_risk(sample_data_dir):
     app = launch(sample_data_dir)
-    assert by_label(app.selectbox, 'Position metrics').value == 'Default'
-    by_label(app.selectbox, 'Position metrics').set_value('Valuation').run()
+    assert by_label(app.get('button_group'), 'Position view').value == 'Holdings'
+    assert not any(c.label == 'Show instrument metrics' for c in app.checkbox)
+    by_label(app.get('button_group'), 'Position view').set_value('Valuation').run()
     assert not app.exception
-    assert by_label(app.multiselect, 'Metric columns').value == ['trailing_pe', 'forward_pe', 'price_book']
-    by_label(app.checkbox, 'Show instrument metrics').check().run()
+    assert by_label(app.multiselect, 'Visible metrics').value == ['trailing_pe', 'forward_pe', 'fund_pe']
+    app.session_state['position_edit_selected'] = 'position-0'
+    app.session_state['position_edit_action'] = 'Details'
+    app.session_state['position_edit_dialog'] = True
+    app.run()
+    by_label(app.get('button_group'), 'Position detail view').set_value('Key metrics').run()
     assert not app.exception
-    details = next(table.value for table in app.dataframe if 'Definition' in table.value)
-    assert details.loc[details.Metric == 'P/E (trailing)', 'Value'].iloc[0] == '20.00'
-    by_label(app.selectbox, 'Position metrics').set_value('Income & fees').run()
+    assert by_label(app.metric, 'P/E (trailing)').value == '20.00'
+    by_label(app.button, 'Close').click().run()
+    by_label(app.get('button_group'), 'Position view').set_value('Income & fees').run()
     assert not app.exception
-    by_label(app.selectbox, 'Position metrics').set_value('Risk').run()
+    by_label(app.get('button_group'), 'Position view').set_value('Risk').run()
     assert not app.exception
-    assert by_label(app.text_input, 'Risk benchmark ticker').value == 'IUSQ.DE'
-    by_label(app.selectbox, 'Risk window (years)').set_value(1).run()
+    assert by_label(app.text_input, 'Benchmark ticker').value == 'IUSQ.DE'
+    by_label(app.selectbox, 'History window').set_value(1).run()
     assert not app.exception
 
 
-def test_portfolio_analytics_scopes_fundamentals_and_risk(sample_data_dir):
+def test_portfolio_analytics_uses_overview_scope_and_risk(sample_data_dir):
+    from portfolio_app.allocation import migration_preview
     app = launch(sample_data_dir)
-    by_label(app.checkbox, 'Show portfolio analytics').check().run()
+    by_label(app.get('button_group'), 'Overview view').set_value('Analytics').run()
     assert not app.exception
-    by_label(app.checkbox, 'Load portfolio fundamentals').check().run()
-    assert not app.exception
-    table = next(item.value for item in app.dataframe if 'Eligible valued assets (EUR)' in item.value)
-    assert table.loc[table.Metric == 'Trailing P/E · profitable direct equities', 'Value'].iloc[0] == '20.00'
-    by_label(app.checkbox, 'Load historical risk').check().run()
+    assert not any(c.label in {'Show portfolio analytics', 'Load portfolio fundamentals', 'Load historical risk'} for c in app.checkbox)
+    assert by_label(app.metric, 'Direct-stock P/E').value == '20.00'
+    by_label(app.button, 'Calculate risk').click().run()
     assert not app.exception
     assert any('known valued assets' in caption.value for caption in app.caption)
-    assert by_label(app.metric, 'Covered-subportfolio beta').value != '—'
-    by_label(app.text_input, 'Risk benchmark ticker').set_value('SYNTHETIC-BENCHMARK').run()
+    assert by_label(app.metric, 'Beta').value != '—'
+    by_label(app.text_input, 'Benchmark ticker').set_value('SYNTHETIC-BENCHMARK').run()
     assert not app.exception
-    by_label(app.multiselect, 'Analytics accounts').set_value([]).run()
+    config, _ = migration_preview(load_holdings(sample_data_dir / 'holdings.csv'))
+    category = config.buckets[0].id
+    by_label(app.selectbox, 'Category').set_value(category).run()
+    assert app.session_state['strategic_category'] == category
+    assert by_label(app.get('button_group'), 'Overview view').value == 'Analytics'
+    assert not app.exception
+    by_label(app.multiselect, 'Accounts').set_value([]).run()
     assert not app.exception
     assert any('No held positions' in info.value for info in app.info)
 
@@ -64,11 +74,10 @@ def test_private_fee_edit_roundtrip_in_invented_workspace(tmp_path):
     (tmp_path / 'holdings.csv').write_text('id,name,ticker,isin,shares,instrument_type\nf,Invented fund,FFF,,1,etf\n')
     script = ('from pathlib import Path\n'
               'from portfolio_app.positions import read_snapshot\n'
-              'from portfolio_app.position_list import render_position_list\n'
+              'from portfolio_app.position_metrics_ui import render_instrument_metrics\n'
               f'p = Path({str(tmp_path / "holdings.csv")!r})\n'
-              'render_position_list(p, read_snapshot(p), demo=True)\n')
+              'render_instrument_metrics(read_snapshot(p).holdings.iloc[0], p.parent, demo=True)\n')
     app = AppTest.from_string(script).run()
-    by_label(app.checkbox, 'Show instrument metrics').check().run()
     assert not app.exception
     by_label(app.number_input, 'Annual fund fee (%)').set_value(.4)
     by_label(app.text_input, 'Fee source').set_value('Invented issuer factsheet')
@@ -95,23 +104,22 @@ def test_fundamental_fetch_deduplicates_account_rows(tmp_path, monkeypatch):
     assert set(snapshots) == {'a'}
 
 
-def test_workspace_switch_resets_analytics_scope(tmp_path, sample_data_dir):
-    # Two synthetic demo directories, no user's working files.
+def test_workspace_switch_resets_analytics_options(tmp_path, sample_data_dir):
     import shutil
     second = tmp_path / 'second-demo'
     shutil.copytree(sample_data_dir, second)
     script = ('from pathlib import Path\nimport streamlit as st\n'
               'from portfolio_app.holdings import load_holdings\n'
-              'from portfolio_app.analytics_ui import render_portfolio_analytics\n'
+              'from portfolio_app.prices import PriceService, StaticProvider\n'
+              'from portfolio_app.portfolio import prepare_portfolio\n'
+              'from portfolio_app.portfolio_analytics_ui import render_portfolio_analytics\n'
               f'directories = [Path({str(sample_data_dir)!r}), Path({str(second)!r})]\n'
               'index = st.selectbox("Test workspace", [0, 1])\n'
               'p = directories[index]\n'
-              'render_portfolio_analytics(load_holdings(p / "holdings.csv"), p, [], demo=True)\n')
-    app = AppTest.from_string(script).run()
-    by_label(app.checkbox, 'Show portfolio analytics').check().run()
-    by_label(app.multiselect, 'Analytics accounts').set_value([]).run()
+              'valued = prepare_portfolio(load_holdings(p / "holdings.csv"), PriceService(StaticProvider(p / "demo_prices.json")))\n'
+              'render_portfolio_analytics(valued, p, [], demo=True)\n')
+    app = AppTest.from_string(script, default_timeout=15).run()
+    by_label(app.multiselect, 'Accounts').set_value([]).run()
     by_label(app.selectbox, 'Test workspace').set_value(1).run()
-    assert not by_label(app.checkbox, 'Show portfolio analytics').value
-    by_label(app.checkbox, 'Show portfolio analytics').check().run()
-    assert len(by_label(app.multiselect, 'Analytics accounts').value) == 2
+    assert len(by_label(app.multiselect, 'Accounts').value) == 2
     assert not app.exception

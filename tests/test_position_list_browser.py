@@ -62,7 +62,7 @@ render_position_editor(path, read_snapshot(path), [], demo=True, embedded=True)
         process.wait(timeout=10)
 
 
-def test_double_click_after_sort_and_filter_opens_exact_account_and_renames(position_page):
+def test_pencil_after_sort_and_filter_opens_exact_account_and_renames(position_page):
     page, path = position_page
     table = page.get_by_role('table', name='Positions', exact=True)
     # Names are plain text, never markup, and identity survives client sorting.
@@ -72,7 +72,7 @@ def test_double_click_after_sort_and_filter_opens_exact_account_and_renames(posi
     page.get_by_role('searchbox', name='Filter positions').fill('Second')
     rows = table.locator('tbody tr')
     playwright.expect(rows).to_have_count(1)
-    rows.get_by_role('cell').first.dblclick()
+    rows.get_by_role('button', name='Edit Invented <b>Token</b> · Second', exact=True).click()
     account = page.get_by_role('textbox', name='Account / broker', exact=True)
     playwright.expect(account).to_have_value('Second')
     assert float(page.get_by_role('spinbutton', name='Quantity held (total)', exact=True).input_value()) == 2.
@@ -80,6 +80,7 @@ def test_double_click_after_sort_and_filter_opens_exact_account_and_renames(posi
     playwright.expect(name).to_be_enabled()
     name.fill('Custom browser name')
     page.get_by_role('button', name='Save position', exact=True).click()
+    playwright.expect(page.get_by_role('dialog')).to_have_count(0)
     table.wait_for()
     stored = load_holdings(path)
     assert stored.name.tolist() == ['Custom browser name', 'Custom browser name', 'Other invented token']
@@ -93,8 +94,9 @@ def test_keyboard_and_edit_button_open_rows_and_back_returns_to_list(position_pa
     table.locator('tbody tr').first.focus()
     page.keyboard.press('ArrowDown')
     page.keyboard.press('Enter')
+    page.get_by_role('dialog').get_by_role('button', name='Edit position').click()
     playwright.expect(page.get_by_role('textbox', name='Account / broker', exact=True)).to_have_value('Second')
-    page.get_by_role('button', name='Back to positions', exact=True).click()
+    page.get_by_role('button', name='Cancel', exact=True).click()
     table.wait_for()
     table.get_by_role('button', name='Edit Other invented token · Third', exact=True).click()
     playwright.expect(page.get_by_role('textbox', name='Account / broker', exact=True)).to_have_value('Third')
@@ -106,6 +108,7 @@ def test_metric_columns_sort_numerically_keep_missing_last_and_preserve_identity
     # Execute the actual component renderer with invented metric values. AppTest
     # separately verifies that the controls supply these columns and row values.
     data = {'context': 'synthetic-metrics', 'revision': 'synthetic-revision', 'hasBuckets': False,
+            'metricView': 'Valuation',
             'metricColumns': [['metric_trailing_pe', 'P/E (trailing)']],
             'rows': [dict(id=identity, name=name, quantity=1, account='Invented', portfolio='',
                           metric_trailing_pe=value, metric_trailing_pe_note='Invented metric source')
@@ -123,7 +126,7 @@ def test_metric_columns_sort_numerically_keep_missing_last_and_preserve_identity
     assert root.locator('tbody tr').evaluate_all('(rows) => rows.map(r => r.dataset.positionId)') == ['small', 'large', 'missing']
     root.get_by_role('button', name='P/E (trailing) ↑', exact=True).click()
     assert root.locator('tbody tr').evaluate_all('(rows) => rows.map(r => r.dataset.positionId)') == ['large', 'small', 'missing']
-    playwright.expect(root.locator('tbody tr').last.locator('td').nth(4)).to_have_text('—')
+    playwright.expect(root.locator('tbody tr').last.locator('td').nth(2)).to_have_text('—')
     root.get_by_role('searchbox').fill('small')
     root.locator('tbody tr').dblclick()
     assert page.evaluate('window.syntheticMetricEvent.id') == 'small'

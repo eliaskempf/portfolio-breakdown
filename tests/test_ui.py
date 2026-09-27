@@ -6,16 +6,54 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 def launch(data_dir):
-    return AppTest.from_string(
+    app = AppTest.from_string(
         "from pathlib import Path\n"
         "from portfolio_app.ui import render_app\n"
         f"render_app(Path({str(data_dir)!r}), demo=True)\n",
         default_timeout=15,
     ).run()
 
+    if not (data_dir / 'holdings.csv').exists():
+        by_label(app.button, 'Add position').click().run()
+    return app
+
+
+def position_action(app, action, position_id='position-0'):
+    """Drive the new toolbar or simulate the stable-ID row event boundary."""
+    if action == 'Add position':
+        return by_label(app.button, 'Add position').click().run()
+    if action in {'Positions', 'Update balances', 'Bulk add purchases'}:
+        return by_label(app.get('button_group'), 'Position tools').set_value(action).run()
+    if action == 'Strategic allocation':
+        return app  # Targets are rendered in Rebalance → Targets.
+    app.session_state['position_edit_selected'] = position_id
+    app.session_state['position_edit_action'] = 'Edit position'
+    app.session_state['position_edit_dialog'] = True
+    return app.run()
+
 
 def by_label(elements, label):
     return next(element for element in elements if element.label == label)
+
+
+def theme_view(app, group='holding'):
+    by_label(app.get('button_group'), 'Exposure view').set_value('Themes & sectors').run()
+    return by_label(app.selectbox, 'Group by').set_value(group).run()
+
+
+def exposure_summary(app):
+    return next(item.value for item in app.tabs[1].caption if 'source positions' in item.value)
+
+
+def selected_value(app):
+    import re
+    return re.search(r'(?:Selected|Priced) value: (€.+?) ·', exposure_summary(app))[1]
+
+
+def missing_prices(app):
+    import re
+    match = re.search(r'(\d+) missing prices', exposure_summary(app))
+    return match[1] if match else '0'
 
 
 @pytest.fixture
@@ -41,6 +79,7 @@ def grouped_data(tmp_path, sample_data_dir):
 def test_optional_smh_grouping_stock_choice_lookthrough_and_filters(grouped_data):
     before = {name: (grouped_data / name).read_bytes() for name in ("holdings.csv", "classifications.yaml")}
     app = launch(grouped_data)
+    theme_view(app, 'holding')
     assert not app.exception
     assert by_label(app.checkbox, "Group SMH with related stocks").value is False
     by_label(app.selectbox, "Group by").set_value("holding").run()
@@ -50,24 +89,26 @@ def test_optional_smh_grouping_stock_choice_lookthrough_and_filters(grouped_data
     for representation in ("Instruments", "ETF look-through"):
         by_label(app.toggle, "Break down ETFs").set_value(representation == "ETF look-through").run()
         assert not app.exception
-        table = app.dataframe[0].value
+        table = app.tabs[1].dataframe[-1].value
         assert table["EUR value"].sum() == 944
         assert table.loc[table.Category == "SMH + related stocks", "EUR value"].tolist() == [560]
         assert table["Allocation %"].sum() == pytest.approx(100)
+    by_label(app.get('button_group'), 'Exposure view').set_value('Assets').run()
     effective = next(item.value for item in app.dataframe if "ETF-derived (EUR)" in item.value)
     assert effective.loc[effective.Asset == "Nvidia", "Total (EUR)"].tolist() == [256]
+    theme_view(app)
     by_label(app.checkbox, "Show tickers").check().run()
-    assert app.dataframe[0].value.Category.str.contains("view-group").sum() == 0
+    assert app.tabs[1].dataframe[-1].value.Category.str.contains("view-group").sum() == 0
     by_label(app.multiselect, "Stocks in the SMH group").set_value(["nvda"]).run()
     assert not app.exception
-    table = app.dataframe[0].value
+    table = app.tabs[1].dataframe[-1].value
     assert table.loc[table.Category == "SMH + related stocks", "EUR value"].tolist() == [440]
     by_label(app.multiselect, "Holdings").set_value(["nvda"]).run()
     assert not app.exception
-    assert app.dataframe[0].value["EUR value"].tolist() == [240]
+    assert app.tabs[1].dataframe[-1].value["EUR value"].tolist() == [240]
     by_label(app.checkbox, "Group SMH with related stocks").uncheck().run()
     assert not app.exception
-    assert app.dataframe[0].value.Category.tolist() == ["Nvidia (NVDA)"]
+    assert app.tabs[1].dataframe[-1].value.Category.tolist() == ["Nvidia (NVDA)"]
     assert all((grouped_data / name).read_bytes() == content for name, content in before.items())
 
 
@@ -75,32 +116,33 @@ def test_smh_group_uses_fund_labels_and_shows_original_members(grouped_data):
     from portfolio_app.label_comparison import Label
 
     app = launch(grouped_data)
+    theme_view(app, 'selected_labels')
     by_label(app.checkbox, "Group SMH with related stocks").check().run()
     by_label(app.toggle, "Break down ETFs").set_value(True).run()
     assert not app.exception
-    assert app.dataframe[0].value["EUR value"].sum() == 560
+    assert app.tabs[1].dataframe[-1].value["EUR value"].sum() == 944  # Includes Unclassified.
     root = (Label("labels", ("Group A",)).key,)
     by_label(app.selectbox, "Detail view").set_value(root).run()
     assert not app.exception
-    assert app.dataframe[0].value.Investment.tolist() == ["SMH + related stocks"]
+    assert app.tabs[1].dataframe[-1].value.Investment.tolist() == ["SMH + related stocks"]
     detail = next(item.value for item in app.dataframe if "Within group (%)" in item.value)
     assert detail["EUR value"].sum() == 560
     assert set(detail.Investment) == {"Synthetic Fund", "Nvidia", "TSMC"}
     by_label(app.multiselect, "Stocks in the SMH group").set_value([]).run()
     assert not app.exception
-    assert app.dataframe[0].value["EUR value"].sum() == 560  # Fund and stocks separate within Group A.
+    assert app.tabs[1].dataframe[-1].value["EUR value"].sum() == 560  # Fund and stocks separate within Group A.
 
 
 def test_demo_launch_and_subset_selection(sample_data_dir):
     app = launch(sample_data_dir)
     assert not app.exception
-    assert app.metric[0].value == "€744.00"
-    assert app.metric[2].value == "1"
+    assert selected_value(app) == "€744.00"
+    assert missing_prices(app) == "1"
     by_label(app.multiselect, "Portfolio").set_value(["AI Sleeve"]).run()
     assert not app.exception
-    assert app.metric[1].value == "€520.00"
-    assert app.metric[2].value == "0"
-    holdings = app.dataframe[-1].value
+    assert selected_value(app) == "€520.00"
+    assert missing_prices(app) == "0"
+    holdings = next(item for item in app.tabs[1].dataframe if "shares" in item.value).value
     assert holdings["portfolio_weight"].sum() == pytest.approx(100)
 
 
@@ -108,22 +150,22 @@ def test_allocations_and_holdings_default_to_decreasing_weight(sample_data_dir):
     app = launch(sample_data_dir)
     assert not app.exception
     assert by_label(app.checkbox, "Show tickers").value is False
-    assert app.dataframe[0].value["Allocation %"].is_monotonic_decreasing
-    assert app.dataframe[-1].value["portfolio_weight"].dropna().is_monotonic_decreasing
+    assert app.tabs[1].dataframe[-1].value["Allocation %"].dropna().is_monotonic_decreasing
+    assert next(item for item in app.tabs[1].dataframe if "shares" in item.value).value["portfolio_weight"].dropna().is_monotonic_decreasing
 
 
 def test_ticker_display_toggle_preserves_selected_instrument_ids(sample_data_dir):
     app = launch(sample_data_dir)
     by_label(app.multiselect, "Holdings").set_value(["nvda", "tsmc"]).run()
-    initial = app.metric[1].value
+    initial = selected_value(app)
     for enabled in (True, False, True, False):
         by_label(app.checkbox, "Show tickers").set_value(enabled).run()
         assert not app.exception
         assert by_label(app.multiselect, "Holdings").value == ["nvda", "tsmc"]
-        assert app.metric[1].value == initial
+        assert selected_value(app) == initial
     by_label(app.multiselect, "Portfolio").set_value(["AI Sleeve"]).run()
-    assert app.dataframe[0].value["Allocation %"].is_monotonic_decreasing
-    assert app.dataframe[-1].value["portfolio_weight"].dropna().is_monotonic_decreasing
+    assert app.tabs[1].dataframe[-1].value["Allocation %"].dropna().is_monotonic_decreasing
+    assert next(item for item in app.tabs[1].dataframe if "shares" in item.value).value["portfolio_weight"].dropna().is_monotonic_decreasing
 
 
 def test_names_are_cleaned_for_display_without_changing_saved_holdings(tmp_path, sample_data_dir):
@@ -133,38 +175,39 @@ def test_names_are_cleaned_for_display_without_changing_saved_holdings(tmp_path,
     path.write_text(source)
     app = launch(tmp_path)
     assert not app.exception
-    assert app.dataframe[-1].value.iloc[0]["name"] == "Synthetic Systems"
-    assert app.dataframe[0].value.iloc[0]["Category"] == "Synthetic Systems"
+    assert next(item for item in app.tabs[1].dataframe if "shares" in item.value).value.iloc[0]["name"] == "Synthetic Systems"
+    assert app.tabs[1].dataframe[-1].value.iloc[0]["Asset"] == "Synthetic Systems"
     by_label(app.checkbox, "Show tickers").check().run()
-    assert app.dataframe[0].value.iloc[0]["Category"] == "Synthetic Systems (NVDA)"
-    by_label(app.radio, "Position action").set_value("Edit position").run()
+    assert app.tabs[1].dataframe[-1].value.iloc[0]["Ticker"] == "NVDA"
+    position_action(app, "Edit position")
     assert by_label(app.text_input, "Instrument name").value == "SYNTHETIC SYSTEMS INC"
     assert path.read_text() == source
 
 
 def test_hierarchy_controls_charts_and_branch_filters(sample_data_dir):
     app = launch(sample_data_dir)
+    theme_view(app, 'holding')
     by_label(app.selectbox, "Group by").set_value("taxonomy:ai").run()
     assert not app.exception
     by_label(app.selectbox, "Hierarchy root").set_value(("AI", "AI Infrastructure")).run()
     assert not app.exception
     by_label(app.selectbox, "View depth").set_value(1).run()
     assert not app.exception
-    table = app.dataframe[0].value
+    table = app.tabs[1].dataframe[-1].value
     assert table["EUR value"].sum() == 384
     assert set(table["Category"].str.strip()) == {"Energy", "Networking"}
     assert "Classification path" not in table
     by_label(app.checkbox, "Show classification paths").check().run()
-    assert "Classification path" in app.dataframe[0].value
+    assert "Classification path" in app.tabs[1].dataframe[-1].value
     by_label(app.checkbox, "Show holdings beneath labels").check().run()
     for kind in ("Sunburst", "Bar", "Treemap", "Pie"):
         by_label(app.selectbox, "Chart").set_value(kind).run()
         assert not app.exception
-        assert len(app.get("plotly_chart")) == 1
+        assert len(app.tabs[1].get("plotly_chart")) == 1
     by_label(app.multiselect, "ai branches").set_value([("AI", "AI Infrastructure", "Energy")]).run()
     assert not app.exception
-    assert app.metric[1].value == "€224.00"
-    assert set(app.dataframe[-1].value["id"]) == {"enr", "vst"}
+    assert selected_value(app) == "€224.00"
+    assert set(next(item for item in app.tabs[1].dataframe if "shares" in item.value).value["id"]) == {"enr", "vst"}
     # A changed taxonomy must not retain an invalid root from the previous view.
     by_label(app.selectbox, "Group by").set_value("taxonomy:sector").run()
     assert not app.exception
@@ -177,10 +220,10 @@ def test_empty_subset_and_all_missing_are_usable(sample_data_dir):
     assert any("No holdings match" in item.value for item in app.info)
     by_label(app.multiselect, "Holdings").set_value(["unpriced"]).run()
     assert not app.exception
-    assert app.metric[1].value == "€0.00"
-    assert app.metric[2].value == "1"
-    assert len(app.get("plotly_chart")) == 0
-    assert len(app.dataframe[-1].value) == 1
+    assert selected_value(app) == "€0.00"
+    assert missing_prices(app) == "1"
+    assert len(app.tabs[1].get("plotly_chart")) == 0
+    assert len(next(item for item in app.tabs[1].dataframe if "shares" in item.value).value) == 1
 
 
 def test_invalid_data_is_actionable(tmp_path):
@@ -195,7 +238,7 @@ def test_empty_holdings(tmp_path):
     (tmp_path / "classifications.yaml").write_text("")
     app = launch(tmp_path)
     assert not app.exception
-    assert "Add a position" in app.info[0].value
+    assert "Add position" in app.info[0].value
 
 
 def test_provider_failures_do_not_crash_app(sample_data_dir):
@@ -212,8 +255,8 @@ def test_provider_failures_do_not_crash_app(sample_data_dir):
         default_timeout=15,
     ).run()
     assert not app.exception
-    assert app.metric[2].value == "7"
-    assert len(app.dataframe[-1].value) == 7
+    assert missing_prices(app) == "7"
+    assert len(next(item for item in app.tabs[1].dataframe if "shares" in item.value).value) == 7
 
 
 def test_zero_positions_and_missing_classifications(tmp_path, sample_data_dir):
@@ -222,8 +265,8 @@ def test_zero_positions_and_missing_classifications(tmp_path, sample_data_dir):
     (tmp_path / "classifications.yaml").write_text("")
     app = launch(tmp_path)
     assert not app.exception
-    assert app.metric[1].value == "€0.00"
-    assert len(app.get("plotly_chart")) == 0
+    assert selected_value(app) == "€0.00"
+    assert len(app.tabs[1].get("plotly_chart")) == 0
 
 
 def test_actual_streamlit_entrypoint(monkeypatch, sample_data_dir):
@@ -233,7 +276,7 @@ def test_actual_streamlit_entrypoint(monkeypatch, sample_data_dir):
     monkeypatch.setattr(sys, "argv", [str(script), "--data-dir", str(sample_data_dir), "--demo"])
     app = AppTest.from_file(script, default_timeout=15).run()
     assert not app.exception
-    assert app.metric[0].value == "€744.00"
+    assert selected_value(app) == "€744.00"
 
 
 def test_target_column_is_optional_and_not_a_filter(tmp_path, sample_data_dir):
@@ -246,14 +289,14 @@ def test_target_column_is_optional_and_not_a_filter(tmp_path, sample_data_dir):
     app = launch(tmp_path)
     assert not app.exception
     assert all(item.label != "Target Allocation" for item in app.multiselect)
-    table = app.dataframe[-1].value
+    table = next(item for item in app.tabs[1].dataframe if "shares" in item.value).value
     assert table["ticker"].tolist() == ["NVDA", "TSM"]
     assert table["target_allocation"].iloc[0] == 15
     assert table["target_allocation"].isna().sum() == 1
     by_label(app.multiselect, "Portfolio").set_value(["AI"]).run()
-    assert app.dataframe[-1].value["target_allocation"].iloc[0] == 15
+    assert next(item for item in app.tabs[1].dataframe if "shares" in item.value).value["target_allocation"].iloc[0] == 15
     by_label(app.multiselect, "Portfolio").set_value(["Core"]).run()
-    assert "target_allocation" not in app.dataframe[-1].value
+    assert "target_allocation" not in next(item for item in app.tabs[1].dataframe if "shares" in item.value).value
 
 
 def test_etf_breakdown_and_look_through(tmp_path, sample_data_dir):
@@ -274,8 +317,8 @@ def test_etf_breakdown_and_look_through(tmp_path, sample_data_dir):
     )
     app = launch(tmp_path)
     assert not app.exception
-    assert app.metric[0].value == "€1,800.00"
-    assert any("ETF breakdown" in item.label for item in app.expander)
+    assert by_label(app.metric, 'Current value').value == "€1,800.00"
+    assert not any("ETF breakdown" in item.label for item in app.expander)  # Details are on demand.
     by_label(app.toggle, "Break down ETFs").set_value(True).run()
     assert not app.exception
     effective = next(table.value for table in app.dataframe if "ETF-derived (EUR)" in table.value.columns)
@@ -283,13 +326,13 @@ def test_etf_breakdown_and_look_through(tmp_path, sample_data_dir):
     assert nvidia["Direct (EUR)"] == 800
     assert nvidia["ETF-derived (EUR)"] == pytest.approx(nvidia_indirect)
     assert effective["Total (EUR)"].sum() == pytest.approx(1800)
-    assert app.metric[1].value == "€1,800.00"
-    by_label(app.selectbox, "Group by").set_value("taxonomy:ai").run()
+    assert selected_value(app) == "€1,800.00"
+    theme_view(app, "taxonomy:ai")
     by_label(app.selectbox, "Hierarchy root").set_value(("AI", "Compute", "GPUs")).run()
     assert not app.exception
-    assert app.dataframe[0].value.empty  # The selected leaf is shown as the separate total.
+    assert app.tabs[1].dataframe[-1].value.empty  # The selected leaf is shown as the separate total.
     by_label(app.checkbox, "Show holdings beneath labels").check().run()
-    assert app.dataframe[0].value.iloc[0]["EUR value"] == pytest.approx(800 + nvidia_indirect)
+    assert app.tabs[1].dataframe[-1].value.iloc[0]["EUR value"] == pytest.approx(800 + nvidia_indirect)
     by_label(app.selectbox, "Chart").set_value("Pie").run()
     assert not app.exception
     by_label(app.toggle, "Break down ETFs").set_value(False).run()
@@ -323,12 +366,13 @@ def test_show_tickers_preserves_merged_hierarchy_leaf_across_exchanges(tmp_path,
     )
     (tmp_path / "classifications.yaml").write_text("supplier:\n  classifications:\n    test:\n      - [Synthetic, Branch]\n")
     app = launch(tmp_path)
+    theme_view(app, 'holding')
     by_label(app.toggle, "Break down ETFs").set_value(True).run()
     by_label(app.selectbox, "Group by").set_value("taxonomy:test").run()
     by_label(app.checkbox, "Show holdings beneath labels").check().run()
     by_label(app.checkbox, "Show tickers").check().run()
     assert not app.exception
-    table = app.dataframe[0].value
+    table = app.tabs[1].dataframe[-1].value
     leaf = table.loc[table.Category.str.strip() == "Synthetic Supplier (NVD.DE)"]
     assert len(leaf) == 1
     assert leaf.iloc[0]["EUR value"] == pytest.approx(80 + 1000 * weight)
@@ -394,8 +438,8 @@ def test_create_position_from_empty_app_and_reopen(tmp_path, sample_data_dir):
     shutil.copy(sample_data_dir / "demo_prices.json", tmp_path)
     reopened = launch(tmp_path)
     assert not reopened.exception
-    assert reopened.dataframe[-1].value.iloc[0]["name"] == "New asset"
-    assert reopened.dataframe[-1].value.iloc[0]["acquisition_price"] == 42.5
+    assert next(item for item in reopened.tabs[1].dataframe if "shares" in item.value).value.iloc[0]["name"] == "New asset"
+    assert next(item for item in reopened.tabs[1].dataframe if "shares" in item.value).value.iloc[0]["acquisition_price"] == 42.5
 
 
 def test_edit_position_updates_total_shares_buy_in_and_currency(tmp_path, sample_data_dir):
@@ -407,7 +451,7 @@ def test_edit_position_updates_total_shares_buy_in_and_currency(tmp_path, sample
         "nvda,Nvidia,NVDA,10,AI,Broker,100,EUR\n"
     )
     app = launch(tmp_path)
-    by_label(app.radio, "Position action").set_value("Edit position").run()
+    position_action(app, "Edit position")
     by_label(app.number_input, "Quantity held (total)").set_value(15.0)
     by_label(app.number_input, "Average buy-in per unit (optional)").set_value(106.666667)
     by_label(app.button, "Save position").click().run()
@@ -416,7 +460,7 @@ def test_edit_position_updates_total_shares_buy_in_and_currency(tmp_path, sample
     assert len(frame) == 1
     assert frame.iloc[0]["shares"] == 15
     assert frame.iloc[0]["acquisition_price"] == pytest.approx(106.666667)
-    assert app.metric[1].value == "€1,200.00"
+    assert selected_value(app) == "€1,200.00"
     assert (tmp_path / ".backups").exists()
 
 
@@ -434,7 +478,7 @@ def test_edit_stale_file_prompts_reload_without_overwrite(tmp_path, sample_data_
     path = tmp_path / "holdings.csv"
     path.write_text("id,name,ticker,shares\nnvda,Nvidia,NVDA,10\n")
     app = launch(tmp_path)
-    by_label(app.radio, "Position action").set_value("Edit position").run()
+    position_action(app, "Edit position")
     changed = "id,name,ticker,shares\nnvda,Nvidia,NVDA,20\n"
     path.write_text(changed)
     by_label(app.number_input, "Quantity held (total)").set_value(15.0)
@@ -464,14 +508,14 @@ def test_new_position_is_visible_after_filters_were_cleared(tmp_path, sample_dat
     (tmp_path / "holdings.csv").write_text("id,name,ticker,shares,portfolio\nnvda,Nvidia,NVDA,10,AI\n")
     app = launch(tmp_path)
     by_label(app.multiselect, "Holdings").set_value([]).run()
-    by_label(app.radio, 'Position action').set_value('Add position').run()
+    position_action(app, 'Add position')
     by_label(app.text_input, "Instrument name").set_value("Arista")
     by_label(app.text_input, "Ticker").set_value("anet")
     by_label(app.number_input, "Quantity held (total)").set_value(1.0)
     by_label(app.button, "Save position").click().run()
     assert not app.exception
-    assert len(app.dataframe[-1].value) == 2
-    assert "ANET" in app.dataframe[-1].value["ticker"].tolist()
+    assert len(next(item for item in app.tabs[1].dataframe if "shares" in item.value).value) == 2
+    assert "ANET" in next(item for item in app.tabs[1].dataframe if "shares" in item.value).value["ticker"].tolist()
 
 
 def test_new_buy_in_requires_currency_but_legacy_amount_is_not_guessed(tmp_path, sample_data_dir):
@@ -481,7 +525,7 @@ def test_new_buy_in_requires_currency_but_legacy_amount_is_not_guessed(tmp_path,
     path = tmp_path / "holdings.csv"
     path.write_text("id,name,ticker,shares,acquisition_price\nnvda,Nvidia,NVDA,10,100\n")
     app = launch(tmp_path)
-    by_label(app.radio, "Position action").set_value("Edit position").run()
+    position_action(app, "Edit position")
     assert by_label(app.text_input, "Buy-in currency").value == ""
     by_label(app.number_input, "Average buy-in per unit (optional)").set_value(110.)
     by_label(app.button, "Save position").click().run()
