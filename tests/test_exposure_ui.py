@@ -16,7 +16,9 @@ def test_default_exposure_is_all_assets_without_chart_or_label_requirement(multi
     assert table['Allocation %'].sum() == pytest.approx(100)
     assert table.loc[table.Asset.eq('Invented Alpha'), 'Total (EUR)'].tolist() == [175]
     assert len(app.tabs[1].get('plotly_chart')) == 0
-    assert len(app.tabs[1].metric) == 0
+    assert by_label(app.tabs[1].metric, 'Current value').value == '€300.00'
+    assert by_label(app.tabs[1].metric, 'Portfolio share').value == '100.0%'
+    assert not any('source positions' in caption.value or 'use a proxy' in caption.value for caption in app.tabs[1].caption)
     assert list_data(app, 'Exposure assets')['maxHeight'] == 620
     assert 'Direct (EUR)' not in {column['key'] for column in list_data(app, 'Exposure assets')['columns']}
     by_label(app.toggle, 'Break down ETFs').set_value(False).run()

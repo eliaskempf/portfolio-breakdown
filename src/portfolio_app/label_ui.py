@@ -33,16 +33,21 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         st.info("Add classification labels to your investments to compare their allocation.")
         return
     with choose.popover("Choose labels"):
-        taxonomy = "labels" if "labels" in names else st.selectbox("Label set", names, key="label_compare_set")
+        if st.session_state.get('label_compare_set') not in names:
+            st.session_state['label_compare_set'] = 'labels' if 'labels' in names else names[0]
+        taxonomy = st.selectbox("Label set", names, key="label_compare_set")
         choices = available_labels(classifications, taxonomy)
         by_key = {label.key: label for label in choices}
         unclassified = any(paths_for(classifications, asset, taxonomy) == (UNCLASSIFIED,) for asset in exposures.asset_id.unique())
         defaults = [label.key for label in choices if len(label.path) == 1 and (label.path != UNCLASSIFIED or unclassified)]
         signature = sha256(repr(list(by_key)).encode()).hexdigest()[:16]
+        remembered = st.session_state.get('label_compare_saved', {})
+        defaults = [key for key in remembered.get(taxonomy, defaults) if key in by_key]
         selected = st.multiselect("Labels to compare", list(by_key), default=defaults,
                                   format_func=lambda key: by_key[key].title,
                                   key=f"label_compare_selection_{signature}",
                                   help="Select any labels. Each includes assets assigned to it or to a category beneath it.")
+        st.session_state['label_compare_saved'] = {**remembered, taxonomy: selected}
     labels = [by_key[key] for key in selected]
     colors = taxonomy_colors(classifications, taxonomy)
     if not labels:

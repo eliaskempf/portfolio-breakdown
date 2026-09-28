@@ -138,7 +138,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             else:
                 render_analysis(data_dir, holdings.loc[holdings.position_id.isin(visible.position_id)], classifications,
                                 funds, demo=demo, price_service=price_service, source_valued=visible, performance_percent=percent,
-                                allocation=allocation, etf_revision=etf_revision)
+                                allocation=allocation, etf_revision=etf_revision, on_toggle_gain=toggle_unit)
     if rebalance.open:
         with rebalance:
             plan_tab, targets_tab = st.tabs(['Plan', 'Targets'], key='rebalance_tabs', on_change='rerun')

@@ -28,14 +28,11 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False):
             records = read_json(Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json') if not demo else {}
             failed = sum(records.get(f.isin, {}).get('status') == 'failed' for f in funds)
             old = sum(snapshot_age_days(f) > 7 for f in funds)
-            proxies = sum(bool(f.proxy_source) for f in funds)
             parts = ([f'{old} outdated ETF snapshot(s)'] if old else []) + ([f'{failed} refresh(es) failed; saved data retained'] if failed else [])
-            if proxies:
-                parts.append(f'{proxies} ETF breakdown(s) use a proxy')
             if coordinator.error(data_dir) and not demo:
                 parts.append('ETF refresh unavailable')
             if parts:
-                st.caption(' · '.join(parts) + ' · Details in Data & settings')
+                st.caption(' · '.join(parts))
     status()
 
 

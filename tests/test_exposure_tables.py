@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from portfolio_app.exposure_tables import asset_exposure_table, complete_exposures, exposure_sources
 
@@ -18,7 +19,7 @@ def test_complete_asset_view_merges_sources_and_keeps_unclassified():
                              dict(position_id='p2', name='Invented ETF', account='Second')])
     sources = exposure_sources(exposures, selected, 'a')
     assert sources['Value (EUR)'].tolist() == [20, 30]
-    assert sources.Exposure.tolist() == ['Direct', 'Through ETF']
+    assert sources.Exposure.tolist() == ['Direct', 'ETF']
     assert sources['% of asset exposure'].tolist() == [40, 60]
 
 
@@ -59,6 +60,36 @@ def test_unpriced_positions_and_partial_totals_remain_unknown():
     assert result.iloc[0]['ETF-derived (EUR)'] == 0
 
 
+def test_source_position_value_and_asset_weight_keep_both_denominators_distinct():
+    selected = pd.DataFrame([
+        dict(position_id='direct', name='Invented Company', current_value_eur=600.),
+        dict(position_id='fund', name='Invented Broad ETF', current_value_eur=24000.),
+    ])
+    exposures = pd.DataFrame([
+        dict(asset_id='company', source_position_id='direct', direct_or_indirect='direct', value=600.),
+        dict(asset_id='company', source_position_id='fund', direct_or_indirect='indirect', value=1000.),
+        dict(asset_id='company', source_position_id='fund', direct_or_indirect='indirect', value=2000.),
+        dict(asset_id='other', source_position_id='fund', direct_or_indirect='indirect', value=21000.),
+    ])
+    sources = exposure_sources(exposures, selected, 'company').set_index('Exposure')
+    assert sources.loc['ETF', 'Position value (EUR)'] == 24000
+    assert sources.loc['ETF', 'Asset weight (%)'] == 12.5
+    assert sources.loc['ETF', 'Value (EUR)'] == 3000
+    assert sources.loc['ETF', '% of asset exposure'] == pytest.approx(100 * 3000 / 3600)
+    assert sources.loc['Direct', 'Asset weight (%)'] == 100
+    selected.loc[1, 'current_value_eur'] = 0.
+    exposures.loc[exposures.source_position_id.eq('fund'), 'value'] = 0.
+    zero = exposure_sources(exposures, selected, 'company').set_index('Exposure')
+    assert pd.isna(zero.loc['ETF', 'Asset weight (%)'])
+    assert zero.loc['ETF', '% of asset exposure'] == 0
+    selected.loc[1, 'current_value_eur'] = float('nan')
+    exposures.loc[1, 'value'] = float('nan')
+    missing = exposure_sources(exposures, selected, 'company').set_index('Exposure')
+    assert pd.isna(missing.loc['ETF', 'Position value (EUR)'])
+    assert pd.isna(missing.loc['ETF', 'Asset weight (%)'])
+    assert missing['% of asset exposure'].isna().all()
+
+
 def test_grouped_totals_keep_residuals_zero_and_unknown_sources_distinct():
     rows = [('a', 'direct', 20.), ('a', 'indirect', 30.), ('a', 'indirect', 40.),
             ('b', 'direct', 10.), ('b', 'indirect', float('nan')),
@@ -71,3 +102,30 @@ def test_grouped_totals_keep_residuals_zero_and_unknown_sources_distinct():
     assert result.loc['other', ['Direct (EUR)', 'ETF-derived (EUR)', 'Total (EUR)']].tolist() == [0, 15, 15]
     assert result.loc['empty', ['Direct (EUR)', 'ETF-derived (EUR)', 'Total (EUR)']].tolist() == [0, 0, 0]
     assert result['Allocation %'].isna().all()
+
+
+def test_compact_previews_cap_sources_without_changing_exposure_percentages():
+    from portfolio_app.exposure_assets_ui import source_previews
+    selected = pd.DataFrame([dict(position_id=f'p{i}', name=f'Invented Fund {i}', account='', current_value_eur=1000.) for i in range(6)])
+    exposures = pd.DataFrame([dict(asset_id='a', asset_name='Invented Company', ticker='', source_position_id=f'p{i}',
+                                    direct_or_indirect='indirect', value=float((i + 1) * 10)) for i in range(6)])
+    remainder = exposures.copy()
+    remainder['asset_id'], remainder['asset_name'] = 'other', 'Invented Other'
+    remainder['value'] = 1000. - remainder['value']
+    exposures = pd.concat([exposures, remainder], ignore_index=True)
+    preview = source_previews(exposures, selected, asset_exposure_table(exposures))['a']
+    assert preview['more'] == 2
+    assert len(preview['items']) == 4
+    assert preview['items'][0] == dict(label='Invented Fund 5', amount='€60.00', share='28.57%')
+    assert preview['items'][-1]['label'] == 'Invented Fund 2'
+    # Search and unrelated holdings must not change asset-relative source shares.
+    table = asset_exposure_table(exposures)
+    assert table.loc[table.asset_id.eq('a'), 'Allocation %'].item() == 3.5
+    assert source_previews(exposures, selected, table.loc[table.asset_id.eq('a')])['a'] == preview
+    selected = pd.concat([selected, pd.DataFrame([dict(position_id='unpriced', name='Invented Unpriced',
+                                                      account='', current_value_eur=float('nan'))])], ignore_index=True)
+    # A missing unrelated valuation does not erase known asset-relative shares.
+    assert source_previews(exposures, selected, asset_exposure_table(exposures, complete=False))['a'] == preview
+    exposures.loc[0, 'value'] = float('nan')
+    preview = source_previews(exposures, selected, asset_exposure_table(exposures, complete=False))['a']
+    assert all(item['share'] == '—' for item in preview['items'])

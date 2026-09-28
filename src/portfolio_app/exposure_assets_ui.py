@@ -7,13 +7,45 @@ import streamlit as st
 from portfolio_app.charts import style_figure
 from portfolio_app.etf import matching_fund
 from portfolio_app.etf_ui import render_fund_details
-from portfolio_app.exposure_tables import asset_exposure_table, exposure_sources
+from portfolio_app.exposure_tables import asset_exposure_table, exposure_sources, source_contributions
 from portfolio_app.label_presentation import taxonomy_colors
 from portfolio_app.list_ui import BOUNDED_LIST_HEIGHT, ListColumn, frame_rows, render_list
+from portfolio_app.taxonomy import describe, taxonomy_names
 
 
-def render_assets(exposures, selected, holdings, funds, classifications, *, query='', show_tickers=False, show_chart=False, complete=True, breakdown=False, context='exposure'):
-    taxonomy = 'labels' if any('labels' in item for item in classifications.values()) else 'sector'
+def source_previews(exposures, selected, table):
+    """Ship only compact summaries; expansion needs no server round trip."""
+    contributions = source_contributions(exposures.loc[exposures.asset_id.isin(table.asset_id)], selected)
+    counts = contributions.asset_id.value_counts().to_dict()
+    previews = {}
+    # One sort and a linear pass also keep initial rendering cheap for large ETFs.
+    for row in contributions.sort_values('Value (EUR)', ascending=False, na_position='last').to_dict('records'):
+        asset = row['asset_id']
+        if asset not in previews:
+            previews[asset] = dict(items=[], more=max(0, counts[asset] - 4))
+        items = previews[asset]['items']
+        if len(items) == 4:
+            continue
+        amount = row['Value (EUR)']
+        share = row['% of asset exposure']
+        label = ('Direct · ' if row['Exposure'] == 'Direct' else '') + row['Source']
+        if row['Account']:
+            label += f' · {row["Account"]}'
+        items.append(dict(label=label,
+                          amount='Unavailable' if pd.isna(amount) else f'€{amount:,.2f}',
+                          share='—' if pd.isna(share) else f'{share:.2f}%'))
+    return previews
+
+
+def render_assets(exposures, selected, holdings, funds, classifications, *, query='', show_tickers=False, show_chart=False, complete=True, breakdown=False, context='exposure', footer='', geography=None):
+    default = 'labels' if any('labels' in item for item in classifications.values()) else 'sector'
+    titles = {'labels': 'Themes', 'sector': 'Sector', 'geography': 'Geography'}
+    taxonomy = st.selectbox('Asset classifications', list(titles), index=list(titles).index(default),
+                            format_func=titles.get, key='exposure_asset_classifications')
+    if geography is not None:
+        classifications = {asset: dict(entry) for asset, entry in classifications.items()}
+        for asset, entry in geography.classifications(exposures.asset_id).items():
+            classifications.setdefault(asset, {}).update(entry)
     table = asset_exposure_table(exposures, classifications=classifications, taxonomy=taxonomy, complete=complete)
     if query.strip():
         terms = table[['Asset', 'Ticker']].fillna('').agg(' '.join, axis=1).str.casefold()
@@ -26,16 +58,18 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
     key = f'exposure_assets_{signature}'
     def select(event):
         st.session_state['exposure_asset_detail'] = event['id']
-    columns = [ListColumn('Asset', 'Asset')]
+    columns = [ListColumn('Asset', 'Asset', width=260)]
     if show_tickers:
-        columns.append(ListColumn('Ticker', 'Ticker'))
-    columns += [ListColumn('Total (EUR)', 'Total (EUR)', numeric=True),
-                ListColumn('Allocation %', '% of selected portfolio', numeric=True),
-                ListColumn('Sources', 'Sources'),
-                ListColumn('Labels', 'Labels', badges=taxonomy_colors(classifications, taxonomy))]
+        columns.append(ListColumn('Ticker', 'Ticker', width=110))
+    columns += [ListColumn('Total (EUR)', 'Total (EUR)', numeric=True, width=140),
+                ListColumn('Allocation %', '% of selected portfolio', numeric=True, width=190),
+                ListColumn('Sources', 'Sources', width=190),
+                ListColumn('Labels', titles[taxonomy], badges=taxonomy_colors(classifications, taxonomy))]
     render_list(frame_rows(table, id_column='asset_id'), columns, key=key, context=key, title='Exposure assets',
-                on_open=select, max_height=BOUNDED_LIST_HEIGHT if breakdown else None, default_sort='Total (EUR)')
-    st.caption('Select an asset to see how much comes from each direct position and ETF.')
+                on_open=select, max_height=BOUNDED_LIST_HEIGHT if breakdown else None, default_sort='Total (EUR)',
+                preview_column='Sources', preview_value_column='Total (EUR)', preview_share_column='Allocation %', previews=source_previews(exposures, selected, table))
+    if footer:
+        st.caption(footer)
     if show_chart:
         largest = table.dropna(subset=['Total (EUR)']).head(12).iloc[::-1]
         figure = style_figure(go.Figure(go.Bar(x=largest['Total (EUR)'], y=largest.Asset, orientation='h')))
@@ -52,10 +86,18 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
         row = table.loc[table.asset_id.eq(asset)].iloc[0]
         st.subheader(row.Asset)
         st.caption('Unknown values remain unavailable; they are not treated as zero.') if pd.isna(row['Total (EUR)']) else st.metric('Total exposure', f'€{row["Total (EUR)"]:,.2f}')
+        for name in taxonomy_names(classifications):
+            st.write(f'{titles.get(name, name.replace("_", " ").title())}: {describe(classifications, asset, name)}')
+        if geography is not None:
+            st.caption('Geography source: ' + geography.sources.get(asset, 'No local metadata'))
+            if reason := geography.reasons.get(asset):
+                st.caption(reason)
         sources = exposure_sources(exposures, selected, asset)
-        st.caption('Percentages are relative to this asset’s total exposure. Each account position is shown separately.')
+        st.caption('Asset weight is the share of each contributing position invested in this asset. The final percentage is that source’s share of your total exposure to this asset.')
         render_list(frame_rows(sources), [ListColumn('Source', 'Source'), ListColumn('Account', 'Account'),
-                    ListColumn('Exposure', 'Source type'), ListColumn('Value (EUR)', 'Contribution (EUR)', numeric=True),
+                    ListColumn('Exposure', 'Source type'), ListColumn('Position value (EUR)', 'Position (EUR)', numeric=True),
+                    ListColumn('Asset weight (%)', 'Asset weight (%)', numeric=True),
+                    ListColumn('Value (EUR)', 'Contribution (EUR)', numeric=True),
                     ListColumn('% of asset exposure', '% of asset exposure', numeric=True)],
                     key=f'{key}_sources', context=f'{key}_{asset}_sources', title='Exposure sources', default_sort='Value (EUR)')
         source_ids = exposures.loc[exposures.asset_id.eq(asset), 'source_position_id']

@@ -57,21 +57,19 @@ def theme_view(app, group='holding'):
     return by_label(app.selectbox, 'Group by').set_value(group).run()
 
 
-def exposure_summary(app):
+def exposure_value_metric(app):
     if app.session_state['main_tabs'] != 'Exposure':
         activate(app, 'Exposure')
-    return next(item.value for item in app.tabs[1].caption if 'source positions' in item.value)
+    return next(item for item in app.tabs[1].metric if item.label in ('Current value', 'Priced value'))
 
 
 def selected_value(app):
-    import re
-    return re.search(r'(?:Selected|Priced) value: (€.+?) ·', exposure_summary(app))[1]
+    return exposure_value_metric(app).value
 
 
 def missing_prices(app):
     import re
-    match = re.search(r'(\d+) missing prices', exposure_summary(app))
-    return match[1] if match else '0'
+    return re.search(r'(\d+) missing prices', exposure_value_metric(app).proto.help)[1]
 
 
 @pytest.fixture

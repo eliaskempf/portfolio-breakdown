@@ -41,15 +41,24 @@ def asset_exposure_table(exposures, *, classifications=None, taxonomy='labels', 
     return result.sort_values(['Total (EUR)', 'Asset'], ascending=[False, True], na_position='last', ignore_index=True)
 
 
-def exposure_sources(exposures, selected, asset_id):
-    rows = exposures.loc[exposures.asset_id.eq(asset_id)]
-    total = rows.value.sum() if rows.value.notna().all() else float('nan')
+def source_contributions(exposures, selected):
+    """Aggregate all asset/source pairs once, with asset-relative denominators."""
+    grouped = exposures.groupby(['asset_id', 'source_position_id', 'direct_or_indirect'], sort=False).value
+    values = grouped.sum().mask(grouped.count() < grouped.size()).rename('Value (EUR)').reset_index()
+    totals = values.groupby('asset_id', sort=False)['Value (EUR)']
+    total = totals.transform('sum').mask(totals.transform('count') < totals.transform('size'))
+    values['% of asset exposure'] = 100 * values['Value (EUR)'] / total.where(total > 0)
     positions = selected.set_index('position_id')
-    records = []
-    for (position, kind), parts in rows.groupby(['source_position_id', 'direct_or_indirect'], sort=False):
-        source = positions.loc[position]
-        value = float('nan') if parts.value.isna().any() else parts.value.sum()
-        records.append({'Source': instrument_name(source), 'Account': source.get('account', ''),
-                        'Exposure': 'Direct' if kind == 'direct' else 'Through ETF', 'Value (EUR)': value,
-                        '% of asset exposure': 100 * value / total if total > 0 else float('nan')})
-    return pd.DataFrame(records, columns=['Source', 'Account', 'Exposure', 'Value (EUR)', '% of asset exposure'])
+    source = values.source_position_id
+    values['Source'] = source.map({position: instrument_name(row) for position, row in positions.iterrows()})
+    values['Account'] = source.map(positions['account']) if 'account' in positions else ''
+    values['Exposure'] = values.direct_or_indirect.map({'direct': 'Direct', 'indirect': 'ETF'})
+    values['Position value (EUR)'] = source.map(positions['current_value_eur']) if 'current_value_eur' in positions else float('nan')
+    values['Asset weight (%)'] = 100 * values['Value (EUR)'] / values['Position value (EUR)'].where(values['Position value (EUR)'] > 0)
+    return values
+
+
+def exposure_sources(exposures, selected, asset_id):
+    values = source_contributions(exposures.loc[exposures.asset_id.eq(asset_id)], selected)
+    return values[['Source', 'Account', 'Exposure', 'Position value (EUR)',
+                   'Asset weight (%)', 'Value (EUR)', '% of asset exposure']]

@@ -27,7 +27,8 @@ from portfolio_app.portfolio import prepare_portfolio
 from portfolio_app.performance_ui import performance_column_config
 from portfolio_app.performance_allocation import performance_exposures, add_performance_column
 from portfolio_app.prices import PriceService, StaticProvider, YahooProvider
-from portfolio_app.presentation import allocation_total
+from portfolio_app.presentation import allocation_total, value_metric
+from portfolio_app.performance import summarize_performance
 from portfolio_app.taxonomy import branches, describe, taxonomy_names
 from portfolio_app.valuation import portfolio_weights
 from portfolio_app.targets import add_target_columns, target_exposures, target_totals
@@ -37,9 +38,11 @@ from portfolio_app.stock_exposure import load_company_identities
 from portfolio_app.company_merges import build_plan, load_company_names, load_settings
 from portfolio_app.company_merge_ui import render_company_merges
 from portfolio_app.input_cache import cached_input
+from portfolio_app.geography import resolve_geography
+from portfolio_app.geography_ui import render_geography
 
 
-def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False, source_valued=None, performance_percent=False, allocation=None, etf_revision=0):
+def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False, source_valued=None, performance_percent=False, allocation=None, etf_revision=0, on_toggle_gain=None):
     dimensions = metadata_dimensions(holdings)
     with st.container(key='exposure_toolbar'):
         scope_col, search_col, breakdown_col, filter_col, settings_col = st.columns([2, 2, 1.4, 1, 1.4], vertical_alignment='bottom')
@@ -69,7 +72,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         show_chart = st.checkbox('Show largest exposures chart', key='exposure_show_chart')
         with st.expander('Individual ETFs'):
             expanded_funds = render_etf_choices(holdings, funds, data_dir, enabled=lookthrough)
-        with st.expander('ETF refresh & snapshots'):
+        refresh_panel = st.expander('ETF refresh & snapshots')
+        with refresh_panel:
             render_refresh_controls(data_dir, holdings, funds, demo=demo)
         display_group = smh_group_control(holdings, funds)
         try:
@@ -90,6 +94,10 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         except DataError as exc:
             st.error(str(exc))
             return
+    # Resolve from manual classifications before adding provider fallbacks, so
+    # provider metadata is never mistaken for an authoritative manual override.
+    geography = cached_input('geography', (signature, lookthrough),
+                             lambda: resolve_geography(holdings, funds, classifications))
     classifications = fund_classifications(classifications, funds, holdings)
     names = taxonomy_names(classifications)
     with filters:
@@ -126,7 +134,6 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                     )
                     if selected:
                         taxonomy_filters[name] = selected
-    filtered = bool(scope) or len(selected_ids) != len(ids) or any(set(metadata[key]) != set(holdings[key].unique()) for key in metadata) or bool(taxonomy_filters)
     with filters:
         st.caption('Source filters apply before ETF expansion. Search filters the resulting assets without changing their percentage denominator.')
         def clear_filters():
@@ -167,17 +174,21 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     missing = int(selected["current_value_eur"].isna().sum())
     all_missing = int(valued["current_value_eur"].isna().sum())
     with summary_area:
-        st.caption(f'{scope_labels[scope]} · {"Priced value" if missing else "Selected value"}: €{selected_total:,.2f} · {len(selected)} source positions'
-                   + (f' · {missing} missing prices' if missing else '') + (' · Filters active' if filtered else ''))
+        first, second = st.columns([2, 1])
+        with first:
+            value_metric(selected_total, summarize_performance(selected), missing=missing,
+                         percent=performance_percent, key='exposure_value', on_toggle_gain=on_toggle_gain)
+        second.metric('Portfolio share', f'{100 * selected_total / total:.1f}%' if not missing and not all_missing and total else '—')
+    with refresh_panel:
         held_funds = [fund for fund in expanded_funds if any(row.get('shares', 0) > 0 and matching_fund(row, [fund]) for row in selected.to_dict('records'))]
         render_refresh_status(data_dir, held_funds, etf_revision, demo=demo)
         if lookthrough:
             intact = sum(row.get('shares', 0) > 0 and row.get('instrument_type') == 'etf'
                          and matching_fund(row, expanded_funds) is None for row in selected.to_dict('records'))
             if intact:
-                st.caption(f'{intact} ETF(s) remain whole instruments · Breakdown unavailable or disabled in Data & settings')
-        if missing:
-            st.warning('Some source positions have no price. Their exposure is unavailable; full portfolio percentages are blank.')
+                st.caption(f'{intact} ETF(s) remain whole instruments · Breakdown unavailable or disabled in Individual ETFs')
+    if missing:
+        results_area.warning(f'{missing} source position(s) missing prices. Their exposure is unavailable; full portfolio percentages are blank.')
     if selected.empty:
         with results_area:
             st.info('No holdings match the selected filters.')
@@ -196,7 +207,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         lambda asset: f'{source_names.get(asset, "ETF")} / Other')
     effective_exposures = exposures
     saved_classifications = classifications
-    mode = results_area.segmented_control('Exposure view', ['Assets', 'Themes & sectors'], default='Assets', key='exposure_view')
+    mode = results_area.segmented_control('Exposure view', ['Assets', 'Themes & sectors', 'Geography'], default='Assets', key='exposure_view')
     if mode == 'Themes & sectors':
         targets = None
         if display_group is not None:
@@ -221,17 +232,21 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             return valued
         for measure in performance.measures():
             measure["asset_name"] = measure["asset_name"].map(display_name)
-    with summary_area:
-        if lookthrough and any(group.enabled and group.basis == 'Estimated name match' for group in plan.groups):
-            st.caption('* Estimated company match · Review or undo in Data & settings → Company merges')
+    match_note = '* Estimated company match · Review or undo in Data & settings → Company merges' if lookthrough and any(group.enabled and group.basis == 'Estimated name match' for group in plan.groups) else ''
     with results_area:
-        if mode != 'Themes & sectors':
+        if mode == 'Geography':
+            render_geography(complete_exposures(effective_exposures, selected), geography, complete=missing == 0, query=query)
+            if match_note:
+                st.caption(match_note)
+        elif mode != 'Themes & sectors':
             render_assets(complete_exposures(effective_exposures, selected), selected, holdings, funds, saved_classifications,
                           query=query, show_tickers=show_tickers, show_chart=show_chart, complete=missing == 0,
-                          breakdown=lookthrough, context=str(data_dir.resolve()))
+                          breakdown=lookthrough, context=str(data_dir.resolve()), footer=match_note, geography=geography)
         else:
             render_theme_view(exposures, selected, holdings, classifications, names, dimensions, targets, performance,
                               total, all_missing, selected_total, show_tickers, performance_percent, query)
+            if match_note:
+                st.caption(match_note)
     with settings_panel:
         if display_group is not None:
             render_group_members(selected, display_group)

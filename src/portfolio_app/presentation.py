@@ -5,6 +5,7 @@ from html import escape
 import streamlit as st
 
 from portfolio_app.grid_interactions import install_grid_interactions
+from portfolio_app.metric_interactions import toggle_gain_unit
 
 CSS = """
 <style>
@@ -19,15 +20,15 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 [data-testid="stMetric"] {border:1px solid color-mix(in srgb,currentColor 14%,transparent);border-radius:6px;padding:16px 18px;}
 [data-testid="stMetricValue"] {font-size:1.7rem;font-weight:600;font-variant-numeric:tabular-nums;}
 [data-testid="stMetricLabel"] {font-size:.8rem;opacity:.75;}
-.st-key-overview_value [data-testid="stMetric"] > div {display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:16px;align-items:center;}
-.st-key-overview_value [data-testid="stMetricLabel"] {grid-column:1 / -1;}
-.st-key-overview_value [data-testid="stMetricValue"] {grid-column:1;grid-row:2;}
-.st-key-overview_value [data-testid="stMetric"] > div > div:has(> [data-testid="stMetricDelta"]) {grid-column:2;grid-row:2;margin-top:0;flex-wrap:wrap;}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetric"] > div {display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:16px;align-items:center;}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricLabel"] {grid-column:1 / -1;}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricValue"] {grid-column:1;grid-row:2;}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetric"] > div > div:has(> [data-testid="stMetricDelta"]) {grid-column:2;grid-row:2;margin-top:0;flex-wrap:wrap;}
 .st-key-overview_allocation {container-type:inline-size;}
 .st-key-overview_allocation_summary {transform:translateY(-24px);}
-.st-key-overview_value [data-testid="stMetricDelta"][role="button"] {cursor:pointer;}
-.st-key-overview_value [data-testid="stMetricDelta"][role="button"]:hover {filter:brightness(.85);}
-.st-key-overview_value [data-testid="stMetricDelta"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"] {cursor:pointer;}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:hover {filter:brightness(.85);}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
 .st-key-exposure_theme_results {container-type:inline-size;}
 .st-key-exposure_toolbar [data-testid="stColumn"] {min-width:0;}
 @container(max-width:860px) {
@@ -78,3 +79,16 @@ def performance_metric(label: str, value: str, amount, *, key: str) -> None:
     tone = 'positive' if amount is not None and amount > 0 else 'negative' if amount is not None and amount < 0 else 'neutral'
     with st.container(key=f'gain_{tone}_{key}'):
         st.metric(label, value)
+
+
+def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None):
+    """One value card with an adjacent, optionally clickable unrealized gain."""
+    gain = performance.return_pct if percent else performance.gain_eur
+    gain_text = 'Unavailable' if gain is None else f'{gain:+,.2f}%' if percent else f'{"-" if gain < 0 else "+"}€{abs(gain):,.2f}'
+    with st.container(key=key):
+        st.metric('Priced value' if missing else 'Current value', f'€{value:,.2f}',
+                  delta=gain_text, delta_color='normal' if gain else 'off', delta_arrow='off',
+                  delta_description='Return on cost' if percent else 'Unrealized gain / loss',
+                  help=f'{missing} missing prices. Performance coverage: {performance.covered_count} of {performance.held_count} held positions with EUR buy-ins and available prices. Excludes dividends and realized gains.')
+    if on_toggle_gain:
+        toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain, container_key=key)

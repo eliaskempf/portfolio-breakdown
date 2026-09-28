@@ -712,19 +712,53 @@ Unpriced positions remain visible; full selection percentages stay blank when
 some source values are unknown. Search narrows visible rows without changing
 the percentage denominator.
 
+**Asset classifications** switches the table badges between **Themes**, **Sector**,
+and **Geography**. Asset details show all available classifications and the source
+of geographical assignments. These choices do not change curated AI labels.
+
+**Exposure → Geography** shows company-country exposure as **Regions** or
+**Countries**, with a bar chart and value table. Use **Geography detail** to drill
+from a region into its countries and then individual assets. Search retains the
+selected portfolio denominator. Regions separate the United States from Other
+North America, alongside Latin America & Caribbean, Europe (including the UK),
+Asia, Africa, and Oceania. The bundled public reference mapping follows
+[UN M49](https://unstats.un.org/unsd/methodology/m49/), with Taiwan retained as a
+separate country/area entry under Asia.
+
+Geography uses explicit local `geography` paths first, then country metadata in
+local ETF snapshots, including linked direct holdings. Country-only paths such as
+`[Germany]` and hierarchical paths such as `[Europe, Germany]` are supported;
+region-only paths retain a **Country unspecified** bucket. Equivalent paths are
+deduplicated, while distinct manual memberships split value equally. Conflicting
+provider countries remain **Unknown geography** until a local override resolves
+them. Country means provider-assigned company location, not revenue exposure.
+Trading venue, currency, ISIN prefix, and fund domicile are not country proxies.
+
+**Gold**, **Crypto**, and **Cash** remain separate at both granularities. Crypto
+and cash use instrument types; gold requires an explicit `geography: [[Gold]]`
+or `asset_class: [[Commodities, Gold]]` classification, or a verified gold
+instrument identifier. Physical assets, ETCs, and mining companies are not
+automatically gold. Unexpanded funds and ETF residuals stay unknown unless
+explicitly classified. Coverage reports country-assigned, region-only,
+non-geographic, and unknown value; missing valuations suppress full-portfolio
+percentages. No new country lookups run online, and saved classifications are
+not rewritten. Coverage depends on existing metadata: the current Xtrackers
+parser retains country information; the iShares and VanEck parsers do not.
+
 The toolbar contains **Source scope**, search, **Break down ETFs**, **Filters**,
 and **Data & settings**. Scope and source filters apply before ETF expansion.
 **Data & settings** contains individual ETF choices, refresh preferences,
 company-match review, optional charts, display groups, and source-price details.
 **Themes & sectors** is an explicit alternative view, with its chart beside its
-table. Both views share the selected source scope.
+table. All Exposure views share the selected source scope.
 
 - **Group by → Selected labels** compares any labels you choose. Assets assigned
   beneath a selected label are included automatically. Each row shows the
   combined EUR value, its share within the selected labels, and its share of the
   filtered portfolio. The coverage caption shows value outside those labels.
-  A local taxonomy named `labels` supplies the primary comparison choices; this
-  comparison is available in Themes & sectors. Unclassified is included by
+  A local taxonomy named `labels` supplies the default comparison choices;
+  **Choose labels → Label set** switches between available taxonomies and
+  remembers selected labels separately for each set. Unclassified is included by
   default when the selection contains unlabeled assets. Other hierarchy views
   remain available through Group by in that view.
 - Selecting a label includes the **full value** of matching assets, independently

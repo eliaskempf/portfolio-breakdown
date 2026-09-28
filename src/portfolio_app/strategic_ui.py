@@ -10,7 +10,7 @@ from portfolio_app.charts import hierarchy_chart, sort_allocation_nodes, strateg
 from portfolio_app.chart_navigation import sync_chart_category
 from portfolio_app.position_list import render_overview_positions
 from portfolio_app.list_ui import ListColumn, frame_rows, render_list
-from portfolio_app.metric_interactions import toggle_gain_unit
+from portfolio_app.presentation import value_metric
 from portfolio_app.performance import position_performance, summarize_performance
 from portfolio_app.strategic import bucket_paths, category_labels, bucket_positions, strategic_summary, strategic_tree, strategic_performance
 
@@ -48,15 +48,9 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
     whole = float(valued.current_value_eur.sum())
     performance = summarize_performance(selected)
     first, second = st.columns([2, 1])
-    gain = performance.return_pct if percent else performance.gain_eur
-    gain_text = 'Unavailable' if gain is None else f'{gain:+,.2f}%' if percent else f'{"-" if gain < 0 else "+"}€{abs(gain):,.2f}'
-    with first.container(key='overview_value'):
-        st.metric('Priced value' if missing else 'Current value', f'€{subtotal:,.2f}',
-                  delta=gain_text, delta_color='normal' if gain else 'off', delta_arrow='off',
-                  delta_description='Return on cost' if percent else 'Unrealized gain / loss',
-                  help='Performance uses positions with recorded EUR buy-ins and available prices; coverage is shown below.')
-    if on_toggle_gain:
-        toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain)
+    with first:
+        value_metric(subtotal, performance, missing=missing, percent=percent,
+                     key='overview_value', on_toggle_gain=on_toggle_gain)
     second.metric('Portfolio share', f'{100 * subtotal / whole:.1f}%' if not missing and valued.current_value_eur.notna().all() and whole else '—')
     st.caption(f'{scope} · {len(selected)} positions · Performance coverage: {performance.covered_count} of {performance.held_count} held positions · EUR buy-ins · Excludes dividends and realized gains')
     if missing:
@@ -124,7 +118,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     table = table.drop(columns='Status')
                 render_list(frame_rows(table), [ListColumn(column, f'% of {scope}' if column == 'Current (%)' else column,
                             numeric=column in {'Value (EUR)', 'Current (%)', 'Target (%)', 'Gap (pp)'},
-                            signed=column == 'Gap (pp)') for column in table],
+                            signed=column == 'Gap (pp)', color_signed=False) for column in table],
                             key='strategic_allocation_table', context=f'{position_context}_{bucket}_allocation',
                             title='Allocation', default_sort='Value (EUR)')
     st.subheader('Positions')

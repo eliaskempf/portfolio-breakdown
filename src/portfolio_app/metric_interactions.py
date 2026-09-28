@@ -27,7 +27,7 @@ export default function({parentElement, data, setTriggerValue}) {
     target = undefined;
   };
   const attach = () => {
-    const candidate = document.querySelector('.st-key-overview_value [data-testid="stMetricDelta"]');
+    const candidate = document.querySelector('.st-key-'+CSS.escape(data.containerKey)+' [data-testid="stMetricDelta"]');
     if (candidate === target || !candidate) return;
     detach();
     target = candidate;
@@ -52,8 +52,9 @@ export default function({parentElement, data, setTriggerValue}) {
 """
 
 
-def toggle_gain_unit(*, percent: bool, on_toggle) -> None:
+def toggle_gain_unit(*, percent: bool, on_toggle, container_key='overview_value') -> None:
     component = st.components.v2.component('overview_gain_toggle', js=JS)
-    component(key='overview_gain_toggle', data={
+    component(key=f'{container_key}_gain_toggle', data={
+        'containerKey': container_key,
         'label': 'Show gain in euros' if percent else 'Show gain as percentage',
     }, on_toggle_change=on_toggle)
