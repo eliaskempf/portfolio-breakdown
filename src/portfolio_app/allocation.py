@@ -157,6 +157,8 @@ def macro_table(valued: pd.DataFrame, config: Allocation, *, extra_cash: float =
     total = float(valued.current_value_eur.sum()) + extra_cash
     records = []
     for b in (*config.buckets, Bucket('unassigned', 'Unassigned')):
+        if b.id == 'unassigned' and not valued.bucket_id.eq('').any():
+            continue
         mask = valued.bucket_id.eq('') if b.id == 'unassigned' else valued.bucket_id.isin(config.leaves(b.id))
         rows = valued.loc[mask]
         value = float(rows.current_value_eur.sum())

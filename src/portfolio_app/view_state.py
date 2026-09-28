@@ -16,6 +16,10 @@ def preserve_view_inputs():
     active = st.session_state.get('main_tabs', 'Overview')
     for key in list(st.session_state):
         value = st.session_state[key]
+        if key.startswith('targets_') and key.endswith('_filter'):
+            if active != 'Rebalance' or st.session_state.get('rebalance_tabs') != 'Targets':
+                st.session_state[key] = value
+            continue
         # Analytics presets and options have their own mount boundaries inside
         # the lazy tabs. Never preserve button/refresh trigger state.
         if key.startswith('analytics_') and (key.endswith(('_view', '_benchmark', '_years', '_accounts')) or '_columns_' in key):
@@ -32,7 +36,7 @@ def preserve_view_inputs():
             if not mounted:
                 st.session_state[key] = value
             continue
-        if (key in names or key.startswith(prefixes) or key.startswith('exposure_root_')) and key != 'rebalance_calculate':
+        if (key in names or key.startswith(prefixes) or key.startswith('exposure_root_')) and key not in {'rebalance_calculate', 'planning_calculate'}:
             if key.startswith('strategic_'):
                 mounted = active == 'Overview'
             elif key.startswith(('rebalance_', 'planning_')) or key == 'ignore_empty_positions':

@@ -14,11 +14,11 @@ from portfolio_app.holdings import DataError
 from portfolio_app.position_ui import render_position_editor, render_position_dialog, request_position
 from portfolio_app.positions import read_snapshot
 from portfolio_app.portfolio import prepare_portfolio
-from portfolio_app.rebalancing import ignore_empty_positions, RebalanceError
+from portfolio_app.rebalancing import RebalanceError
 from portfolio_app.rebalance_ui import render_rebalancing
 from portfolio_app.prices import PriceService, StaticProvider, UnavailableProvider
 from portfolio_app.presentation import apply_style, empty_overview, workspace_header
-from portfolio_app.allocation import analysis_targets, ignore_empty_by_bucket, migration_preview
+from portfolio_app.allocation import analysis_targets, migration_preview
 from portfolio_app.strategic_ui import render_strategic_overview
 from portfolio_app.scoped_ui import render_scoped_rebalancing
 from portfolio_app.input_cache import load_inputs
@@ -38,7 +38,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         context = (str(data_dir.resolve()), demo)
         if st.session_state.get("portfolio_workspace_context") != context:
             for key in list(st.session_state):
-                if key.startswith(("position_edit_", "filter_", "label_compare_", "allocation_group_", "rebalance_", "strategic_", "exposure_", "position_draft", "positions_", "planning_", "bulk_bucket_")) or key in {"position_saved_notice", "ignore_empty_positions", "hide_empty_positions", "view_editor_drafts", "view_editor_bases", "main_tabs", "rebalance_tabs", "portfolio_contribution_result"}:
+                if key.startswith(("position_edit_", "filter_", "label_compare_", "allocation_group_", "rebalance_", "strategic_", "exposure_", "position_draft", "positions_", "planning_", "bulk_bucket_", "targets_")) or key in {"position_saved_notice", "ignore_empty_positions", "hide_empty_positions", "view_editor_drafts", "view_editor_bases", "main_tabs", "rebalance_tabs", "portfolio_contribution_result"}:
                     del st.session_state[key]
             st.session_state["portfolio_workspace_context"] = context
     workspace_header(demo)
@@ -148,19 +148,11 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                     render_allocation_editor(data_dir / 'holdings.csv', snapshot, allocation)
             if plan_tab.open:
                 with plan_tab:
-                    redistribute = st.checkbox('Exclude empty positions and redistribute their planning targets',
-                        key='ignore_empty_positions', help='Changes temporary planning weights only. Saved targets stay unchanged.')
-                    planning = valued
                     try:
-                        if redistribute:
-                            planning = analysis_targets(ignore_empty_by_bucket(valued), allocation) if allocation else ignore_empty_positions(valued)
-                            st.caption('Planning weights exclude empty positions; their targets are redistributed. Saved targets are unchanged.')
-                            if planning.empty and not valued.empty:
-                                st.info('All positions have zero shares. Disable planning target redistribution to allocate new money to them.')
                         if allocation:
-                            render_scoped_rebalancing(planning, allocation)
+                            render_scoped_rebalancing(valued, allocation)
                         else:
-                            render_rebalancing(planning)
+                            render_rebalancing(valued)
                     except RebalanceError as exc:
                         st.error(str(exc))
     render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=demo, allocation=allocation, valued=valued)

@@ -106,16 +106,16 @@ render_app(directory)
             start = time.monotonic()
             page.get_by_role('tab', name='Rebalance', exact=True).click()
             page.get_by_role('tab', name='Targets', exact=True).click()
-            playwright.expect(page.get_by_role('button', name='Save category settings')).to_be_visible()
+            playwright.expect(page.get_by_role('button', name='Save categories')).to_be_visible()
             timings['navigate_to_targets'] = time.monotonic() - start
             before = (tmp_path / 'allocation.yaml').stat().st_mtime_ns
             start = time.monotonic()
-            page.get_by_role('button', name='Save category settings').click()
+            page.get_by_role('button', name='Save categories').click()
             # Wait for the observable write, not a transient idle indicator
             # which can disappear before the click reaches the server.
             while (tmp_path / 'allocation.yaml').stat().st_mtime_ns == before and time.monotonic() - start < 5:
                 page.wait_for_timeout(10)
-            playwright.expect(page.get_by_role('button', name='Save category settings')).to_be_enabled()
+            playwright.expect(page.get_by_role('button', name='Save categories')).to_be_enabled()
             timings['save'] = time.monotonic() - start
             assert (tmp_path / 'allocation.yaml').stat().st_mtime_ns != before
             # A late history completion must not reopen a dismissed position.

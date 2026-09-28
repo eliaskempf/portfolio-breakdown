@@ -1,14 +1,13 @@
-"""Interactive, read-only rebalance plans for the whole portfolio."""
-
-from collections import Counter
+"""Interactive, read-only position plans, shared by legacy and category scopes."""
 from hashlib import sha256
 
 import pandas as pd
 import numpy as np
 import streamlit as st
 from portfolio_app.view_state import persistent_editor
-
-from portfolio_app.display_names import display_name
+from portfolio_app.planning_ui import PLANNING_HELP, planning_positions, restriction_summary
+from portfolio_app.rebalance_tables import allocation_table, position_labels
+from portfolio_app.rebalance_results_ui import render_impact, render_summary, render_trades, show_table
 from portfolio_app.rebalancing import (
     RebalanceError, balanced_cash_tradeoffs, cash_tradeoffs, minimum_new_money, minimum_trades, prepare_rebalance, spread_new_money,
 )
@@ -17,110 +16,98 @@ MODES = ["Fewest trades (buys and sells)", "Minimum new money (no sells)", "Allo
 
 
 def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfolio_value: float | None = None,
-                       sell_protected: bool = False):
-    st.subheader("Rebalance your portfolio")
-    st.caption((f'Plans use targets relative to {scope}. Other buckets remain unchanged. ' if scope else "Plans use the whole portfolio’s position targets. ") + "Overview filters, label selections and ETF display groups do not change the trade universe. "
-               "Planning target redistribution is controlled above. One trade means a net buy or sell for one position/account row.")
+                       sell_protected: bool = False, portfolio_positions=None, allocation=None):
     if valued is None:
         st.info("A portfolio valuation is required before calculating.")
         return
-    mode = st.selectbox("Rebalancing mode", MODES, key="rebalance_mode")
-    new_money = st.number_input("New money (EUR)", min_value=0., value=500., step=100., key="rebalance_cash") if mode == MODES[2] else 0.
-    with st.expander('Advanced planning settings'):
-        left, right = st.columns(2)
-        with left:
-            tolerance_type = st.selectbox("Tolerance type", ["Percentage points", "Relative to target"], key="rebalance_tolerance_type")
-            relative = tolerance_type == "Relative to target"
-            tolerance = st.number_input("Allowed deviation (% of target)" if relative else "Allowed deviation (pp)",
-                                        min_value=0., max_value=100., value=5. if relative else .5, step=.1,
-                                        key=f"rebalance_tolerance_{relative}")
-        with right:
-            no_new = st.checkbox("No new positions", key="rebalance_no_new",
-                                 help="Only buy position rows that already hold shares. Empty positions keep their targets unless Ignore empty positions is enabled.")
+    original = valued
+    st.caption(f'Targets relative to {scope or "portfolio"}.' + (' Selling is protected for this category.' if sell_protected else ''))
+    mode_col, amount_col, options_col = st.columns([3, 2, 1], vertical_alignment='bottom')
+    mode = mode_col.selectbox("Rebalancing mode", MODES, key="rebalance_mode")
+    new_money = amount_col.number_input("New money (EUR)", min_value=0., value=500., step=100., key="rebalance_cash") if mode == MODES[2] else 0.
+    with options_col.popover('Options', width='stretch'):
+        st.markdown('**Positions**')
+        valued = planning_positions(valued)
+        no_new = st.toggle("Only buy existing positions", key="rebalance_no_new",
+                           help="Do not buy zero-quantity positions. Their targets remain unless redistribution is enabled.")
         distribution = "Optimize rebalancing"
         eligible_ids = None
         buy_all, prefer_fewer, minimum_purchase, extra_error = False, False, .01, 0.
         max_allocations = {}
         cap_scope = 'portfolio'
-        if mode == MODES[2] and st.checkbox("Limit buys to selected positions", key="rebalance_limit_buys"):
-            identity_fields = [column for column in ("position_id", "id", "name", "ticker", "account", "portfolio") if column in valued]
-            identity = sha256(valued[identity_fields].to_json().encode()).hexdigest()[:16]
-            labels = {row.position_id: " · ".join(str(part) for part in (
-                display_name(row["name"]),
-                row.get("account", "") or "No account", row.get("portfolio", "") or "No portfolio") if part)
-                      for _, row in valued.iterrows()}
-            duplicates = Counter(labels.values())
-            labels = {key: f"{label} [row {i + 1}]" if duplicates[label] > 1 else label for i, (key, label) in enumerate(labels.items())}
+        labels = position_labels(valued)
+        identity = sha256(valued[[c for c in ('position_id', 'name', 'account', 'portfolio') if c in valued]].to_json().encode()).hexdigest()[:16]
+        limited = mode == MODES[2] and st.toggle("Limit buys to selected positions", key="rebalance_limit_buys")
+        if limited:
             eligible_ids = st.multiselect("Positions eligible for buying", list(labels), format_func=labels.get,
                                           key=f"rebalance_buy_positions_{identity}",
-                                          help="Choose instrument/account rows that may receive new money. Unselected positions stay invested, keep their targets and receive no trades.")
-            active = valued.loc[valued.position_id.isin(eligible_ids)]
-            allowed_count = int((active.shares > 0).sum()) if no_new else len(active)
-            distribution = st.selectbox("Distribution", ["Rebalance selected positions", "Spread by target weights", "Optimize rebalancing"], key="rebalance_distribution")
-            st.caption(f"{len(eligible_ids)} selected · {allowed_count} eligible after position restrictions.")
-            if distribution == "Optimize rebalancing":
-                st.caption("Choose buys that reduce deviation in the planning scope. This can put the entire contribution into one position.")
-            elif distribution == "Rebalance selected positions":
-                st.caption("Use current holdings and targets to balance the remaining gaps across your selection within the planning scope. "
-                           "Minimizes squared percentage-point gaps to exact targets under your purchase constraints. "
-                           "Tolerance ranges affect the reported status, not this split. Purchases use whole cents; allocation caps can leave cash unallocated.")
+                                          help="Unselected positions keep their targets and receive no trades.")
+        st.markdown('**Purchase rules**')
+        if limited:
+            distribution = st.selectbox("Distribution", ["Rebalance selected positions", "Spread by target weights", "Optimize rebalancing"],
+                key="rebalance_distribution", help="Rebalance selected positions minimizes squared percentage-point gaps to exact targets. Spread by target weights divides the contribution proportionally. Optimize rebalancing minimizes deviation outside tolerance ranges.")
+            if distribution == "Rebalance selected positions":
                 buy_all = st.selectbox("Selection intent", ["Buy every selected position", "Allow skipping positions"],
                                        key="rebalance_buy_intent") == "Buy every selected position"
                 minimum_purchase = st.number_input("Minimum purchase (EUR)", min_value=.01, value=25., step=5.,
-                                                    key="rebalance_minimum_purchase",
-                                                    help="Every suggested buy must reach this amount. Applies to Rebalance selected positions.")
+                                                    key="rebalance_minimum_purchase")
                 if buy_all:
-                    st.caption(f"Buying all {len(eligible_ids)} selected positions requires at least €{len(eligible_ids) * minimum_purchase:,.2f}. "
-                               "This includes selected positions already above target. Empty selections or conflicting restrictions need to be resolved before calculating.")
+                    st.caption(f'Minimum contribution for this selection: €{len(eligible_ids) * minimum_purchase:,.2f}')
                 else:
-                    prefer_fewer = st.checkbox("Prefer fewer trades", key="rebalance_prefer_fewer",
-                                               help="Compare trade counts and choose the fewest trades within your allowed extra target error. Off finds the best allocation without a trade-count preference.")
+                    prefer_fewer = st.toggle("Prefer fewer trades", key="rebalance_prefer_fewer",
+                        help="Choose the fewest trades within your allowed extra target error, while investing as much as possible.")
                     if prefer_fewer:
                         extra_error = st.number_input("Allowed extra target error (pp)", min_value=0., value=.1, step=.05,
-                                                       key="rebalance_extra_error",
-                                                       help="Additional root mean squared target gap permitted compared with the best plan under Maximum trades. This is separate from tolerance ranges.")
-                if st.checkbox("Limit allocations for this rebalance", key="rebalance_limit_allocations"):
-                    if scope:
-                        cap_scope = st.selectbox('Cap denominator', ['portfolio', 'bucket'], key='rebalance_cap_scope', format_func=lambda v: '% of whole portfolio' if v == 'portfolio' else '% of selected bucket')
-                    st.caption("Enter a maximum percentage using the selected denominator after adding the contribution, including unallocated cash. "
-                               "Blank means no cap. Saved targets still guide buying. A position already above its cap receives no further buys. "
-                               "These limits apply only to this calculation and reset when the selected positions change.")
-                    cap_rows = active[["position_id", "target_allocation"]].copy().reset_index(drop=True)
-                    cap_rows["Investment"] = cap_rows.position_id.map(labels)
-                    cap_rows["Target %"] = cap_rows.target_allocation * 100
-                    cap_rows["Max allocation %"] = pd.Series([None] * len(cap_rows), dtype="float64")
-                    cap_key = sha256(repr((identity, tuple(active.position_id))).encode()).hexdigest()[:16]
-                    cap_rows = persistent_editor(cap_rows.drop(columns="target_allocation"), hide_index=True, width="stretch",
-                                              disabled=["position_id", "Investment", "Target %"], key=f"rebalance_caps_{cap_key}",
-                                              column_config={"position_id": None,
-                                                             "Target %": st.column_config.NumberColumn("Target", format="%.2f %%"),
-                                                             "Max allocation %": st.column_config.NumberColumn("Max allocation after rebalance (%)", min_value=0., max_value=100., step=.1, format="%.2f %%")})
-                    max_allocations = {row.position_id: float(row["Max allocation %"]) / 100 for _, row in cap_rows.iterrows()
-                                       if pd.notna(row["Max allocation %"])}
-            else:
-                st.caption("Split the new contribution across the eligible selection. Existing holdings are kept. "
-                           "Target weights split the money in proportion to their targets, with zero targets receiving nothing. "
-                           "This uses one trade per recipient, without a maximum-trade limit. Amounts are rounded to cents while preserving the total.")
+                            key="rebalance_extra_error", help="Additional RMS target gap compared with the best plan under your trade limit. Separate from tolerance ranges.")
         spreading = distribution != "Optimize rebalancing"
         balancing = distribution == "Rebalance selected positions"
         max_trades = int(st.number_input("Maximum trades", min_value=1, max_value=max(1, len(valued)),
-                                         value=min(4, max(1, len(valued))), step=1, key=f"rebalance_max_trades_{len(valued)}")) if mode == MODES[2] and (not spreading or prefer_fewer) else len(valued)
-        st.caption("±0.5 pp gives a 10% target a 9.5–10.5% range. A 5% relative tolerance gives that same range; a zero target has a zero relative range. "
-                   "Plans allow fractional shares and exclude fees, taxes, spreads and lot-size rules. New money is invested up to your allocation caps; leftover cash is shown separately.")
+            value=min(4, max(1, len(valued))), step=1, key=f"rebalance_max_trades_{len(valued)}")) if mode == MODES[2] and (not spreading or prefer_fewer) else len(valued)
+        st.markdown('**Tolerances & caps**')
+        tolerance_type = st.selectbox("Tolerance type", ["Percentage points", "Relative to target"], key="rebalance_tolerance_type",
+            help="A 10% target with ±0.5 percentage points or 5% relative tolerance has a 9.5–10.5% range. Zero targets have a zero relative range.")
+        relative = tolerance_type == "Relative to target"
+        tolerance = st.number_input("Allowed deviation (% of target)" if relative else "Allowed deviation (pp)",
+                                    min_value=0., max_value=100., value=5. if relative else .5, step=.1,
+                                    key=f"rebalance_tolerance_{relative}")
+        if balancing and st.toggle("Limit allocations for this rebalance", key="rebalance_limit_allocations"):
+            if scope:
+                cap_scope = st.selectbox('Cap denominator', ['portfolio', 'bucket'], key='rebalance_cap_scope',
+                                         format_func=lambda v: '% of portfolio' if v == 'portfolio' else '% of category')
+            active = valued.loc[valued.position_id.isin(eligible_ids)]
+            cap_rows = active[["position_id", "target_allocation"]].copy().reset_index(drop=True)
+            cap_rows["Investment"] = cap_rows.position_id.map(labels)
+            cap_rows["Target %"] = cap_rows.target_allocation * 100
+            cap_rows["Max allocation %"] = pd.Series([None] * len(cap_rows), dtype="float64")
+            cap_key = sha256(repr((identity, tuple(active.position_id))).encode()).hexdigest()[:16]
+            cap_rows = persistent_editor(cap_rows.drop(columns="target_allocation"), hide_index=True, width="stretch", height='content',
+                disabled=["position_id", "Investment", "Target %"], key=f"rebalance_caps_{cap_key}",
+                column_config={"position_id": None,
+                    "Target %": st.column_config.NumberColumn(f"Target (% of {scope or 'portfolio'})", format="%.2f %%"),
+                    "Max allocation %": st.column_config.NumberColumn("Maximum allocation (%)", min_value=0., max_value=100., step=.1, format="%.2f %%",
+                        help="Blank means no cap. Uses final value including unallocated contribution. Limits are temporary and reset when the selection changes.")})
+            max_allocations = {row.position_id: float(row["Max allocation %"]) / 100 for _, row in cap_rows.iterrows()
+                               if pd.notna(row["Max allocation %"])}
+        st.caption(PLANNING_HELP)
+    restriction_summary(no_new=no_new, caps=max_allocations, selected=None if eligible_ids is None else len(eligible_ids),
+                        maximum=max_trades if mode == MODES[2] and (not spreading or prefer_fewer) else None)
+    if valued.empty:
+        st.info('All positions have zero shares or this category has no positions. Disable target redistribution or add positions to allocate new money.')
+        return
     try:
         problem = prepare_rebalance(valued, tolerance=tolerance, tolerance_type="relative" if relative else "pp")
     except RebalanceError as exc:
         st.info(str(exc))
         return
     fields = [column for column in ("position_id", "id", "name", "ticker", "account", "portfolio", "shares", "current_value_eur", "target_allocation") if column in valued]
-    fingerprint = sha256((valued[fields].to_json() + repr((scope, portfolio_value, sell_protected, cap_scope, mode, tolerance_type, tolerance, no_new, new_money, max_trades, distribution, buy_all, minimum_purchase, prefer_fewer, extra_error, tuple(sorted(max_allocations.items())), None if eligible_ids is None else tuple(sorted(eligible_ids))))).encode()).hexdigest()
+    fingerprint = sha256((valued[fields].to_json() + repr((st.session_state.get("ignore_empty_positions"), scope, portfolio_value, sell_protected, cap_scope, mode, tolerance_type, tolerance, no_new, new_money, max_trades, distribution, buy_all, minimum_purchase, prefer_fewer, extra_error, tuple(sorted(max_allocations.items())), None if eligible_ids is None else tuple(sorted(eligible_ids))))).encode()).hexdigest()
     entered_caps = max_allocations.copy()
     if scope and cap_scope == 'portfolio' and max_allocations:
         if portfolio_value is None:
-            st.info('Whole-portfolio caps require complete portfolio valuation; select bucket-relative caps instead.')
+            st.info('Whole-portfolio caps require complete portfolio valuation; select category-relative caps instead.')
             return
         max_allocations = {key: min(1., cap * (portfolio_value + new_money) / (problem.total + new_money)) for key, cap in max_allocations.items()}
-    if st.button("Calculate rebalance", type="primary", key="rebalance_calculate"):
+    if st.button("Calculate plan", type="primary", key="rebalance_calculate"):
         st.session_state.pop("rebalance_result", None)
         try:
             with st.spinner("Calculating your trade plan…"):
@@ -151,7 +138,6 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
             return
     cached = st.session_state.get("rebalance_result")
     if cached is None or cached[0] != fingerprint:
-        st.caption("Choose your settings and calculate. Plans are refreshed when you calculate again; they never place orders or change your saved holdings.")
         return
     plans = cached[1]
     index = len(plans) - 1
@@ -159,70 +145,49 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
         least_cash = min(plan.unallocated_cash for plan in plans)
         best_error = min(plan.target_rms for plan in plans if plan.unallocated_cash == least_cash)
         index = next(i for i, plan in enumerate(plans) if plan.unallocated_cash == least_cash and plan.target_rms <= best_error + extra_error + 1e-10)
-        st.caption(f"Suggested: {plans[index].trade_count} trades, allowing up to {extra_error:.3f} pp extra RMS target gap "
-                   "compared with the best plan under your trade limit while investing as much of the budget as possible. You can inspect any plan below.")
-    if len(plans) > 1:
-        st.caption("Compare how much each additional trade improves the allocation. Choose a lower-trade plan if the extra improvement is small.")
-        frontier = pd.DataFrame({
-            "Trades": [plan.trade_count for plan in plans],
-            **({"RMS target gap (pp)": [plan.target_rms for plan in plans]} if balancing else {}),
-            **({"Unallocated cash (EUR)": [plan.unallocated_cash for plan in plans]} if max_allocations else {}),
-            "Deviation outside ranges (pp)": [plan.deviation_after for plan in plans],
-            "Improvement (pp)": [plan.deviation_before - plan.deviation_after for plan in plans],
-            "All positions in range": [plan.within_bands for plan in plans],
-        })
-        st.dataframe(frontier, hide_index=True, height="content", width="stretch", column_config={
-            name: st.column_config.NumberColumn(format="%.3f") for name in ("Deviation outside ranges (pp)", "Improvement (pp)", "RMS target gap (pp)")
-        })
-        index = st.selectbox("Plan to inspect", list(range(len(plans))), index=index,
-                             format_func=lambda i: (f"{plans[i].trade_count} trades · {plans[i].target_rms:.3f} pp RMS target gap" if balancing else
-                                                    f"{plans[i].trade_count} trades · {plans[i].deviation_after:.3f} pp outside ranges"),
-                             key=f"rebalance_plan_{fingerprint}")
-    plan = plans[index]
-    first, second, third = st.columns(3)
-    first.metric("Trades", plan.trade_count, help=f"{plan.buy_count} buys and {plan.sell_count} sells")
-    second.metric("Minimum new money" if mode == MODES[1] else "New money", f"€{plan.new_money:,.2f}")
-    third.metric("Deviation outside ranges", f"{plan.deviation_after:.3f} pp")
-    if balancing:
-        st.metric("RMS target gap", f"{plan.target_rms:.3f} pp",
-                  help="Square root of the mean squared percentage-point gap to targets across all position rows in this planning scope. Lower is better; large gaps count more.")
-    if plan.unallocated_cash:
-        st.metric("Unallocated cash", f"€{plan.unallocated_cash:,.2f}")
-        st.info("This cash remains unallocated under the allocation caps, minimum purchase and trade limit. "
-                f"It is included in the final {'bucket' if scope else 'portfolio'} value used for percentages. Position percentages therefore sum to less than 100%.")
-    st.caption("Deviation is the sum of each position’s distance outside its allowed range. Zero means every position is within range; it does not require exact target weights. "
-               "Targets are evaluated against the final value of the planning scope, including new money and unallocated cash.")
-    if plan.within_bands:
-        st.success("Every position is within its target range.")
-    elif plan.unallocated_cash:
-        st.info("Some positions remain outside their target ranges after the capped purchases.")
-    elif spreading:
-        st.info("The contribution is spread as requested. Some positions remain outside their target ranges.")
-    else:
-        st.info("This is the closest allocation within the trade limit and restrictions; some positions remain outside their ranges.")
-    if plan.deviation_after > plan.deviation_before + 1e-5:
-        st.warning("This contribution increases deviation from the planning scope’s target ranges." if spreading else
-                   "Fully investing this amount under these restrictions increases deviation. Try more trades or a different cash amount.")
-    table = plan.table.rename(columns={"name": "Investment", "account": "Account", "portfolio": "Portfolio"}).copy()
-    if scope and entered_caps:
-        table['Max allocation %'] = table.position_id.map(entered_caps) * 100
-    table["Investment"] = table["Investment"].map(display_name)
-    config = {"position_id": None, "id": None, "ticker": None,
-              **{name: st.column_config.NumberColumn(format="€ %.2f") for name in ("Trade (EUR)", "Current (EUR)", "After (EUR)")},
-              **{name: st.column_config.NumberColumn(format="%.2f %%") for name in ("Current %", "After %", "Target %", "Lower %", "Upper %", "Max allocation %")},
-              "Gap (pp)": st.column_config.NumberColumn(format="%+.3f")}
-    if scope:
-        config.update({key: st.column_config.NumberColumn(f'{key.removesuffix(" %")} (% of bucket)', format='%.2f %%')
-                       for key in ('Current %', 'After %', 'Target %', 'Lower %', 'Upper %')})
-        config['Max allocation %'] = st.column_config.NumberColumn(f'Max allocation (% of {cap_scope})', format='%.2f %%')
-    trades = table.loc[table.Action != "Hold"].copy()
-    trades = trades.sort_values("Trade (EUR)", key=lambda amounts: amounts.abs(), ascending=False, kind="stable")
-    if trades.empty:
-        st.info("No buys fit these caps and purchase restrictions." if plan.unallocated_cash else "No trades are needed.")
-    else:
-        st.dataframe(trades, hide_index=True, height="content", width="stretch", column_config=config)
-        st.caption(f"Buy €{trades['Trade (EUR)'].clip(lower=0).sum():,.2f} · Sell €{-trades['Trade (EUR)'].clip(upper=0).sum():,.2f}. Negative trade amounts are sells.")
-    with st.expander("Full allocation after rebalancing"):
-        st.dataframe(table.sort_values("After %", ascending=False, kind="stable"), hide_index=True,
-                     height="content", width="stretch", column_config=config)
+    results = st.container()
+    with st.expander('Plan details'):
+        if len(plans) > 1:
+            frontier = pd.DataFrame({
+                "Trades": [plan.trade_count for plan in plans],
+                **({"RMS target gap (pp)": [plan.target_rms for plan in plans]} if balancing else {}),
+                "Unallocated cash (EUR)": [plan.unallocated_cash for plan in plans],
+                "Deviation outside ranges (pp)": [plan.deviation_after for plan in plans],
+                "All positions in range": [plan.within_bands for plan in plans],
+            })
+            show_table(frontier)
+            index = st.selectbox("Plan to inspect", list(range(len(plans))), index=index,
+                                 format_func=lambda i: f"{plans[i].trade_count} trades · €{plans[i].unallocated_cash:.2f} unallocated",
+                                 key=f"rebalance_plan_{fingerprint}")
+        plan = plans[index]
+        st.metric("Deviation outside ranges", f"{plan.deviation_after:.3f} pp",
+                  help="Sum of position distances outside their allowed ranges. Zero means every position is within range, not necessarily exactly on target.")
+        if balancing:
+            st.metric("RMS target gap", f"{plan.target_rms:.3f} pp",
+                      help="Root mean squared percentage-point gap to targets. Lower is better; large gaps count more.")
+        positions = original.copy()
+        positions['target_allocation'] = positions.position_id.map(valued.set_index('position_id').target_allocation).where(
+            positions.position_id.isin(valued.position_id), 0.)
+        table = allocation_table(positions, plan.table, new_money=plan.new_money)
+        for column in ('Lower %', 'Upper %'):
+            table[column] = positions.position_id.map(plan.table.set_index('position_id')[column]).to_numpy()
+        if entered_caps:
+            table['Max allocation %'] = positions.position_id.map(entered_caps).to_numpy() * 100
+        st.markdown('**Full allocation**')
+        st.caption(f'Percentages of {scope or "portfolio"}, including unallocated contribution. Targets use the current planning options.')
+        show_table(table.sort_values('After (EUR)', ascending=False, kind='stable'), scope=scope or 'portfolio',
+                   cap_scope='category' if cap_scope == 'bucket' else 'portfolio')
+    with results:
+        render_summary(table, plan.new_money, plan.unallocated_cash, minimum=mode == MODES[1])
+        if plan.within_bands:
+            st.success("Every position is within its target range.")
+        else:
+            st.info("Some positions remain outside their target ranges.")
+        if plan.deviation_after > plan.deviation_before + 1e-5:
+            st.warning("This contribution increases deviation from the planning scope’s target ranges.")
+        render_trades(table)
+        if allocation is not None and portfolio_positions is not None:
+            after = portfolio_positions.copy()
+            after['current_value_eur'] += after.position_id.map(plan.table.set_index('position_id')['Trade (EUR)']).fillna(0.)
+            render_impact(portfolio_positions, after, allocation, cash=plan.unallocated_cash, key='rebalance_impact_parent')
     return plan

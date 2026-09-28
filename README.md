@@ -187,7 +187,7 @@ prices leave full percentages blank and the chart shows only known value.
 
 **Exposure** contains the existing sector/label and ETF look-through analysis.
 Its filters do not change strategic ownership or the whole-portfolio overview.
-**Rebalance → Targets → Assign positions in bulk** offers
+**Rebalance → Targets → Assign positions** offers
 **Select all**, a destination bucket, and an assignment button. Assignments keep
 quantities, buy-ins, classification labels, and within-bucket target percentages;
 review the destination's target total after moving positions.
@@ -196,11 +196,11 @@ Use the top-right menu's **Light**, **Dark**, or **System** option for appearanc
 The browser remembers the choice. Charts, tables, editors and search use the same
 theme.
 
-The Rebalance option **Exclude empty positions and redistribute their planning targets** redistributes
+The Rebalance option **Exclude empty positions and redistribute targets** redistributes
 position targets within each bucket only. An empty bucket retains its strategic
 target and appears as planned capacity. Saved targets do not change.
 
-**Rebalance → Planning scope** offers portfolio contributions and within-bucket
+**Rebalance → Plan → Planning scope** offers portfolio contributions and within-bucket
 planning. Portfolio contributions first minimize deviations from bucket ranges,
 then bucket target gaps, before allocating each budget internally. Position
 constraints and the shared trade limit can leave some reserved money unallocated;
@@ -209,6 +209,28 @@ use that bucket's post-contribution value and display the macro impact. They do
 not require unrelated buckets' position targets. Protecting a bucket from selling
 also protects its descendants while allowing contributions. Temporary caps state
 whether their denominator is the whole portfolio or the selected bucket.
+
+**Plan** keeps scope, mode, contribution, and **Calculate plan** together. **Options**
+contains position eligibility, empty-position target redistribution, purchase rules,
+tolerances, and temporary caps. Scope uses categories; source instruments remain the
+trade universe independently of Overview and Exposure filters.
+
+Results lead with **Suggested trades**, showing only buys and sells with readable
+investment/category names and account distinctions. **Portfolio impact** compares
+current, planned, and target allocations among sibling categories. **Plan details**
+contains the full allocation (including Hold rows), optional trade-count comparisons,
+and reserved versus invested category budgets. Unallocated cash remains in the
+planning denominator; the preview never creates a cash holding or executes orders.
+Unassigned appears only when source positions actually lack a category. Empty
+configured categories retain their targets and planned capacity.
+
+**Targets** has fixed-row category and position editors. **Add category** and
+**Delete categories** modify a draft; **Save categories** persists it. Positions and
+child categories must be moved before deleting their category. Position target
+edits survive category filters and tab changes and are saved together with
+**Save position targets**. Each editor has **Discard changes**. Blank targets remain
+unspecified, while zero is explicit; totals are reported without automatic
+normalization. Save a newly added category before choosing it as a parent.
 
 **Positions → Update balances** replaces several quantities and optional
 buy-ins in one atomic save. Choose **Average per unit** or **Total buy-in** above
@@ -298,7 +320,7 @@ contributes to its labels immediately. Add classification labels for new assets
 in the private YAML file; otherwise they appear under Unclassified.
 
 The sidebar’s **Hide empty positions** changes only visibility in Positions and Exposure.
-The separate Rebalance option **Exclude empty positions and redistribute their planning targets**
+The separate Rebalance option **Exclude empty positions and redistribute targets**
 removes zero-share rows from the planning calculation. Their combined target is divided equally among
 remaining unique asset IDs, then equally among each asset’s held account rows.
 This is an equal percentage-point increment, not a proportional scaling. For
@@ -373,9 +395,9 @@ contribution. Minimum-purchase and selection-intent controls apply to
 **Rebalance selected positions**. Both distributions allocate whole EUR cents
 so buys plus any unallocated cash sum to the budget. Target-weight splitting rejects an amount too small
 to fund every positive-weight recipient with at least one cent.
-**No new positions** excludes selected rows with zero shares. If this conflicts
+**Only buy existing positions** excludes selected rows with zero shares. If this conflicts
 with **Buy every selected position**, deselect those rows, allow skipping, or
-turn off No new positions; the calculator explains the conflict.
+turn off Only buy existing positions; the calculator explains the conflict.
 Unselected positions receive no trades. Final weights and deviation still use
 whole-portfolio targets, so spreading can leave positions outside their ranges.
 Changing the selection or distribution hides stale plans. Changing position
@@ -390,8 +412,8 @@ can allow a small holding. Bounds are clipped to 0–100%.
 Rebalancing uses whole-portfolio position targets totaling 100%, complete EUR
 valuations, and final weights including the contribution. Overview filters,
 label selections and ETF display groups do not alter the tradable positions.
-**No new positions** forbids buying zero-share account rows while retaining
-their targets; **Exclude empty positions and redistribute their planning targets** instead removes and redistributes
+**Only buy existing positions** forbids buying zero-share account rows while retaining
+their targets; **Exclude empty positions and redistribute targets** instead removes and redistributes
 them before calculation. Infeasible restrictions produce an explanation.
 
 Amounts assume fractional shares and exclude fees, taxes, spreads and lot-size

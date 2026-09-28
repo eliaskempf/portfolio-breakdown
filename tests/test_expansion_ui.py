@@ -43,15 +43,15 @@ def test_scoped_plans_balance_save_and_macro_overview(tmp_path, sample_data_dir)
     by_label(app.button, 'Save replacement balances').click().run()
     assert not app.exception
     activate(app, 'Rebalance', 'Plan')
-    by_label(app.button, 'Calculate portfolio contribution').click().run()
+    by_label(app.button, 'Calculate plan').click().run()
     assert not app.exception
     assert not app.error
-    by_label(app.radio, 'Planning scope').set_value('Within a bucket').run()
+    by_label(app.get('button_group'), 'Planning scope').set_value('Within a category').run()
     assert not app.exception
     by_label(app.selectbox, 'Rebalancing mode').set_value('Allocate new money').run()
-    by_label(app.button, 'Calculate rebalance').click().run()
+    by_label(app.button, 'Calculate plan').click().run()
     assert not app.exception
-    assert any(item.value == 'Portfolio impact' for item in app.subheader)
+    assert any(item.label == 'Portfolio impact' for item in app.expander)
 
 
 def test_optional_stock_view_and_manual_position_entry(tmp_path, sample_data_dir):
@@ -100,7 +100,7 @@ def test_strategic_drill_down_planned_bucket_and_bulk_assignment(tmp_path, sampl
     position_action(app, 'Strategic allocation')
     by_label(app.button, 'Select all').click().run()
     assert len(by_label(app.multiselect, 'Positions to assign').value) == 3
-    by_label(app.selectbox, 'Destination bucket').set_value('planned').run()
+    by_label(app.selectbox, 'Destination category').set_value('planned').run()
     by_label(app.button, 'Assign 3 positions').click().run()
     assert not app.exception
     after = read_snapshot(path).holdings
