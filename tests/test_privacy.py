@@ -7,7 +7,7 @@ import pytest
 
 from portfolio_app.demo import create_demo_data
 from portfolio_app.holdings import DataError
-from portfolio_app.privacy import check_index, content_problem, path_problem
+from portfolio_app.privacy import ICON_FILES, check_index, content_problem, path_problem
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -34,9 +34,29 @@ def test_private_paths_are_blocked(filename):
 @pytest.mark.parametrize("filename", [
     "README.md", "AGENTS.md", "pyproject.toml", "uv.lock", ".gitignore", ".python-version",
     "src/portfolio_app/holdings.py", "tests/test_holdings.py", ".githooks/pre-commit",
+    "LICENSE", "docs/release-plan.md", ".github/workflows/candidate.yml",
+    *sorted(ICON_FILES), "packaging/portfolio.spec",
 ])
 def test_public_sources_are_allowed(filename):
     assert path_problem(filename) is None
+
+
+@pytest.mark.parametrize('filename', ['.github/workflows/private.yml', 'docs/portfolio.json',
+                                    'src/portfolio_app/assets/screenshot.png', 'packaging/holdings.csv'])
+def test_release_exceptions_do_not_allow_arbitrary_data(filename):
+    assert path_problem(filename)
+
+
+@pytest.mark.parametrize('filename', sorted(ICON_FILES))
+def test_supplied_artwork_can_be_staged_and_checked(git_repo, filename):
+    target = git_repo / filename
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(REPO / filename, target)
+    subprocess.run(['git', 'add', filename], check=True)
+    assert check_index() == []
+    target.write_bytes(b'not an image')
+    subprocess.run(['git', 'add', filename], check=True)
+    assert check_index()
 
 
 @pytest.mark.parametrize("filename", [
@@ -112,7 +132,7 @@ def test_real_hook_blocks_force_staged_data(git_repo):
     subprocess.run(["git", "config", "portfolio.uvPath", uv], check=True)
     (git_repo / "README.md").write_text("Public documentation")
     subprocess.run(["git", "add", "README.md"], check=True)
-    hook = [str(git_repo / ".githooks/pre-commit")]
+    hook = ["sh", str(git_repo / ".githooks/pre-commit")]
     assert subprocess.run(hook, capture_output=True).returncode == 0
     (git_repo / "holdings.csv").write_text("id,name,shares\nexample,Synthetic,1\n")
     subprocess.run(["git", "add", "-f", "holdings.csv"], check=True)

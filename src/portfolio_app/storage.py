@@ -6,7 +6,7 @@ from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
 from portfolio_app.holdings import DataError
-from portfolio_app.positions import _write_lock
+from portfolio_app.locking import write_lock as _write_lock
 
 
 def revision(path: Path) -> str | None:

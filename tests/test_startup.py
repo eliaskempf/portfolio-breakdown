@@ -23,7 +23,7 @@ def test_each_launch_gets_editable_fresh_demo_and_preserves_personal_data(tmp_pa
     (old_demo / "holdings.csv").write_text("Keep this earlier file")
     launched = []
 
-    def run(command):
+    def run(command, *args, **kwargs):
         assert Path(command[command.index("--data-dir") + 1]) == personal
         demo = Path(command[command.index("--demo-dir") + 1])
         launched.append(demo)
@@ -35,7 +35,7 @@ def test_each_launch_gets_editable_fresh_demo_and_preserves_personal_data(tmp_pa
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "argv", ["portfolio-app"])
-    monkeypatch.setattr("portfolio_app.app.subprocess.call", run)
+    monkeypatch.setattr("portfolio_app.app.run_server", run)
     for _ in range(2):
         with pytest.raises(SystemExit) as result:
             main()
@@ -50,7 +50,7 @@ def test_demo_flag_never_resets_custom_personal_directory(tmp_path, monkeypatch)
     original = tmp_path / "holdings.csv"
     original.write_text("Existing data remains untouched")
 
-    def run(command):
+    def run(command, *args, **kwargs):
         assert command[-1] == "--demo"
         assert "--server.port=8510" in command
         assert Path(command[command.index("--data-dir") + 1]) == tmp_path
@@ -58,7 +58,7 @@ def test_demo_flag_never_resets_custom_personal_directory(tmp_path, monkeypatch)
         return 0
 
     monkeypatch.setattr(sys, "argv", ["portfolio-app", "--demo", "--data-dir", str(tmp_path), "--server.port=8510"])
-    monkeypatch.setattr("portfolio_app.app.subprocess.call", run)
+    monkeypatch.setattr("portfolio_app.app.run_server", run)
     with pytest.raises(SystemExit):
         main()
     assert original.read_text() == "Existing data remains untouched"
@@ -67,13 +67,13 @@ def test_demo_flag_never_resets_custom_personal_directory(tmp_path, monkeypatch)
 def test_interrupted_start_cleans_temporary_demo(tmp_path, monkeypatch):
     launched = []
 
-    def interrupt(command):
+    def interrupt(command, *args, **kwargs):
         launched.append(Path(command[command.index("--demo-dir") + 1]))
         raise KeyboardInterrupt
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "argv", ["portfolio-app"])
-    monkeypatch.setattr("portfolio_app.app.subprocess.call", interrupt)
+    monkeypatch.setattr("portfolio_app.app.run_server", interrupt)
     with pytest.raises(SystemExit) as result:
         main()
     assert result.value.code == 130

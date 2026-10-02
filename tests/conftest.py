@@ -10,6 +10,21 @@ from portfolio_app.valuation import value_holdings
 
 
 @pytest.fixture(autouse=True)
+def isolated_application_paths(tmp_path, monkeypatch):
+    monkeypatch.setenv('PORTFOLIO_STATE_DIR', str(tmp_path / 'app-state'))
+    monkeypatch.setattr('portfolio_app.settings.user_data_path', lambda *a, **kw: tmp_path / 'data')
+
+
+def pytest_sessionfinish(session, exitstatus):
+    # Browser CI must not turn missing Playwright or missing browsers into green skips.
+    import os
+    if os.environ.get('PORTFOLIO_REQUIRE_BROWSER') == '1':
+        reporter = session.config.pluginmanager.get_plugin('terminalreporter')
+        if reporter and (reporter.stats.get('skipped') or session.testscollected == 0):
+            session.exitstatus = 1
+
+
+@pytest.fixture(autouse=True)
 def stateful_layout_test_support(monkeypatch):
     # Streamlit 1.63's AppTest does not serialize tab-container widget state.
     # Supply the same value the browser sends, without changing app behavior.

@@ -23,11 +23,15 @@ from portfolio_app.strategic_ui import render_strategic_overview
 from portfolio_app.scoped_ui import render_scoped_rebalancing
 from portfolio_app.input_cache import load_inputs
 from portfolio_app.market_data import coordinator as market_coordinator, prices_for
-from portfolio_app.view_state import preserve_view_inputs
+from portfolio_app.view_state import preserve_view_inputs, reset_workspace
 
 
 def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None) -> None:
-    st.set_page_config(page_title="Portfolio breakdown", layout="wide")
+    from portfolio_app.settings import icon_path
+    from portfolio_app.workspace_ui import workspace_info
+    persistent_data_dir = data_dir
+    icon = icon_path('favicon.svg')
+    st.set_page_config(page_title="Portfolio breakdown", layout="wide", page_icon=str(icon) if icon else None)
     apply_style()
     preserve_view_inputs()
     if demo_dir is not None:
@@ -37,10 +41,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             data_dir = demo_dir
         context = (str(data_dir.resolve()), demo)
         if st.session_state.get("portfolio_workspace_context") != context:
-            for key in list(st.session_state):
-                if key.startswith(("import_", "position_edit_", "filter_", "label_compare_", "allocation_group_", "rebalance_", "strategic_", "exposure_", "position_draft", "positions_", "planning_", "bulk_bucket_", "targets_")) or key in {"position_saved_notice", "ignore_empty_positions", "hide_empty_positions", "view_editor_drafts", "view_editor_bases", "main_tabs", "rebalance_tabs", "portfolio_contribution_result"}:
-                    del st.session_state[key]
+            reset_workspace()
             st.session_state["portfolio_workspace_context"] = context
+    workspace_info(data_dir, persistent_data_dir, demo=demo)
     workspace_header(demo)
     from portfolio_app.import_ui import render_import_next_steps
     render_import_next_steps()

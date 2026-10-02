@@ -216,6 +216,26 @@ Before making a non-trivial change:
 6. run relevant tests
 7. perform a lightweight app smoke test when UI behavior changes
 
+### Running-preview verification
+
+The Streamlit `/_stcore/health` endpoint checks process liveness only. It does
+not prove that the current code, imported modules, or affected views work.
+
+Before reporting an app change as ready:
+
+- Identify the actual preview URL/port, checkout and data directory being used.
+- If Python modules changed while that preview was running, restart that preview
+  with the same data directory and launch options. A browser refresh or successful
+  test in a separate process does not clear stale server-side imports. Do not
+  restart another session's app.
+- Open the actual preview in a browser and visit the affected tabs and modes.
+  Verify the requested default view, chart rendering, control placement and
+  absence of application exceptions, including imports triggered by navigation.
+- Keep runtime inspection read-only; do not record private portfolio values or
+  screenshots. Automated tests and demos must continue to use synthetic data.
+- If browser verification is unavailable, explicitly report the preview as
+  unverified rather than treating a healthy endpoint as a successful UI check.
+
 Document assumptions when behavior is not obvious.
 
 Do not silently invent financial semantics when the specification is ambiguous.

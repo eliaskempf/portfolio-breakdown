@@ -1,0 +1,70 @@
+name: Build candidate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: windows-x64
+          - os: ubuntu-22.04
+            platform: linux-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --locked --all-groups
+      - run: uv run portfolio-check-private --tracked
+      - run: uv run ruff check src tests tools
+      - run: uv run playwright install --with-deps chromium
+      - name: Tests (including required browser suites)
+        env:
+          PORTFOLIO_REQUIRE_BROWSER: '1'
+        run: uv run pytest -q --junitxml=dist/test-results.xml
+      - run: uv run python tools/release.py build
+      - run: uv run python tools/release.py test
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: candidate-${{ matrix.platform }}
+          path: dist/candidate/*
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: candidate-test-results-${{ matrix.platform }}
+          path: dist/test-results.xml
+          retention-days: 30
+  linux-compatibility:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: candidate-linux-x64
+          path: dist/candidate
+      - run: uv sync --locked --group browser
+      - run: uv run playwright install --with-deps chromium
+      - run: uv run python tools/release.py test

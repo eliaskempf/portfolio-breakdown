@@ -1,0 +1,21 @@
+# Build using the locked release environment, on the target OS.
+from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
+from portfolio_app.settings import BRANDING_ASSETS
+
+root = Path(SPECPATH).parent
+assets = root / 'src' / 'portfolio_app' / 'assets'
+datas = collect_data_files('streamlit')
+datas += [(str(path), 'portfolio_app') for path in (root / 'src/portfolio_app').glob('*.py')]
+datas += [(str(assets / name), 'portfolio_app/assets') for name in BRANDING_ASSETS if (assets / name).is_file()]
+datas += copy_metadata('portfolio-breakdown', recursive=True)
+datas += [(str(root / 'LICENSE'), '.')]
+analysis = Analysis(
+    [str(root / 'packaging' / 'entrypoint.py')], pathex=[str(root / 'src')],
+    datas=datas, hiddenimports=collect_submodules('portfolio_app') + collect_submodules('streamlit') + collect_submodules('python_calamine'),
+    excludes=['playwright', 'pytest', 'ruff', 'pip_audit'],
+)
+pyz = PYZ(analysis.pure)
+exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True, name='portfolio-app',
+          console=True, icon=str(assets / 'portfolio-breakdown.png') if (assets / 'portfolio-breakdown.png').exists() else None)
+collection = COLLECT(exe, analysis.binaries, analysis.datas, name='portfolio-app')

@@ -9,7 +9,7 @@ from typing import Protocol
 
 from portfolio_app.analytics_cache import AnalyticsCache, atomic_json, utc_now
 from portfolio_app.holdings import DataError
-from portfolio_app.positions import _write_lock
+from portfolio_app.locking import write_lock as _write_lock
 
 
 @dataclass(frozen=True)

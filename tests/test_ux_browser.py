@@ -56,10 +56,24 @@ def ux_page(tmp_path):
 
 def click_slice(page, label):
     chart = page.locator('.js-plotly-plot').first
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     page.wait_for_function("!!document.querySelector('.js-plotly-plot')?._ev?._events?.plotly_sunburstclick")
     text = chart.locator('text.slicetext').filter(has_text=re.compile(r'\s*'.join(map(re.escape, label.split()))))
-    text.scroll_into_view_if_needed()
-    bounds = text.bounding_box()
+    # Plotly's SVG labels delegate pointer events to the slice underneath.
+    # Wait for layout, retrying only when a rerun replaces the element before
+    # a click has been dispatched.
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            text.scroll_into_view_if_needed()
+            bounds = text.bounding_box()
+            if bounds is not None:
+                break
+        except playwright.Error as error:
+            if 'not attached to the DOM' not in str(error):
+                raise
+        if time.monotonic() >= deadline:
+            raise AssertionError(f'Chart label did not settle: {label}')
     page.mouse.click(bounds['x'] + bounds['width'] / 2, bounds['y'] + bounds['height'] / 2)
 
 

@@ -7,6 +7,13 @@ import subprocess
 import sys
 
 ROOT_FILES = {"README.md", "AGENTS.md", ".gitignore", ".python-version", "pyproject.toml", "uv.lock"}
+RELEASE_FILES = {"LICENSE", "docs/release-plan.md", "docs/release-checklist.md", "docs/install.md",
+                 ".github/workflows/ci.yml", ".github/workflows/candidate.yml",
+                 ".github/workflows/publish.yml", ".github/workflows/maintenance.yml",
+                 ".github/dependabot.yml", "packaging/portfolio.spec", "packaging/entrypoint.py",
+                 "tools/release.py", "tools/promote.py", "tools/package_smoke.py"}
+ICON_FILES = {"src/portfolio_app/assets/portfolio-breakdown.png", "src/portfolio_app/assets/portfolio-breakdown.svg",
+              "src/portfolio_app/assets/favicon.svg", "src/portfolio_app/assets/favicon.ico"}
 PRIVATE_PARTS = {"data", "private", "imports", "exports", "reports", "screenshots", ".cache", ".backups", ".codex", ".agents", ".vscode", ".idea", ".streamlit", ".venv"}
 SECRET_PATTERNS = (
     ("private key", re.compile(rb"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")),
@@ -22,7 +29,7 @@ def path_problem(filename: str) -> str | None:
     path = PurePosixPath(filename)
     if any(part in PRIVATE_PARTS for part in path.parts) or path.name.startswith(".env"):
         return "private data or local configuration"
-    if filename in ROOT_FILES or filename == ".githooks/pre-commit":
+    if filename in ROOT_FILES | RELEASE_FILES | ICON_FILES or filename == ".githooks/pre-commit":
         return None
     if len(path.parts) >= 2 and path.parts[0] in {"src", "tests"} and path.suffix == ".py":
         return None
@@ -36,6 +43,23 @@ def content_problem(content: bytes) -> str | None:
         if pattern.search(content):
             return description
     return None
+
+
+def icon_problem(filename: str, content: bytes) -> str | None:
+    if len(content) > 5_000_000:
+        return 'oversized approved icon'
+    if filename.endswith('.svg'):
+        from xml.etree import ElementTree
+        reason = content_problem(content)
+        if reason:
+            return reason
+        try:
+            root = ElementTree.fromstring(content)
+        except ElementTree.ParseError:
+            return 'invalid SVG icon'
+        return None if root.tag == '{http://www.w3.org/2000/svg}svg' else 'invalid SVG icon'
+    signature = b'\x89PNG\r\n\x1a\n' if filename.endswith('.png') else b'\x00\x00\x01\x00'
+    return None if content.startswith(signature) else 'invalid approved icon'
 
 
 def _git(*arguments: str, input: bytes | None = None) -> bytes:
@@ -54,7 +78,11 @@ def check_index(*, tracked: bool = False) -> list[tuple[str, str]]:
             if entry != b"100644" and entry != b"100755":
                 reason = "symlinks, submodules, and unresolved index entries are not allowed"
             else:
-                reason = content_problem(_git("show", f":{filename}"))
+                content = _git("show", f":{filename}")
+                if filename in ICON_FILES:
+                    reason = icon_problem(filename, content)
+                else:
+                    reason = content_problem(content)
         if reason:
             issues.append((filename, reason))
     return issues

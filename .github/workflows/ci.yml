@@ -1,0 +1,78 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --locked --group release
+      - run: uv run portfolio-check-private --tracked
+      - run: uv run ruff check src tests tools
+      - run: uv run pytest -q --junitxml=dist/unit-results.xml
+      - run: uv build
+      - run: uv run python tools/release.py check --directory dist
+      - name: Install wheel outside checkout
+        run: |
+          uv venv "$RUNNER_TEMP/portfolio-installed"
+          uv pip install --python "$RUNNER_TEMP/portfolio-installed" --no-deps dist/*.whl
+          uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file "$RUNNER_TEMP/portfolio-runtime.txt"
+          uv pip install --python "$RUNNER_TEMP/portfolio-installed" --requirements "$RUNNER_TEMP/portfolio-runtime.txt"
+          if [ "$RUNNER_OS" = Windows ]; then
+            installed="$RUNNER_TEMP/portfolio-installed/Scripts/portfolio-app.exe"
+          else
+            installed="$RUNNER_TEMP/portfolio-installed/bin/portfolio-app"
+          fi
+          cd "$RUNNER_TEMP"
+          "$installed" --version
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: unit-results-${{ matrix.os }}
+          path: dist/unit-results.xml
+          retention-days: 14
+  browser:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      PORTFOLIO_REQUIRE_BROWSER: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --locked --group browser
+      - run: uv run playwright install --with-deps chromium
+      - run: uv run pytest -q tests/*browser.py --junitxml=dist/browser-results.xml
+      - run: uv run python tools/package_smoke.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: browser-results
+          path: dist/browser-results.xml
+          retention-days: 14

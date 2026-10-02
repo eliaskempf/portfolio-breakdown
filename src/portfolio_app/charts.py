@@ -6,6 +6,7 @@ import colorsys
 
 import plotly.graph_objects as go
 import pandas as pd
+from portfolio_app.settings import PRIMARY_COLOR
 
 
 def sort_allocation_nodes(nodes: pd.DataFrame) -> pd.DataFrame:
@@ -23,7 +24,7 @@ def sort_allocation_nodes(nodes: pd.DataFrame) -> pd.DataFrame:
     return nodes.set_index("node_id", drop=False).loc[traversal].reset_index(drop=True)
 
 PALETTE = ["#377f66", "#6da995", "#a9cabc", "#d5b982", "#617f99", "#9cb3c5", "#bb8c7a", "#7a8d71"]
-SUNBURST_PALETTE = ["#5470c6", "#9a6dd7", "#e5a04b", "#4aa9b3", "#d76e91", "#75a565", "#c57b55", "#7b91b3"]
+SUNBURST_PALETTE = [PRIMARY_COLOR, "#9a6dd7", "#e5a04b", "#4aa9b3", "#d76e91", "#75a565", "#c57b55", "#7b91b3"]
 
 
 def style_figure(figure: go.Figure) -> go.Figure:

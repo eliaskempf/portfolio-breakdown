@@ -1,7 +1,6 @@
 """Local position persistence with validation, backups, and stale-edit detection."""
 
 from collections.abc import Callable, Mapping
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -15,6 +14,7 @@ from uuid import uuid4
 import pandas as pd
 
 from portfolio_app.holdings import DataError, parse_holdings
+from portfolio_app.locking import write_lock as _write_lock
 
 EMPTY_CSV = "id,name,ticker,isin,shares,acquisition_price,acquisition_currency,portfolio,account,target_allocation\n"
 
@@ -35,32 +35,6 @@ def read_snapshot(path: Path) -> HoldingsSnapshot:
     except (OSError, UnicodeError) as exc:
         raise DataError(f"Cannot read holdings CSV {path}: {exc}") from exc
 
-
-@contextmanager
-def _write_lock(path: Path):
-    """Coordinate app writers across tabs/processes without a database."""
-    with path.open("a+b") as handle:
-        if os.name == "nt":
-            import msvcrt
-
-            handle.seek(0)
-            if not handle.read(1):
-                handle.write(b"0")
-                handle.flush()
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
-        else:
-            import fcntl
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            if os.name == "nt":
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _new_asset_id(fields: Mapping[str, str], holdings: pd.DataFrame) -> str:

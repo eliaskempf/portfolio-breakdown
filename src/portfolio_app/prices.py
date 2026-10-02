@@ -142,7 +142,7 @@ class PriceService:
             return
         temporary = None
         try:
-            from portfolio_app.positions import _write_lock
+            from portfolio_app.locking import write_lock as _write_lock
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
             with _write_lock(self.cache_path.with_suffix('.lock')):
                 try:

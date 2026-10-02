@@ -51,3 +51,14 @@ credentials*
 .idea/
 .streamlit/
 handoff.md
+
+# Reviewed release infrastructure and application artwork only.
+!/.github/workflows/ci.yml
+!/.github/workflows/candidate.yml
+!/.github/workflows/publish.yml
+!/.github/workflows/maintenance.yml
+!/.github/dependabot.yml
+!/src/portfolio_app/assets/portfolio-breakdown.png
+!/src/portfolio_app/assets/portfolio-breakdown.svg
+!/src/portfolio_app/assets/favicon.svg
+!/src/portfolio_app/assets/favicon.ico

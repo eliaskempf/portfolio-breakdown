@@ -1,0 +1,35 @@
+name: Publish tested candidate
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run:
+        description: Successful candidate run ID from the default branch
+        required: true
+        type: string
+      acceptance:
+        description: I completed the release checklist on Windows and Linux for this exact candidate
+        required: true
+        default: false
+        type: boolean
+permissions:
+  contents: read
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: inputs.acceptance && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Verify and promote existing artifacts (no build or dependency install)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
+        run: python3 tools/promote.py --run-id "$CANDIDATE_RUN" --acceptance tested-on-windows-and-linux

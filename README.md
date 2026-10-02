@@ -5,6 +5,14 @@ Plotly. It supports current EUR valuation, hierarchical classifications,
 filtering, allocation charts, optional position targets, and ETF look-through
 for configured fund snapshots.
 
+## Installation and release preparation
+
+See [installation, desktop launch, migration and recovery](docs/install.md),
+[release milestones](docs/release-plan.md), and the
+[candidate acceptance checklist](docs/release-checklist.md).
+The application is licensed under [GPL-3.0-only](LICENSE).
+
+
 ## Position metrics and portfolio analytics
 
 For future development, see [analytics state and open design choices](#analytics-development-notes).
@@ -93,7 +101,7 @@ uv run portfolio-app
 
 `uv` manages Python 3.12 and the project environment. Open the local URL printed
 by Streamlit. The default launch uses live market data and your private local
-data directory, `data/portfolio/`. A fresh portfolio starts empty; create positions
+data directory in the platform user-data location (see the installation guide). A fresh portfolio starts empty; create positions
 under **Positions**. They remain saved when you stop and restart the app.
 
 The sidebar's **Portfolio workspace** switch opens **My portfolio** or the
@@ -118,8 +126,10 @@ as a fallback for live prices. The example portfolio has €744 in valued
 positions, including €520 in the AI sleeve, plus one intentionally unvalued
 example to demonstrate missing-data handling.
 
-The persistent data directory is `./data/portfolio` relative to your launch directory. You
-can use an independent directory with your own files:
+The persistent data directory defaults to the platform user-data location, independent
+of your launch directory. Existing `data/portfolio` folders are preserved; open them
+with `--data-dir data/portfolio` or follow the explicit migration guide. You can
+use an independent directory with your own files:
 
 ```bash
 uv run portfolio-app --data-dir /absolute/path/to/my-data
