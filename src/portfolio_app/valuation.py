@@ -44,6 +44,10 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
             result.at[index, 'price_observed_at'] = observed.isoformat()
             result.at[index, 'price_age_hours'] = max(0, (prices.now() - observed).total_seconds() / 3600)
             result.at[index, 'valuation_note'] = 'Manual unit price; update independently of confirmed quantity.'
+            if position.get('import_source') == 'snapshot':
+                result.at[index, 'valuation_note'] = f"Imported snapshot unit price ({position['manual_price_date']}); switch explicitly to live pricing."
+                if currency != 'EUR':
+                    result.at[index, 'valuation_note'] += ' Uses available FX, not historical snapshot FX.'
             result.at[index, 'fx_status'] = fx.status
             if fx.quote is not None and fx.quote.currency == 'EUR':
                 result.at[index, 'fx_to_eur'] = fx.quote.price

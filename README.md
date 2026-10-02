@@ -135,6 +135,52 @@ from another directory, use the installed `portfolio-app` command or
 Streamlit options are forwarded, for example `--server.headless=true` or
 `--server.port=8502`. The app is intended for local use.
 
+## Experimental holdings import
+
+In an empty portfolio, choose **Positions → Import portfolio — experimental**.
+Upload one or more CSV, delimited TXT/TSV, or Excel XLS/XLSX files, review the
+suggested column mappings, and correct cells or exclude non-position rows before
+choosing **Import reviewed positions**. Encoding, delimiter, worksheet, header row
+and German/English number formatting can be adjusted per file. Quantity columns
+containing nominal amounts or prices quoted as percentages need conversion to
+ordinary units before import; the importer does not calculate bond valuations.
+
+FinanzManager support is provisional: its
+[manual documents report export](https://www.lexware.de/fileadmin/support/handbuecher/2023/handbuch_finanzmanager_2023.pdf),
+but no tester export/version has been verified. Export a current holdings report
+using **Bericht exportieren**, then use column mapping if suggestions do not
+match. If the report contains both Bank and FinanzManager quantities, choose the
+intended source explicitly. QIF, PDF and transaction histories are not supported.
+The importer does not reconstruct balances from purchases or synchronize existing
+portfolios. Multiple depot files can be reviewed together in the initial import.
+
+Only instrument name and quantity are required, together with confirmation of
+the quantity convention. ISIN/WKN, account, costs, prices, targets and
+classifications can be omitted. Internal position identities are generated;
+names alone never merge instruments. Duplicate positions must be resolved in
+the preview. No target allocation or strategic bucket is inferred from the export.
+After import, **Set up allocation** opens the existing bucket/assignment tools.
+
+Exported unit prices can provide an immediate allocation view when their date,
+currency and unit convention are known. They remain dated manual prices and do
+not refresh automatically. Foreign prices use the app's available FX conversion,
+not historical export-date FX; missing FX leaves valuation unknown. Acquisition
+cost remains optional and has its own currency. Select either average cost per
+unit or total cost of the remaining position, not both.
+
+Use **Positions → Connect live prices** later to select a listing. The explicit
+switch to live pricing clears manual prices for that instrument across accounts,
+preserving quantities, costs, identities and allocation assignments. Otherwise,
+linking a listing retains snapshot pricing. Existing ISINs must match the listing.
+
+Uploaded files and review drafts stay in session memory. Accepted position data
+is saved in the selected private portfolio directory through a revision-checked
+atomic write; prior files receive private backups. Canceling writes no holdings,
+workspace changes clear import drafts, and repeated submissions cannot append
+the same holdings again. Keep real exports out of Git. The format-specific
+column suggestions are separate from readers and normalized position handling
+so another source can reuse the same review and save flow.
+
 ## Private data and Git
 
 The entire `data/` directory, personal handoff, imports, exports, reports,

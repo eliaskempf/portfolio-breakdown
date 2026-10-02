@@ -61,9 +61,15 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
             for key, value in st.session_state.get('position_draft', {}).items():
                 st.session_state[key] = value
             st.session_state['position_edit_dialog'] = True
-    workflow = st.segmented_control('Position tools', ['Positions', 'Bulk add purchases', 'Update balances'],
+    workflow = st.segmented_control('Position tools', ['Positions', 'Bulk add purchases', 'Update balances', 'Import portfolio', 'Connect live prices'],
                                     default='Positions', key='positions_workflow', on_change=_dismiss)
-    if workflow == 'Update balances':
+    if workflow == 'Import portfolio':
+        from portfolio_app.import_ui import render_import
+        render_import(path, snapshot, funds)
+    elif workflow == 'Connect live prices':
+        from portfolio_app.import_ui import render_listing_link
+        render_listing_link(path, snapshot, funds, demo=demo)
+    elif workflow == 'Update balances':
         from portfolio_app.allocation_ui import render_balances
         render_balances(path, snapshot)
     elif workflow == 'Bulk add purchases':
@@ -75,7 +81,10 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
             st.rerun()
     else:
         if snapshot.holdings.empty:
-            st.info('Add your first position to see its value, allocation and performance.')
+            st.info('Add your first position or import a holdings file to see its value and allocation.')
+            def start_import():
+                st.session_state['positions_workflow'] = 'Import portfolio'
+            st.button('Import portfolio — experimental', on_click=start_import)
         else:
             st.caption('Select a position for details and price history. Use the pencil to edit.')
             render_position_list(path, snapshot, allocation, valued=valued, percent=percent, demo=demo)

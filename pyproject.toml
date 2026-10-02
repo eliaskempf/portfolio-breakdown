@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
   "pandas>=2.2,<4",
   "plotly>=6,<7",
+  "python-calamine>=0.3,<1",
   "PyYAML>=6,<7",
   "scipy>=1.14,<2",
   "streamlit>=1.63,<2",

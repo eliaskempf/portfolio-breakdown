@@ -38,10 +38,12 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         context = (str(data_dir.resolve()), demo)
         if st.session_state.get("portfolio_workspace_context") != context:
             for key in list(st.session_state):
-                if key.startswith(("position_edit_", "filter_", "label_compare_", "allocation_group_", "rebalance_", "strategic_", "exposure_", "position_draft", "positions_", "planning_", "bulk_bucket_", "targets_")) or key in {"position_saved_notice", "ignore_empty_positions", "hide_empty_positions", "view_editor_drafts", "view_editor_bases", "main_tabs", "rebalance_tabs", "portfolio_contribution_result"}:
+                if key.startswith(("import_", "position_edit_", "filter_", "label_compare_", "allocation_group_", "rebalance_", "strategic_", "exposure_", "position_draft", "positions_", "planning_", "bulk_bucket_", "targets_")) or key in {"position_saved_notice", "ignore_empty_positions", "hide_empty_positions", "view_editor_drafts", "view_editor_bases", "main_tabs", "rebalance_tabs", "portfolio_contribution_result"}:
                     del st.session_state[key]
             st.session_state["portfolio_workspace_context"] = context
     workspace_header(demo)
+    from portfolio_app.import_ui import render_import_next_steps
+    render_import_next_steps()
     if demo:
         st.caption("Demo · Synthetic data · Resets on restart")
     etf_revision = refresh_revision(data_dir)
@@ -97,8 +99,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             if st.button('Complete buy-ins'):
                 st.session_state['main_tabs'] = 'Positions'
                 st.session_state['positions_workflow'] = 'Update balances'
-    else:
+    elif not valued.price_status.eq('manual').any():
         st.caption('Latest available daily close · Prices may be delayed')
+    if valued.price_status.eq('manual').any():
+        st.caption(f"{valued.price_status.eq('manual').sum()} dated manual/snapshot prices · These do not refresh automatically.")
     if 'main_tabs' not in st.session_state:
         st.session_state['main_tabs'] = 'Positions' if holdings.empty else 'Overview'
     overview, exposure, positions, rebalance = st.tabs(['Overview', 'Exposure', 'Positions', 'Rebalance'],
