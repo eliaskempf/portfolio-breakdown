@@ -180,7 +180,8 @@ class FakeWebview:
         self.urls = []
     def create_window(self, *args, **kwargs):
         assert kwargs['js_api'] is None
-        assert kwargs['fullscreen'] is True
+        assert kwargs['fullscreen'] is False
+        assert kwargs['maximized'] is True
         assert kwargs['background_color'] == '#11151c'
         return self.window
     def load_url(self, url):
@@ -260,6 +261,7 @@ def test_frozen_browser_relaunch_keeps_dispatch_flag(monkeypatch):
 
 
 def test_native_navigation_and_popup_handlers_keep_window_on_app(monkeypatch):
+    monkeypatch.setattr(WindowPresentation, '_install_window_controls', lambda self: None)
     opened = []
     monkeypatch.setattr('portfolio_app.desktop.open_browser', opened.append)
     class NativeEvent(Event):
@@ -302,6 +304,27 @@ def test_focus_restores_minimized_window_without_shrinking_maximized_window(monk
     presentation._activate()
     assert native.WindowState == expected
     assert calls == ['show', 'activate']
+
+
+def test_fullscreen_toggle_restores_maximized_frame_and_borderless_exit(monkeypatch):
+    monkeypatch.setitem(sys.modules, 'System.Windows.Forms',
+                        SimpleNamespace(FormWindowState=SimpleNamespace(Maximized='maximized')))
+    native = SimpleNamespace(is_fullscreen=False, WindowState='maximized')
+    def toggle():
+        native.is_fullscreen = not native.is_fullscreen
+        native.WindowState = 'normal'  # Backend restoration must not shrink the window.
+    native.toggle_fullscreen = toggle
+    presentation = WindowPresentation()
+    presentation.window = SimpleNamespace(native=native)
+    presentation.fullscreen_button = SimpleNamespace(Text='Fullscreen (F11)')
+    presentation.exit_button = SimpleNamespace(Visible=False)
+    presentation._toggle_fullscreen()
+    assert native.is_fullscreen and presentation.exit_button.Visible
+    assert presentation.fullscreen_button.Text == 'Windowed (F11)'
+    presentation._toggle_fullscreen()
+    assert not native.is_fullscreen and not presentation.exit_button.Visible
+    assert native.WindowState == 'maximized'
+    assert presentation.fullscreen_button.Text == 'Fullscreen (F11)'
 
 
 def test_windows_use_distinct_temporary_profiles(monkeypatch):

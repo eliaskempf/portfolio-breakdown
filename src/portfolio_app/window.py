@@ -112,11 +112,62 @@ class WindowPresentation:
         native.Show()
         native.Activate()
 
+    def _toggle_fullscreen(self):
+        """Called on the GUI thread; returning to windowed mode stays maximized."""
+        from System.Windows.Forms import FormWindowState
+        native = self.window.native
+        native.toggle_fullscreen()
+        if not native.is_fullscreen:
+            native.WindowState = FormWindowState.Maximized
+        self.fullscreen_button.Text = 'Windowed (F11)' if native.is_fullscreen else 'Fullscreen (F11)'
+        self.exit_button.Visible = native.is_fullscreen
+
+    def _install_window_controls(self):
+        from System.Drawing import Color
+        from System.Windows.Forms import (DockStyle, Keys, ToolStrip, ToolStripButton,
+                                          ToolStripGripStyle, ToolStripItemAlignment)
+        native = self.window.native
+        toolbar = ToolStrip()
+        toolbar.Dock = DockStyle.Top
+        toolbar.GripStyle = ToolStripGripStyle.Hidden
+        toolbar.AutoSize = False
+        toolbar.Height = 34
+        toolbar.BackColor = Color.FromArgb(17, 21, 28)
+        self.exit_button = ToolStripButton('Exit')
+        self.exit_button.ToolTipText = 'Close Portfolio Breakdown and stop its server'
+        self.exit_button.Visible = False
+        self.exit_button.Click += lambda sender, args: native.Close()
+        self.fullscreen_button = ToolStripButton('Fullscreen (F11)')
+        self.fullscreen_button.Click += lambda sender, args: self._toggle_fullscreen()
+        for button in (self.exit_button, self.fullscreen_button):
+            button.Alignment = ToolStripItemAlignment.Right
+            button.ForeColor = Color.FromArgb(227, 231, 239)
+            toolbar.Items.Add(button)
+        native.Controls.Add(toolbar)
+        # Dock the browser after the toolbar so controls never cover app content.
+        native.webview.BringToFront()
+        native.KeyPreview = True
+        pressed = False
+        def key_down(sender, args):
+            nonlocal pressed
+            if args.KeyCode == Keys.F11:
+                args.Handled = True
+                if not pressed:
+                    pressed = True
+                    self._toggle_fullscreen()
+        def key_up(sender, args):
+            nonlocal pressed
+            if args.KeyCode == Keys.F11:
+                pressed = False
+        native.KeyDown += key_down
+        native.KeyUp += key_up
+
     def _install_navigation(self, origin):
         """Run on the WinForms thread before navigating to the app."""
         from portfolio_app.desktop import open_browser
         browser = self.window.native.browser
         control = self.window.native.webview
+        self._install_window_controls()
         def navigate(sender, args):
             uri = str(args.Uri)
             # NavigateToString uses about:blank for our startup surface only.
@@ -163,7 +214,7 @@ class WindowPresentation:
                                 OPEN_EXTERNAL_LINKS_IN_BROWSER=False, REMOTE_DEBUGGING_PORT=None)
         self.window = webview.create_window(APP_NAME + ' — experimental window', html=LOADING_HTML,
                                            width=1280, height=900, min_size=(800, 600),
-                                           fullscreen=True, background_color='#11151c',
+                                           fullscreen=False, maximized=True, background_color='#11151c',
                                            text_select=True, zoomable=True, js_api=None)
         def before_show():
             try:

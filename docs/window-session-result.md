@@ -33,8 +33,11 @@ $workspace = Join-Path $env:TEMP "portfolio-window-synthetic-workspace"
 uv run --extra window portfolio-window --data-dir $workspace --offline-demo --server.port 8529
 ```
 
-The window starts in borderless fullscreen and dark mode. Use Alt+F4 or
-Settings → App & workspace → Stop application to close it. The supplied intro
+The window starts maximized with its normal title bar, in dark mode. Use the
+top-right Fullscreen / Windowed button or F11 to switch between the maximized
+window and borderless fullscreen. Borderless mode also shows a dedicated Exit
+button that closes the app and stops its server. Alt+F4 and
+Settings → App & workspace → Stop application remain available. The supplied intro
 plays before the welcome dialog or demo; `--skip-intro` bypasses it during development.
 For the updated demo with public market data, add `--demo` and omit `--offline-demo`.
 `--theme.base=light` selects a light initial view explicitly. Theme selection in
@@ -136,7 +139,8 @@ cannot delete another window's profile.
 
 The initial surface is dark static text while the server starts. The shared
 release-v1 SVG intro then plays in the app, with its reduced-motion behavior and
-eight-second timeout. It runs once per connection, without replaying on tab or
+eight-second timeout. It stays horizontally and vertically centered in the app
+viewport, including when resized. It runs once per connection, without replaying on tab or
 workspace changes. States distinguish
 `starting`, `server-reachable`, `document-loaded`, `first-view-rendered` and
 `failed`. A value-free DOM probe recognizes the welcome heading or selected
@@ -319,3 +323,28 @@ The original Windows test copy is preserved. A separate `PortfolioWindowIntegrat
 temporary directory contains the integrated source and its own environment for
 the user's next launch. It uses its own workspace and state directory. This is
 an editable source preview, not a frozen Windows release artifact.
+
+## Window mode controls and centered intro (2026-10-04)
+
+The default is now a maximized, resizable window with the normal title bar.
+A small native toolbar exposes Fullscreen (F11), changing to Windowed (F11)
+in borderless mode. Returning restores the maximized frame. The dedicated Exit
+button appears in borderless mode and invokes the normal close/shutdown path.
+Controls are outside the web content and remain usable during startup. No new
+JavaScript application API, dependencies or global keyboard hooks were added.
+
+The intro container is centered within the app viewport instead of using a
+fixed top offset. Completion, reduced motion and timeout behavior are unchanged.
+
+- 52 focused Linux tests passed, including all eight startup browser checks and
+  animation centering at 1440×1000, 650×500 and 390×844. Ruff and diff checks passed.
+- 44 window/lifecycle tests passed on native Windows.
+- A fresh Windows 10/WebView2 preview on port 52891, using a separate extracted
+  source copy and temporary synthetic offline workspace, verified the maximized
+  default, both mode buttons, F11 messages targeted to its own WebView control,
+  centered animation, dark mode, header and all four tabs. Clicking the native
+  Exit button in borderless mode closed the window and stopped its owned server.
+  The preview is stopped. No global keyboard input was sent to other apps.
+- The updated editable Windows copy is under a separate `PortfolioWindowModes-*`
+  temporary directory, with its own environment. Earlier user test copies remain
+  untouched. Frozen packaging and Windows 11 acceptance remain separate checks.

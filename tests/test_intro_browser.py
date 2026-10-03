@@ -162,6 +162,15 @@ def test_embedded_wordmark_has_separate_letters_before_swirl(intro_page):
     frame = page.frame_locator('iframe[title*=portfolio_breakdown_intro]')
     playwright.expect(frame.locator('body')).to_have_attribute('data-phase', 'wordmark')
     frame.locator('body').evaluate('() => BreakdownIntro.pause()')
+    # Center in the app viewport, including after resizing during playback.
+    for width, height in [(1440, 1000), (650, 500), (390, 844)]:
+        page.set_viewport_size({'width': width, 'height': height})
+        page.wait_for_function('''() => {
+            const r = document.querySelector('iframe[title*=portfolio_breakdown_intro]')?.getBoundingClientRect();
+            return r && Math.abs(r.x+r.width/2-innerWidth/2)<2
+                && Math.abs(r.y+r.height/2-innerHeight/2)<2;
+        }''')
+    page.set_viewport_size({'width': 1440, 'height': 1000})
     boxes = frame.locator('#letters text').evaluate_all('els => els.map(el => el.getBoundingClientRect().toJSON())')
     assert len(boxes) == 9
     assert all(right['x'] > left['x'] + left['width'] * .7 for left, right in zip(boxes, boxes[1:]))
