@@ -1,5 +1,6 @@
 """Cross-platform advisory locks for private documents and application sessions."""
 from contextlib import contextmanager
+import errno
 import os
 from pathlib import Path
 
@@ -15,7 +16,12 @@ def write_lock(path: Path, *, blocking: bool = True):
                 handle.write(b'0')
                 handle.flush()
             handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK, 1)
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK, 1)
+            except OSError as exc:
+                if not blocking and exc.errno in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                    raise BlockingIOError(exc.errno, str(exc)) from exc
+                raise
         else:
             import fcntl
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))

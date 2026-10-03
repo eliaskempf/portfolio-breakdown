@@ -74,7 +74,7 @@ The local host is older than the supported Ubuntu runner baseline; this is not
 a substitute for hosted/clean-machine acceptance. No GitHub workflows have been
 run, no Windows build has been verified, and no release/tag has been created.
 
-Next: review the bounded pre-release refactor scope, integrate v1 into main, push the workflows
+Next: integrate the reviewed v1 cleanup into main, push the workflows
 and make them available on the default branch, run Build candidate, then download
 and test that specific candidate on supported machines. The four supplied artwork
 files under src/portfolio_app/assets are included in packages. Publication
@@ -105,3 +105,55 @@ Out of scope: transaction/tax accounting, realized gains, reconstructed personal
 historical returns, universal ETF ingestion, cloud accounts, database migration.
 Existing valuation, targets, rebalancing, ETF exposure and risk features are
 sufficient for this first release; no new financial features are required.
+
+
+## Bounded architecture cleanup (2026-10-03)
+
+Implemented on release-v1 after scope agreement:
+
+- ETF refresh uses the shared cross-platform lock. Nonblocking Windows lock
+  contention has the same exception contract as Unix; unrelated I/O failures
+  remain errors. Refresh no longer imports Unix-only fcntl at UI startup.
+- Import uploads and ordinary review controls have explicit session-only draft
+  ownership in import_state.py. Same-workspace navigation retains bytes, mappings,
+  parsing choices, confirmations and edited rows. Cancel, completion and workspace
+  switching clear drafts; no upload or draft is persisted to disk. The remounted
+  Position tools selector also uses the remembered workflow as its default, so
+  the next click cannot silently return to Positions before an import saves.
+- analytics_service.py owns fundamentals/history loading and orchestration without
+  Streamlit. analytics_ui.py retains formatting and controls. exposure_analysis.py
+  owns source selection and normalized ETF expansion; rendering retains labels and
+  presentation. Existing calculation order, denominators and missing-data handling
+  are preserved.
+- Spot, chart and risk paths share case-sensitive quote-subunit normalization.
+  Performance charts, cards and lists share gain/loss color defaults.
+- Suggested trades uses the existing shared read-only list. Full planning details,
+  editors and diagnostics remain native grids. Themes tables retain their native
+  optional-column controls; converting those would require additional interaction
+  work and is deferred.
+
+Deferred: app-wide state-model replacement, persistence transaction consolidation,
+large Exposure/UI rewrites, and further table conversion. Release workflows,
+locked dependencies, uv run entrypoints, holdings import scope and futures exclusion
+are unchanged. The four supplied icons were already integrated and remain intact.
+
+Validation: all 779 non-browser tests passed in the final full-suite run; after
+fixing browser synchronization, the complete 25-test Chromium suite passed with
+no skips (804 tests covered across those runs). The source application's
+fresh-process Chromium smoke check passed,
+including CSV/XLSX uploads, favicon decoding, navigation, save/restart, repeated
+launch, shutdown, and backup/restore in temporary synthetic workspaces. No existing
+preview was restarted. Final smoke previews used localhost ports 53897 and 42831
+from /tmp/portfolio-v1-worktree with temporary demo data and an invented persistent
+workspace. Wheel/source archive content checks and artwork inclusion passed;
+Ruff correctness and the tracked-file privacy check passed. All new source and
+test files were also reviewed for private content. Browser tab-roundtrip tests
+now wait for the intermediate view to mount before switching back, and keyboard
+metric interaction waits for the chart-triggered rerun to settle. Existing
+assertions are preserved. Local validation used uv run with the worktree
+environment and an explicitly selected cached Chromium headless shell; no live
+portfolio data was used.
+
+These source changes require a new candidate; earlier candidate acceptance does
+not cover them.
+Native Windows/Ubuntu acceptance and explicit publication approval remain pending.

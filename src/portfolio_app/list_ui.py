@@ -9,6 +9,7 @@ from hashlib import sha256
 import json
 
 import streamlit as st
+from portfolio_app.settings import GAIN_COLOR, LOSS_COLOR
 
 BOUNDED_LIST_HEIGHT = 620
 
@@ -50,7 +51,7 @@ th{position:sticky;top:0;background:var(--st-secondary-background-color);font-we
 section[data-interactive="true"] tbody tr{cursor:pointer}tbody tr:hover,tbody tr:focus{background:var(--st-secondary-background-color)}tbody tr:last-child td{border-bottom:0}
 tr:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:-2px}input:focus-visible,button:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:2px}
 td.number,th.number{text-align:right;font-variant-numeric:tabular-nums}td:first-child{font-weight:500}
-td.positive{color:var(--st-green-text-color,#27836c)}td.negative{color:var(--st-red-text-color,#b84655)}
+td.positive{color:var(--st-green-text-color,__GAIN_COLOR__)}td.negative{color:var(--st-red-text-color,__LOSS_COLOR__)}
 td button{border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:4px;background:transparent;padding:4px 10px;cursor:pointer}
 .preview-row{cursor:default!important}.preview-row>td{padding:0;background:color-mix(in srgb,var(--st-secondary-background-color) 55%,var(--st-background-color))}
 .preview-panel{position:relative;display:grid;contain:inline-size;white-space:normal;font-size:13px;font-weight:400;padding-bottom:6px}
@@ -64,7 +65,7 @@ td button{border:1px solid color-mix(in srgb,currentColor 20%,transparent);borde
 .tree-share{padding:5px 12px;align-self:center;text-align:right;opacity:.75;white-space:nowrap;font-variant-numeric:tabular-nums;font-size:13px}
 .source-actions{display:flex;align-items:center;gap:14px}.source-details{border:0;padding:3px 0;color:var(--st-primary-color);font-weight:500}.source-details:hover{text-decoration:underline}.preview-more{grid-column:1/-1;margin:2px 12px 0 32px;font-size:12px;opacity:.65}
 button[data-preview-toggle]{border:0;background:transparent;padding:0;font-weight:500}.empty{font-size:14px;opacity:.65}.badges{display:flex;gap:5px;flex-wrap:wrap;max-width:340px}.badge{font-size:12px;white-space:normal;border-radius:4px;padding:3px 6px;background:color-mix(in srgb,var(--badge-color) 15%,transparent);color:var(--st-text-color);border:1px solid color-mix(in srgb,var(--badge-color) 45%,transparent)}
-"""
+""".replace("__GAIN_COLOR__", GAIN_COLOR).replace("__LOSS_COLOR__", LOSS_COLOR)
 
 JS = """
 export default function({parentElement:root,data,setTriggerValue}) {

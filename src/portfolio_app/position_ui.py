@@ -62,7 +62,8 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
                 st.session_state[key] = value
             st.session_state['position_edit_dialog'] = True
     workflow = st.segmented_control('Position tools', ['Positions', 'Bulk add purchases', 'Update balances', 'Import portfolio', 'Connect live prices'],
-                                    default='Positions', key='positions_workflow', on_change=_dismiss)
+                                    default=st.session_state.get('positions_workflow', 'Positions'),
+                                    key='positions_workflow', on_change=_dismiss)
     if workflow == 'Import portfolio':
         from portfolio_app.import_ui import render_import
         render_import(path, snapshot, funds)

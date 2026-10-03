@@ -3,13 +3,14 @@
 Workers never call Streamlit. Provider adapters validate and atomically publish
 snapshots; readers can continue using the previous snapshot during a download.
 """
+from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
-import fcntl
 import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import Lock, Thread
 
+from portfolio_app.locking import write_lock
 from portfolio_app.etf import load_funds, matching_fund
 from portfolio_app.etf_sources import SOURCES, refresh_snapshot as refresh_provider
 from portfolio_app.vaneck import refresh_snapshot as refresh_vaneck
@@ -106,9 +107,9 @@ class RefreshCoordinator:
         cache = directory / '.cache' / 'etf-refresh'
         try:
             cache.mkdir(parents=True, exist_ok=True)
-            with (cache / 'writer.lock').open('a') as lock:
+            with ExitStack() as locks:
                 try:
-                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    locks.enter_context(write_lock(cache / 'writer.lock', blocking=False))
                 except BlockingIOError:
                     return
                 records = read_json(cache / 'status.json')

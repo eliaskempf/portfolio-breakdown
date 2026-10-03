@@ -21,6 +21,7 @@ from portfolio_app.imports import (
 )
 from portfolio_app.instruments import InstrumentSearch, catalog_search
 from portfolio_app.view_state import persistent_editor
+from portfolio_app.import_state import import_files, review_control
 
 FIELD_LABELS = {
     'name': 'Instrument name (required)', 'shares': 'Quantity (required)',
@@ -36,7 +37,7 @@ def _mapping_controls(fields, table, suggestions, prefix):
     columns = st.columns(3)
     for index, field in enumerate(fields):
         choices = ['', *table.columns]
-        mapping[field] = columns[index % 3].selectbox(
+        mapping[field] = review_control(columns[index % 3].selectbox,
             FIELD_LABELS[field], choices, index=choices.index(suggestions[field]),
             format_func=lambda item: item or 'Not supplied', key=prefix + field)
     return mapping
@@ -69,32 +70,30 @@ def render_import(path, snapshot, funds):
                     'Files are processed locally and held in this session. Only accepted position fields are saved '
                     'in the selected private portfolio directory. Prices from the report remain dated manual prices '
                     'until you explicitly switch to live pricing.')
-    uploads = st.file_uploader('Holdings files', type=['csv', 'txt', 'tsv', 'xls', 'xlsx'],
-                               accept_multiple_files=True, key='import_uploads')
+    uploads = import_files()
     if not uploads:
         return
     st.session_state.setdefault('import_revision', snapshot.revision)
     drafts = []
     failed = False
-    for number, upload in enumerate(uploads):
-        content = upload.getvalue()
+    for number, (filename, content) in enumerate(uploads):
         token = sha256(content).hexdigest()[:16]
         prefix = f'import_{number}_{token}_'
-        with st.expander(f'{number + 1}. {upload.name}', expanded=True):
+        with st.expander(f'{number + 1}. {filename}', expanded=True):
             try:
-                excel = Path(upload.name).suffix.lower() in {'.xls', '.xlsx'}
+                excel = Path(filename).suffix.lower() in {'.xls', '.xlsx'}
                 detected = None if excel else detect_text_format(content)
                 settings = st.columns(3)
-                decimal_label = settings[0].selectbox('Number format', ['1.234,56 (German)', '1,234.56 (English)'], key=prefix + 'decimal')
+                decimal_label = review_control(settings[0].selectbox, 'Number format', ['1.234,56 (German)', '1,234.56 (English)'], key=prefix + 'decimal')
                 decimal = ',' if 'German' in decimal_label else '.'
-                header = settings[1].number_input('Header row', min_value=1, value=1, step=1, key=prefix + 'header')
+                header = review_control(settings[1].number_input, 'Header row', min_value=1, value=1, step=1, key=prefix + 'header')
                 sheet, encoding, delimiter = 0, 'utf-8-sig', ';'
                 if excel:
-                    sheet = settings[2].selectbox('Worksheet', excel_sheets(content), key=prefix + 'sheet')
+                    sheet = review_control(settings[2].selectbox, 'Worksheet', excel_sheets(content), key=prefix + 'sheet')
                 else:
                     encodings = ['utf-8-sig', 'cp1252', 'utf-16']
-                    encoding = settings[2].selectbox('Text encoding', encodings, index=encodings.index(detected.encoding), key=prefix + 'encoding')
-                    delimiter = st.selectbox('Delimiter', [';', '\t', ',', '|'], index=[';', '\t', ',', '|'].index(detected.delimiter),
+                    encoding = review_control(settings[2].selectbox, 'Text encoding', encodings, index=encodings.index(detected.encoding), key=prefix + 'encoding')
+                    delimiter = review_control(st.selectbox, 'Delimiter', [';', '\t', ',', '|'], index=[';', '\t', ',', '|'].index(detected.delimiter),
                                              format_func=lambda item: 'Tab' if item == '\t' else item, key=prefix + 'delimiter')
                     with st.expander('First lines (for header selection)'):
                         st.text('\n'.join(content.decode(encoding).splitlines()[:12]))
@@ -115,9 +114,9 @@ def render_import(path, snapshot, funds):
                     st.caption('These values apply to this file only. Leave unknown information blank.')
                     for field, label in [('account', 'Account / depot for this file'), ('price_currency', 'Snapshot currency'),
                                          ('price_date', 'Snapshot date (YYYY-MM-DD)'), ('acquisition_currency', 'Buy-in currency for this file')]:
-                        defaults[field] = st.text_input(label, key=prefix + 'default_' + field)
-                use_prices = st.checkbox('Use dated snapshot prices', value=bool(mapping['price']), key=prefix + 'use_prices')
-                units = st.checkbox('Quantities are shares/units and prices are amounts per unit (not nominal values or percent quotes)',
+                        defaults[field] = review_control(st.text_input, label, key=prefix + 'default_' + field)
+                use_prices = review_control(st.checkbox, 'Use dated snapshot prices', value=bool(mapping['price']), key=prefix + 'use_prices')
+                units = review_control(st.checkbox, 'Quantities are shares/units and prices are amounts per unit (not nominal values or percent quotes)',
                                     key=prefix + 'units')
                 st.caption('Correct cells below or uncheck Include for headings, totals and other non-position rows.')
                 include_column = 'Include'

@@ -1,6 +1,7 @@
 """Shared result layout for portfolio and category plans."""
 import streamlit as st
 
+from portfolio_app.list_ui import ListColumn, frame_rows, render_list
 from portfolio_app.rebalance_tables import portfolio_impact, suggested_trades
 from portfolio_app.strategic import category_labels
 
@@ -38,7 +39,15 @@ def render_trades(table):
     if trades.empty:
         st.info('No trades in this plan.')
     else:
-        show_table(trades)
+        labels = {'Trade (EUR)': 'Amount (EUR)', 'Current (EUR)': 'Current value (EUR)',
+                  'After (EUR)': 'Planned value (EUR)'}
+        columns = [ListColumn(column, labels.get(column, column),
+                              numeric=column.endswith('(EUR)'),
+                              prefix='€ ' if column.endswith('(EUR)') else '', color_signed=False)
+                   for column in trades]
+        render_list(frame_rows(trades), columns, key='rebalance_trades_list',
+                    context=f"trades:{st.session_state.get('portfolio_workspace_context', '')}",
+                    title='Suggested trades')
 
 
 def render_impact(before, after, allocation, *, cash=0., key):

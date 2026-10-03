@@ -3,6 +3,7 @@
 from html import escape
 
 import streamlit as st
+from portfolio_app.settings import GAIN_COLOR, LOSS_COLOR
 
 from portfolio_app.grid_interactions import install_grid_interactions
 from portfolio_app.metric_interactions import toggle_gain_unit
@@ -38,8 +39,8 @@ h3 {font-size:1rem!important;font-weight:600!important;}
   .st-key-exposure_theme_results [data-testid="stHorizontalBlock"] {flex-direction:column;align-items:stretch;}
   .st-key-exposure_theme_results [data-testid="stColumn"] {width:100%!important;flex:1 1 100%;min-width:0;}
 }
-[class*="st-key-gain_positive_"] [data-testid="stMetricValue"] {color:var(--st-green-text-color,#27836c);}
-[class*="st-key-gain_negative_"] [data-testid="stMetricValue"] {color:var(--st-red-text-color,#b84655);}
+[class*="st-key-gain_positive_"] [data-testid="stMetricValue"] {color:var(--st-green-text-color,__GAIN_COLOR__);}
+[class*="st-key-gain_negative_"] [data-testid="stMetricValue"] {color:var(--st-red-text-color,__LOSS_COLOR__);}
 [data-testid="stTabs"] [role="tablist"] {gap:24px;border-bottom:1px solid color-mix(in srgb,currentColor 14%,transparent);margin:4px 0 20px;}
 [data-testid="stTabs"] [role="tab"] {padding:10px 0;font-size:.9rem;font-weight:500;}
 [data-testid="stForm"] {border-radius:6px;padding:20px;}
@@ -53,7 +54,7 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 [data-testid="stAppDeployButton"] {display:none;}
 @media(max-width:700px) {[data-testid="stHorizontalBlock"]{flex-wrap:wrap}[data-testid="stColumn"]{min-width:min(100%,260px)}.block-container{padding:3.5rem 1rem 2rem}h1{font-size:1.5rem!important}[data-testid="stMetric"]{padding:10px}}
 </style>
-"""
+""".replace("__GAIN_COLOR__", GAIN_COLOR).replace("__LOSS_COLOR__", LOSS_COLOR)
 
 
 def apply_style() -> None:

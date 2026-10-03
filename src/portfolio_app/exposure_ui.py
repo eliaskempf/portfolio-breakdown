@@ -9,15 +9,14 @@ import streamlit as st
 from portfolio_app.aggregation import aggregate, aggregate_dimension
 from portfolio_app.charts import bar_chart, hierarchy_chart, hierarchy_table, pie_chart, sort_allocation_nodes
 from portfolio_app.display_names import display_name, instrument_name, named_holdings
-from portfolio_app.etf import matching_fund, expand_etfs, fund_classifications
+from portfolio_app.etf import matching_fund, fund_classifications
 from portfolio_app.etf_refresh_ui import render_refresh_controls, render_refresh_status
 from portfolio_app.etf_selection import render_etf_choices, render_etf_toggle
 from portfolio_app.exposure_assets_ui import render_assets
 from portfolio_app.exposure_tables import complete_exposures
-from portfolio_app.strategic import bucket_positions, category_labels
+from portfolio_app.strategic import category_labels
 from portfolio_app.chart_navigation import sync_chart_category
-from portfolio_app.exposures import normalize_exposures
-from portfolio_app.filtering import filter_holdings
+from portfolio_app.exposure_analysis import select_sources, prepare_exposures
 from portfolio_app.group_ui import render_group_members, smh_group_control
 from portfolio_app.grouping import group_classifications, group_exposures
 from portfolio_app.label_ui import render_label_comparison
@@ -30,7 +29,6 @@ from portfolio_app.prices import PriceService, StaticProvider, YahooProvider
 from portfolio_app.presentation import allocation_total, value_metric
 from portfolio_app.performance import summarize_performance
 from portfolio_app.taxonomy import branches, describe, taxonomy_names
-from portfolio_app.valuation import portfolio_weights
 from portfolio_app.targets import add_target_columns, target_exposures, target_totals
 from portfolio_app.target_ui import target_caption, target_column_config
 from portfolio_app.stock_ui import render_stock_exposure
@@ -163,16 +161,11 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     valued = named_holdings(valued)
     if price_service.cache_warning:
         st.warning(price_service.cache_warning)
-    selected = filter_holdings(
-        valued, classifications, metadata=metadata, asset_ids=selected_ids, taxonomy_branches=taxonomy_filters,
-    )
-    if scope:
-        selected = bucket_positions(selected, allocation, scope) if allocation else selected.loc[selected.portfolio.eq(scope)].copy()
-    selected["portfolio_weight"] = portfolio_weights(selected["current_value_eur"])
-    total = valued["current_value_eur"].sum()
-    selected_total = selected["current_value_eur"].sum()
-    missing = int(selected["current_value_eur"].isna().sum())
-    all_missing = int(valued["current_value_eur"].isna().sum())
+    selection = select_sources(valued, classifications, metadata=metadata, asset_ids=selected_ids,
+                               taxonomy_branches=taxonomy_filters, scope=scope, allocation=allocation)
+    selected = selection.positions
+    total, selected_total = selection.total, selection.selected_total
+    missing, all_missing = selection.missing, selection.all_missing
     with summary_area:
         first, second = st.columns([2, 1])
         with first:
@@ -193,13 +186,11 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         with results_area:
             st.info('No holdings match the selected filters.')
         return valued
-    exposures = normalize_exposures(selected)
-    if lookthrough:
-        try:
-            exposures = expand_etfs(exposures, expanded_funds, holdings)
-        except DataError as exc:
-            st.error(str(exc))
-            return valued
+    try:
+        exposures = prepare_exposures(selected, expanded_funds, holdings, lookthrough=lookthrough)
+    except DataError as exc:
+        st.error(str(exc))
+        return valued
     exposures["asset_name"] = exposures["asset_name"].map(display_name)
     residual = exposures.source_type.eq('etf_other')
     source_names = {row.id: instrument_name(row) for row in holdings.itertuples()}

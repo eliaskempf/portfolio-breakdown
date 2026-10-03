@@ -1,3 +1,4 @@
+from list_helpers import list_frame
 from test_ui import position_action
 """UI checks use deliberately invented positions and static prices in temp files."""
 
@@ -155,7 +156,7 @@ def test_buy_selection_constrains_cash_and_invalidates_previous_plan(rebalance_d
     assert any("select at least one" in item.value for item in app.error)
     by_label(app.multiselect, "Positions eligible for buying").set_value(["position-1"]).run()
     calculate(app)
-    plan = next(item.value for item in app.dataframe if "Action" in item.value)
+    plan = list_frame(app, 'Suggested trades')
     assert plan.Investment.tolist() == ["Synthetic B"]
     assert plan["Trade (EUR)"].tolist() == pytest.approx([100])
     by_label(app.multiselect, "Positions eligible for buying").set_value(["position-1", "position-2"]).run()
@@ -205,7 +206,7 @@ def test_target_gap_balancing_is_default_for_selected_positions(rebalance_data):
     calculate(app)
     assert by_label(app.selectbox, "Selection intent").value == "Buy every selected position"
     assert metrics(app)["Trades"] == "3"
-    plan = next(item.value for item in app.dataframe if "Action" in item.value)
+    plan = list_frame(app, 'Suggested trades')
     assert plan.Investment.tolist() == ["Synthetic B", "Synthetic C", "Synthetic A"]
     assert plan["Trade (EUR)"].tolist() == pytest.approx([37.5, 37.5, 25])
     assert "squared percentage-point gaps" in by_label(app.selectbox, "Distribution").proto.help
@@ -213,7 +214,7 @@ def test_target_gap_balancing_is_default_for_selected_positions(rebalance_data):
     by_label(app.selectbox, "Distribution").set_value("Spread by target weights").run()
     assert "Trades" not in metrics(app)
     calculate(app)
-    plan = next(item.value for item in app.dataframe if "Action" in item.value)
+    plan = list_frame(app, 'Suggested trades')
     assert plan["Trade (EUR)"].tolist() == pytest.approx([40, 30, 30])
     by_label(app.selectbox, "Distribution").set_value("Optimize rebalancing").run()
     assert any(item.label == "Maximum trades" for item in app.number_input)
@@ -299,7 +300,7 @@ def test_temporary_caps_redirect_buys_show_cash_and_never_save_targets(rebalance
     app = capped_app(rebalance_data)
     edit_caps(app, {1: 20})
     calculate(app)
-    plan = next(item.value for item in app.dataframe if 'Action' in item.value)
+    plan = list_frame(app, 'Suggested trades')
     assert plan.set_index('Investment')['Trade (EUR)'].to_dict() == {'Synthetic A': 10, 'Synthetic B': 30, 'Synthetic C': 60}
     edit_caps(app, {0: 45, 1: 15, 2: 15})
     app.run()
@@ -324,10 +325,10 @@ def test_cap_conflicts_and_selection_changes_clear_limits(rebalance_data):
     by_label(app.selectbox, 'Selection intent').set_value('Allow skipping positions').run()
     edit_caps(app, {0: 0})
     calculate(app)
-    plan = next(item.value for item in app.dataframe if 'Action' in item.value)
+    plan = list_frame(app, 'Suggested trades')
     assert set(plan.Investment) == {'Synthetic B', 'Synthetic C'}
     by_label(app.multiselect, 'Positions eligible for buying').set_value(['position-0']).run()
     calculate(app)
-    plan = next(item.value for item in app.dataframe if 'Action' in item.value)
+    plan = list_frame(app, 'Suggested trades')
     assert plan.Investment.tolist() == ['Synthetic A']
     assert plan['Trade (EUR)'].tolist() == [100]

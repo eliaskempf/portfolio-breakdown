@@ -50,6 +50,7 @@ def test_refresh_is_nonblocking_single_writer_and_persists_throttle(refresh_work
         other = RefreshCoordinator(refresh=lambda _: pytest.fail('Concurrent download'), now=lambda: now[0])
         assert other.schedule(path, holdings, funds, force=True)
         join(other, path)
+        assert not other.error(path)
     finally:
         release.set()
         join(service, path)
@@ -103,3 +104,15 @@ def test_due_uses_attempt_time_and_tolerates_invalid_timestamp(refresh_workspace
     assert due(funds[0], {'attempted_at': 'bad date'}, now)
     assert not due(funds[0], {'attempted_at': (now - timedelta(hours=23)).isoformat()}, now)
     assert due(funds[0], {'attempted_at': (now - timedelta(days=1)).isoformat()}, now)
+
+
+def test_refresh_import_does_not_require_unix_fcntl():
+    import subprocess
+    import sys
+
+    # Simulate the absent Unix module without changing platform identity or
+    # reading a workspace. Native Windows lock behavior is checked in CI.
+    result = subprocess.run([sys.executable, '-c',
+        "import sys; sys.modules['fcntl'] = None; import portfolio_app.etf_refresh"],
+        capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr

@@ -5,8 +5,9 @@ import pandas as pd
 import streamlit as st
 
 from portfolio_app.analytics import metric_value
-from portfolio_app.analytics_ui import (context_key, data_quality_caption, display_value, load_metrics,
-    load_risk, render_sources, risk_settings)
+from portfolio_app.analytics_service import load_metrics, load_risk
+from portfolio_app.analytics_ui import (context_key, data_quality_caption, display_value,
+    render_sources, risk_settings)
 from portfolio_app.fundamentals import DEFINITIONS, FundFee, Metric, fee_key, finite, load_fee_overrides, save_fee_override
 from portfolio_app.holdings import DataError
 

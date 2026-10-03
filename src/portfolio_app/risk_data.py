@@ -7,8 +7,10 @@ from typing import Protocol
 import numpy as np
 import pandas as pd
 
+from portfolio_app.currencies import quote_unit
+
 from portfolio_app.analytics_cache import AnalyticsCache, utc_now
-from portfolio_app.risk import SUBUNITS, daily_prices, eur_prices
+from portfolio_app.risk import daily_prices, eur_prices
 
 
 @dataclass(frozen=True)
@@ -85,7 +87,7 @@ class RiskHistoryService:
         result = get(ticker)
         if result.prices.empty:
             return result
-        currency = SUBUNITS.get(result.currency, (result.currency, 1))[0]
+        currency = quote_unit(result.currency)[0]
         if len(currency) != 3 or not currency.isalpha() or not currency.isupper():
             return AdjustedHistory(pd.Series(dtype=float), '', 'unavailable', note='History currency is unavailable')
         fx = get(f'{currency}EUR=X') if currency != 'EUR' else None

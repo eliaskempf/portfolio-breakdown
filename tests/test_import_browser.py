@@ -69,6 +69,12 @@ def test_upload_review_chart_allocation_and_listing(import_page):
     page.get_by_role('option', name='Stück/Nennwert Bank', exact=True).click()
     page.get_by_text('Quantities are shares/units and prices are amounts per unit (not nominal values or percent quotes)', exact=True).click()
     playwright.expect(save).to_be_enabled()
+    page.get_by_role('tab', name='Overview', exact=True).click()
+    playwright.expect(page.get_by_text('Open Positions and choose Add position to get started.', exact=True)).to_be_visible()
+    page.get_by_role('tab', name='Positions', exact=True).click()
+    playwright.expect(save).to_be_enabled()
+    playwright.expect(page.get_by_role('radio', name='Import portfolio', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('combobox', name='Quantity (required)', exact=True)).to_have_value('Stück/Nennwert Bank')
     save.click()
     page.locator('.js-plotly-plot').first.wait_for()
     assert page.locator('.js-plotly-plot').first.evaluate('el => el.data[0].type') == 'sunburst'

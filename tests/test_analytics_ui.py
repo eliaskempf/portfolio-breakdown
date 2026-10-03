@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.analytics_ui import load_metrics
+from portfolio_app.analytics_service import load_metrics
 from portfolio_app.holdings import load_holdings
 from test_ui import activate, by_label, launch
 

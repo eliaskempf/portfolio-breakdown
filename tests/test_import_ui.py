@@ -122,3 +122,42 @@ def test_source_row_correction_and_explicit_subtotal_exclusion(tmp_path, monkeyp
     stored = read_snapshot(path).holdings
     assert stored.shares.tolist() == [2.5]
     assert stored.name.tolist() == ['Invented asset']
+
+
+def test_review_controls_and_rows_survive_navigation_without_uploader(tmp_path, monkeypatch):
+    app, path = launch(tmp_path, monkeypatch, b'Name;Quantity;Adjusted\nInvented asset;1;2\n')
+    by_label(app.selectbox, 'Quantity (required)').set_value('Adjusted').run()
+    by_label(app.text_input, 'Account / depot for this file').set_value('Synthetic account').run()
+    confirm_units(app)
+    key = next(key for key in app.session_state.filtered_state if key.startswith('import_') and key.endswith('_rows'))
+    app.session_state[key] = {'edited_rows': {0: {'Adjusted': '3'}}, 'added_rows': [], 'deleted_rows': []}
+    app.run()
+    # A remounted uploader does not restore its UploadedFile widgets. The draft
+    # must retain bytes separately; this also exercises a genuine unmount.
+    monkeypatch.setattr('portfolio_app.import_state.st.file_uploader', lambda *a, **kw: [])
+    activate(app, 'Overview')
+    activate(app, 'Positions')
+    assert not app.exception
+    assert by_label(app.selectbox, 'Quantity (required)').value == 'Adjusted'
+    assert by_label(app.text_input, 'Account / depot for this file').value == 'Synthetic account'
+    assert next(box for box in app.checkbox if box.label.startswith('Quantities are')).value
+    by_label(app.button, 'Import reviewed positions').click().run()
+    assert not app.exception
+    stored = read_snapshot(path).holdings
+    assert stored.shares.tolist() == [3.]
+    assert stored.account.tolist() == ['Synthetic account']
+    assert 'import_files' not in app.session_state.filtered_state
+    assert 'import_controls' not in app.session_state.filtered_state
+
+
+def test_replacement_upload_requires_fresh_review(tmp_path, monkeypatch):
+    app, path = launch(tmp_path, monkeypatch, b'Name;Quantity\nInvented first;1\n')
+    confirm_units(app)
+    monkeypatch.setattr('portfolio_app.import_state.st.file_uploader',
+                        lambda *a, **kw: [Upload(b'Name;Quantity\nInvented replacement;7\n')])
+    app.run()
+    assert not app.exception
+    assert by_label(app.button, 'Import reviewed positions').disabled
+    confirm_units(app)
+    by_label(app.button, 'Import reviewed positions').click().run()
+    assert read_snapshot(path).holdings.name.tolist() == ['Invented replacement']

@@ -107,7 +107,9 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     offset = summary_box['y'] + summary_box['height']/2 - chart_box['y'] - chart_box['height']/2
     assert -40 < offset < -8
     page.get_by_role('tab', name='Positions', exact=True).click()
+    playwright.expect(page.get_by_role('table', name='Positions', exact=True)).to_be_visible()
     page.get_by_role('tab', name='Overview', exact=True).click()
+    playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_be_visible()
     initial_colors = page.locator('.js-plotly-plot').first.evaluate('el => Object.fromEntries(el.data[0].ids.map((id,i) => [id,el.data[0].marker.colors[i]]))')
     click_slice(page, 'ETF core')
     page.wait_for_function("document.querySelector('.js-plotly-plot')?.data?.[0]?.labels?.[0] === 'ETF core'")
@@ -118,6 +120,7 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     selected_colors = chart.evaluate('el => Object.fromEntries(el.data[0].ids.map((id,i) => [id,el.data[0].marker.colors[i]]))')
     assert all(initial_colors[node] == color for node, color in selected_colors.items())
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('ETF core')
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     value_card.get_by_role('button', name='Show gain as percentage').press('Space')
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+13.64%')
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('ETF core')

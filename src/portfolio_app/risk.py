@@ -5,11 +5,12 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
+from portfolio_app.currencies import quote_unit
+
 from portfolio_app.fundamentals import finite
 
 DEFAULT_BENCHMARK = 'IUSQ.DE'
 MIN_OBSERVATIONS = 52
-SUBUNITS = {'GBp': ('GBP', .01), 'GBX': ('GBP', .01), 'ZAc': ('ZAR', .01), 'ILA': ('ILS', .01)}
 
 
 def daily_prices(series: pd.Series) -> pd.Series:
@@ -21,7 +22,7 @@ def daily_prices(series: pd.Series) -> pd.Series:
 
 
 def eur_prices(prices, currency, fx=None):
-    currency, factor = SUBUNITS.get(currency, (currency, 1.))
+    currency, factor = quote_unit(currency)
     if len(currency) != 3 or not currency.isupper():
         raise ValueError('History currency is unavailable')
     result = daily_prices(prices) * factor

@@ -8,6 +8,8 @@ from platformdirs import user_data_path, user_state_path
 APP_ID = 'portfolio-breakdown'
 APP_NAME = 'Portfolio Breakdown'
 PRIMARY_COLOR = '#5470c6'
+GAIN_COLOR = '#27836c'
+LOSS_COLOR = '#b84655'
 LIGHT_BACKGROUND = '#ffffff'
 DARK_BACKGROUND = '#11151c'
 BRANDING_ASSETS = ('portfolio-breakdown.svg', 'portfolio-breakdown.png', 'favicon.svg', 'favicon.ico')

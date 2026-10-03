@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from portfolio_app.settings import GAIN_COLOR, LOSS_COLOR
 from portfolio_app.charts import hierarchy_chart, sort_allocation_nodes, strategic_colors, style_figure
 from portfolio_app.chart_navigation import sync_chart_category
 from portfolio_app.position_list import render_overview_positions
@@ -71,7 +72,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                       f'{row["Return (%)"]:+,.2f}%' if pd.notna(row['Return (%)']) else 'Unavailable',
                       row['Coverage'], row['Status']] for _, row in available.iterrows()]
             figure = style_figure(go.Figure(go.Bar(x=available[measure], y=available.Category, orientation='h',
-                marker_color=['#b84655' if value < 0 else '#27836c' for value in available[measure]],
+                marker_color=[LOSS_COLOR if value < 0 else GAIN_COLOR for value in available[measure]],
                 text=[f'{value:+,.2f}' + ('%' if chart_percent else ' €') for value in available[measure]], textposition='auto',
                 customdata=hover, hovertemplate='%{y}<br>Return: %{customdata[2]}<br>Gain: %{customdata[1]}<br>Buy-in cost: %{customdata[0]}<br>Coverage: %{customdata[3]} · %{customdata[4]}<extra></extra>')))
             figure.update_layout(height=max(260, 36 * len(available)), xaxis_title=measure, margin=dict(l=12, r=12, t=12, b=30))

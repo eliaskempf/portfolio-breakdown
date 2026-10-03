@@ -3,7 +3,8 @@ import pandas as pd
 import streamlit as st
 
 from portfolio_app.analytics import snapshot_analytics
-from portfolio_app.analytics_ui import context_key, data_quality_caption, display_value, load_metrics, load_risk, render_sources, risk_settings
+from portfolio_app.analytics_service import load_metrics, load_risk
+from portfolio_app.analytics_ui import context_key, data_quality_caption, display_value, render_sources, risk_settings
 from portfolio_app.charts import correlation_chart
 from portfolio_app.company_merges import build_plan, load_company_names, load_settings
 from portfolio_app.display_names import instrument_name

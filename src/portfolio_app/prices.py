@@ -9,6 +9,8 @@ from tempfile import NamedTemporaryFile
 from threading import RLock
 from typing import Callable, Protocol
 
+from portfolio_app.currencies import quote_unit
+
 UTC = timezone.utc
 
 
@@ -81,8 +83,7 @@ class YahooProvider:
         if not units:
             raise ValueError(f"Quote currency unavailable for {ticker}.")
         # Yahoo uses case-sensitive currency codes for some exchange subunits.
-        normalizations = {"GBp": ("GBP", 0.01), "GBX": ("GBP", 0.01), "ZAc": ("ZAR", 0.01), "ILA": ("ILS", 0.01)}
-        units, factor = normalizations.get(units, (units, 1.0))
+        units, factor = quote_unit(units)
         observed = closes.index[-1].to_pydatetime()
         if observed.tzinfo is None:
             observed = observed.replace(tzinfo=UTC)

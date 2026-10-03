@@ -5,6 +5,7 @@ import re
 import pytest
 import yaml
 
+from list_helpers import list_frame
 from test_ui import activate, by_label, launch
 from portfolio_app.allocation import load_allocation
 from portfolio_app.positions import read_snapshot
@@ -46,7 +47,7 @@ def test_portfolio_results_are_trades_only_readable_and_display_changes_keep_pla
     by_label(app.number_input, 'Maximum trades').set_value(1).run()
     by_label(app.button, 'Calculate plan').click().run()
     assert not app.exception and not app.error
-    trades = next(item.value for item in app.dataframe if 'Action' in item.value)
+    trades = list_frame(app, 'Suggested trades')
     assert len(trades) == 1
     assert trades['Trade (EUR)'].ne(0).all()
     assert trades.Category.iloc[0].endswith('category')
@@ -178,7 +179,7 @@ def test_category_plan_respects_ancestor_protection_with_unrelated_missing_price
     by_label(app.selectbox, 'Rebalancing mode').set_value('Allocate new money').run()
     by_label(app.button, 'Calculate plan').click().run()
     assert not app.exception and not app.error
-    trades = next(item.value for item in app.dataframe if 'Action' in item.value)
+    trades = list_frame(app, 'Suggested trades')
     assert trades.Action.eq('Buy').all()
     before = {item.label: item.value for item in app.metric}
     by_label(app.selectbox, 'Compare categories within').set_value('parent').run()

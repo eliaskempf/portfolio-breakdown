@@ -183,9 +183,10 @@ switch to live pricing clears manual prices for that instrument across accounts,
 preserving quantities, costs, identities and allocation assignments. Otherwise,
 linking a listing retains snapshot pricing. Existing ISINs must match the listing.
 
-Uploaded files and review drafts stay in session memory. Accepted position data
-is saved in the selected private portfolio directory through a revision-checked
-atomic write; prior files receive private backups. Canceling writes no holdings,
+Uploaded files and review drafts stay in session memory and survive navigation
+between tabs. Canceling, completing the import, or switching workspaces clears
+them. Accepted position data is saved in the selected private portfolio directory
+through a revision-checked atomic write; prior files receive private backups. Canceling writes no holdings,
 workspace changes clear import drafts, and repeated submissions cannot append
 the same holdings again. Keep real exports out of Git. The format-specific
 column suggestions are separate from readers and normalized position handling
@@ -1086,6 +1087,9 @@ Position filters run after valuation and before exposure normalization. The
 exposure table retains asset IDs and source-position metadata through ETF
 expansion. Provider parsing and refresh code are separate from the generic ETF
 transformation and aggregation engine. All chart types share the same aggregation engine.
+`exposure_analysis.py` owns source selection and normalized ETF expansion without
+Streamlit; the UI supplies selections and renders the resulting tables.
+`currencies.py` shares quote-subunit normalization across spot and historical prices.
 
 ```bash
 uv run pytest
@@ -1120,8 +1124,9 @@ remain deferred.
 `src/portfolio_app/list_ui.py` defines the shared read-only list component,
 column formatting, taxonomy badges, sorting, row actions and scrolling policy.
 Overview allocations/performance, position lists, Exposure assets and source
-contributions, and ETF constituent lists use it. Keep presentation changes here
-instead of copying table CSS or row-selection controls into individual pages.
+contributions, ETF constituent lists, and Suggested trades use it. Keep
+presentation changes here instead of copying table CSS or row-selection controls
+into individual pages.
 Use `ListColumn` for column labels, numeric precision and signed values.
 
 Lists grow with the page by default. Exposure enables the shared
@@ -1215,7 +1220,8 @@ development requirements. These notes contain no working portfolio data.
 | `analytics.py` | Pure snapshot aggregation and concentration |
 | `risk_data.py` | Adjusted price histories and historical EUR conversion |
 | `risk.py` | Pure common-sample weekly risk calculations |
-| `analytics_ui.py` | Shared loading, formatting, sources, benchmark settings |
+| `analytics_service.py` | Provider/cache orchestration for fundamentals and risk, independent of Streamlit |
+| `analytics_ui.py` | Shared formatting, sources, benchmark settings |
 | `portfolio_analytics_ui.py` | Overview analytics presentation |
 | `position_metrics_ui.py` | Position metric presets, details, fee maintenance |
 | `charts.py` → `correlation_chart` | Correlation matrix rendering |

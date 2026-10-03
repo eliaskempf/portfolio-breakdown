@@ -27,7 +27,8 @@ data. A checked checklist is specific to one build, not a blanket approval.
 - [ ] Demo, all main tabs/modes, dialogs, charts and lists work.
 - [ ] Futures sandbox absent from package, navigation and CLI.
 - [ ] CSV and Excel imports reviewed and saved; cancel writes nothing, workspace
-      switching clears drafts, restart retains positions and live-price linking works.
+      switching clears drafts, navigation retains uploads/mappings/edits, restart
+      retains positions and live-price linking works.
 - [ ] Spaces and non-ASCII paths work.
 - [ ] Offline/stale/missing data states are understandable.
 - [ ] Migration, backup and restoration preserve an invented complete workspace.

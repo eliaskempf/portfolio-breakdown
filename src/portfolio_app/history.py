@@ -10,8 +10,9 @@ from typing import Protocol
 
 import pandas as pd
 
+from portfolio_app.currencies import quote_unit
+
 PERIODS = {"1M": "1mo", "6M": "6mo", "1Y": "1y", "5Y": "5y", "Max": "max"}
-SUBUNITS = {"GBp": ("GBP", .01), "GBX": ("GBP", .01), "ZAc": ("ZAR", .01), "ILA": ("ILS", .01)}
 
 
 @dataclass(frozen=True)
@@ -30,7 +31,7 @@ class HistoryProvider(Protocol):
 
 
 def normalize_history(frame, currency: str) -> HistoryResult:
-    currency, factor = SUBUNITS.get(currency, (currency, 1.))
+    currency, factor = quote_unit(currency)
     if len(currency) != 3 or not currency.isupper():
         raise ValueError("History quote currency is unavailable.")
     if "Close" not in frame:
