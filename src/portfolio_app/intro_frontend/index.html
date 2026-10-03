@@ -72,7 +72,7 @@
         <g id="assemblingRing"></g>
       </svg>
       <g id="trails" fill="none" stroke-linecap="round" aria-hidden="true"></g>
-      <g id="letters" aria-hidden="true"></g>
+      <g id="letters" aria-hidden="true" style="visibility:hidden"></g>
     </svg>
   </div>
   <div class="controls" aria-label="Animation controls">
@@ -146,24 +146,33 @@
     const text = svgNode("text", {x: 0, y: 0, fill: color}, $("letters"));
     text.textContent = char;
     const trail = svgNode("path", {stroke: color, opacity: 0}, $("trails"));
-    return {text, trail, group, index: i, width: text.getComputedTextLength()};
+    return {text, trail, group, index: i};
   });
-  const totalWidth = letters.reduce((s, l) => s+l.width, 0) - 8;
-  let cursor = -totalWidth / 2;
-  letters.forEach((l) => {
-    l.x = cursor + l.width / 2;
-    cursor += l.width - 1;
-    const box = l.text.getBBox();
-    l.baseline = -(box.y + box.height / 2);
-    l.startAngle = l.x < 0 ? Math.PI : 0;
-    const count = l.group === 0 ? 5 : l.group === 1 ? 3 : 1;
-    const localIndex = l.index - (l.group === 0 ? 0 : l.group === 1 ? 5 : 8);
-    const sector = reveals[l.group];
-    let end = lerp(sector.a, sector.b, (localIndex+.5)/count);
-    // Mathematical angles increase CCW. SVG's downward y is inverted here.
-    while (end-l.startAngle < Math.PI * .8) end += tau;
-    l.endAngle = end;
-  });
+  function layoutLetters() {
+    // Streamlit initially hides component iframes. SVG text metrics are zero
+    // until the frame is rendered; never cache those as the wordmark geometry.
+    $("letters").style.display = "";
+    const widths = letters.map(l => l.text.getComputedTextLength());
+    if (widths.some(width => width <= 0)) return false;
+    letters.forEach((l, i) => { l.width = widths[i]; });
+    const totalWidth = letters.reduce((s, l) => s+l.width, 0) - 8;
+    let cursor = -totalWidth / 2;
+    letters.forEach((l) => {
+      l.x = cursor + l.width / 2;
+      cursor += l.width - 1;
+      const box = l.text.getBBox();
+      l.baseline = -(box.y + box.height / 2);
+      l.startAngle = l.x < 0 ? Math.PI : 0;
+      const count = l.group === 0 ? 5 : l.group === 1 ? 3 : 1;
+      const localIndex = l.index - (l.group === 0 ? 0 : l.group === 1 ? 5 : 8);
+      const sector = reveals[l.group];
+      let end = lerp(sector.a, sector.b, (localIndex+.5)/count);
+      // Mathematical angles increase CCW. SVG's downward y is inverted here.
+      while (end-l.startAngle < Math.PI * .8) end += tau;
+      l.endAngle = end;
+    });
+    return true;
+  }
 
   let holdMs = 950, swirlMs = 1850, elapsed = 0, lastTime = null, raf = 0;
   let playing = false, completed = false, runToken = null, reported = null;
@@ -189,12 +198,14 @@
     elapsed = clamp(ms, 0, duration());
     const u = clamp((elapsed-holdMs)/swirlMs);
     const done = elapsed >= duration();
+    if (!done && letters.some(l => l.width === undefined) && !layoutLetters()) return;
     canonical.style.display = done ? "" : "none";
     assembling.style.display = done || u === 0 ? "none" : "";
     $("letters").style.display = done ? "none" : "";
+    $("letters").style.visibility = "visible";
     $("trails").style.display = done ? "none" : "";
 
-    letters.forEach((l) => {
+    if (!done) letters.forEach((l) => {
       const local = clamp((u-l.index*.008)/(1-l.index*.008));
       const p = pose(l, local);
       const opacity = 1 - windowed(local, .30, .74);
@@ -238,9 +249,15 @@
     stop();
     if (respectReducedMotion && motionPreference.matches) { finish(); return; }
     if (restart || elapsed >= duration()) { elapsed = 0; completed = false; }
-    render(elapsed);
     playing = true; $("pause").textContent = "Pause";
-    raf = requestAnimationFrame(tick);
+    $("letters").style.visibility = "hidden";
+    const begin = () => {
+      if (!layoutLetters()) { raf = requestAnimationFrame(begin); return; }
+      render(elapsed);
+      $("letters").style.visibility = "visible";
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(begin);
   }
   function seek(ms) { stop(); completed = false; render(ms); }
   $("replay").addEventListener("click", () => play(true));

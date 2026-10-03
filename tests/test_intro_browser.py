@@ -153,3 +153,69 @@ def test_animation_standalone_replay_and_exact_final_svg(intro_page):
     page.emulate_media(reduced_motion='reduce')
     page.get_by_role('button', name='Replay', exact=False).click()
     page.wait_for_function('window.BreakdownIntro.completed && !window.BreakdownIntro.playing')
+
+
+def test_embedded_wordmark_has_separate_letters_before_swirl(intro_page):
+    page, url, _ = intro_page
+    page.goto(url)
+    frame = page.frame_locator('iframe[title*=portfolio_breakdown_intro]')
+    playwright.expect(frame.locator('body')).to_have_attribute('data-phase', 'wordmark')
+    frame.locator('body').evaluate('() => BreakdownIntro.pause()')
+    boxes = frame.locator('#letters text').evaluate_all('els => els.map(el => el.getBoundingClientRect().toJSON())')
+    assert len(boxes) == 9
+    assert all(right['x'] > left['x'] + left['width'] * .7 for left, right in zip(boxes, boxes[1:]))
+    assert max(box['y'] + box['height']/2 for box in boxes) - min(box['y'] + box['height']/2 for box in boxes) < 2
+    # Replay must remeasure visible letters too, including after the final mark.
+    frame.locator('body').evaluate('() => { BreakdownIntro.seek(BreakdownIntro.duration); BreakdownIntro.replay(); }')
+    playwright.expect(frame.locator('body')).to_have_attribute('data-phase', 'wordmark')
+    frame.locator('body').evaluate('() => BreakdownIntro.pause()')
+    replay = frame.locator('#letters text').evaluate_all('els => els.map(el => el.getBoundingClientRect().x)')
+    assert all(right > left + 15 for left, right in zip(replay, replay[1:]))
+
+
+@pytest.mark.parametrize('theme', ['Light', 'Dark'])
+def test_welcome_cards_follow_selected_theme_with_readable_text(intro_page, theme):
+    page, url, _ = intro_page
+    page.emulate_media(reduced_motion='reduce')
+    page.goto(url)
+    page.get_by_role('button', name='Explore demo', exact=True).click()
+    page.get_by_role('button', name='Main menu', exact=True).click()
+    page.get_by_test_id(f'stMainMenuItem-theme-{theme}').click()
+    page.keyboard.press('Escape')
+    select_workspace(page, 'My portfolio')
+    playwright.expect(page.get_by_role('dialog')).to_be_visible()
+    for reload in (False, True):
+        if reload:
+            page.reload()
+            playwright.expect(page.get_by_role('dialog')).to_be_visible()
+        for card in ('welcome_demo', 'welcome_personal'):
+            colors = page.locator(f'.st-key-{card}').evaluate('''el => {
+                const ctx = document.createElement('canvas').getContext('2d');
+                const ancestors = [];
+                for (let node = el; node; node = node.parentElement) ancestors.unshift(node);
+                ctx.fillStyle = 'white'; ctx.fillRect(0, 0, 1, 1);
+                for (const node of ancestors) {
+                    ctx.fillStyle = getComputedStyle(node).backgroundColor;
+                    ctx.fillRect(0, 0, 1, 1);
+                }
+                const bg = [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
+                const text = [...el.querySelectorAll('[data-testid="stMarkdownContainer"] p')].filter(p => !p.closest('button')).map(p => {
+                    ctx.fillStyle = `rgb(${bg.join(',')})`; ctx.fillRect(0, 0, 1, 1);
+                    ctx.fillStyle = getComputedStyle(p).color; ctx.fillRect(0, 0, 1, 1);
+                    return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
+                });
+                return {bg, text};
+            }''')
+            def luminance(rgb):
+                channels = [v/255 for v in rgb]
+                linear = [v/12.92 if v <= .04045 else ((v+.055)/1.055)**2.4 for v in channels]
+                return sum(v*w for v, w in zip(linear, (.2126, .7152, .0722)))
+            background = luminance(colors['bg'])
+            assert (background < .1) if theme == 'Dark' else (background > .7)
+            assert colors['text']
+            for rgb in colors['text']:
+                foreground = luminance(rgb)
+                assert (max(background, foreground)+.05)/(min(background, foreground)+.05) >= 4.5
+    page.set_viewport_size({'width': 390, 'height': 844})
+    assert page.get_by_role('dialog').evaluate('el => el.scrollWidth <= el.clientWidth + 1')
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

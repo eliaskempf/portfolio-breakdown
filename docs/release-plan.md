@@ -541,3 +541,22 @@ on Windows, refresh existing shortcuts, and check repeat launch, missing/occupie
 port errors and stop/restart with no terminal flash. This local Linux result is
 not Windows or clean-machine acceptance. No official release is published or
 approved by this change.
+
+## Startup visual corrections (2026-10-03)
+
+The embedded intro initially measured SVG letters while Streamlit still hid the
+iframe, caching zero widths and collapsing the wordmark. It now waits for valid
+rendered text metrics and measures again on replay. Reduced motion still skips
+directly to the final mark without calculating uninitialized letter transforms.
+
+Welcome cards used an unavailable CSS variable with a white fallback, leaving
+white text on pale cards in dark mode. Their accent backgrounds now blend with
+the actual dialog surface, retaining the user's selected light or dark theme.
+
+Validation: 11 focused browser/onboarding tests passed, including initial embedded
+letter spacing, replay, light/dark body-text contrast (at least 4.5:1), theme
+persistence after reload, narrow layout, reduced motion and Skip. Restarted the
+owned source preview on port 8513 with the same isolated synthetic workspace and
+launch options; checked the actual welcome in dark mode and the animation
+workbench on port 8512. No financial behavior or packaging contract changed.
+The previous executable does not include these fixes until rebuilt.

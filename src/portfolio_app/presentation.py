@@ -18,8 +18,8 @@ CSS = """
 .st-key-app_header [data-testid="stHorizontalBlock"] {flex-wrap:wrap;gap:12px;}
 .stDialog > div:has(.st-key-welcome_personal) {width:min(880px,calc(100vw - 32px))!important;max-width:880px;margin:clamp(24px,12vh,120px) auto!important;}
 .st-key-welcome_demo,.st-key-welcome_personal {padding:24px!important;border-radius:16px!important;min-height:285px;}
-.st-key-welcome_demo {background:color-mix(in srgb,#5470c6 12%,var(--st-background-color,white));border-color:#5470c6!important;}
-.st-key-welcome_personal {background:color-mix(in srgb,#4aa9b3 7%,var(--st-background-color,white));}
+.st-key-welcome_demo {background:color-mix(in srgb,#5470c6 12%,transparent);border-color:#5470c6!important;}
+.st-key-welcome_personal {background:color-mix(in srgb,#4aa9b3 7%,transparent);}
 .welcome-symbol {font-size:2.5rem;line-height:1.1;color:#5470c6;margin-bottom:12px;}
 .st-key-welcome_demo .welcome-symbol {width:40px;height:40px;border-radius:50%;background:conic-gradient(#5470c6 0deg 220deg,#4aa9b3 220deg 310deg,#9a6dd7 310deg);font-size:0;}
 .st-key-welcome_personal .welcome-symbol {color:#4aa9b3;}
