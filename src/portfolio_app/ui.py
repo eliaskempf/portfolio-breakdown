@@ -18,7 +18,7 @@ from portfolio_app.portfolio import prepare_portfolio
 from portfolio_app.rebalancing import RebalanceError
 from portfolio_app.rebalance_ui import render_rebalancing
 from portfolio_app.prices import PriceService, StaticProvider, UnavailableProvider
-from portfolio_app.presentation import apply_style, empty_overview
+from portfolio_app.presentation import apply_style, empty_overview, mark_view_ready
 from portfolio_app.allocation import analysis_targets, migration_preview
 from portfolio_app.strategic_ui import render_strategic_overview
 from portfolio_app.scoped_ui import render_scoped_rebalancing
@@ -58,6 +58,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     except DataError as exc:
         st.error(str(exc))
         st.info("Edit holdings.csv and classifications.yaml in the data directory, then rerun the app.")
+        mark_view_ready()
         return
     coordinator.schedule(data_dir, holdings, funds, demo=offline_demo)
     with st.container(key='refresh_status'):
@@ -81,8 +82,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if holdings.empty and not demo:
         from portfolio_app.onboarding_ui import render_welcome, render_guided_setup
         if render_welcome(demo_available=demo_dir is not None):
+            mark_view_ready()
             return
         if render_guided_setup(data_dir, snapshot, allocation):
+            mark_view_ready()
             return
     background_prices = price_service is None and not offline_demo
     market_workspace = str(data_dir.resolve())
@@ -109,6 +112,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             st.warning('Some quotes are unavailable. Use Refresh prices to retry. Synthetic prices are never substituted for live data.')
             st.dataframe(valued.loc[valued.current_value_eur.isna(), ['name', 'valuation_note']], hide_index=True)
             st.caption('For an offline example, restart with --offline-demo. My portfolio remains available in the workspace menu.')
+            mark_view_ready()
         return
     if price_service.cache_warning:
         st.warning(price_service.cache_warning)
@@ -186,6 +190,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued)
     if background_prices:
         render_market_status(market_workspace, market_revision)
+    mark_view_ready()
 
 
 

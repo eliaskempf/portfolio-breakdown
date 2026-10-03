@@ -51,7 +51,13 @@ def render_startup_intro() -> bool:
         with st.container(key='startup_intro'):
             st.html('''<style>
             [data-testid="stApp"]:has(.st-key-startup_intro) {background:#11151c;color:#e3e7ef;}
-            .st-key-startup_intro {padding-top:clamp(24px,12vh,140px);}
+            .st-key-startup_intro {
+                position:fixed;inset:0;width:100%;height:100dvh;
+                display:flex;align-items:center;justify-content:center;
+                padding:0;gap:0;background:#11151c;z-index:1000;
+            }
+            .st-key-startup_intro > div {width:100%;}
+            .st-key-startup_intro iframe {display:block;width:100%;height:min(360px,100dvh);}
             </style>''')
             done = breakdown_intro(height=360)
             if done or monotonic() - started >= 8:

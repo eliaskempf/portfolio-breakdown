@@ -74,6 +74,136 @@ def select_workspace(page, name):
     page.get_by_role('option', name=name, exact=True).click()
 
 
+def test_native_startup_asset_plays_centered_without_a_server(intro_page):
+    from portfolio_app.window import startup_html
+    page, _, _ = intro_page
+    page.set_content(startup_html())
+    page.wait_for_function('window.BreakdownIntro?.playing')
+    page.evaluate('window.BreakdownIntro.pause()')
+    for width, height in [(1440, 1000), (650, 500), (390, 844)]:
+        page.set_viewport_size({'width': width, 'height': height})
+        scene = page.locator('#scene').bounding_box()
+        assert abs(scene['x'] + scene['width'] / 2 - width / 2) < 2
+        assert abs(scene['y'] + scene['height'] / 2 - (height + 48) / 2) < 2
+    playwright.expect(page.locator('.controls')).to_be_hidden()
+    page.evaluate('window.BreakdownIntro.replay()')
+    page.wait_for_function('window.BreakdownIntro.completed')
+
+
+def open_window_splash(page, url, content='<p>Loading synthetic app</p>'):
+    from portfolio_app.window_splash import startup_html
+    page.route(url + '/__portfolio_window__', lambda route: route.fulfill(content_type='text/html', body=startup_html()))
+    page.route(url + '/synthetic-app', lambda route: route.fulfill(content_type='text/html', body=content))
+    page.goto(url + '/__portfolio_window__')
+    assert page.evaluate('(url) => PortfolioSplash.open(url)', url + '/synthetic-app')
+    frame = page.frame_locator('#portfolio-app')
+    playwright.expect(frame.locator('body')).not_to_be_empty()
+    return frame
+
+
+READY_VIEW = '''<button role="tab" aria-selected="true">Overview</button>
+<div class="js-plotly-plot"><svg class="main-svg"></svg></div>'''
+
+
+def test_window_splash_holds_until_all_charts_draw_without_reloading(intro_page):
+    page, url, _ = intro_page
+    frame = open_window_splash(page, url)
+    page.wait_for_function('BreakdownIntro.completed')
+    playwright.expect(page.locator('main')).to_be_visible()
+    assert page.locator('#scene').evaluate('e => getComputedStyle(e).animationName') == 'loading-pulse'
+    frame.locator('body').evaluate('(e, html) => e.innerHTML = html', READY_VIEW + '<div id="pending" class="js-plotly-plot"></div>')
+    page.wait_for_timeout(500)
+    playwright.expect(page.locator('main')).to_be_visible()
+    frame.locator('#pending').evaluate('e => e.innerHTML = \'<svg class="main-svg"></svg>\'')
+    playwright.expect(page.locator('main')).to_have_count(0)
+    assert page.evaluate('PortfolioSplash.state') == 'first-view-rendered'
+    playwright.expect(frame.locator('#pending .main-svg')).to_have_count(1)
+    assert page.locator('#portfolio-app').evaluate('e => e.inert') is False
+
+
+def test_window_fast_load_finishes_animation_before_reveal(intro_page):
+    page, url, _ = intro_page
+    open_window_splash(page, url, READY_VIEW)
+    page.evaluate('BreakdownIntro.pause()')
+    page.wait_for_timeout(500)
+    playwright.expect(page.locator('main')).to_be_visible()
+    page.evaluate('BreakdownIntro.finish()')
+    playwright.expect(page.locator('main')).to_have_count(0)
+
+
+def test_window_splash_reduced_motion_and_error_reveal(intro_page):
+    page, url, _ = intro_page
+    page.emulate_media(reduced_motion='reduce')
+    frame = open_window_splash(page, url)
+    assert page.evaluate('BreakdownIntro.completed')
+    assert page.locator('#scene').evaluate('e => getComputedStyle(e).animationName') == 'none'
+    frame.locator('body').evaluate('e => e.innerHTML = \'<div data-testid="stException">Synthetic failure</div>\'')
+    playwright.expect(page.locator('main')).to_have_count(0)
+    assert page.evaluate('PortfolioSplash.state') == 'failed'
+    playwright.expect(frame.get_by_text('Synthetic failure')).to_be_visible()
+
+
+def test_window_splash_slow_start_has_a_way_to_show_app(intro_page):
+    page, url, _ = intro_page
+    page.clock.install()
+    open_window_splash(page, url)
+    page.clock.fast_forward(61000)
+    playwright.expect(page.get_by_text('Loading is taking longer than expected.')).to_be_visible()
+    page.get_by_role('button', name='Show application').click()
+    page.clock.fast_forward(500)
+    playwright.expect(page.locator('main')).to_have_count(0)
+
+
+def test_window_splash_reveals_actual_welcome_and_navigation(intro_page):
+    from portfolio_app.window_splash import startup_html
+    page, url, _ = intro_page
+    page.route(url + '/__portfolio_window__', lambda route: route.fulfill(content_type='text/html', body=startup_html()))
+    page.goto(url + '/__portfolio_window__')
+    page.evaluate('(url) => PortfolioSplash.open(url)', url)
+    playwright.expect(page.locator('main')).to_have_count(0, timeout=20000)
+    frame = page.frame_locator('#portfolio-app')
+    frame.get_by_role('button', name='Explore demo', exact=True).click()
+    playwright.expect(frame.locator('.js-plotly-plot').first).to_be_visible()
+    frame.get_by_role('tab', name='Positions', exact=True).click()
+    playwright.expect(frame.get_by_test_id('stException')).to_have_count(0)
+
+
+def test_window_splash_reveals_actual_input_error(intro_page):
+    from portfolio_app.window_splash import startup_html
+    page, url, directory = intro_page
+    workspace = directory / 'empty'
+    workspace.mkdir(exist_ok=True)
+    (workspace / 'holdings.csv').write_text('synthetic,invalid,columns\nexample,only,here\n')
+    page.route(url + '/__portfolio_window__', lambda route: route.fulfill(content_type='text/html', body=startup_html()))
+    page.goto(url + '/__portfolio_window__')
+    page.evaluate('(url) => PortfolioSplash.open(url)', url)
+    frame = page.frame_locator('#portfolio-app')
+    playwright.expect(frame.get_by_test_id('stAlert').first).to_be_visible(timeout=20000)
+    playwright.expect(page.locator('main')).to_have_count(0)
+    playwright.expect(frame.locator('[data-portfolio-view-ready="true"]')).to_have_count(1)
+
+
+def test_window_controls_and_skip_intro(intro_page):
+    from portfolio_app.window_splash import startup_html
+    page, url, _ = intro_page
+    page.route(url + '/__portfolio_window__', lambda route: route.fulfill(content_type='text/html', body=startup_html(False)))
+    page.goto(url + '/__portfolio_window__')
+    playwright.expect(page.locator('main')).to_have_count(0)
+    playwright.expect(page.get_by_role('button', name='Fullscreen', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_role('button', name='Exit', exact=True)).to_be_hidden()
+    page.evaluate('window.commands = []; window.chrome.webview = {postMessage: c => commands.push(c)}')
+    page.get_by_role('button', name='Fullscreen', exact=True).click()
+    page.evaluate('PortfolioSplash.setFullscreen(true)')
+    playwright.expect(page.get_by_role('button', name='Windowed', exact=True)).to_be_visible()
+    exit_button = page.get_by_role('button', name='Exit', exact=True)
+    playwright.expect(exit_button).to_be_visible()
+    exit_button.focus()
+    page.keyboard.press('Enter')
+    assert page.evaluate('commands') == ['portfolio:fullscreen', 'portfolio:exit']
+    page.evaluate('PortfolioSplash.setFullscreen(false)')
+    playwright.expect(exit_button).to_be_hidden()
+
+
 def test_intro_welcome_navigation_and_help(intro_page):
     page, url, directory = intro_page
     page.goto(url)
@@ -170,6 +300,15 @@ def test_embedded_wordmark_has_separate_letters_before_swirl(intro_page):
     frame = page.frame_locator('iframe[title*=portfolio_breakdown_intro]')
     playwright.expect(frame.locator('body')).to_have_attribute('data-phase', 'wordmark')
     frame.locator('body').evaluate('() => BreakdownIntro.pause()')
+    # Center in the app viewport, including after resizing during playback.
+    for width, height in [(1440, 1000), (650, 500), (390, 844)]:
+        page.set_viewport_size({'width': width, 'height': height})
+        page.wait_for_function('''() => {
+            const r = document.querySelector('iframe[title*=portfolio_breakdown_intro]')?.getBoundingClientRect();
+            return r && Math.abs(r.x+r.width/2-innerWidth/2)<2
+                && Math.abs(r.y+r.height/2-innerHeight/2)<2;
+        }''')
+    page.set_viewport_size({'width': 1440, 'height': 1000})
     boxes = frame.locator('#letters text').evaluate_all('els => els.map(el => el.getBoundingClientRect().toJSON())')
     assert len(boxes) == 9
     assert all(right['x'] > left['x'] + left['width'] * .7 for left, right in zip(boxes, boxes[1:]))
