@@ -1,6 +1,8 @@
 """Opt-in desktop prototype. Importing this module never imports pywebview."""
+from base64 import b64encode
 import logging
 import os
+from pathlib import Path
 import signal
 import sys
 import threading
@@ -13,7 +15,22 @@ RUNTIME_URL = 'https://developer.microsoft.com/microsoft-edge/webview2/'
 LOADING_HTML = '''<!doctype html><title>Portfolio Breakdown</title>
 <style>html{background:#11151c;color:#e3e7ef;font:16px system-ui}body{padding:24px}</style>
 <p>Starting Portfolio Breakdown…</p>'''
-# A future supplied splash may use this state change. No portfolio values leave the renderer.
+
+
+def startup_html():
+    """Reuse the supplied animation before Streamlit is available."""
+    html = (Path(__file__).with_name('intro_frontend') / 'index.html').read_text(encoding='utf-8')
+    style = '''<style>
+    html,body{height:100%;overflow:hidden}
+    body main{width:100%;height:100dvh;margin:0;display:flex;align-items:center;justify-content:center}
+    header,.controls,footer{display:none}
+    .stage{width:100%;border:0;border-radius:0}
+    #scene{width:100%;height:min(360px,100dvh)}
+    </style>'''
+    return html.replace('</head>', style + '</head>')
+
+
+# No portfolio values leave the renderer.
 VIEW_PROBE = """(() => {
  const exception = document.querySelector('[data-testid="stException"]');
  if (exception) return 'failed';
@@ -67,6 +84,8 @@ class WindowPresentation:
         self.closed = threading.Event()
         self.renderer_ready = threading.Event()
         self.color_scheme = 'dark'
+        self.show_intro = True
+        self.startup_loaded = threading.Event()
 
     def prepare(self):
         from portfolio_app.holdings import DataError
@@ -94,6 +113,10 @@ class WindowPresentation:
                 self.color_scheme = arg.split('=', 1)[1]
         if not any(arg == '--theme.base' or arg.startswith('--theme.base=') for arg in command[:separator]):
             command = [*command[:separator], '--theme.base=dark', *command[separator:]]
+        self.show_intro = '--skip-intro' not in command
+        if self.show_intro:
+            # The window plays the same asset immediately; do not replay it in Streamlit.
+            command = [*command, *([] if '--' in command else ['--']), '--skip-intro']
         return contained_child(command)
 
     def focus(self):
@@ -123,26 +146,44 @@ class WindowPresentation:
         self.exit_button.Visible = native.is_fullscreen
 
     def _install_window_controls(self):
-        from System.Drawing import Color
-        from System.Windows.Forms import (DockStyle, Keys, ToolStrip, ToolStripButton,
-                                          ToolStripGripStyle, ToolStripItemAlignment)
+        from System.Drawing import Color, Region, Size
+        from System.Drawing.Drawing2D import GraphicsPath
+        from System.Windows.Forms import (BorderStyle, Button, DockStyle, FlatStyle,
+                                          FlowDirection, FlowLayoutPanel, Keys, Padding)
         native = self.window.native
-        toolbar = ToolStrip()
+        toolbar = FlowLayoutPanel()
         toolbar.Dock = DockStyle.Top
-        toolbar.GripStyle = ToolStripGripStyle.Hidden
-        toolbar.AutoSize = False
-        toolbar.Height = 34
+        toolbar.BorderStyle = getattr(BorderStyle, 'None')
+        toolbar.FlowDirection = FlowDirection.RightToLeft
+        toolbar.WrapContents = False
+        toolbar.Padding = Padding(0, 8, 12, 8)
+        toolbar.Height = 48
         toolbar.BackColor = Color.FromArgb(17, 21, 28)
-        self.exit_button = ToolStripButton('Exit')
-        self.exit_button.ToolTipText = 'Close Portfolio Breakdown and stop its server'
+        def button(label, width, color, hover):
+            control = Button()
+            control.Text = control.AccessibleName = label
+            control.Size = Size(width, 32)
+            control.Margin = Padding(8, 0, 0, 0)
+            control.FlatStyle = FlatStyle.Flat
+            control.FlatAppearance.BorderSize = 0
+            control.BackColor = Color.FromArgb(*color)
+            control.ForeColor = Color.White
+            control.FlatAppearance.MouseOverBackColor = Color.FromArgb(*hover)
+            control.FlatAppearance.MouseDownBackColor = Color.FromArgb(*color)
+            shape = GraphicsPath()
+            for x, y, angle in [(0, 0, 180), (width-12, 0, 270), (width-12, 20, 0), (0, 20, 90)]:
+                shape.AddArc(x, y, 12, 12, angle, 90)
+            shape.CloseFigure()
+            control.Region = Region(shape)
+            shape.Dispose()
+            toolbar.Controls.Add(control)
+            return control
+        self.exit_button = button('Exit', 84, (190, 43, 55), (215, 55, 68))
+        self.exit_button.AccessibleDescription = 'Close Portfolio Breakdown and stop its server'
         self.exit_button.Visible = False
         self.exit_button.Click += lambda sender, args: native.Close()
-        self.fullscreen_button = ToolStripButton('Fullscreen (F11)')
+        self.fullscreen_button = button('Fullscreen (F11)', 132, (35, 43, 56), (48, 59, 75))
         self.fullscreen_button.Click += lambda sender, args: self._toggle_fullscreen()
-        for button in (self.exit_button, self.fullscreen_button):
-            button.Alignment = ToolStripItemAlignment.Right
-            button.ForeColor = Color.FromArgb(227, 231, 239)
-            toolbar.Items.Add(button)
         native.Controls.Add(toolbar)
         # Dock the browser after the toolbar so controls never cover app content.
         native.webview.BringToFront()
@@ -161,6 +202,9 @@ class WindowPresentation:
                 pressed = False
         native.KeyDown += key_down
         native.KeyUp += key_up
+        # WebView2 raises accelerator events on its control, bypassing Form.KeyPreview.
+        native.webview.KeyDown += key_down
+        native.webview.KeyUp += key_up
 
     def _install_navigation(self, origin):
         """Run on the WinForms thread before navigating to the app."""
@@ -168,10 +212,12 @@ class WindowPresentation:
         browser = self.window.native.browser
         control = self.window.native.webview
         self._install_window_controls()
+        startup_url = 'data:text/html;charset=utf-8;base64,' + b64encode(self.window.html.encode('utf-8')).decode('ascii')
         def navigate(sender, args):
             uri = str(args.Uri)
-            # NavigateToString uses about:blank for our startup surface only.
-            if uri == 'about:blank' and self.state == 'starting':
+            # WebView2 can report NavigateToString as a data URL. Permit only
+            # the exact bundled startup document, and only during startup.
+            if uri in {'about:blank', startup_url} and self.state == 'starting':
                 return
             action = navigation_action(uri, origin)
             if action != 'allow':
@@ -212,7 +258,8 @@ class WindowPresentation:
         webview = self.webview
         webview.settings.update(ALLOW_DOWNLOADS=True, ALLOW_FILE_URLS=False,
                                 OPEN_EXTERNAL_LINKS_IN_BROWSER=False, REMOTE_DEBUGGING_PORT=None)
-        self.window = webview.create_window(APP_NAME + ' — experimental window', html=LOADING_HTML,
+        self.window = webview.create_window(APP_NAME + ' — experimental window',
+                                           html=startup_html() if self.show_intro else LOADING_HTML,
                                            width=1280, height=900, min_size=(800, 600),
                                            fullscreen=False, maximized=True, background_color='#11151c',
                                            text_select=True, zoomable=True, js_api=None)
@@ -243,6 +290,16 @@ class WindowPresentation:
                     raise DataError('The window renderer did not initialize within 30 seconds.')
             if self.failures:
                 raise DataError('The window renderer could not initialize.')
+            if self.show_intro:
+                deadline = time.monotonic() + 8
+                while not stopped.is_set() and time.monotonic() < deadline:
+                    if self.startup_loaded.is_set():
+                        try:
+                            if self.window.evaluate_js('Boolean(window.BreakdownIntro?.completed)') is True:
+                                break
+                        except Exception:
+                            LOG.debug('Startup animation is still loading', exc_info=True)
+                    stopped.wait(.1)
             if not stopped.is_set():
                 self.state = 'server-reachable'
                 # With paired themes, theme.base alone still follows the OS.
@@ -275,7 +332,9 @@ class WindowPresentation:
                 stopped.set()
                 worker.join(timeout=3)
         def loaded():
-            if self.state != 'starting':
+            if self.state == 'starting':
+                self.startup_loaded.set()
+            else:
                 try:
                     self.state = self.window.evaluate_js(VIEW_PROBE)
                     if self.state == 'failed':

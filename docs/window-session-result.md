@@ -348,3 +348,37 @@ fixed top offset. Completion, reduced motion and timeout behavior are unchanged.
 - The updated editable Windows copy is under a separate `PortfolioWindowModes-*`
   temporary directory, with its own environment. Earlier user test copies remain
   untouched. Frozen packaging and Windows 11 acceptance remain separate checks.
+
+## Keyboard, toolbar and startup corrections (2026-10-04)
+
+F11 now handles the WebView2 control's own key events as well as the native
+form's. The previous mode smoke sent messages to the outer WinForms control;
+that did not verify real keyboard input while Chromium had focus. The corrected
+native smoke sends F11 only after checking that its own synthetic preview owns
+the foreground and focuses its WebView2 control. Both directions pass.
+
+A flat dark panel replaces the system ToolStrip and its white edge. Both controls
+are real buttons; borderless Exit is red with rounded corners and still follows
+the normal close/server-shutdown path. The maximized window remains the default.
+
+The initial native document now plays the supplied animation while the server
+starts, instead of waiting for Streamlit and its component to load. It is centered
+and respects reduced motion. Navigation waits for animation completion, with a
+bounded fallback; closing during playback cancels navigation. The child skips
+the duplicate Streamlit intro, and explicit `--skip-intro` skips both. Python and
+WebView2 initialization still precede the animation. WebView2 reports the initial
+HTML as a data URL on this host, so navigation permits exactly the bundled startup
+document during startup; unrelated data URLs remain blocked.
+
+- 56 focused Linux tests passed: 47 window/lifecycle and nine browser intro tests.
+  These cover completion/close, skipping, navigation restrictions, and standalone
+  centering at three viewport sizes. Ruff and diff checks passed.
+- The actual Windows 10/WebView2 preview used a fresh `PortfolioWindowPolish-*`
+  source copy, its own environment and an invented offline workspace. It verified
+  early wordmark/swirl playback, centering, real F11 input, both mode buttons,
+  dark mode, all four tabs, chart rendering, focus and Exit/server shutdown.
+  No previous user copy or real portfolio directory was changed.
+- All 47 window/lifecycle tests also passed on native Windows. The final preview
+  and its owned server were stopped after verification.
+- Frozen Windows 11 acceptance remains unverified. This is an editable source
+  preview, not a new release artifact.

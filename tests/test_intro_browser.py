@@ -66,6 +66,22 @@ def select_workspace(page, name):
     page.get_by_role('option', name=name, exact=True).click()
 
 
+def test_native_startup_asset_plays_centered_without_a_server(intro_page):
+    from portfolio_app.window import startup_html
+    page, _, _ = intro_page
+    page.set_content(startup_html())
+    page.wait_for_function('window.BreakdownIntro?.playing')
+    page.evaluate('window.BreakdownIntro.pause()')
+    for width, height in [(1440, 1000), (650, 500), (390, 844)]:
+        page.set_viewport_size({'width': width, 'height': height})
+        scene = page.locator('#scene').bounding_box()
+        assert abs(scene['x'] + scene['width'] / 2 - width / 2) < 2
+        assert abs(scene['y'] + scene['height'] / 2 - height / 2) < 2
+    playwright.expect(page.locator('.controls')).to_be_hidden()
+    page.evaluate('window.BreakdownIntro.replay()')
+    page.wait_for_function('window.BreakdownIntro.completed')
+
+
 def test_intro_welcome_navigation_and_help(intro_page):
     page, url, directory = intro_page
     page.goto(url)

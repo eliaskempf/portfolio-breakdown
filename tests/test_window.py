@@ -1,4 +1,5 @@
 """Window policy and child-channel tests; all workspaces are invented."""
+from base64 import b64encode
 from io import BytesIO
 import subprocess
 import sys
@@ -60,8 +61,18 @@ def test_window_defaults_to_dark_without_overriding_explicit_theme(monkeypatch, 
     presentation.child(command)
     assert presentation.color_scheme == ('light' if override else 'dark')
     expected = override or ['--theme.base=dark']
-    assert captured == [['python', '-m', 'streamlit', 'run', 'synthetic.py', *expected, '--', '--demo']]
+    assert captured == [['python', '-m', 'streamlit', 'run', 'synthetic.py', *expected, '--', '--demo', '--skip-intro']]
+    assert presentation.show_intro
     assert command == ['python', '-m', 'streamlit', 'run', 'synthetic.py', *override, '--', '--demo']
+
+
+def test_skip_intro_skips_both_window_and_streamlit(monkeypatch):
+    captured = []
+    monkeypatch.setattr('portfolio_app.window_process.contained_child', captured.append)
+    presentation = WindowPresentation()
+    presentation.child(['python', '-m', 'streamlit', 'run', 'synthetic.py', '--', '--skip-intro'])
+    assert not presentation.show_intro
+    assert captured[0].count('--skip-intro') == 1
 
 
 def test_assignment_failure_never_releases_start_gate(monkeypatch):
@@ -176,7 +187,8 @@ class FakeWebview:
         self.destroyed = threading.Event()
         self.window = SimpleNamespace(
             events=SimpleNamespace(**{name: Event() for name in ('before_show', 'initialized', 'closing', 'closed', 'loaded')}),
-            load_url=self.load_url, destroy=self.destroy, evaluate_js=lambda js: 'first-view-rendered')
+            load_url=self.load_url, destroy=self.destroy,
+            evaluate_js=lambda js: True if 'BreakdownIntro' in js else 'first-view-rendered')
         self.urls = []
     def create_window(self, *args, **kwargs):
         assert kwargs['js_api'] is None
@@ -197,6 +209,7 @@ class FakeWebview:
         if self.window.events.initialized.fire(self.renderer):
             return
         self.window.events.before_show.fire()
+        self.window.events.loaded.fire()
         thread = threading.Thread(target=worker)
         thread.start()
         assert self.destroyed.wait(5)
@@ -232,6 +245,30 @@ def test_mshtml_fallback_is_refused(monkeypatch):
     with pytest.raises(DataError, match='experimental window failed'):
         presentation.run('http://127.0.0.1:1', threading.Event(), lambda callback: pytest.fail('No legacy renderer'))
     assert not presentation.webview.urls
+
+
+@pytest.mark.parametrize('close_during_intro', [False, True])
+def test_startup_waits_for_animation_or_window_close(monkeypatch, close_during_intro):
+    presentation = WindowPresentation()
+    fake = FakeWebview()
+    presentation.webview = fake
+    monkeypatch.setattr(presentation, '_install_navigation', lambda url: presentation.renderer_ready.set())
+    probes = []
+    def evaluate(js):
+        if 'BreakdownIntro' not in js:
+            return 'first-view-rendered'
+        assert not fake.urls, 'App must not replace the animation before it finishes'
+        probes.append(js)
+        if close_during_intro:
+            fake.window.events.closing.fire()
+        return len(probes) > 1
+    fake.window.evaluate_js = evaluate
+    def monitor(on_ready):
+        on_ready()
+        return 0
+    assert presentation.run('http://127.0.0.1:1', threading.Event(), monitor) == 0
+    assert len(probes) == (1 if close_during_intro else 2)
+    assert bool(fake.urls) is not close_during_intro
 
 
 def test_closing_window_stops_monitor(monkeypatch):
@@ -275,10 +312,18 @@ def test_native_navigation_and_popup_handlers_keep_window_on_app(monkeypatch):
     core = SimpleNamespace(NewWindowRequested=popup_event, Navigate=navigated.append)
     control = SimpleNamespace(CoreWebView2=core, NavigationStarting=NativeEvent())
     presentation = WindowPresentation()
-    presentation.window = SimpleNamespace(native=SimpleNamespace(
+    presentation.window = SimpleNamespace(html='<p>Synthetic startup</p>', native=SimpleNamespace(
         browser=SimpleNamespace(on_new_window_request=prior_popup), webview=control))
     presentation._install_navigation('http://127.0.0.1:8519')
     assert presentation.renderer_ready.is_set()
+    startup_uri = 'data:text/html;charset=utf-8;base64,' + b64encode(presentation.window.html.encode()).decode()
+    for state, uri, cancelled in [('starting', startup_uri, False),
+                                   ('starting', 'data:text/html,unexpected', True),
+                                   ('document-loaded', startup_uri, True)]:
+        presentation.state = state
+        args = SimpleNamespace(Uri=uri, Cancel=False)
+        control.NavigationStarting.fire(None, args)
+        assert args.Cancel is cancelled
     for uri, cancelled in [('http://127.0.0.1:8519/', False), ('https://example.org/help', True),
                            ('file:///invented', True), ('javascript:void(0)', True)]:
         args = SimpleNamespace(Uri=uri, Cancel=False)
