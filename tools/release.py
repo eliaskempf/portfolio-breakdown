@@ -83,10 +83,12 @@ def notices(destination):
                     except UnicodeError:
                         pass
     import sysconfig
-    python_license = Path(sysconfig.get_path('stdlib')) / 'LICENSE.txt'
-    if not python_license.exists():
-        python_license = Path(sys.base_prefix) / 'LICENSE'
-    if not python_license.exists():
+    # Windows CPython installs LICENSE.txt beside python.exe, outside Lib.
+    # Use the base interpreter rather than the project's virtual environment.
+    candidates = (Path(sysconfig.get_path('stdlib')) / 'LICENSE.txt',
+                  Path(sys.base_prefix) / 'LICENSE', Path(sys.base_prefix) / 'LICENSE.txt')
+    python_license = next((path for path in candidates if path.is_file()), None)
+    if python_license is None:
         raise ValueError('Python license not found in the build interpreter.')
     blocks.append('\n=== Python ===\n' + python_license.read_text(encoding='utf-8'))
     (destination / 'THIRD_PARTY_NOTICES.txt').write_text('\n'.join(blocks), encoding='utf-8')

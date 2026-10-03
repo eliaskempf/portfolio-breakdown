@@ -19,6 +19,40 @@ release_build = importlib.util.module_from_spec(build_spec)
 build_spec.loader.exec_module(release_build)
 
 
+@pytest.mark.parametrize('layout', ['stdlib', 'base-license', 'windows-base-license-txt'])
+def test_notices_include_build_interpreter_license(tmp_path, monkeypatch, layout):
+    from types import SimpleNamespace
+    import sysconfig
+    base = tmp_path / 'synthetic-python'
+    stdlib = base / 'Lib'
+    stdlib.mkdir(parents=True)
+    destination = tmp_path / 'bundle'
+    destination.mkdir()
+    license_path = {'stdlib': stdlib / 'LICENSE.txt', 'base-license': base / 'LICENSE',
+                    'windows-base-license-txt': base / 'LICENSE.txt'}[layout]
+    license_text = 'Invented interpreter license — synthetic test text.'
+    license_path.write_text(license_text, encoding='utf-8')
+    monkeypatch.setattr(release_build, 'sys', SimpleNamespace(base_prefix=str(base)))
+    monkeypatch.setattr(sysconfig, 'get_path', lambda name: str(stdlib))
+    monkeypatch.setattr(release_build.metadata, 'distributions', lambda: [])
+    release_build.notices(destination)
+    assert '\n=== Python ===\n' + license_text in (destination / 'THIRD_PARTY_NOTICES.txt').read_text(encoding='utf-8')
+    assert json.loads((destination / 'dependencies.json').read_text(encoding='utf-8')) == []
+
+
+def test_notices_require_interpreter_license_not_checkout_license(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import sysconfig
+    (tmp_path / 'LICENSE').write_text('Invented application license', encoding='utf-8')
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(release_build, 'sys', SimpleNamespace(base_prefix=str(tmp_path / 'synthetic-python')))
+    monkeypatch.setattr(sysconfig, 'get_path', lambda name: str(tmp_path / 'synthetic-python' / 'Lib'))
+    monkeypatch.setattr(release_build.metadata, 'distributions', lambda: [])
+    with pytest.raises(ValueError, match='Python license not found'):
+        release_build.notices(tmp_path)
+    assert not (tmp_path / 'THIRD_PARTY_NOTICES.txt').exists()
+
+
 @pytest.mark.parametrize('tainted', [None, 'wheel', 'sdist'])
 def test_package_check_inspects_content_inside_archives(tmp_path, tainted):
     private_path = b'/' + b'home/invented-person/portfolio'

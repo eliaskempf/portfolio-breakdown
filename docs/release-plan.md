@@ -402,3 +402,24 @@ privacy review and diff checks passed. No private workspace data was accessed.
 Neither platform has an accepted distributable candidate from this run. A fresh
 complete candidate run is required to verify these corrections on Windows; do not
 publish or treat this run as release acceptance.
+
+## Windows interpreter license lookup (2026-10-03)
+
+The next supplied Windows log reached `tools/release.py build`, after the required
+tests, and passed wheel/source content checks. Packaging then stopped while
+generating third-party notices because its interpreter-license search omitted
+the base installation's `LICENSE.txt`. Windows CPython installs that file next
+to the executable, outside `Lib`.
+
+The lookup now includes that base-interpreter location, retaining the existing
+stdlib and extensionless-license locations. A missing interpreter license still
+fails the build; the project's GPL license is never used as a substitute.
+Synthetic tests reproduced the reported failure before the fix and cover all
+three layouts plus missing-license rejection. All 93 release/privacy tests and
+Ruff passed. Generating notices from the local installed environment also passed,
+including the Python license and dependency inventory, using a temporary output
+directory. No application UI or financial calculations changed.
+
+The correction requires a fresh complete hosted candidate run. The Windows
+packaged executable, extracted-bundle smoke and native installation acceptance
+remain unverified; no release publication is approved.
