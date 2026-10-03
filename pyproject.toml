@@ -21,8 +21,12 @@ dependencies = [
   "platformdirs>=4,<5",
 ]
 
+[project.optional-dependencies]
+window = ["pywebview==6.2.1; sys_platform == 'win32'"]
+
 [project.scripts]
 portfolio-app = "portfolio_app.app:main"
+portfolio-window = "portfolio_app.window:main"
 portfolio-check-private = "portfolio_app.privacy:main"
 
 [dependency-groups]

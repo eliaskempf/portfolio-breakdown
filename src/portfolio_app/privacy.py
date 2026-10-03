@@ -11,7 +11,9 @@ RELEASE_FILES = {"LICENSE", "docs/release-plan.md", "docs/release-checklist.md",
                  ".github/workflows/ci.yml", ".github/workflows/candidate.yml",
                  ".github/workflows/publish.yml", ".github/workflows/maintenance.yml",
                  ".github/dependabot.yml", "packaging/portfolio.spec", "packaging/entrypoint.py",
-                 "tools/release.py", "tools/promote.py", "tools/package_smoke.py"}
+                 "tools/release.py", "tools/promote.py", "tools/package_smoke.py",
+                 "packaging/window.spec", "packaging/window_entrypoint.py",
+                 "tools/window_build.py", "docs/window-session-result.md"}
 ICON_FILES = {"src/portfolio_app/assets/portfolio-breakdown.png", "src/portfolio_app/assets/portfolio-breakdown.svg",
               "src/portfolio_app/assets/favicon.svg", "src/portfolio_app/assets/favicon.ico"}
 PRIVATE_PARTS = {"data", "private", "imports", "exports", "reports", "screenshots", ".cache", ".backups", ".codex", ".agents", ".vscode", ".idea", ".streamlit", ".venv"}
