@@ -29,8 +29,10 @@ data. A checked checklist is specific to one build, not a blanket approval.
       works, cancel writes nothing, existing portfolios skip welcome, and
       synthetic position edits/save/restart work.
 - [ ] Demo targets (60/25/10/5), equity 70/30 split, mixed gains/losses, both
-      equity ETF breakdowns and rebalancing work offline; demo changes never
-      affect the persistent workspace and reset on application restart.
+      equity ETF issuer breakdowns, real price history and rebalancing work with
+      live public data. Retry/missing-data states are honest; quantities initialize
+      once and survive refreshes. Explicit --offline-demo works without network.
+      Demo changes never affect the persistent workspace and reset on restart.
 - [ ] Demo, all main tabs/modes, dialogs, charts and lists work.
 - [ ] Futures sandbox absent from package, navigation and CLI.
 - [ ] CSV and Excel imports reviewed and saved; cancel writes nothing, workspace

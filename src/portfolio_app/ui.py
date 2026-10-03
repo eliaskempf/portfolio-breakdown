@@ -6,6 +6,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from portfolio_app.demo import initialize_live_demo, live_demo_pending
 from portfolio_app.etf import validate_fund_listings
 from portfolio_app.exposure_ui import render_analysis
 from portfolio_app.etf_refresh import coordinator
@@ -43,15 +44,17 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if st.session_state.get("portfolio_workspace_context") != context:
             reset_workspace()
             st.session_state["portfolio_workspace_context"] = context
+    offline_demo = demo and not (data_dir / '.live-demo').exists()
     workspace_info(data_dir, persistent_data_dir, demo=demo)
     workspace_header(demo)
     from portfolio_app.import_ui import render_import_next_steps
     render_import_next_steps()
     if demo:
-        st.caption("Demo · Invented prices, buy-ins and ETF weights · Resets on restart")
+        st.caption("Offline demo · Invented prices, buy-ins and ETF weights · Resets on restart" if offline_demo else
+                   "Demo · Invented quantities, targets and buy-ins · Public market data · Resets on restart")
         if demo_dir is not None:
             from portfolio_app.onboarding_ui import demo_guide
-            demo_guide()
+            demo_guide(offline=offline_demo)
     etf_revision = refresh_revision(data_dir)
     try:
         snapshot, allocation, classifications, funds = load_inputs(data_dir)
@@ -65,10 +68,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         from portfolio_app.onboarding_ui import render_welcome
         if render_welcome(demo_available=demo_dir is not None):
             return
-    coordinator.schedule(data_dir, holdings, funds, demo=demo)
+    coordinator.schedule(data_dir, holdings, funds, demo=offline_demo)
     with st.sidebar:
-        render_refresh_status(data_dir, funds, etf_revision, demo=demo)
-    refresh = st.sidebar.button('Refresh prices', disabled=demo)
+        render_refresh_status(data_dir, funds, etf_revision, demo=offline_demo)
+    refresh = st.sidebar.button('Refresh prices', disabled=offline_demo)
     context_key = sha256(str(data_dir.resolve()).encode()).hexdigest()[:12]
     unit_key = f'performance_unit_{context_key}'
     def remember_unit():
@@ -83,11 +86,11 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         key=unit_key, on_change=remember_unit) == '%'
     hide_empty = st.sidebar.checkbox('Hide empty positions', key='hide_empty_positions',
         help='Hide zero-quantity rows in Positions and Exposure. Saved targets and planning weights stay unchanged.')
-    background_prices = price_service is None and not demo
+    background_prices = price_service is None and not offline_demo
     market_workspace = str(data_dir.resolve())
     market_revision = market_coordinator.revision(market_workspace)
     if price_service is None:
-        if demo:
+        if offline_demo:
             try:
                 provider = StaticProvider(data_dir / 'demo_prices.json')
             except (OSError, ValueError):
@@ -98,6 +101,17 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     source = analysis_targets(holdings, allocation) if allocation else holdings
     with st.spinner('Valuing portfolio…'):
         valued = prepare_portfolio(source, price_service, refresh=refresh)
+    if demo and live_demo_pending(data_dir):
+        if background_prices:
+            render_market_status(market_workspace, market_revision)
+        if initialize_live_demo(data_dir, valued):
+            st.rerun()
+        st.info('Preparing the demo with public quotes. Initial quantities will keep the category allocations close to their targets.')
+        if not market_coordinator.pending(market_workspace):
+            st.warning('Some quotes are unavailable. Use Refresh prices to retry. Synthetic prices are never substituted for live data.')
+            st.dataframe(valued.loc[valued.current_value_eur.isna(), ['name', 'valuation_note']], hide_index=True)
+            st.caption('For an offline example, restart with --offline-demo. My portfolio remains available in the sidebar.')
+        return
     if price_service.cache_warning:
         st.warning(price_service.cache_warning)
     missing_cost = (valued.shares.gt(0) & valued.unrealized_gain_eur.isna()).sum()
@@ -111,7 +125,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             if st.button('Complete buy-ins'):
                 st.session_state['main_tabs'] = 'Positions'
                 st.session_state['positions_workflow'] = 'Update balances'
-    elif not demo and not valued.price_status.eq('manual').any():
+    elif not offline_demo and not valued.price_status.eq('manual').any():
         st.caption('Latest available daily close · Prices may be delayed')
     if valued.price_status.eq('manual').any():
         st.caption(f"{valued.price_status.eq('manual').sum()} dated manual/snapshot prices · These do not refresh automatically.")
@@ -122,7 +136,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     visible = valued.loc[valued.shares.gt(0)].copy() if hide_empty else valued
     if positions.open:
         with positions:
-            render_position_editor(data_dir / 'holdings.csv', snapshot, funds, demo=demo, embedded=True,
+            render_position_editor(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, embedded=True,
                                    allocation=allocation, valued=visible, percent=percent, defer_dialog=True)
     def open_valued_position(position_id, *, editing=False):
         if read_snapshot(data_dir / 'holdings.csv').revision != snapshot.revision:
@@ -146,14 +160,14 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                                           percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
                                           edit_position=lambda position_id: open_valued_position(position_id, editing=True),
                                           analytics=lambda selected, scope: render_portfolio_analytics(
-                                              selected, data_dir, funds, demo=demo, scope=scope))
+                                              selected, data_dir, funds, demo=offline_demo, scope=scope))
     if exposure.open:
         with exposure:
             if visible.empty:
                 st.info('No visible positions. Add a position or turn off Hide empty positions.')
             else:
                 render_analysis(data_dir, holdings.loc[holdings.position_id.isin(visible.position_id)], classifications,
-                                funds, demo=demo, price_service=price_service, source_valued=visible, performance_percent=percent,
+                                funds, demo=offline_demo, price_service=price_service, source_valued=visible, performance_percent=percent,
                                 allocation=allocation, etf_revision=etf_revision, on_toggle_gain=toggle_unit)
     if rebalance.open:
         with rebalance:
@@ -171,19 +185,21 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                             render_rebalancing(valued)
                     except RebalanceError as exc:
                         st.error(str(exc))
-    render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=demo, allocation=allocation, valued=valued)
+    render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued)
     if background_prices:
-        pending = market_coordinator.pending(market_workspace)
-        @st.fragment(run_every=.5 if pending else None)
-        def market_status():
-            if market_coordinator.revision(market_workspace) != market_revision:
-                st.rerun()
-            if market_coordinator.pending(market_workspace):
-                st.caption('Updating prices in the background · Saved quotes remain visible with their original dates')
-        market_status()
+        render_market_status(market_workspace, market_revision)
 
 
 
+def render_market_status(market_workspace, market_revision):
+    pending = market_coordinator.pending(market_workspace)
+    @st.fragment(run_every=.5 if pending else None)
+    def market_status():
+        if market_coordinator.revision(market_workspace) != market_revision:
+            st.rerun()
+        if market_coordinator.pending(market_workspace):
+            st.caption('Updating prices in the background · Saved quotes remain visible with their original dates')
+    market_status()
 
 
 if __name__ == "__main__":

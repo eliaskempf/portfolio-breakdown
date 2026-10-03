@@ -190,3 +190,28 @@ def test_provider_classifications_preserve_local_paths_and_zero_unknown_stock_va
     exposure = stock_exposure(valued, [fund])
     assert exposure.stock_value == 99.
     assert exposure.companies['Total (EUR)'].sum() == 99.
+
+
+def signed_dws_cash(positive=2, negative=-1):
+    raw = json.loads(dws_export((60, 39, positive)))
+    rows = raw['tables'][0]['values']
+    liability = json.loads(json.dumps(rows[-1]))
+    liability['header']['value'] = '_CURRENCYOTHER'
+    liability['column_0']['value'] = 'Invented cash liability'
+    liability['column_1']['sortValue'] = negative
+    rows.append(liability)
+    return json.dumps(raw).encode()
+
+
+def test_dws_nets_cash_without_changing_equity_or_total():
+    _, frame, notes = dws.parse_holdings(signed_dws_cash())
+    assert frame.weight.tolist() == pytest.approx([.6, .39, .01])
+    assert frame.constituent_id.iloc[-1] == 'dws:net-cash'
+    assert frame.country.iloc[-1] == '' and frame.sector.iloc[-1] == ''
+    assert 'netted' in notes
+    _, basket, _ = dws.parse_holdings(signed_dws_cash(), allow_signed=True)
+    assert basket.weight.tolist() == pytest.approx([.6, .39, .02, -.01])
+    with pytest.raises(DataError, match='Net cash borrowing'):
+        dws.parse_holdings(signed_dws_cash(positive=.5))
+    with pytest.raises(DataError):
+        dws.parse_holdings(dws_export((-1, 99, 2)))

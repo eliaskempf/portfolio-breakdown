@@ -2,6 +2,7 @@
 
 from datetime import date, datetime
 import json
+import math
 import re
 
 import pandas as pd
@@ -37,6 +38,18 @@ def parse_holdings(content: bytes, *, allow_signed: bool = False) -> tuple[date,
                 'instrument_type': {'Equities': 'equity', 'Depository Receipts': 'equity', 'Cash': 'cash', 'Bonds': 'bond', 'Bond': 'bond', 'Government Bond': 'bond', 'Supranational Bond': 'bond', 'Corporate Bond': 'bond', 'Mutual Fund': 'etf', 'Fixed Income': 'bond', 'Money Market': 'money_market'}.get(kind, 'unknown'),
                 'sector': row['column_4']['value'], 'country': row['column_3']['value'],
             })
-        return as_of, validate_constituents(pd.DataFrame(records), allow_signed=allow_signed), 'Published full-precision weights; any rounding remainder stays in Other.'
+        notes = 'Published full-precision weights; any rounding remainder stays in Other.'
+        if not allow_signed and any(r['instrument_type'] == 'cash' and r['weight'] < 0 for r in records):
+            # Match the existing unsigned allocation semantics: cash liabilities
+            # offset cash assets, never stocks. Signed substitute baskets stay raw.
+            validate_constituents(pd.DataFrame(records), allow_signed=True)
+            cash = math.fsum(r['weight'] for r in records if r['instrument_type'] == 'cash')
+            if cash < 0:
+                raise ValueError('Net cash borrowing requires a signed exposure model')
+            records = [r for r in records if r['instrument_type'] != 'cash']
+            records.append(dict(constituent_id='dws:net-cash', name='Net cash', ticker='', isin='',
+                                weight=cash, instrument_type='cash', sector='', country=''))
+            notes += ' Cash assets and liabilities are netted; the cash pool has no assigned country or currency.'
+        return as_of, validate_constituents(pd.DataFrame(records), allow_signed=allow_signed), notes
     except (KeyError, ValueError, TypeError, StopIteration) as exc:
         raise DataError(f'Invalid Xtrackers holdings export: {exc}') from exc

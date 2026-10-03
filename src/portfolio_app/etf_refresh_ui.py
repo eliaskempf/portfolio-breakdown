@@ -49,7 +49,7 @@ def render_refresh_controls(data_dir, holdings, funds, *, demo=False):
             coordinator.schedule(data_dir, holdings, funds)
         except OSError as exc:
             st.error(f'Could not save refresh preferences: {exc}')
-    st.caption('Checked at startup and while the app is in use; at most once per fund per 24 hours. No Codex session is needed. Demo stays offline.')
+    st.caption('Checked at startup and while the app is in use; at most once per fund per 24 hours. Offline demos do not download data.')
     refreshable = [f for f in funds if supported(f) and any(row.get('shares', 0) > 0 and matching_fund(row, [f]) for row in holdings.to_dict('records'))]
     candidates = discovery_candidates(holdings, funds)
     if st.button('Refresh ETF holdings now', disabled=demo or coordinator.running(data_dir) or not (refreshable or candidates)):

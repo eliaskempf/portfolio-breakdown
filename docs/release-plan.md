@@ -423,3 +423,54 @@ directory. No application UI or financial calculations changed.
 The correction requires a fresh complete hosted candidate run. The Windows
 packaged executable, extracted-bundle smoke and native installation acceptance
 remain unverified; no release publication is approved.
+
+## Live demo data and equity breakdown correction (2026-10-03)
+
+The user reports that both hosted platform builds now pass, and has launched the
+Windows candidate. Its run ID/checksum and remaining native acceptance steps
+still need recording. The Windows browser could not be reached from this session;
+checks below use a separate temporary source preview.
+
+The reported large Other positions came from the offline demo's invented partial
+snapshots (three constituents each). Normal startup and Explore demo now use the
+ordinary public quote, history, fundamentals and ETF refresh paths. Demo ownership
+and reset behavior remain separate from market-data mode. Nothing reads the
+persistent portfolio to construct the demo, and provider downloads stay in its
+temporary workspace rather than source or packaged assets.
+
+Initial quantities are sized once from all six available quotes/FX, with invented
+uneven values near the requested category allocations. Targets remain 60/25/10/5,
+with World/EM 70/30 and BTC/ETH 60/40 within their categories. Invented buy-ins show
+both gains and losses. Refreshes and workspace switches preserve quantities and
+edits. Missing initial quotes show retry/status instead of synthetic prices;
+subsequent requests retain the usual dated-cache behavior. Missing ETF downloads
+leave funds whole. Explicit `--offline-demo` preserves deterministic synthetic
+prices/history and partial snapshots for offline use and packaging smoke tests.
+
+Live validation also found a small cash liability in the World issuer export.
+Xtrackers now nets cash assets/liabilities into one unclassified cash pool when
+needed, following the existing unsigned allocation semantics. It leaves equity
+weights and total coverage unchanged, rejects net borrowing/negative equity, and
+preserves signed substitute baskets. Synthetic regressions cover these rules.
+No additional money-market breakdown implementation was added; existing support
+can resolve it, otherwise the fund stays whole.
+
+Validation:
+
+- Full locked suite: 855 tests passed, including required Chromium suites without
+  skips. Synthetic tests cover one-time sizing, missing FX, edit preservation,
+  target/performance behavior, workspace isolation and the ordinary history path.
+- Fresh source preview on a separately selected loopback port and temporary demo:
+  Overview, Exposure (including chart), Positions with actual instrument history,
+  and Rebalance/Targets rendered without application exceptions. World downloaded
+  1,258 normalized rows with 99.999994% coverage; EM IMI downloaded 2,958 rows with
+  100% coverage. The opened instrument chart had 251 actual daily observations.
+  These are transient public-provider checks, not committed market-data fixtures.
+- Source launcher/browser/lifecycle smoke passed with explicit offline demo mode,
+  including import, manual ETF setup, restart and recovery checks. It keeps the
+  candidate packaging checks independent of live network availability.
+
+Next: build a fresh complete hosted candidate for these changes, then repeat the
+Windows demo acceptance with a connection and confirm issuer snapshots/history
+in that binary. The existing downloaded executable does not receive source
+changes automatically. Official publication remains unapproved.

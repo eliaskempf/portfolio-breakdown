@@ -1,10 +1,9 @@
-"""Deterministic demonstration portfolio; all financial values are invented.
-
-Only instrument identities are public metadata. Prices, costs, quantities,
-allocations and partial ETF weights are synthetic, never issuer observations.
-"""
+"""Invented portfolios, with explicit live and deterministic offline data modes."""
 import csv
 import json
+from hashlib import sha256
+import math
+from tempfile import NamedTemporaryFile
 from pathlib import Path
 
 import yaml
@@ -22,8 +21,8 @@ def _write_csv(path, columns, rows):
         writer.writerows(rows)
 
 
-def create_demo_data(directory: Path) -> Path:
-    """Create an isolated €100,000 example, preserving any existing workspace."""
+def create_demo_data(directory: Path, *, live: bool = False) -> Path:
+    """Create an isolated example; live quotes size the initial holdings on first use."""
     marker = directory / '.synthetic-demo'
     if marker.exists():
         return directory
@@ -57,7 +56,8 @@ def create_demo_data(directory: Path) -> Path:
     prices = {ticker: dict(price=price, currency='EUR', observed_at=STAMP)
               for ticker, price in [('XDWD.DE', 100.), ('IS3N.DE', 50.), ('XEON.DE', 150.),
                                     ('EWG2.SG', 100.), ('BTC-EUR', 70000.), ('ETH-EUR', 2000.)]}
-    (directory / 'demo_prices.json').write_text(json.dumps({'prices': prices, 'fx': {}}), encoding='utf-8')
+    if not live:
+        (directory / 'demo_prices.json').write_text(json.dumps({'prices': prices, 'fx': {}}), encoding='utf-8')
 
     classifications = {
         'world': {'asset_class': [['Equity', 'Developed markets']]},
@@ -84,7 +84,7 @@ def create_demo_data(directory: Path) -> Path:
     etfs = directory / 'etfs'
     etfs.mkdir()
     by_id = {row[0]: row for row in instruments}
-    for asset, fund_id, constituents in snapshots:
+    for asset, fund_id, constituents in ([] if live else snapshots):
         _, name, ticker, isin, *_ = by_id[asset]
         manifest = dict(fund_id=fund_id, name=name, isin=isin, tickers=[ticker],
                         as_of=STAMP[:10], source='Synthetic demo — invented partial constituent weights',
@@ -103,5 +103,56 @@ def create_demo_data(directory: Path) -> Path:
     (directory / 'classifications.yaml').write_text(yaml.safe_dump({
         asset: {'classifications': paths} for asset, paths in classifications.items()
     }), encoding='utf-8')
-    marker.write_text('Invented demo data; never use as actual portfolio or fund holdings.\n', encoding='utf-8')
+    marker.write_text('Invented demo positions; not a personal portfolio.\n', encoding='utf-8')
+    if live:
+        (directory / '.live-demo').write_text(sha256((directory / 'holdings.csv').read_bytes()).hexdigest(), encoding='ascii')
     return directory
+
+
+# Deliberately uneven values and buy-in ratios; these are examples, not observations.
+LIVE_EXAMPLES = {
+    'world': (44382.71, .874), 'emerging': (16745.38, 1.092),
+    'money-market': (23865.12, .9853), 'gold': (10870.64, .823),
+    'bitcoin': (2734.85, .8929), 'ethereum': (1387.29, 1.20),
+}
+
+
+def live_demo_pending(directory: Path) -> bool:
+    """Only the unedited seed can be sized; later edits and refreshes are preserved."""
+    marker = directory / '.live-demo'
+    return (marker.exists() and (directory / '.synthetic-demo').exists()
+            and marker.read_text(encoding='ascii') == sha256((directory / 'holdings.csv').read_bytes()).hexdigest())
+
+
+def initialize_live_demo(directory: Path, valued) -> bool:
+    """Size invented positions once all six real quotes/FX are available, atomically.
+
+    No network access here. Never mix synthetic prices into the live cache and
+    never change quantities again when prices move or the workspace is revisited.
+    """
+    from portfolio_app.locking import write_lock
+    with write_lock(directory / '.holdings.csv.lock'):
+        if not live_demo_pending(directory):
+            return False
+        prices = {row.id: row.current_price * row.fx_to_eur for row in valued.itertuples()}
+        if set(prices) != set(LIVE_EXAMPLES) or any(not math.isfinite(p) or p <= 0 for p in prices.values()):
+            return False
+        path = directory / 'holdings.csv'
+        with path.open(encoding='utf-8', newline='') as handle:
+            reader = csv.DictReader(handle)
+            columns, rows = reader.fieldnames, list(reader)
+        for row in rows:
+            value, cost_ratio = LIVE_EXAMPLES[row['id']]
+            price = prices[row['id']]
+            row['shares'] = str(round(value / price, 6))
+            row['acquisition_price'] = str(round(price * cost_ratio, 4))
+        with NamedTemporaryFile(mode='w', encoding='utf-8', newline='', dir=directory, delete=False) as handle:
+            temporary = Path(handle.name)
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(rows)
+        try:
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return True

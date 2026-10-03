@@ -117,6 +117,7 @@ def exercise_manual_breakdown(page):
 
 
 def smoke(command):
+    command = [*command, '--offline-demo']
     with TemporaryDirectory(prefix='portfolio smoke ü ') as temporary:
         root = Path(temporary)
         state = root / 'state'

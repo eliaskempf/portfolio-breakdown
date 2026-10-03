@@ -20,7 +20,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description='Local portfolio allocation explorer')
     parser.add_argument('--version', action='version', version=app_version())
     parser.add_argument('--data-dir', type=Path, help='Private workspace (default: platform user-data directory)')
-    parser.add_argument('--demo', action='store_true', help='Editable offline demo, reset on each server start')
+    parser.add_argument('--demo', action='store_true', help='Editable demo with public market data, reset on each server start')
+    parser.add_argument('--offline-demo', action='store_true', help='Use synthetic offline data in the demo workspace')
     parser.add_argument('--desktop', action='store_true', help='Launch in background and open the browser')
     parser.add_argument('--foreground', action='store_true', help='Keep the server attached to this terminal')
     parser.add_argument('--no-browser', action='store_true', help='Do not open a browser automatically')
@@ -62,6 +63,8 @@ def main() -> None:
             forwarded = ['--data-dir', str(directory), '--server.headless', args.headless, *streamlit_args]
             if args.demo:
                 forwarded.append('--demo')
+            if args.offline_demo:
+                forwarded.append('--offline-demo')
             if args.port:
                 forwarded += ['--server.port', str(args.port)]
             start_desktop(forwarded, directory, demo=args.demo, browser=browser)
@@ -71,7 +74,7 @@ def main() -> None:
         with workspace_lease(directory):
             port = choose_port(args.port)
             with TemporaryDirectory(prefix='portfolio-demo-') as temporary:
-                demo_dir = create_demo_data(Path(temporary))
+                demo_dir = create_demo_data(Path(temporary), live=not args.offline_demo)
                 prefix = [sys.executable, '--internal-streamlit'] if getattr(sys, 'frozen', False) else [sys.executable, '-m', 'streamlit']
                 command = [*prefix, 'run', str(Path(__file__).with_name('ui.py')), *theme_options(), *streamlit_args,
                            '--server.address=127.0.0.1', f'--server.port={port}', '--server.headless=true',

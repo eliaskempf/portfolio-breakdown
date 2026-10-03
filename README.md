@@ -110,47 +110,61 @@ The sidebar's **Portfolio workspace** switch opens **My portfolio** or the
 editable **Demo portfolio**. Switching clears position forms and filters so an
 unfinished edit cannot be applied to the other portfolio.
 
-For a deterministic offline demonstration:
+The demo uses public quotes, genuine instrument price history and issuer ETF
+holdings downloads by default:
 
 ```bash
 uv run portfolio-app --demo
 ```
 
-Each app start generates deliberately invented holdings, classifications, ETF
-weights, prices, and FX in a fresh temporary demo directory. You can add and edit
-dummy positions with the same controls as your real portfolio. Demo edits survive
-page refreshes and workspace switches while the server runs. Stopping and
-starting `portfolio-app` resets them. The temporary directory is removed on a
-normal shutdown; a new launch always creates fresh data even after a crash.
-`--demo` starts with the demo workspace selected; it does not reset personal data.
-Demo prices and FX are explicitly labeled in the UI and never used
-as a fallback for live prices. The example portfolio has €100,000 in invented
-positions and preconfigured allocation targets:
+Quantities, buy-ins and allocation targets are invented. At first use, the demo
+waits for all six quotes (and any required FX), then sizes the positions once to
+roughly €100,000 with deliberately uneven allocations. Buy-ins are invented
+relative to those prices to show both gains and losses; they are not historical
+transactions. Later price refreshes never resize quantities or reset your edits.
+Quotes are the latest available daily closes, not real-time ticks. History charts
+show the actual instrument, not reconstructed portfolio returns.
 
-| Category | Target | Demo value | Current allocation |
-| --- | ---: | ---: | ---: |
-| Equities | 60% | €61,000 | 61% |
-| Money market | 25% | €24,000 | 24% |
-| Gold | 10% | €11,000 | 11% |
-| Crypto | 5% | €4,000 | 4% |
+| Category | Target | Approximate initial allocation |
+| --- | ---: | ---: |
+| Equities | 60% | 61% |
+| Money market | 25% | 24% |
+| Gold | 10% | 11% |
+| Crypto | 5% | 4% |
 
-Equities target 70% [Xtrackers MSCI World 1C](https://etf.dws.com/en-sg/IE00BJ0KDQ92-msci-world-ucits-etf-1c/)
-(IE00BJ0KDQ92) and 30% [iShares Core MSCI EM IMI](https://www.ishares.com/uk/individual/en/products/264659/ishares-core-msci-em-imi-ucits-etf)
-(IE00BKM4GZ66); their invented values are €45,000 and €16,000.
-Money market uses [Xtrackers II EUR Overnight Rate Swap 1C](https://etf.dws.com/de-ch/wissen/themenwelten/xtrackers-overnight-etfs-eine-alternative-zum-tagesgeld/)
-(LU0290358497), gold uses [EUWAX Gold II](https://www.euwax-gold.de/ewg2ld/)
-(DE000EWG2LD7), and crypto targets 60% Bitcoin / 40%
-Ethereum with invented values of €2,800 / €1,200. These are demonstration
-choices, with deliberately uneven allocations and fixed buy-ins giving gains
-and losses. No runtime randomness or live quotes are needed.
+Within Equities, the targets are 70% Xtrackers MSCI World 1C (IE00BJ0KDQ92)
+and 30% iShares Core MSCI EM IMI (IE00BKM4GZ66). Money market uses Xtrackers
+II EUR Overnight Rate Swap 1C (LU0290358497), gold uses EUWAX Gold II
+(DE000EWG2LD7), and Crypto targets 60% Bitcoin / 40% Ethereum.
 
-Both equity ETFs include explicitly synthetic, partial constituent snapshots.
-**Exposure → Break down ETFs** demonstrates constituent expansion and residual
-Other without provider downloads. The money-market fund remains a whole position;
-its swap collateral is not presented as equity exposure. **Try the demo** gives
-a short tour, and **Rebalance** can calculate against the saved targets immediately.
-Instrument identities are public metadata; prices, buy-ins, quantities, allocation
-weights and constituent weights are invented, not current market or issuer data.
+**Exposure → Break down ETFs** uses the supported issuer download paths for
+World and EM IMI. Downloaded weights and dates appear in the normal snapshot
+controls. Missing downloads leave the fund whole; there is no invented
+three-stock fallback. Small genuine residuals remain Other. Overnight exposure
+uses the existing provider support when available; its substitute basket never
+becomes equity exposure.
+
+All demo edits and downloaded data stay in a fresh temporary demo directory,
+separate from **My portfolio**. Edits survive refreshes and workspace switches,
+and reset when the app restarts. The temporary directory is removed on normal
+shutdown; a new launch always creates fresh demo data even after a crash.
+`--demo` selects this workspace; `--data-dir` still names the persistent portfolio.
+No personal portfolio is read to construct the example.
+
+If quotes are unavailable on first use, the app offers a retry and keeps
+**My portfolio** accessible. Later failures retain dated cached observations
+with their normal status. Synthetic prices and sine-wave history are never
+substituted for failed live requests. For a deterministic, explicitly labelled
+offline example (also used by packaging smoke tests):
+
+```bash
+uv run portfolio-app --demo --offline-demo
+```
+
+Offline mode has fixed €100,000 values, invented prices/history and partial
+three-constituent equity snapshots. Its large Other remainder is intentional
+and is not representative of actual issuer coverage. Both modes retain the
+same category and within-category targets and reset on restart.
 
 The persistent data directory defaults to the platform user-data location, independent
 of your launch directory. Existing `data/portfolio` folders are preserved; open them
@@ -1021,7 +1035,10 @@ Missing metadata remains Unknown. Published aggregate ratings are shown separate
 when individual ratings are unavailable; they are never assigned to securities.
 Provider duration, maturity, coupon and yield metrics carry their own source dates.
 Denomination currency is not a measure of net currency risk after hedging.
-iShares cash, money-market holdings, collateral and FX form a net liquidity pool;
+Xtrackers cash liabilities offset cash assets in a net cash pool without an assigned
+country or currency; equity weights and the total remain unchanged. Signed
+substitute baskets retain their original rows. iShares cash, money-market
+holdings, collateral and FX form a net liquidity pool;
 net borrowing that cannot fit the unsigned allocation model is rejected.
 
 XEON's economic view represents its EUR overnight-rate benchmark, the Solactive
@@ -1140,7 +1157,7 @@ status polls for completion and reloads the analysis automatically. A workspace
 lock prevents concurrent refresh writers, including across app instances. Failed
 updates keep the prior snapshot and can be retried manually. Snapshots older than
 seven days still get a recency notice; a fresh check need not mean fresh holdings.
-Refresh is separate from market-price refresh and is always disabled in demo mode.
+Refresh is separate from market-price refresh and is disabled only in the explicit offline demo mode.
 It runs inside the portfolio app, with no Codex session required. The app must be
 running; this is not an operating-system scheduler.
 

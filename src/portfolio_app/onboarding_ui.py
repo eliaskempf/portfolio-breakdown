@@ -42,7 +42,7 @@ def render_welcome(*, demo_available: bool) -> bool:
     return True
 
 
-def demo_guide():
+def demo_guide(*, offline=True):
     panel = st.expander('Try the demo', key='demo_guide', on_change='rerun')
     if not panel.open:
         return
@@ -51,7 +51,11 @@ def demo_guide():
             '1. **Overview:** compare the 60% equity, 25% money market, 10% gold and 5% crypto targets '
             'with the deliberately uneven holdings. Select Equities to explore its 70/30 World/EM split.\n'
             '2. **Exposure:** toggle **Break down ETFs** to see the two equity funds turn into example '
-            'constituents and residual Other exposure. The partial weights are invented.\n'
+            'constituents and residual Other exposure.\n'
             '3. **Positions:** inspect the made-up buy-ins and their gains and losses.\n'
             '4. **Rebalance:** calculate a plan against the saved targets, or try allocating new money.'
         )
+
+        st.caption('Offline example: prices, history and partial ETF weights are invented.' if offline else
+                   'Prices and history come from market providers; ETF weights come from issuer downloads. '
+                   'Buy-ins are invented, not historical transactions. Missing downloads are shown explicitly.')

@@ -49,3 +49,41 @@ def test_demo_breakdown_conserves_each_source_and_labels_synthetic_weights(tmp_p
         valued.set_index('position_id').current_value_eur.to_dict())
     assert expanded.loc[expanded.source_type.eq('etf_other'), 'value'].sum() == pytest.approx(45000 * .81 + 16000 * .79)
     assert set(expanded.loc[expanded.direct_or_indirect.eq('direct'), 'asset_id']) == {'money-market', 'gold', 'bitcoin', 'ethereum'}
+
+
+def test_live_demo_sizes_once_from_quotes_and_preserves_targets_and_edits(tmp_path):
+    from portfolio_app.demo import initialize_live_demo, live_demo_pending, LIVE_EXAMPLES
+    from portfolio_app.positions import read_snapshot, save_position
+    live = create_demo_data(tmp_path / 'live', live=True)
+    offline = create_demo_data(tmp_path / 'offline')
+    prices = PriceService(StaticProvider(offline / 'demo_prices.json'))
+    assert not (live / 'demo_prices.json').exists()
+    assert not load_funds(live / 'etfs')  # Never seed invented weights into live mode.
+    holdings = load_holdings(live / 'holdings.csv')
+    valued = value_holdings(holdings, prices)
+    original = (live / 'holdings.csv').read_bytes()
+    missing = valued.copy()
+    missing.loc[0, 'fx_to_eur'] = float('nan')
+    assert not initialize_live_demo(live, missing)
+    assert (live / 'holdings.csv').read_bytes() == original
+    assert live_demo_pending(live)
+    assert initialize_live_demo(live, valued)
+    assert not live_demo_pending(live)
+    holdings = load_holdings(live / 'holdings.csv')
+    config = load_allocation(live / 'allocation.yaml', holdings)
+    assert analysis_targets(holdings, config).target_allocation.tolist() == pytest.approx([.42, .18, .25, .10, .03, .02])
+    valued = value_holdings(holdings, prices)
+    assert valued.set_index('id').current_value_eur.to_dict() == pytest.approx(
+        {k: v[0] for k, v in LIVE_EXAMPLES.items()}, abs=.04)
+    gains = position_performance(valued).unrealized_gain_eur
+    assert (gains > 0).sum() == 4 and (gains < 0).sum() == 2
+    snapshot = read_snapshot(live / 'holdings.csv')
+    save_position(live / 'holdings.csv', {'shares': '123'}, expected_revision=snapshot.revision,
+                  position_id=snapshot.holdings.position_id.iloc[0])
+    edited = (live / 'holdings.csv').read_bytes()
+    valued['current_price'] *= 2
+    assert not initialize_live_demo(live, valued)
+    create_demo_data(live, live=True)
+    assert (live / 'holdings.csv').read_bytes() == edited
+    assert not live_demo_pending(offline)
+    assert not initialize_live_demo(offline, valued)
