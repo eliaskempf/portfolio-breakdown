@@ -13,10 +13,21 @@ import sys
 import threading
 import time
 from urllib.request import Request, urlopen
+from typing import Callable, ContextManager, Protocol
 
 from portfolio_app.holdings import DataError
 from portfolio_app.locking import write_lock
 from portfolio_app.settings import state_path
+
+
+class Presentation(Protocol):
+    """Optional local presentation; normal browser launches do not import a GUI."""
+
+    def prepare(self) -> None: ...
+    def child(self, command: list[str]) -> ContextManager[subprocess.Popen]: ...
+    def focus(self) -> None: ...
+    def run(self, url: str, stopped: threading.Event,
+            monitor: Callable[[Callable[[], None]], int]) -> int: ...
 
 
 def app_command() -> list[str]:
@@ -36,7 +47,7 @@ def request_instance(directory: Path, action: str = 'status') -> dict | None:
         info = json.loads(record.read_text(encoding='utf-8'))
         request = Request(f'http://127.0.0.1:{int(info["control_port"])}/{action}',
                           headers={'Authorization': 'Bearer ' + info['token']},
-                          method='POST' if action == 'stop' else 'GET')
+                          method='POST' if action in {'stop', 'focus'} else 'GET')
         with urlopen(request, timeout=2) as response:
             result = json.load(response)
         return result if result.get('instance') == info['token'] else None
@@ -82,7 +93,7 @@ def ready(url: str) -> bool:
 
 
 @contextmanager
-def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool):
+def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool, focus: Callable[[], None] | None = None):
     token = secrets.token_urlsafe(32)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -92,12 +103,18 @@ def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool)
             if not secrets.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + token):
                 self.send_error(403)
                 return
-            if (self.command, self.path) not in {('GET', '/status'), ('POST', '/stop')}:
+            actions = {('GET', '/status'), ('POST', '/stop')}
+            if focus is not None:
+                actions.add(('POST', '/focus'))
+            if (self.command, self.path) not in actions:
                 self.send_error(404)
                 return
             if self.path == '/stop':
                 stopped.set()
-            body = json.dumps(dict(instance=token, url=url, ready=ready(url), demo=demo)).encode()
+            if self.path == '/focus':
+                focus()
+            body = json.dumps(dict(instance=token, url=url, ready=ready(url), demo=demo,
+                                   presentation='window' if focus is not None else 'browser')).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(body)))
@@ -128,29 +145,12 @@ def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool)
         thread.join(timeout=2)
 
 
-def run_server(command: list[str], directory: Path, *, port: int, browser: bool, demo: bool) -> int:
-    """Supervise only our own child; never kill a process based on a stale PID."""
-    url = f'http://127.0.0.1:{port}'
-    stopped = threading.Event()
-    previous = signal.signal(signal.SIGTERM, lambda *args: stopped.set())
+@contextmanager
+def owned_child(command: list[str]):
+    """Keep cleanup and waiting inside the workspace lease."""
     child = subprocess.Popen(command)
     try:
-        with instance(directory, url, stopped, demo=demo):
-            deadline = time.monotonic() + 60
-            while not ready(url):
-                if child.poll() is not None:
-                    raise DataError(f'Application server exited with code {child.returncode}.')
-                if stopped.wait(.1):
-                    return 0
-                if time.monotonic() >= deadline:
-                    raise DataError('Application server did not start within 60 seconds.')
-            print(f'Portfolio Breakdown: {url}', flush=True)
-            if browser:
-                from portfolio_app.desktop import open_browser
-                open_browser(url)
-            while child.poll() is None and not stopped.wait(.2):
-                pass
-            return child.returncode or 0
+        yield child
     finally:
         if child.poll() is None:
             child.terminate()
@@ -159,16 +159,63 @@ def run_server(command: list[str], directory: Path, *, port: int, browser: bool,
             except subprocess.TimeoutExpired:
                 child.kill()
                 child.wait(timeout=5)
+
+
+def monitor_server(child, url: str, stopped: threading.Event, on_ready: Callable[[], None]) -> int:
+    deadline = time.monotonic() + 60
+    while not stopped.is_set():
+        if child.poll() is not None:
+            raise DataError(f'Application server exited with code {child.returncode}.')
+        if ready(url):
+            break
+        if time.monotonic() >= deadline:
+            raise DataError('Application server did not start within 60 seconds.')
+        stopped.wait(.1)
+    if stopped.is_set():
+        return 0
+    print(f'Portfolio Breakdown: {url}', flush=True)
+    on_ready()
+    while child.poll() is None and not stopped.wait(.2):
+        pass
+    if not stopped.is_set() and child.returncode:
+        raise DataError(f'Application server exited with code {child.returncode}.')
+    return child.returncode or 0
+
+
+def run_server(command: list[str], directory: Path, *, port: int, browser: bool, demo: bool,
+               presentation: Presentation | None = None) -> int:
+    """Supervise only our own child; never kill a process based on a stale PID."""
+    url = f'http://127.0.0.1:{port}'
+    stopped = threading.Event()
+    previous = signal.signal(signal.SIGTERM, lambda *args: stopped.set())
+    try:
+        child_context = presentation.child(command) if presentation else owned_child(command)
+        with child_context as child:
+            with instance(directory, url, stopped, demo=demo,
+                          focus=presentation.focus if presentation else None):
+                def monitor(on_ready):
+                    return monitor_server(child, url, stopped, on_ready)
+                if presentation:
+                    return presentation.run(url, stopped, monitor)
+                def show_browser():
+                    if browser:
+                        from portfolio_app.desktop import open_browser
+                        open_browser(url)
+                return monitor(show_browser)
+    finally:
         signal.signal(signal.SIGTERM, previous)
 
 
-def open_existing(directory: Path, *, demo: bool, browser: bool) -> bool:
+def open_existing(directory: Path, *, demo: bool, browser: bool, focus: bool = False) -> bool:
     info = request_instance(directory)
     if not info:
         return False
     if info['demo'] != demo:
         raise DataError('This workspace is already running in another mode. Stop it before changing modes.')
-    if browser:
+    if focus and info.get('presentation') == 'window':
+        if request_instance(directory, 'focus') is None:
+            raise DataError('The existing window could not be focused. Retry after it finishes closing.')
+    elif browser:
         from portfolio_app.desktop import open_browser
         open_browser(info['url'])
     print(f'Already running: {info["url"]}')
@@ -210,3 +257,22 @@ def workspace_lease(directory: Path):
         except (BlockingIOError, PermissionError) as exc:
             raise DataError('This workspace is already starting or in use. Retry after it finishes starting.') from exc
         yield
+
+
+@contextmanager
+def presentation_workspace(directory: Path, *, demo: bool, browser: bool, timeout: float = 5):
+    """One lease winner; losing window launches discover/focus it, never spawn."""
+    deadline = time.monotonic() + timeout
+    with ExitStack() as stack:
+        while True:
+            if open_existing(directory, demo=demo, browser=browser, focus=True):
+                yield False
+                return
+            try:
+                stack.enter_context(workspace_lease(directory))
+                break
+            except DataError:
+                if time.monotonic() >= deadline:
+                    raise DataError('This workspace is still starting or closing. Retry shortly.') from None
+                time.sleep(.1)
+        yield True

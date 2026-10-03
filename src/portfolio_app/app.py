@@ -7,11 +7,11 @@ from tempfile import TemporaryDirectory
 from portfolio_app.demo import create_demo_data
 from portfolio_app.holdings import DataError
 from portfolio_app.launcher import (choose_port, open_existing, run_server, start_desktop,
-                                    stop_instance, workspace_lease)
+                                    stop_instance, workspace_lease, presentation_workspace, Presentation)
 from portfolio_app.settings import app_version, theme_options, workspace_path
 
 
-def main() -> None:
+def main(*, presentation: Presentation | None = None) -> None:
     if sys.argv[1:2] == ['--internal-streamlit']:
         from streamlit.web.cli import main as streamlit_main
         sys.argv = ['streamlit', *sys.argv[2:]]
@@ -59,7 +59,7 @@ def main() -> None:
         if args.port is not None and not 1 <= args.port <= 65535:
             parser.error('--server.port must be between 1 and 65535')
         browser = not args.no_browser and args.headless != 'true'
-        if not args.foreground and (args.desktop or getattr(sys, 'frozen', False)):
+        if presentation is None and not args.foreground and (args.desktop or getattr(sys, 'frozen', False)):
             forwarded = ['--data-dir', str(directory), '--server.headless', args.headless, *streamlit_args]
             if args.demo:
                 forwarded.append('--demo')
@@ -69,9 +69,15 @@ def main() -> None:
                 forwarded += ['--server.port', str(args.port)]
             start_desktop(forwarded, directory, demo=args.demo, browser=browser)
             return
-        if open_existing(directory, demo=args.demo, browser=browser):
+        if presentation is None and open_existing(directory, demo=args.demo, browser=browser):
             return
-        with workspace_lease(directory):
+        lease = (presentation_workspace(directory, demo=args.demo, browser=browser)
+                 if presentation else workspace_lease(directory))
+        with lease as acquired:
+            if presentation:
+                if not acquired:
+                    return
+                presentation.prepare()
             port = choose_port(args.port)
             with TemporaryDirectory(prefix='portfolio-demo-') as temporary:
                 demo_dir = create_demo_data(Path(temporary), live=not args.offline_demo)
@@ -84,11 +90,12 @@ def main() -> None:
                 command += ['--', '--data-dir', str(directory), '--demo-dir', str(demo_dir)]
                 if args.demo:
                     command.append('--demo')
-                raise SystemExit(run_server(command, directory, port=port, browser=browser, demo=args.demo))
+                options = {'presentation': presentation} if presentation else {}
+                raise SystemExit(run_server(command, directory, port=port, browser=browser, demo=args.demo, **options))
     except KeyboardInterrupt:
         raise SystemExit(130) from None
     except (DataError, OSError) as exc:
-        if args.desktop or (getattr(sys, 'frozen', False) and not args.foreground):
+        if presentation or args.desktop or (getattr(sys, 'frozen', False) and not args.foreground):
             from portfolio_app.desktop import startup_error
             startup_error(str(exc))
         parser.exit(1, f'Portfolio could not complete the operation: {exc}\n')
