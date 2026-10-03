@@ -133,9 +133,11 @@ def test_job_platform_guard_and_native_child_cleanup(tmp_path):
     child = subprocess.Popen([sys.executable, '-c', 'import sys; sys.stdin.read()'], stdin=subprocess.PIPE)
     try:
         job.assign(child)
+        assert child.poll() is None
         job.close()
         child.wait(timeout=5)
-        assert child.returncode != 0
+        # Kill-on-close can return zero on Windows; termination is the contract.
+        assert child.returncode is not None
     finally:
         job.close()
         child.stdin.close()
@@ -297,3 +299,26 @@ def test_windows_use_distinct_temporary_profiles(monkeypatch):
         presentation.run('http://127.0.0.1:1', threading.Event(), lambda ready: ready() or 0)
         profiles.append(fake.profile)
     assert profiles[0] != profiles[1]
+
+
+@pytest.mark.parametrize('error_code', [109, 232, 6])
+def test_windows_parent_monitor_never_blocks_in_crt_read(monkeypatch, error_code):
+    import ctypes
+    from portfolio_app.window import wait_for_parent_close
+    sleeps = []
+    responses = iter([True, True, False])
+    def peek(*args):
+        return next(responses)
+    monkeypatch.setattr(sys, 'platform', 'win32')
+    monkeypatch.setitem(sys.modules, 'msvcrt', SimpleNamespace(get_osfhandle=lambda fd: fd))
+    monkeypatch.setattr(ctypes, 'WinDLL', lambda *a, **kw: SimpleNamespace(PeekNamedPipe=peek), raising=False)
+    monkeypatch.setattr(ctypes, 'get_last_error', lambda: error_code, raising=False)
+    monkeypatch.setattr(ctypes, 'WinError', lambda error: OSError(error, 'Synthetic pipe error'), raising=False)
+    monkeypatch.setattr('portfolio_app.window.time.sleep', sleeps.append)
+    stream = SimpleNamespace(fileno=lambda: 123, read=lambda: pytest.fail('Blocking read would stall native imports'))
+    if error_code == 6:
+        with pytest.raises(OSError):
+            wait_for_parent_close(stream)
+    else:
+        wait_for_parent_close(stream)
+    assert sleeps == [.1, .1]

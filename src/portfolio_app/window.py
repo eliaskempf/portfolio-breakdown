@@ -238,7 +238,9 @@ class WindowPresentation:
             self.closed.set()
             finished.wait(3)
         if self.failures:
-            raise DataError('The experimental window failed. Relaunch with --browser; see the private window log.') from self.failures[0]
+            reason = str(self.failures[0]) or type(self.failures[0]).__name__
+            raise DataError(f'The experimental window failed: {reason} '
+                            'Relaunch with --browser; see the private window log.') from self.failures[0]
         return result[0]
 
 
@@ -260,13 +262,37 @@ def control_input():
     return None
 
 
+def wait_for_parent_close(stream):
+    """Watch EOF without a blocking Windows CRT read during native DLL imports."""
+    if sys.platform != 'win32':
+        stream.read()
+        return
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+    api = ctypes.WinDLL('kernel32', use_last_error=True)
+    api.PeekNamedPipe.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD,
+                                 ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+    api.PeekNamedPipe.restype = wintypes.BOOL
+    pipe = msvcrt.get_osfhandle(stream.fileno())
+    while api.PeekNamedPipe(pipe, None, 0, None, None, None):
+        time.sleep(.1)
+    error = ctypes.get_last_error()
+    if error not in {109, 232}:  # ERROR_BROKEN_PIPE / ERROR_NO_DATA: writer closed.
+        raise ctypes.WinError(error)
+
+
 def server_child():
     """Private pipe gate and graceful-stop channel; never a network API."""
     stream = control_input()
     if stream is None or stream.readline() != b'start\n':
         return
     def wait_for_close():
-        stream.read()  # Parent close/crash -> EOF; no token or PID file involved.
+        try:
+            wait_for_parent_close(stream)
+        except OSError:
+            # A broken monitor cannot safely leave the server running unattended.
+            LOG.exception('Could not monitor the parent shutdown pipe')
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             handler = signal.getsignal(signal.SIGTERM)

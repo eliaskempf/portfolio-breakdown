@@ -2,13 +2,16 @@
 
 ## Recommendation and current evidence
 
-Defer shipping this window in v1. The opt-in adapter and Windows build recipe are
-implemented, but native Windows rendering, packaging and process containment
-remain unverified. This session runs on WSL2; Linux browser checks are regression
-evidence only. A read-only native host check identified Windows 10 build
-19045.6456, Python 3.9.5 and no uv command. No supported Windows 11/Python 3.12
-build environment was available, and none was provisioned. The browser-first v1 launcher and production packaging remain the
-default. No release candidate, tag, workflow run, push or publication is produced.
+The opt-in window is implemented and its source launch now passes a native
+Windows 10 smoke check using an isolated Python 3.12 environment. The initial
+user test exposed a startup deadlock, fixed as described below. Overview charts,
+all four tabs, an authenticated focus request, window close and server shutdown
+were exercised in the actual WebView2 window with synthetic data.
+
+Keep v1 shipping approval pending the remaining Windows 11 and frozen-bundle
+acceptance checks. The browser-first v1 launcher and production packaging remain
+the default. No release candidate, tag, workflow run, push or publication is
+produced. Linux browser checks alone are not native Windows evidence.
 
 Implementation worktree: `/tmp/portfolio-window-v1`, branch `window-prototype-v1`.
 Base: `9f1877d4e2a3222529f979782e0e90c6ee2134dc` from `release-v1`.
@@ -171,8 +174,9 @@ See [pywebview installation requirements](https://pywebview.flowrl.com/guide/ins
 
 ## Native acceptance checklist and deferral boundary
 
-All native Windows items below remain UNVERIFIED. Run on Windows 11 x64, first
-from source and then from the extracted bundle on a machine without Python/uv:
+The Windows 10 source checks recorded below cover part of this list. The complete
+Windows 11 and frozen-bundle matrix remains UNVERIFIED. Run on Windows 11 x64,
+first from source and then from the extracted bundle on a machine without Python/uv:
 
 1. Double-click launch and terminal launch; no unwanted terminal flashes. Test
    readable startup errors and logs, paths with spaces/non-ASCII characters, an
@@ -209,7 +213,8 @@ and an installer/runtime bootstrapper are outside this prototype.
 - Final focused adapter, launcher, startup, release and privacy suite: 145 passed
   in 10.98 seconds with `PORTFOLIO_REQUIRE_BROWSER=1` and no skips. The native Job test now checks explicit refusal
   on non-Windows hosts instead of skipping, preserving the existing candidate
-  workflow's strict no-skips rule. Its Windows cleanup branch remains unverified.
+  workflow's strict no-skips rule. Its Windows cleanup branch subsequently passed
+  in the native regression run recorded below.
 - Release/privacy regression set: 97 passed at that point; Ruff correctness and
   Git diff checks passed. Source wheel and sdist content/privacy checks passed.
 - The real pipe-gated Streamlit child started and exited with code zero after
@@ -230,7 +235,38 @@ and an installer/runtime bootstrapper are outside this prototype.
   restarted. The smoke cleanup stopped its owned server and removed its temporary
   workspace. No preview is being handed over as a running native window.
 
-Windows source launch, frozen execution, terminal-flash behavior, native file
-selection/downloads, renderer navigation, focus/scaling and hard-crash cleanup
-are unverified. No Windows bundle or clean-machine claim is made. The standalone
-smoke failure and native acceptance gaps are explicit reasons to defer v1 shipping.
+## Native startup failure and fix
+
+The first native source launch timed out before the server became reachable.
+A diagnostic stack probe found NumPy's native module import stalled while the
+shutdown watcher blocked in a Windows CRT pipe read. Closing the parent pipe
+released the import immediately. The watcher now polls `PeekNamedPipe` for parent
+closure without holding a blocking CRT read. The startup gate and owned Job
+Object remain intact. Unexpected pipe errors initiate shutdown. Startup errors
+also include the underlying reason instead of only a generic failure message.
+
+The user's isolated source test copy received the adapter fix, with its original
+source preserved separately. No portfolio files were changed. Validation used
+new disposable synthetic workspaces, not the user's portfolio or test workspace.
+
+- Actual host: Windows 10 build 19045.6456, isolated Python 3.12, pywebview 6.2.1
+  and the host's WebView2 runtime. This is not Windows 11 acceptance.
+- Native adapter/lifecycle suite: **40 passed in 12.16 seconds**, including a
+  real pipe-gated Streamlit child and kill-on-close Job Object. The latter checks
+  that a live child exits; Windows can return zero for kill-on-close termination.
+- Linux adapter/lifecycle suite: **40 passed in 6.40 seconds**. Ruff passed for
+  the changed source and tests.
+- A fresh native window loaded the offline demo from the patched extracted
+  source copy, at `http://127.0.0.1:63986`. Its workspace and state were generated
+  under a disposable `render-probe-*` directory. The actual WebView2 DOM reached
+  `first-view-rendered`, rendered Overview Plotly charts, and visited Overview,
+  Exposure, Positions, Rebalance and Overview again without application exceptions.
+- An authenticated focus request was accepted. Closing that window stopped its
+  owned server and removed instance discovery; the smoke process exited zero.
+  Foreground activation while minimized was not checked. No preview was left running.
+
+Frozen execution, Windows 11 behavior, terminal flashes, native file selection/
+downloads, external navigation, scaling and supervisor hard-crash cleanup remain
+unverified. No Windows bundle or clean-machine claim is made. The earlier
+standalone browser smoke failure also remains unresolved; this native check did
+not exercise its ETF dropdown sequence.
