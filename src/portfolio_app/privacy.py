@@ -14,6 +14,9 @@ RELEASE_FILES = {"LICENSE", "docs/release-plan.md", "docs/release-checklist.md",
                  "tools/release.py", "tools/promote.py", "tools/package_smoke.py"}
 ICON_FILES = {"src/portfolio_app/assets/portfolio-breakdown.png", "src/portfolio_app/assets/portfolio-breakdown.svg",
               "src/portfolio_app/assets/favicon.svg", "src/portfolio_app/assets/favicon.ico"}
+DOCS_FILES = {"mkdocs.yml", ".github/workflows/docs.yml", ".github/workflows/docs-pages.yml",
+              "tools/docs_site.py", "tools/docs_preview.py", "docs/documentation-maintenance.md",
+              "docs/documentation-migration.md", "docs/documentation-session-result.md"}
 PRIVATE_PARTS = {"data", "private", "imports", "exports", "reports", "screenshots", ".cache", ".backups", ".codex", ".agents", ".vscode", ".idea", ".streamlit", ".venv"}
 SECRET_PATTERNS = (
     ("private key", re.compile(rb"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")),
@@ -30,7 +33,9 @@ def path_problem(filename: str) -> str | None:
     path = PurePosixPath(filename)
     if any(part in PRIVATE_PARTS for part in path.parts) or path.name.startswith(".env"):
         return "private data or local configuration"
-    if filename in ROOT_FILES | RELEASE_FILES | ICON_FILES or filename == ".githooks/pre-commit":
+    if filename in ROOT_FILES | RELEASE_FILES | ICON_FILES | DOCS_FILES or filename == ".githooks/pre-commit":
+        return None
+    if path.parts[:2] == ("docs", "user") and path.suffix == ".md":
         return None
     if len(path.parts) >= 2 and path.parts[0] in {"src", "tests"} and path.suffix == ".py":
         return None

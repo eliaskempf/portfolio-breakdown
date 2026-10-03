@@ -1,0 +1,47 @@
+site_name: Portfolio Breakdown
+site_description: Local portfolio analysis — user guide
+site_url: https://example.invalid/portfolio-breakdown/dev/
+docs_dir: docs/user
+site_dir: dist/docs-site
+use_directory_urls: true
+strict: true
+theme:
+  name: mkdocs
+  color_mode: light
+  user_color_mode_toggle: false
+  navigation_depth: 2
+  highlightjs: false
+plugins:
+  - search
+markdown_extensions:
+  - attr_list
+  - admonition
+hooks:
+  - tools/docs_site.py
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+nav:
+  - Start here: index.md
+  - Setup:
+      - Install and run: install.md
+      - Your first portfolio: getting-started.md
+  - Holdings:
+      - Positions and buy-ins: positions.md
+      - Import holdings: import.md
+  - Analysis:
+      - Exposure and ETFs: exposure.md
+      - Prices and performance: performance.md
+      - Analytics and risk: analytics.md
+  - Planning:
+      - Categories and targets: allocation.md
+      - Rebalance: rebalance.md
+  - Help:
+      - Storage and recovery: storage.md
+      - Troubleshooting: troubleshooting.md

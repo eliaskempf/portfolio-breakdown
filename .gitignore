@@ -58,6 +58,9 @@ handoff.md
 !/.github/workflows/publish.yml
 !/.github/workflows/maintenance.yml
 !/.github/dependabot.yml
+!/mkdocs.yml
+!/.github/workflows/docs.yml
+!/.github/workflows/docs-pages.yml
 !/src/portfolio_app/assets/portfolio-breakdown.png
 !/src/portfolio_app/assets/portfolio-breakdown.svg
 !/src/portfolio_app/assets/favicon.svg

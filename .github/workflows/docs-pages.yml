@@ -1,0 +1,103 @@
+name: Publish reviewed documentation
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full reviewed source SHA (must include documentation tooling)
+        required: true
+        type: string
+      channel:
+        description: Build development or frozen candidate documentation
+        type: choice
+        options: [dev, candidate]
+        default: candidate
+      release_version:
+        description: Optional release alias for an ALREADY archived candidate; copies existing bytes without building
+        type: string
+      acceptance:
+        description: I approved publication, matched app/docs source, reviewed the archive and completed documentation acceptance
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: documentation-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    # Intentionally dormant. Do not set this variable or enable Pages in this task.
+    if: vars.DOCS_PUBLISH_APPROVED == 'true' && inputs.acceptance && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      CHANNEL: ${{ inputs.channel }}
+      RELEASE_VERSION: ${{ inputs.release_version }}
+      DOCS_BASE_URL: ${{ vars.DOCS_BASE_URL }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate publication inputs
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$DOCS_BASE_URL" =~ ^https://[^/]+/.*/$ ]]
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --locked --group docs
+      - name: Restore the latest successfully published archive
+        run: |
+          previous=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow docs-pages.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          mkdir -p dist/pages
+          if [ -n "$previous" ]; then
+            gh run download "$previous" --repo "$GITHUB_REPOSITORY" --name docs-pages-archive --dir dist/pages
+          fi
+      - name: Build a reviewed source or promote already archived bytes
+        run: |
+          if [ -n "$RELEASE_VERSION" ]; then
+            uv run python tools/docs_site.py promote dist/pages --source-sha "$SOURCE_SHA" --version "$RELEASE_VERSION"
+          else
+            uv run python tools/docs_site.py build --channel "$CHANNEL" --base-url "$DOCS_BASE_URL"
+            uv run python tools/docs_site.py assemble dist/docs-site dist/pages
+          fi
+      - name: Check every retained documentation version
+        run: |
+          uv run python - <<'PY'
+          import subprocess, sys
+          from pathlib import Path
+          manifests = list(Path('dist/pages').rglob('build-info.json'))
+          assert manifests, 'No versioned documentation to publish'
+          for manifest in manifests:
+              subprocess.run([sys.executable, 'tools/docs_site.py', 'check', str(manifest.parent)], check=True)
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: docs-pages-archive
+          path: dist/pages
+          include-hidden-files: true
+          retention-days: 90
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: dist/pages
+  deploy:
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish the reviewed archive
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
