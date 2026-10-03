@@ -100,7 +100,15 @@ def test_upload_review_chart_allocation_and_listing(import_page):
     assert linked.ticker.tolist() == ['NVDA']
     assert linked.manual_price.isna().all()
     assert linked.position_key.tolist() == stored.position_key.tolist()
-    page.get_by_role('tab', name='Exposure', exact=True).click()
+    # Saving the listing remounts navigation; old and new tabs can coexist until
+    # Streamlit finishes the rerun. Wait for the unique live tab, not an arbitrary
+    # first match that could belong to the stale tree.
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
+    exposure = page.get_by_role('tab', name='Exposure', exact=True)
+    playwright.expect(exposure).to_have_count(1)
+    exposure.click()
+    playwright.expect(exposure).to_have_attribute('aria-selected', 'true')
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     playwright.expect(page.locator('[data-testid="stException"]')).to_have_count(0)
 
 

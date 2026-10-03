@@ -11,10 +11,9 @@ def write_lock(path: Path, *, blocking: bool = True):
     with path.open('a+b') as handle:
         if os.name == 'nt':
             import msvcrt
-            handle.seek(0)
-            if not handle.read(1):
-                handle.write(b'0')
-                handle.flush()
+            # Windows denies even reads through a second handle to a locked
+            # byte. Lock directly: _locking permits a range beyond EOF, so an
+            # empty lease file needs no read or initialization write.
             handle.seek(0)
             try:
                 msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK, 1)

@@ -34,7 +34,7 @@ jobs:
       - name: Tests (including required browser suites)
         env:
           PORTFOLIO_REQUIRE_BROWSER: '1'
-        run: uv run pytest -q --junitxml=dist/test-results.xml
+        run: uv run pytest -v --durations=20 --junitxml=dist/test-results.xml
       - run: uv run python tools/release.py build
       - run: uv run python tools/release.py test
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

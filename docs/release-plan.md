@@ -362,3 +362,43 @@ local builds are validation artifacts, not distributable candidates.
 Native Windows/Ubuntu acceptance, fresh live-provider acceptance and explicit
 publication approval remain pending. The next distributable candidate must be
 built from the final clean integrated commit on the hosted Windows/Linux runners.
+
+## First hosted candidate feedback (2026-10-03)
+
+Candidate run `37121950806` did not pass. The supplied Linux test log reports
+844 passes and one browser failure: immediately after saving a price listing,
+Streamlit briefly retained both old and new navigation tabs, so the Exposure
+locator was ambiguous. The test now waits for rerender completion and exactly one
+Exposure tab before clicking, then checks navigation and absence of exceptions.
+Both import browser tests passed locally, followed by three consecutive passing
+two-test runs using synthetic data and the locked browser environment.
+
+The Windows job exceeded the existing 45-minute limit, but its supplied test log
+reached 100% before reporting errors. Two concrete portability issues were visible:
+the dashboard fixture wrote Greek source text with the default CP1252 encoding,
+and an oversized upload fixture generated a million-character test ID that exceeds
+Windows' environment-variable limit. The fixture now uses explicit UTF-8 and
+upload cases have short descriptive IDs, retaining the full oversized payload.
+
+The three failure positions correspond to manual ETF lock contention, concurrent
+ETF refresh and concurrent price-cache writes. Reviewing their shared lock helper
+found a read of the reserved byte before attempting the Windows lock; a competing
+lock can deny that read through another handle. Lock acquisition now directly
+reserves the byte range, including empty files, as supported by Microsoft's
+[_locking contract](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/locking?view=msvc-170).
+Regression coverage includes Windows contention without a pre-lock read and native
+empty/existing lease contention plus release after an exception. The 48 focused
+lock, ETF refresh/discovery, market-data and purchase-upload tests pass locally.
+Native Windows confirmation still requires a new hosted run.
+
+CI and candidate test commands now print individual test names and the slowest
+durations. Time limits and required test coverage are unchanged. The Node.js
+action-runtime warning is separate from the reported Linux test failure.
+
+Final local validation: all 848 tests passed in the locked environment, including
+all 28 required Chromium tests with no skips. Ruff, workflow YAML parsing, staged
+privacy review and diff checks passed. No private workspace data was accessed.
+
+Neither platform has an accepted distributable candidate from this run. A fresh
+complete candidate run is required to verify these corrections on Windows; do not
+publish or treat this run as release acceptance.

@@ -38,7 +38,7 @@ positions = pd.DataFrame([
 ])
 render_strategic_overview(positions, config)
 render_search_box("", [], "")
-''')
+''', encoding='utf-8')
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]

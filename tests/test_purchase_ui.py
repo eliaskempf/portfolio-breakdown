@@ -173,7 +173,8 @@ def test_bulk_in_full_app_keeps_history_out_of_allocation_dimensions(tmp_path, s
     assert all("Purchase History" != item.label for item in app.multiselect)
 
 
-@pytest.mark.parametrize("content,error", [(CSV.encode(), None), (b"\xff", "UTF-8"), (b"x" * 1_000_001, "too large")])
+@pytest.mark.parametrize("content,error", [(CSV.encode(), None), (b"\xff", "UTF-8"), (b"x" * 1_000_001, "too large")],
+                         ids=['valid', 'invalid-utf8', 'oversized'])
 def test_upload_validates_and_saves_only_valid_input(monkeypatch, tmp_path, content, error):
     upload = SimpleNamespace(size=len(content), getvalue=lambda: content)
     monkeypatch.setattr("portfolio_app.purchase_ui.st.file_uploader", lambda *args, **kwargs: upload)

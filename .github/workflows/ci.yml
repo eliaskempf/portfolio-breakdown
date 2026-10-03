@@ -31,7 +31,7 @@ jobs:
       - run: uv sync --locked --group release
       - run: uv run portfolio-check-private --tracked
       - run: uv run ruff check src tests tools
-      - run: uv run pytest -q --junitxml=dist/unit-results.xml
+      - run: uv run pytest -v --durations=20 --junitxml=dist/unit-results.xml
       - run: uv build
       - run: uv run python tools/release.py check --directory dist
       - name: Install wheel outside checkout
