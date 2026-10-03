@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.demo import create_demo_data
+from synthetic_sample import create_sample_data as create_demo_data
 from portfolio_app.positions import read_snapshot
 from test_ui import activate, by_label
 

@@ -15,6 +15,8 @@ data. A checked checklist is specific to one build, not a blanket approval.
 - [ ] Windows/Linux unit and AppTest suites pass.
 - [ ] Required Chromium browser suites run with no skipped modules.
 - [ ] Package content/privacy and source-install checks pass.
+- [ ] Candidate archives contain no private workspace data, local installation
+      provenance or personal build paths; archive owner metadata is neutral.
 - [ ] Extracted binaries pass lifecycle and browser navigation checks on both OSes.
 - [ ] Linux binary tested on Ubuntu 22.04 and 24.04.
 
@@ -23,7 +25,12 @@ data. A checked checklist is specific to one build, not a blanket approval.
 - [ ] Extract, launch, create shortcut, relaunch after reboot.
 - [ ] Repeat launch opens existing app; occupied port and startup failure are understandable.
 - [ ] Stop/restart leaves no server behind; closing only the browser is documented.
-- [ ] Empty workspace onboarding and synthetic position edits/save/restart work.
+- [ ] Empty workspace offers demo, manual entry and holdings import; each route
+      works, cancel writes nothing, existing portfolios skip welcome, and
+      synthetic position edits/save/restart work.
+- [ ] Demo targets (60/25/10/5), equity 70/30 split, mixed gains/losses, both
+      equity ETF breakdowns and rebalancing work offline; demo changes never
+      affect the persistent workspace and reset on application restart.
 - [ ] Demo, all main tabs/modes, dialogs, charts and lists work.
 - [ ] Futures sandbox absent from package, navigation and CLI.
 - [ ] CSV and Excel imports reviewed and saved; cancel writes nothing, workspace

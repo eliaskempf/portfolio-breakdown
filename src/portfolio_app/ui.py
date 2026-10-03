@@ -48,7 +48,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     from portfolio_app.import_ui import render_import_next_steps
     render_import_next_steps()
     if demo:
-        st.caption("Demo · Synthetic data · Resets on restart")
+        st.caption("Demo · Invented prices, buy-ins and ETF weights · Resets on restart")
+        if demo_dir is not None:
+            from portfolio_app.onboarding_ui import demo_guide
+            demo_guide()
     etf_revision = refresh_revision(data_dir)
     try:
         snapshot, allocation, classifications, funds = load_inputs(data_dir)
@@ -58,6 +61,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         st.error(str(exc))
         st.info("Edit holdings.csv and classifications.yaml in the data directory, then rerun the app.")
         return
+    if holdings.empty and not demo:
+        from portfolio_app.onboarding_ui import render_welcome
+        if render_welcome(demo_available=demo_dir is not None):
+            return
     coordinator.schedule(data_dir, holdings, funds, demo=demo)
     refresh = st.sidebar.button('Refresh prices', disabled=demo)
     context_key = sha256(str(data_dir.resolve()).encode()).hexdigest()[:12]
@@ -102,7 +109,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             if st.button('Complete buy-ins'):
                 st.session_state['main_tabs'] = 'Positions'
                 st.session_state['positions_workflow'] = 'Update balances'
-    elif not valued.price_status.eq('manual').any():
+    elif not demo and not valued.price_status.eq('manual').any():
         st.caption('Latest available daily close · Prices may be delayed')
     if valued.price_status.eq('manual').any():
         st.caption(f"{valued.price_status.eq('manual').sum()} dated manual/snapshot prices · These do not refresh automatically.")

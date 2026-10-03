@@ -105,7 +105,14 @@ private data before migration and verification.
 
 ## First use and limitations
 
-Start with **Positions → Add position**, or choose the synthetic Demo portfolio.
+An empty portfolio opens a welcome screen: **Explore demo**, **Start manually**,
+or **Import holdings**. The demo is a separate, editable €100,000 synthetic
+portfolio with allocation targets, mixed gains/losses and offline equity ETF
+breakdowns. Demo edits reset on application restart. Manual entry opens the
+existing Add position form; import opens the experimental CSV/Excel review flow,
+including provisional FinanzManager column recognition. Nothing is saved until
+you accept the form or reviewed import. Existing portfolios skip the welcome screen.
+Use **Getting started** to return to the choices while your portfolio is empty.
 Use **Update balances** to replace quantities and optional average buy-ins. In
 **Rebalance → Targets**, configure strategic categories and position targets.
 Analytical label hierarchies are maintained in `classifications.yaml`; see the

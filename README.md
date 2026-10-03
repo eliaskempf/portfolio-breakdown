@@ -101,8 +101,10 @@ uv run portfolio-app
 
 `uv` manages Python 3.12 and the project environment. Open the local URL printed
 by Streamlit. The default launch uses live market data and your private local
-data directory in the platform user-data location (see the installation guide). A fresh portfolio starts empty; create positions
-under **Positions**. They remain saved when you stop and restart the app.
+data directory in the platform user-data location (see the installation guide).
+A fresh portfolio offers **Explore demo**, **Start manually**, or **Import holdings**.
+Manual entry and import use the existing reviewed save flows; positions remain
+saved when you stop and restart the app. Existing portfolios open normally.
 
 The sidebar's **Portfolio workspace** switch opens **My portfolio** or the
 editable **Demo portfolio**. Switching clears position forms and filters so an
@@ -122,9 +124,33 @@ starting `portfolio-app` resets them. The temporary directory is removed on a
 normal shutdown; a new launch always creates fresh data even after a crash.
 `--demo` starts with the demo workspace selected; it does not reset personal data.
 Demo prices and FX are explicitly labeled in the UI and never used
-as a fallback for live prices. The example portfolio has €744 in valued
-positions, including €520 in the AI sleeve, plus one intentionally unvalued
-example to demonstrate missing-data handling.
+as a fallback for live prices. The example portfolio has €100,000 in invented
+positions and preconfigured allocation targets:
+
+| Category | Target | Demo value | Current allocation |
+| --- | ---: | ---: | ---: |
+| Equities | 60% | €61,000 | 61% |
+| Money market | 25% | €24,000 | 24% |
+| Gold | 10% | €11,000 | 11% |
+| Crypto | 5% | €4,000 | 4% |
+
+Equities target 70% [Xtrackers MSCI World 1C](https://etf.dws.com/en-sg/IE00BJ0KDQ92-msci-world-ucits-etf-1c/)
+(IE00BJ0KDQ92) and 30% [iShares Core MSCI EM IMI](https://www.ishares.com/uk/individual/en/products/264659/ishares-core-msci-em-imi-ucits-etf)
+(IE00BKM4GZ66); their invented values are €45,000 and €16,000.
+Money market uses [Xtrackers II EUR Overnight Rate Swap 1C](https://etf.dws.com/de-ch/wissen/themenwelten/xtrackers-overnight-etfs-eine-alternative-zum-tagesgeld/)
+(LU0290358497), gold uses [EUWAX Gold II](https://www.euwax-gold.de/ewg2ld/)
+(DE000EWG2LD7), and crypto targets 60% Bitcoin / 40%
+Ethereum with invented values of €2,800 / €1,200. These are demonstration
+choices, with deliberately uneven allocations and fixed buy-ins giving gains
+and losses. No runtime randomness or live quotes are needed.
+
+Both equity ETFs include explicitly synthetic, partial constituent snapshots.
+**Exposure → Break down ETFs** demonstrates constituent expansion and residual
+Other without provider downloads. The money-market fund remains a whole position;
+its swap collateral is not presented as equity exposure. **Try the demo** gives
+a short tour, and **Rebalance** can calculate against the saved targets immediately.
+Instrument identities are public metadata; prices, buy-ins, quantities, allocation
+weights and constituent weights are invented, not current market or issuer data.
 
 The persistent data directory defaults to the platform user-data location, independent
 of your launch directory. Existing `data/portfolio` folders are preserved; open them

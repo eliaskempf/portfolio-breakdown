@@ -59,7 +59,10 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
             if fund.proxy_source:
                 st.info(f'Approximate breakdown · {fund.proxy_source}')
             st.caption(f"ISIN {fund.isin} · Holdings as of {fund.as_of.isoformat()} · {snapshot_age_days(fund)} day(s) old")
-            st.markdown(f"[Holdings source]({fund.source})")
+            if fund.source.startswith(('https://', 'http://')):
+                st.markdown(f"[Holdings source]({fund.source})")
+            else:
+                st.caption(f'Source: {fund.source}')
             st.caption(f'{len(fund.constituents):,} components · {100 * fund.constituents.weight.sum():.2f}% covered')
             if fund.notes:
                 st.caption(fund.notes)

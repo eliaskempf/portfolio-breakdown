@@ -21,6 +21,7 @@ SECRET_PATTERNS = (
     ("access token", re.compile(rb"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|sk-(?:proj-)?[A-Za-z0-9_-]{24,}|xox[baprs]-[A-Za-z0-9-]{20,})\b")),
     ("cloud access key", re.compile(rb"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")),
     ("bank account", re.compile(rb"\bDE[0-9]{20}\b")),
+    ("local user-directory path", re.compile(rb"/(?:home|Users)/[A-Za-z0-9_.-]+|[A-Za-z]:[\\/]+Users[\\/]+[A-Za-z0-9_.-]+")),
     ("secret assignment", re.compile(rb"(?im)^\s*(?:export\s+)?[A-Z0-9_]*(?:API_KEY|ACCESS_TOKEN|AUTH_TOKEN|PASSWORD|CLIENT_SECRET)[A-Z0-9_]*\s*[:=]\s*[\"']?[A-Za-z0-9_./+\-=]{12,}")),
 )
 

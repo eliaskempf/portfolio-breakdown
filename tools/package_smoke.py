@@ -75,11 +75,11 @@ def smoke(command):
         assert '--fork-futures' not in subprocess.check_output(command + ['--help'], env=env, cwd=root, text=True)
         log = root / 'synthetic-server.log'
         with log.open('w', encoding='utf-8') as handle:
-            child = subprocess.Popen(command + ['--foreground', '--demo', '--no-browser', '--data-dir', str(workspace)],
+            child = subprocess.Popen(command + ['--foreground', '--no-browser', '--data-dir', str(workspace)],
                                      cwd=root, env=env, stdout=handle, stderr=handle)
             try:
                 url = wait_for_instance(state, child)
-                repeated = subprocess.run(command + ['--demo', '--foreground', '--no-browser', '--data-dir', str(workspace)],
+                repeated = subprocess.run(command + ['--foreground', '--no-browser', '--data-dir', str(workspace)],
                                           env=env, cwd=root, capture_output=True, text=True, timeout=30)
                 assert repeated.returncode == 0 and 'Already running' in repeated.stdout
                 with sync_playwright() as runner:
@@ -87,7 +87,10 @@ def smoke(command):
                     page = browser.new_page(viewport={'width': 1440, 'height': 1000})
                     page.set_default_timeout(20000)
                     page.goto(url)
+                    expect(page.get_by_role('heading', name='Welcome to Portfolio Breakdown', exact=True)).to_be_visible()
+                    page.get_by_role('button', name='Explore demo', exact=True).click()
                     page.locator('.js-plotly-plot').first.wait_for()
+                    expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('100,000.00')
                     favicon = page.locator('link[rel="shortcut icon"]')
                     expect(favicon).to_have_attribute('href', re.compile(r'^data:image/svg\+xml;base64,'))
                     assert page.evaluate('''async href => {
@@ -104,7 +107,17 @@ def smoke(command):
                         # Wait for Streamlit's rerun, including navigation-triggered imports.
                         page.wait_for_timeout(800)
                         expect(page.get_by_test_id('stException')).to_have_count(0)
+                    page.get_by_role('tab', name='Exposure', exact=True).click()
+                    assets = page.get_by_role('table', name='Exposure assets', exact=True)
+                    expect(assets.get_by_text('Nvidia', exact=True)).to_be_visible()
+                    breakdown = page.get_by_test_id('stTabs').get_by_text('Break down ETFs', exact=True)
+                    breakdown.click()
+                    expect(assets.get_by_text('Nvidia', exact=True)).to_have_count(0)
+                    breakdown.click()
+                    expect(assets.get_by_text('Nvidia', exact=True)).to_be_visible()
                     page.get_by_role('tab', name='Rebalance', exact=True).click()
+                    page.get_by_role('button', name='Calculate plan', exact=True).click()
+                    expect(page.get_by_role('table', name='Suggested trades', exact=True)).to_be_visible()
                     page.get_by_role('tab', name='Targets', exact=True).click()
                     page.wait_for_timeout(800)
                     expect(page.get_by_test_id('stException')).to_have_count(0)
@@ -119,8 +132,13 @@ def smoke(command):
                     # provider ticker, so this check needs no market network.
                     page.get_by_text('My portfolio', exact=True).click()
                     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
-                    page.get_by_role('tab', name='Positions', exact=True).click()
-                    page.get_by_role('button', name='Import portfolio — experimental', exact=True).click()
+                    expect(page.get_by_role('button', name='Explore demo', exact=True)).to_be_visible()
+                    page.get_by_role('button', name='Start manually', exact=True).click()
+                    expect(page.get_by_role('textbox', name='Instrument name', exact=True)).to_have_value('')
+                    page.get_by_role('button', name='Cancel', exact=True).click()
+                    assert not (workspace / 'holdings.csv').exists()
+                    page.get_by_role('button', name='Getting started', exact=True).click()
+                    page.get_by_role('button', name='Import holdings', exact=True).click()
                     page.locator('input[type=file]').set_input_files([
                         {'name': 'invented.csv', 'mimeType': 'text/csv',
                          'buffer': b'Name;Quantity\nSynthetic imported CSV;1,25\n'},
@@ -171,12 +189,24 @@ def smoke(command):
                                check=True, capture_output=True, timeout=30)
                 child.wait(timeout=15)
                 assert (workspace / 'holdings.csv').read_bytes() == saved
-                desktop = subprocess.run(command + ['--desktop', '--no-browser', '--data-dir', str(workspace)],
+                desktop = subprocess.run(command + ['--desktop', '--demo', '--no-browser', '--data-dir', str(workspace)],
                                          env=env, cwd=root, capture_output=True, text=True, timeout=90)
                 assert desktop.returncode == 0, desktop.stderr
                 assert 'http://127.0.0.1:' in desktop.stdout
+                with sync_playwright() as runner:
+                    browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
+                    page = browser.new_page()
+                    page.goto(re.search(r'http://127\.0\.0\.1:\d+', desktop.stdout)[0])
+                    expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('100,000.00')
+                    page.get_by_role('tab', name='Positions', exact=True).click()
+                    page.get_by_role('table', name='Positions', exact=True).wait_for()
+                    expect(page.get_by_role('table', name='Positions', exact=True)
+                           .get_by_text('Synthetic packaged position', exact=True)).to_have_count(0)
+                    expect(page.get_by_test_id('stException')).to_have_count(0)
+                    browser.close()
                 subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,
                                check=True, capture_output=True, timeout=30)
+                assert (workspace / 'holdings.csv').read_bytes() == saved
                 assert not list((state / 'sessions').glob('*.json'))
                 backup, restored = root / 'backup', root / 'restored'
                 subprocess.run(command + ['--data-dir', str(workspace), '--backup-to', str(backup)],

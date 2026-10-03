@@ -28,7 +28,7 @@ def test_each_launch_gets_editable_fresh_demo_and_preserves_personal_data(tmp_pa
         demo = Path(command[command.index("--demo-dir") + 1])
         launched.append(demo)
         snapshot = read_snapshot(demo / "holdings.csv")
-        assert snapshot.holdings.iloc[0]["shares"] == 2
+        assert snapshot.holdings.iloc[0]["shares"] == 450
         save_position(demo / "holdings.csv", {"shares": "99"}, expected_revision=snapshot.revision, position_id="position-0")
         assert load_holdings(demo / "holdings.csv").iloc[0]["shares"] == 99
         return 0
@@ -98,7 +98,7 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     assert not app.exception
     assert by_label(app.radio, "Portfolio workspace").value == "My portfolio"
     by_label(app.radio, "Portfolio workspace").set_value("Demo portfolio").run()
-    assert app.metric[0].value == "€744.00"
+    assert app.metric[0].value == "€100,000.00"
     position_action(app, "Edit position")
     by_label(app.number_input, "Quantity held (total)").set_value(9.)
     by_label(app.button, "Save position").click().run()
@@ -109,7 +109,7 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     assert app.metric[0].value == edited_total
     by_label(app.radio, "Portfolio workspace").set_value("My portfolio").run()
     assert not app.exception
-    position_action(app, "Add position")
+    by_label(app.button, 'Start manually').click().run()
     assert by_label(app.text_input, "Instrument name").value == ""
     by_label(app.text_input, "Instrument name").set_value("Synthetic personal position")
     by_label(app.number_input, "Quantity held (total)").set_value(4.)
@@ -121,7 +121,7 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     second_demo = create_demo_data(tmp_path / "second-start")
     restarted = launch_workspaces(personal, second_demo, start_demo=True)
     assert not restarted.exception
-    assert restarted.metric[0].value == "€744.00"
+    assert restarted.metric[0].value == "€100,000.00"
     by_label(restarted.radio, "Portfolio workspace").set_value("My portfolio").run()
     restarted.session_state['exposure_sources_open'] = True
     activate(restarted, 'Exposure')
@@ -165,6 +165,7 @@ def test_performance_unit_is_remembered_per_workspace(tmp_path):
     app = launch_workspaces(tmp_path / 'personal', demo, start_demo=True)
     by_label(app.get('button_group'), 'Performance display').set_value('%').run()
     by_label(app.radio, 'Portfolio workspace').set_value('My portfolio').run()
+    by_label(app.button, 'Start manually').click().run()
     assert by_label(app.get('button_group'), 'Performance display').value == '€'
     by_label(app.radio, 'Portfolio workspace').set_value('Demo portfolio').run()
     assert by_label(app.get('button_group'), 'Performance display').value == '%'

@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 import shutil
+import tarfile
+from io import BytesIO
 import zipfile
 
 import pytest
@@ -12,6 +14,61 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('release_promote', ROOT / 'tools/promote.py')
 promote = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(promote)
+build_spec = importlib.util.spec_from_file_location('release_build', ROOT / 'tools/release.py')
+release_build = importlib.util.module_from_spec(build_spec)
+build_spec.loader.exec_module(release_build)
+
+
+@pytest.mark.parametrize('tainted', [None, 'wheel', 'sdist'])
+def test_package_check_inspects_content_inside_archives(tmp_path, tainted):
+    private_path = b'/' + b'home/invented-person/portfolio'
+    with zipfile.ZipFile(tmp_path / 'portfolio_breakdown-0.1.0-py3-none-any.whl', 'w') as wheel:
+        wheel.writestr('portfolio_app/ui.py', private_path if tainted == 'wheel' else b'# Synthetic source')
+        wheel.writestr('portfolio_breakdown-0.1.0.dist-info/licenses/LICENSE', b'Synthetic license')
+    with tarfile.open(tmp_path / 'portfolio_breakdown-0.1.0.tar.gz', 'w:gz') as source:
+        content = private_path if tainted == 'sdist' else b'Synthetic public documentation'
+        member = tarfile.TarInfo('portfolio_breakdown-0.1.0/README.md')
+        member.size = len(content)
+        source.addfile(member, BytesIO(content))
+    if tainted:
+        with pytest.raises(ValueError, match='local user-directory path') as error:
+            release_build.package_check(tmp_path)
+        assert private_path.decode() not in str(error.value)
+    else:
+        release_build.package_check(tmp_path)
+
+
+def test_frozen_check_rejects_installer_provenance_and_private_app_content(tmp_path):
+    package = tmp_path / '_internal' / 'portfolio_app'
+    package.mkdir(parents=True)
+    source = package / 'ui.py'
+    source.write_text('# Synthetic application')
+    release_build.frozen_check(tmp_path)
+    metadata = tmp_path / '_internal' / 'invented.dist-info'
+    metadata.mkdir()
+    provenance = metadata / 'direct_url.json'
+    provenance.write_text('{}')
+    with pytest.raises(ValueError, match='installation provenance'):
+        release_build.frozen_check(tmp_path)
+    provenance.unlink()
+    source.write_bytes(b'/' + b'home/invented-person/project')
+    with pytest.raises(ValueError, match='local user-directory path'):
+        release_build.frozen_check(tmp_path)
+
+
+@pytest.mark.parametrize('windows', [False, True])
+def test_bundle_archive_preserves_files_without_builder_ownership(tmp_path, windows):
+    bundle = tmp_path / 'portfolio-app'
+    bundle.mkdir()
+    (bundle / 'example.txt').write_text('Invented application file')
+    archive = release_build.archive_bundle(bundle, tmp_path / 'candidate', windows=windows)
+    if windows:
+        with zipfile.ZipFile(archive) as packaged:
+            assert packaged.read('portfolio-app/example.txt') == b'Invented application file'
+    else:
+        with tarfile.open(archive) as packaged:
+            assert all((m.uid, m.gid, m.uname, m.gname) == (0, 0, '', '') for m in packaged.getmembers())
+            assert packaged.extractfile('portfolio-app/example.txt').read() == b'Invented application file'
 
 
 def candidate(directory, platform='linux-x64'):

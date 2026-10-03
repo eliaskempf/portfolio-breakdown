@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from portfolio_app.demo import create_demo_data
+from synthetic_sample import create_sample_data
 from portfolio_app.holdings import load_holdings
 from portfolio_app.prices import PriceService, StaticProvider
 from portfolio_app.taxonomy import load_classifications
@@ -51,7 +51,7 @@ def no_background_network(monkeypatch):
 
 @pytest.fixture(scope="session")
 def sample_data_dir(tmp_path_factory):
-    return create_demo_data(tmp_path_factory.mktemp("synthetic-portfolio"))
+    return create_sample_data(tmp_path_factory.mktemp("synthetic-portfolio"))
 
 
 @pytest.fixture

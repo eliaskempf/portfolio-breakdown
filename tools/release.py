@@ -23,7 +23,11 @@ def digest(path):
 
 
 def package_check(directory):
-    from portfolio_app.privacy import path_problem
+    from portfolio_app.privacy import ICON_FILES, content_problem, icon_problem, path_problem
+    def check_content(name, content):
+        reason = icon_problem(name, content) if name in ICON_FILES else content_problem(content)
+        if reason:
+            raise ValueError(f'Unapproved package content: {name}: {reason}')
     wheels = list(directory.glob('*.whl'))
     sources = list(directory.glob('portfolio_breakdown-*.tar.gz'))
     if len(wheels) != 1 or len(sources) != 1:
@@ -31,6 +35,8 @@ def package_check(directory):
     with zipfile.ZipFile(wheels[0]) as archive:
         names = archive.namelist()
         for name in names:
+            if name.endswith('/'):
+                continue
             path = PurePosixPath(name)
             if '..' in path.parts or path.is_absolute():
                 raise ValueError('Unsafe wheel member')
@@ -39,6 +45,7 @@ def package_check(directory):
                     raise ValueError(f'Unapproved wheel member: {name}')
             elif '.dist-info/' not in name:
                 raise ValueError(f'Unexpected wheel member: {name}')
+            check_content('src/' + name if name.startswith('portfolio_app/') else name, archive.read(name))
         if 'portfolio_app/ui.py' not in names or not any(n.endswith('/LICENSE') for n in names):
             raise ValueError('Wheel is missing application source or license.')
     with tarfile.open(sources[0]) as archive:
@@ -51,6 +58,7 @@ def package_check(directory):
                 raise ValueError('Unsafe source archive member')
             if relative != 'PKG-INFO' and path_problem(relative):
                 raise ValueError(f'Unapproved source archive member: {relative}')
+            check_content(relative, archive.extractfile(member).read())
     print('Wheel and source archive content checks passed.')
 
 
@@ -85,6 +93,45 @@ def notices(destination):
     (destination / 'dependencies.json').write_text(json.dumps(inventory, indent=2), encoding='utf-8')
 
 
+def frozen_check(bundle):
+    """Audit first-party frozen files and exclude local installation provenance."""
+    from portfolio_app.privacy import ICON_FILES, content_problem, icon_problem, path_problem
+    if any(bundle.rglob('direct_url.json')):
+        raise ValueError('Frozen bundle contains local installation provenance.')
+    package = bundle / '_internal' / 'portfolio_app'
+    if not (package / 'ui.py').is_file():
+        raise ValueError('Frozen bundle is missing application source.')
+    for file in package.rglob('*'):
+        if not file.is_file():
+            continue
+        name = 'src/portfolio_app/' + file.relative_to(package).as_posix()
+        reason = path_problem(name)
+        if not reason:
+            content = file.read_bytes()
+            reason = icon_problem(name, content) if name in ICON_FILES else content_problem(content)
+        if reason:
+            raise ValueError(f'Unapproved frozen application content: {name}: {reason}')
+    for metadata in (bundle / '_internal').glob('portfolio_breakdown-*.dist-info'):
+        for file in metadata.rglob('*'):
+            if file.is_file() and (reason := content_problem(file.read_bytes())):
+                raise ValueError(f'Unapproved frozen application metadata: {file.name}: {reason}')
+    print('Frozen application source and installation-provenance checks passed.')
+
+
+def archive_bundle(bundle, destination, *, windows):
+    """Linux archives must not disclose the builder's user/group names or IDs."""
+    if windows:
+        return shutil.make_archive(str(destination), 'zip', bundle.parent, bundle.name)
+    def neutral_owner(member):
+        member.uid = member.gid = 0
+        member.uname = member.gname = ''
+        return member
+    archive = str(destination) + '.tar.gz'
+    with tarfile.open(archive, 'w:gz') as output:
+        output.add(bundle, arcname=bundle.name, filter=neutral_owner)
+    return archive
+
+
 def build(output):
     from portfolio_app.settings import BRANDING_ASSETS
     output.mkdir(parents=True, exist_ok=True)
@@ -100,10 +147,11 @@ def build(output):
     shutil.copy(ROOT / 'LICENSE', bundle / 'LICENSE')
     shutil.copy(ROOT / 'docs/install.md', bundle / 'INSTALL.md')
     notices(bundle)
+    frozen_check(bundle)
     version = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))['project']['version']
     target = 'windows-x64' if os.name == 'nt' else 'linux-x64'
     name = f'portfolio-breakdown-{version}-{target}'
-    shutil.make_archive(str(output / name), 'zip' if os.name == 'nt' else 'gztar', bundle.parent, bundle.name)
+    archive_bundle(bundle, output / name, windows=os.name == 'nt')
     shutil.copy(bundle / 'THIRD_PARTY_NOTICES.txt', output / 'THIRD_PARTY_NOTICES.txt')
     shutil.copy(bundle / 'dependencies.json', output / 'dependencies.json')
     # Corresponding source, build instructions and dependency lock accompany every bundle.
@@ -152,6 +200,7 @@ def main():
         from tempfile import TemporaryDirectory
         with TemporaryDirectory(prefix='portfolio-package-') as temporary:
             executable = extract_bundle(directory, Path(temporary))
+            frozen_check(executable.parent)
             subprocess.run([sys.executable, str(ROOT / 'tools/package_smoke.py'), str(executable)], check=True)
 
 

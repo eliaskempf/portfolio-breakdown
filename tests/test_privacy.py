@@ -117,6 +117,21 @@ def test_recognizable_private_content_is_rejected(content):
     assert content_problem(content) is not None
 
 
+@pytest.mark.parametrize('content', [
+    b'/' + b'home/invented-person/project',
+    b'/' + b'Users/invented-person/project',
+    b'C:' + b'\\Users\\invented-person\\project',
+    b'C:/' + b'Users/invented-person/project',
+    b'C:' + b'\\\\Users\\\\invented-person\\\\project',
+])
+def test_user_directory_paths_are_rejected_without_echoing_values(content):
+    assert content_problem(content) == 'local user-directory path'
+
+
+def test_portable_paths_and_platform_defaults_are_allowed():
+    assert content_problem(b'/path/to/workspace; ~/.local/share; %LOCALAPPDATA%; Path.home()') is None
+
+
 def test_real_hook_blocks_force_staged_data(git_repo):
     uv = shutil.which("uv")
     if uv is None:

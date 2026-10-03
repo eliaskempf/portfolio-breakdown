@@ -74,7 +74,7 @@ The local host is older than the supported Ubuntu runner baseline; this is not
 a substitute for hosted/clean-machine acceptance. No GitHub workflows have been
 run, no Windows build has been verified, and no release/tag has been created.
 
-Next: integrate the reviewed v1 cleanup into main, push the workflows
+Next: integrate the audited release-v1 changes into main, push the workflows
 and make them available on the default branch, run Build candidate, then download
 and test that specific candidate on supported machines. The four supplied artwork
 files under src/portfolio_app/assets are included in packages. Publication
@@ -143,9 +143,8 @@ no skips (804 tests covered across those runs). The source application's
 fresh-process Chromium smoke check passed,
 including CSV/XLSX uploads, favicon decoding, navigation, save/restart, repeated
 launch, shutdown, and backup/restore in temporary synthetic workspaces. No existing
-preview was restarted. Final smoke previews used localhost ports 53897 and 42831
-from /tmp/portfolio-v1-worktree with temporary demo data and an invented persistent
-workspace. Wheel/source archive content checks and artwork inclusion passed;
+preview was restarted. Final smoke previews used temporary demo data and an invented persistent
+workspace in the isolated release checkout. Wheel/source archive content checks and artwork inclusion passed;
 Ruff correctness and the tracked-file privacy check passed. All new source and
 test files were also reviewed for private content. Browser tab-roundtrip tests
 now wait for the intermediate view to mount before switching back, and keyboard
@@ -157,3 +156,67 @@ portfolio data was used.
 These source changes require a new candidate; earlier candidate acceptance does
 not cover them.
 Native Windows/Ubuntu acceptance and explicit publication approval remain pending.
+
+## First use and demonstration portfolio (2026-10-03)
+
+Empty persistent portfolios now offer Explore demo, Start manually and Import
+holdings. These choices use the existing temporary demo workspace, position form
+and reviewed importer. Existing holdings skip welcome. Getting started returns
+an empty workspace to the choices; switching workspaces resets first-use state.
+FinanzManager recognition remains provisional, with no additional import formats.
+
+The default demo is an invented EUR 100,000 portfolio. Its target/current category
+weights are equity 60/61%, money market 25/24%, gold 10/11% and crypto 5/4%.
+Equity targets are 70/30 Xtrackers MSCI World / iShares Core MSCI EM IMI. The other
+positions are Xtrackers EUR Overnight Rate Swap, EUWAX Gold II, Bitcoin and Ethereum;
+the crypto target split is 60/40. Fixed invented buy-ins create both gains and
+losses (EUR 6,557 net), and saved allocation targets allow immediate rebalancing.
+Only instrument identities are public metadata. Quotes and partial ETF snapshots
+are explicitly synthetic and work offline; both equity funds expand with residual
+Other. The money-market fund stays intact. The tour explains these distinctions.
+The previous synthetic dataset remains a test-only fixture for legacy allocation,
+duplicate-identity and missing-data regression coverage.
+
+Validation: all 808 tests passed, including all 25 required Chromium browser
+tests with no skips. Fresh source-app browser/lifecycle checks exercised welcome,
+demo, manual cancellation, CSV/XLSX import, ETF breakdown off/on, rebalancing,
+save/restart, repeated launch, detached demo startup/reset, shutdown and
+backup/restore. Source previews ran from the isolated release checkout using only
+temporary invented workspaces. No existing preview was restarted.
+Wheel/source archive content checks, Ruff correctness checks, tracked-file privacy
+checks and a separate scan/review of changed and new files passed.
+
+Release dependencies, uv run development, build/promotion workflows and the
+futures exclusion remain unchanged. The package smoke test now covers the welcome
+routes and new demo, including the packaged --demo launch path. This work still
+requires a fresh Windows/Linux candidate and native acceptance; no official
+release is approved by these local checks.
+
+## Pre-candidate privacy audit (2026-10-03)
+
+Reviewed the current 194 source/documentation/artwork files and all 40 commits
+then reachable from release-v1 (513 unique approved source blobs), including
+commit messages. No prohibited portfolio paths or recognized credentials or
+personal home-directory paths were found in that source/history scan. Private
+workspace files were neither read nor compared. Public instrument catalogs,
+provider integrations and explicitly invented fixtures remain; their presence
+does not establish personal ownership, but supported instruments can suggest
+interests. Normal Git author metadata and older generic temporary-path examples
+remain in history. No history was rewritten.
+
+Removed temporary checkout paths from the current handoff. The four icons contain
+no embedded private metadata or external SVG references. Added rejection of user
+home paths to the privacy guard and content scanning inside wheel/source archives.
+Frozen packages now exclude editable-install direct_url.json provenance and check
+first-party source/metadata. Linux archive ownership is normalized to zero IDs and
+empty names instead of disclosing the builder's account.
+
+The local Linux frozen executable passed the expanded browser/lifecycle smoke
+test after removing installation provenance. Scanning 4,811 decompressed Python
+modules found local interpreter paths in the third-party sysconfig module; that
+development-environment build must not be distributed. Windows/Linux distributable
+candidates must be built on clean hosted runners and inspected after download.
+No private holdings, reports, caches, credentials or screenshots are packaged.
+The audit is not a mathematical guarantee that arbitrary prose or public ticker
+selection cannot disclose preferences. Package/privacy regression tests pass;
+native Windows acceptance and official publication approval remain pending.

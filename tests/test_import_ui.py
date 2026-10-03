@@ -31,7 +31,7 @@ def launch(tmp_path, monkeypatch, content=None, *, workspaces=False):
     ).run()
     if workspaces:
         by_label(app.radio, 'Portfolio workspace').set_value('My portfolio').run()
-    by_label(app.button, 'Import portfolio — experimental').click().run()
+    by_label(app.button, 'Import holdings' if workspaces else 'Import portfolio — experimental').click().run()
     return app, directory / 'holdings.csv'
 
 

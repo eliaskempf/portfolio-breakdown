@@ -15,6 +15,9 @@ analysis = Analysis(
     datas=datas, hiddenimports=collect_submodules('portfolio_app') + collect_submodules('streamlit') + collect_submodules('python_calamine'),
     excludes=['playwright', 'pytest', 'ruff', 'pip_audit'],
 )
+# Editable-install provenance contains the builder's absolute checkout URL.
+# It is unnecessary for runtime version/dependency metadata.
+analysis.datas = [entry for entry in analysis.datas if Path(entry[0]).name != 'direct_url.json']
 pyz = PYZ(analysis.pure)
 exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True, name='portfolio-app',
           console=True, icon=str(assets / 'portfolio-breakdown.png') if (assets / 'portfolio-breakdown.png').exists() else None)

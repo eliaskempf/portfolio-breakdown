@@ -82,5 +82,5 @@ def persistent_editor(data, *, key, **kwargs):
 def reset_workspace():
     """Discard workspace-specific forms and filters before switching portfolios."""
     for key in list(st.session_state):
-        if key.startswith(("import_", "position_edit_", "filter_", "label_compare_", "allocation_group_", "rebalance_", "strategic_", "exposure_", "position_draft", "positions_", "planning_", "bulk_bucket_", "targets_")) or key in {"position_saved_notice", "ignore_empty_positions", "hide_empty_positions", "view_editor_drafts", "view_editor_bases", "main_tabs", "rebalance_tabs", "portfolio_contribution_result"}:
+        if key.startswith(("onboarding_", "import_", "position_edit_", "filter_", "label_compare_", "allocation_group_", "rebalance_", "strategic_", "exposure_", "position_draft", "positions_", "planning_", "bulk_bucket_", "targets_")) or key in {"position_saved_notice", "ignore_empty_positions", "hide_empty_positions", "view_editor_drafts", "view_editor_bases", "main_tabs", "rebalance_tabs", "portfolio_contribution_result"}:
             del st.session_state[key]
