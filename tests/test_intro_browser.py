@@ -17,7 +17,7 @@ from portfolio_app.settings import theme_options
 playwright = pytest.importorskip('playwright.sync_api')
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture
 def intro_server(tmp_path_factory):
     directory = tmp_path_factory.mktemp('synthetic-intro')
     create_demo_data(directory / 'demo')
@@ -92,6 +92,7 @@ def test_intro_welcome_navigation_and_help(intro_page):
     select_workspace(page, 'My portfolio')
     playwright.expect(dialog).to_be_visible()
     dialog.get_by_role('button', name='Start my portfolio', exact=True).click()
+    dialog.get_by_role('button', name='Skip setup', exact=True).click()
     playwright.expect(dialog).to_have_count(0)
     playwright.expect(page.get_by_role('button', name='Import portfolio — experimental', exact=True)).to_be_visible()
     page.get_by_role('button', name=re.compile('Add position$')).click()
@@ -128,12 +129,12 @@ def test_reduced_motion_and_narrow_welcome(intro_page):
     page.screenshot(path=str(directory / 'synthetic-header-narrow.png'))
 
 
-def test_skip_works_when_animation_resource_fails(intro_page):
+def test_intro_automatically_continues_when_animation_resource_fails(intro_page):
     page, url, _ = intro_page
     page.route('**/component/portfolio_app.intro.portfolio_breakdown_intro/**', lambda route: route.abort())
     page.goto(url)
-    page.get_by_role('button', name='Skip intro', exact=True).click()
-    playwright.expect(page.get_by_role('dialog')).to_be_visible()
+    playwright.expect(page.get_by_role('button', name='Skip intro', exact=True)).to_have_count(0)
+    playwright.expect(page.get_by_role('dialog')).to_be_visible(timeout=15000)
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
 
@@ -218,4 +219,39 @@ def test_welcome_cards_follow_selected_theme_with_readable_text(intro_page, them
                 assert (max(background, foreground)+.05)/(min(background, foreground)+.05) >= 4.5
     page.set_viewport_size({'width': 390, 'height': 844})
     assert page.get_by_role('dialog').evaluate('el => el.scrollWidth <= el.clientWidth + 1')
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
+def test_guided_setup_and_physical_asset_in_dark_narrow_view(intro_page):
+    page, url, directory = intro_page
+    page.emulate_media(color_scheme='dark', reduced_motion='reduce')
+    page.set_viewport_size({'width': 650, 'height': 950})
+    page.goto(url)
+    page.get_by_role('button', name='Start my portfolio', exact=True).click()
+    dialog = page.get_by_role('dialog')
+    playwright.expect(dialog.get_by_text('1 of 2 · Categories and optional targets', exact=True)).to_be_visible()
+    page.screenshot(path=str(directory / 'synthetic-guided-categories.png'))
+    dialog.get_by_role('button', name='Save categories & continue', exact=True).click()
+    playwright.expect(page.get_by_role('dialog', name='Add position', exact=True)).to_be_visible()
+    dialog.get_by_role('radio', name='Physical asset', exact=True).click()
+    playwright.expect(dialog.get_by_role('spinbutton', name='Current price per troy oz (optional)', exact=True)).to_be_visible()
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
+    dialog.get_by_role('textbox', name='Instrument name', exact=True).fill('Invented bullion')
+    dialog.get_by_role('spinbutton', name='Quantity held (total)', exact=True).fill('2.5')
+    dialog.get_by_role('spinbutton', name='Current price per troy oz (optional)', exact=True).fill('2000')
+    dialog.get_by_role('combobox', name='Category', exact=True).click()
+    page.get_by_role('option', name='Gold', exact=True).click()
+    dialog.get_by_text('Buy-in (optional)', exact=True).click()
+    dialog.get_by_role('spinbutton', name='Average buy-in per unit (optional)', exact=True).fill('1500')
+    page.screenshot(path=str(directory / 'synthetic-physical-position.png'))
+    assert dialog.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
+    dialog.get_by_role('button', name='Save position', exact=True).click()
+    playwright.expect(dialog).to_have_count(0)
+    playwright.expect(page.get_by_role('table', name='Positions', exact=True).get_by_text('Invented bullion', exact=True)).to_be_visible()
+    stored = read_snapshot(directory / 'empty' / 'holdings.csv').holdings.iloc[0]
+    assert stored.quantity_unit == 'troy oz' and stored.manual_price == 2000. and stored.shares == 2.5
+    assert stored.bucket_id and stored.acquisition_price == 1500.
+    page.reload()
+    playwright.expect(page.get_by_role('tab', name='Overview', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_role('button', name='Start my portfolio', exact=True)).to_have_count(0)
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

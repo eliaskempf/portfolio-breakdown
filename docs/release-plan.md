@@ -560,3 +560,57 @@ owned source preview on port 8513 with the same isolated synthetic workspace and
 launch options; checked the actual welcome in dark mode and the animation
 workbench on port 8512. No financial behavior or packaging contract changed.
 The previous executable does not include these fixes until rebuilt.
+
+## Guided setup, demo sizing and physical-asset entry (2026-10-03)
+
+The visible Skip intro control is removed. Normal completion and reduced motion
+advance automatically; a server-side eight-second timeout also advances when the
+component cannot load. The development-only `--skip-intro` option remains.
+
+The live demo now starts around EUR 93,184, with uneven invented position values
+and mixed gains/losses. Quantities are sized once from public prices, then remain
+stable through refreshes and edits. Category targets remain 60/25/10/5, with
+70/30 equity and 60/40 crypto targets within their categories. The explicit
+offline test fixture remains deterministic at EUR 100,000. The actual preview
+was restarted in live mode and displayed EUR 93,184.32 after quantity rounding.
+
+Start my portfolio now offers two steps: editable category names with optional
+whole-portfolio targets, then first-position entry with category assignment.
+Targets are opt-in; enabling them requires a complete total of 100%. Skipping
+setup opens empty Positions; Finish later retains saved categories without
+creating holdings. Existing allocations are reused. Category creation uses the
+existing allocation format and document writer, checks holdings revisions under
+the holdings lock, and refuses to replace an existing allocation. Category and
+position saves are explicit separate actions. Within-category targets are still
+optional and distinct from category targets.
+
+Position dialogs now separate Holding and Valuation, with buy-ins, targets and
+advanced details in optional sections. The empty Existing instrument selector
+is omitted. Listed investments retain search and explicit listing identifiers.
+Physical asset is a visible alternative, defaulting to a gold name with troy-ounce,
+gram or unit quantities and dated manual pricing in the same unit. This exposes
+existing valuation support; it adds no gold spot-feed dependency or ETF/futures
+price proxy. Quantity can be saved without a price and remains unvalued. Changing
+a new draft's unit clears amounts rather than converting them. Existing physical
+positions keep their stored unit, including imported custom units. Position
+details now display the unit beside the quantity. All examples remain invented.
+
+Source preview on port 8513 was restarted from this checkout with the same
+temporary empty workspace, using live demo mode. Browser verification covered
+intro, categories/targets, listed and physical forms, cancellation, the new demo
+value and all main tabs without application exceptions or persistent workspace
+writes. Separate synthetic browser tests save and reload the guided gold example,
+including category assignment and buy-in. Light and dark/narrow layouts remain
+covered. Source launcher/navigation/lifecycle smoke passed, including CSV/XLSX
+import and manual ETF setup. Native Windows acceptance still needs a fresh
+candidate. No official publication is approved.
+
+Final validation: all 879 tests were covered across the full run and focused
+follow-up. The full run passed 877 tests and exposed a timing failure in an
+existing metric keyboard-toggle test; that test now waits for the Streamlit
+rerun to finish before dispatching the next key. Its six-test browser module and
+eight onboarding UI tests passed together (14 passed), including an additional
+regression proving that an older physical holding with no recorded unit does
+not acquire an assumed ounce unit. Required browser suites ran without skips.
+Ruff, diff checks and wheel/sdist content checks passed. A fresh native candidate
+and one complete hosted run remain release gates.

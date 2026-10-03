@@ -27,11 +27,19 @@ data. A checked checklist is specific to one build, not a blanket approval.
       portfolio-app.exe remains available for CLI diagnostics.
 - [ ] Repeat launch opens existing app; occupied port and startup failure are understandable.
 - [ ] Stop/restart leaves no server behind; closing only the browser is documented.
-- [ ] Intro completes before the welcome dialog; Skip and reduced motion work.
+- [ ] Intro completes before the welcome dialog; reduced motion and automatic timeout
+      on a failed component work, with no Skip button.
       Normal reruns/workspace switches do not replay it.
 - [ ] Empty workspace offers Explore demo and Start my portfolio. Manual entry
       and holdings import remain in Positions; cancel writes nothing, existing
       portfolios skip welcome, and synthetic position edits/save/restart work.
+- [ ] Guided setup saves optional categories and optional whole-portfolio targets;
+      Skip setup and Finish later work. The first position can be assigned to a
+      category; within-category targets stay separate. Existing allocations are
+      retained and concurrent edits are rejected.
+- [ ] Physical-asset entry values invented gold in troy ounces and grams using a
+      dated manual price per matching unit. Unit changes clear draft amounts;
+      editing preserves the unit. No live gold spot feed is implied.
 - [ ] Header workspace dropdown, question-mark help and Settings work at desktop
       and narrow widths; Settings retains recovery controls with invalid inputs.
 - [ ] Demo targets (60/25/10/5), equity 70/30 split, mixed gains/losses, both

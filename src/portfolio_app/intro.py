@@ -1,6 +1,7 @@
 """Local SVG intro and session-scoped startup gate; no network or build step."""
 from pathlib import Path
 from uuid import uuid4
+from time import monotonic
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -40,19 +41,21 @@ def breakdown_intro(
 
 
 def render_startup_intro() -> bool:
-    """Return False while playing. Skip remains usable if the component fails."""
+    """Play once, with an automatic timeout if the component cannot report back."""
     if st.session_state.get('startup_intro_done'):
         return True
-    with st.container(key='startup_intro'):
-        st.html('''<style>
-        [data-testid="stApp"]:has(.st-key-startup_intro) {background:#11151c;color:#e3e7ef;}
-        .st-key-startup_intro {padding-top:clamp(24px,12vh,140px);}
-        .st-key-startup_intro button {color:#e3e7ef!important;border-color:#4b566c!important;}
-        </style>''')
-        done = breakdown_intro(height=360)
-        with st.container(horizontal=True, horizontal_alignment='center'):
-            skip = st.button('Skip intro', type='tertiary')
-        if done or skip:
-            st.session_state['startup_intro_done'] = True
-            st.rerun()
+    started = st.session_state.setdefault('startup_intro_started', monotonic())
+
+    @st.fragment(run_every=.5)
+    def animation():
+        with st.container(key='startup_intro'):
+            st.html('''<style>
+            [data-testid="stApp"]:has(.st-key-startup_intro) {background:#11151c;color:#e3e7ef;}
+            .st-key-startup_intro {padding-top:clamp(24px,12vh,140px);}
+            </style>''')
+            done = breakdown_intro(height=360)
+            if done or monotonic() - started >= 8:
+                st.session_state['startup_intro_done'] = True
+                st.rerun(scope='app')
+    animation()
     return False

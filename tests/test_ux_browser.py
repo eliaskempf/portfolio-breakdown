@@ -95,6 +95,8 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     page.get_by_role('button', name='tune Settings', exact=True).click()
     playwright.expect(page.get_by_role('radio', name='%', exact=True)).to_be_checked()
     page.keyboard.press('Escape')
+    # The metric text can arrive before the rerun finishes attaching controls.
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     value_card.get_by_role('button', name='Show gain in euros').press('Enter')
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+€60.00')
     page.get_by_role('button', name='tune Settings', exact=True).click()

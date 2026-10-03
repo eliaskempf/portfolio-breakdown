@@ -110,6 +110,7 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     by_label(app.selectbox, "Portfolio workspace").set_value("My portfolio").run()
     assert not app.exception
     by_label(app.button, 'Start my portfolio').click().run()
+    by_label(app.button, 'Skip setup').click().run()
     by_label(app.button, 'Add position').click().run()
     assert by_label(app.text_input, "Instrument name").value == ""
     by_label(app.text_input, "Instrument name").set_value("Synthetic personal position")
@@ -167,6 +168,7 @@ def test_performance_unit_is_remembered_per_workspace(tmp_path):
     by_label(app.get('button_group'), 'Performance display').set_value('%').run()
     by_label(app.selectbox, 'Portfolio workspace').set_value('My portfolio').run()
     by_label(app.button, 'Start my portfolio').click().run()
+    by_label(app.button, 'Skip setup').click().run()
     by_label(app.button, 'Add position').click().run()
     assert by_label(app.get('button_group'), 'Performance display').value == '€'
     by_label(app.selectbox, 'Portfolio workspace').set_value('Demo portfolio').run()

@@ -195,6 +195,7 @@ def smoke(command):
                     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
                     expect(page.get_by_role('button', name='Explore demo', exact=True)).to_be_visible()
                     page.get_by_role('button', name='Start my portfolio', exact=True).click()
+                    page.get_by_role('button', name='Skip setup', exact=True).click()
                     page.get_by_role('button', name=re.compile('Add position$')).click()
                     expect(page.get_by_role('textbox', name='Instrument name', exact=True)).to_have_value('')
                     page.get_by_role('button', name='Cancel', exact=True).click()

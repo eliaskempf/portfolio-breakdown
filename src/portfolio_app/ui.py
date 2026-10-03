@@ -79,8 +79,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         hide_empty = st.checkbox('Hide empty positions', key='hide_empty_positions',
             help='Hide zero-quantity rows in Positions and Exposure. Saved targets and planning weights stay unchanged.')
     if holdings.empty and not demo:
-        from portfolio_app.onboarding_ui import render_welcome
+        from portfolio_app.onboarding_ui import render_welcome, render_guided_setup
         if render_welcome(demo_available=demo_dir is not None):
+            return
+        if render_guided_setup(data_dir, snapshot, allocation):
             return
     background_prices = price_service is None and not offline_demo
     market_workspace = str(data_dir.resolve())
@@ -106,7 +108,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if not market_coordinator.pending(market_workspace):
             st.warning('Some quotes are unavailable. Use Refresh prices to retry. Synthetic prices are never substituted for live data.')
             st.dataframe(valued.loc[valued.current_value_eur.isna(), ['name', 'valuation_note']], hide_index=True)
-            st.caption('For an offline example, restart with --offline-demo. My portfolio remains available in the sidebar.')
+            st.caption('For an offline example, restart with --offline-demo. My portfolio remains available in the workspace menu.')
         return
     if price_service.cache_warning:
         st.warning(price_service.cache_warning)

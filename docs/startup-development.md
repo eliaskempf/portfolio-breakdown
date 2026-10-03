@@ -37,10 +37,13 @@ On Windows, use an equivalent new temporary path. The app chooses a free loopbac
 port and opens the browser. The intro precedes a two-choice welcome dialog.
 Use Explore demo to check the header, workspace dropdown, question-mark help,
 Settings, navigation and position dialogs without market network access. Use
-Start my portfolio to check empty Positions and its Add/import actions.
+Start my portfolio to check optional categories/targets and first-position entry.
+Skip setup to check empty Positions and its Add/import actions. Physical asset
+entry exposes unit-aware manual valuation; use only invented quantities and prices.
 
 Opening a fresh browser session replays the intro. Ordinary reruns and workspace
-switches do not. Skip remains available if the animation component cannot load.
+switches do not. There is no Skip button; a failed component automatically
+continues after eight seconds. Reduced motion finishes immediately.
 Use `--skip-intro` while iterating on unrelated views, or `--demo` to start with
 the demo selected. Omitting `--offline-demo` enables public demo market data.
 
@@ -80,6 +83,6 @@ uv run python tools/package_smoke.py
 
 Install Chromium with `uv run playwright install chromium` after syncing the
 browser dependency group. Tests use invented workspaces. They cover animation
-completion/skip/reduced motion, final SVG geometry, replay, two welcome choices,
+completion/timeout/reduced motion, final SVG geometry, replay, two welcome choices,
 help/settings, dropdown isolation and narrow layouts. Package smoke verifies the
 actual bundled animation, navigation, CSV/XLSX import, manual ETF setup and lifecycle.

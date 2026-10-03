@@ -111,14 +111,16 @@ An empty portfolio opens a welcome dialog with **Explore demo** and **Start my
 portfolio**. The demo uses invented positions/buy-ins/targets with public quotes,
 real instrument history and supported issuer ETF breakdowns. Explicit
 `--offline-demo` uses synthetic offline fixtures instead. Demo edits reset on
-application restart. Starting your own portfolio opens the empty Positions view;
-use Add position or Import portfolio there. Import retains provisional
-FinanzManager CSV/Excel support. Nothing is saved until you accept the form or
-reviewed import. Existing portfolios skip the welcome dialog.
+application restart. Starting your own portfolio offers optional categories and
+targets, then your first position. Skip setup to open empty Positions, where Add
+position and provisional FinanzManager CSV/Excel import remain available. Saving
+categories is separate from saving holdings; Finish later creates no position.
+Existing portfolios skip the welcome dialog.
 
 The header dropdown switches portfolios, **?** opens help, and **Settings** holds
-display and workspace controls. The animation respects reduced motion and has a
-Skip button; `--skip-intro` disables it for a server. It plays once per browser
+display and workspace controls. The animation respects reduced motion and finishes
+automatically. A failed component times out after eight seconds; `--skip-intro`
+disables it for a development server. It plays once per browser
 session, not on tab changes or portfolio switches. For source previews and replay
 controls, see [Startup development](startup-development.md).
 
