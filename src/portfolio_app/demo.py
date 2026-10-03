@@ -111,9 +111,9 @@ def create_demo_data(directory: Path, *, live: bool = False) -> Path:
 
 # Deliberately uneven values and buy-in ratios; these are examples, not observations.
 LIVE_EXAMPLES = {
-    'world': (44382.71, .874), 'emerging': (16745.38, 1.092),
-    'money-market': (23865.12, .9853), 'gold': (10870.64, .823),
-    'bitcoin': (2734.85, .8929), 'ethereum': (1387.29, 1.20),
+    'world': (40287.43, .874), 'emerging': (17432.18, 1.092),
+    'money-market': (22596.77, .9853), 'gold': (8951.62, .823),
+    'bitcoin': (2536.91, .8929), 'ethereum': (1379.44, 1.20),
 }
 
 

@@ -474,3 +474,143 @@ Next: build a fresh complete hosted candidate for these changes, then repeat the
 Windows demo acceptance with a connection and confirm issuer snapshots/history
 in that binary. The existing downloaded executable does not receive source
 changes automatically. Official publication remains unapproved.
+
+
+## Welcome, header and startup integration (2026-10-03)
+
+The first-use screen is now a non-dismissable two-card welcome dialog: Explore
+demo or Start my portfolio. The latter opens empty Positions; manual add and
+FinanzManager-compatible import stay available there. Import is no longer a
+welcome choice. The sidebar is replaced by a compact header with a workspace
+dropdown, refresh, Settings and question-mark help. Display preferences and
+App & workspace recovery controls live in Settings, including on input errors.
+
+The supplied self-contained SVG animation is integrated before the welcome/app
+in the browser. Its source asset and wrapper were copied into the package; the
+original supplied files remain untouched. No other private data was copied.
+It runs once per browser session, respects reduced motion and has a Skip button.
+`--skip-intro` bypasses it for development. The animation workbench and direct
+HTML preview support replay/timing edits without building an executable; see
+[startup development](startup-development.md). Normal demo startup still uses
+public market data; automated checks use explicit offline synthetic workspaces.
+
+Windows packaging now provides a windowed `Portfolio Breakdown.exe` and retains
+the console `portfolio-app.exe` companion. Shortcuts point to the GUI entry;
+owned child processes are hidden and missing stdio is redirected to private
+launcher logs before application imports. `uv run portfolio-desktop` uses the
+same lifecycle from source. The candidate smoke check additionally launches the
+Windows GUI entry and verifies its server in Chromium. Native no-flash behavior,
+shortcuts and startup-error dialogs still need Windows candidate/manual acceptance.
+The dedicated webview remains a separate optional task, not the default launcher.
+
+Browser/package smoke exposed a stale Positions workflow after import completion.
+A pending navigation request now applies when the Positions controls remount,
+preserving the intended table or requested next step. Synthetic regression checks
+cover stale form selection without changing saved positions or import semantics.
+
+Parallel-session handoffs are in `documentation-session-handoff.md` (Default
+mode) and `window-session-handoff.md` (Plan first). They pin the pre-integration
+base so those sessions can work independently. Reconcile the final header and
+launcher contract with their results before integration. Documentation publication,
+a dedicated window and an official release are not part of this change.
+
+Validation:
+
+- All 863 tests verified across the full run and a focused rerun, including
+  required Chromium suites with no skips. The full run reported 862 passed and
+  one obsolete popover assertion already collected before its correction; the
+  corrected six-test module and subsequent `pytest --lf` both passed. The new
+  regressions cover intro completion/skip/reduced motion/replay, header workflows,
+  invalid-input recovery controls, Windows command routing/stdio, and import
+  workflow restoration. A single clean hosted run remains a candidate gate.
+- Restarted source preview from this checkout with an isolated temporary workspace
+  and `--offline-demo`. Chromium visited the actual intro, welcome, all four main
+  tabs, help and Settings, plus a 390px layout. No application exceptions; charts
+  rendered and the workspace dropdown preserved isolation. The separate animation
+  workbench replayed successfully. Neither preview reads the private portfolio.
+- Source launcher/browser/lifecycle smoke passed. A freshly built Linux frozen
+  bundle passed the same animation/navigation, CSV/XLSX import, manual bond ETF
+  breakdown, save/restart and recovery smoke. The upload smoke now waits for the
+  file-triggered rerun before opening the asset-class dropdown.
+- Wheel/sdist content checks passed; the wheel contains the intro HTML and desktop
+  entrypoint. Ruff, diff checks and staged privacy review passed. No new runtime
+  dependency or lockfile change is needed.
+
+A new complete hosted candidate is still required. Verify `Portfolio Breakdown.exe`
+on Windows, refresh existing shortcuts, and check repeat launch, missing/occupied
+port errors and stop/restart with no terminal flash. This local Linux result is
+not Windows or clean-machine acceptance. No official release is published or
+approved by this change.
+
+## Startup visual corrections (2026-10-03)
+
+The embedded intro initially measured SVG letters while Streamlit still hid the
+iframe, caching zero widths and collapsing the wordmark. It now waits for valid
+rendered text metrics and measures again on replay. Reduced motion still skips
+directly to the final mark without calculating uninitialized letter transforms.
+
+Welcome cards used an unavailable CSS variable with a white fallback, leaving
+white text on pale cards in dark mode. Their accent backgrounds now blend with
+the actual dialog surface, retaining the user's selected light or dark theme.
+
+Validation: 11 focused browser/onboarding tests passed, including initial embedded
+letter spacing, replay, light/dark body-text contrast (at least 4.5:1), theme
+persistence after reload, narrow layout, reduced motion and Skip. Restarted the
+owned source preview on port 8513 with the same isolated synthetic workspace and
+launch options; checked the actual welcome in dark mode and the animation
+workbench on port 8512. No financial behavior or packaging contract changed.
+The previous executable does not include these fixes until rebuilt.
+
+## Guided setup, demo sizing and physical-asset entry (2026-10-03)
+
+The visible Skip intro control is removed. Normal completion and reduced motion
+advance automatically; a server-side eight-second timeout also advances when the
+component cannot load. The development-only `--skip-intro` option remains.
+
+The live demo now starts around EUR 93,184, with uneven invented position values
+and mixed gains/losses. Quantities are sized once from public prices, then remain
+stable through refreshes and edits. Category targets remain 60/25/10/5, with
+70/30 equity and 60/40 crypto targets within their categories. The explicit
+offline test fixture remains deterministic at EUR 100,000. The actual preview
+was restarted in live mode and displayed EUR 93,184.32 after quantity rounding.
+
+Start my portfolio now offers two steps: editable category names with optional
+whole-portfolio targets, then first-position entry with category assignment.
+Targets are opt-in; enabling them requires a complete total of 100%. Skipping
+setup opens empty Positions; Finish later retains saved categories without
+creating holdings. Existing allocations are reused. Category creation uses the
+existing allocation format and document writer, checks holdings revisions under
+the holdings lock, and refuses to replace an existing allocation. Category and
+position saves are explicit separate actions. Within-category targets are still
+optional and distinct from category targets.
+
+Position dialogs now separate Holding and Valuation, with buy-ins, targets and
+advanced details in optional sections. The empty Existing instrument selector
+is omitted. Listed investments retain search and explicit listing identifiers.
+Physical asset is a visible alternative, defaulting to a gold name with troy-ounce,
+gram or unit quantities and dated manual pricing in the same unit. This exposes
+existing valuation support; it adds no gold spot-feed dependency or ETF/futures
+price proxy. Quantity can be saved without a price and remains unvalued. Changing
+a new draft's unit clears amounts rather than converting them. Existing physical
+positions keep their stored unit, including imported custom units. Position
+details now display the unit beside the quantity. All examples remain invented.
+
+Source preview on port 8513 was restarted from this checkout with the same
+temporary empty workspace, using live demo mode. Browser verification covered
+intro, categories/targets, listed and physical forms, cancellation, the new demo
+value and all main tabs without application exceptions or persistent workspace
+writes. Separate synthetic browser tests save and reload the guided gold example,
+including category assignment and buy-in. Light and dark/narrow layouts remain
+covered. Source launcher/navigation/lifecycle smoke passed, including CSV/XLSX
+import and manual ETF setup. Native Windows acceptance still needs a fresh
+candidate. No official publication is approved.
+
+Final validation: all 879 tests were covered across the full run and focused
+follow-up. The full run passed 877 tests and exposed a timing failure in an
+existing metric keyboard-toggle test; that test now waits for the Streamlit
+rerun to finish before dispatching the next key. Its six-test browser module and
+eight onboarding UI tests passed together (14 passed), including an additional
+regression proving that an older physical holding with no recorded unit does
+not acquire an assumed ounce unit. Required browser suites ran without skips.
+Ruff, diff checks and wheel/sdist content checks passed. A fresh native candidate
+and one complete hosted run remain release gates.

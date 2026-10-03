@@ -10,7 +10,9 @@ from urllib.parse import urlsplit
 
 LOG = logging.getLogger(__name__)
 RUNTIME_URL = 'https://developer.microsoft.com/microsoft-edge/webview2/'
-LOADING_HTML = '<!doctype html><title>Portfolio Breakdown</title><p>Starting Portfolio Breakdown…</p>'
+LOADING_HTML = '''<!doctype html><title>Portfolio Breakdown</title>
+<style>html{background:#11151c;color:#e3e7ef;font:16px system-ui}body{padding:24px}</style>
+<p>Starting Portfolio Breakdown…</p>'''
 # A future supplied splash may use this state change. No portfolio values leave the renderer.
 VIEW_PROBE = """(() => {
  const exception = document.querySelector('[data-testid="stException"]');
@@ -64,6 +66,7 @@ class WindowPresentation:
         self.failures = []
         self.closed = threading.Event()
         self.renderer_ready = threading.Event()
+        self.color_scheme = 'dark'
 
     def prepare(self):
         from portfolio_app.holdings import DataError
@@ -81,6 +84,16 @@ class WindowPresentation:
 
     def child(self, command):
         from portfolio_app.window_process import contained_child
+        # Default only this presentation to dark; explicit Streamlit overrides win.
+        separator = command.index('--') if '--' in command else len(command)
+        options = command[:separator]
+        for index, arg in enumerate(options):
+            if arg == '--theme.base' and index + 1 < len(options):
+                self.color_scheme = options[index + 1]
+            elif arg.startswith('--theme.base='):
+                self.color_scheme = arg.split('=', 1)[1]
+        if not any(arg == '--theme.base' or arg.startswith('--theme.base=') for arg in command[:separator]):
+            command = [*command[:separator], '--theme.base=dark', *command[separator:]]
         return contained_child(command)
 
     def focus(self):
@@ -150,6 +163,7 @@ class WindowPresentation:
                                 OPEN_EXTERNAL_LINKS_IN_BROWSER=False, REMOTE_DEBUGGING_PORT=None)
         self.window = webview.create_window(APP_NAME + ' — experimental window', html=LOADING_HTML,
                                            width=1280, height=900, min_size=(800, 600),
+                                           fullscreen=True, background_color='#11151c',
                                            text_select=True, zoomable=True, js_api=None)
         def before_show():
             try:
@@ -180,7 +194,10 @@ class WindowPresentation:
                 raise DataError('The window renderer could not initialize.')
             if not stopped.is_set():
                 self.state = 'server-reachable'
-                self.window.load_url(url)
+                # With paired themes, theme.base alone still follows the OS.
+                # Streamlit's initial-theme option also applies without embed=true.
+                scheme = 'light' if self.color_scheme == 'light' else 'dark'
+                self.window.load_url(f'{url}/?embed_options={scheme}_theme')
         def supervise():
             try:
                 result[0] = monitor(on_ready)

@@ -9,8 +9,10 @@ Inside that download, extract the platform application archive. Keep the entire
 `portfolio-app` directory together; the executable needs its `_internal` folder.
 Use a permanent application location outside your portfolio folder.
 
-On Windows, launch `portfolio-app.exe`. On Linux, launch `./portfolio-app`.
-The local browser opens automatically. Once running, **App & workspace** shows
+On Windows, launch `Portfolio Breakdown.exe` for a console-free desktop start.
+Keep `portfolio-app.exe` alongside it for command-line operations and diagnostics.
+On Linux, launch `./portfolio-app`. The local browser opens automatically and
+plays the intro before showing the app. Once running, **Settings → App & workspace** shows
 the version, active folder and a stop button. Closing a browser tab leaves the
 server running; launching again reopens that instance.
 
@@ -36,7 +38,7 @@ package dependencies and does not consume the project's uv.lock. Prefer the
 locked checkout or frozen bundle when reproducing a tested release environment.
 
 Developer changes remain editable with `uv run`. Use `--data-dir` for a disposable
-workspace, or `--demo` for invented offline data. Restart after changes to imported
+workspace, or `--demo --offline-demo` for invented offline data. Restart after changes to imported
 Python modules; a browser refresh alone can leave stale imports.
 
 ```sh
@@ -105,14 +107,23 @@ private data before migration and verification.
 
 ## First use and limitations
 
-An empty portfolio opens a welcome screen: **Explore demo**, **Start manually**,
-or **Import holdings**. The demo is a separate, editable €100,000 synthetic
-portfolio with allocation targets, mixed gains/losses and offline equity ETF
-breakdowns. Demo edits reset on application restart. Manual entry opens the
-existing Add position form; import opens the experimental CSV/Excel review flow,
-including provisional FinanzManager column recognition. Nothing is saved until
-you accept the form or reviewed import. Existing portfolios skip the welcome screen.
-Use **Getting started** to return to the choices while your portfolio is empty.
+An empty portfolio opens a welcome dialog with **Explore demo** and **Start my
+portfolio**. The demo uses invented positions/buy-ins/targets with public quotes,
+real instrument history and supported issuer ETF breakdowns. Explicit
+`--offline-demo` uses synthetic offline fixtures instead. Demo edits reset on
+application restart. Starting your own portfolio offers optional categories and
+targets, then your first position. Skip setup to open empty Positions, where Add
+position and provisional FinanzManager CSV/Excel import remain available. Saving
+categories is separate from saving holdings; Finish later creates no position.
+Existing portfolios skip the welcome dialog.
+
+The header dropdown switches portfolios, **?** opens help, and **Settings** holds
+display and workspace controls. The animation respects reduced motion and finishes
+automatically. A failed component times out after eight seconds; `--skip-intro`
+disables it for a development server. It plays once per browser
+session, not on tab changes or portfolio switches. For source previews and replay
+controls, see [Startup development](startup-development.md).
+
 Use **Update balances** to replace quantities and optional average buy-ins. In
 **Rebalance → Targets**, configure strategic categories and position targets.
 Analytical label hierarchies are maintained in `classifications.yaml`; see the

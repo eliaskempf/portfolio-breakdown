@@ -11,6 +11,7 @@ assets = root / 'src' / 'portfolio_app' / 'assets'
 datas = collect_data_files('streamlit')
 datas += [(str(path), 'portfolio_app') for path in (root / 'src/portfolio_app').glob('*.py')]
 datas += [(str(assets / name), 'portfolio_app/assets') for name in BRANDING_ASSETS if (assets / name).is_file()]
+datas += [(str(root / 'src/portfolio_app/intro_frontend/index.html'), 'portfolio_app/intro_frontend')]
 datas += copy_metadata('portfolio-breakdown', recursive=True)
 datas += copy_metadata('pywebview', recursive=True)
 datas += collect_data_files('webview')

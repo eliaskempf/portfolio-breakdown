@@ -26,7 +26,7 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None):
         performance_metric('Return on cost', '—' if pd.isna(row.get('return_pct', float('nan'))) else f'{row.return_pct:+.2f}%',
                            row.get('return_pct'), key='position_return')
     names = {b.id: b.name for b in allocation.buckets} if allocation else {}
-    details = {'Quantity': f'{row.shares:g}', 'Account': row.get('account') or '—',
+    details = {'Quantity': f"{row.shares:g} {row.get('quantity_unit') or 'units'}", 'Account': row.get('account') or '—',
                'Category': names.get(row.get('bucket_id'), row.get('portfolio') or 'Unassigned'),
                'Average buy-in': money(row.get('acquisition_price'), row.get('acquisition_currency') or 'currency unspecified'),
                'Total buy-in': money(row.shares * row.acquisition_price, row.get('acquisition_currency') or 'currency unspecified'),

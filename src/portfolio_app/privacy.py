@@ -13,7 +13,9 @@ RELEASE_FILES = {"LICENSE", "docs/release-plan.md", "docs/release-checklist.md",
                  ".github/dependabot.yml", "packaging/portfolio.spec", "packaging/entrypoint.py",
                  "tools/release.py", "tools/promote.py", "tools/package_smoke.py",
                  "packaging/window.spec", "packaging/window_entrypoint.py",
-                 "tools/window_build.py", "docs/window-session-result.md"}
+                 "tools/window_build.py", "docs/window-session-result.md",
+                 "docs/documentation-session-handoff.md", "docs/window-session-handoff.md",
+                 "docs/startup-development.md", "src/portfolio_app/intro_frontend/index.html"}
 ICON_FILES = {"src/portfolio_app/assets/portfolio-breakdown.png", "src/portfolio_app/assets/portfolio-breakdown.svg",
               "src/portfolio_app/assets/favicon.svg", "src/portfolio_app/assets/favicon.ico"}
 PRIVATE_PARTS = {"data", "private", "imports", "exports", "reports", "screenshots", ".cache", ".backups", ".codex", ".agents", ".vscode", ".idea", ".streamlit", ".venv"}

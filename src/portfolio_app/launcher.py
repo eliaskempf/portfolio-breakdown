@@ -31,7 +31,17 @@ class Presentation(Protocol):
 
 
 def app_command() -> list[str]:
-    return [sys.executable] if getattr(sys, 'frozen', False) else [sys.executable, '-m', 'portfolio_app.app']
+    if getattr(sys, 'frozen', False):
+        executable = Path(sys.executable)
+        if sys.platform == 'win32' and executable.stem == 'Portfolio Breakdown':
+            # Windowed bootloaders discard stdio even when the parent supplies
+            # handles. Run the console companion hidden with explicit log handles.
+            executable = executable.with_name('portfolio-app.exe')
+        return [str(executable)]
+    executable = Path(sys.executable)
+    if sys.platform == 'win32' and executable.name.lower() == 'pythonw.exe':
+        executable = executable.with_name('python.exe')
+    return [str(executable), '-m', 'portfolio_app.app']
 
 
 def session_files(directory: Path) -> tuple[Path, Path]:
@@ -148,7 +158,8 @@ def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool,
 @contextmanager
 def owned_child(command: list[str]):
     """Keep cleanup and waiting inside the workspace lease."""
-    child = subprocess.Popen(command)
+    options = dict(creationflags=subprocess.CREATE_NO_WINDOW) if os.name == 'nt' else {}
+    child = subprocess.Popen(command, **options)
     try:
         yield child
     finally:

@@ -15,7 +15,9 @@ produced. Linux browser checks alone are not native Windows evidence.
 
 Implementation worktree: `/tmp/portfolio-window-v1`, branch `window-prototype-v1`.
 Base: `9f1877d4e2a3222529f979782e0e90c6ee2134dc` from `release-v1`.
-The integration checkout's concurrent UI/startup work was not copied or edited.
+The integration checkout remains untouched. Its committed UI/startup changes
+through `f4b53b61adf3ddcc8757f7889faa4c384bafb385` are now merged into this branch
+at the user's request; no uncommitted state was copied.
 Shared launcher hooks and the optional adapter are separate commits.
 Launcher integration: `0ee40fc83130bdc57fb388f0f709f97ee340b68b`.
 Adapter and final validation hashes are recorded in the final handoff.
@@ -30,6 +32,13 @@ $env:PORTFOLIO_STATE_DIR = Join-Path $env:TEMP "portfolio-window-synthetic-state
 $workspace = Join-Path $env:TEMP "portfolio-window-synthetic-workspace"
 uv run --extra window portfolio-window --data-dir $workspace --offline-demo --server.port 8529
 ```
+
+The window starts in borderless fullscreen and dark mode. Use Alt+F4 or
+Settings → App & workspace → Stop application to close it. The supplied intro
+plays before the welcome dialog or demo; `--skip-intro` bypasses it during development.
+For the updated demo with public market data, add `--demo` and omit `--offline-demo`.
+`--theme.base=light` selects a light initial view explicitly. Theme selection in
+Streamlit remains available during the session; a new launch uses the launch default.
 
 Use an unused port and a new invented workspace. Omit `--demo` to see the empty
 welcome screen; add it to open the temporary demo initially. `--offline-demo`
@@ -64,8 +73,9 @@ the checkout, run `portfolio-window.exe` with the same synthetic launch options.
 Use `portfolio-window.exe --browser ...` for fallback. The build refuses an
 occupied output directory and refuses non-Windows hosts. The directory includes
 source wheel/archive, notices, dependency and DLL inventories, checksums and size
-measurements in `experimental-build.json`. Production candidate/promotion tools
-and `packaging/portfolio.spec` are unchanged.
+measurements in `experimental-build.json`. Release-v1's browser packaging is
+retained alongside this optional recipe; candidate/promotion workflows are unchanged.
+The window recipe includes the same bundled intro HTML as the browser recipe.
 
 The separate windowed entrypoint initializes logs before importing application or
 renderer modules. The frozen child uses internal dispatch, never another window.
@@ -81,7 +91,8 @@ normal source-development path.
 retain default browser behavior. The optional `Presentation` protocol supplies
 `prepare`, `child`, `run` and `focus`. Existing parsing, command construction,
 temporary demo ownership, loopback binding, workspace lease and control endpoint
-remain shared. No financial calculation, UI module or data schema changes.
+remain shared. The adapter adds no financial calculation or data schema changes;
+the UI comes from the integrated release-v1 implementation.
 
 - New window: acquire the existing workspace lease, validate dependencies, start
   a contained server child and run pywebview on the main thread. A worker uses the
@@ -108,10 +119,10 @@ remain shared. No financial calculation, UI module or data schema changes.
   authorize shutdown and are replaced only after acquiring the lease. Portfolio
   files are never deleted. Abrupt termination can leave temporary demo/cache files.
 
-Likely integration conflicts: `app.py`, `launcher.py`, `pyproject.toml`, `uv.lock`
-and the exact privacy allowlist additions. Reconcile these with the main session's
-console-free launcher patch; do not replace its launcher wholesale. The adapter,
-process containment, tests, experimental spec and build helper are new files.
+The release-v1 merge reconciles its hidden-child launch option with the window's
+owned-child context and combines the exact privacy allowlists. Presentation hooks,
+pipe shutdown fix and Job containment remain intact. Release-v1's console-free
+browser entrypoint is retained separately from the optional window entrypoint.
 
 External HTTP(S) navigation opens in the default browser; unrelated file/data/
 script schemes are blocked. The pinned backend's navigation and popup handlers
@@ -123,19 +134,24 @@ cannot delete another window's profile.
 
 ## Animation and readiness
 
-The initial surface is static text, with no animation assets. States distinguish
+The initial surface is dark static text while the server starts. The shared
+release-v1 SVG intro then plays in the app, with its reduced-motion behavior and
+eight-second timeout. It runs once per connection, without replaying on tab or
+workspace changes. States distinguish
 `starting`, `server-reachable`, `document-loaded`, `first-view-rendered` and
 `failed`. A value-free DOM probe recognizes the welcome heading or selected
 Overview with a rendered Plotly SVG; this is a presentation signal, not proof
 that every control works. It also accepts a future
 `data-portfolio-view-ready="true"` marker owned by UI integration.
 
-A supplied cold-start animation can replace the initial surface, but cannot
-cover executable/Python initialization before the GUI exists without a separate
-native splash. A page animation runs after renderer navigation. Do not infer
-rendered readiness from the health endpoint or document-loaded event. The current
-adapter exposes a state hook for later integration; it does not implement the
-main session's animation or change the default Overview/welcome behavior.
+The intro runs after renderer navigation and cannot cover executable/Python
+initialization before the GUI exists. Readiness waits for the welcome or Overview
+after the intro; it is not inferred from health or document-loaded events.
+The adapter uses Streamlit's initial-theme URL option to select dark mode even
+when the OS prefers light and both app palettes are configured; `theme.base`
+alone does not select the initial palette in this configuration. See
+[Streamlit embed options](https://docs.streamlit.io/deploy/streamlit-community-cloud/share-your-app/embed-your-app#embed-options).
+The option is used without `embed=true`, retaining the normal toolbar and padding.
 
 ## Dependencies, licenses and package impact
 
@@ -267,6 +283,39 @@ new disposable synthetic workspaces, not the user's portfolio or test workspace.
 
 Frozen execution, Windows 11 behavior, terminal flashes, native file selection/
 downloads, external navigation, scaling and supervisor hard-crash cleanup remain
-unverified. No Windows bundle or clean-machine claim is made. The earlier
-standalone browser smoke failure also remains unresolved; this native check did
-not exercise its ETF dropdown sequence.
+unverified. No Windows bundle or clean-machine claim is made. The initial native
+check did not exercise the earlier failing ETF dropdown sequence; the integrated
+source smoke below subsequently passed it.
+
+## Release-v1 integration validation
+
+Integrated release-v1 through `f4b53b61adf3ddcc8757f7889faa4c384bafb385`, including
+the supplied intro and layout fixes, header replacing the sidebar, updated live
+demo sizing, guided setup and physical-entry changes. The window adds borderless
+fullscreen, a dark loading surface and an explicit initial dark palette. The
+optional dependency lock is unchanged. Browser defaults remain release-v1's.
+
+- All **925 tests** passed across the initial run and targeted reruns, with no
+  skips. Initially 889 passed and 36 browser cases failed to launch Chromium
+  because its configuration directory was not writable in the sandbox. Setting
+  isolated `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` directories fixed the test
+  environment: the 8 intro tests and remaining 28 browser cases then passed.
+- After the final window changes, **50 focused tests passed on Linux** and
+  **50 passed on native Windows** (15.92 seconds). Ruff and diff checks passed.
+- Actual Windows 10/WebView2 smoke used a separate extracted source copy and
+  newly generated workspaces. It observed the intro's wordmark and swirl,
+  borderless fullscreen, dark app background while the OS preferred light,
+  header present, sidebar absent, Overview charts and all four main tabs without
+  exceptions. Both offline mode (port 51540) and public-data demo mode (port 51684)
+  passed. Authenticated focus requests, close and owned-server shutdown passed;
+  neither preview remains running. Existing portfolio directories were not read.
+- The source application smoke passed animation, navigation, import, manual ETF
+  setup, save/restart and lifecycle checks. This resolves the earlier smoke
+  failure for the integrated source state; frozen Windows acceptance is separate.
+- Wheel and source archive content/privacy checks passed, including presence of
+  the intro HTML. The experimental window spec also includes that asset.
+
+The original Windows test copy is preserved. A separate `PortfolioWindowIntegrated-*`
+temporary directory contains the integrated source and its own environment for
+the user's next launch. It uses its own workspace and state directory. This is
+an editable source preview, not a frozen Windows release artifact.

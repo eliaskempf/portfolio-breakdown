@@ -75,6 +75,7 @@ def test_live_demo_sizes_once_from_quotes_and_preserves_targets_and_edits(tmp_pa
     valued = value_holdings(holdings, prices)
     assert valued.set_index('id').current_value_eur.to_dict() == pytest.approx(
         {k: v[0] for k, v in LIVE_EXAMPLES.items()}, abs=.04)
+    assert 93000 < valued.current_value_eur.sum() < 93500
     gains = position_performance(valued).unrealized_gain_eur
     assert (gains > 0).sum() == 4 and (gains < 0).sum() == 2
     snapshot = read_snapshot(live / 'holdings.csv')

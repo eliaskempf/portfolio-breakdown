@@ -12,9 +12,17 @@ CSS = """
 <style>
 .block-container {max-width:1440px;padding:2rem 2.5rem 3rem;}
 [data-testid="stHeader"] {background:transparent;}
-[data-testid="stSidebar"] {border-right:1px solid color-mix(in srgb,currentColor 12%,transparent);}
-[data-testid="stSidebar"] h2 {font-size:.9rem;font-weight:600;margin-top:.7rem;}
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {gap:.7rem;}
+.st-key-app_header {border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent);padding-bottom:16px;margin-bottom:8px;}
+.app-brand {display:flex;align-items:center;gap:10px;font-size:1.3rem;font-weight:650;letter-spacing:-.5px;}
+.app-brand img {width:38px;height:38px;flex-shrink:0;}
+.st-key-app_header [data-testid="stHorizontalBlock"] {flex-wrap:wrap;gap:12px;}
+.stDialog > div:has(.st-key-welcome_personal) {width:min(880px,calc(100vw - 32px))!important;max-width:880px;margin:clamp(24px,12vh,120px) auto!important;}
+.st-key-welcome_demo,.st-key-welcome_personal {padding:24px!important;border-radius:16px!important;min-height:285px;}
+.st-key-welcome_demo {background:color-mix(in srgb,#5470c6 12%,transparent);border-color:#5470c6!important;}
+.st-key-welcome_personal {background:color-mix(in srgb,#4aa9b3 7%,transparent);}
+.welcome-symbol {font-size:2.5rem;line-height:1.1;color:#5470c6;margin-bottom:12px;}
+.st-key-welcome_demo .welcome-symbol {width:40px;height:40px;border-radius:50%;background:conic-gradient(#5470c6 0deg 220deg,#4aa9b3 220deg 310deg,#9a6dd7 310deg);font-size:0;}
+.st-key-welcome_personal .welcome-symbol {color:#4aa9b3;}
 h1 {font-size:1.8rem!important;letter-spacing:-.5px;font-weight:600!important;padding-bottom:.4rem!important;}
 h2 {font-size:1.15rem!important;font-weight:600!important;}
 h3 {font-size:1rem!important;font-weight:600!important;}
@@ -60,7 +68,6 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 def apply_style() -> None:
     st.html(CSS)
     install_grid_interactions()
-    st.sidebar.html('<div class="brand">Portfolio</div>')
 
 
 def workspace_header(demo: bool) -> None:

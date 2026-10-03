@@ -10,14 +10,17 @@ def test_welcome_demo_and_manual_save_are_isolated(tmp_path):
     demo = create_demo_data(tmp_path / 'demo')
     app = launch_workspaces(personal, demo)
     assert not app.exception and not app.tabs
-    assert {button.label for button in app.button} >= {'Explore demo', 'Start manually', 'Import holdings'}
+    assert {button.label for button in app.button} >= {'Explore demo', 'Start my portfolio'}
+    assert 'Import holdings' not in {button.label for button in app.button}
     by_label(app.button, 'Explore demo').click().run()
     assert not app.exception
-    assert by_label(app.radio, 'Portfolio workspace').value == 'Demo portfolio'
+    assert by_label(app.selectbox, 'Portfolio workspace').value == 'Demo portfolio'
     assert app.metric[0].value == '€100,000.00'
     assert not (personal / 'holdings.csv').exists()
-    by_label(app.radio, 'Portfolio workspace').set_value('My portfolio').run()
-    by_label(app.button, 'Start manually').click().run()
+    by_label(app.selectbox, 'Portfolio workspace').set_value('My portfolio').run()
+    by_label(app.button, 'Start my portfolio').click().run()
+    by_label(app.button, 'Skip setup').click().run()
+    by_label(app.button, 'Add position').click().run()
     assert not app.exception
     by_label(app.text_input, 'Instrument name').set_value('Invented first position')
     by_label(app.number_input, 'Quantity held (total)').set_value(2.)
@@ -34,14 +37,16 @@ def test_import_choice_and_workspace_switch_clear_first_use_state(tmp_path):
     personal = tmp_path / 'invented-personal'
     demo = create_demo_data(tmp_path / 'demo')
     app = launch_workspaces(personal, demo)
-    by_label(app.button, 'Import holdings').click().run()
+    by_label(app.button, 'Start my portfolio').click().run()
+    by_label(app.button, 'Skip setup').click().run()
+    by_label(app.button, 'Import portfolio — experimental').click().run()
     assert not app.exception
     assert app.session_state['main_tabs'] == 'Positions'
     assert by_label(app.get('button_group'), 'Position tools').value == 'Import portfolio'
     assert app.get('file_uploader')
     assert not (personal / 'holdings.csv').exists()
-    by_label(app.radio, 'Portfolio workspace').set_value('Demo portfolio').run()
-    by_label(app.radio, 'Portfolio workspace').set_value('My portfolio').run()
+    by_label(app.selectbox, 'Portfolio workspace').set_value('Demo portfolio').run()
+    by_label(app.selectbox, 'Portfolio workspace').set_value('My portfolio').run()
     assert not app.exception and not app.tabs
     assert 'onboarding_started' not in app.session_state.filtered_state
     assert not any(key.startswith('import_') for key in app.session_state.filtered_state)
@@ -89,5 +94,119 @@ def test_live_demo_uses_normal_market_mode_and_preserves_workspace_isolation(tmp
     assert not app.exception
     assert requested == [live]
     assert any('Injected public-history path' in info.value for info in app.info)
-    by_label(app.radio, 'Portfolio workspace').set_value('My portfolio').run()
+    by_label(app.selectbox, 'Portfolio workspace').set_value('My portfolio').run()
     assert not app.exception and not app.tabs
+
+
+def test_recovery_controls_remain_available_with_invalid_holdings(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    (tmp_path / 'holdings.csv').write_text('id,name,shares\ninvented,Invented broken input,invalid\n', encoding='utf-8')
+    app = AppTest.from_string(
+        'from pathlib import Path\nfrom portfolio_app.ui import render_app\n'
+        f'render_app(Path({str(tmp_path)!r}), demo=True)\n', default_timeout=15,
+    ).run()
+    assert not app.exception and app.error
+    assert {'Open data folder', 'Stop application'} <= {button.label for button in app.button}
+
+
+def test_guided_categories_targets_and_first_physical_position(tmp_path):
+    from portfolio_app.allocation import load_allocation
+    from portfolio_app.prices import PriceService, UnavailableProvider
+    from portfolio_app.valuation import value_holdings
+    personal = tmp_path / 'invented-personal'
+    app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
+    by_label(app.button, 'Start my portfolio').click().run()
+    by_label(app.text_area, 'Categories (one per line)').set_value('Invented equities\nInvented gold').run()
+    by_label(app.toggle, 'Add target allocations').set_value(True).run()
+    by_label(app.number_input, 'Invented equities target (%)').set_value(80.)
+    by_label(app.number_input, 'Invented gold target (%)').set_value(10.)
+    by_label(app.button, 'Save categories & continue').click().run()
+    assert app.error and not (personal / 'allocation.yaml').exists()
+    by_label(app.number_input, 'Invented gold target (%)').set_value(20.)
+    by_label(app.button, 'Save categories & continue').click().run()
+    assert not app.exception
+    config = load_allocation(personal / 'allocation.yaml')
+    assert [b.target for b in config.buckets] == [.8, .2]
+    by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
+    by_label(app.text_input, 'Instrument name').set_value('Invented gold coins')
+    by_label(app.number_input, 'Quantity held (total)').set_value(2.5)
+    by_label(app.number_input, 'Current price per troy oz (optional)').set_value(2000.)
+    gold = next(b.id for b in config.buckets if b.name == 'Invented gold')
+    by_label(app.selectbox, 'Category').set_value(gold)
+    by_label(app.button, 'Save position').click().run()
+    assert not app.exception and not app.error
+    saved = read_snapshot(personal / 'holdings.csv').holdings
+    row = saved.iloc[0]
+    assert row.quantity_unit == 'troy oz' and row.instrument_type == 'physical'
+    assert row.ticker == '' and row.bucket_id == gold
+    assert row.manual_price == 2000.
+    assert value_holdings(saved, PriceService(UnavailableProvider())).current_value_eur.iloc[0] == 5000.
+    assert app.session_state['onboarding_step'] == 'done'
+    assert not list(personal.glob('*.json'))
+
+
+def test_guided_optional_targets_and_finish_later(tmp_path):
+    from portfolio_app.allocation import load_allocation
+    personal = tmp_path / 'invented-personal'
+    app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
+    by_label(app.button, 'Start my portfolio').click().run()
+    by_label(app.button, 'Save categories & continue').click().run()
+    assert not app.exception
+    assert all(b.target is None for b in load_allocation(personal / 'allocation.yaml').buckets)
+    by_label(app.button, 'Finish later').click().run()
+    assert not app.exception and not (personal / 'holdings.csv').exists()
+    # Saved categories survive restarting an empty workspace; they are not overwritten.
+    before = (personal / 'allocation.yaml').read_bytes()
+    app = launch_workspaces(personal, create_demo_data(tmp_path / 'second-demo'))
+    by_label(app.button, 'Start my portfolio').click().run()
+    assert not app.exception and by_label(app.selectbox, 'Category')
+    assert (personal / 'allocation.yaml').read_bytes() == before
+
+
+def test_physical_unit_change_clears_amounts_and_edit_keeps_unit(tmp_path):
+    from test_ui import position_action
+    from portfolio_app.prices import PriceService, UnavailableProvider
+    from portfolio_app.valuation import value_holdings
+    personal = tmp_path / 'invented-personal'
+    app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
+    by_label(app.button, 'Start my portfolio').click().run()
+    by_label(app.button, 'Skip setup').click().run()
+    by_label(app.button, 'Add position').click().run()
+    by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
+    by_label(app.number_input, 'Quantity held (total)').set_value(2.)
+    by_label(app.number_input, 'Current price per troy oz (optional)').set_value(2000.).run()
+    by_label(app.selectbox, 'Quantity unit').set_value('grams').run()
+    assert by_label(app.number_input, 'Quantity held (total)').value == 0
+    assert by_label(app.number_input, 'Current price per grams (optional)').value is None
+    by_label(app.number_input, 'Quantity held (total)').set_value(10.)
+    by_label(app.number_input, 'Current price per grams (optional)').set_value(60.)
+    by_label(app.button, 'Save position').click().run()
+    assert not app.exception and not app.error
+    saved = read_snapshot(personal / 'holdings.csv').holdings
+    assert value_holdings(saved, PriceService(UnavailableProvider())).current_value_eur.iloc[0] == 600.
+    position_action(app, 'Edit position')
+    assert by_label(app.selectbox, 'Quantity unit').disabled
+    assert by_label(app.selectbox, 'Quantity unit').value == 'grams'
+    by_label(app.button, 'Save position').click().run()
+    assert not app.exception
+    assert read_snapshot(personal / 'holdings.csv').holdings.manual_price.iloc[0] == 60.
+
+
+def test_existing_physical_holding_with_unknown_unit_is_not_assigned_ounces(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    path = tmp_path / 'holdings.csv'
+    path.write_text('id,name,shares,instrument_type\nmetal,Invented unspecified metal,10,physical\n', encoding='utf-8')
+    app = AppTest.from_string(
+        'from pathlib import Path\nimport streamlit as st\n'
+        'from portfolio_app.positions import read_snapshot\n'
+        'from portfolio_app.position_ui import render_position_form\n'
+        f'path=Path({str(path)!r})\n'
+        'st.session_state["position_edit_selected"]="position-0"\n'
+        'render_position_form(path,read_snapshot(path),[],action="Edit position")\n', default_timeout=15,
+    ).run()
+    assert not app.exception
+    assert by_label(app.text_input, 'Quantity unit').value == ''
+    by_label(app.button, 'Save position').click().run()
+    assert not app.exception
+    row = read_snapshot(path).holdings.iloc[0]
+    assert row.quantity_unit == '' and row.shares == 10.

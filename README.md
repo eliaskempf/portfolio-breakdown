@@ -102,13 +102,22 @@ uv run portfolio-app
 `uv` manages Python 3.12 and the project environment. Open the local URL printed
 by Streamlit. The default launch uses live market data and your private local
 data directory in the platform user-data location (see the installation guide).
-A fresh portfolio offers **Explore demo**, **Start manually**, or **Import holdings**.
-Manual entry and import use the existing reviewed save flows; positions remain
-saved when you stop and restart the app. Existing portfolios open normally.
+After a short intro, a fresh portfolio opens a welcome dialog with **Explore demo**
+and **Start my portfolio**. A skippable two-step guide explains categories and
+optional target allocations, then opens the first position with category assignment.
+Saving categories writes only the allocation; saving a position is a separate action.
+**Skip setup** opens empty Positions, where manual entry and experimental import
+remain available. **Finish later** leaves saved categories intact without adding a
+position. Existing portfolios open normally.
 
-The sidebar's **Portfolio workspace** switch opens **My portfolio** or the
+The header's **Portfolio workspace** dropdown opens **My portfolio** or the
 editable **Demo portfolio**. Switching clears position forms and filters so an
-unfinished edit cannot be applied to the other portfolio.
+unfinished edit cannot be applied to the other portfolio. The **?** button at the
+upper right opens help and the demo guide; **Settings → App & workspace** contains
+folder, version and stop controls.
+
+For startup/animation development without rebuilding the executable, see
+[Startup development](docs/startup-development.md).
 
 The demo uses public quotes, genuine instrument price history and issuer ETF
 holdings downloads by default:
@@ -119,7 +128,7 @@ uv run portfolio-app --demo
 
 Quantities, buy-ins and allocation targets are invented. At first use, the demo
 waits for all six quotes (and any required FX), then sizes the positions once to
-roughly €100,000 with deliberately uneven allocations. Buy-ins are invented
+roughly €93,184 with deliberately uneven allocations. Buy-ins are invented
 relative to those prices to show both gains and losses; they are not historical
 transactions. Later price refreshes never resize quantities or reset your edits.
 Quotes are the latest available daily closes, not real-time ticks. History charts
@@ -127,9 +136,9 @@ show the actual instrument, not reconstructed portfolio returns.
 
 | Category | Target | Approximate initial allocation |
 | --- | ---: | ---: |
-| Equities | 60% | 61% |
+| Equities | 60% | 62% |
 | Money market | 25% | 24% |
-| Gold | 10% | 11% |
+| Gold | 10% | 10% |
 | Crypto | 5% | 4% |
 
 Within Equities, the targets are 70% Xtrackers MSCI World 1C (IE00BJ0KDQ92)
@@ -259,6 +268,22 @@ staged diff. Automated checks cannot recognize every personal detail pasted
 into permitted source or documentation files. Never copy private data into
 those files or bypass the hook. Local data persists independently of Git;
 back it up separately if needed.
+
+## Physical holdings, including gold
+
+Choose **Add position → Physical asset** to record gold or another physical holding.
+Choose **troy oz**, **grams**, or **units**, enter the quantity and assign a category
+if categories are enabled. For gold, use the amount of fine gold in that unit.
+Supply a current price **per the same unit**, its currency and date; without a
+price the quantity is retained and valuation is unknown. This is a manual valuation,
+not an automatic gold spot feed or a proxy using an ETF/futures price.
+
+Buy-in is optional and can be entered per unit or as a total. Changing units in a
+new form clears amounts for re-entry; it does not convert them. The unit is fixed
+when editing or adding another position of an existing physical instrument. Use a
+separate instrument to track a different unit. Categories and targets work as for
+other holdings. Position details show the unit with the quantity; manual valuations
+have no instrument price-history chart.
 
 ## Strategic allocation and balance maintenance
 
@@ -416,7 +441,7 @@ investment. Its current value is zero without requiring a quote, and its target
 contributes to its labels immediately. Add classification labels for new assets
 in the private YAML file; otherwise they appear under Unclassified.
 
-The sidebar’s **Hide empty positions** changes only visibility in Positions and Exposure.
+The header’s **Settings → Hide empty positions** changes only visibility in Positions and Exposure.
 The separate Rebalance option **Exclude empty positions and redistribute targets**
 removes zero-share rows from the planning calculation. Their combined target is divided equally among
 remaining unique asset IDs, then equally among each asset’s held account rows.
@@ -742,7 +767,7 @@ narrow screens.
 Performance is aggregated from owned source positions, independent of ETF
 look-through or overlapping exposure labels. Empty categories remain selectable.
 
-The sidebar’s **Performance display** switches **€ / %** across Overview,
+The header’s **Settings → Performance display** switches **€ / %** across Overview,
 Positions and Exposure, defaulting to EUR gains. The choice is remembered per
 workspace. EUR totals include only held positions with recorded EUR costs and
 available valuations. Category return is total gain divided by those same

@@ -29,6 +29,9 @@ portfolio-app = "portfolio_app.app:main"
 portfolio-window = "portfolio_app.window:main"
 portfolio-check-private = "portfolio_app.privacy:main"
 
+[project.gui-scripts]
+portfolio-desktop = "portfolio_app.gui:main"
+
 [dependency-groups]
 dev = ["pytest>=8,<10"]
 browser = ["playwright>=1.50,<2"]

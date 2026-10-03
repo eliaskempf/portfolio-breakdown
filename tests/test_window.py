@@ -51,6 +51,19 @@ def test_gated_command_preserves_arguments(monkeypatch):
         gated_command(['app.exe', '--something-else'])
 
 
+@pytest.mark.parametrize('override', [[], ['--theme.base=light'], ['--theme.base', 'light']])
+def test_window_defaults_to_dark_without_overriding_explicit_theme(monkeypatch, override):
+    captured = []
+    monkeypatch.setattr('portfolio_app.window_process.contained_child', captured.append)
+    command = ['python', '-m', 'streamlit', 'run', 'synthetic.py', *override, '--', '--demo']
+    presentation = WindowPresentation()
+    presentation.child(command)
+    assert presentation.color_scheme == ('light' if override else 'dark')
+    expected = override or ['--theme.base=dark']
+    assert captured == [['python', '-m', 'streamlit', 'run', 'synthetic.py', *expected, '--', '--demo']]
+    assert command == ['python', '-m', 'streamlit', 'run', 'synthetic.py', *override, '--', '--demo']
+
+
 def test_assignment_failure_never_releases_start_gate(monkeypatch):
     events = []
     class Pipe(BytesIO):
@@ -167,6 +180,8 @@ class FakeWebview:
         self.urls = []
     def create_window(self, *args, **kwargs):
         assert kwargs['js_api'] is None
+        assert kwargs['fullscreen'] is True
+        assert kwargs['background_color'] == '#11151c'
         return self.window
     def load_url(self, url):
         self.urls.append(url)
@@ -206,7 +221,7 @@ def test_window_monitor_completion_closes_window_and_reports_failures(tmp_path, 
     else:
         assert presentation.run('http://127.0.0.1:1', stopped, monitor) == 0
         assert presentation.state == 'first-view-rendered'
-    assert fake.urls == ['http://127.0.0.1:1']
+    assert fake.urls == ['http://127.0.0.1:1/?embed_options=dark_theme']
     assert stopped.is_set() and fake.destroyed.is_set()
 
 

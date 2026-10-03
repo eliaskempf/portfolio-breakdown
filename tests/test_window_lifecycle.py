@@ -107,7 +107,7 @@ def test_presentation_exception_reaps_child_before_lease_release(tmp_path, monke
 
 
 def test_failed_spawn_restores_signal_handler(tmp_path, monkeypatch):
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise OSError('Synthetic spawn failure')
     monkeypatch.setattr(launcher.subprocess, 'Popen', fail)
     original = signal.getsignal(signal.SIGTERM)

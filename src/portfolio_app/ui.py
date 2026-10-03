@@ -18,43 +18,38 @@ from portfolio_app.portfolio import prepare_portfolio
 from portfolio_app.rebalancing import RebalanceError
 from portfolio_app.rebalance_ui import render_rebalancing
 from portfolio_app.prices import PriceService, StaticProvider, UnavailableProvider
-from portfolio_app.presentation import apply_style, empty_overview, workspace_header
+from portfolio_app.presentation import apply_style, empty_overview
 from portfolio_app.allocation import analysis_targets, migration_preview
 from portfolio_app.strategic_ui import render_strategic_overview
 from portfolio_app.scoped_ui import render_scoped_rebalancing
 from portfolio_app.input_cache import load_inputs
 from portfolio_app.market_data import coordinator as market_coordinator, prices_for
-from portfolio_app.view_state import preserve_view_inputs, reset_workspace
+from portfolio_app.view_state import preserve_view_inputs
 
 
-def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None) -> None:
+def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None, intro: bool = False) -> None:
     from portfolio_app.settings import icon_path
-    from portfolio_app.workspace_ui import workspace_info
+    from portfolio_app.workspace_ui import app_header, workspace_info
     persistent_data_dir = data_dir
     icon = icon_path('favicon.svg')
     st.set_page_config(page_title="Portfolio breakdown", layout="wide", page_icon=str(icon) if icon else None)
     apply_style()
+    if intro:
+        from portfolio_app.intro import render_startup_intro
+        if not render_startup_intro():
+            return
     preserve_view_inputs()
-    if demo_dir is not None:
-        workspace = st.sidebar.radio("Portfolio workspace", ["My portfolio", "Demo portfolio"], index=1 if demo else 0, key="active_portfolio")
-        demo = workspace == "Demo portfolio"
-        if demo:
-            data_dir = demo_dir
-        context = (str(data_dir.resolve()), demo)
-        if st.session_state.get("portfolio_workspace_context") != context:
-            reset_workspace()
-            st.session_state["portfolio_workspace_context"] = context
+    data_dir, demo, refresh, settings_panel = app_header(data_dir, demo_dir, demo=demo)
+    with settings_panel:
+        display_settings = st.container()
+        # Recovery controls must also be available when loading inputs fails.
+        workspace_info(data_dir, persistent_data_dir, demo=demo)
     offline_demo = demo and not (data_dir / '.live-demo').exists()
-    workspace_info(data_dir, persistent_data_dir, demo=demo)
-    workspace_header(demo)
     from portfolio_app.import_ui import render_import_next_steps
     render_import_next_steps()
     if demo:
         st.caption("Offline demo · Invented prices, buy-ins and ETF weights · Resets on restart" if offline_demo else
                    "Demo · Invented quantities, targets and buy-ins · Public market data · Resets on restart")
-        if demo_dir is not None:
-            from portfolio_app.onboarding_ui import demo_guide
-            demo_guide(offline=offline_demo)
     etf_revision = refresh_revision(data_dir)
     try:
         snapshot, allocation, classifications, funds = load_inputs(data_dir)
@@ -64,14 +59,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         st.error(str(exc))
         st.info("Edit holdings.csv and classifications.yaml in the data directory, then rerun the app.")
         return
-    if holdings.empty and not demo:
-        from portfolio_app.onboarding_ui import render_welcome
-        if render_welcome(demo_available=demo_dir is not None):
-            return
     coordinator.schedule(data_dir, holdings, funds, demo=offline_demo)
-    with st.sidebar:
+    with st.container(key='refresh_status'):
         render_refresh_status(data_dir, funds, etf_revision, demo=offline_demo)
-    refresh = st.sidebar.button('Refresh prices', disabled=offline_demo)
     context_key = sha256(str(data_dir.resolve()).encode()).hexdigest()[:12]
     unit_key = f'performance_unit_{context_key}'
     def remember_unit():
@@ -81,11 +71,19 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     def toggle_unit():
         st.session_state[unit_key] = '€' if st.session_state.get(unit_key) == '%' else '%'
         remember_unit()
-    percent = st.sidebar.segmented_control('Performance display', ['€', '%'],
-        default=st.session_state.get('performance_preferences', {}).get(context_key, '€'),
-        key=unit_key, on_change=remember_unit) == '%'
-    hide_empty = st.sidebar.checkbox('Hide empty positions', key='hide_empty_positions',
-        help='Hide zero-quantity rows in Positions and Exposure. Saved targets and planning weights stay unchanged.')
+    with display_settings:
+        st.markdown('**Display**')
+        percent = st.segmented_control('Performance display', ['€', '%'],
+            default=st.session_state.get('performance_preferences', {}).get(context_key, '€'),
+            key=unit_key, on_change=remember_unit) == '%'
+        hide_empty = st.checkbox('Hide empty positions', key='hide_empty_positions',
+            help='Hide zero-quantity rows in Positions and Exposure. Saved targets and planning weights stay unchanged.')
+    if holdings.empty and not demo:
+        from portfolio_app.onboarding_ui import render_welcome, render_guided_setup
+        if render_welcome(demo_available=demo_dir is not None):
+            return
+        if render_guided_setup(data_dir, snapshot, allocation):
+            return
     background_prices = price_service is None and not offline_demo
     market_workspace = str(data_dir.resolve())
     market_revision = market_coordinator.revision(market_workspace)
@@ -110,7 +108,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if not market_coordinator.pending(market_workspace):
             st.warning('Some quotes are unavailable. Use Refresh prices to retry. Synthetic prices are never substituted for live data.')
             st.dataframe(valued.loc[valued.current_value_eur.isna(), ['name', 'valuation_note']], hide_index=True)
-            st.caption('For an offline example, restart with --offline-demo. My portfolio remains available in the sidebar.')
+            st.caption('For an offline example, restart with --offline-demo. My portfolio remains available in the workspace menu.')
         return
     if price_service.cache_warning:
         st.warning(price_service.cache_warning)
@@ -124,7 +122,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             st.caption('Edit a position to complete its buy-in or pricing details.')
             if st.button('Complete buy-ins'):
                 st.session_state['main_tabs'] = 'Positions'
-                st.session_state['positions_workflow'] = 'Update balances'
+                st.session_state['positions_workflow_request'] = 'Update balances'
     elif not offline_demo and not valued.price_status.eq('manual').any():
         st.caption('Latest available daily close · Prices may be delayed')
     if valued.price_status.eq('manual').any():
@@ -207,5 +205,6 @@ if __name__ == "__main__":
     parser.add_argument("--data-dir", type=Path, default=Path.cwd() / "data" / "portfolio")
     parser.add_argument("--demo-dir", type=Path)
     parser.add_argument("--demo", action="store_true")
+    parser.add_argument("--skip-intro", action="store_true")
     args = parser.parse_args()
-    render_app(args.data_dir, demo=args.demo, demo_dir=args.demo_dir)
+    render_app(args.data_dir, demo=args.demo, demo_dir=args.demo_dir, intro=not args.skip_intro)
