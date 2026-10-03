@@ -4,7 +4,7 @@ import streamlit as st
 
 from portfolio_app.display_names import compact_fund_name
 from portfolio_app.etf import snapshot_age_days, matching_fund
-from portfolio_app.etf_refresh import coordinator, preferences, save_preferences, read_json, supported
+from portfolio_app.etf_refresh import coordinator, preferences, save_preferences, read_json, supported, discovery_candidates
 
 
 def refresh_revision(data_dir):
@@ -23,7 +23,7 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False):
         if not pending and (running or refresh_revision(data_dir) != revision):
             st.rerun()
         if pending:
-            st.caption('Updating ETF holdings in the background · Using saved snapshots')
+            st.caption('Discovering and updating ETF holdings · Using saved snapshots')
         else:
             records = read_json(Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json') if not demo else {}
             failed = sum(records.get(f.isin, {}).get('status') == 'failed' for f in funds)
@@ -51,10 +51,23 @@ def render_refresh_controls(data_dir, holdings, funds, *, demo=False):
             st.error(f'Could not save refresh preferences: {exc}')
     st.caption('Checked at startup and while the app is in use; at most once per fund per 24 hours. No Codex session is needed. Demo stays offline.')
     refreshable = [f for f in funds if supported(f) and any(row.get('shares', 0) > 0 and matching_fund(row, [f]) for row in holdings.to_dict('records'))]
-    if st.button('Refresh ETF holdings now', disabled=demo or coordinator.running(data_dir) or not refreshable):
+    candidates = discovery_candidates(holdings, funds)
+    if st.button('Refresh ETF holdings now', disabled=demo or coordinator.running(data_dir) or not (refreshable or candidates)):
         coordinator.schedule(data_dir, holdings, funds, force=True)
         st.rerun()
     records = read_json(Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json') if not demo else {}
+    for key, row in candidates.items():
+        record = records.get(key, {})
+        st.markdown(f"**{row.get('name', key)}**")
+        st.caption(f"{key} · {record.get('status', 'Awaiting discovery')}")
+        if record.get('error'):
+            st.info(record['error'])
+    unidentified = [row for row in holdings.to_dict('records') if row.get('shares', 0) > 0
+                    and row.get('instrument_type') == 'etf' and not any(row.get(k) for k in ('isin', 'wkn', 'ticker'))]
+    if unidentified:
+        st.info('Some funds have no identifier. Use Positions → Connect live prices to select their ISIN; snapshot prices can be retained.')
+    from portfolio_app.etf_setup_ui import render_setup
+    render_setup(data_dir, holdings, funds, demo=demo)
     for fund in funds:
         record = records.get(fund.isin, {})
         st.markdown(f'**{compact_fund_name(fund.name)}**')
@@ -71,3 +84,7 @@ def render_refresh_controls(data_dir, holdings, funds, *, demo=False):
             st.caption('Manual snapshot · No automatic provider configured')
     if error := coordinator.error(data_dir):
         st.warning(error)
+    from portfolio_app.etf_ui import render_fund_details
+    held = [fund for fund in funds if any(row.get('shares', 0) > 0 and matching_fund(row, [fund])
+                                         for row in holdings.to_dict('records'))]
+    render_fund_details(held, holdings, holdings=holdings, key_prefix='settings_', percentages_only=True)

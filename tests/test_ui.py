@@ -338,7 +338,8 @@ def test_etf_breakdown_and_look_through(tmp_path, sample_data_dir):
     activate(app, 'Overview')
     assert by_label(app.metric, 'Current value').value == "€1,800.00"
     activate(app, 'Exposure')
-    assert not any("ETF breakdown" in item.label for item in app.expander)  # Details are on demand.
+    assert any("ETF breakdown" in item.label for item in app.expander)  # Saved snapshots are accessible in settings.
+    assert not any(item.label == 'Breakdown view' for item in app.segmented_control)  # Contents stay on demand.
     by_label(app.toggle, "Break down ETFs").set_value(True).run()
     assert not app.exception
     effective = list_frame(app, 'Exposure assets')

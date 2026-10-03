@@ -847,8 +847,9 @@ automatically gold. Unexpanded funds and ETF residuals stay unknown unless
 explicitly classified. Coverage reports country-assigned, region-only,
 non-geographic, and unknown value; missing valuations suppress full-portfolio
 percentages. No new country lookups run online, and saved classifications are
-not rewritten. Coverage depends on existing metadata: the current Xtrackers
-parser retains country information; the iShares and VanEck parsers do not.
+not rewritten. Coverage depends on saved metadata: Xtrackers and newly discovered
+iShares snapshots retain provider country information where available; older
+snapshots and VanEck exports may lack it.
 
 The toolbar contains **Source scope**, search, **Break down ETFs**, **Filters**,
 and **Data & settings**. Scope and source filters apply before ETF expansion.
@@ -937,8 +938,10 @@ table. All Exposure views share the selected source scope.
 
 ## ETF breakdowns
 
-Supported provider integrations include VanEck Semiconductor UCITS, Xtrackers
-MSCI World 1C, and iShares Core MSCI EM IMI. Amundi MSCI Europe Momentum uses an
+Automatic discovery supports physical equity and bond ETFs in the official
+iShares and Xtrackers product listings, plus the verified economic interpretation
+of Xtrackers EUR Overnight Rate Swap 1C (XEON). Existing VanEck Semiconductor,
+Xtrackers MSCI World 1C and iShares EM IMI integrations remain available. Amundi MSCI Europe Momentum uses an
 explicitly labeled **same-index iShares proxy**, not its synthetic substitute
 basket. Proxy data approximates company allocation; it is not the actual
 Amundi portfolio or an exact index constituent file.
@@ -976,6 +979,61 @@ selection drills into the resulting constituent allocations. The holdings
 table continues to show original instrument positions. Unsupported ETFs remain
 unexpanded instruments.
 
+### Newly added and imported funds
+
+After positions load, the background worker discovers missing breakdowns and
+installs validated snapshots. This includes positions created by the experimental
+FinanzManager/Lexware importer with an ISIN but no ticker or instrument type.
+Import review itself stays offline. Discovery does not change quantities,
+acquisition costs, saved identities, targets, classifications or snapshot pricing.
+
+ISIN is authoritative. WKN and qualified listing searches supply candidates;
+only a unique issuer-confirmed identity is accepted. These searches can be
+unavailable or incomplete. In **Exposure → Data & settings → ETF refresh &
+snapshots**, inspect per-position status or use **Set up a breakdown** to supply
+an official iShares/Xtrackers product page. A WKN-only position can use this route
+when the issuer confirms its WKN. **Positions → Connect live prices** also
+connects a position to a verified ISIN; retain manual pricing by leaving the
+switch-to-live-prices option off. Names and bare tickers are never identity keys.
+
+The setup panel also accepts a normalized UTF-8 constituent CSV for physical
+funds from other providers. Supply the exact fund ISIN, holdings date and asset
+class. Required columns are `constituent_id,name,ticker,isin,weight`; weights are
+fractions of the whole fund. Bond/money-market files also require an explicit
+`instrument_type` per row. Optional metadata includes `issuer`, `country`,
+`market_currency`, ISO `maturity` and `credit_rating`. Review identity, date,
+interpretation and coverage before **Save breakdown**. Source and upload drafts
+remain in session memory until saved. Partial data retains `Other`.
+
+### Bonds and overnight-rate funds
+
+Open an asset's contributing positions and its **ETF breakdown** panel, or inspect
+saved breakdowns in **ETF refresh & snapshots** even before connecting prices. Physical
+bond funds default to **Summary**, with issuer, country, denomination currency,
+maturity and credit-quality views. **Holdings** shows the separate securities,
+including ISINs where supplied. Different bonds from one issuer remain distinct;
+issuer summaries do not merge them with the issuer's shares.
+
+Maturity bands use the holdings date: under 1, 1–3, 3–5, 5–10 and 10+ years.
+Missing metadata remains Unknown. Published aggregate ratings are shown separately
+when individual ratings are unavailable; they are never assigned to securities.
+Provider duration, maturity, coupon and yield metrics carry their own source dates.
+Denomination currency is not a measure of net currency risk after hedging.
+iShares cash, money-market holdings, collateral and FX form a net liquidity pool;
+net borrowing that cannot fit the unsigned allocation model is rejected.
+
+XEON's economic view represents its EUR overnight-rate benchmark, the Solactive
+€STR +8.5 Daily Total Return Index. Its actual substitute basket is visible under
+**Holdings**, with signed basket weights preserved, but never contributes to
+portfolio company, country or bond allocations. Economic representation and basket
+coverage are distinct. Other unverified synthetic or unsupported compositions
+remain whole fund positions; there is no automatic same-index proxy substitution.
+
+Public provider checks cover iShares Core MSCI World (IE00B4L5Y983), MSCI World
+ex-USA (IE000R4ZNTN3), Core DAX accumulating (DE0005933931), Core Euro Government
+Bond (IE00B4WXJJ64), and XEON (LU0290358497). These are coverage examples, not a
+hard-coded discovery list. Unit tests and browser demos use invented data.
+
 ### Combine the ETF with direct stocks
 
 Enable **Group SMH with related stocks** in Exposure → Data & settings to show the held UCITS
@@ -1002,7 +1060,7 @@ source, listing aliases, and constituent CSV. Weights are fractions of the
 entire ETF. For partial snapshots, the remainder is explicitly retained as
 `Other`; named holdings are never scaled to 100%.
 
-### World-fund imports
+### Snapshot installation
 
 To install or refresh one supported snapshot in a private workspace:
 
@@ -1010,12 +1068,14 @@ To install or refresh one supported snapshot in a private workspace:
 uv run python -m portfolio_app.etf_sources <ISIN> --data-dir /path/to/private/workspace
 ```
 
-The command accepts IE00BJ0KDQ92, IE00BKM4GZ66, and LU1681041460. It only writes
-snapshot files under `etfs/`; it never changes holdings, targets, or local labels.
-Xtrackers uses full-precision JSON percentage weights and ISINs. iShares uses
-the complete XML Spreadsheet **Holdings / All** export and derives weights from
-all market values, checking against published percentages. This preserves small
-holdings lost to two-decimal percentage rounding. Net cash includes cash
+The command resolves an ISIN through the same provider discovery used by the app.
+Use `--product-url <official-product-page>` when needed. Existing explicit
+integrations remain supported. It writes snapshots under `etfs/` and a workspace
+writer lock; it never changes holdings, targets or local labels.
+Xtrackers uses full-precision JSON percentage weights and ISINs. New iShares
+discoveries use complete named holdings arrays with ISINs, market values and published weights. Legacy integrations retain their XML Spreadsheet
+**Holdings / All** export. Both derive weights from all market values and check
+against published percentages. This preserves small holdings lost to two-decimal percentage rounding. Net cash includes cash
 liabilities, money-market holdings, collateral, and FX. Futures notional
 exposure is not assigned to companies. Unsupported signed equity or net
 borrowing fails validation instead of silently dropping liabilities.
@@ -1067,7 +1127,7 @@ retrieve that list. Proxy status is saved in the manifest and shown in the UI.
 
 **Exposure → Data & settings → ETF refresh & snapshots** displays provider dates,
 last attempts and successful checks. The app automatically checks held, supported
-funds when a portfolio is opened and on subsequent interactions. By default,
+funds and discovers missing snapshots when a portfolio is opened and on subsequent interactions. By default,
 snapshots at least **one day old** qualify, with at most one attempt per fund per
 24 hours. The age threshold is configurable from 1–30 days; automatic updates can
 be disabled. Attempts are stored privately so restarting does not trigger repeated

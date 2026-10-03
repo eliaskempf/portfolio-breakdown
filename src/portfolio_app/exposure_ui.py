@@ -10,7 +10,7 @@ from portfolio_app.aggregation import aggregate, aggregate_dimension
 from portfolio_app.charts import bar_chart, hierarchy_chart, hierarchy_table, pie_chart, sort_allocation_nodes
 from portfolio_app.display_names import display_name, instrument_name, named_holdings
 from portfolio_app.etf import matching_fund, fund_classifications
-from portfolio_app.etf_refresh_ui import render_refresh_controls, render_refresh_status
+from portfolio_app.etf_refresh_ui import render_refresh_controls
 from portfolio_app.etf_selection import render_etf_choices, render_etf_toggle
 from portfolio_app.exposure_assets_ui import render_assets
 from portfolio_app.exposure_tables import complete_exposures
@@ -173,8 +173,6 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                          percent=performance_percent, key='exposure_value', on_toggle_gain=on_toggle_gain)
         second.metric('Portfolio share', f'{100 * selected_total / total:.1f}%' if not missing and not all_missing and total else '—')
     with refresh_panel:
-        held_funds = [fund for fund in expanded_funds if any(row.get('shares', 0) > 0 and matching_fund(row, [fund]) for row in selected.to_dict('records'))]
-        render_refresh_status(data_dir, held_funds, etf_revision, demo=demo)
         if lookthrough:
             intact = sum(row.get('shares', 0) > 0 and row.get('instrument_type') == 'etf'
                          and matching_fund(row, expanded_funds) is None for row in selected.to_dict('records'))

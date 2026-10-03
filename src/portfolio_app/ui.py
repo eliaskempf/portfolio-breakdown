@@ -9,7 +9,7 @@ import streamlit as st
 from portfolio_app.etf import validate_fund_listings
 from portfolio_app.exposure_ui import render_analysis
 from portfolio_app.etf_refresh import coordinator
-from portfolio_app.etf_refresh_ui import refresh_revision
+from portfolio_app.etf_refresh_ui import refresh_revision, render_refresh_status
 from portfolio_app.holdings import DataError
 from portfolio_app.position_ui import render_position_editor, render_position_dialog, request_position
 from portfolio_app.positions import read_snapshot
@@ -66,6 +66,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if render_welcome(demo_available=demo_dir is not None):
             return
     coordinator.schedule(data_dir, holdings, funds, demo=demo)
+    with st.sidebar:
+        render_refresh_status(data_dir, funds, etf_revision, demo=demo)
     refresh = st.sidebar.button('Refresh prices', disabled=demo)
     context_key = sha256(str(data_dir.resolve()).encode()).hexdigest()[:12]
     unit_key = f'performance_unit_{context_key}'

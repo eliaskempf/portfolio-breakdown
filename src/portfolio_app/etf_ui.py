@@ -1,6 +1,7 @@
 """ETF snapshot presentation, separate from portfolio calculations."""
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from portfolio_app.etf import FundSnapshot, fund_breakdown, matching_fund, constituent_resolver, snapshot_age_days
@@ -47,12 +48,13 @@ def classified_fund_table(fund: FundSnapshot, holdings: pd.DataFrame, classifica
 
 def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, holdings: pd.DataFrame | None = None,
                         classifications: Classifications | None = None, show_tickers: bool = False,
-                        classification_names: list[str] | None = None) -> None:
+                        classification_names: list[str] | None = None, key_prefix: str = '',
+                        percentages_only: bool = False) -> None:
     for fund in funds:
         source = selected if holdings is None else holdings
         position = next((row for row in source.to_dict('records') if matching_fund(row, [fund]) is not None), None)
         label = instrument_name(position) if position else compact_fund_name(fund.name)
-        panel = st.expander(f"ETF breakdown: {label}", key=f'etf_detail_{fund.fund_id}', on_change='rerun')
+        panel = st.expander(f"ETF breakdown: {label}", key=f'{key_prefix}etf_detail_{fund.fund_id}', on_change='rerun')
         if not panel.open:
             continue
         with panel:
@@ -66,11 +68,28 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
             st.caption(f'{len(fund.constituents):,} components · {100 * fund.constituents.weight.sum():.2f}% covered')
             if fund.notes:
                 st.caption(fund.notes)
+            view = st.segmented_control('Breakdown view', ['Holdings', 'Summary'],
+                default='Summary' if fund.asset_class in {'fixed_income', 'money_market'} else 'Holdings',
+                key=f'{key_prefix}fund_view_{fund.fund_id}')
+            if view == 'Summary':
+                render_fund_summary(fund, key_prefix=key_prefix)
+                continue
+            if fund.breakdown_basis == 'economic':
+                st.info('Economic allocation; the substitute basket below is separate from portfolio exposure.')
+            if fund.basket is not None:
+                with st.expander('Actual substitute basket · excluded from portfolio exposure'):
+                    st.caption('These are fund-held securities, not the overnight-rate economic allocation. Signed weights are retained. '
+                               f'Net basket coverage: {fund.basket.weight.sum():.4%}.')
+                    basket = fund.basket.copy()
+                    basket['Basket weight %'] = basket.pop('weight') * 100
+                    st.dataframe(basket.drop(columns=['constituent_id'], errors='ignore'), hide_index=True, height=350)
             table = classified_fund_table(fund, selected if holdings is None else holdings, classifications or {})
             table["name"] = table["name"].map(display_name)
             table["Fund allocation %"] = table["weight"] * 100
-            fund_positions = [row for row in selected.to_dict("records") if matching_fund(row, [fund]) is not None]
+            fund_positions = [] if percentages_only else [row for row in selected.to_dict("records") if matching_fund(row, [fund]) is not None]
             columns = ["name", "ticker", "Fund allocation %"]
+            if fund.asset_class in {'fixed_income', 'money_market'}:
+                columns += [c for c in ('isin', 'instrument_type', 'issuer', 'market_currency', 'maturity', 'credit_rating') if c in table]
             if fund_positions:
                 values = pd.Series([row["current_value_eur"] for row in fund_positions])
                 if values.notna().any():
@@ -78,6 +97,8 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
                     columns.append("Selected ETF exposure (EUR)")
                 if values.isna().any():
                     st.caption("Exposure amounts exclude ETF positions that could not be valued.")
+            elif percentages_only:
+                st.caption('Fund composition is available independently of position pricing.')
             else:
                 st.caption("No position in this ETF is selected. Fund percentages are available independently of your holdings.")
             columns += [column for column in table if column.startswith("classification:") and
@@ -87,7 +108,41 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
                                 if column.startswith('classification:') else column),
                                 numeric=column in {'Fund allocation %', 'Selected ETF exposure (EUR)'})
                      for column in columns if column != 'ticker' or show_tickers]
-            render_list(frame_rows(table[columns]), specs, key=f'etf_holdings_{fund.fund_id}',
-                        context=f'etf_holdings_{fund.fund_id}', title=f'{label} holdings', max_height=BOUNDED_LIST_HEIGHT,
+            render_list(frame_rows(table[columns]), specs, key=f'{key_prefix}etf_holdings_{fund.fund_id}',
+                        context=f'{key_prefix}etf_holdings_{fund.fund_id}', title=f'{label} holdings', max_height=BOUNDED_LIST_HEIGHT,
                         default_sort='Fund allocation %', search_label='Filter ETF holdings', search_fields=['name', 'ticker'])
             st.caption("Other retains the weight not assigned to named constituents, including cash and rounding residuals. Partial holdings are never scaled up to 100%.")
+
+
+def render_fund_summary(fund, *, key_prefix=''):
+    from portfolio_app.fund_summary import composition_summary, DIMENSIONS
+    if fund.breakdown_basis == 'economic':
+        st.info('EUR overnight-rate-linked exposure · Solactive €STR +8.5 Daily Total Return Index. '
+                'This represents the economic benchmark, not a bank deposit. The substitute basket is available under Holdings.')
+        st.caption('100% economic representation · Basket coverage is reported separately. No basket securities enter portfolio allocation.')
+        return
+    dimension = st.selectbox('Summarize by', list(DIMENSIONS), key=f'{key_prefix}fund_summary_{fund.fund_id}')
+    frame = composition_summary(fund, dimension)
+    provider = fund.summaries.get(dimension)
+    if provider and 'rows' in provider and frame[dimension].eq('Unknown').all():
+        frame = pd.DataFrame(provider['rows']).rename(columns={'label': dimension, 'percentage': 'Fund allocation %'})
+        st.caption(f"Provider aggregate · {provider['as_of']} · These categories are not assigned to individual securities.")
+        st.markdown(f"[Summary source]({provider['source']})")
+    else:
+        st.caption(f'Calculated from holdings dated {fund.as_of}; missing metadata remains Unknown.')
+    if dimension == 'Denomination currency':
+        st.caption('Security denomination, not net currency risk after hedging.')
+    if dimension == 'Issuer':
+        st.caption('Issuer identifiers group bonds without combining their security identities or merging with shares.')
+    chart = px.bar(frame, x='Fund allocation %', y=dimension, orientation='h')
+    chart.update_layout(yaxis={'categoryorder': 'total ascending'}, height=max(280, min(650, len(frame) * 28)))
+    st.plotly_chart(chart, width='stretch', key=f'{key_prefix}fund_summary_chart_{fund.fund_id}')
+    st.dataframe(frame, hide_index=True, width='stretch')
+    labels = {'modelOad': 'Effective duration (years)', 'effectiveDuration': 'Effective duration (years)',
+              'weightedAvgLife': 'Weighted average maturity (years)', 'weightedAverageMaturity': 'Weighted average maturity (years)',
+              'yieldToWorst': 'Yield to worst (%)', 'weightedAverageYieldToMaturity': 'Yield to maturity (%)',
+              'weightedAvgCoupon': 'Weighted average coupon (%)', 'weightedAverageCoupon': 'Weighted average coupon (%)'}
+    for key, item in fund.summaries.items():
+        if key in labels and 'value' in item:
+            st.caption(f"{labels[key]}: {item['value']:.2f} · Provider figure as of {item['as_of']}")
+            st.markdown(f"[Metric source]({item['source']})")
