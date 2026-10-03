@@ -22,6 +22,7 @@ def main() -> None:
     parser.add_argument('--data-dir', type=Path, help='Private workspace (default: platform user-data directory)')
     parser.add_argument('--demo', action='store_true', help='Editable demo with public market data, reset on each server start')
     parser.add_argument('--offline-demo', action='store_true', help='Use synthetic offline data in the demo workspace')
+    parser.add_argument('--skip-intro', action='store_true', help='Skip the startup animation for this server')
     parser.add_argument('--desktop', action='store_true', help='Launch in background and open the browser')
     parser.add_argument('--foreground', action='store_true', help='Keep the server attached to this terminal')
     parser.add_argument('--no-browser', action='store_true', help='Do not open a browser automatically')
@@ -65,6 +66,8 @@ def main() -> None:
                 forwarded.append('--demo')
             if args.offline_demo:
                 forwarded.append('--offline-demo')
+            if args.skip_intro:
+                forwarded.append('--skip-intro')
             if args.port:
                 forwarded += ['--server.port', str(args.port)]
             start_desktop(forwarded, directory, demo=args.demo, browser=browser)
@@ -82,6 +85,8 @@ def main() -> None:
                 if getattr(sys, 'frozen', False):
                     command += ['--server.fileWatcherType=none', '--global.developmentMode=false']
                 command += ['--', '--data-dir', str(directory), '--demo-dir', str(demo_dir)]
+                if args.skip_intro:
+                    command.append('--skip-intro')
                 if args.demo:
                     command.append('--demo')
                 raise SystemExit(run_server(command, directory, port=port, browser=browser, demo=args.demo))

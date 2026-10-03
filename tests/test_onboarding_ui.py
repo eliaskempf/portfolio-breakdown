@@ -10,14 +10,16 @@ def test_welcome_demo_and_manual_save_are_isolated(tmp_path):
     demo = create_demo_data(tmp_path / 'demo')
     app = launch_workspaces(personal, demo)
     assert not app.exception and not app.tabs
-    assert {button.label for button in app.button} >= {'Explore demo', 'Start manually', 'Import holdings'}
+    assert {button.label for button in app.button} >= {'Explore demo', 'Start my portfolio'}
+    assert 'Import holdings' not in {button.label for button in app.button}
     by_label(app.button, 'Explore demo').click().run()
     assert not app.exception
-    assert by_label(app.radio, 'Portfolio workspace').value == 'Demo portfolio'
+    assert by_label(app.selectbox, 'Portfolio workspace').value == 'Demo portfolio'
     assert app.metric[0].value == '€100,000.00'
     assert not (personal / 'holdings.csv').exists()
-    by_label(app.radio, 'Portfolio workspace').set_value('My portfolio').run()
-    by_label(app.button, 'Start manually').click().run()
+    by_label(app.selectbox, 'Portfolio workspace').set_value('My portfolio').run()
+    by_label(app.button, 'Start my portfolio').click().run()
+    by_label(app.button, 'Add position').click().run()
     assert not app.exception
     by_label(app.text_input, 'Instrument name').set_value('Invented first position')
     by_label(app.number_input, 'Quantity held (total)').set_value(2.)
@@ -34,14 +36,15 @@ def test_import_choice_and_workspace_switch_clear_first_use_state(tmp_path):
     personal = tmp_path / 'invented-personal'
     demo = create_demo_data(tmp_path / 'demo')
     app = launch_workspaces(personal, demo)
-    by_label(app.button, 'Import holdings').click().run()
+    by_label(app.button, 'Start my portfolio').click().run()
+    by_label(app.button, 'Import portfolio — experimental').click().run()
     assert not app.exception
     assert app.session_state['main_tabs'] == 'Positions'
     assert by_label(app.get('button_group'), 'Position tools').value == 'Import portfolio'
     assert app.get('file_uploader')
     assert not (personal / 'holdings.csv').exists()
-    by_label(app.radio, 'Portfolio workspace').set_value('Demo portfolio').run()
-    by_label(app.radio, 'Portfolio workspace').set_value('My portfolio').run()
+    by_label(app.selectbox, 'Portfolio workspace').set_value('Demo portfolio').run()
+    by_label(app.selectbox, 'Portfolio workspace').set_value('My portfolio').run()
     assert not app.exception and not app.tabs
     assert 'onboarding_started' not in app.session_state.filtered_state
     assert not any(key.startswith('import_') for key in app.session_state.filtered_state)
@@ -89,5 +92,16 @@ def test_live_demo_uses_normal_market_mode_and_preserves_workspace_isolation(tmp
     assert not app.exception
     assert requested == [live]
     assert any('Injected public-history path' in info.value for info in app.info)
-    by_label(app.radio, 'Portfolio workspace').set_value('My portfolio').run()
+    by_label(app.selectbox, 'Portfolio workspace').set_value('My portfolio').run()
     assert not app.exception and not app.tabs
+
+
+def test_recovery_controls_remain_available_with_invalid_holdings(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    (tmp_path / 'holdings.csv').write_text('id,name,shares\ninvented,Invented broken input,invalid\n', encoding='utf-8')
+    app = AppTest.from_string(
+        'from pathlib import Path\nfrom portfolio_app.ui import render_app\n'
+        f'render_app(Path({str(tmp_path)!r}), demo=True)\n', default_timeout=15,
+    ).run()
+    assert not app.exception and app.error
+    assert {'Open data folder', 'Stop application'} <= {button.label for button in app.button}

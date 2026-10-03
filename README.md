@@ -102,13 +102,19 @@ uv run portfolio-app
 `uv` manages Python 3.12 and the project environment. Open the local URL printed
 by Streamlit. The default launch uses live market data and your private local
 data directory in the platform user-data location (see the installation guide).
-A fresh portfolio offers **Explore demo**, **Start manually**, or **Import holdings**.
-Manual entry and import use the existing reviewed save flows; positions remain
-saved when you stop and restart the app. Existing portfolios open normally.
+After a short intro, a fresh portfolio opens a welcome dialog with **Explore demo**
+and **Start my portfolio**. The latter opens an empty Positions view with manual
+entry and experimental import available there. Nothing is saved until a form or
+reviewed import is accepted. Existing portfolios open normally.
 
-The sidebar's **Portfolio workspace** switch opens **My portfolio** or the
+The header's **Portfolio workspace** dropdown opens **My portfolio** or the
 editable **Demo portfolio**. Switching clears position forms and filters so an
-unfinished edit cannot be applied to the other portfolio.
+unfinished edit cannot be applied to the other portfolio. The **?** button at the
+upper right opens help and the demo guide; **Settings → App & workspace** contains
+folder, version and stop controls.
+
+For startup/animation development without rebuilding the executable, see
+[Startup development](docs/startup-development.md).
 
 The demo uses public quotes, genuine instrument price history and issuer ETF
 holdings downloads by default:
@@ -416,7 +422,7 @@ investment. Its current value is zero without requiring a quote, and its target
 contributes to its labels immediately. Add classification labels for new assets
 in the private YAML file; otherwise they appear under Unclassified.
 
-The sidebar’s **Hide empty positions** changes only visibility in Positions and Exposure.
+The header’s **Settings → Hide empty positions** changes only visibility in Positions and Exposure.
 The separate Rebalance option **Exclude empty positions and redistribute targets**
 removes zero-share rows from the planning calculation. Their combined target is divided equally among
 remaining unique asset IDs, then equally among each asset’s held account rows.
@@ -742,7 +748,7 @@ narrow screens.
 Performance is aggregated from owned source positions, independent of ETF
 look-through or overlapping exposure labels. Empty categories remain selectable.
 
-The sidebar’s **Performance display** switches **€ / %** across Overview,
+The header’s **Settings → Performance display** switches **€ / %** across Overview,
 Positions and Exposure, defaulting to EUR gains. The choice is remembered per
 workspace. EUR totals include only held positions with recorded EUR costs and
 available valuations. Category return is total gain divided by those same

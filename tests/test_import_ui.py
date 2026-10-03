@@ -30,8 +30,10 @@ def launch(tmp_path, monkeypatch, content=None, *, workspaces=False):
         default_timeout=20,
     ).run()
     if workspaces:
-        by_label(app.radio, 'Portfolio workspace').set_value('My portfolio').run()
-    by_label(app.button, 'Import holdings' if workspaces else 'Import portfolio — experimental').click().run()
+        by_label(app.selectbox, 'Portfolio workspace').set_value('My portfolio').run()
+    if workspaces:
+        by_label(app.button, 'Start my portfolio').click().run()
+    by_label(app.button, 'Import portfolio — experimental').click().run()
     return app, directory / 'holdings.csv'
 
 
@@ -85,7 +87,7 @@ def test_workspace_switch_clears_import_state(tmp_path, monkeypatch):
     app, path = launch(tmp_path, monkeypatch, workspaces=True)
     confirm_units(app)
     assert any(key.startswith('import_') for key in app.session_state.filtered_state)
-    by_label(app.radio, 'Portfolio workspace').set_value('Demo portfolio').run()
+    by_label(app.selectbox, 'Portfolio workspace').set_value('Demo portfolio').run()
     assert not app.exception and not path.exists()
     assert not any(key.startswith('import_') for key in app.session_state.filtered_state)
 
@@ -161,3 +163,17 @@ def test_replacement_upload_requires_fresh_review(tmp_path, monkeypatch):
     confirm_units(app)
     by_label(app.button, 'Import reviewed positions').click().run()
     assert read_snapshot(path).holdings.name.tolist() == ['Invented replacement']
+
+
+def test_import_completion_overrides_stale_workflow_on_remount(tmp_path, monkeypatch):
+    app, path = launch(tmp_path, monkeypatch)
+    confirm_units(app)
+    by_label(app.button, 'Import reviewed positions').click().run()
+    assert app.session_state['main_tabs'] == 'Overview'
+    # Simulate the old browser selection arriving when the Positions tab mounts.
+    app.session_state['positions_workflow'] = 'Import portfolio'
+    activate(app, 'Positions')
+    assert not app.exception
+    assert app.session_state['positions_workflow'] == 'Positions'
+    assert not any('Import currently requires' in item.value for item in app.info)
+    assert read_snapshot(path).holdings.shares.tolist() == [2.5]

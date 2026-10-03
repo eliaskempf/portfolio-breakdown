@@ -52,6 +52,7 @@ def clear_import():
             if key.startswith('import_'):
                 del st.session_state[store][key]
     st.session_state['positions_workflow'] = 'Positions'
+    st.session_state['positions_workflow_request'] = 'Positions'
 
 
 def render_import(path, snapshot, funds):
@@ -179,7 +180,7 @@ def render_import_next_steps():
         st.rerun()
     if prices.button('Connect live prices'):
         st.session_state['main_tabs'] = 'Positions'
-        st.session_state['positions_workflow'] = 'Connect live prices'
+        st.session_state['positions_workflow_request'] = 'Connect live prices'
         st.rerun()
     if done.button('Dismiss import tips'):
         st.session_state.pop('import_complete', None)

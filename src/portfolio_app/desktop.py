@@ -49,6 +49,10 @@ def desktop_quote(value: str) -> str:
 def install_shortcut(directory: Path) -> Path:
     command = app_command() + ['--desktop', '--data-dir', str(directory)]
     if os.name == 'nt':
+        if getattr(sys, 'frozen', False):
+            gui = Path(sys.executable).with_name('Portfolio Breakdown.exe')
+            if gui.is_file():
+                command[0] = str(gui)
         target = Path(os.environ['APPDATA']) / 'Microsoft/Windows/Start Menu/Programs/Portfolio Breakdown.lnk'
         target.parent.mkdir(parents=True, exist_ok=True)
         env = dict(os.environ, PORTFOLIO_SHORTCUT=str(target), PORTFOLIO_EXECUTABLE=command[0],
@@ -65,8 +69,9 @@ def install_shortcut(directory: Path) -> Path:
             env['PORTFOLIO_ICON'] = str(converted)
         script = ('$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:PORTFOLIO_SHORTCUT); '
                   '$s.TargetPath=$env:PORTFOLIO_EXECUTABLE; $s.Arguments=$env:PORTFOLIO_ARGUMENTS; '
-                  '$s.IconLocation=$env:PORTFOLIO_ICON; $s.WindowStyle=7; $s.Save()')
-        subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], env=env, check=True)
+                  '$s.IconLocation=$env:PORTFOLIO_ICON; $s.WindowStyle=1; $s.Save()')
+        subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script], env=env, check=True,
+                       creationflags=subprocess.CREATE_NO_WINDOW)
     else:
         target = user_data_path() / 'applications/portfolio-breakdown.desktop'
         target.parent.mkdir(parents=True, exist_ok=True)

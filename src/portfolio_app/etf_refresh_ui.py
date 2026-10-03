@@ -15,6 +15,8 @@ def refresh_revision(data_dir):
 
 
 def render_refresh_status(data_dir, funds, revision, *, demo=False):
+    if demo:
+        return  # Offline fixtures have invented dates, not stale provider data.
     running = not demo and coordinator.running(data_dir)
 
     @st.fragment(run_every=2 if running else None)

@@ -46,10 +46,7 @@ def test_analytics_views_dialog_and_mobile_layout(ux_page):
     playwright.expect(page.get_by_role('searchbox', name='Filter positions')).to_have_value('Regional')
     playwright.expect(page.get_by_role('radio', name='Valuation', exact=True)).to_be_checked()
     page.screenshot(path=str(directory / 'analytics-positions.png'), full_page=True)
-    collapse = page.get_by_test_id('stSidebarCollapseButton').get_by_role('button')
-    if collapse.is_visible():
-        collapse.click()
-    page.wait_for_function("document.querySelector('[data-testid=stSidebar]')?.getBoundingClientRect().right <= 0")
+    playwright.expect(page.get_by_test_id('stSidebar')).to_have_count(0)
     page.set_viewport_size({'width': 700, 'height': 1000})
     page.get_by_role('tab', name='Overview', exact=True).click()
     playwright.expect(page.get_by_role('tab', name='Overview', exact=True)).to_have_attribute('aria-selected', 'true')

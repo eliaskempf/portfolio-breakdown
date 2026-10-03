@@ -72,7 +72,7 @@ render_app(directory, price_service=PriceService(StaticProvider(directory / 'pri
             page = browser.new_page(viewport={'width': 1440, 'height': 1000})
             page.goto(f'http://127.0.0.1:{port}')
             page.get_by_role('tab', name='Exposure', exact=True).click()
-            refresh_status = page.get_by_test_id('stSidebar').get_by_text('Discovering and updating ETF holdings', exact=False)
+            refresh_status = page.locator('.st-key-refresh_status').get_by_text('Discovering and updating ETF holdings', exact=False)
             results = page.locator('.st-key-exposure_results')
             page.get_by_role('button', name='Data & settings', exact=True).click()
             page.get_by_text('ETF refresh & snapshots', exact=True).click()

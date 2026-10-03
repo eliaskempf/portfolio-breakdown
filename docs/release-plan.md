@@ -474,3 +474,70 @@ Next: build a fresh complete hosted candidate for these changes, then repeat the
 Windows demo acceptance with a connection and confirm issuer snapshots/history
 in that binary. The existing downloaded executable does not receive source
 changes automatically. Official publication remains unapproved.
+
+
+## Welcome, header and startup integration (2026-10-03)
+
+The first-use screen is now a non-dismissable two-card welcome dialog: Explore
+demo or Start my portfolio. The latter opens empty Positions; manual add and
+FinanzManager-compatible import stay available there. Import is no longer a
+welcome choice. The sidebar is replaced by a compact header with a workspace
+dropdown, refresh, Settings and question-mark help. Display preferences and
+App & workspace recovery controls live in Settings, including on input errors.
+
+The supplied self-contained SVG animation is integrated before the welcome/app
+in the browser. Its source asset and wrapper were copied into the package; the
+original supplied files remain untouched. No other private data was copied.
+It runs once per browser session, respects reduced motion and has a Skip button.
+`--skip-intro` bypasses it for development. The animation workbench and direct
+HTML preview support replay/timing edits without building an executable; see
+[startup development](startup-development.md). Normal demo startup still uses
+public market data; automated checks use explicit offline synthetic workspaces.
+
+Windows packaging now provides a windowed `Portfolio Breakdown.exe` and retains
+the console `portfolio-app.exe` companion. Shortcuts point to the GUI entry;
+owned child processes are hidden and missing stdio is redirected to private
+launcher logs before application imports. `uv run portfolio-desktop` uses the
+same lifecycle from source. The candidate smoke check additionally launches the
+Windows GUI entry and verifies its server in Chromium. Native no-flash behavior,
+shortcuts and startup-error dialogs still need Windows candidate/manual acceptance.
+The dedicated webview remains a separate optional task, not the default launcher.
+
+Browser/package smoke exposed a stale Positions workflow after import completion.
+A pending navigation request now applies when the Positions controls remount,
+preserving the intended table or requested next step. Synthetic regression checks
+cover stale form selection without changing saved positions or import semantics.
+
+Parallel-session handoffs are in `documentation-session-handoff.md` (Default
+mode) and `window-session-handoff.md` (Plan first). They pin the pre-integration
+base so those sessions can work independently. Reconcile the final header and
+launcher contract with their results before integration. Documentation publication,
+a dedicated window and an official release are not part of this change.
+
+Validation:
+
+- All 863 tests verified across the full run and a focused rerun, including
+  required Chromium suites with no skips. The full run reported 862 passed and
+  one obsolete popover assertion already collected before its correction; the
+  corrected six-test module and subsequent `pytest --lf` both passed. The new
+  regressions cover intro completion/skip/reduced motion/replay, header workflows,
+  invalid-input recovery controls, Windows command routing/stdio, and import
+  workflow restoration. A single clean hosted run remains a candidate gate.
+- Restarted source preview from this checkout with an isolated temporary workspace
+  and `--offline-demo`. Chromium visited the actual intro, welcome, all four main
+  tabs, help and Settings, plus a 390px layout. No application exceptions; charts
+  rendered and the workspace dropdown preserved isolation. The separate animation
+  workbench replayed successfully. Neither preview reads the private portfolio.
+- Source launcher/browser/lifecycle smoke passed. A freshly built Linux frozen
+  bundle passed the same animation/navigation, CSV/XLSX import, manual bond ETF
+  breakdown, save/restart and recovery smoke. The upload smoke now waits for the
+  file-triggered rerun before opening the asset-class dropdown.
+- Wheel/sdist content checks passed; the wheel contains the intro HTML and desktop
+  entrypoint. Ruff, diff checks and staged privacy review passed. No new runtime
+  dependency or lockfile change is needed.
+
+A new complete hosted candidate is still required. Verify `Portfolio Breakdown.exe`
+on Windows, refresh existing shortcuts, and check repeat launch, missing/occupied
+port errors and stop/restart with no terminal flash. This local Linux result is
+not Windows or clean-machine acceptance. No official release is published or
+approved by this change.

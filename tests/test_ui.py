@@ -291,7 +291,7 @@ def test_actual_streamlit_entrypoint(monkeypatch, sample_data_dir):
     import portfolio_app.ui
 
     script = Path(portfolio_app.ui.__file__)
-    monkeypatch.setattr(sys, "argv", [str(script), "--data-dir", str(sample_data_dir), "--demo"])
+    monkeypatch.setattr(sys, "argv", [str(script), "--data-dir", str(sample_data_dir), "--demo", "--skip-intro"])
     app = AppTest.from_file(script, default_timeout=15).run()
     assert not app.exception
     assert selected_value(app) == "€744.00"

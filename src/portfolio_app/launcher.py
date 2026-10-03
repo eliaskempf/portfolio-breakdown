@@ -20,7 +20,17 @@ from portfolio_app.settings import state_path
 
 
 def app_command() -> list[str]:
-    return [sys.executable] if getattr(sys, 'frozen', False) else [sys.executable, '-m', 'portfolio_app.app']
+    if getattr(sys, 'frozen', False):
+        executable = Path(sys.executable)
+        if sys.platform == 'win32' and executable.stem == 'Portfolio Breakdown':
+            # Windowed bootloaders discard stdio even when the parent supplies
+            # handles. Run the console companion hidden with explicit log handles.
+            executable = executable.with_name('portfolio-app.exe')
+        return [str(executable)]
+    executable = Path(sys.executable)
+    if sys.platform == 'win32' and executable.name.lower() == 'pythonw.exe':
+        executable = executable.with_name('python.exe')
+    return [str(executable), '-m', 'portfolio_app.app']
 
 
 def session_files(directory: Path) -> tuple[Path, Path]:
@@ -133,7 +143,8 @@ def run_server(command: list[str], directory: Path, *, port: int, browser: bool,
     url = f'http://127.0.0.1:{port}'
     stopped = threading.Event()
     previous = signal.signal(signal.SIGTERM, lambda *args: stopped.set())
-    child = subprocess.Popen(command)
+    options = dict(creationflags=subprocess.CREATE_NO_WINDOW) if os.name == 'nt' else {}
+    child = subprocess.Popen(command, **options)
     try:
         with instance(directory, url, stopped, demo=demo):
             deadline = time.monotonic() + 60

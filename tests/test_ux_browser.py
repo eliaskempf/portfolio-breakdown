@@ -92,10 +92,14 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     playwright.expect(page.locator('.st-key-strategic_crumb_')).to_have_count(0)
     value_card.get_by_role('button', name='Show gain as percentage').click()
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+22.22%')
+    page.get_by_role('button', name='tune Settings', exact=True).click()
     playwright.expect(page.get_by_role('radio', name='%', exact=True)).to_be_checked()
+    page.keyboard.press('Escape')
     value_card.get_by_role('button', name='Show gain in euros').press('Enter')
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+€60.00')
+    page.get_by_role('button', name='tune Settings', exact=True).click()
     playwright.expect(page.get_by_role('radio', name='€', exact=True)).to_be_checked()
+    page.keyboard.press('Escape')
     value_box = value_card.get_by_test_id('stMetricValue').bounding_box()
     gain_box = value_card.get_by_test_id('stMetricDelta').bounding_box()
     assert gain_box['x'] >= value_box['x'] + value_box['width']
@@ -124,7 +128,9 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     value_card.get_by_role('button', name='Show gain as percentage').press('Space')
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+13.64%')
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('ETF core')
+    page.get_by_role('button', name='tune Settings', exact=True).click()
     page.get_by_role('radio', name='€', exact=True).click()
+    page.keyboard.press('Escape')
     playwright.expect(value_card.get_by_role('button', name='Show gain as percentage')).to_contain_text('+€30.00')
     click_slice(page, 'ETF core')  # Center returns to the parent rather than zooming independently.
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('Portfolio')
@@ -150,10 +156,7 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     page.screenshot(path=str(directory / 'overview.png'))
     page.set_viewport_size({'width': 700, 'height': 1000})
-    collapse = page.get_by_test_id('stSidebarCollapseButton').get_by_role('button')
-    if collapse.is_visible():
-        collapse.click()
-    page.wait_for_function("document.querySelector('[data-testid=stSidebar]')?.getBoundingClientRect().right <= 0")
+    playwright.expect(page.get_by_test_id('stSidebar')).to_have_count(0)
     playwright.expect(allocation.get_by_role('table', name='Allocation', exact=True)).to_be_visible()
     page.wait_for_function("({chart, table}) => table.getBoundingClientRect().top >= chart.getBoundingClientRect().bottom",
                            arg={'chart': allocation.get_by_test_id('stPlotlyChart').element_handle(),
@@ -196,9 +199,7 @@ def test_position_details_edit_cancel_and_preserved_filter(ux_page):
     from portfolio_app.positions import read_snapshot
     assert read_snapshot(directory / 'holdings.csv').holdings.shares.tolist() == [2., 3., 1.]
     page.set_viewport_size({'width': 700, 'height': 900})
-    collapse = page.get_by_test_id('stSidebarCollapseButton').get_by_role('button')
-    if collapse.is_visible():
-        collapse.click()
+    playwright.expect(page.get_by_test_id('stSidebar')).to_have_count(0)
     page.screenshot(path=str(directory / 'positions-narrow.png'))
 
 
@@ -322,6 +323,8 @@ def test_tiny_labels_reappear_when_scoped_and_losses_are_red(ux_page):
     card = page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))
     playwright.expect(card.get_by_test_id('stMetricDelta')).to_contain_text('-€49.00')
     assert_gain_color(card.get_by_test_id('stMetricDelta'), positive=False)
+    page.get_by_role('button', name='tune Settings', exact=True).click()
     page.get_by_role('radio', name='%', exact=True).click()
+    page.keyboard.press('Escape')
     playwright.expect(card.get_by_test_id('stMetricDelta')).to_contain_text('-98.00%')
     assert_gain_color(card.get_by_test_id('stMetricDelta'), positive=False)

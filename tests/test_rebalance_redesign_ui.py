@@ -43,7 +43,8 @@ def test_portfolio_results_are_trades_only_readable_and_display_changes_keep_pla
     app = launch(workspace, tab='Rebalance', subtab='Plan')
     assert not app.exception
     assert len(app.radio) == 0
-    assert len(app.get('popover')) == 1
+    assert sum(any(control.label == 'Maximum trades' for control in panel.get('number_input'))
+               for panel in app.get('popover')) == 1
     by_label(app.number_input, 'Maximum trades').set_value(1).run()
     by_label(app.button, 'Calculate plan').click().run()
     assert not app.exception and not app.error

@@ -65,3 +65,39 @@ def test_windows_streamlit_launch_uses_frozen_dispatch(tmp_path, monkeypatch):
         main()
     assert seen[0][1:3] == ['--internal-streamlit', 'run']
     assert '--server.fileWatcherType=none' in seen[0]
+
+
+def test_windowed_entry_uses_console_companion_for_server(monkeypatch, tmp_path):
+    import sys
+    from portfolio_app.launcher import app_command
+    monkeypatch.setattr(sys, 'platform', 'win32')
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(sys, 'executable', str(tmp_path / 'Portfolio Breakdown.exe'))
+    assert app_command() == [str(tmp_path / 'portfolio-app.exe')]
+    monkeypatch.setattr(sys, 'frozen', False)
+    monkeypatch.setattr(sys, 'executable', str(tmp_path / 'pythonw.exe'))
+    assert app_command() == [str(tmp_path / 'python.exe'), '-m', 'portfolio_app.app']
+
+
+def test_gui_logs_missing_streams_and_reports_startup_failure(monkeypatch, tmp_path):
+    import sys
+    from portfolio_app.gui import main
+    monkeypatch.setattr('portfolio_app.settings.state_path', lambda: tmp_path)
+    monkeypatch.setattr(sys, 'argv', ['portfolio-desktop', '--no-browser'])
+    errors = []
+    monkeypatch.setattr('portfolio_app.desktop.startup_error', errors.append)
+    def failing_app():
+        assert '--desktop' in sys.argv
+        print('Synthetic startup diagnostic')
+        raise ValueError('Invented startup failure')
+    monkeypatch.setattr('portfolio_app.app.main', failing_app)
+    with monkeypatch.context() as context:
+        context.setattr(sys, 'stdout', None)
+        context.setattr(sys, 'stderr', None)
+        with pytest.raises(SystemExit) as error:
+            main()
+        assert error.value.code == 1
+        assert sys.stdout is None and sys.stderr is None
+    log = (tmp_path / 'launcher.log').read_text(encoding='utf-8')
+    assert 'Synthetic startup diagnostic' in log and 'Invented startup failure' in log
+    assert errors == ['Application could not start: Invented startup failure']
