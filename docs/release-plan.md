@@ -651,3 +651,59 @@ confirmation/editing, narrow layout, skip/cancel and demo charts/main tabs. No
 setup or position was saved during runtime inspection. Tests use only synthetic
 temporary data. Release tooling and uv entrypoints are unchanged. A fresh hosted
 candidate and native acceptance remain required; no publication is approved.
+
+
+## Setup keyboard flow and physical gold spot pricing (2026-10-04)
+
+Category entry now skips help buttons during Tab/Shift+Tab navigation. Pointer
+help remains on the new row, with the same text exposed as input descriptions
+for assistive technology; added category rows have no repeated tooltips. The
+confirmation is titled All set? and uses a compact semantic table with aligned
+percentages and escaped category labels. Continuing/editing retains the previous
+save contract. Onboarding explicitly states that portfolio currency is EUR;
+a selectable portfolio base currency remains deferred, while quotes and buy-ins
+in other currencies continue to use the existing EUR conversion.
+
+New physical holdings default to Gold spot price with troy oz, grams or kg of
+fine gold. An explicit additive price_source=gold_spot field selects this mode;
+the name does not infer the metal. The pure weight conversion uses exactly
+31.1034768 grams per troy ounce. A separate Gold API adapter fetches XAU/USD spot
+and its observation timestamp, while the existing market provider supplies FX.
+No gold ETF/futures proxy, premium model, API key or dependency was added. The
+normal 15-minute price cache, Refresh prices, background requests, timestamps,
+missing-data behavior and dated cached fallback apply. Quotes are not streaming.
+
+Existing manual holdings remain manual; users can explicitly change valuation
+method in Edit position. Switching to spot clears the saved manual price. Stored
+units remain fixed on edit; unsupported/unknown units cannot activate gold spot.
+Changing new draft units clears quantity/costs, including switching a draft from
+manual item counts to gold weight. Gold spot inputs reject exchange identifiers,
+nonphysical instrument types and conflicting manual prices. Provider-specific
+fetching remains separate from pure valuation and no aggregation rules changed.
+Spot gold has no history chart yet. Requests transmit only the fixed XAU symbol,
+not position names, weights, costs, categories or account/storage information.
+
+Provider contract: https://gold-api.com/docs and https://gold-api.com/llms.txt.
+Weight reference: https://www.royalmint.com/faqs/bullion/what-is-a-troy-ounce/.
+A temporary, invented holding passed an actual spot-fetch → kilogram conversion
+→ USD/EUR valuation check. Network availability is not required by unit/browser
+tests; their prices and FX are injected synthetic fixtures.
+
+Both owned source previews were restarted with their existing directories and
+launch options. Read-only checks on the existing workspace verified saved-setup
+reuse/cancellation and main tabs. The fresh preview verified keyboard navigation,
+All set? table, narrow gold entry and kg selection, cancellation, live demo charts
+and main tabs without saving holdings or categories. The original checkout and
+private portfolio data were not modified. Wheel and source archive content checks passed; a fresh hosted candidate
+and Windows acceptance are still required, with no publication approved.
+
+Final validation: all 905 tests were covered across the full run and focused
+follow-up. The full run passed 903 tests; one browser test had already loaded the
+previous confirmation title when it was renamed, and another asserted while
+Streamlit briefly retained old and new category rows during a rerun. The latter
+now waits for the new row and completed rerun before asserting unique fields.
+All 10 startup/gold browser tests passed together afterward, with required browser
+suites enabled. Synthetic tests also cover equivalent weight units, FX conversion,
+cache failures, invalid spot input, manual preservation, explicit method switching
+and save/reload. Ruff, diff checks and staged privacy review passed. A single
+complete hosted candidate run remains a release gate.

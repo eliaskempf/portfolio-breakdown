@@ -107,8 +107,10 @@ and **Start my portfolio**. A skippable two-step guide explains categories and
 optional target allocations, then opens the first position with category assignment.
 Add categories one at a time with a name and optional portfolio target; examples
 are in the field help. Enter adds the row and focuses the next empty name. When
-complete targets reach 100%, choose to continue or keep editing. Blank or partial
+complete targets reach 100%, the **All set?** dialog shows a category/target table
+and lets you continue or keep editing. Tab skips help icons; added rows omit them. Blank or partial
 targets can be saved for later; nothing is automatically redistributed.
+The portfolio currency is EUR; foreign-currency holdings are converted to euros.
 Saving categories writes only the allocation; saving a position is a separate action.
 **Skip setup** opens empty Positions, where manual entry and experimental import
 remain available. **Finish later** leaves saved categories intact without adding a
@@ -275,19 +277,30 @@ back it up separately if needed.
 
 ## Physical holdings, including gold
 
-Choose **Add position → Physical asset** to record gold or another physical holding.
-Choose **troy oz**, **grams**, or **units**, enter the quantity and assign a category
-if categories are enabled. For gold, use the amount of fine gold in that unit.
-Supply a current price **per the same unit**, its currency and date; without a
-price the quantity is retained and valuation is unknown. This is a manual valuation,
-not an automatic gold spot feed or a proxy using an ETF/futures price.
+Choose **Add position → Physical asset → Gold spot price**. Enter fine-gold weight
+in **troy oz**, **grams**, or **kg**, and assign a category if enabled. The app
+retrieves the [Gold API XAU spot quote](https://gold-api.com/docs) in USD per troy
+ounce, converts it to your stored weight unit and uses the ordinary USD/EUR rate
+for portfolio valuation. One troy ounce is exactly 31.1034768 grams. Coin/bar
+premiums are not modeled. Source and quote time remain visible in position details.
+Quotes use the existing 15-minute cache and **Refresh prices**; this is not a
+streaming feed. Failed refreshes retain dated cached quotes when available,
+otherwise valuation is unknown. Gold price history is not integrated yet.
+
+**Manual price** remains available for gold or other physical assets, including
+existing holdings with custom units. Enter a dated price per matching unit, or
+leave it blank to track quantity only. Existing manual holdings stay manual until
+you explicitly switch to gold spot pricing; switching clears the saved manual
+price. Spot pricing requires a supported weight unit and no exchange ticker/ISIN.
+The additive CSV field `price_source=gold_spot` selects it explicitly; a name such
+as Gold never activates spot pricing by itself. Blank `price_source` retains the
+existing manual/listed behavior.
 
 Buy-in is optional and can be entered per unit or as a total. Changing units in a
-new form clears amounts for re-entry; it does not convert them. The unit is fixed
-when editing or adding another position of an existing physical instrument. Use a
-separate instrument to track a different unit. Categories and targets work as for
-other holdings. Position details show the unit with the quantity; manual valuations
-have no instrument price-history chart.
+new form clears amounts for re-entry; it does not convert the entered quantity or
+buy-in. Editing or adding another position of an existing physical instrument
+keeps its stored unit. Use a separate instrument to track a different unit.
+Categories and targets work as for other holdings.
 
 ## Strategic allocation and balance maintenance
 

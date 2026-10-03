@@ -4,6 +4,7 @@ from pathlib import Path
 from threading import RLock
 
 from portfolio_app.history import HistoryService, YahooHistoryProvider
+from portfolio_app.gold_prices import SpotGoldProvider
 from portfolio_app.prices import PriceService, YahooProvider
 
 
@@ -113,7 +114,7 @@ def services(data_dir):
         if workspace not in _services:
             cache = Path(workspace) / '.cache'
             _services[workspace] = (
-                PriceService(YahooProvider(cache / 'yahoo'), cache / 'prices.json'),
+                PriceService(SpotGoldProvider(YahooProvider(cache / 'yahoo')), cache / 'prices.json'),
                 HistoryService(YahooHistoryProvider(), cache / 'history'),
             )
         return _services[workspace]

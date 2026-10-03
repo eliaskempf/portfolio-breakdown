@@ -196,6 +196,9 @@ def render_listing_link(path, snapshot, funds, *, demo=False):
     asset_id = st.selectbox('Instrument to link', list(instruments.index),
                             format_func=lambda value: str(instruments.loc[value, 'name']), key='import_link_asset')
     row = instruments.loc[asset_id]
+    if row.get('price_source') == 'gold_spot':
+        st.info('This holding already uses gold spot pricing. Use Edit position to change its valuation method.')
+        return
     prefix = f'import_link_{asset_id}_{snapshot.revision}_'
     st.caption('Listing changes apply to all accounts for this instrument. Quantities, costs and allocation assignments stay saved.')
     query = st.text_input('Search by ISIN, WKN, ticker or name', value=row['isin'] or row.get('wkn', '') or row['name'], key=prefix + 'query')

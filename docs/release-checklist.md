@@ -36,15 +36,18 @@ data. A checked checklist is specific to one build, not a blanket approval.
 - [ ] Guided setup starts with an empty category form; examples are help only.
       Enter adds a row and focuses/highlights the next empty name. Complete targets
       totaling 100% open Continue/Keep editing; editing preserves the draft and
-      does not immediately reopen the same confirmation.
+      does not immediately reopen the same confirmation. Tab/Shift+Tab skip help
+      buttons, added rows have no tooltips, and All set? shows an aligned table.
 - [ ] Guided setup saves optional categories and optional whole-portfolio targets;
       blank/partial targets stay unknown or retain their entered percentages.
       Skip setup and Finish later work. The first position can be assigned to a
       category; within-category targets stay separate. Existing allocations are
       retained and concurrent edits are rejected.
-- [ ] Physical-asset entry values invented gold in troy ounces and grams using a
-      dated manual price per matching unit. Unit changes clear draft amounts;
-      editing preserves the unit. No live gold spot feed is implied.
+- [ ] Physical gold spot valuation gives equal values for equivalent troy-ounce,
+      gram and kilogram weights; USD quotes convert to EUR. Quote timestamps,
+      missing prices/FX and cached fallback stay visible. Manual pricing remains
+      available and existing manual holdings stay unchanged until explicitly switched.
+      Unit changes clear draft amounts; editing preserves the stored unit.
 - [ ] Header workspace dropdown, question-mark help and Settings work at desktop
       and narrow widths; Settings retains recovery controls with invalid inputs.
 - [ ] Demo targets (60/25/10/5), equity 70/30 split, mixed gains/losses, both

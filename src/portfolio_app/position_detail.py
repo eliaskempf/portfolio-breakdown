@@ -44,6 +44,9 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None):
         from portfolio_app.position_metrics_ui import render_instrument_metrics
         render_instrument_metrics(row, data_dir, demo=demo)
         return
+    if row.get('price_source') == 'gold_spot':
+        st.info('Gold spot valuation uses the latest available quote. Gold price history is not available here yet.')
+        return
     st.markdown('**Market-price history**')
     period = st.segmented_control('Period', list(PERIODS), default='1Y', key=f'position_edit_history_{row.position_id}') or '1Y'
     service = HistoryService(DemoHistoryProvider(), data_dir / '.cache' / 'history') if demo else history_for(data_dir)

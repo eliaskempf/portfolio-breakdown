@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from portfolio_app.prices import PriceService
+from portfolio_app.physical_assets import pricing_key, price_unit_factor
 
 
 def portfolio_weights(values: pd.Series) -> pd.Series:
@@ -24,7 +25,8 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
     active = holdings.loc[holdings["shares"] > 0]
     if 'manual_price' in active:
         active = active.loc[active.manual_price.isna()]
-    price_results = {ticker: prices.price(ticker, refresh=refresh) for ticker in active["ticker"].unique() if ticker}
+    keys = {pricing_key(row) for _, row in active.iterrows()} - {""}
+    price_results = {key: prices.price(key, refresh=refresh) for key in keys}
     currencies = {item.quote.currency for item in price_results.values() if item.quote}
     fx_results = {currency: prices.fx(currency, refresh=refresh) for currency in currencies}
     for index, position in holdings.iterrows():
@@ -59,23 +61,32 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
             else:
                 result.at[index, 'valuation_note'] += ' Missing FX conversion.'
             continue
-        if not position["ticker"]:
+        key = pricing_key(position)
+        if not key:
             result.at[index, "valuation_note"] = "Missing ticker"
             result.at[index, "price_status"] = "missing"
             continue
-        price = price_results[position["ticker"]]
+        price = price_results[key]
         result.at[index, "price_status"] = price.status
         if price.quote is None:
             result.at[index, "valuation_note"] = f"Missing price: {price.error}"
             continue
         quote = price.quote
-        result.at[index, "current_price"] = quote.price
+        unit_price = quote.price * price_unit_factor(position)
+        if not math.isfinite(unit_price):
+            result.at[index, 'valuation_note'] = 'Converted unit price exceeds supported numeric range.'
+            continue
+        result.at[index, "current_price"] = unit_price
         result.at[index, "quote_currency"] = quote.currency
         result.at[index, "price_observed_at"] = quote.observed_at.isoformat()
         result.at[index, "price_age_hours"] = max(0, (prices.now() - quote.observed_at).total_seconds() / 3600)
         fx = fx_results[quote.currency]
         result.at[index, "fx_status"] = fx.status
         notes = [f"Price refresh failed: {price.error}"] if price.error else []
+        if position.get('price_source') == 'gold_spot':
+            notes.append(f"Gold spot (Gold API), per {position['quantity_unit']} of fine gold.")
+            if result.at[index, 'price_age_hours'] >= 24:
+                notes.append('Gold spot quote is at least 24 hours old.')
         if position.get('instrument_type') == 'crypto' and result.at[index, 'price_age_hours'] >= 24:
             notes.append('Crypto quote is at least 24 hours old; markets trade continuously.')
         if fx.quote is None:
@@ -87,7 +98,7 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
             result.at[index, "fx_to_eur"] = rate
             result.at[index, "fx_observed_at"] = fx.quote.observed_at.isoformat()
             result.at[index, "fx_age_hours"] = max(0, (prices.now() - fx.quote.observed_at).total_seconds() / 3600)
-            value = position["shares"] * quote.price * rate
+            value = position["shares"] * unit_price * rate
             if math.isfinite(value):
                 result.at[index, "current_value_eur"] = value
             else:

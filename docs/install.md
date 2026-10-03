@@ -114,11 +114,12 @@ real instrument history and supported issuer ETF breakdowns. Explicit
 application restart. Starting your own portfolio offers optional categories and
 targets, then your first position. Add a name and optional percentage per row;
 Enter adds it and focuses the next blank name. Complete targets totaling 100%
-open a confirmation before saving. You can also save unfinished targets for later.
+open an **All set?** confirmation table before saving. You can also save unfinished targets for later.
 Skip setup to open empty Positions, where Add
 position and provisional FinanzManager CSV/Excel import remain available. Saving
 categories is separate from saving holdings; Finish later creates no position.
-Existing portfolios skip the welcome dialog.
+Portfolio totals and rebalancing use EUR; foreign-currency quotes and buy-ins
+are converted. Existing portfolios skip the welcome dialog.
 
 The header dropdown switches portfolios, **?** opens help, and **Settings** holds
 display and workspace controls. The animation respects reduced motion and finishes
@@ -133,6 +134,11 @@ Analytical label hierarchies are maintained in `classifications.yaml`; see the
 README's data reference. ETF look-through requires a supported/configured snapshot,
 and partial coverage remains visible. Missing prices and buy-ins are unknown,
 not zero. The app is for local analysis and planning; it does not execute trades.
+
+Physical gold is available under **Add position → Physical asset → Gold spot price**.
+Enter fine-gold weight in troy ounces, grams or kilograms. The spot quote is
+converted to EUR and follows the normal refresh/cache behavior. Manual prices
+remain available; existing manually valued holdings are not switched automatically.
 
 ## Building and testing packages
 

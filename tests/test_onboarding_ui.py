@@ -139,6 +139,7 @@ def test_guided_categories_targets_and_first_physical_position(tmp_path):
     config = load_allocation(personal / 'allocation.yaml')
     assert [b.target for b in config.buckets] == [.8, .2]
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
+    by_label(app.radio, 'Valuation method').set_value('Manual price').run()
     by_label(app.text_input, 'Instrument name').set_value('Invented gold coins')
     by_label(app.number_input, 'Quantity held (total)').set_value(2.5)
     by_label(app.number_input, 'Current price per troy oz (optional)').set_value(2000.)
@@ -185,6 +186,7 @@ def test_physical_unit_change_clears_amounts_and_edit_keeps_unit(tmp_path):
     by_label(app.button, 'Skip setup').click().run()
     by_label(app.button, 'Add position').click().run()
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
+    by_label(app.radio, 'Valuation method').set_value('Manual price').run()
     by_label(app.number_input, 'Quantity held (total)').set_value(2.)
     by_label(app.number_input, 'Current price per troy oz (optional)').set_value(2000.).run()
     by_label(app.selectbox, 'Quantity unit').set_value('grams').run()
@@ -248,3 +250,60 @@ def test_guided_duplicate_remove_partial_targets_and_skip(tmp_path):
     assert by_label(app.text_input, 'Category 1').value == 'Invented reserve'
     by_label(app.button, 'Skip setup').click().run()
     assert not app.exception and not (personal / 'allocation.yaml').exists()
+
+
+def test_physical_gold_spot_save_edit_and_explicit_manual_switch(tmp_path):
+    from portfolio_app.prices import PriceService
+    from portfolio_app.valuation import value_holdings
+    from test_ui import position_action
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    personal = tmp_path / 'invented-gold'
+    app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
+    by_label(app.button, 'Start my portfolio').click().run()
+    by_label(app.button, 'Skip setup').click().run()
+    by_label(app.button, 'Add position').click().run()
+    by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
+    assert by_label(app.radio, 'Valuation method').value == 'Gold spot price'
+    assert set(by_label(app.selectbox, 'Quantity unit').options) == {'troy oz', 'grams', 'kg'}
+    by_label(app.selectbox, 'Quantity unit').set_value('kg').run()
+    by_label(app.number_input, 'Quantity held (total)').set_value(.1)
+    by_label(app.text_input, 'Instrument name').set_value('Invented gold weight')
+    by_label(app.button, 'Save position').click().run()
+    assert not app.exception and not app.error
+    row = read_snapshot(personal / 'holdings.csv').holdings.iloc[0]
+    assert row.price_source == 'gold_spot' and row.quantity_unit == 'kg'
+    assert row.shares == .1 and row.ticker == ''
+    position_action(app, 'Edit position')
+    assert by_label(app.radio, 'Valuation method').value == 'Gold spot price'
+    assert by_label(app.selectbox, 'Quantity unit').disabled
+    by_label(app.radio, 'Valuation method').set_value('Manual price').run()
+    by_label(app.number_input, 'Current price per kg (optional)').set_value(60000.)
+    by_label(app.button, 'Save position').click().run()
+    assert not app.exception and not app.error
+    saved = read_snapshot(personal / 'holdings.csv').holdings
+    assert saved.price_source.tolist() == ['']
+    prices = PriceService(SimpleNamespace(price=lambda _: None), now=lambda: datetime.now(timezone.utc))
+    assert value_holdings(saved, prices).current_value_eur.tolist() == [6000.]
+    position_action(app, 'Edit position')
+    assert by_label(app.radio, 'Valuation method').value == 'Manual price'
+    by_label(app.radio, 'Valuation method').set_value('Gold spot price').run()
+    by_label(app.button, 'Save position').click().run()
+    assert not app.exception and not app.error
+    saved = read_snapshot(personal / 'holdings.csv').holdings
+    assert saved.price_source.tolist() == ['gold_spot'] and saved.manual_price.isna().all()
+
+
+def test_new_manual_units_cannot_be_reinterpreted_as_gold_ounces(tmp_path):
+    app = launch_workspaces(tmp_path / 'invented-gold', create_demo_data(tmp_path / 'demo'))
+    by_label(app.button, 'Start my portfolio').click().run()
+    by_label(app.button, 'Skip setup').click().run()
+    by_label(app.button, 'Add position').click().run()
+    by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
+    by_label(app.radio, 'Valuation method').set_value('Manual price').run()
+    by_label(app.selectbox, 'Quantity unit').set_value('units').run()
+    by_label(app.number_input, 'Quantity held (total)').set_value(10.).run()
+    by_label(app.radio, 'Valuation method').set_value('Gold spot price').run()
+    assert not app.exception
+    assert by_label(app.number_input, 'Quantity held (total)').value == 0.
+    assert by_label(app.selectbox, 'Quantity unit').value == 'troy oz'

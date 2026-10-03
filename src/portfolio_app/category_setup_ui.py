@@ -1,4 +1,6 @@
 """Draft category rows and confirmation for first-use setup; no implicit saves."""
+from html import escape
+import json
 import math
 
 import streamlit as st
@@ -57,6 +59,25 @@ def _add(index):
 def _focus_new(index):
     # A bounded, one-shot focus adapter. Never interpolate user labels into JS.
     st.html('''<script>(() => {
+      // Keep pointer help, but remove help buttons from sequential keyboard navigation.
+      // Associate the same explanations with inputs for assistive technology.
+      window.__categorySetupHelpObserver?.disconnect();
+      const root = document.querySelector('.st-key-onboarding_new_category');
+      function updateHelp() {
+        root?.querySelectorAll('button[aria-label^="Help for "]').forEach(button => {
+          button.tabIndex = -1;
+        });
+        const name = root?.querySelector('[data-testid="stTextInput"] input');
+        const target = root?.querySelector('[data-testid="stNumberInput"] input');
+        name?.setAttribute('aria-description', CATEGORY_DESCRIPTION);
+        target?.setAttribute('aria-description', TARGET_DESCRIPTION);
+      }
+      updateHelp();
+      if (root) {
+        const observer = new MutationObserver(updateHelp);
+        observer.observe(root, {childList: true, subtree: true});
+        window.__categorySetupHelpObserver = observer;
+      }
       const selector = '.st-key-onboarding_new_name_INDEX input';
       const token = 'ROW_TOKEN';
       if (window.__categorySetupFocus === token) return;
@@ -71,7 +92,9 @@ def _focus_new(index):
       }
       focus();
     })();</script>'''.replace('INDEX', str(index)).replace('ROW_TOKEN',
-        f"{st.session_state['onboarding_focus_session']}-{index}"), unsafe_allow_javascript=True)
+        f"{st.session_state['onboarding_focus_session']}-{index}").replace(
+            'CATEGORY_DESCRIPTION', json.dumps(CATEGORY_HELP)).replace(
+            'TARGET_DESCRIPTION', json.dumps(TARGET_HELP)), unsafe_allow_javascript=True)
 
 
 def render_category_setup(directory, snapshot, first_position):
@@ -87,12 +110,20 @@ def render_category_setup(directory, snapshot, first_position):
             first_position()
             st.rerun()
 
-    @st.dialog('Your targets add up to 100%', dismissible=False)
+    @st.dialog('All set?', dismissible=False)
     def review():
-        st.write('Ready to add your first position?')
-        for row in _rows():
-            # Text, not user-supplied HTML/Markdown.
-            st.text(f"{row['name']} · {row['target']:g}%")
+        rows = ''.join(f'<tr><th scope="row">{escape(row["name"])}</th>'
+                       f'<td>{row["target"]:g}%</td></tr>' for row in _rows())
+        st.html('<style>.category-review {width:100%;border-collapse:collapse;}'
+                '.category-review th,.category-review td {padding:.5rem .25rem;'
+                'border-bottom:1px solid color-mix(in srgb,currentColor 15%,transparent);}'
+                '.category-review th {text-align:left;overflow-wrap:anywhere;}'
+                '.category-review tbody th {font-weight:400;}'
+                '.category-review td,.category-review th:last-child {text-align:right;'
+                'font-variant-numeric:tabular-nums;white-space:nowrap;}'
+                '</style><table class="category-review" aria-label="Category targets">'
+                '<thead><tr><th scope="col">Category</th><th scope="col">Target</th></tr></thead>'
+                f'<tbody>{rows}</tbody></table>')
         st.caption('Continuing saves these categories. Your first position is saved separately.')
         if st.button('Continue to first position', type='primary', width='stretch'):
             save()
@@ -105,14 +136,15 @@ def render_category_setup(directory, snapshot, first_position):
     def setup():
         st.caption('1 of 2 · Categories and optional targets')
         st.write('Group your holdings into categories. Targets are optional.')
+        st.caption('Portfolio currency: EUR. Holdings in other currencies are converted to euros.')
         for number, row in enumerate(_rows(), 1):
             with st.container(border=True):
                 name, target, remove = st.columns([3, 2, 1], vertical_alignment='bottom')
                 row['name'] = name.text_input(f'Category {number}', value=row['name'],
-                    key=f"onboarding_name_{row['id']}", help=CATEGORY_HELP)
+                    key=f"onboarding_name_{row['id']}")
                 row['target'] = target.number_input(f'Target {number} (%)', value=row['target'],
-                    min_value=0., max_value=100., step=1., key=f"onboarding_target_{row['id']}", help=TARGET_HELP)
-                if remove.button('Remove', key=f"onboarding_remove_{row['id']}", help=f'Remove category {number}'):
+                    min_value=0., max_value=100., step=1., key=f"onboarding_target_{row['id']}")
+                if remove.button('Remove', key=f"onboarding_remove_{row['id']}"):
                     _rows().remove(row)
                     st.rerun()
 

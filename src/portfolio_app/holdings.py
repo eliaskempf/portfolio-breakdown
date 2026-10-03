@@ -72,6 +72,16 @@ def parse_holdings(content: str) -> pd.DataFrame:
         for _, row in frame.loc[number.notna()].iterrows():
             if not row.get("quantity_unit") or not row.get("manual_price_date") or not re.fullmatch(r"[A-Z]{3}", row.get("manual_price_currency", "")):
                 raise DataError("Manual prices require a quantity unit, date, and three-letter currency.")
+    if 'price_source' in frame:
+        from portfolio_app.physical_assets import GOLD_WEIGHT_UNITS
+        if not frame.price_source.isin(['', 'gold_spot']).all():
+            raise DataError('price_source must be blank or gold_spot.')
+        for _, row in frame.loc[frame.price_source.eq('gold_spot')].iterrows():
+            if (row.get('instrument_type') != 'physical' or row.get('quantity_unit') not in GOLD_WEIGHT_UNITS
+                    or row.ticker or row['isin']):
+                raise DataError('Gold spot pricing requires physical fine gold in troy oz, grams or kg, with no ticker or ISIN.')
+            if pd.notna(row.get('manual_price', float('nan'))):
+                raise DataError('Choose gold spot pricing or a manual price, not both.')
     for column in ("id", "name"):
         if frame[column].eq("").any():
             raise DataError(f"Every holding needs a nonempty {column}.")
@@ -100,5 +110,5 @@ def parse_holdings(content: str) -> pd.DataFrame:
 
 
 def metadata_dimensions(holdings: pd.DataFrame) -> list[str]:
-    excluded = {"position_id", "position_key", "id", "name", "short_name", "ticker", "isin", "shares", "acquisition_price", "acquisition_currency", "target_allocation", "within_bucket_target", "purchase_history", "holdings_confirmed_on", "balance_replaced_at", "manual_price", "manual_price_currency", "manual_price_date", "quantity_unit", "wkn", "import_source"}
+    excluded = {"position_id", "position_key", "id", "name", "short_name", "ticker", "isin", "shares", "acquisition_price", "acquisition_currency", "target_allocation", "within_bucket_target", "purchase_history", "holdings_confirmed_on", "balance_replaced_at", "manual_price", "manual_price_currency", "manual_price_date", "quantity_unit", "wkn", "import_source", "price_source"}
     return [column for column in holdings.columns if column not in excluded]

@@ -1,5 +1,6 @@
 """Startup transitions with invented workspaces and no market network."""
 import os
+import json
 import re
 from pathlib import Path
 import socket
@@ -21,11 +22,18 @@ playwright = pytest.importorskip('playwright.sync_api')
 def intro_server(tmp_path_factory):
     directory = tmp_path_factory.mktemp('synthetic-intro')
     create_demo_data(directory / 'demo')
+    fixture_path = directory / 'demo' / 'demo_prices.json'
+    fixture = json.loads(fixture_path.read_text(encoding='utf-8'))
+    fixture['prices']['spot:gold:USD:troy_oz'] = dict(price=2000., currency='USD', observed_at='2026-01-05T00:00:00Z')
+    fixture['fx']['USD'] = dict(price=.8, currency='EUR', observed_at='2026-01-05T00:00:00Z')
+    fixture_path.write_text(json.dumps(fixture), encoding='utf-8')
     app = directory / 'app.py'
     app.write_text('''
 from pathlib import Path
 from portfolio_app.ui import render_app
-render_app(Path(__file__).parent / 'empty', demo_dir=Path(__file__).parent / 'demo', intro=True)
+from portfolio_app.prices import PriceService, StaticProvider
+render_app(Path(__file__).parent / 'empty', demo_dir=Path(__file__).parent / 'demo', intro=True,
+           price_service=PriceService(StaticProvider(Path(__file__).parent / 'demo' / 'demo_prices.json')))
 ''', encoding='utf-8')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
@@ -232,6 +240,8 @@ def test_guided_setup_and_physical_asset_in_dark_narrow_view(intro_page):
     playwright.expect(dialog.get_by_text('1 of 2 · Categories and optional targets', exact=True)).to_be_visible()
     dialog.get_by_role('textbox', name='Category name', exact=True).fill('Gold')
     dialog.get_by_role('button', name='Add category', exact=True).click()
+    playwright.expect(dialog.get_by_role('textbox', name='Category 1', exact=True)).to_have_value('Gold')
+    playwright.expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
     playwright.expect(dialog.get_by_role('textbox', name='Category name', exact=True)).to_have_count(1)
     playwright.expect(dialog.get_by_role('textbox', name='Category name', exact=True)).to_have_value('')
     playwright.expect(dialog.get_by_role('textbox', name='Category name', exact=True)).to_be_focused()
@@ -239,6 +249,7 @@ def test_guided_setup_and_physical_asset_in_dark_narrow_view(intro_page):
     dialog.get_by_role('button', name='Save categories & continue', exact=True).click()
     playwright.expect(page.get_by_role('dialog', name='Add position', exact=True)).to_be_visible()
     dialog.get_by_role('radio', name='Physical asset', exact=True).click()
+    dialog.get_by_text('Manual price', exact=True).click()
     playwright.expect(dialog.get_by_role('spinbutton', name='Current price per troy oz (optional)', exact=True)).to_be_visible()
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     dialog.get_by_role('textbox', name='Instrument name', exact=True).fill('Invented bullion')
@@ -272,18 +283,37 @@ def test_category_rows_keyboard_focus_and_target_confirmation(intro_page):
     playwright.expect(name).to_be_focused()
     playwright.expect(name).to_have_value('')
     name.fill('Invented equity')
-    dialog.get_by_role('spinbutton', name='Target (%) · optional', exact=True).fill('75')
+    page.keyboard.press('Tab')
+    target = dialog.get_by_role('spinbutton', name='Target (%) · optional', exact=True)
+    playwright.expect(target).to_be_focused()
+    page.keyboard.press('Shift+Tab')
+    playwright.expect(name).to_be_focused()
+    page.keyboard.press('Tab')
+    target.fill('75')
     page.keyboard.press('Enter')
     playwright.expect(dialog.get_by_role('textbox', name='Category 1', exact=True)).to_have_value('Invented equity')
+    playwright.expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
+    playwright.expect(name).to_have_count(1)
     playwright.expect(name).to_have_value('')
     playwright.expect(name).to_be_focused()
-    name.fill('Invented reserve')
-    dialog.get_by_role('spinbutton', name='Target (%) · optional', exact=True).fill('25')
+    playwright.expect(dialog.get_by_role('button', name='Help for Category 1', exact=True)).to_have_count(0)
+    playwright.expect(dialog.get_by_role('button', name='Help for Target 1 (%)', exact=True)).to_have_count(0)
+    # Help remains available with a pointer; its contents also describe the inputs.
+    playwright.expect(name).to_have_attribute('aria-description', re.compile('Examples: Equities'))
+    name.fill('Invented <reserve> & cash')
+    page.keyboard.press('Tab')
+    playwright.expect(target).to_be_focused()
+    target.fill('25')
     page.keyboard.press('Enter')
-    playwright.expect(page.get_by_role('dialog', name='Your targets add up to 100%', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_role('dialog', name='All set?', exact=True)).to_be_visible()
+    table = dialog.get_by_role('table', name='Category targets', exact=True)
+    playwright.expect(table.get_by_role('row')).to_have_count(3)
+    playwright.expect(table.get_by_role('rowheader', name='Invented <reserve> & cash', exact=True)).to_be_visible()
+    playwright.expect(table.get_by_role('cell', name='25%', exact=True)).to_be_visible()
+    assert table.locator('td').first.evaluate("el => getComputedStyle(el).textAlign") == 'right'
     assert not (directory / 'empty' / 'allocation.yaml').exists()
     page.get_by_role('button', name='Keep editing', exact=True).click()
-    playwright.expect(dialog.get_by_role('textbox', name='Category 2', exact=True)).to_have_value('Invented reserve')
+    playwright.expect(dialog.get_by_role('textbox', name='Category 2', exact=True)).to_have_value('Invented <reserve> & cash')
     # An unchanged 100% total must not immediately reopen the confirmation.
     dialog.get_by_role('spinbutton', name='Target 2 (%)', exact=True).fill('20')
     page.keyboard.press('Tab')
@@ -294,4 +324,31 @@ def test_category_rows_keyboard_focus_and_target_confirmation(intro_page):
     playwright.expect(dialog.get_by_text('Target total: 100% of portfolio', exact=True)).to_be_visible()
     dialog.get_by_role('button', name='Save categories & continue', exact=True).click()
     playwright.expect(page.get_by_role('dialog', name='Add position', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
+def test_gold_spot_weight_save_reload_and_details(intro_page):
+    page, url, directory = intro_page
+    page.emulate_media(reduced_motion='reduce')
+    page.goto(url)
+    page.get_by_role('button', name='Start my portfolio', exact=True).click()
+    page.get_by_role('button', name='Skip setup', exact=True).click()
+    page.get_by_role('button', name='Add position', exact=False).click()
+    dialog = page.get_by_role('dialog')
+    dialog.get_by_role('radio', name='Physical asset', exact=True).click()
+    playwright.expect(dialog.get_by_role('radio', name='Gold spot price', exact=True)).to_be_checked()
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
+    dialog.get_by_role('textbox', name='Instrument name', exact=True).fill('Invented spot gold')
+    dialog.get_by_role('spinbutton', name='Quantity held (total)', exact=True).fill('2.5')
+    dialog.get_by_role('button', name='Save position', exact=True).click()
+    playwright.expect(dialog).to_have_count(0)
+    rows = read_snapshot(directory / 'empty' / 'holdings.csv').holdings
+    assert rows.price_source.tolist() == ['gold_spot'] and rows.quantity_unit.tolist() == ['troy oz']
+    page.get_by_role('tab', name='Overview', exact=True).click()
+    playwright.expect(page.get_by_test_id('stMetricValue').first).to_have_text('€4,000.00')
+    page.reload()
+    playwright.expect(page.get_by_test_id('stMetricValue').first).to_have_text('€4,000.00')
+    page.get_by_role('tab', name='Positions', exact=True).click()
+    page.get_by_role('table', name='Positions', exact=True).get_by_text('Invented spot gold', exact=True).click()
+    playwright.expect(dialog.get_by_text('Gold spot valuation uses the latest available quote. Gold price history is not available here yet.', exact=True)).to_be_visible()
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
