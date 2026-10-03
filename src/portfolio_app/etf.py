@@ -1,6 +1,6 @@
 """ETF snapshots and value-preserving expansion into normalized exposures."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 import math
 from pathlib import Path
@@ -25,13 +25,21 @@ class FundSnapshot:
     equity_fund: bool = False
     proxy_source: str = ''
     notes: str = ''
+    provider: str = ''
+    product_url: str = ''
+    asset_class: str = ''
+    replication: str = ''
+    breakdown_basis: str = 'holdings'
+    wkn: str = ''
+    summaries: dict = field(default_factory=dict)
+    basket: pd.DataFrame | None = None
 
 
 def snapshot_age_days(fund: FundSnapshot, today: date | None = None) -> int:
     return ((today or date.today()) - fund.as_of).days
 
 
-def validate_constituents(frame: pd.DataFrame) -> pd.DataFrame:
+def validate_constituents(frame: pd.DataFrame, *, allow_signed: bool = False) -> pd.DataFrame:
     required = {"constituent_id", "name", "ticker", "isin", "weight"}
     if not required.issubset(frame.columns) or frame.empty:
         raise DataError("ETF holdings must contain constituent_id, name, ticker, isin, and weight rows.")
@@ -41,10 +49,12 @@ def validate_constituents(frame: pd.DataFrame) -> pd.DataFrame:
     result["ticker"] = result["ticker"].str.upper()
     result["isin"] = result["isin"].str.upper()
     weights = pd.to_numeric(result["weight"], errors="coerce")
-    if (~weights.map(math.isfinite) | (weights < 0) | (weights > 1)).any():
+    if (~weights.map(math.isfinite) | (weights < (-1 if allow_signed else 0)) | (weights > 1)).any():
         raise DataError("ETF weights must be finite fractions from 0 to 1.")
     if math.fsum(weights) > 1 + 1e-12:
         raise DataError("ETF constituent weights exceed 100%; correct the source data instead of renormalizing it.")
+    if allow_signed and math.fsum(weights) <= 0:
+        raise DataError('A substitute basket must have positive net weight.')
     if result["constituent_id"].eq("").any() or result["name"].eq("").any() or not result["constituent_id"].is_unique:
         raise DataError("ETF constituents require unique nonempty IDs and nonempty names.")
     if result["constituent_id"].str.startswith("etf-other:").any():
@@ -67,6 +77,12 @@ def load_funds(directory: Path) -> list[FundSnapshot]:
                 manifest_path=manifest,
                 equity_fund=raw.get('equity_fund', False),
                 proxy_source=raw.get('proxy_source', ''), notes=raw.get('notes', ''),
+                **{key: raw.get(key, default) for key, default in {
+                    'provider': '', 'product_url': '', 'asset_class': '', 'replication': '',
+                    'breakdown_basis': 'holdings', 'wkn': '', 'summaries': {},
+                }.items()},
+                basket=validate_constituents(pd.read_csv(manifest.parent / raw['basket_file'], dtype=str,
+                    keep_default_na=False), allow_signed=True) if raw.get('basket_file') else None,
             )
             if not fund.fund_id or not fund.name or len(fund.isin) != 12:
                 raise ValueError("Fund ID, name, and a 12-character ISIN are required")
@@ -74,6 +90,13 @@ def load_funds(directory: Path) -> list[FundSnapshot]:
                 raise ValueError('equity_fund must be true or false')
             if not isinstance(fund.proxy_source, str) or not isinstance(fund.notes, str):
                 raise ValueError('proxy_source and notes must be text')
+            if fund.breakdown_basis not in {'holdings', 'economic', 'proxy'}:
+                raise ValueError('Unknown breakdown basis')
+            if not isinstance(fund.summaries, dict):
+                raise ValueError('Fund summaries must be a mapping')
+            if any(not isinstance(getattr(fund, key), str) for key in
+                   ('provider', 'product_url', 'asset_class', 'replication', 'wkn')):
+                raise ValueError('Fund metadata must be text')
             funds.append(fund)
         except (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError) as exc:
             raise DataError(f"Invalid ETF snapshot {manifest.name}: {exc}") from exc
@@ -85,8 +108,11 @@ def load_funds(directory: Path) -> list[FundSnapshot]:
 def matching_fund(position: dict, funds: list[FundSnapshot]) -> FundSnapshot | None:
     isin = str(position.get("isin", "")).strip().upper()
     ticker = str(position.get("ticker", "")).strip().upper()
+    wkn = str(position.get('wkn', '')).strip().upper()
     # An explicit ISIN is authoritative; a conflicting ticker must not select another fund.
-    return next((fund for fund in funds if (isin == fund.isin if isin else ticker in fund.tickers)), None)
+    matches = [fund for fund in funds if (isin == fund.isin if isin else
+               wkn == fund.wkn if wkn else bool(ticker) and ticker in fund.tickers)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def smh_group_candidates(holdings: pd.DataFrame, funds: list[FundSnapshot]) -> tuple[set[str], set[str], set[str]]:
@@ -176,7 +202,9 @@ def fund_classifications(classifications, funds, holdings):
     for fund in funds:
         for row in fund.constituents.to_dict('records'):
             asset_id, _ = resolve(row)
-            for column, taxonomy in [('sector', 'sector'), ('country', 'geography')]:
+            for column, taxonomy in [('sector', 'sector'), ('country', 'geography'),
+                                     ('issuer', 'issuer'), ('market_currency', 'currency'),
+                                     ('maturity_band', 'maturity'), ('credit_rating', 'credit_quality')]:
                 label = row.get(column)
                 if isinstance(label, str) and label.strip() and label not in {'Unknown', '-'}:
                     result.setdefault(asset_id, {}).setdefault(taxonomy, ((label.strip(),),))
@@ -196,6 +224,17 @@ def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd
             row["asset_id"], row["asset_name"] = resolve(constituent)
             row["value"] = exposure["value"] * constituent["weight"]
             row["ticker"], row["isin"] = constituent["ticker"], constituent["isin"]
+            if 'wkn' in row:
+                row['wkn'] = ''
+            kind = constituent.get('instrument_type')
+            if not isinstance(kind, str) or not kind:
+                kind = ('equity' if fund.equity_fund else 'non_equity'
+                        if fund.asset_class in {'fixed_income', 'money_market'} else 'unknown')
+            row['instrument_type'] = kind
+            declared = constituent.get('exposure_kind')
+            row['exposure_kind'] = declared if isinstance(declared, str) and declared else (
+                'equity' if kind == 'equity' else 'non_equity'
+                if kind in {'cash', 'bond', 'money_market', 'overnight_rate', 'non_equity', 'crypto', 'physical'} else 'unknown')
             row["source_type"] = "etf_other" if constituent["constituent_id"].startswith("etf-other:") else "etf_constituent"
             row["direct_or_indirect"] = "indirect"
             # Instrument quantities, quotes, and targets do not describe its constituents.
@@ -203,7 +242,7 @@ def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd
                 if field in row:
                     row[field] = float("nan")
             records.append(row)
-    return pd.DataFrame(records, columns=exposures.columns)
+    return pd.DataFrame(records, columns=list(dict.fromkeys([*exposures.columns, 'instrument_type', 'exposure_kind'])))
 
 
 def effective_exposure_table(exposures: pd.DataFrame) -> pd.DataFrame:

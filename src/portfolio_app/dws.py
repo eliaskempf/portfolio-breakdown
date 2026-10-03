@@ -12,7 +12,7 @@ from portfolio_app.holdings import DataError
 SOURCE = 'https://etf.dws.com/api/pdp/en-gb/etf/IE00BJ0KDQ92-msci-world-ucits-etf-1c/holdings'
 
 
-def parse_holdings(content: bytes) -> tuple[date, pd.DataFrame, str]:
+def parse_holdings(content: bytes, *, allow_signed: bool = False) -> tuple[date, pd.DataFrame, str]:
     try:
         tables = json.loads(content)['tables']
         table = next(t for t in tables if t['id'] == 'securitiesheldtable-securitiesholding')
@@ -34,9 +34,9 @@ def parse_holdings(content: bytes) -> tuple[date, pd.DataFrame, str]:
                 'constituent_id': f'isin:{isin}' if isin else f'dws:{identifier}',
                 'name': row['column_0']['value'], 'ticker': '', 'isin': isin,
                 'weight': float(row['column_1']['sortValue']) / 100,
-                'instrument_type': {'Equities': 'equity', 'Depository Receipts': 'equity', 'Cash': 'cash'}.get(kind, 'unknown'),
+                'instrument_type': {'Equities': 'equity', 'Depository Receipts': 'equity', 'Cash': 'cash', 'Bonds': 'bond', 'Bond': 'bond', 'Government Bond': 'bond', 'Supranational Bond': 'bond', 'Corporate Bond': 'bond', 'Mutual Fund': 'etf', 'Fixed Income': 'bond', 'Money Market': 'money_market'}.get(kind, 'unknown'),
                 'sector': row['column_4']['value'], 'country': row['column_3']['value'],
             })
-        return as_of, validate_constituents(pd.DataFrame(records)), 'Published full-precision weights; any rounding remainder stays in Other.'
+        return as_of, validate_constituents(pd.DataFrame(records), allow_signed=allow_signed), 'Published full-precision weights; any rounding remainder stays in Other.'
     except (KeyError, ValueError, TypeError, StopIteration) as exc:
         raise DataError(f'Invalid Xtrackers holdings export: {exc}') from exc

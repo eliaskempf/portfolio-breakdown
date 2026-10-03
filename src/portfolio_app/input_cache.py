@@ -47,6 +47,8 @@ def load_inputs(directory):
             raw = yaml.safe_load(manifest.read_text())
             if isinstance(raw, dict) and isinstance(raw.get('holdings_file'), str):
                 files.append(manifest.parent / raw['holdings_file'])
+                if raw.get('basket_file'):
+                    files.append(manifest.parent / raw['basket_file'])
         return files
     try:
         files = cached_input('fund_paths', manifest_stamp, holdings_files)

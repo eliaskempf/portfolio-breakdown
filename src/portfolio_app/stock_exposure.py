@@ -111,10 +111,12 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
             if not isinstance(constituent_kind, str) or not constituent_kind:
                 analysis_asset = constituent.get('analysis_asset_id')
                 linked_equity = isinstance(analysis_asset, str) and bool(analysis_asset)
-                constituent_kind = 'equity' if equity_universe or linked_equity else 'unknown'
+                constituent_kind = ('equity' if equity_universe or linked_equity else
+                                    'non_equity' if fund.asset_class in {'fixed_income', 'money_market'} else 'unknown')
             if residual:
-                constituent_kind = 'equity' if equity_universe else 'unknown'
-            if constituent_kind in {'cash', 'crypto', 'physical', 'non_equity'}:
+                constituent_kind = ('equity' if equity_universe else
+                                    'non_equity' if fund.asset_class in {'fixed_income', 'money_market'} else 'unknown')
+            if constituent_kind in {'cash', 'bond', 'money_market', 'overnight_rate', 'crypto', 'physical', 'non_equity'}:
                 continue
             if constituent_kind == 'etf' and constituent.get('exposure_kind') == 'equity':
                 stock_total += amount

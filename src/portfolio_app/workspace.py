@@ -27,10 +27,12 @@ def validate_workspace(directory: Path) -> None:
             raw = yaml.safe_load(path.read_text(encoding='utf-8'))
         except (yaml.YAMLError, UnicodeError) as exc:
             raise DataError('Cannot copy a workspace with an invalid ETF manifest.') from exc
-        if isinstance(raw, dict) and isinstance(raw.get('holdings_file'), str):
-            target = (path.parent / raw['holdings_file']).resolve()
-            if not target.is_relative_to(directory.resolve()):
-                raise DataError('ETF holdings files must be inside the workspace before copying.')
+        if isinstance(raw, dict):
+            for field in ('holdings_file', 'basket_file'):
+                if isinstance(raw.get(field), str):
+                    target = (path.parent / raw[field]).resolve()
+                    if not target.is_relative_to(directory.resolve()):
+                        raise DataError('ETF holdings and basket files must be inside the workspace before copying.')
     load_funds(directory / 'etfs')
 
 
