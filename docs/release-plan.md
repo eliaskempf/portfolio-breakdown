@@ -220,3 +220,101 @@ No private holdings, reports, caches, credentials or screenshots are packaged.
 The audit is not a mathematical guarantee that arbitrary prose or public ticker
 selection cannot disclose preferences. Package/privacy regression tests pass;
 native Windows acceptance and official publication approval remain pending.
+
+## Extended ETF breakdown integration handoff
+
+Prepared on `feature/etf-release-v1`, based on release-v1 commit
+`6fd87c6bd13729bd61fedfd6ef5a285fc90cde5f`. Neither `release-v1` nor `main` was
+merged or advanced during this preparation. The original working checkout was
+left intact. The extension previously existed as uncommitted changes mixed with
+futures experiments; there was no existing ETF extension commit to cherry-pick.
+
+Apply these focused commits in order after reviewing the release branch state:
+
+| Commit | Scope |
+| --- | --- |
+| `0c2e98f94d3d843ecc3949a21ff957de0eb392ac` | Provider discovery, validated publication and refresh, bond/rate semantics, summaries, basket-aware workspace copying, synthetic backend tests |
+| `950b8c70cf9017620287e16865307fb82bca3eca` | Source setup, fund summaries and saved breakdown UI, workspace draft reset, synthetic browser tests, ETF README documentation |
+
+Dependencies are already present in the chosen release base:
+
+- `330ef27`: preliminary holdings import and later live-price linking, including
+  python-calamine. Do not copy the older importer from the futures checkout over
+  the release version.
+- `a7ec302`: cross-platform `locking.write_lock` and release workspace support.
+  Both automatic refresh and manual ETF saves use this shared lock; the new
+  modules have no unconditional POSIX `fcntl` import.
+- `786c723`: release exposure-analysis and workspace-state refactors. UI wiring
+  was adapted to these boundaries rather than replacing their modules wholesale.
+- `6fd87c6`: retained onboarding, demo behavior and strengthened privacy checks.
+
+No futures-branch commit, futures calculation, leverage setting or experimental
+market-exposure module is required. A basket test that referenced the experimental
+exposure module now verifies value conservation, non-equity typing, company
+exclusion and geography exclusion through the existing release APIs. There are
+no changes to `pyproject.toml` or `uv.lock` in the ETF commits.
+
+Supported behavior:
+
+- Newly added/imported funds can discover physical equity and bond holdings from
+  supported official iShares/Xtrackers sources. Imported rows need not already
+  have a price ticker or instrument type. ISIN is authoritative; WKN/listing
+  candidates require issuer confirmation.
+- Official product URLs can be previewed and saved, then refreshed through the
+  normal held-fund updater. Normalized physical-holdings CSVs provide a manual
+  fallback. Failed retrieval keeps the last valid snapshot; unresolved funds
+  remain whole instruments. Partial holdings retain an explicit Other remainder.
+- Bond views summarize issuer, country, denomination currency, dated maturity
+  bands and available credit quality. Missing metadata stays unknown. Provider
+  aggregate ratings and duration/yield figures retain their own dates and sources.
+- XEON has a specific verified overnight-rate economic representation. Its signed
+  substitute basket is stored and displayed separately, excluded from portfolio
+  company/country/bond allocations. Existing explicit provider integrations and
+  the labeled legacy proxy remain supported.
+
+Validation of the isolated Linux checkout:
+
+- `uv run pytest -q`: **811 passed, 12 skipped**. Browser modules are optional in
+  that environment; these skips do not establish browser acceptance.
+- Required affected-browser run: **5 passed, no skips** across
+  `test_etf_discovery_browser.py` and `test_import_browser.py`, using temporary
+  synthetic Streamlit apps and Chromium. These check bond summary defaults and
+  charts, security details, the separate overnight basket, settings access without
+  a live listing, and import workflows. Servers were stopped after testing.
+  Local browser compatibility used Playwright 1.48; the release's locked browser
+  group and its full browser suite still need to run on supported CI runners.
+- `uv run ruff check src tests tools` and `git diff --check`: passed.
+- `uv build` and `uv run python tools/release.py check --directory dist`: passed
+  for wheel and source archive. An independently installed wheel, with runtime
+  dependencies pinned from the unchanged lockfile, passed ETF/UI imports,
+  synthetic snapshot save/reload and partial-coverage summaries outside the
+  checkout; the installed command reports version 0.1.0.
+- Staged diff review plus `portfolio-check-private --staged` ran before each
+  commit; the enabled pre-commit hook audited the tracked index. Package content
+  scanning also passed. Added tests invent their provider responses and positions
+  in temporary directories. No working portfolio, cache, export, screenshot or
+  private handoff content was copied into these commits or archives. Public
+  instrument/provider identifiers describe supported behavior, not ownership.
+
+Remaining limitations and release gates:
+
+- Native Windows execution, frozen candidate testing and the full required
+  browser suite have not been performed for this branch. Run the existing
+  Windows/Linux candidate gates after integration; do not treat Linux tests or
+  the portable lock adaptation as Windows acceptance.
+- Discovery is bounded by supported provider metadata/export formats. WKN and
+  ticker searches may be incomplete; bare tickers/names are not identities.
+  Provider changes or unsupported structures can leave a fund unexpanded.
+- Synthetic ETF economics are not general: XEON is explicitly handled, alongside
+  the existing labeled proxy. There is no generic swap, hedging, duration-risk or
+  signed portfolio allocation model. Currency summaries describe denomination.
+- Automatic attempts require the app to be running and scheduled through app
+  startup/interactions. Defaults are a one-day snapshot age and at most one
+  automatic attempt per fund per 24 hours; this is not a separate scheduled job.
+- Earlier public-source probes covered World, World ex-USA, DAX, Euro Government
+  Bond and XEON. Those probes were not rerun for this isolation; the new validation
+  is deterministic and offline. Provider availability must be checked separately
+  if live-source acceptance is needed for the release candidate.
+
+The integration commits are ready for release-session review. This handoff does
+not approve a merge, tag, candidate distribution or publication.

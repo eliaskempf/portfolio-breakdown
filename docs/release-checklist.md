@@ -36,6 +36,12 @@ data. A checked checklist is specific to one build, not a blanket approval.
 - [ ] CSV and Excel imports reviewed and saved; cancel writes nothing, workspace
       switching clears drafts, navigation retains uploads/mappings/edits, restart
       retains positions and live-price linking works.
+- [ ] Extended ETF discovery works for synthetic newly added/imported positions;
+      official-URL setup and refresh, normalized CSV fallback, failure retention,
+      and unsupported-fund states work without changing positions or prices.
+- [ ] Bond summaries and security details render; missing metadata remains unknown;
+      overnight economic exposure stays separate from its substitute basket in
+      allocations, saved snapshots and workspace backups/restoration.
 - [ ] Spaces and non-ASCII paths work.
 - [ ] Offline/stale/missing data states are understandable.
 - [ ] Migration, backup and restoration preserve an invented complete workspace.
