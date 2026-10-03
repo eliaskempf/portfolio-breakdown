@@ -70,7 +70,7 @@ def prepare_draft(directory, identifier, *, product_url='', content=None, as_of=
                                     replication='physical', wkn=wkn)
     if content is not None:
         from dataclasses import replace
-        fund = replace(fund, provider='', product_url='', source='Manual normalized CSV', asset_class=asset_class,
+        fund = replace(fund, provider='manual', product_url='', source='Manual normalized CSV', asset_class=asset_class,
                        equity_fund=asset_class == 'equity', replication='physical', breakdown_basis='holdings',
                        proxy_source='', summaries={})
     return SnapshotDraft(fund, frame, stamp, notes, path.read_bytes() if path.exists() else None, source, basket)

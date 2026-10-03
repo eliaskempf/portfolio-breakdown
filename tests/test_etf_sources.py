@@ -88,6 +88,21 @@ def test_xml_nets_cash_preserves_fractional_holdings_and_ignores_zero_value_futu
     assert frame.weight.tolist() == pytest.approx([.99996, .00004, 0])
 
 
+@pytest.mark.parametrize('default_namespace', [False, True])
+@pytest.mark.parametrize('malformed_footer', [False, True])
+def test_xml_preserves_inherited_namespaces_and_isolates_bad_footer(default_namespace, malformed_footer):
+    content = xml_export().replace(b'<ns0:Workbook ', b'<ns0:Workbook xmlns:ss="' + ishares.NS.encode() + b'" ')
+    content = content.replace(b'ns0:Name=', b'ss:Name=')
+    if default_namespace:
+        content = content.replace(b'ns0:', b'').replace(b'xmlns:ns0=', b'xmlns=')
+    if malformed_footer:
+        closing = b'</Workbook>' if default_namespace else b'</ns0:Workbook>'
+        content = content.replace(closing, b'<broken>Invented & malformed disclaimer</broken>' + closing)
+    stamp, frame, _ = ishares.parse_holdings(content)
+    assert stamp == date(2026, 1, 2)
+    assert frame.weight.tolist() == pytest.approx([.99, .01])
+
+
 @pytest.mark.parametrize(('old', 'new'), [
     (b'99.00', b'60.00'), (b'ZZZ -10.00', b'ZZZ -40.00'),
     (b'Equity', b'Unrecognized derivative'), (b'All', b'Top 10'),

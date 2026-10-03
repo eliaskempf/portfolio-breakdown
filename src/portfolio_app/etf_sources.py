@@ -58,6 +58,9 @@ def download(url: str) -> bytes:
 
 
 def source_for(fund: FundSnapshot, fetch=download) -> Source | None:
+    # An explicit manual source must not fall back to the legacy ISIN registry.
+    if fund.provider == 'manual':
+        return None
     if fund.provider and fund.product_url:
         from portfolio_app.etf_discovery import source_from_url
         return source_from_url(fund.product_url, fetch, expected_isin=fund.isin)[1]

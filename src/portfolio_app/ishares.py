@@ -54,14 +54,17 @@ def provider_date(value: str) -> date:
 
 def parse_holdings(content: bytes) -> tuple[date, pd.DataFrame, str]:
     try:
-        # Some provider workbooks have malformed disclaimer text in later sheets.
-        # Extract the complete Holdings element without repairing financial data.
-        match = re.search(rb'<(?P<prefix>[A-Za-z_][\w.-]*:)?Worksheet\b[^>]*\b(?:\w+:)?Name=["\']Holdings["\'][^>]*>.*?</(?P=prefix)Worksheet>', content, re.S)
-        if match:
-            prefix = (match['prefix'] or b'').decode().rstrip(':')
-            namespace = f'xmlns:{prefix}' if prefix else 'xmlns'
-            content = f'<Workbook {namespace}="{NS}">'.encode() + match[0] + b'</Workbook>'
-        root = ET.fromstring(content)
+        try:
+            root = ET.fromstring(content)
+        except ET.ParseError:
+            # Some later sheets contain malformed disclaimer text. Retain the
+            # original namespace declarations while isolating the complete
+            # Holdings sheet; never repair its financial rows.
+            workbook = re.search(rb'<(?P<prefix>(?:[A-Za-z_][\w.-]*:)?)Workbook\b[^>]*>', content)
+            sheet = re.search(rb'<(?P<prefix>(?:[A-Za-z_][\w.-]*:)?)Worksheet\b[^>]*\b(?:\w+:)?Name=["\']Holdings["\'][^>]*>.*?</(?P=prefix)Worksheet>', content, re.S)
+            if not workbook or not sheet:
+                raise
+            root = ET.fromstring(workbook[0] + sheet[0] + b'</' + workbook['prefix'] + b'Workbook>')
         sheet = next(s for s in root.findall(f'{{{NS}}}Worksheet') if s.get(f'{{{NS}}}Name') == 'Holdings')
         rows = []
         for node in sheet.findall(f'{{{NS}}}Table/{{{NS}}}Row'):

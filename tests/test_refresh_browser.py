@@ -14,7 +14,7 @@ from test_ux_browser import playwright
 def test_background_refresh_keeps_ui_usable_and_reloads_finished_snapshot(tmp_path):
     funds = tmp_path / 'etfs'
     funds.mkdir()
-    (tmp_path / 'holdings.csv').write_text('id,name,ticker,isin,shares\na,Invented Alpha,SYN-A,ZZ1111111111,1\nf,Invented ETF,SYN-F,ZZ9999999999,1\n')
+    (tmp_path / 'holdings.csv').write_text('id,name,ticker,isin,shares,instrument_type\na,Invented Alpha,SYN-A,ZZ1111111111,1,equity\nf,Invented ETF,SYN-F,ZZ9999999999,1,etf\n')
     (tmp_path / 'prices.json').write_text(json.dumps({'prices': {
         ticker: dict(price=value, currency='EUR', observed_at='2026-09-01T12:00:00+00:00')
         for ticker, value in [('SYN-A', 20), ('SYN-F', 100)]}, 'fx': {}}))
@@ -72,11 +72,11 @@ render_app(directory, price_service=PriceService(StaticProvider(directory / 'pri
             page = browser.new_page(viewport={'width': 1440, 'height': 1000})
             page.goto(f'http://127.0.0.1:{port}')
             page.get_by_role('tab', name='Exposure', exact=True).click()
-            summary = page.locator('.st-key-exposure_summary')
+            refresh_status = page.get_by_test_id('stSidebar').get_by_text('Discovering and updating ETF holdings', exact=False)
             results = page.locator('.st-key-exposure_results')
             page.get_by_role('button', name='Data & settings', exact=True).click()
             page.get_by_text('ETF refresh & snapshots', exact=True).click()
-            playwright.expect(page.get_by_text('Updating ETF holdings in the background', exact=False)).to_be_visible(timeout=15000)
+            playwright.expect(refresh_status).to_be_visible(timeout=15000)
             page.keyboard.press('Escape')
             playwright.expect(results.get_by_role('cell', name='70.00', exact=True)).to_have_count(1)
             page.get_by_role('textbox', name='Search exposure').fill('Alpha')
@@ -84,7 +84,7 @@ render_app(directory, price_service=PriceService(StaticProvider(directory / 'pri
             playwright.expect(results).to_contain_text('1 matching assets')
             (tmp_path / 'release').touch()
             playwright.expect(results.get_by_role('table', name='Exposure assets').get_by_role('cell', name='100.00', exact=True)).to_have_count(1, timeout=15000)
-            playwright.expect(summary).not_to_contain_text('Updating ETF holdings in the background')
+            playwright.expect(refresh_status).to_have_count(0)
             playwright.expect(page.get_by_role('textbox', name='Search exposure')).to_have_value('Alpha')
             playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
             status = json.loads((tmp_path / '.cache/etf-refresh/status.json').read_text())

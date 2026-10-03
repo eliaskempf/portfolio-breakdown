@@ -12,6 +12,8 @@
   The full icon is used for desktop branding; the favicon SVG is used in the browser.
 - V1 includes the experimental holdings import and later live-price linking from
   main (330ef27). Futures sandbox modules, UI and CLI are excluded.
+- V1 also includes the isolated ETF discovery, source setup, bond summaries and
+  separate overnight-rate basket support described in the integration record below.
 
 ## Milestones and status
 
@@ -318,3 +320,45 @@ Remaining limitations and release gates:
 
 The integration commits are ready for release-session review. This handoff does
 not approve a merge, tag, candidate distribution or publication.
+
+## ETF integration review and validation (2026-10-03)
+
+Integrated the two ETF commits and their handoff commit (`6a749d2`) into release-v1
+by fast-forward from `6fd87c6`. No futures commits or dependency changes were
+needed. The original working checkout and the ETF preparation checkout were not
+modified. Release tooling, uv development, onboarding and import behavior remain.
+
+Release review added three focused corrections with synthetic regression tests:
+
+- Manual CSV snapshots retain an explicit manual provider choice, including funds
+  present in the legacy registry. Automatic/forced refresh cannot overwrite them;
+  saving a reviewed official source restores provider updates.
+- WKN catalogue matches require the product metadata to confirm the catalogue's
+  ISIN before its identifiers are accepted.
+- iShares XML parsing preserves inherited namespaces. Malformed disclaimer
+  recovery isolates the holdings sheet without repairing its financial contents.
+
+The locked environment's complete 845-test run reported 843 passes and two browser
+test failures: an immediate chart-count assertion and an outdated refresh-status
+selector. After correcting those checks, all four tests in the affected browser
+modules passed. All 845 tests, including the 28 required browser tests, are covered
+across these runs with no skips. The refresh fixture now declares its invented
+stock type so it cannot trigger live discovery. Ruff and diff checks pass.
+
+The source-app browser/lifecycle smoke test also passed. It now uploads, previews
+and saves an invented bond CSV, opens the default summary chart and security list,
+and checks that backup/restore preserves its snapshots. All previews use temporary
+synthetic workspaces; no existing session was restarted or private data accessed.
+The rebuilt, extracted Linux executable passed the same expanded browser/lifecycle
+smoke, including the new manual setup and backup/restore route. Wheel/source archive
+content checks and frozen source/provenance checks also passed.
+
+The updated privacy review scanned 44 reachable release commits, 558 unique source
+blobs and 201 current allowed files, with no prohibited paths or recognized private
+content. Public provider identifiers and invented fixtures were reviewed. The
+earlier limitation about interpreter paths in locally built binaries still applies;
+local builds are validation artifacts, not distributable candidates.
+
+Native Windows/Ubuntu acceptance, fresh live-provider acceptance and explicit
+publication approval remain pending. The next distributable candidate must be
+built from the final clean integrated commit on the hosted Windows/Linux runners.

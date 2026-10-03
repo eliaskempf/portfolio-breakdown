@@ -1004,6 +1004,8 @@ fractions of the whole fund. Bond/money-market files also require an explicit
 `market_currency`, ISO `maturity` and `credit_rating`. Review identity, date,
 interpretation and coverage before **Save breakdown**. Source and upload drafts
 remain in session memory until saved. Partial data retains `Other`.
+Saving a manual CSV disables provider refresh for that snapshot, including funds
+with built-in integrations. Preview and save an official source to re-enable it.
 
 ### Bonds and overnight-rate funds
 

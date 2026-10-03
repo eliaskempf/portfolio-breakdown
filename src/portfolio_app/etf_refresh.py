@@ -18,7 +18,7 @@ from portfolio_app.vaneck import refresh_snapshot as refresh_vaneck
 
 
 def supported(fund):
-    return fund.manifest_path is not None and (fund.isin in SOURCES or fund.isin == 'IE00BMC38736'
+    return fund.provider != 'manual' and fund.manifest_path is not None and (fund.isin in SOURCES or fund.isin == 'IE00BMC38736'
                                               or bool(fund.provider and fund.product_url))
 
 

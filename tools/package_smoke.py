@@ -9,6 +9,7 @@ import time
 from urllib.request import urlopen
 import json
 import re
+import csv
 from io import BytesIO
 from zipfile import ZipFile
 
@@ -60,6 +61,59 @@ def wait_for_instance(state, process):
                 pass
         time.sleep(.2)
     raise RuntimeError('Packaged application did not become ready.')
+
+
+def add_synthetic_fund(workspace):
+    """Seed an invented, manually priced fund for the packaged CSV setup route."""
+    path = workspace / 'holdings.csv'
+    with path.open(encoding='utf-8', newline='') as handle:
+        reader = csv.DictReader(handle)
+        rows, columns = list(reader), reader.fieldnames
+    fund = dict(id='synthetic-bond-fund', name='Synthetic bond fund', isin='ZZ0000009991',
+                shares='1', instrument_type='etf', manual_price='100', manual_price_currency='EUR',
+                manual_price_date='2026-01-02', quantity_unit='units')
+    if 'position_key' in columns:
+        fund['position_key'] = 'synthetic-bond-position'
+    with path.open('w', encoding='utf-8', newline='') as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(dict.fromkeys([*columns, *fund])))
+        writer.writeheader()
+        writer.writerows([*rows, fund])
+    preferences = workspace / '.cache' / 'etf-refresh' / 'preferences.json'
+    preferences.parent.mkdir(parents=True, exist_ok=True)
+    preferences.write_text(json.dumps({'enabled': False, 'minimum_age_days': 1}), encoding='utf-8')
+
+
+def exercise_manual_breakdown(page):
+    page.get_by_role('tab', name='Exposure', exact=True).click()
+    page.get_by_role('button', name='Data & settings', exact=True).click()
+    page.get_by_text('ETF refresh & snapshots', exact=True).click()
+    page.get_by_text('Set up a breakdown', exact=True).click()
+    position = page.get_by_role('combobox', name='Fund position', exact=True)
+    position.click()
+    position.fill('Synthetic bond fund')
+    page.get_by_role('option', name='Synthetic bond fund', exact=True).click()
+    page.get_by_text('Normalized holdings CSV', exact=True).click()
+    page.locator('input[type=file]').set_input_files({
+        'name': 'invented-bonds.csv', 'mimeType': 'text/csv',
+        'buffer': (b'constituent_id,name,ticker,isin,weight,instrument_type,issuer,country,market_currency,maturity\n'
+                   b'bond-one,Invented bond one,,ZZ0000000016,0.6,bond,Invented issuer,Invented country,EUR,2030-01-02\n'
+                   b'bond-two,Invented bond two,,ZZ0000000024,0.3,bond,Invented issuer,Invented country,EUR,2036-01-02\n'),
+    })
+    page.get_by_role('combobox', name='Physical fund asset class', exact=True).click()
+    page.get_by_role('combobox', name='Physical fund asset class', exact=True).fill('fixed_income')
+    page.get_by_role('option', name='fixed_income', exact=True).click()
+    page.get_by_role('button', name='Preview breakdown', exact=True).click()
+    expect(page.get_by_text('90.00% represented', exact=False)).to_be_visible()
+    page.get_by_role('button', name='Save breakdown', exact=True).click()
+    panel = page.get_by_text('ETF breakdown: Synthetic bond fund', exact=True)
+    expect(panel).to_be_visible()
+    panel.click()
+    page.get_by_role('combobox', name='Summarize by', exact=True).wait_for()
+    expect(page.locator('.js-plotly-plot').last).to_be_visible()
+    page.get_by_role('radio', name='Holdings', exact=True).click()
+    table = page.get_by_role('table', name='Synthetic bond fund holdings', exact=True)
+    expect(table.get_by_text('Invented bond one', exact=True)).to_be_visible()
+    expect(page.get_by_test_id('stException')).to_have_count(0)
 
 
 def smoke(command):
@@ -172,6 +226,7 @@ def smoke(command):
                 child.wait(timeout=15)
                 assert child.returncode == 0
                 assert not list((state / 'sessions').glob('*.json'))
+                add_synthetic_fund(workspace)
                 saved = (workspace / 'holdings.csv').read_bytes()
                 child = subprocess.Popen(command + ['--foreground', '--no-browser', '--data-dir', str(workspace)],
                                          cwd=root, env=env, stdout=handle, stderr=handle)
@@ -184,6 +239,7 @@ def smoke(command):
                     expect(page.get_by_role('table', name='Positions', exact=True)
                            .get_by_text('Synthetic persistent position', exact=True)).to_be_visible()
                     expect(page.get_by_test_id('stException')).to_have_count(0)
+                    exercise_manual_breakdown(page)
                     browser.close()
                 subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,
                                check=True, capture_output=True, timeout=30)
@@ -214,6 +270,8 @@ def smoke(command):
                 subprocess.run(command + ['--data-dir', str(restored), '--restore-from', str(backup)],
                                env=env, cwd=root, check=True, capture_output=True, timeout=30)
                 assert (restored / 'holdings.csv').read_bytes() == saved
+                assert {p.name: p.read_bytes() for p in (workspace / 'etfs').iterdir()} == {
+                    p.name: p.read_bytes() for p in (restored / 'etfs').iterdir()}
             except BaseException as exc:
                 handle.flush()
                 print(log.read_text(encoding='utf-8'), file=sys.stderr)

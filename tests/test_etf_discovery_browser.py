@@ -78,7 +78,8 @@ def test_bond_summary_defaults_charts_and_security_details(fund_page):
     page = fund_page
     dialog = detail(page, 'Invented issuer bond one', 'Invented fund')
     dialog.get_by_role('combobox', name='Summarize by').wait_for()
-    assert dialog.locator('.js-plotly-plot').count() == 1
+    playwright.expect(dialog.locator('.js-plotly-plot')).to_have_count(1)
+    playwright.expect(dialog.locator('.js-plotly-plot')).to_be_visible()
     dialog.get_by_role('combobox', name='Summarize by').click()
     dialog.get_by_role('combobox', name='Summarize by').fill('Maturity')
     page.get_by_role('option', name='Maturity', exact=True).click()

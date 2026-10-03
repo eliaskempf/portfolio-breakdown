@@ -189,6 +189,36 @@ def test_manual_review_partial_weights_lock_and_stale_edit(tmp_path):
     assert composition_summary(fund, 'Issuer')['Fund allocation %'].sum() == pytest.approx(100)
 
 
+def test_manual_snapshot_keeps_source_choice_for_registered_isin(tmp_path, monkeypatch):
+    from portfolio_app.etf_refresh import supported
+    from portfolio_app.etf_sources import SOURCES, source_for
+    provider = Provider()
+    source = Discovery(provider).resolve({'isin': FUND})[1]
+    monkeypatch.setitem(SOURCES, FUND, source)
+    install_snapshot(tmp_path / 'etfs', FUND, source=source, fetch=provider)
+    content = f'constituent_id,name,ticker,isin,weight,instrument_type\na,Invented bond,,{BOND_A},0.6,bond\n'.encode()
+    draft = prepare_draft(tmp_path, {'isin': FUND, 'name': 'Invented fund'}, content=content,
+                          as_of=date(2026, 1, 2), asset_class='fixed_income')
+    save_draft(tmp_path, draft)
+    fund = load_funds(tmp_path / 'etfs')[0]
+    assert not supported(fund) and source_for(fund) is None
+    holdings = pd.DataFrame([dict(id='fund', isin=FUND, shares=1)])
+    service = RefreshCoordinator(refresh=lambda _: pytest.fail('Manual composition must remain unchanged'))
+    assert not service.schedule(tmp_path, holdings, [fund], force=True)
+    with pytest.raises(DataError, match='No configured provider'):
+        refresh_snapshot(fund, fetch=lambda _: pytest.fail('Manual source must not download'))
+    # An explicitly reviewed official source can restore automatic updates.
+    save_draft(tmp_path, prepare_draft(tmp_path, {'isin': FUND}, product_url=PRODUCT, fetch=provider))
+    assert supported(load_funds(tmp_path / 'etfs')[0])
+
+
+def test_wkn_catalogue_product_must_confirm_catalogue_isin():
+    provider = Provider()
+    provider.facts = metadata(isin=invented_isin(888))
+    with pytest.raises(DataError, match='identity'):
+        Discovery(provider).resolve({'wkn': '000999'})
+
+
 def test_maturity_boundaries_and_missing_data():
     assert maturity_band('', date(2026, 1, 2)) == 'Unknown'
     assert maturity_band('2025-01-01', date(2026, 1, 2)) == 'Matured / date needs review'

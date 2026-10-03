@@ -211,7 +211,8 @@ class Discovery:
                    and ((row.get('isin') == isin) if isin else (wkn and row.get('wkn') == wkn))]
         if len(matches) == 1:
             row = matches[0]
-            result_isin, source = source_from_url('https://www.ishares.com' + row['productPageUrl'], self.fetch, expected_isin=isin)
+            result_isin, source = source_from_url('https://www.ishares.com' + row['productPageUrl'], self.fetch,
+                                                  expected_isin=isin or row['isin'])
             return result_isin, replace(source, wkn=row.get('wkn', ''))
         if len(matches) > 1:
             raise DataError('Ambiguous provider identity. Select an exact product page.')
