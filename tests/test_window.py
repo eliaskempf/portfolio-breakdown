@@ -1,6 +1,6 @@
 """Window policy and child-channel tests; all workspaces are invented."""
-from base64 import b64encode
 from io import BytesIO
+import json
 import subprocess
 import sys
 import threading
@@ -12,6 +12,12 @@ import pytest
 from portfolio_app.holdings import DataError
 from portfolio_app.window import WindowPresentation, navigation_action
 from portfolio_app.window_process import contained_child, gated_command
+
+
+@pytest.fixture(autouse=True)
+def no_native_dispatch(monkeypatch):
+    # Unit tests have no WinForms event loop; native dispatch is exercised in the GUI smoke.
+    monkeypatch.setattr(WindowPresentation, '_dispatch', lambda *args: None)
 
 
 @pytest.mark.parametrize('url,expected', [
@@ -188,8 +194,15 @@ class FakeWebview:
         self.window = SimpleNamespace(
             events=SimpleNamespace(**{name: Event() for name in ('before_show', 'initialized', 'closing', 'closed', 'loaded')}),
             load_url=self.load_url, destroy=self.destroy,
-            evaluate_js=lambda js: True if 'BreakdownIntro' in js else 'first-view-rendered')
+            evaluate_js=self.evaluate_js)
         self.urls = []
+    def evaluate_js(self, js):
+        if 'PortfolioSplash?.open(' in js:
+            url = json.loads(js.split('open(', 1)[1][:-1])
+            if url not in self.urls:
+                self.urls.append(url)
+            return True
+        return 'first-view-rendered'
     def create_window(self, *args, **kwargs):
         assert kwargs['js_api'] is None
         assert kwargs['fullscreen'] is False
@@ -248,27 +261,19 @@ def test_mshtml_fallback_is_refused(monkeypatch):
 
 
 @pytest.mark.parametrize('close_during_intro', [False, True])
-def test_startup_waits_for_animation_or_window_close(monkeypatch, close_during_intro):
+def test_app_loads_behind_animation_unless_window_closed(monkeypatch, close_during_intro):
     presentation = WindowPresentation()
     fake = FakeWebview()
     presentation.webview = fake
     monkeypatch.setattr(presentation, '_install_navigation', lambda url: presentation.renderer_ready.set())
-    probes = []
-    def evaluate(js):
-        if 'BreakdownIntro' not in js:
-            return 'first-view-rendered'
-        assert not fake.urls, 'App must not replace the animation before it finishes'
-        probes.append(js)
+    def monitor(on_ready):
         if close_during_intro:
             fake.window.events.closing.fire()
-        return len(probes) > 1
-    fake.window.evaluate_js = evaluate
-    def monitor(on_ready):
         on_ready()
         return 0
     assert presentation.run('http://127.0.0.1:1', threading.Event(), monitor) == 0
-    assert len(probes) == (1 if close_during_intro else 2)
     assert bool(fake.urls) is not close_during_intro
+
 
 
 def test_closing_window_stops_monitor(monkeypatch):
@@ -299,6 +304,7 @@ def test_frozen_browser_relaunch_keeps_dispatch_flag(monkeypatch):
 
 def test_native_navigation_and_popup_handlers_keep_window_on_app(monkeypatch):
     monkeypatch.setattr(WindowPresentation, '_install_window_controls', lambda self: None)
+    monkeypatch.setattr(WindowPresentation, '_install_startup_document', lambda *args: None)
     opened = []
     monkeypatch.setattr('portfolio_app.desktop.open_browser', opened.append)
     class NativeEvent(Event):
@@ -309,17 +315,21 @@ def test_native_navigation_and_popup_handlers_keep_window_on_app(monkeypatch):
     popup_event = NativeEvent()
     popup_event += prior_popup
     navigated = []
-    core = SimpleNamespace(NewWindowRequested=popup_event, Navigate=navigated.append)
-    control = SimpleNamespace(CoreWebView2=core, NavigationStarting=NativeEvent())
+    messages = []
+    prior_message = lambda sender, args: messages.append(args)
+    message_event = NativeEvent()
+    message_event += prior_message
+    core = SimpleNamespace(NewWindowRequested=popup_event, FrameNavigationStarting=NativeEvent(), ExecuteScriptAsync=navigated.append)
+    control = SimpleNamespace(CoreWebView2=core, NavigationStarting=NativeEvent(), WebMessageReceived=message_event)
     presentation = WindowPresentation()
     presentation.window = SimpleNamespace(html='<p>Synthetic startup</p>', native=SimpleNamespace(
-        browser=SimpleNamespace(on_new_window_request=prior_popup), webview=control))
+        browser=SimpleNamespace(on_new_window_request=prior_popup, on_script_notify=prior_message), webview=control))
     presentation._install_navigation('http://127.0.0.1:8519')
     assert presentation.renderer_ready.is_set()
-    startup_uri = 'data:text/html;charset=utf-8;base64,' + b64encode(presentation.window.html.encode()).decode()
+    startup_uri = 'http://127.0.0.1:8519/__portfolio_window__'
     for state, uri, cancelled in [('starting', startup_uri, False),
                                    ('starting', 'data:text/html,unexpected', True),
-                                   ('document-loaded', startup_uri, True)]:
+                                   ('document-loaded', startup_uri, False)]:
         presentation.state = state
         args = SimpleNamespace(Uri=uri, Cancel=False)
         control.NavigationStarting.fire(None, args)
@@ -334,7 +344,13 @@ def test_native_navigation_and_popup_handlers_keep_window_on_app(monkeypatch):
         popup_event.fire(None, args)
         assert args.Handled
     assert opened == ['https://example.org/help', 'https://example.org/provider']
-    assert navigated == ['http://127.0.0.1:8519/example']
+    assert navigated == ['document.querySelector("#portfolio-app").src = "http://127.0.0.1:8519/example"']
+    toggled = []
+    monkeypatch.setattr(presentation, '_toggle_fullscreen', lambda: toggled.append(True))
+    for source in ['https://example.org', 'http://127.0.0.1:8519/', startup_uri]:
+        message_event.fire(None, SimpleNamespace(Source=source, WebMessageAsJson='"portfolio:fullscreen"'))
+    assert toggled == [True]
+    assert len(messages) == 2
 
 
 @pytest.mark.parametrize('state,expected', [('minimized', 'normal'), ('maximized', 'maximized')])
@@ -353,7 +369,8 @@ def test_focus_restores_minimized_window_without_shrinking_maximized_window(monk
 
 def test_fullscreen_toggle_restores_maximized_frame_and_borderless_exit(monkeypatch):
     monkeypatch.setitem(sys.modules, 'System.Windows.Forms',
-                        SimpleNamespace(FormWindowState=SimpleNamespace(Maximized='maximized')))
+                        SimpleNamespace(FormWindowState=SimpleNamespace(Maximized='maximized', Normal='normal'),
+                                        Screen=SimpleNamespace(FromControl=lambda native: SimpleNamespace(Bounds='monitor'))))
     native = SimpleNamespace(is_fullscreen=False, WindowState='maximized')
     def toggle():
         native.is_fullscreen = not native.is_fullscreen
@@ -361,15 +378,15 @@ def test_fullscreen_toggle_restores_maximized_frame_and_borderless_exit(monkeypa
     native.toggle_fullscreen = toggle
     presentation = WindowPresentation()
     presentation.window = SimpleNamespace(native=native)
-    presentation.fullscreen_button = SimpleNamespace(Text='Fullscreen (F11)')
-    presentation.exit_button = SimpleNamespace(Visible=False)
+    modes = []
+    monkeypatch.setattr(presentation, '_sync_window_controls', lambda: modes.append(native.is_fullscreen))
     presentation._toggle_fullscreen()
-    assert native.is_fullscreen and presentation.exit_button.Visible
-    assert presentation.fullscreen_button.Text == 'Windowed (F11)'
+    assert native.is_fullscreen and native.Bounds == 'monitor'
+    assert native.WindowState == 'normal'
     presentation._toggle_fullscreen()
-    assert not native.is_fullscreen and not presentation.exit_button.Visible
+    assert not native.is_fullscreen
     assert native.WindowState == 'maximized'
-    assert presentation.fullscreen_button.Text == 'Fullscreen (F11)'
+    assert modes == [True, False]
 
 
 def test_windows_use_distinct_temporary_profiles(monkeypatch):

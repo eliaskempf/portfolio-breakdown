@@ -382,3 +382,49 @@ document during startup; unrelated data URLs remain blocked.
   and its owned server were stopped after verification.
 - Frozen Windows 11 acceptance remains unverified. This is an editable source
   preview, not a new release artifact.
+
+## Splash holds until rendering; app-style controls (2026-10-04)
+
+The splash now plays once, holds the completed logo with a subtle opacity pulse,
+and fades away only after the first view has rendered and its charts have drawn.
+The Streamlit page loads at full size underneath the splash, so slow startup is
+covered without delaying server loading. Reduced motion disables the pulse and
+fade. Explicit `--skip-intro` retains the window controls and bypasses the splash.
+Exceptions are revealed immediately; completed empty, setup and input-error views
+have an invisible readiness marker. A stalled startup offers Show application
+after 60 seconds instead of trapping the user behind the logo.
+
+A small same-origin shell hosts the existing app in a full-size frame. WebView2
+serves only the exact shell URL from bundled content before the server is ready;
+there is no extra server or dependency. The shell inspects rendered DOM and the
+readiness marker, without sending portfolio values to Python. This replaces the
+previous data-URL startup document. Navigation/popup restrictions cover the app
+frame too; local popups stay inside it so the controls remain available.
+
+The system-native toolbar is replaced by HTML/CSS buttons with app-sized text,
+icons, dark styling and a red rounded Exit button in borderless mode. Two fixed
+window commands are accepted only from the shell URL; no general Python API is
+exposed. F11 remains a native keyboard handler. Borderless mode uses a normal
+borderless Form at the exact monitor bounds, avoiding maximized-frame overscan;
+returning to windowed mode restores the maximized title-bar window.
+
+Validation:
+
+- 63 focused Linux tests passed (47 window/lifecycle and 16 intro/browser tests).
+  Coverage includes fast and slow rendering, pending charts, reduced motion,
+  exceptions, actual input-error and welcome views, skip mode, controls, timeout
+  recovery, navigation restrictions and shutdown. Ruff and diff checks passed.
+- 47 window/lifecycle tests passed on native Windows. A separate source preview
+  under `PortfolioWindowSplash-*` used only generated offline workspaces. Native
+  WebView2 checks covered animation/hold/reveal, all four tabs, charts, buttons,
+  real foreground-checked F11 input, focus and Exit/server shutdown. A deliberate
+  six-second app delay verified that the finished logo stayed over incomplete
+  content. Final source validation used port 56383; its preview/server are stopped.
+- Native borderless bounds equaled the monitor bounds, Form client and outer sizes
+  matched, and WebView2 started at client coordinate (0, 0) with no side padding.
+  The rendered header was visually inspected using synthetic content only.
+- The wheel includes the shell module and original animation asset. Wheel path,
+  tracked-source and staged-source privacy checks passed. No dependency changes.
+
+Earlier Windows user copies were preserved. Frozen packaging, Windows 11 and
+additional display-scaling configurations remain separate acceptance checks.

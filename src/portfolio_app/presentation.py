@@ -65,6 +65,11 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 """.replace("__GAIN_COLOR__", GAIN_COLOR).replace("__LOSS_COLOR__", LOSS_COLOR)
 
 
+def mark_view_ready() -> None:
+    """Signal completed empty/error views too, without adding layout space."""
+    st.html('<style data-portfolio-view-ready="true">/* View rendered */</style>')
+
+
 def apply_style() -> None:
     st.html(CSS)
     install_grid_interactions()

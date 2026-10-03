@@ -1,8 +1,7 @@
 """Opt-in desktop prototype. Importing this module never imports pywebview."""
-from base64 import b64encode
+import json
 import logging
 import os
-from pathlib import Path
 import signal
 import sys
 import threading
@@ -10,38 +9,10 @@ import time
 from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
 
+from portfolio_app.window_splash import startup_html
+
 LOG = logging.getLogger(__name__)
 RUNTIME_URL = 'https://developer.microsoft.com/microsoft-edge/webview2/'
-LOADING_HTML = '''<!doctype html><title>Portfolio Breakdown</title>
-<style>html{background:#11151c;color:#e3e7ef;font:16px system-ui}body{padding:24px}</style>
-<p>Starting Portfolio Breakdown…</p>'''
-
-
-def startup_html():
-    """Reuse the supplied animation before Streamlit is available."""
-    html = (Path(__file__).with_name('intro_frontend') / 'index.html').read_text(encoding='utf-8')
-    style = '''<style>
-    html,body{height:100%;overflow:hidden}
-    body main{width:100%;height:100dvh;margin:0;display:flex;align-items:center;justify-content:center}
-    header,.controls,footer{display:none}
-    .stage{width:100%;border:0;border-radius:0}
-    #scene{width:100%;height:min(360px,100dvh)}
-    </style>'''
-    return html.replace('</head>', style + '</head>')
-
-
-# No portfolio values leave the renderer.
-VIEW_PROBE = """(() => {
- const exception = document.querySelector('[data-testid="stException"]');
- if (exception) return 'failed';
- const marker = document.querySelector('[data-portfolio-view-ready="true"]');
- const welcome = [...document.querySelectorAll('h1,h2,h3')].some(
-   e => e.textContent === 'Welcome to Portfolio Breakdown');
- const overview = document.querySelector('[role="tab"][aria-selected="true"]');
- const chart = document.querySelector('.js-plotly-plot .main-svg');
- return marker || welcome || (overview && overview.textContent === 'Overview' && chart)
-   ? 'first-view-rendered' : 'document-loaded';
-})()"""
 
 
 def navigation_action(url: str, origin: str) -> str:
@@ -86,6 +57,7 @@ class WindowPresentation:
         self.color_scheme = 'dark'
         self.show_intro = True
         self.startup_loaded = threading.Event()
+        self.server_started = threading.Event()
 
     def prepare(self):
         from portfolio_app.holdings import DataError
@@ -137,56 +109,32 @@ class WindowPresentation:
 
     def _toggle_fullscreen(self):
         """Called on the GUI thread; returning to windowed mode stays maximized."""
-        from System.Windows.Forms import FormWindowState
+        from System.Windows.Forms import FormWindowState, Screen
         native = self.window.native
+        screen = Screen.FromControl(native)
         native.toggle_fullscreen()
-        if not native.is_fullscreen:
+        if native.is_fullscreen:
+            # A maximized borderless Form can retain the resize-frame overscan.
+            # Normal state with exact monitor bounds has no non-client inset.
+            native.WindowState = FormWindowState.Normal
+            native.Bounds = screen.Bounds
+        else:
             native.WindowState = FormWindowState.Maximized
-        self.fullscreen_button.Text = 'Windowed (F11)' if native.is_fullscreen else 'Fullscreen (F11)'
-        self.exit_button.Visible = native.is_fullscreen
+        self._sync_window_controls()
+
+    def _sync_window_controls(self):
+        native = self.window.native
+        if native.webview.CoreWebView2 is not None:
+            native.webview.CoreWebView2.ExecuteScriptAsync(
+                f'window.PortfolioSplash?.setFullscreen({json.dumps(bool(native.is_fullscreen))})')
 
     def _install_window_controls(self):
-        from System.Drawing import Color, Region, Size
-        from System.Drawing.Drawing2D import GraphicsPath
-        from System.Windows.Forms import (BorderStyle, Button, DockStyle, FlatStyle,
-                                          FlowDirection, FlowLayoutPanel, Keys, Padding)
+        from System.Drawing import Color
+        from System.Windows.Forms import Keys, Padding
         native = self.window.native
-        toolbar = FlowLayoutPanel()
-        toolbar.Dock = DockStyle.Top
-        toolbar.BorderStyle = getattr(BorderStyle, 'None')
-        toolbar.FlowDirection = FlowDirection.RightToLeft
-        toolbar.WrapContents = False
-        toolbar.Padding = Padding(0, 8, 12, 8)
-        toolbar.Height = 48
-        toolbar.BackColor = Color.FromArgb(17, 21, 28)
-        def button(label, width, color, hover):
-            control = Button()
-            control.Text = control.AccessibleName = label
-            control.Size = Size(width, 32)
-            control.Margin = Padding(8, 0, 0, 0)
-            control.FlatStyle = FlatStyle.Flat
-            control.FlatAppearance.BorderSize = 0
-            control.BackColor = Color.FromArgb(*color)
-            control.ForeColor = Color.White
-            control.FlatAppearance.MouseOverBackColor = Color.FromArgb(*hover)
-            control.FlatAppearance.MouseDownBackColor = Color.FromArgb(*color)
-            shape = GraphicsPath()
-            for x, y, angle in [(0, 0, 180), (width-12, 0, 270), (width-12, 20, 0), (0, 20, 90)]:
-                shape.AddArc(x, y, 12, 12, angle, 90)
-            shape.CloseFigure()
-            control.Region = Region(shape)
-            shape.Dispose()
-            toolbar.Controls.Add(control)
-            return control
-        self.exit_button = button('Exit', 84, (190, 43, 55), (215, 55, 68))
-        self.exit_button.AccessibleDescription = 'Close Portfolio Breakdown and stop its server'
-        self.exit_button.Visible = False
-        self.exit_button.Click += lambda sender, args: native.Close()
-        self.fullscreen_button = button('Fullscreen (F11)', 132, (35, 43, 56), (48, 59, 75))
-        self.fullscreen_button.Click += lambda sender, args: self._toggle_fullscreen()
-        native.Controls.Add(toolbar)
-        # Dock the browser after the toolbar so controls never cover app content.
-        native.webview.BringToFront()
+        native.Padding = Padding(0)
+        native.BackColor = Color.FromArgb(17, 21, 28)
+        native.webview.Margin = Padding(0)
         native.KeyPreview = True
         pressed = False
         def key_down(sender, args):
@@ -212,12 +160,9 @@ class WindowPresentation:
         browser = self.window.native.browser
         control = self.window.native.webview
         self._install_window_controls()
-        startup_url = 'data:text/html;charset=utf-8;base64,' + b64encode(self.window.html.encode('utf-8')).decode('ascii')
         def navigate(sender, args):
             uri = str(args.Uri)
-            # WebView2 can report NavigateToString as a data URL. Permit only
-            # the exact bundled startup document, and only during startup.
-            if uri in {'about:blank', startup_url} and self.state == 'starting':
+            if uri == 'about:blank':
                 return
             action = navigation_action(uri, origin)
             if action != 'allow':
@@ -231,7 +176,8 @@ class WindowPresentation:
             if action == 'external':
                 open_browser(uri)
             elif action == 'allow':
-                control.CoreWebView2.Navigate(uri)
+                control.CoreWebView2.ExecuteScriptAsync(
+                    f'document.querySelector("#portfolio-app").src = {json.dumps(uri)}')
         def initialized(sender=None, args=None):
             if args is not None and not args.IsSuccess:
                 self.failures.append(RuntimeError('WebView2 initialization failed.'))
@@ -242,6 +188,20 @@ class WindowPresentation:
                 # Replace pywebview's unrestricted popup handler; keep downloads intact.
                 core.NewWindowRequested -= browser.on_new_window_request
                 core.NewWindowRequested += popup
+                core.FrameNavigationStarting += navigate
+                self._install_startup_document(core, origin)
+                def message(sender, args):
+                    payload = json.loads(str(args.WebMessageAsJson))
+                    if str(args.Source) == origin + '/__portfolio_window__' and isinstance(payload, str):
+                        if payload == 'portfolio:fullscreen':
+                            self._toggle_fullscreen()
+                            return
+                        if payload == 'portfolio:exit':
+                            self.window.native.Close()
+                            return
+                    browser.on_script_notify(sender, args)
+                control.WebMessageReceived -= browser.on_script_notify
+                control.WebMessageReceived += message
                 self.renderer_ready.set()
             except Exception as exc:
                 self.failures.append(exc)
@@ -252,14 +212,32 @@ class WindowPresentation:
         else:
             control.CoreWebView2InitializationCompleted += initialized
 
+    def _install_startup_document(self, core, origin):
+        """Serve only the bundled shell inside WebView2, even before the server starts."""
+        from System.IO import MemoryStream
+        from System.Text import Encoding
+        from Microsoft.Web.WebView2.Core import (CoreWebView2WebResourceContext,
+                                                CoreWebView2WebResourceRequestSourceKinds)
+        startup_url = origin + '/__portfolio_window__'
+        html = startup_html(show_intro=self.show_intro)
+        def serve(sender, args):
+            if str(args.Request.Uri) == startup_url:
+                stream = MemoryStream(Encoding.UTF8.GetBytes(html))
+                args.Response = core.Environment.CreateWebResourceResponse(
+                    stream, 200, 'OK', 'Content-Type: text/html; charset=utf-8\r\nCache-Control: no-store')
+        core.AddWebResourceRequestedFilter(startup_url, CoreWebView2WebResourceContext.Document,
+                                          CoreWebView2WebResourceRequestSourceKinds.Document)
+        core.WebResourceRequested += serve
+
     def run(self, url, stopped, monitor):
         from portfolio_app.holdings import DataError
         from portfolio_app.settings import APP_NAME, state_path, icon_path
         webview = self.webview
         webview.settings.update(ALLOW_DOWNLOADS=True, ALLOW_FILE_URLS=False,
                                 OPEN_EXTERNAL_LINKS_IN_BROWSER=False, REMOTE_DEBUGGING_PORT=None)
+        self.app_url = f'{url}/?embed_options={self.color_scheme}_theme'
         self.window = webview.create_window(APP_NAME + ' — experimental window',
-                                           html=startup_html() if self.show_intro else LOADING_HTML,
+                                           url=url + '/__portfolio_window__',
                                            width=1280, height=900, min_size=(800, 600),
                                            fullscreen=False, maximized=True, background_color='#11151c',
                                            text_select=True, zoomable=True, js_api=None)
@@ -290,22 +268,15 @@ class WindowPresentation:
                     raise DataError('The window renderer did not initialize within 30 seconds.')
             if self.failures:
                 raise DataError('The window renderer could not initialize.')
-            if self.show_intro:
-                deadline = time.monotonic() + 8
-                while not stopped.is_set() and time.monotonic() < deadline:
-                    if self.startup_loaded.is_set():
-                        try:
-                            if self.window.evaluate_js('Boolean(window.BreakdownIntro?.completed)') is True:
-                                break
-                        except Exception:
-                            LOG.debug('Startup animation is still loading', exc_info=True)
-                    stopped.wait(.1)
+            while not self.startup_loaded.wait(.1):
+                if stopped.is_set():
+                    return
+                if time.monotonic() >= deadline:
+                    raise DataError('The startup view did not load within 30 seconds.')
             if not stopped.is_set():
                 self.state = 'server-reachable'
-                # With paired themes, theme.base alone still follows the OS.
-                # Streamlit's initial-theme option also applies without embed=true.
-                scheme = 'light' if self.color_scheme == 'light' else 'dark'
-                self.window.load_url(f'{url}/?embed_options={scheme}_theme')
+                self.server_started.set()
+                loaded()
         def supervise():
             try:
                 result[0] = monitor(on_ready)
@@ -332,20 +303,22 @@ class WindowPresentation:
                 stopped.set()
                 worker.join(timeout=3)
         def loaded():
-            if self.state == 'starting':
-                self.startup_loaded.set()
-            else:
-                try:
-                    self.state = self.window.evaluate_js(VIEW_PROBE)
-                    if self.state == 'failed':
-                        LOG.error('Streamlit rendered an application exception; the view remains visible.')
-                except Exception:
-                    LOG.exception('Could not inspect the first rendered view')
+            self.startup_loaded.set()
+            self._dispatch(self._sync_window_controls)
+            if not self.server_started.is_set():
+                return
+            try:
+                # Idempotent open also restores the frame after a window reload.
+                self.window.evaluate_js(f'window.PortfolioSplash?.open({json.dumps(self.app_url)})')
+                self.state = self.window.evaluate_js('window.PortfolioSplash?.state') or 'document-loaded'
+                if self.state == 'failed':
+                    LOG.error('Streamlit rendered an application exception; the view remains visible.')
+            except Exception:
+                LOG.exception('Could not inspect the first rendered view')
         self.window.events.loaded += loaded
-        # Readiness inspection is deliberately DOM-only; Streamlit may finish after loaded.
         def inspect_view():
-            while not self.closed.wait(.5) and not finished.is_set():
-                if self.state in {'server-reachable', 'document-loaded'}:
+            while not self.closed.wait(.2) and not finished.is_set():
+                if self.server_started.is_set() and self.state not in {'first-view-rendered', 'failed'}:
                     loaded()
         inspector = threading.Thread(target=inspect_view, daemon=True)
         try:
