@@ -5,6 +5,14 @@ from test_startup import launch_workspaces
 from test_ui import by_label
 
 
+def add_category(app, name, target=None):
+    by_label(app.text_input, 'Category name').set_value(name)
+    if target is not None:
+        by_label(app.number_input, 'Target (%) · optional').set_value(target)
+    by_label(app.button, 'Add category').click().run()
+    assert not app.exception
+
+
 def test_welcome_demo_and_manual_save_are_isolated(tmp_path):
     personal = tmp_path / 'invented-personal'
     demo = create_demo_data(tmp_path / 'demo')
@@ -116,13 +124,16 @@ def test_guided_categories_targets_and_first_physical_position(tmp_path):
     personal = tmp_path / 'invented-personal'
     app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
     by_label(app.button, 'Start my portfolio').click().run()
-    by_label(app.text_area, 'Categories (one per line)').set_value('Invented equities\nInvented gold').run()
-    by_label(app.toggle, 'Add target allocations').set_value(True).run()
-    by_label(app.number_input, 'Invented equities target (%)').set_value(80.)
-    by_label(app.number_input, 'Invented gold target (%)').set_value(10.)
+    assert by_label(app.text_input, 'Category name').value == ''
+    add_category(app, 'Invented equities', 80.)
+    add_category(app, 'Invented gold', 30.)
     by_label(app.button, 'Save categories & continue').click().run()
     assert app.error and not (personal / 'allocation.yaml').exists()
-    by_label(app.number_input, 'Invented gold target (%)').set_value(20.)
+    by_label(app.number_input, 'Target 2 (%)').set_value(20.).run()
+    assert not (personal / 'allocation.yaml').exists()
+    by_label(app.button, 'Keep editing').click().run()
+    assert by_label(app.text_input, 'Category 1').value == 'Invented equities'
+    assert by_label(app.number_input, 'Target 2 (%)').value == 20.
     by_label(app.button, 'Save categories & continue').click().run()
     assert not app.exception
     config = load_allocation(personal / 'allocation.yaml')
@@ -150,6 +161,7 @@ def test_guided_optional_targets_and_finish_later(tmp_path):
     personal = tmp_path / 'invented-personal'
     app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
     by_label(app.button, 'Start my portfolio').click().run()
+    add_category(app, 'Invented reserve')
     by_label(app.button, 'Save categories & continue').click().run()
     assert not app.exception
     assert all(b.target is None for b in load_allocation(personal / 'allocation.yaml').buckets)
@@ -210,3 +222,29 @@ def test_existing_physical_holding_with_unknown_unit_is_not_assigned_ounces(tmp_
     assert not app.exception
     row = read_snapshot(path).holdings.iloc[0]
     assert row.quantity_unit == '' and row.shares == 10.
+
+
+def test_guided_confirmation_saves_only_after_continue(tmp_path):
+    from portfolio_app.allocation import load_allocation
+    personal = tmp_path / 'invented-personal'
+    app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
+    by_label(app.button, 'Start my portfolio').click().run()
+    add_category(app, 'Invented core', 100.)
+    assert not (personal / 'allocation.yaml').exists()
+    by_label(app.button, 'Continue to first position').click().run()
+    assert not app.exception
+    assert load_allocation(personal / 'allocation.yaml').buckets[0].target == 1.
+
+
+def test_guided_duplicate_remove_partial_targets_and_skip(tmp_path):
+    personal = tmp_path / 'invented-personal'
+    app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
+    by_label(app.button, 'Start my portfolio').click().run()
+    add_category(app, 'Invented core', 60.)
+    add_category(app, ' invented CORE ')
+    assert app.error and len(app.session_state['onboarding_rows']) == 1
+    add_category(app, 'Invented reserve')
+    app.button(key='onboarding_remove_0').click().run()
+    assert by_label(app.text_input, 'Category 1').value == 'Invented reserve'
+    by_label(app.button, 'Skip setup').click().run()
+    assert not app.exception and not (personal / 'allocation.yaml').exists()

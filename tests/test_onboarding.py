@@ -17,8 +17,8 @@ def test_categories_can_have_unknown_or_parent_relative_targets(tmp_path):
     assert len({b.id for b in loaded.buckets}) == 2
 
 
-@pytest.mark.parametrize('names,targets', [([], None), (['A',' a '], None), (['A','B'], [50,None]),
-    (['A','B'], [50,40]), (['A'], [float('nan')]), (['A'], [101])])
+@pytest.mark.parametrize('names,targets', [([], None), (['A',' a '], None), (['A','B'], [70,40]),
+    (['A',''], [50,50]), (['A'], [float('nan')]), (['A'], [101])])
 def test_invalid_setup_does_not_write(tmp_path, names, targets):
     with pytest.raises(DataError):
         save_initial_categories(tmp_path, names, targets, None)
@@ -36,3 +36,11 @@ def test_setup_refuses_existing_allocation_and_concurrent_holdings(tmp_path):
     with pytest.raises(DataError):
         save_initial_categories(other, ['Invented reserve'], None, None)
     assert not (other / 'allocation.yaml').exists()
+
+
+def test_partial_setup_preserves_unknown_targets_without_normalizing(tmp_path):
+    config = save_initial_categories(tmp_path, ['Invented core', 'Invented reserve'], [60., None], None)
+    assert [bucket.target for bucket in load_allocation(tmp_path / 'allocation.yaml').buckets] == [.6, None]
+    assert config.global_target(config.buckets[0].id) == .6
+    import math
+    assert math.isnan(config.global_target(config.buckets[1].id))

@@ -72,41 +72,6 @@ def render_guided_setup(directory, snapshot, allocation):
         _first_position()
         st.rerun()
 
-    @st.dialog('Set up your portfolio', width='large', dismissible=False)
-    def setup():
-        from hashlib import sha256
-        from portfolio_app.holdings import DataError
-        from portfolio_app.onboarding import save_initial_categories
-        st.caption('1 of 2 · Categories and optional targets')
-        st.write('Categories group what you own—for example Equities, Bonds & cash, Gold or Crypto. '
-                 'Each position belongs to one category. You can change these later in Rebalance → Targets.')
-        names_text = st.text_area('Categories (one per line)', value='Equities\nBonds & cash\nGold\nCrypto',
-                                  key='onboarding_categories', height=135)
-        names = [name.strip() for name in names_text.splitlines() if name.strip()]
-        targeted = st.toggle('Add target allocations', key='onboarding_targets')
-        targets = None
-        if targeted:
-            st.caption('These are shares of your whole portfolio. For example, a 5% Crypto target is separate '
-                       'from a later 60% Bitcoin target within Crypto.')
-            columns = st.columns(2)
-            targets = [columns[i % 2].number_input(f'{name} target (%)', min_value=0., max_value=100., value=None,
-                       key='onboarding_target_' + sha256(name.encode()).hexdigest()[:16] + f'_{i}')
-                       for i, name in enumerate(names)]
-            st.caption(f'Target total: {sum(value or 0 for value in targets):g}% · Complete targets must total 100%.')
-        else:
-            st.caption('No targets are assumed. You can organize holdings now and add targets later.')
-        save, skip = st.columns(2)
-        if save.button('Save categories & continue', type='primary', width='stretch'):
-            try:
-                save_initial_categories(directory, names, targets, snapshot.revision)
-            except (DataError, OSError) as exc:
-                st.error(str(exc))
-            else:
-                _first_position()
-                st.rerun()
-        if skip.button('Skip setup', width='stretch'):
-            st.session_state['onboarding_step'] = 'done'
-            st.rerun()
-        st.caption('Saving creates categories only. Your first position is a separate save in the next step.')
-    setup()
+    from portfolio_app.category_setup_ui import render_category_setup
+    render_category_setup(directory, snapshot, _first_position)
     return True

@@ -112,7 +112,10 @@ portfolio**. The demo uses invented positions/buy-ins/targets with public quotes
 real instrument history and supported issuer ETF breakdowns. Explicit
 `--offline-demo` uses synthetic offline fixtures instead. Demo edits reset on
 application restart. Starting your own portfolio offers optional categories and
-targets, then your first position. Skip setup to open empty Positions, where Add
+targets, then your first position. Add a name and optional percentage per row;
+Enter adds it and focuses the next blank name. Complete targets totaling 100%
+open a confirmation before saving. You can also save unfinished targets for later.
+Skip setup to open empty Positions, where Add
 position and provisional FinanzManager CSV/Excel import remain available. Saving
 categories is separate from saving holdings; Finish later creates no position.
 Existing portfolios skip the welcome dialog.

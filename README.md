@@ -105,6 +105,10 @@ data directory in the platform user-data location (see the installation guide).
 After a short intro, a fresh portfolio opens a welcome dialog with **Explore demo**
 and **Start my portfolio**. A skippable two-step guide explains categories and
 optional target allocations, then opens the first position with category assignment.
+Add categories one at a time with a name and optional portfolio target; examples
+are in the field help. Enter adds the row and focuses the next empty name. When
+complete targets reach 100%, choose to continue or keep editing. Blank or partial
+targets can be saved for later; nothing is automatically redistributed.
 Saving categories writes only the allocation; saving a position is a separate action.
 **Skip setup** opens empty Positions, where manual entry and experimental import
 remain available. **Finish later** leaves saved categories intact without adding a

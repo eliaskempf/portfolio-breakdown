@@ -9,15 +9,15 @@ from portfolio_app.positions import read_snapshot
 
 
 def initial_categories(names, targets=None):
-    names = [name.strip() for name in names if name.strip()]
-    if not names or len({name.casefold() for name in names}) != len(names):
+    names = [name.strip() for name in names]
+    if not names or any(not name for name in names) or len({name.casefold() for name in names}) != len(names):
         raise DataError('Enter at least one category, with a different name for each.')
     if targets is not None:
-        if len(targets) != len(names) or any(value is None or not math.isfinite(value) or not 0 <= value <= 100 for value in targets):
-            raise DataError('Enter a target from 0 to 100 for every category, or turn off target allocations.')
-        if not math.isclose(sum(targets), 100, abs_tol=.0001):
-            raise DataError('Category targets must add up to 100%. You can also leave targets for later.')
-    return Allocation(tuple(Bucket(uuid4().hex, name, target=None if targets is None else targets[i]/100)
+        if len(targets) != len(names) or any(value is not None and (not math.isfinite(value) or not 0 <= value <= 100) for value in targets):
+            raise DataError('Targets must be between 0 and 100, or blank to leave them for later.')
+        if sum(value for value in targets if value is not None) > 100.0001:
+            raise DataError('Category targets cannot exceed 100% of the portfolio.')
+    return Allocation(tuple(Bucket(uuid4().hex, name, target=None if targets is None or targets[i] is None else targets[i]/100)
                             for i, name in enumerate(names)))
 
 

@@ -33,7 +33,12 @@ data. A checked checklist is specific to one build, not a blanket approval.
 - [ ] Empty workspace offers Explore demo and Start my portfolio. Manual entry
       and holdings import remain in Positions; cancel writes nothing, existing
       portfolios skip welcome, and synthetic position edits/save/restart work.
+- [ ] Guided setup starts with an empty category form; examples are help only.
+      Enter adds a row and focuses/highlights the next empty name. Complete targets
+      totaling 100% open Continue/Keep editing; editing preserves the draft and
+      does not immediately reopen the same confirmation.
 - [ ] Guided setup saves optional categories and optional whole-portfolio targets;
+      blank/partial targets stay unknown or retain their entered percentages.
       Skip setup and Finish later work. The first position can be assigned to a
       category; within-category targets stay separate. Existing allocations are
       retained and concurrent edits are rejected.

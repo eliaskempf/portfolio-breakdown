@@ -614,3 +614,40 @@ regression proving that an older physical holding with no recorded unit does
 not acquire an assumed ounce unit. Required browser suites ran without skips.
 Ruff, diff checks and wheel/sdist content checks passed. A fresh native candidate
 and one complete hosted run remain release gates.
+
+
+## Category setup interaction revision (2026-10-04)
+
+Replaced the prefilled multiline category field with an empty row-based form.
+Examples (Equities, Bonds, Gold) are field help, not preset portfolio choices.
+Each addition accepts a label and optional whole-portfolio target; Enter or Add
+category appends the row and focuses the next blank name with a themed outline.
+Added rows remain editable/removable. Complete targets totaling 100% open a
+separate confirmation offering first-position entry or continued editing, without
+saving automatically. Returning to edit preserves rows and suppresses repeated
+confirmation of the same allocation. Existing allocation files are still reused.
+
+The guide now permits blank and incomplete targets, matching the allocation
+model's existing unknown-target semantics. It preserves supplied percentages,
+rejects duplicate/blank names and totals above 100%, and never fills or normalizes
+missing targets. Overview can show category values/current weights without target
+gaps; planning still requires complete targets in the scope being calculated.
+Skipping setup leaves ordinary holdings/exposure analysis available. No pricing,
+aggregation or rebalancing calculation was changed. Physical gold still uses
+manual per-unit prices; live spot pricing is a separate unimplemented integration.
+
+Validation: 38 focused tests passed together, including the required startup
+browser suite, onboarding persistence/UI, strategic calculations and performance
+allocation. Coverage includes keyboard submission/focus, confirmation/editing,
+optional/partial targets, duplicate/removal/skip, dark narrow layout and a saved
+synthetic physical holding. Ruff and diff checks passed. This is targeted
+validation, not a new complete release-suite or Windows candidate run.
+
+Restarted the owned live source preview with its existing workspace and options;
+verified that saved categories bypass setup, first-position cancellation and all
+main tabs work without exceptions. Preserved the existing workspace unchanged.
+A separate fresh temporary live preview verified blank setup, sequential focus,
+confirmation/editing, narrow layout, skip/cancel and demo charts/main tabs. No
+setup or position was saved during runtime inspection. Tests use only synthetic
+temporary data. Release tooling and uv entrypoints are unchanged. A fresh hosted
+candidate and native acceptance remain required; no publication is approved.
