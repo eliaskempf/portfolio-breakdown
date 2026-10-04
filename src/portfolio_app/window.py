@@ -52,6 +52,7 @@ class WindowPresentation:
         self.focus_requested = threading.Event()
         self.state = 'starting'
         self.failures = []
+        self.closing = threading.Event()
         self.closed = threading.Event()
         self.renderer_ready = threading.Event()
         self.color_scheme = 'dark'
@@ -248,6 +249,9 @@ class WindowPresentation:
                 self.failures.append(exc)
                 self.renderer_ready.set()
         def closing():
+            # Mark this before waking the supervisor: WinForms has not emitted
+            # closed yet, and a second destroy can re-enter its close handler.
+            self.closing.set()
             stopped.set()
         def initialized(renderer):
             if renderer != 'edgechromium':
@@ -285,7 +289,7 @@ class WindowPresentation:
                 self.failures.append(exc)
             finally:
                 finished.set()
-                if not self.closed.is_set():
+                if not self.closing.is_set() and not self.closed.is_set():
                     self.window.destroy()
         def gui_worker():
             worker = threading.Thread(target=supervise, daemon=True)

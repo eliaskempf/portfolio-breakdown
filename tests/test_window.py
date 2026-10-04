@@ -269,6 +269,7 @@ def test_app_loads_behind_animation_unless_window_closed(monkeypatch, close_duri
     def monitor(on_ready):
         if close_during_intro:
             fake.window.events.closing.fire()
+            fake.destroy()
         on_ready()
         return 0
     assert presentation.run('http://127.0.0.1:1', threading.Event(), monitor) == 0
@@ -285,10 +286,37 @@ def test_closing_window_stops_monitor(monkeypatch):
     def monitor(on_ready):
         on_ready()
         fake.window.events.closing.fire()
+        fake.destroy()
         assert stopped.wait(1)
         return 0
     assert presentation.run('http://127.0.0.1:1', stopped, monitor) == 0
     assert fake.destroyed.is_set()
+
+
+def test_native_close_in_progress_is_not_destroyed_again(monkeypatch):
+    presentation = WindowPresentation()
+    fake = FakeWebview()
+    presentation.webview = fake
+    monkeypatch.setattr(presentation, '_install_navigation', lambda url: presentation.renderer_ready.set())
+    duplicate_closes = []
+    # WinForms has begun closing, but its closed callback has not fired yet.
+    fake.window.destroy = lambda: duplicate_closes.append(True)
+    def start(worker, **kwargs):
+        fake.window.events.before_show.fire()
+        fake.window.events.loaded.fire()
+        thread = threading.Thread(target=worker)
+        thread.start()
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+        assert not duplicate_closes
+        fake.destroy()  # The original native close now completes.
+    fake.start = start
+    def monitor(on_ready):
+        on_ready()
+        fake.window.events.closing.fire()
+        return 0
+    assert presentation.run('http://127.0.0.1:1', threading.Event(), monitor) == 0
+    assert not duplicate_closes
 
 
 def test_frozen_browser_relaunch_keeps_dispatch_flag(monkeypatch):

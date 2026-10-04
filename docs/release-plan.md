@@ -888,3 +888,19 @@ still unmerged. [CI run 37198430094](https://github.com/eliaskempf/portfolio-bre
 passed every job at `5db6e4480cde4d83a1fd908b79dace46ecf5a62a`.
 This handoff entry is documentation-only and is newer than the candidate's
 recorded source commit; it does not change its binaries.
+
+### Welcome-screen shutdown correction
+
+The installer was reported to work, but closing before selecting a workspace
+briefly displayed a native error dialog. A synthetic native Windows probe
+reproduced it in three of three launches, despite exit code zero. The supervisor
+requested `destroy()` after WinForms had started closing but before its closed
+callback, re-entering pywebview's close handler (`KeyError: 'master'`).
+
+The presentation now marks closing before signaling the supervisor, which leaves
+an in-progress native close alone. A regression test fails with the original code
+and passes with the correction; all 56 window/launcher tests pass. The packaged
+native smoke now closes at the welcome screen and watches for transient dialogs,
+also checking shutdown after entering the demo. That stronger smoke detects the
+error in the previous frozen executable. A rebuilt candidate must pass it before
+this correction is considered packaged and ready for another installation test.

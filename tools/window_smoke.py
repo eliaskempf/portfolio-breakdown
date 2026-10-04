@@ -66,6 +66,28 @@ def window_handle(api, callback, pid):
     return found[0] if found else None
 
 
+def close_without_dialog(api, callback, process, handle, close):
+    """A transient WinForms error dialog can appear even with exit code zero."""
+    dialogs = set()
+    watching = threading.Event()
+    def observe():
+        while not watching.is_set():
+            visible = window_handle(api, callback, process.pid)
+            if visible and visible != handle:
+                dialogs.add(visible)
+            watching.wait(.005)
+    observer = threading.Thread(target=observe, daemon=True)
+    observer.start()
+    try:
+        close()
+        process.wait(timeout=25)
+    finally:
+        watching.set()
+        observer.join(timeout=2)
+    assert process.returncode == 0
+    assert not dialogs, 'An unexpected native dialog appeared during shutdown'
+
+
 def native_file_choice(api, callback, owner, path, errors):
     """Drive only a file dialog owned by our app, using language-neutral IDs."""
     try:
@@ -190,7 +212,7 @@ def file_and_link_checks(page, frame, api, callback, handle, root):
     print('Native upload/save dialogs, saved synthetic CSV, download bytes and system-browser external link passed.', flush=True)
 
 
-def smoke(executable, *, interactive=False):
+def smoke(executable, *, interactive=False, welcome_only=False):
     if os.name != 'nt':
         raise RuntimeError('Run the frozen window smoke test on native Windows.')
     api, callback = native_api()
@@ -225,6 +247,12 @@ def smoke(executable, *, interactive=False):
                 frame = page.frame_locator('#portfolio-app')
                 expect(frame.get_by_role('button', name='Explore demo', exact=True)).to_be_visible(timeout=90000)
                 expect(page.locator('main')).to_have_count(0, timeout=15000)
+                if welcome_only:
+                    close_without_dialog(api, callback, process, handle,
+                                         lambda: api.PostMessageW(handle, 0x0010, 0, 0))
+                    assert not list((root / 'state/sessions').glob('*.json'))
+                    print('Frozen window: welcome-screen close without error dialogs and session cleanup passed.')
+                    return
                 frame.get_by_role('button', name='Explore demo', exact=True).click()
                 expect(frame.locator('.js-plotly-plot').first).to_be_visible(timeout=30000)
                 for tab in ['Exposure', 'Positions', 'Rebalance', 'Overview']:
@@ -265,9 +293,8 @@ def smoke(executable, *, interactive=False):
                     file_and_link_checks(page, frame, api, callback, handle, root)
                 # The custom exit command exercises shutdown in borderless mode.
                 page.get_by_role('button', name='Fullscreen', exact=True).click()
-                page.get_by_role('button', name='Exit', exact=True).click()
-                process.wait(timeout=25)
-                assert process.returncode == 0
+                close_without_dialog(api, callback, process, handle,
+                                     lambda: page.get_by_role('button', name='Exit', exact=True).click())
             assert not list((root / 'state/sessions').glob('*.json'))
             print('Frozen window: startup, charts/tabs, real F11, monitor edges, repeat launch, bundled help and shutdown passed.')
         finally:
@@ -286,4 +313,5 @@ if __name__ == '__main__':
     parser.add_argument('executable', type=Path)
     parser.add_argument('--interactive', action='store_true', help='Also exercise native file dialogs and the system browser')
     args = parser.parse_args()
+    smoke(args.executable.resolve(), welcome_only=True)
     smoke(args.executable.resolve(), interactive=args.interactive)
