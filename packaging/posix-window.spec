@@ -23,6 +23,13 @@ analysis = Analysis([str(root / 'packaging/window_entrypoint.py')], pathex=[str(
               'gi', 'cefpython3', 'webview.platforms.winforms', 'webview.platforms.gtk',
               *(['webview.platforms.cocoa'] if sys.platform == 'linux' else ['webview.platforms.qt', 'PyQt6', 'qtpy'])])
 analysis.datas = [entry for entry in analysis.datas if Path(entry[0]).name != 'direct_url.json']
+if sys.platform == 'linux':
+    # Host Mesa drivers load into Qt's process. An older bundled C++/GBM runtime
+    # can break those drivers on newer Ubuntu releases; use the declared distro
+    # dependencies, as we already do for glibc and the graphics driver itself.
+    system_runtime = {'libstdc++.so.6', 'libgcc_s.so.1', 'libgbm.so.1'}
+    analysis.binaries = [entry for entry in analysis.binaries
+                         if Path(entry[0]).name not in system_runtime]
 pyz = PYZ(analysis.pure)
 exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True, name='portfolio-window',
           console=sys.platform != 'darwin', target_arch='arm64' if sys.platform == 'darwin' else None,

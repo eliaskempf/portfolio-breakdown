@@ -12,7 +12,7 @@ from release import ROOT, digest, frozen_check, notices, package_check
 
 DEB_NAME = 'portfolio-breakdown-experimental'
 APP_NAME = 'Portfolio Breakdown Experimental.app'
-LINUX_DEPENDS = ('libc6 (>= 2.35), libstdc++6, libgl1, libegl1, libopengl0, libnss3, '
+LINUX_DEPENDS = ('libc6 (>= 2.35), libstdc++6, libgcc-s1, libgbm1, libgl1, libegl1, libopengl0, libnss3, '
                  'libasound2 | libasound2t64, libxkbcommon0, libxkbcommon-x11-0, '
                  'libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, '
                  'libxcb-render-util0, libxcb-xinerama0, libxcb-randr0, libxcb-shape0, '
