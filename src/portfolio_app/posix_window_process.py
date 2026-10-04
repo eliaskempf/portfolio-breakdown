@@ -51,11 +51,16 @@ def supervise(command: list[str], stream) -> int:
         if child is not None:
             # Do not poll/wait (reap) before killpg: the unreaped group leader
             # reserves the PID even if the application exits before descendants.
-            os.killpg(child.pid, signal.SIGTERM)
+            def signal_group(sig):
+                try:
+                    os.killpg(child.pid, sig)
+                except ProcessLookupError:
+                    pass  # An empty group has no live descendants to stop.
+            signal_group(signal.SIGTERM)
             deadline = time.monotonic() + 10
             while not exited() and time.monotonic() < deadline:
                 time.sleep(.1)
-            os.killpg(child.pid, signal.SIGKILL)
+            signal_group(signal.SIGKILL)
             code = child.wait(timeout=5)
         watch_done.set()
         watcher.join(timeout=1)

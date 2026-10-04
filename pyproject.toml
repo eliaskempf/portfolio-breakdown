@@ -25,10 +25,8 @@ dependencies = [
 [project.optional-dependencies]
 window = [
   "pywebview==6.2.1",
-  "PyQt6>=6.7,<6.8; sys_platform == 'linux'",
-  "PyQt6-WebEngine>=6.7,<6.8; sys_platform == 'linux'",
-  "PyQt6-Qt6>=6.7,<6.8; sys_platform == 'linux'",
-  "PyQt6-WebEngine-Qt6>=6.7,<6.8; sys_platform == 'linux'",
+  "PyQt6>=6.10,<7; sys_platform == 'linux'",
+  "PyQt6-WebEngine>=6.10,<7; sys_platform == 'linux'",
   "qtpy>=2.4,<3; sys_platform == 'linux'",
 ]
 

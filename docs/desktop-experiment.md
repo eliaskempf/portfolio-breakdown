@@ -28,11 +28,10 @@ shortcut runs `portfolio-breakdown-experimental`. macOS users would copy the app
 to Applications. This prototype has ad-hoc integrity signing only: no Developer
 ID signature or notarization. It is not ready for normal public Mac distribution.
 
-The Linux experiment pins Qt 6.7 to permit additional local smoke testing on an
-older development host. This is not a supported production browser baseline;
-review/update the Qt/Chromium runtime before public shipment. The hosted jobs
-remain the evidence for supported Ubuntu versions. Do not infer Wayland coverage
-from an Xvfb/X11 pass.
+The Linux candidate uses the Qt/Chromium version recorded in the dependency lock
+and artifact inventory. An earlier local Qt 6.7 run on an older development host
+provided supplemental evidence only; the supported Ubuntu jobs test the current
+locked runtime. Do not infer Wayland coverage from an Xvfb/X11 pass.
 
 `portfolio-window --browser` explicitly selects the existing browser launcher.
 Data-directory and backup options retain their existing semantics. Updates and

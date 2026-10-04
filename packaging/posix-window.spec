@@ -26,7 +26,13 @@ pyz = PYZ(analysis.pure)
 exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True, name='portfolio-window',
           console=sys.platform != 'darwin', target_arch='arm64' if sys.platform == 'darwin' else None,
           codesign_identity=None)
-collection = COLLECT(exe, analysis.binaries, analysis.datas, name='portfolio-window')
+executables = [exe]
+if sys.platform == 'darwin':
+    # The .app remains console-free; a companion preserves stdout for diagnostics
+    # and packaged browser checks, as the Windows release already does.
+    executables.append(EXE(pyz, analysis.scripts, [], exclude_binaries=True,
+        name='portfolio-cli', console=True, target_arch='arm64', codesign_identity=None))
+collection = COLLECT(*executables, analysis.binaries, analysis.datas, name='portfolio-window')
 if sys.platform == 'darwin':
     app = BUNDLE(collection, name='Portfolio Breakdown Experimental.app',
         icon=str(assets / 'portfolio-breakdown.png'),

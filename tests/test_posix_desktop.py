@@ -159,3 +159,20 @@ def test_qt6_download_accept_and_cancel(selected):
     save_qt_download(download, lambda name: selected)
     assert calls == ([('directory', '/tmp'), ('filename', 'invented-download.txt'), 'accept']
                      if selected else ['cancel'])
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='POSIX process supervision')
+def test_natural_server_exit_preserves_exit_code_without_buffered_pipe_deadlock():
+    code = ('import sys; from portfolio_app.posix_window_process import supervise; '
+            'sys.exit(supervise([sys.executable, "-c", "raise SystemExit(7)"], sys.stdin.buffer))')
+    child = subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        child.stdin.write(b'start\n')
+        child.stdin.flush()
+        assert child.wait(timeout=10) == 7
+        assert b'Fatal Python error' not in child.stderr.read()
+    finally:
+        child.stdin.close()
+        if child.poll() is None:
+            child.kill()
+            child.wait()

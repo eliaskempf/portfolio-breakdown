@@ -82,7 +82,11 @@ def run(executable, output):
                 os.environ.pop('PORTFOLIO_STATE_DIR', None)
             else:
                 os.environ['PORTFOLIO_STATE_DIR'] = previous
+    from package_smoke import smoke as browser_smoke
+    console = executable.with_name('portfolio-cli') if sys.platform == 'darwin' else executable
+    browser_smoke([str(console), '--browser'])
     summary = {'status': 'passed', 'native': results,
+               'browser': ['packaged portfolio edit, save, restart, CSV/Excel import, backup/restore'],
                'lifecycle': ['repeat launch', 'window crash cleanup', 'browser fallback', 'restart preserves data'],
                'shipping': 'experimental only; review native test gaps and signing'}
     (output / 'summary.json').write_text(json.dumps(summary, indent=2))
