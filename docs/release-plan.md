@@ -834,3 +834,13 @@ post-import navigation: stale browser state must not restore the import form on
 returning to Positions. Its new synthetic regression fails before the backport
 and passes afterward, including when run against release source. The release
 application and frozen executable code are unchanged by these CI corrections.
+
+Run `37195647864` passed both complete regression suites, Linux packaging/smoke
+and Windows packaging/browser smoke. Native Windows smoke then attached to CDP
+before the window navigation arrived: its `time.sleep` loop polled cached page
+URLs without letting Playwright dispatch navigation events. It now waits for the
+page/navigation through Playwright. A delayed synthetic navigation test fails
+with the original loop and passes with the correction. The updated controller
+also passed locally against the frozen Windows executable, including real F11,
+monitor edges, repeat launch, bundled help and shutdown. This remains a test-tool
+correction; fresh hosted validation is required for the final candidate.

@@ -29,6 +29,14 @@ def until(check, seconds=90):
     raise TimeoutError('Native window check did not complete.')
 
 
+def wait_for_window_page(browser, timeout=90000):
+    """Wait for the single startup window without blocking Playwright events."""
+    context = browser.contexts[0]
+    page = context.pages[0] if context.pages else context.wait_for_event('page', timeout=timeout)
+    page.wait_for_url('**/__portfolio_window__', timeout=timeout)
+    return page
+
+
 def native_api():
     api = ctypes.WinDLL('user32', use_last_error=True)
     callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -213,8 +221,7 @@ def smoke(executable, *, interactive=False):
             until(debugger_ready)
             with sync_playwright() as playwright:
                 browser = playwright.chromium.connect_over_cdp(f'http://127.0.0.1:{debug_port}')
-                page = until(lambda: next((p for c in browser.contexts for p in c.pages
-                                          if '/__portfolio_window__' in p.url), None))
+                page = wait_for_window_page(browser)
                 frame = page.frame_locator('#portfolio-app')
                 expect(frame.get_by_role('button', name='Explore demo', exact=True)).to_be_visible(timeout=90000)
                 expect(page.locator('main')).to_have_count(0, timeout=15000)
