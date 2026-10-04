@@ -9,6 +9,26 @@ import threading
 import time
 
 
+def signal_owned_group(pid: int, sig: int) -> None:
+    """Signal a group whose leader is still our unreaped child."""
+    try:
+        os.killpg(pid, sig)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        # Darwin returns EPERM for a group containing only zombies. Keep the
+        # leader unreaped while checking membership so its ID cannot be reused.
+        # Never suppress a permission failure if any member is still alive.
+        if sys.platform != 'darwin':
+            raise
+        rows = subprocess.check_output(
+            ['/bin/ps', '-axo', 'pgid=,stat='], text=True).splitlines()
+        for row in rows:
+            group, state = row.split()
+            if int(group) == pid and not state.startswith('Z'):
+                raise
+
+
 def internal_command(command: list[str]) -> list[str]:
     from portfolio_app.window_process import gated_command
     result = gated_command(command)
@@ -52,10 +72,7 @@ def supervise(command: list[str], stream) -> int:
             # Do not poll/wait (reap) before killpg: the unreaped group leader
             # reserves the PID even if the application exits before descendants.
             def signal_group(sig):
-                try:
-                    os.killpg(child.pid, sig)
-                except ProcessLookupError:
-                    pass  # An empty group has no live descendants to stop.
+                signal_owned_group(child.pid, sig)
             signal_group(signal.SIGTERM)
             deadline = time.monotonic() + 10
             while not exited() and time.monotonic() < deadline:

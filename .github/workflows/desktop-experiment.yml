@@ -128,6 +128,7 @@ jobs:
           sudo apt-get install -y xvfb ./*.deb
           sha256sum -c SHA256SUMS
         working-directory: dist/downloaded
+      - run: uv run playwright install --with-deps chromium
       - run: xvfb-run -a uv run python tools/desktop_smoke.py /opt/portfolio-breakdown-experimental/portfolio-window --output "$RUNNER_TEMP/compat-native"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()

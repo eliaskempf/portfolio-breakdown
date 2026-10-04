@@ -179,3 +179,18 @@ def test_natural_server_exit_preserves_exit_code_without_buffered_pipe_deadlock(
         if child.poll() is None:
             child.kill()
             child.wait()
+
+
+@pytest.mark.parametrize('state,allowed', [('Z', True), ('Z+', True), ('S', False)])
+def test_darwin_permission_error_only_ignored_for_dead_group(monkeypatch, state, allowed):
+    from portfolio_app.posix_window_process import signal_owned_group
+    monkeypatch.setattr(sys, 'platform', 'darwin')
+    def denied(*args):
+        raise PermissionError('synthetic denied signal')
+    monkeypatch.setattr(os, 'killpg', denied, raising=False)
+    monkeypatch.setattr(subprocess, 'check_output', lambda *a, **kw: f' 73 {state}\n 99 S\n')
+    if allowed:
+        signal_owned_group(73, signal.SIGTERM)
+    else:
+        with pytest.raises(PermissionError):
+            signal_owned_group(73, signal.SIGTERM)

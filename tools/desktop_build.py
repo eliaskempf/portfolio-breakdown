@@ -17,7 +17,7 @@ LINUX_DEPENDS = ('libc6 (>= 2.35), libstdc++6, libgl1, libegl1, libopengl0, libn
                  'libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, '
                  'libxcb-render-util0, libxcb-xinerama0, libxcb-randr0, libxcb-shape0, '
                  'libxcb-xfixes0, libxcomposite1, libxdamage1, libxrandr2, libxtst6, '
-                 'libdbus-1-3, libfontconfig1')
+                 'libdbus-1-3, libfontconfig1, libwayland-client0, libwayland-server0')
 
 
 def linux_package(bundle, stage, output, version):
