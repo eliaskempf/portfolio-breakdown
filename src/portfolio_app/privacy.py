@@ -8,6 +8,7 @@ import sys
 
 ROOT_FILES = {"README.md", "AGENTS.md", ".gitignore", ".python-version", "pyproject.toml", "uv.lock"}
 RELEASE_FILES = {"packaging/posix-window.spec", "tools/desktop_build.py", "tools/desktop_smoke.py",
+                 "tools/desktop_gatekeeper.py", "tools/desktop_session.py",
                  ".github/workflows/desktop-experiment.yml", "docs/desktop-experiment.md","LICENSE", "docs/release-plan.md", "docs/release-checklist.md", "docs/install.md",
                  ".github/workflows/ci.yml", ".github/workflows/candidate.yml",
                  ".github/workflows/publish.yml", ".github/workflows/maintenance.yml",

@@ -21,10 +21,10 @@ def wait(check, timeout=90):
     raise TimeoutError('Installed desktop check timed out')
 
 
-def run(executable, output):
+def run(executable, output, desktop=False):
     output.mkdir(parents=True, exist_ok=False)
     results = []
-    for mode in ['render', 'welcome', 'early-close']:
+    for mode in (['desktop'] if desktop else ['render']) + ['welcome', 'early-close']:
         with (output / f'{mode}.log').open('w') as log:
             result = subprocess.run([str(executable), '--native-self-test', str(output / mode), mode],
                                     cwd=output, stdout=log, stderr=subprocess.STDOUT, timeout=150)
@@ -96,5 +96,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('executable', type=Path)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--desktop', action='store_true', help='Require real window-state/focus checks')
     args = parser.parse_args()
-    run(args.executable.resolve(), args.output.resolve())
+    run(args.executable.resolve(), args.output.resolve(), desktop=args.desktop)

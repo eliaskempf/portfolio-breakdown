@@ -440,8 +440,8 @@ def main():
     # The fixed self-test creates only synthetic data; no real-workspace options
     # or arbitrary scripts can be combined with it.
     if sys.argv[1:2] == ['--native-self-test']:
-        if len(sys.argv) != 4 or sys.argv[3] not in {'render', 'welcome', 'early-close'}:
-            raise SystemExit('Usage: --native-self-test NEW_OUTPUT_DIRECTORY render|welcome|early-close')
+        if len(sys.argv) != 4 or sys.argv[3] not in {'render', 'desktop', 'welcome', 'early-close'}:
+            raise SystemExit('Usage: --native-self-test NEW_OUTPUT_DIRECTORY render|desktop|welcome|early-close')
         from pathlib import Path
         from portfolio_app.desktop_probe import main as probe
         probe(Path(sys.argv[2]), sys.argv[3])

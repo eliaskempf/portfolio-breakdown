@@ -23,7 +23,7 @@ def wait(check, timeout=60):
 
 
 def main(output: Path, mode='render'):
-    if mode not in {'render', 'welcome', 'early-close'}:
+    if mode not in {'render', 'desktop', 'welcome', 'early-close'}:
         raise ValueError('Unknown native self-test mode')
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -52,7 +52,7 @@ def main(output: Path, mode='render'):
         marker.write_text('Invented preservation sentinel', encoding='utf-8')
         os.environ['PORTFOLIO_STATE_DIR'] = str(root / 'state')
         sys.argv = [original_argv[0], '--data-dir', str(workspace), '--offline-demo']
-        if mode == 'render':
+        if mode in {'render', 'desktop'}:
             sys.argv += ['--demo', '--skip-intro']
         def inspect(window):
             try:
@@ -80,9 +80,23 @@ def main(output: Path, mode='render'):
                 if sys.platform == 'linux':
                     qt_interactions(window, root, output, record)
                     report['gaps'].remove('native upload/save dialogs')
+                    from qtpy.QtGui import QGuiApplication
+                    report['display_backend'] = QGuiApplication.platformName()
+                    if os.environ.get('QT_QPA_PLATFORM') == 'wayland':
+                        assert report['display_backend'].startswith('wayland')
+                        report['gaps'].remove('Wayland')
+                        report['gaps'].append('Wayland compositors other than the tested Weston session')
                 elif sys.platform == 'darwin':
                     cocoa_snapshot(window, output / 'native-overview.png')
                     record('native WebKit snapshot captured')
+                    from portfolio_app.desktop_controls import cocoa_interactions
+                    cocoa_interactions(window, root, record)
+                    report['gaps'].remove('native upload/save dialogs')
+                if mode == 'desktop':
+                    from portfolio_app.desktop_controls import window_states
+                    window_states(window, workspace, record)
+                    report['gaps'].remove('desktop focus policy')
+                    report['gaps'].append('other desktop environments and physical displays')
                 # Native top-level navigation must invoke the system-browser
                 # adapter and leave the app loaded. Do not open a real website.
                 window.evaluate_js("location.href = 'https://example.invalid/synthetic-external'")
