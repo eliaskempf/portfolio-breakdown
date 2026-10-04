@@ -1009,3 +1009,37 @@ workspace `/tmp/portfolio-etf-v1-preview` and offline launch options. Actual
 browser navigation verified provider setup, the partial bond chart and overnight
 summary without application exceptions. No private portfolio was used. A native
 Windows installer has not been built or verified for these commits.
+
+### ETF/search integration into release-v1 (2026-10-04)
+
+Integrated the complete `fix/v1-etf-breakdown` branch through
+`56c41034fec6c1e154a3326032e8498585e77502`, including
+`cacd96b6e88eb3b3db16044febb7e3311f661f5c`, from release base
+`f2db5ab1cf81a5c45e43e5f4d5c5fad58c97fc15`. This is a conflict-free
+fast-forward preserving the current guided setup, gold valuation, Windows
+installer and welcome-screen shutdown fix. The experimental Linux/macOS desktop
+branch is not part of this integration. Dependencies and release tooling are
+unchanged.
+
+Validation in the isolated `/tmp/portfolio-v1-etf-integration` worktree on
+`integrate/v1-etf-fixes`:
+
+- `uv run pytest -q` with required Chromium suites: **1,047 passed**, no skips.
+  Browser fixtures launch this checkout on temporary loopback ports with
+  synthetic workspaces, including ISIN search, partial bond summaries and Other,
+  overnight economic exposure and its separate substitute basket, onboarding,
+  imports and navigation. No private portfolio or another session's preview was
+  used.
+- Ruff and tracked-file privacy checks passed.
+- Strict documentation build, all 30 help-topic checks, and the documentation
+  browser smoke passed (navigation, search and narrow layouts). The temporary
+  docs preview at `http://127.0.0.1:39665/portfolio-breakdown/dev/` was stopped
+  after verification.
+- Wheel and source archive builds and release content checks passed.
+
+Next validation: build a fresh hosted candidate from the integrated release
+commit. Previous Windows installer results do not validate these new adapters.
+Record its run and packaged smoke results before treating the new installer as
+verified. Existing portfolios can use **Refresh ETF holdings now** to retry
+previously unavailable breakdowns. No official release or tag is authorized by
+this integration.
