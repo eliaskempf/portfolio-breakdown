@@ -104,16 +104,18 @@ def exercise_manual_breakdown(page):
     expect(page.get_by_role('button', name='Preview breakdown', exact=True)).to_be_enabled()
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     asset_class = page.get_by_role('combobox', name='Physical fund asset class', exact=True)
-    # Keyboard selection keeps the action on the surviving combobox while
-    # Streamlit replaces the dropdown portal at the end of an upload rerun.
+    # Confirm the actual option: the combobox's search text can match without
+    # committing a selection, so its value alone is not sufficient evidence.
     asset_class.click()
     asset_class.fill('fixed_income')
-    asset_class.press('ArrowDown')
-    asset_class.press('Enter')
+    page.get_by_role('option', name='fixed_income', exact=True).click()
+    expect(asset_class).to_have_attribute('aria-expanded', 'false')
     expect(asset_class).to_have_value('fixed_income')
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     page.get_by_role('button', name='Preview breakdown', exact=True).click()
     expect(page.get_by_text('90.00% represented', exact=False)).to_be_visible()
     page.get_by_role('button', name='Save breakdown', exact=True).click()
+    expect(page.get_by_role('button', name='Save breakdown', exact=True)).to_have_count(0)
     panel = page.get_by_text('ETF breakdown: Synthetic bond fund', exact=True)
     expect(panel).to_be_visible()
     panel.click()

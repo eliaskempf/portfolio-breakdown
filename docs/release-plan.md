@@ -781,3 +781,9 @@ Pages publication or official release are part of this local validation step.
 The next user check is Windows 11 Setup, Start Menu launch, display scaling and
 normal interaction, then reinstall/uninstall with an invented workspace. Record
 its results and exact Setup checksum in the release checklist.
+
+The rebuilt-package smoke additionally exposed a test-controller selection issue:
+typing a fund class into the combobox search was not evidence that its option had
+been selected. The smoke now clicks the actual fixed_income option, checks the
+closed selector, and waits for save completion before opening the summary. This
+changes test synchronization only; the app and saved-data semantics are unchanged.
