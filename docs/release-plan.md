@@ -812,7 +812,10 @@ Follow-up run `37192870139` passed all 982 Linux tests, Linux package checks and
 Windows installer creation. Its Windows packaged browser smoke lost the nested
 fund option list during pointer selection. Slowed Chromium reproduced the issue
 on Linux and the frozen Windows app; DOM diagnostics showed the server was idle
-when the list closed. The smoke now waits for the completed Exposure view, uses
-keyboard selection after the filtered option is visible, and checks both the
-committed selection and bound synthetic ISIN before uploading.
+when the list closed. The smoke now waits for the completed Exposure view,
+selects directly from the fixture's four-item list without filtering/resizing
+the nested popup, and checks both the committed selection and bound synthetic
+ISIN before uploading. This passed with 4× Chromium CPU slowdown against main
+source, release source and the existing frozen Windows executable. The
+superseded candidate run `37194260306` was canceled during this investigation.
 The application and frozen executable code are unchanged by this follow-up.

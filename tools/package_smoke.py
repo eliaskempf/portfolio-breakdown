@@ -94,13 +94,9 @@ def exercise_manual_breakdown(page):
     page.get_by_text('Set up a breakdown', exact=True).click()
     position = page.get_by_role('combobox', name='Fund position', exact=True)
     position.click()
-    position.fill('Synthetic bond fund')
-    # The nested popover can close its option list during pointer targeting
-    # even with the server idle. Select the single filtered option by keyboard;
-    # the bound ISIN below verifies a committed selection, not just search text.
-    expect(page.get_by_role('option', name='Synthetic bond fund', exact=True)).to_be_visible()
-    position.press('ArrowDown')
-    position.press('Enter')
+    # This fixture has four options. Choose directly from the full list, avoiding
+    # an asynchronous filtered-popup resize inside the settings popover.
+    page.get_by_role('option', name='Synthetic bond fund', exact=True).click()
     expect(position).to_have_attribute('aria-expanded', 'false')
     expect(position).to_have_value('Synthetic bond fund')
     expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
