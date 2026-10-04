@@ -818,4 +818,19 @@ the nested popup, and checks both the committed selection and bound synthetic
 ISIN before uploading. This passed with 4× Chromium CPU slowdown against main
 source, release source and the existing frozen Windows executable. The
 superseded candidate run `37194260306` was canceled during this investigation.
-The application and frozen executable code are unchanged by this follow-up.
+Normal-speed isolation then identified the remaining trigger: nested expanders
+were still animating and scrolling when the selector opened, and React Aria
+closed its list on that ancestor scroll. A focused synthetic probe failed all
+eight attempts before waiting for finite animations and delivered scroll events,
+then passed all eight afterward. The package smoke now uses that settling step
+before both setup selectors. The same wait protects the exposure dialog's Close
+button; run `37194767789` had reproduced that failure after server-idle checks
+alone. Five repeated settled dialog-close checks passed, as did source smoke and
+the frozen Windows smoke with 4× CPU slowdown. No forced clicks, fixed sleeps or
+automatic test retries are introduced.
+
+The separate main CI repair also backports the already-present release fix for
+post-import navigation: stale browser state must not restore the import form on
+returning to Positions. Its new synthetic regression fails before the backport
+and passes afterward, including when run against release source. The release
+application and frozen executable code are unchanged by these CI corrections.

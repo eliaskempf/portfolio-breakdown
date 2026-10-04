@@ -109,7 +109,14 @@ def test_overnight_economic_view_and_separate_basket(fund_page):
     playwright.expect(dialog.get_by_role('table', name='Invented overnight fund holdings', exact=True)).to_be_visible()
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
-    dialog.get_by_role('button', name='Close exposure details').click()
+    # The expanded basket can still animate/scroll after the server becomes idle.
+    page.wait_for_function("""() => !document.querySelector('[data-testid=stDialog]')
+        .getAnimations({subtree: true}).some(animation => animation.playState === 'running'
+            && animation.effect.getTiming().iterations !== Infinity)""")
+    close = dialog.get_by_role('button', name='Close exposure details')
+    close.evaluate("el => el.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'})")
+    close.evaluate('el => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    close.click()
     playwright.expect(dialog).to_have_count(0)
     page.get_by_role('button', name='Data & settings', exact=True).click()
     page.get_by_text('ETF refresh & snapshots', exact=True).click()
