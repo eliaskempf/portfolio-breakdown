@@ -9,18 +9,25 @@ Inside that download, extract the platform application archive. Keep the entire
 `portfolio-app` directory together; the executable needs its `_internal` folder.
 Use a permanent application location outside your portfolio folder.
 
-On Windows, launch `Portfolio Breakdown.exe` for a console-free desktop start.
-Keep `portfolio-app.exe` alongside it for command-line operations and diagnostics.
-On Linux, launch `./portfolio-app`. The local browser opens automatically and
-plays the intro before showing the app. Once running, **Settings → App & workspace** shows
-the version, active folder and a stop button. Closing a browser tab leaves the
-server running; launching again reopens that instance.
+On Windows, run `portfolio-breakdown-<version>-windows-x64-setup.exe` from the
+candidate download. Setup installs for the current user, adds the Start Menu
+shortcut and offers an optional desktop shortcut. It detects WebView2 and offers
+Microsoft's Evergreen bootstrapper if needed. Deselect that prerequisite to use
+the browser fallback. The default **Portfolio Breakdown** shortcut opens the
+standalone window; F11 toggles borderless mode. Closing the window stops its server.
+Repeated launches focus the existing window. The portable ZIP remains available:
+keep its whole directory together and launch `Portfolio Breakdown.exe`.
 
-To add a Windows Start Menu or Linux application-menu shortcut, run the executable
-once with `--install-shortcut`. You can pin that entry or copy it to your desktop
-using your desktop environment. Repeat after moving the application directory.
-Use `--foreground` for terminal diagnostics; private desktop-startup logs are
-stored in the platform's per-user application state directory.
+The installed **Portfolio Breakdown (browser)** shortcut or `--browser` selects
+browser mode. Keep `portfolio-app.exe` for CLI operations and diagnostics.
+On Linux, `./portfolio-app` opens the browser; closing its tab leaves the server
+running until **Settings → App & workspace → Stop application** or `--stop`.
+Portable installs can add a shortcut with `--install-shortcut`.
+
+The app's **? → User guide** opens the exact bundled public documentation, even
+without internet or Pages publication. Source guides are under `docs/user/`;
+the static published archive belongs on `gh-pages`. See [user installation guide](user/install.md)
+for detailed installation, upgrades and removal.
 
 ## Source installation and development
 
@@ -93,13 +100,15 @@ and check the restored workspace before adopting it. Automatic per-document
 `.backups` remain useful for individual edits but do not replace complete backups.
 Backup directories contain private financial data; keep them outside Git.
 
-For upgrades, stop the old application, back up the workspace, extract the new
+For upgrades, stop the old application and back up the workspace. Installed
+Windows apps can run the new Setup over the existing install. For portable apps, extract the new
 bundle to a new application directory, and launch it against the same workspace.
 Recreate shortcuts if the executable path changed. Retain the older bundle and
 backup until the new version is verified. Versioned data migrations must be
 reviewed before downgrading; restoring a backup is the safe rollback path.
 
-To uninstall a bundle, stop it and remove its application directory and shortcut.
+Use Windows Apps settings to uninstall a Setup installation. To uninstall a
+portable bundle, stop it and remove its application directory and shortcut.
 For uv tool installations, use `uv tool uninstall portfolio-breakdown`. Portfolio
 folders are separate and remain in place. Source checkouts can likewise be removed
 without deleting an external workspace. Never remove a checkout containing old

@@ -31,13 +31,14 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
             refresh = st.button('Refresh prices', icon=':material/refresh:', type='tertiary', disabled=offline)
             settings = st.popover('Settings', icon=':material/tune:')
             with st.popover('?', help='Help and demo guide'):
+                from portfolio_app.documentation import guide_url
+                st.link_button('User guide', guide_url(), icon=':material/menu_book:')
+                st.link_button('Getting started', guide_url('getting-started/'))
+                st.link_button('Categories and targets', guide_url('allocation/'))
+                st.link_button('ETF breakdowns', guide_url('exposure/'))
                 if demo:
-                    from portfolio_app.onboarding_ui import demo_guide
-                    demo_guide(offline=offline)
-                else:
-                    st.markdown('**Your portfolio**')
-                    st.write('Add or import holdings in Positions, then set category targets in Rebalance → Targets.')
-                st.caption('Demo changes reset on restart. Your own portfolio stays saved locally.')
+                    st.caption('Invented holdings and buy-ins. Demo changes reset on restart.')
+                    st.caption('Synthetic offline prices.' if offline else 'Public market quotes and history; availability varies.')
     return data_dir, demo, refresh, settings
 
 
@@ -52,7 +53,7 @@ def workspace_info(active: Path, persistent: Path, *, demo: bool) -> None:
                 open_folder(active)
             except OSError as exc:
                 st.error(f'Could not open the folder: {exc}')
-        st.caption('Back up the complete folder with the app stopped. Closing the browser tab keeps the app running.')
+        st.caption('Back up the complete folder with the app stopped. Closing the app window stops it; closing a browser tab does not.')
         if st.button('Stop application'):
             from portfolio_app.launcher import stop_instance
             st.info('Stopping the local application. You can close this tab.')

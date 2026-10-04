@@ -23,8 +23,9 @@ def sort_allocation_nodes(nodes: pd.DataFrame) -> pd.DataFrame:
         pending.extend(reversed(children.get(node, [])))
     return nodes.set_index("node_id", drop=False).loc[traversal].reset_index(drop=True)
 
-PALETTE = ["#377f66", "#6da995", "#a9cabc", "#d5b982", "#617f99", "#9cb3c5", "#bb8c7a", "#7a8d71"]
-SUNBURST_PALETTE = [PRIMARY_COLOR, "#9a6dd7", "#e5a04b", "#4aa9b3", "#d76e91", "#75a565", "#c57b55", "#7b91b3"]
+# The icon's largest-to-smallest wedges establish the default allocation order.
+PALETTE = [PRIMARY_COLOR, "#4aa9b3", "#9a6dd7", "#e5a04b", "#d76e91", "#75a565", "#c57b55", "#7b91b3"]
+SUNBURST_PALETTE = PALETTE
 
 
 def style_figure(figure: go.Figure) -> go.Figure:
@@ -58,6 +59,7 @@ def correlation_chart(correlations: pd.DataFrame, names: dict[str, str]) -> go.F
 
 
 def hierarchy_chart(nodes: pd.DataFrame, chart_type: str) -> go.Figure:
+    nodes = sort_allocation_nodes(nodes)
     trace_class = go.Treemap if chart_type == "Treemap" else go.Sunburst
     figure = style_figure(go.Figure(trace_class(
         ids=nodes["node_id"], parents=nodes["parent_id"], labels=nodes["label"],
@@ -78,11 +80,13 @@ def hierarchy_chart(nodes: pd.DataFrame, chart_type: str) -> go.Figure:
 
 
 def strategic_colors(nodes, config):
-    """Stable identity-based colours, with distinct shades for siblings."""
-    top = sorted(b.id for b in config.children())
+    """Rank the full portfolio by value; callers reuse it while drilling down."""
+    ranked = nodes.sort_values(['value', 'label', 'node_id'], ascending=[False, True, True], kind='stable')
+    top = [row.path[0] for row in ranked.itertuples() if len(row.path) == 1 and row.kind != 'holding']
+    top += sorted(b.id for b in config.children() if b.id not in top)
     palettes = {key: SUNBURST_PALETTE[i % len(SUNBURST_PALETTE)] for i, key in enumerate(top)}
-    sibling_indices = {node: (i, len(group)) for _, group in nodes.groupby('parent_id')
-                       for i, node in enumerate(sorted(group.node_id))}
+    sibling_indices = {node: (i, len(group)) for _, group in ranked.groupby('parent_id')
+                       for i, node in enumerate(group.node_id)}
     colors = []
     for row in nodes.itertuples():
         if not row.path:
@@ -114,7 +118,7 @@ def bar_chart(nodes: pd.DataFrame) -> go.Figure:
 
 def pie_chart(nodes: pd.DataFrame) -> go.Figure:
     # Only disjoint leaf buckets belong in a pie; parent totals would double-count.
-    leaves = nodes.loc[nodes["is_leaf"]]
+    leaves = nodes.loc[nodes["is_leaf"]].sort_values(['value', 'label', 'node_id'], ascending=[False, True, True], kind='stable')
     labels = [" > ".join(row.path) + (" > Assigned here" if row.kind == "assigned" else "") for row in leaves.itertuples()]
     return style_figure(go.Figure(go.Pie(
         ids=leaves["node_id"], labels=labels, values=leaves["value"],

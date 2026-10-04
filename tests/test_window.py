@@ -36,7 +36,7 @@ def test_navigation_is_origin_scoped(url, expected):
 
 def test_missing_platform_fails_before_gui_import(monkeypatch):
     monkeypatch.setattr(sys, 'platform', 'linux')
-    with pytest.raises(DataError, match='Windows 11'):
+    with pytest.raises(DataError, match='requires Windows'):
         WindowPresentation().prepare()
 
 
@@ -255,7 +255,7 @@ def test_window_monitor_completion_closes_window_and_reports_failures(tmp_path, 
 def test_mshtml_fallback_is_refused(monkeypatch):
     presentation = WindowPresentation()
     presentation.webview = FakeWebview(renderer='mshtml')
-    with pytest.raises(DataError, match='experimental window failed'):
+    with pytest.raises(DataError, match='application window failed'):
         presentation.run('http://127.0.0.1:1', threading.Event(), lambda callback: pytest.fail('No legacy renderer'))
     assert not presentation.webview.urls
 

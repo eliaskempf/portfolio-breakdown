@@ -707,3 +707,37 @@ suites enabled. Synthetic tests also cover equivalent weight units, FX conversio
 cache failures, invalid spot input, manual preservation, explicit method switching
 and save/reload. Ruff, diff checks and staged privacy review passed. A single
 complete hosted candidate run remains a release gate.
+
+## Reconciled Windows window, documentation and installer candidate
+
+Windows standalone shipping is approved and supersedes the prototype-only scope.
+The isolated integration includes the complete window branch through
+`1a3b26843eb6b24647b14d2bfaf19d5ba3b106a5` and documentation branch through
+`0976779`, on top of release-v1 `7cafe2c`. The newer category guide, keyboard flow,
+All set? confirmation, EUR policy and weight-based physical gold spot valuation
+are retained. Futures branches and private portfolio files are excluded.
+
+Windows desktop launch now enters the window; the console companion remains a
+CLI/browser diagnostic entry. Production packaging includes pywebview and its
+Windows dependencies, assets and matched Microsoft SDK notices. Setup uses
+Inno Setup 6.5.4, installs per user, creates shortcuts and offers a signed
+Microsoft Evergreen bootstrapper when WebView2 is missing. The portable bundle,
+`--browser`, Linux browser launch and `uv run` development remain available.
+
+Guide source stays beside app source for source-matched review; only generated
+static documentation belongs on `gh-pages`. Publication remains manual and gated.
+Candidate schema 2 adds the Windows Setup artifact and frozen documentation ZIP,
+with checksums and documentation source identity. Installed help serves the exact
+bundled public guide locally, independent of Pages availability. README is reduced
+to product scope, limits and installation; data/calculation reference moved to
+the guide. Main/PR documentation checks and human docs-impact review remain required.
+
+The allocation palette follows the icon's blue, teal and purple sequence and
+ranks categories by current value rather than category IDs. The full portfolio's
+colors are reused while drilling into its categories.
+
+Validation is in progress. Record the final commit/run/checksums and native results
+below before candidate acceptance. Windows 10 with Python installed is available
+for native packaging checks; Windows 11 acceptance on another machine remains a
+separate user test. Neither this integration nor producing a candidate authorizes
+an official release or Pages publication.

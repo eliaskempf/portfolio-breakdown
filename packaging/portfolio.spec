@@ -12,10 +12,14 @@ datas += [(str(root / 'src/portfolio_app/intro_frontend/index.html'), 'portfolio
 datas += [(str(assets / name), 'portfolio_app/assets') for name in BRANDING_ASSETS if (assets / name).is_file()]
 datas += copy_metadata('portfolio-breakdown', recursive=True)
 datas += [(str(root / 'LICENSE'), '.')]
+if sys.platform == 'win32':
+    datas += collect_data_files('webview')
+    datas += copy_metadata('pywebview', recursive=True)
 analysis = Analysis(
     [str(root / 'packaging' / 'entrypoint.py')], pathex=[str(root / 'src')],
     datas=datas, hiddenimports=collect_submodules('portfolio_app') + collect_submodules('streamlit') + collect_submodules('python_calamine'),
-    excludes=['playwright', 'pytest', 'ruff', 'pip_audit'],
+    excludes=['playwright', 'pytest', 'ruff', 'pip_audit', 'mkdocs',
+              'PyQt5', 'PyQt6', 'PySide2', 'PySide6', 'qtpy', 'gi', 'cefpython3'],
 )
 # Editable-install provenance contains the builder's absolute checkout URL.
 # It is unnecessary for runtime version/dependency metadata.

@@ -5,6 +5,10 @@ import traceback
 
 
 def main():
+    if sys.platform == 'win32':
+        from portfolio_app.window import main as window_main
+        window_main()
+        return
     from portfolio_app.settings import state_path
     original = sys.stdout, sys.stderr
     with ExitStack() as stack:

@@ -14,9 +14,11 @@ import zipfile
 
 def verify_candidate(directory, *, commit, run_id, run_attempt, platform, require_publishable=True):
     manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
-    expected = dict(schema=1, commit=commit, run_id=str(run_id), run_attempt=str(run_attempt), platform=platform)
+    expected = dict(commit=commit, run_id=str(run_id), run_attempt=str(run_attempt), platform=platform)
     if any(manifest.get(k) != v for k, v in expected.items()):
         raise ValueError('Candidate identity does not match the successful workflow run.')
+    if manifest.get('schema') not in {1, 2} or (require_publishable and manifest['schema'] != 2):
+        raise ValueError('A current installer/documentation candidate is required for publication.')
     if not re.fullmatch(r'\d+\.\d+\.\d+(?:[abrc]+\d+)?', manifest.get('version', '')):
         raise ValueError('Invalid candidate version.')
     if not re.fullmatch(r'[0-9a-f]{64}', manifest.get('lock_sha256', '')):
@@ -30,6 +32,14 @@ def verify_candidate(directory, *, commit, run_id, run_attempt, platform, requir
     bundle = f'portfolio-breakdown-{version}-{platform}' + ('.zip' if platform == 'windows-x64' else '.tar.gz')
     required = {bundle, f'portfolio_breakdown-{version}-py3-none-any.whl',
                 f'portfolio_breakdown-{version}.tar.gz', 'THIRD_PARTY_NOTICES.txt', 'dependencies.json'}
+    if manifest['schema'] == 2:
+        required.add(f'portfolio-breakdown-{version}-docs.zip')
+        docs = manifest.get('documentation', {})
+        if (docs.get('source_sha') != commit or docs.get('route') != f'candidates/{commit}/'
+                or not re.fullmatch('[a-f0-9]{64}', docs.get('build_info_sha256', ''))):
+            raise ValueError('Documentation does not match candidate source.')
+        if platform == 'windows-x64':
+            required.add(f'portfolio-breakdown-{version}-windows-x64-setup.exe')
     if set(files) != required:
         raise ValueError('Candidate contains missing or unexpected release files.')
     sums = {}
@@ -49,6 +59,22 @@ def verify_candidate(directory, *, commit, run_id, run_attempt, platform, requir
         actual = sha256(path.read_bytes()).hexdigest()
         if sums[name] != actual or (name != 'manifest.json' and files[name] != actual):
             raise ValueError(f'Checksum mismatch: {name}')
+    if manifest['schema'] == 2:
+        with zipfile.ZipFile(directory / f'portfolio-breakdown-{version}-docs.zip') as archive:
+            info_bytes = archive.read('build-info.json')
+            info = json.loads(info_bytes)
+            if (sha256(info_bytes).hexdigest() != docs['build_info_sha256']
+                    or info.get('source_sha') != commit or info.get('app_version') != version
+                    or info.get('dirty') is not False or info.get('channel') != 'candidate'):
+                raise ValueError('Documentation archive does not match candidate identity.')
+            members = [item.filename for item in archive.infolist() if not item.is_dir()]
+            if len(members) != len(set(members)) or set(members) != set(info['files']) | {'build-info.json'}:
+                raise ValueError('Unexpected documentation archive content.')
+            for name, checksum in info['files'].items():
+                path = Path(name)
+                if (path.is_absolute() or '..' in path.parts or '\\' in name
+                        or sha256(archive.read(name)).hexdigest() != checksum):
+                    raise ValueError('Unsafe or modified documentation content.')
     return manifest
 
 
@@ -133,13 +159,15 @@ def promote(api, repository, run_id):
                 if name in {'THIRD_PARTY_NOTICES.txt', 'dependencies.json'}:
                     path.rename(folder / f'{platform}-{name}')
                     uploads.append(folder / f'{platform}-{name}')
-                elif platform == 'linux-x64' or name.endswith('-windows-x64.zip'):
+                elif platform == 'linux-x64' or name.endswith(('-windows-x64.zip', '-windows-x64-setup.exe')):
                     uploads.append(path)
             path = folder / 'manifest.json'
             path.rename(folder / f'{platform}-manifest.json')
             uploads.append(folder / f'{platform}-manifest.json')
         if len({m['version'] for m in manifests}) != 1 or len({m['lock_sha256'] for m in manifests}) != 1:
             raise ValueError('Platforms were built from different versions or dependency locks.')
+        if len({m['documentation']['build_info_sha256'] for m in manifests}) != 1:
+            raise ValueError('Platforms have different documentation contents.')
         tag = 'v' + manifests[0]['version']
         sums = root / 'SHA256SUMS'
         sums.write_text(''.join(f'{sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in uploads), encoding='utf-8')

@@ -1,4 +1,4 @@
-"""Opt-in desktop prototype. Importing this module never imports pywebview."""
+"""Windows desktop presentation. Importing this module never imports pywebview."""
 import json
 import logging
 import os
@@ -62,7 +62,7 @@ class WindowPresentation:
     def prepare(self):
         from portfolio_app.holdings import DataError
         if sys.platform != 'win32':
-            raise DataError('The experimental window supports Windows 11 x64 only. Use portfolio-app or --browser.')
+            raise DataError('The desktop window requires Windows. Use portfolio-app or --browser.')
         if not runtime_available():
             raise DataError(f'WebView2 Runtime is missing. Install Evergreen from {RUNTIME_URL} '
                             'or relaunch with --browser.')
@@ -70,7 +70,7 @@ class WindowPresentation:
             import webview
             self.webview = webview
         except Exception as exc:
-            raise DataError('Window dependencies could not load. Run uv sync --extra window, '
+            raise DataError('Window dependencies could not load. Reinstall the application or run uv sync --locked, '
                             'or relaunch with --browser.') from exc
 
     def child(self, command):
@@ -236,7 +236,7 @@ class WindowPresentation:
         webview.settings.update(ALLOW_DOWNLOADS=True, ALLOW_FILE_URLS=False,
                                 OPEN_EXTERNAL_LINKS_IN_BROWSER=False, REMOTE_DEBUGGING_PORT=None)
         self.app_url = f'{url}/?embed_options={self.color_scheme}_theme'
-        self.window = webview.create_window(APP_NAME + ' — experimental window',
+        self.window = webview.create_window(APP_NAME,
                                            url=url + '/__portfolio_window__',
                                            width=1280, height=900, min_size=(800, 600),
                                            fullscreen=False, maximized=True, background_color='#11151c',
@@ -339,7 +339,7 @@ class WindowPresentation:
             finished.wait(3)
         if self.failures:
             reason = str(self.failures[0]) or type(self.failures[0]).__name__
-            raise DataError(f'The experimental window failed: {reason} '
+            raise DataError(f'The application window failed: {reason} '
                             'Relaunch with --browser; see the private window log.') from self.failures[0]
         return result[0]
 
@@ -451,7 +451,7 @@ def main():
     except Exception:
         LOG.exception('Window startup failed')
         from portfolio_app.desktop import startup_error
-        startup_error('The experimental window could not start. Relaunch with --browser. '
+        startup_error('The application window could not start. Relaunch with --browser. '
                       'Diagnostics are in the application state directory under window.')
         raise SystemExit(1) from None
 

@@ -17,6 +17,7 @@ release_spec.loader.exec_module(release)
 
 @pytest.mark.parametrize('matching', [True, False])
 def test_interop_inventory_requires_exact_sdk_bytes(tmp_path, monkeypatch, matching):
+    monkeypatch.syspath_prepend(str(ROOT / 'tools'))
     monkeypatch.setitem(sys.modules, 'release', release)
     spec.loader.exec_module(module)
     sdk = tmp_path / 'synthetic-sdk.nupkg'

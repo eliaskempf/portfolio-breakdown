@@ -51,6 +51,16 @@ def test_desktop_exec_escaping():
     assert '\\$' in desktop_quote('$HOME')
 
 
+def test_windows_desktop_entry_dispatches_to_window(monkeypatch):
+    import sys
+    from portfolio_app.gui import main
+    called = []
+    monkeypatch.setattr(sys, 'platform', 'win32')
+    monkeypatch.setattr('portfolio_app.window.main', lambda: called.append('window'))
+    main()
+    assert called == ['window']
+
+
 def test_windows_streamlit_launch_uses_frozen_dispatch(tmp_path, monkeypatch):
     import sys
     from portfolio_app.app import main
@@ -82,6 +92,7 @@ def test_windowed_entry_uses_console_companion_for_server(monkeypatch, tmp_path)
 def test_gui_logs_missing_streams_and_reports_startup_failure(monkeypatch, tmp_path):
     import sys
     from portfolio_app.gui import main
+    monkeypatch.setattr(sys, 'platform', 'linux')
     monkeypatch.setattr('portfolio_app.settings.state_path', lambda: tmp_path)
     monkeypatch.setattr(sys, 'argv', ['portfolio-desktop', '--no-browser'])
     errors = []

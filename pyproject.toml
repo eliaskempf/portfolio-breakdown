@@ -19,6 +19,7 @@ dependencies = [
   "streamlit>=1.63,<2",
   "yfinance>=0.2.65,<2",
   "platformdirs>=4,<5",
+  "pywebview==6.2.1; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +35,7 @@ portfolio-desktop = "portfolio_app.gui:main"
 
 [dependency-groups]
 dev = ["pytest>=8,<10"]
+docs = ["mkdocs>=1.6,<2"]
 browser = ["playwright>=1.50,<2"]
 release = ["pyinstaller>=6.19,<7", "ruff>=0.14,<1", "pip-audit>=2.9,<3"]
 
@@ -41,7 +43,7 @@ release = ["pyinstaller>=6.19,<7", "ruff>=0.14,<1", "pip-audit>=2.9,<3"]
 packages = ["src/portfolio_app"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/tests", "/README.md", "/AGENTS.md", "/LICENSE", "/docs", "/tools", "/packaging", "/.github", "/pyproject.toml", "/uv.lock", "/.python-version", "/.gitignore", "/.githooks"]
+include = ["/src", "/tests", "/README.md", "/AGENTS.md", "/LICENSE", "/docs", "/tools", "/packaging", "/.github", "/pyproject.toml", "/uv.lock", "/mkdocs.yml", "/.python-version", "/.gitignore", "/.githooks"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

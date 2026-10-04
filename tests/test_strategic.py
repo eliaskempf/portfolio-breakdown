@@ -95,3 +95,18 @@ def test_unassigned_and_account_rows_remain_independent(positions, config):
     root = strategic_summary(positions, config).set_index("Category")
     assert root.loc["Unassigned", "Current (%)"] == pytest.approx(100 / 6)
     assert pd.isna(root.loc["Unassigned", "Target (%)"])
+
+
+def test_icon_palette_follows_actual_allocation_not_category_ids(positions, config):
+    from portfolio_app.charts import strategic_colors
+    tree = strategic_tree(positions, config)
+    colors = dict(zip(tree.label, strategic_colors(tree, config)))
+    assert colors['Long term'] == '#5470c6'
+    assert colors['Active'] == '#4aa9b3'
+    shuffled = tree.sample(frac=1, random_state=4)
+    assert dict(zip(shuffled.node_id, strategic_colors(shuffled, config))) == dict(zip(tree.node_id, strategic_colors(tree, config)))
+    positions.loc[0, 'current_value_eur'] = 5
+    changed = strategic_tree(positions, config)
+    colors = dict(zip(changed.label, strategic_colors(changed, config)))
+    assert colors['Active'] == '#5470c6'
+    assert colors['Long term'] == '#4aa9b3'

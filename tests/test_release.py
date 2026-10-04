@@ -111,13 +111,25 @@ def candidate(directory, platform='linux-x64'):
     suffix = '.zip' if platform == 'windows-x64' else '.tar.gz'
     names = [f'portfolio-breakdown-{version}-{platform}{suffix}',
              f'portfolio_breakdown-{version}-py3-none-any.whl',
-             f'portfolio_breakdown-{version}.tar.gz', 'THIRD_PARTY_NOTICES.txt', 'dependencies.json']
+             f'portfolio_breakdown-{version}.tar.gz', 'THIRD_PARTY_NOTICES.txt', 'dependencies.json',
+             f'portfolio-breakdown-{version}-docs.zip']
+    if platform == 'windows-x64':
+        names.append(f'portfolio-breakdown-{version}-windows-x64-setup.exe')
+    docs_info = json.dumps(dict(source_sha='a' * 40, app_version=version,
+        dirty=False, channel='candidate', files={'index.html': sha256(b'Invented guide').hexdigest()})).encode()
     files = {}
     for name in names:
         content = ('Synthetic candidate ' + name).encode()
-        (directory / name).write_bytes(content)
+        if name.endswith('-docs.zip'):
+            with zipfile.ZipFile(directory / name, 'w') as archive:
+                archive.writestr('build-info.json', docs_info)
+                archive.writestr('index.html', b'Invented guide')
+            content = (directory / name).read_bytes()
+        else:
+            (directory / name).write_bytes(content)
         files[name] = sha256(content).hexdigest()
-    manifest = dict(schema=1, version=version, commit='a' * 40, run_id='123', run_attempt='1',
+    manifest = dict(schema=2, documentation=dict(source_sha='a' * 40,
+                    route='candidates/' + 'a' * 40 + '/', build_info_sha256=sha256(docs_info).hexdigest()), version=version, commit='a' * 40, run_id='123', run_attempt='1',
                     platform=platform, lock_sha256='b' * 64, icon_ready=True, source_clean=True, files=files)
     (directory / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
     sums = dict(files, **{'manifest.json': sha256((directory / 'manifest.json').read_bytes()).hexdigest()})

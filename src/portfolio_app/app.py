@@ -96,7 +96,9 @@ def main(*, presentation: Presentation | None = None) -> None:
                 if args.demo:
                     command.append('--demo')
                 options = {'presentation': presentation} if presentation else {}
-                raise SystemExit(run_server(command, directory, port=port, browser=browser, demo=args.demo, **options))
+                from portfolio_app.documentation import documentation_server
+                with documentation_server():
+                    raise SystemExit(run_server(command, directory, port=port, browser=browser, demo=args.demo, **options))
     except KeyboardInterrupt:
         raise SystemExit(130) from None
     except (DataError, OSError) as exc:

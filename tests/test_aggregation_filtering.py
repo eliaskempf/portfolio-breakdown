@@ -124,7 +124,7 @@ def test_charts_use_unique_node_ids_and_valid_parent_totals(exposures, taxonomy)
     for chart_type in ("Treemap", "Sunburst"):
         trace = hierarchy_chart(nodes, chart_type).data[0]
         assert trace.branchvalues == "total"
-        assert list(trace.ids) == nodes["node_id"].tolist()
+        assert list(trace.ids) == sort_allocation_nodes(nodes)["node_id"].tolist()
     trace = bar_chart(nodes).data[0]
     assert sum(trace.x) == 260
     pie = pie_chart(nodes).data[0]
@@ -133,13 +133,13 @@ def test_charts_use_unique_node_ids_and_valid_parent_totals(exposures, taxonomy)
     assert len(set(pie.ids)) == len(pie.ids)
 
 
-def test_sunburst_has_distinct_palette_and_room_for_complete_circle(exposures, taxonomy):
+def test_allocation_views_share_icon_palette_and_keep_complete_circle(exposures, taxonomy):
     nodes = aggregate(exposures, taxonomy, taxonomy="ai", include_holdings=True)
     sunburst = hierarchy_chart(nodes, "Sunburst")
     treemap = hierarchy_chart(nodes, "Treemap")
     assert sunburst.layout.height >= 600
     assert min(sunburst.layout.margin[key] for key in ("l", "r", "t", "b")) >= 20
-    assert sunburst.layout.sunburstcolorway != treemap.layout.treemapcolorway
+    assert sunburst.layout.sunburstcolorway == treemap.layout.treemapcolorway
     assert sunburst.data[0].insidetextorientation == "radial"
     assert sunburst.layout.uniformtext.mode == "hide"
 
@@ -152,10 +152,10 @@ def test_sunburst_hides_only_labels_below_one_percent():
         dict(node_id='large', parent_id='root', label='Invented Large', value=986., percentage=.986),
     ])
     trace = hierarchy_chart(nodes, 'Sunburst').data[0]
-    assert list(trace.text) == ['Portfolio', '', 'Invented Boundary', 'Invented Large']
-    assert list(trace.values) == [1000., 4., 10., 986.]
-    assert trace.labels[1] == 'Invented Small'  # Hover identity is retained.
-    assert trace.customdata[1][0] == .004
+    assert list(trace.text) == ['Portfolio', 'Invented Large', 'Invented Boundary', '']
+    assert list(trace.values) == [1000., 986., 10., 4.]
+    assert trace.labels[3] == 'Invented Small'  # Hover identity is retained.
+    assert trace.customdata[3][0] == .004
 
 
 def test_default_sort_orders_siblings_without_detaching_descendants(exposures, taxonomy):

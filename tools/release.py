@@ -143,22 +143,45 @@ def build(output):
     # uv adds this helper to new output directories; it is not a release asset.
     (output / '.gitignore').unlink(missing_ok=True)
     package_check(output)
+    from docs_site import build as build_docs, check_site
+    docs_directory = ROOT / 'dist/docs-site'
+    build_docs(docs_directory, 'candidate', 'https://eliaskempf.github.io/portfolio-breakdown/')
+    docs_info = check_site(docs_directory)
     subprocess.run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
                     '--distpath', str(ROOT / 'dist/frozen'), str(ROOT / 'packaging/portfolio.spec')], cwd=ROOT, check=True)
     bundle = ROOT / 'dist/frozen/portfolio-app'
     shutil.copy(ROOT / 'LICENSE', bundle / 'LICENSE')
     shutil.copy(ROOT / 'docs/install.md', bundle / 'INSTALL.md')
     notices(bundle)
+    windows_metadata = {}
+    if os.name == 'nt':
+        from windows_bundle import prepare_notices
+        prepare_notices(bundle, ROOT / 'dist/windows-prerequisites')
+    shutil.copytree(docs_directory, bundle / 'documentation', dirs_exist_ok=True)
+    # Frozen help uses the exact bundled site, including before Pages publication.
+    help_metadata = dict(source_sha=docs_info['source_sha'], route=docs_info['route'],
+                         site_url=docs_info['site_url'], topics=docs_info['topics'])
+    (bundle / '_internal/portfolio_app/documentation-build.json').write_text(
+        json.dumps(help_metadata, indent=2), encoding='utf-8')
     frozen_check(bundle)
     version = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))['project']['version']
     target = 'windows-x64' if os.name == 'nt' else 'linux-x64'
     name = f'portfolio-breakdown-{version}-{target}'
     archive_bundle(bundle, output / name, windows=os.name == 'nt')
+    if os.name == 'nt':
+        from windows_bundle import build_installer
+        windows_metadata = build_installer(ROOT, bundle, output, version)
+    # Identical documentation bytes accompany both platforms and stay separately
+    # downloadable for Pages archival/promotion without rebuilding the guides.
+    shutil.make_archive(str(output / f'portfolio-breakdown-{version}-docs'), 'zip', docs_directory)
     shutil.copy(bundle / 'THIRD_PARTY_NOTICES.txt', output / 'THIRD_PARTY_NOTICES.txt')
     shutil.copy(bundle / 'dependencies.json', output / 'dependencies.json')
     # Corresponding source, build instructions and dependency lock accompany every bundle.
     files = {p.name: digest(p) for p in sorted(output.iterdir()) if p.is_file()}
-    manifest = dict(schema=1, version=version, platform=target,
+    manifest = dict(schema=2, version=version, platform=target,
+                    documentation=dict(source_sha=docs_info['source_sha'], route=docs_info['route'],
+                        build_info_sha256=digest(docs_directory / 'build-info.json')),
+                    windows=windows_metadata,
                     source_clean=not subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).strip(),
                     icon_ready=all((ROOT / "src/portfolio_app/assets" / name).is_file() for name in BRANDING_ASSETS),
                     commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
@@ -204,6 +227,9 @@ def main():
             executable = extract_bundle(directory, Path(temporary))
             frozen_check(executable.parent)
             subprocess.run([sys.executable, str(ROOT / 'tools/package_smoke.py'), str(executable)], check=True)
+            if os.name == 'nt':
+                subprocess.run([sys.executable, str(ROOT / 'tools/window_smoke.py'),
+                                str(executable.with_name('Portfolio Breakdown.exe'))], check=True)
 
 
 if __name__ == '__main__':

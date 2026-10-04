@@ -78,3 +78,26 @@ data. A checked checklist is specific to one build, not a blanket approval.
 No manual acceptance has been performed or release approved merely by adding
 this checklist. Artwork is integrated; its appearance on each target desktop and
 the untested operating systems still need acceptance.
+
+## Integrated window / Setup candidate
+
+- [ ] Record Setup EXE SHA256 as well as portable archive hashes.
+- [ ] Windows 11: install as a standard user, accept or skip the optional WebView2
+      prerequisite, launch from Start Menu and optional desktop shortcut.
+- [ ] No terminal flash; intro stays visible until the initial app/charts render.
+- [ ] F11 works with focus in the app and its controls; borderless edges fit the
+      monitor exactly, Exit works, returning to windowed mode restores maximize.
+- [ ] Native file upload and download/save dialogs work with synthetic CSV/Excel.
+- [ ] External links open the system browser; bundled help opens the matching
+      offline guide. No external navigation replaces the app window.
+- [ ] Repeated launch focuses one existing instance; close/Stop ends its server;
+      relaunch succeeds and the browser fallback works independently.
+- [ ] Run from outside the checkout with Python/uv absent from PATH. Record whether
+      Python/uv are installed on the host; that is not a clean-machine test.
+- [ ] Upgrade/reinstall preserves an invented workspace and leaves one usable
+      shortcut; uninstall removes app/shortcuts but preserves that workspace.
+- [ ] All allocation charts use the icon palette, largest allocations first;
+      navigation retains consistent category colors within the current portfolio.
+- [ ] Candidate docs identify the same source SHA as both binary manifests.
+      Docs build, internal links, search, mobile layout and task walkthrough pass.
+- [ ] Pages publication and official release publication remain separately approved.

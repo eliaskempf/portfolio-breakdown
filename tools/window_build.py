@@ -7,27 +7,11 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import zipfile
 
 from release import ROOT, archive_bundle, frozen_check, notices, package_check
 
 
-def interop_notices(sdk: Path, webview_root: Path, bundle: Path):
-    """Match supplied official SDK bytes, then preserve its license and notices."""
-    with zipfile.ZipFile(sdk) as archive:
-        dlls = [p for p in webview_root.rglob('*.dll')
-                if p.name.startswith('Microsoft.Web.WebView2.') or p.name == 'WebView2Loader.dll']
-        if not dlls:
-            raise ValueError('Missing WebView2 interop DLLs.')
-        for dll in dlls:
-            candidates = [name for name in archive.namelist() if name.endswith('/' + dll.name)]
-            if not any(archive.read(name) == dll.read_bytes() for name in candidates):
-                raise ValueError(f'SDK does not match bundled {dll.name}.')
-        license_text = archive.read('LICENSE.txt').decode('utf-8')
-        notice_text = archive.read('NOTICE.txt').decode('utf-8')
-    with (bundle / 'THIRD_PARTY_NOTICES.txt').open('a', encoding='utf-8') as handle:
-        handle.write('\n=== Microsoft WebView2 SDK interop (matched against supplied NuGet package) ===\n')
-        handle.write(license_text + '\n' + notice_text + '\n')
+from windows_bundle import interop_notices
 
 
 def main():
