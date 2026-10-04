@@ -135,6 +135,15 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     page.keyboard.press('Escape')
     playwright.expect(value_card.get_by_role('button', name='Show gain as percentage')).to_contain_text('+€30.00')
     click_slice(page, 'ETF core')  # Center returns to the parent rather than zooming independently.
+    # Streamlit can retain both Category controls while replacing the scoped
+    # layout. Wait atomically for the new chart, value and unique control before
+    # asking Playwright to apply a strict single-element assertion.
+    page.wait_for_function("""() => {
+        const categories = document.querySelectorAll('[role=combobox][aria-label="Category"]');
+        return document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'
+            && categories.length === 1 && categories[0].value === 'Portfolio'
+            && document.querySelector('.js-plotly-plot')?.data?.[0]?.labels?.[0] === 'Portfolio';
+    }""")
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('Portfolio')
     click_slice(page, 'Portfolio')  # Root center is a safe no-op.
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('Portfolio')
