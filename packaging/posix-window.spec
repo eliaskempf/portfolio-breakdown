@@ -1,5 +1,6 @@
 # Experimental native-window artifacts only; production release.spec is untouched.
 from pathlib import Path
+from importlib.metadata import version
 import sys
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 from portfolio_app.settings import BRANDING_ASSETS
@@ -37,5 +38,7 @@ if sys.platform == 'darwin':
     app = BUNDLE(collection, name='Portfolio Breakdown Experimental.app',
         icon=str(assets / 'portfolio-breakdown.png'),
         bundle_identifier='io.github.eliaskempf.portfolio-breakdown.experimental',
-        info_plist={'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': '14.0',
+        info_plist={'CFBundleShortVersionString': version('portfolio-breakdown'),
+                    'CFBundleVersion': version('portfolio-breakdown'),
+                    'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': '14.0',
                     'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True}})

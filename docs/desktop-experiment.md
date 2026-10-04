@@ -14,7 +14,8 @@ v1. Base: `f2db5ab`; branch: `experiment/linux-macos-desktop`.
 Use an isolated checkout on the target OS: Python 3.12 on Linux and Python
 3.13 on macOS. Python 3.12 does not expose `os.waitid` on macOS, which the
 supervisor needs to retain process identity during cleanup. Installed bundles
-include the required interpreter:
+include the required interpreter. On macOS, set `UV_PYTHON=3.13` for both
+commands below; otherwise the repository default selects Python 3.12:
 
 ```sh
 uv sync --locked --extra window --all-groups

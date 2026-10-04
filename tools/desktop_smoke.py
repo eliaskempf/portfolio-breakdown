@@ -24,7 +24,7 @@ def wait(check, timeout=90):
 def run(executable, output):
     output.mkdir(parents=True, exist_ok=False)
     results = []
-    for mode in ['render', 'early-close']:
+    for mode in ['render', 'welcome', 'early-close']:
         with (output / f'{mode}.log').open('w') as log:
             result = subprocess.run([str(executable), '--native-self-test', str(output / mode), mode],
                                     cwd=output, stdout=log, stderr=subprocess.STDOUT, timeout=150)

@@ -23,13 +23,13 @@ def wait(check, timeout=60):
 
 
 def main(output: Path, mode='render'):
-    if mode not in {'render', 'early-close'}:
+    if mode not in {'render', 'welcome', 'early-close'}:
         raise ValueError('Unknown native self-test mode')
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     report = {'mode': mode, 'platform': sys.platform, 'checks': [], 'status': 'failed',
-              'gaps': ['native upload/save dialogs', 'desktop focus policy', 'Gatekeeper (macOS)',
-                       'Wayland (Linux)']}
+              'gaps': ['native upload/save dialogs', 'desktop focus policy',
+                       'Gatekeeper' if sys.platform == 'darwin' else 'Wayland']}
     import webview
     from portfolio_app.window import main as window_main
     from portfolio_app.launcher import request_instance
@@ -51,11 +51,20 @@ def main(output: Path, mode='render'):
         marker = workspace / 'synthetic-preserved.txt'
         marker.write_text('Invented preservation sentinel', encoding='utf-8')
         os.environ['PORTFOLIO_STATE_DIR'] = str(root / 'state')
-        sys.argv = [original_argv[0], '--data-dir', str(workspace), '--offline-demo', '--demo', '--skip-intro']
+        sys.argv = [original_argv[0], '--data-dir', str(workspace), '--offline-demo']
+        if mode == 'render':
+            sys.argv += ['--demo', '--skip-intro']
         def inspect(window):
             try:
                 record('native window shown')
                 if mode == 'early-close':
+                    return
+                if mode == 'welcome':
+                    wait(lambda: window.evaluate_js("""[...document.querySelectorAll('button')]
+                        .some(el => el.textContent.trim() === 'Explore demo' && el.getClientRects().length)"""))
+                    assert not window.evaluate_js("Boolean(document.querySelector('[data-testid=stException]'))")
+                    record('default intro completes and empty-workspace welcome renders')
+                    report['status'] = 'passed'
                     return
                 wait(lambda: window.evaluate_js("Boolean(document.querySelector('.js-plotly-plot'))"))
                 record('default overview chart rendered in native webview')

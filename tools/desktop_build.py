@@ -42,7 +42,7 @@ def linux_package(bundle, stage, output, version):
     icon.parent.mkdir(parents=True)
     shutil.copy(ROOT / 'src/portfolio_app/assets/portfolio-breakdown.png', icon)
     artifact = output / f'{DEB_NAME}_{version}_amd64.deb'
-    subprocess.run(['dpkg-deb', '--root-owner-group', '--build', str(stage), str(artifact)], check=True)
+    subprocess.run(['dpkg-deb', '-Zgzip', '-z6', '--root-owner-group', '--build', str(stage), str(artifact)], check=True)
     return artifact
 
 
@@ -50,6 +50,8 @@ def build(output):
     target = (sys.platform, platform.machine().lower())
     if target not in {('linux', 'x86_64'), ('darwin', 'arm64')}:
         raise ValueError('Supported build hosts: Linux x64 or Apple Silicon macOS.')
+    if sys.platform == 'darwin' and sys.version_info < (3, 13):
+        raise ValueError('Build macOS with UV_PYTHON=3.13 (waitid is required).')
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
         raise ValueError('Output must be empty; never mix candidate builds.')

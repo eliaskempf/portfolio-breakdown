@@ -147,8 +147,9 @@ def test_windowed_posix_bootloader_recovers_inherited_pipe(monkeypatch):
     assert descriptors == [0]
 
 
-@pytest.mark.parametrize('selected', ['', '/tmp/invented-download.txt'])
-def test_qt6_download_accept_and_cancel(selected):
+@pytest.mark.parametrize('accept', [True, False])
+def test_qt6_download_accept_and_cancel(tmp_path, accept):
+    selected = str(tmp_path / 'invented-download.txt') if accept else ''
     from types import SimpleNamespace
     from portfolio_app.posix_window import save_qt_download
     calls = []
@@ -157,7 +158,7 @@ def test_qt6_download_accept_and_cancel(selected):
         setDownloadFileName=lambda value: calls.append(('filename', value)),
         accept=lambda: calls.append('accept'), cancel=lambda: calls.append('cancel'))
     save_qt_download(download, lambda name: selected)
-    assert calls == ([('directory', '/tmp'), ('filename', 'invented-download.txt'), 'accept']
+    assert calls == ([('directory', str(tmp_path)), ('filename', 'invented-download.txt'), 'accept']
                      if selected else ['cancel'])
 
 

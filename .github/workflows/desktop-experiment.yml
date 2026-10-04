@@ -6,7 +6,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: desktop-experiment-${{ github.ref }}
+  group: desktop-experiment-${{ github.sha }}
   cancel-in-progress: true
 jobs:
   build:
@@ -90,6 +90,7 @@ jobs:
             ${{ runner.temp }}/launch-services-native
           retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: desktop-experiment-${{ matrix.target }}
           path: |
@@ -100,7 +101,7 @@ jobs:
             dist/desktop-experiment/SHA256SUMS
             dist/desktop-experiment/source/*.whl
             dist/desktop-experiment/source/*.tar.gz
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
   linux-compatibility:
     if: ${{ always() && !cancelled() }}
