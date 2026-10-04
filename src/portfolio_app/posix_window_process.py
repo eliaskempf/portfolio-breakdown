@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 import os
 import signal
+import select
 import subprocess
 import sys
 import threading
@@ -25,12 +26,20 @@ def supervise(command: list[str], stream) -> int:
         return 0
     stopping = threading.Event()
     previous = signal.signal(signal.SIGTERM, lambda *_: stopping.set())
+    watch_done = threading.Event()
     def watch_parent():
+        # Do not hold BufferedReader's lock during interpreter shutdown when
+        # the application exits before its window closes the pipe.
         try:
-            stream.read()
-        finally:
+            while not watch_done.is_set():
+                readable, _, _ = select.select([stream.fileno()], [], [], .2)
+                if readable and not os.read(stream.fileno(), 4096):
+                    stopping.set()
+                    return
+        except OSError:
             stopping.set()
-    threading.Thread(target=watch_parent, daemon=True).start()
+    watcher = threading.Thread(target=watch_parent, daemon=True)
+    watcher.start()
     child = None
     try:
         child = subprocess.Popen(command, stdin=subprocess.DEVNULL, start_new_session=True, close_fds=True)
@@ -48,6 +57,8 @@ def supervise(command: list[str], stream) -> int:
                 time.sleep(.1)
             os.killpg(child.pid, signal.SIGKILL)
             code = child.wait(timeout=5)
+        watch_done.set()
+        watcher.join(timeout=1)
         signal.signal(signal.SIGTERM, previous)
     return 0 if stopping.is_set() else code
 

@@ -16,8 +16,10 @@ jobs:
         include:
           - os: ubuntu-22.04
             target: linux-x64
+            python: '3.12'
           - os: macos-14
             target: macos-arm64
+            python: '3.13'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -32,7 +34,7 @@ jobs:
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           version: '0.12.10'
-          python-version: '3.12'
+          python-version: ${{ matrix.python }}
       - run: uv sync --locked --extra window --all-groups
       - run: uv run portfolio-check-private --tracked
       - run: uv run ruff check src tests tools
@@ -40,7 +42,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libxcb-cursor0 libxkbcommon-x11-0 libegl1 libopengl0
+          sudo apt-get install -y xvfb libxcb-cursor0 libxkbcommon-x11-0 libegl1 libopengl0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-randr0 libxcb-shape0 libxcb-xfixes0
       - name: Verify native GUI session before packaging
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
@@ -101,6 +103,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   linux-compatibility:
+    if: ${{ always() && !cancelled() }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 20

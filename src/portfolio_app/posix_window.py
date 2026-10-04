@@ -95,6 +95,8 @@ class PosixWindowPresentation:
     def prepare(self):
         if sys.platform not in {'linux', 'darwin'}:
             raise DataError('This experimental window supports Linux and macOS only.')
+        if sys.platform == 'darwin' and not hasattr(os, 'waitid'):
+            raise DataError('The macOS window requires Python 3.13 or newer. Use the bundled app or --browser.')
         if sys.platform == 'linux':
             if not (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')):
                 raise DataError('No desktop display is available. Use --browser or run in a desktop session.')
