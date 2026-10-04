@@ -284,6 +284,9 @@ def test_dismissed_draft_resumes_and_stale_edit_cannot_overwrite(ux_page):
     page.get_by_role('button', name='Reload position form', exact=True).click()
     quantity = page.get_by_role('dialog').get_by_role('spinbutton', name='Quantity held (total)', exact=True)
     playwright.expect(quantity).to_have_value('4.0000000000')
+    # Reload replaces the warning's Cancel button after the new fields arrive.
+    playwright.expect(page.get_by_role('button', name='Reload position form', exact=True)).to_have_count(0)
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     page.get_by_role('dialog').get_by_role('button', name='Cancel', exact=True).click()
     playwright.expect(page.get_by_role('dialog')).to_have_count(0)
 

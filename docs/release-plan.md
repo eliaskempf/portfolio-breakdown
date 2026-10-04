@@ -849,3 +849,13 @@ Run `37196886950` exposed an independent exposure-chart test race: the Detail
 view selector had updated while Plotly still displayed its previous root. The
 test now waits for the expected chart root on both drill-down and return before
 continuing. It retains the original chart, selector and exception assertions.
+
+The Windows job in that run passed all 983 tests, installer creation, packaged
+browser smoke and native startup/F11/monitor-edge/relaunch/help/shutdown checks.
+Run `37197766978` subsequently exposed another dialog replacement race in the
+stale-edit test: the reloaded quantity arrived before the warning form's Cancel
+control was replaced. The test now waits for the old reload control to disappear
+and the rerun to finish before canceling; stale-write protection and dismissal
+assertions remain unchanged. The six UX browser tests and a deliberately delayed
+synthetic form passed. Main CI run `37197753233` passed all jobs; the additional
+reload synchronization is also being carried into its repair PR.
