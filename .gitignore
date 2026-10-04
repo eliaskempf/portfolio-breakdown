@@ -65,3 +65,5 @@ handoff.md
 !/src/portfolio_app/assets/portfolio-breakdown.svg
 !/src/portfolio_app/assets/favicon.svg
 !/src/portfolio_app/assets/favicon.ico
+
+!/.github/workflows/desktop-experiment.yml

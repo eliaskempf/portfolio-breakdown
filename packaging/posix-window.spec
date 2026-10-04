@@ -1,0 +1,35 @@
+# Experimental native-window artifacts only; production release.spec is untouched.
+from pathlib import Path
+import sys
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
+from portfolio_app.settings import BRANDING_ASSETS
+
+if sys.platform not in {'linux', 'darwin'}:
+    raise RuntimeError('Build on the target Linux/macOS host.')
+root = Path(SPECPATH).parent
+assets = root / 'src/portfolio_app/assets'
+datas = collect_data_files('streamlit') + collect_data_files('webview')
+datas += [(str(p), 'portfolio_app') for p in (root / 'src/portfolio_app').glob('*.py')]
+datas += [(str(assets / n), 'portfolio_app/assets') for n in BRANDING_ASSETS]
+datas += [(str(root / 'src/portfolio_app/intro_frontend/index.html'), 'portfolio_app/intro_frontend')]
+datas += copy_metadata('portfolio-breakdown', recursive=True) + copy_metadata('pywebview', recursive=True)
+datas += [(str(root / 'LICENSE'), '.')]
+backend = 'webview.platforms.qt' if sys.platform == 'linux' else 'webview.platforms.cocoa'
+analysis = Analysis([str(root / 'packaging/window_entrypoint.py')], pathex=[str(root / 'src')],
+    datas=datas, hiddenimports=collect_submodules('portfolio_app') + collect_submodules('streamlit') +
+        collect_submodules('python_calamine') + [backend],
+    excludes=['playwright', 'pytest', 'ruff', 'pip_audit', 'mkdocs', 'PyQt5', 'PySide2', 'PySide6',
+              'gi', 'cefpython3', 'webview.platforms.winforms', 'webview.platforms.gtk',
+              *(['webview.platforms.cocoa'] if sys.platform == 'linux' else ['webview.platforms.qt', 'PyQt6', 'qtpy'])])
+analysis.datas = [entry for entry in analysis.datas if Path(entry[0]).name != 'direct_url.json']
+pyz = PYZ(analysis.pure)
+exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True, name='portfolio-window',
+          console=sys.platform != 'darwin', target_arch='arm64' if sys.platform == 'darwin' else None,
+          codesign_identity=None)
+collection = COLLECT(exe, analysis.binaries, analysis.datas, name='portfolio-window')
+if sys.platform == 'darwin':
+    app = BUNDLE(collection, name='Portfolio Breakdown Experimental.app',
+        icon=str(assets / 'portfolio-breakdown.png'),
+        bundle_identifier='io.github.eliaskempf.portfolio-breakdown.experimental',
+        info_plist={'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': '14.0',
+                    'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True}})

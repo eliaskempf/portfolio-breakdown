@@ -1,0 +1,133 @@
+name: Experimental desktop candidates
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/linux-macos-desktop]
+permissions:
+  contents: read
+concurrency:
+  group: desktop-experiment-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: linux-x64
+          - os: macos-14
+            target: macos-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      QT_QPA_PLATFORM: xcb
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --locked --extra window --all-groups
+      - run: uv run portfolio-check-private --tracked
+      - run: uv run ruff check src tests tools
+      - name: Linux native display dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libxcb-cursor0 libxkbcommon-x11-0 libegl1 libopengl0
+      - name: Verify native GUI session before packaging
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a uv run --extra window portfolio-window --native-self-test "$RUNNER_TEMP/source-native" render
+          else
+            uv run --extra window portfolio-window --native-self-test "$RUNNER_TEMP/source-native" render
+          fi
+      - run: uv run playwright install --with-deps chromium
+      - name: Application and lifecycle tests
+        env:
+          PORTFOLIO_REQUIRE_BROWSER: '1'
+        run: uv run pytest -q --ignore=tests/test_posix_desktop.py --junitxml=dist/unit-results.xml
+      - name: POSIX policy and containment tests
+        run: uv run pytest tests/test_posix_desktop.py -q --junitxml=dist/posix-results.xml
+      - run: uv run python tools/desktop_build.py
+      - name: Install Linux artifact and test native binary
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y ./dist/desktop-experiment/*.deb
+          xvfb-run -a uv run python tools/desktop_smoke.py /opt/portfolio-breakdown-experimental/portfolio-window --output "$RUNNER_TEMP/installed-native"
+          uv run python -c 'import os; from pathlib import Path; from portfolio_app.demo import create_demo_data; create_demo_data(Path(os.environ["RUNNER_TEMP"]) / "upgrade-workspace")'
+          sha256sum "$RUNNER_TEMP/upgrade-workspace/holdings.csv" > "$RUNNER_TEMP/preserved.sha256"
+          sudo apt-get install --reinstall -y ./dist/desktop-experiment/*.deb
+          sudo apt-get remove -y portfolio-breakdown-experimental
+          sha256sum -c "$RUNNER_TEMP/preserved.sha256"
+          test ! -e /opt/portfolio-breakdown-experimental/portfolio-window
+      - name: Copy Mac app from DMG and test installed binary
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p "$RUNNER_TEMP/desktop-mount" "$RUNNER_TEMP/desktop-installed"
+          hdiutil attach dist/desktop-experiment/*.dmg -nobrowse -mountpoint "$RUNNER_TEMP/desktop-mount"
+          ditto "$RUNNER_TEMP/desktop-mount/Portfolio Breakdown Experimental.app" "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app"
+          hdiutil detach "$RUNNER_TEMP/desktop-mount"
+          codesign --verify --deep --strict "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app"
+          open -W -n "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app" --args --native-self-test "$RUNNER_TEMP/launch-services-native" render
+          uv run python tools/desktop_smoke.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-window" --output "$RUNNER_TEMP/installed-native"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: desktop-evidence-${{ matrix.target }}
+          path: |
+            dist/*-results.xml
+            ${{ runner.temp }}/source-native
+            ${{ runner.temp }}/installed-native
+            ${{ runner.temp }}/launch-services-native
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: desktop-experiment-${{ matrix.target }}
+          path: |
+            dist/desktop-experiment/*.deb
+            dist/desktop-experiment/*.dmg
+            dist/desktop-experiment/*.json
+            dist/desktop-experiment/*.txt
+            dist/desktop-experiment/SHA256SUMS
+            dist/desktop-experiment/source/*.whl
+            dist/desktop-experiment/source/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+  linux-compatibility:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: xcb
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: desktop-experiment-linux-x64
+          path: dist/downloaded
+      - run: uv sync --locked --extra window --all-groups
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb ./*.deb
+          sha256sum -c SHA256SUMS
+        working-directory: dist/downloaded
+      - run: xvfb-run -a uv run python tools/desktop_smoke.py /opt/portfolio-breakdown-experimental/portfolio-window --output "$RUNNER_TEMP/compat-native"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: desktop-evidence-linux-24
+          path: ${{ runner.temp }}/compat-native
+          retention-days: 14

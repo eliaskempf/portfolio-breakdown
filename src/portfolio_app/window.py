@@ -351,6 +351,11 @@ class WindowPresentation:
 def control_input():
     if sys.stdin is not None:
         return sys.stdin.buffer
+    if os.name == 'posix':
+        try:
+            return os.fdopen(os.dup(0), 'rb')
+        except OSError:
+            return None
     # A windowed PyInstaller executable can have None Python streams even when
     # Popen supplied a valid inherited standard-input pipe.
     if sys.platform == 'win32':
@@ -432,10 +437,29 @@ def configure_logging():
 
 
 def main():
+    # The fixed self-test creates only synthetic data; no real-workspace options
+    # or arbitrary scripts can be combined with it.
+    if sys.argv[1:2] == ['--native-self-test']:
+        if len(sys.argv) != 4 or sys.argv[3] not in {'render', 'early-close'}:
+            raise SystemExit('Usage: --native-self-test NEW_OUTPUT_DIRECTORY render|early-close')
+        from pathlib import Path
+        from portfolio_app.desktop_probe import main as probe
+        probe(Path(sys.argv[2]), sys.argv[3])
+        return
     # Internal frozen dispatch must never recursively create another webview.
     if sys.argv[1:2] == ['--internal-window-server']:
         configure_logging()
         server_child()
+        return
+    if sys.argv[1:2] == ['--internal-posix-supervisor']:
+        configure_logging()
+        from portfolio_app.posix_window_process import supervisor_main
+        supervisor_main()
+        return
+    if sys.argv[1:2] == ['--internal-streamlit']:
+        configure_logging()
+        from portfolio_app.app import main as app_main
+        app_main()
         return
     configure_logging()
     from portfolio_app.app import main as app_main
@@ -451,7 +475,12 @@ def main():
             app_main()
         return
     try:
-        app_main(presentation=WindowPresentation())
+        if sys.platform in {'linux', 'darwin'}:
+            from portfolio_app.posix_window import PosixWindowPresentation
+            presentation = PosixWindowPresentation()
+        else:
+            presentation = WindowPresentation()
+        app_main(presentation=presentation)
     except Exception:
         LOG.exception('Window startup failed')
         from portfolio_app.desktop import startup_error
