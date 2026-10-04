@@ -39,6 +39,21 @@ def confirm_units(app):
     return next(box for box in app.checkbox if box.label.startswith('Quantities are')).check().run()
 
 
+def test_import_return_to_positions_ignores_stale_browser_tool(tmp_path, monkeypatch):
+    app, path = launch(tmp_path, monkeypatch)
+    confirm_units(app)
+    by_label(app.button, 'Import reviewed positions').click().run()
+    assert app.session_state['main_tabs'] == 'Overview'
+    saved = path.read_bytes()
+    # A remounted browser control can send its old value after import completed.
+    app.session_state['positions_workflow'] = 'Import portfolio'
+    activate(app, 'Positions')
+    assert not app.exception
+    assert app.session_state['positions_workflow'] == 'Positions'
+    assert not any('Import currently requires' in notice.value for notice in app.info)
+    assert path.read_bytes() == saved
+
+
 def test_import_snapshots_then_allocation_and_live_linking(tmp_path, monkeypatch):
     app, path = launch(tmp_path, monkeypatch)
     assert not app.exception

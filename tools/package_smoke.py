@@ -83,6 +83,20 @@ def add_synthetic_fund(workspace):
     preferences.write_text(json.dumps({'enabled': False, 'minimum_age_days': 1}), encoding='utf-8')
 
 
+def open_setup_selector(page, name):
+    """Finish nested-expander motion and scrolling before opening an option list."""
+    page.wait_for_function("""() => !document.querySelector('[data-testid=stPopoverBody]')
+        .getAnimations({subtree: true}).some(animation => animation.playState === 'running'
+            && animation.effect.getTiming().iterations !== Infinity)""")
+    control = page.get_by_role('combobox', name=name, exact=True)
+    control.evaluate("el => el.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'})")
+    # React Aria closes the list on ancestor scroll. Let the browser deliver that
+    # scroll event before the click opens it; no fixed delay or forced click.
+    control.evaluate('el => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    control.click()
+    return control
+
+
 def exercise_manual_breakdown(page):
     page.get_by_role('tab', name='Exposure', exact=True).click()
     settings = page.get_by_role('button', name='Data & settings', exact=True)
@@ -92,8 +106,7 @@ def exercise_manual_breakdown(page):
     settings.click()
     page.get_by_text('ETF refresh & snapshots', exact=True).click()
     page.get_by_text('Set up a breakdown', exact=True).click()
-    position = page.get_by_role('combobox', name='Fund position', exact=True)
-    position.click()
+    position = open_setup_selector(page, 'Fund position')
     # This fixture has four options. Choose directly from the full list, avoiding
     # an asynchronous filtered-popup resize inside the settings popover.
     page.get_by_role('option', name='Synthetic bond fund', exact=True).click()
@@ -115,10 +128,9 @@ def exercise_manual_breakdown(page):
     # the dropdown, which would otherwise be detached mid-selection.
     expect(page.get_by_role('button', name='Preview breakdown', exact=True)).to_be_enabled()
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
-    asset_class = page.get_by_role('combobox', name='Physical fund asset class', exact=True)
+    asset_class = open_setup_selector(page, 'Physical fund asset class')
     # Confirm the actual option: the combobox's search text can match without
     # committing a selection, so its value alone is not sufficient evidence.
-    asset_class.click()
     asset_class.fill('fixed_income')
     page.get_by_role('option', name='fixed_income', exact=True).click()
     expect(asset_class).to_have_attribute('aria-expanded', 'false')

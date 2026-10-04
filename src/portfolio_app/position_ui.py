@@ -61,6 +61,10 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
             for key, value in st.session_state.get('position_draft', {}).items():
                 st.session_state[key] = value
             st.session_state['position_edit_dialog'] = True
+    # Apply navigation after remount: an old browser widget value can otherwise
+    # restore the import form after a successful save switches to Overview.
+    if requested := st.session_state.pop('positions_workflow_request', None):
+        st.session_state['positions_workflow'] = requested
     workflow = st.segmented_control('Position tools', ['Positions', 'Bulk add purchases', 'Update balances', 'Import portfolio', 'Connect live prices'],
                                     default=st.session_state.get('positions_workflow', 'Positions'),
                                     key='positions_workflow', on_change=_dismiss)
