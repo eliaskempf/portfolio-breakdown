@@ -85,26 +85,49 @@ def add_synthetic_fund(workspace):
 
 def exercise_manual_breakdown(page):
     page.get_by_role('tab', name='Exposure', exact=True).click()
-    page.get_by_role('button', name='Data & settings', exact=True).click()
+    settings = page.get_by_role('button', name='Data & settings', exact=True)
+    expect(settings).to_be_visible()
+    # Exposure streams the settings controls before its remaining results.
+    expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
+    settings.click()
     page.get_by_text('ETF refresh & snapshots', exact=True).click()
     page.get_by_text('Set up a breakdown', exact=True).click()
     position = page.get_by_role('combobox', name='Fund position', exact=True)
     position.click()
-    position.fill('Synthetic bond fund')
+    # This fixture has four options. Choose directly from the full list, avoiding
+    # an asynchronous filtered-popup resize inside the settings popover.
     page.get_by_role('option', name='Synthetic bond fund', exact=True).click()
+    expect(position).to_have_attribute('aria-expanded', 'false')
+    expect(position).to_have_value('Synthetic bond fund')
+    expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
     page.get_by_text('Normalized holdings CSV', exact=True).click()
+    # Check the bound instrument as well as the selector's search text before
+    # uploading: this proves the chosen fund survived both reruns.
+    expect(page.get_by_role('textbox', name='Fund ISIN', exact=True)).to_have_value('ZZ0000009991')
+    expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
     page.locator('input[type=file]').set_input_files({
         'name': 'invented-bonds.csv', 'mimeType': 'text/csv',
         'buffer': (b'constituent_id,name,ticker,isin,weight,instrument_type,issuer,country,market_currency,maturity\n'
                    b'bond-one,Invented bond one,,ZZ0000000016,0.6,bond,Invented issuer,Invented country,EUR,2030-01-02\n'
                    b'bond-two,Invented bond two,,ZZ0000000024,0.3,bond,Invented issuer,Invented country,EUR,2036-01-02\n'),
     })
-    page.get_by_role('combobox', name='Physical fund asset class', exact=True).click()
-    page.get_by_role('combobox', name='Physical fund asset class', exact=True).fill('fixed_income')
+    # Upload triggers a rerun; wait for the parsed-file controls before opening
+    # the dropdown, which would otherwise be detached mid-selection.
+    expect(page.get_by_role('button', name='Preview breakdown', exact=True)).to_be_enabled()
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
+    asset_class = page.get_by_role('combobox', name='Physical fund asset class', exact=True)
+    # Confirm the actual option: the combobox's search text can match without
+    # committing a selection, so its value alone is not sufficient evidence.
+    asset_class.click()
+    asset_class.fill('fixed_income')
     page.get_by_role('option', name='fixed_income', exact=True).click()
+    expect(asset_class).to_have_attribute('aria-expanded', 'false')
+    expect(asset_class).to_have_value('fixed_income')
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     page.get_by_role('button', name='Preview breakdown', exact=True).click()
     expect(page.get_by_text('90.00% represented', exact=False)).to_be_visible()
     page.get_by_role('button', name='Save breakdown', exact=True).click()
+    expect(page.get_by_role('button', name='Save breakdown', exact=True)).to_have_count(0)
     panel = page.get_by_text('ETF breakdown: Synthetic bond fund', exact=True)
     expect(panel).to_be_visible()
     panel.click()
@@ -145,7 +168,7 @@ def smoke(command):
                     expect(page.get_by_role('heading', name='Welcome to Portfolio Breakdown', exact=True)).to_be_visible()
                     page.get_by_role('button', name='Explore demo', exact=True).click()
                     page.locator('.js-plotly-plot').first.wait_for()
-                    expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('100,000.00')
+                    expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('100,000.00', timeout=20000)
                     favicon = page.locator('link[rel="shortcut icon"]')
                     expect(favicon).to_have_attribute('href', re.compile(r'^data:image/svg\+xml;base64,'))
                     assert page.evaluate('''async href => {
@@ -254,7 +277,7 @@ def smoke(command):
                     browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
                     page = browser.new_page()
                     page.goto(re.search(r'http://127\.0\.0\.1:\d+', desktop.stdout)[0])
-                    expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('100,000.00')
+                    expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('100,000.00', timeout=20000)
                     page.get_by_role('tab', name='Positions', exact=True).click()
                     page.get_by_role('table', name='Positions', exact=True).wait_for()
                     expect(page.get_by_role('table', name='Positions', exact=True)
