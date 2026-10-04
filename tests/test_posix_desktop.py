@@ -170,8 +170,10 @@ def test_natural_server_exit_preserves_exit_code_without_buffered_pipe_deadlock(
     try:
         child.stdin.write(b'start\n')
         child.stdin.flush()
-        assert child.wait(timeout=10) == 7
-        assert b'Fatal Python error' not in child.stderr.read()
+        code = child.wait(timeout=10)
+        diagnostic = child.stderr.read().decode('utf-8', errors='replace')
+        assert code == 7, diagnostic
+        assert 'Fatal Python error' not in diagnostic
     finally:
         child.stdin.close()
         if child.poll() is None:

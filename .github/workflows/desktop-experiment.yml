@@ -38,6 +38,8 @@ jobs:
       - run: uv sync --locked --extra window --all-groups
       - run: uv run portfolio-check-private --tracked
       - run: uv run ruff check src tests tools
+      - name: POSIX policy and containment tests
+        run: uv run pytest tests/test_posix_desktop.py -q --junitxml=dist/posix-results.xml
       - name: Linux native display dependencies
         if: runner.os == 'Linux'
         run: |
@@ -55,8 +57,6 @@ jobs:
       # exercises the native renderer and the installed-package browser suite.
       - name: Application and lifecycle unit tests
         run: uv run pytest -q --ignore-glob='*browser*' --ignore=tests/test_posix_desktop.py --junitxml=dist/unit-results.xml
-      - name: POSIX policy and containment tests
-        run: uv run pytest tests/test_posix_desktop.py -q --junitxml=dist/posix-results.xml
       - run: uv run python tools/desktop_build.py
       - name: Install Linux artifact and test native binary
         if: runner.os == 'Linux'
