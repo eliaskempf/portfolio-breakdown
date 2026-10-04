@@ -71,6 +71,9 @@ def main(output: Path, mode='render'):
                 if sys.platform == 'linux':
                     qt_interactions(window, root, output, record)
                     report['gaps'].remove('native upload/save dialogs')
+                elif sys.platform == 'darwin':
+                    cocoa_snapshot(window, output / 'native-overview.png')
+                    record('native WebKit snapshot captured')
                 # Native top-level navigation must invoke the system-browser
                 # adapter and leave the app loaded. Do not open a real website.
                 window.evaluate_js("location.href = 'https://example.invalid/synthetic-external'")
@@ -214,3 +217,34 @@ def qt_interactions(window, root, output, record):
     finally:
         if timer[0] is not None:
             gui(timer[0].stop)
+
+
+def cocoa_snapshot(window, destination):
+    """Snapshot our synthetic WKWebView, without recording the user's desktop."""
+    from AppKit import NSBitmapImageRep, NSBitmapImageFileTypePNG
+    from PyObjCTools import AppHelper
+    from webview.platforms.cocoa import BrowserView
+    completed = threading.Event()
+    errors = []
+    def received(image, error):
+        try:
+            if error is not None or image is None:
+                raise RuntimeError('WebKit did not produce a native snapshot')
+            bitmap = NSBitmapImageRep.imageRepWithData_(image.TIFFRepresentation())
+            png = bitmap.representationUsingType_properties_(NSBitmapImageFileTypePNG, {})
+            if not png.writeToFile_atomically_(str(destination), True):
+                raise OSError('Could not save synthetic native snapshot')
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            completed.set()
+    def capture():
+        try:
+            BrowserView.instances[window.uid].webview.takeSnapshotWithConfiguration_completionHandler_(None, received)
+        except Exception as exc:
+            errors.append(exc)
+            completed.set()
+    AppHelper.callAfter(capture)
+    assert completed.wait(30), 'Native WebKit snapshot timed out'
+    if errors:
+        raise errors[0]

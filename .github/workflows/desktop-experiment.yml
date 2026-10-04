@@ -51,10 +51,10 @@ jobs:
             uv run --extra window portfolio-window --native-self-test "$RUNNER_TEMP/source-native" render
           fi
       - run: uv run playwright install --with-deps chromium
-      - name: Application and lifecycle tests
-        env:
-          PORTFOLIO_REQUIRE_BROWSER: '1'
-        run: uv run pytest -q --ignore=tests/test_posix_desktop.py --junitxml=dist/unit-results.xml
+      # The PR's existing browser job runs the full browser suite. This job
+      # exercises the native renderer and the installed-package browser suite.
+      - name: Application and lifecycle unit tests
+        run: uv run pytest -q --ignore-glob='*browser*' --ignore=tests/test_posix_desktop.py --junitxml=dist/unit-results.xml
       - name: POSIX policy and containment tests
         run: uv run pytest tests/test_posix_desktop.py -q --junitxml=dist/posix-results.xml
       - run: uv run python tools/desktop_build.py

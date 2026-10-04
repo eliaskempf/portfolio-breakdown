@@ -45,6 +45,9 @@ never signals a process identified by a saved PID or port.
 The separate **Experimental desktop candidates** workflow builds and tests Linux
 and macOS independently. It uploads artifacts without publishing or promoting
 releases. The second Linux job installs the Ubuntu 22.04-built package on 24.04.
+Existing PR CI supplies the full browser suite and Windows regressions; the
+experiment runs each target's unit suite plus native and installed-package
+checks. Synthetic Qt and WebKit snapshots support visual review.
 
 ```sh
 uv run pytest tests/test_posix_desktop.py tests/test_window.py tests/test_window_lifecycle.py tests/test_launcher.py
