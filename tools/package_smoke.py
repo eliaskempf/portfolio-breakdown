@@ -103,9 +103,14 @@ def exercise_manual_breakdown(page):
     # the dropdown, which would otherwise be detached mid-selection.
     expect(page.get_by_role('button', name='Preview breakdown', exact=True)).to_be_enabled()
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
-    page.get_by_role('combobox', name='Physical fund asset class', exact=True).click()
-    page.get_by_role('combobox', name='Physical fund asset class', exact=True).fill('fixed_income')
-    page.get_by_role('option', name='fixed_income', exact=True).click()
+    asset_class = page.get_by_role('combobox', name='Physical fund asset class', exact=True)
+    # Keyboard selection keeps the action on the surviving combobox while
+    # Streamlit replaces the dropdown portal at the end of an upload rerun.
+    asset_class.click()
+    asset_class.fill('fixed_income')
+    asset_class.press('ArrowDown')
+    asset_class.press('Enter')
+    expect(asset_class).to_have_value('fixed_income')
     page.get_by_role('button', name='Preview breakdown', exact=True).click()
     expect(page.get_by_text('90.00% represented', exact=False)).to_be_visible()
     page.get_by_role('button', name='Save breakdown', exact=True).click()
@@ -275,7 +280,9 @@ def smoke(command):
                 if os.name == 'nt' and len(command) == 2:
                     gui = Path(command[0]).with_name('Portfolio Breakdown.exe')
                     assert gui.is_file(), 'Missing console-free desktop entry'
-                    desktop = subprocess.run([str(gui), '--offline-demo', '--demo', '--no-browser',
+                    # Browser fallback detaches; the standalone window is tested
+                    # separately and intentionally stays alive until it is closed.
+                    desktop = subprocess.run([str(gui), '--browser', '--offline-demo', '--demo', '--no-browser',
                                               '--data-dir', str(workspace)], env=env, cwd=root, timeout=90)
                     assert desktop.returncode == 0
                     gui_url = wait_for_instance(state, None)

@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import shutil
 import subprocess
 import sys
@@ -95,8 +96,12 @@ def test_staged_secret_is_detected_even_when_working_copy_is_clean(git_repo):
 def test_staged_symlink_to_private_file_is_rejected(git_repo):
     (git_repo / "private").mkdir()
     (git_repo / "private" / "account").write_text("fictional private fixture")
-    (git_repo / "README.md").symlink_to("private/account")
-    subprocess.run(["git", "add", "README.md"], check=True)
+    # Stage Git's actual symlink representation without requiring Windows'
+    # administrator/Developer Mode privilege to create a filesystem symlink.
+    blob = subprocess.run(["git", "hash-object", "-w", "--stdin"],
+                          input="private/account", capture_output=True, text=True, check=True).stdout.strip()
+    subprocess.run(["git", "update-index", "--add", "--cacheinfo",
+                    f"120000,{blob},README.md"], check=True)
     assert "symlinks" in check_index()[0][1]
 
 
@@ -143,15 +148,15 @@ def test_real_hook_blocks_force_staged_data(git_repo):
     shutil.copy(REPO / "src/portfolio_app/privacy.py", script_dir)
     shutil.copy(REPO / "pyproject.toml", git_repo)
     shutil.copy(REPO / "uv.lock", git_repo)
-    (git_repo / ".venv").symlink_to(sys.prefix, target_is_directory=True)
+    env = os.environ | {"UV_PROJECT_ENVIRONMENT": sys.prefix}
     subprocess.run(["git", "config", "portfolio.uvPath", uv], check=True)
     (git_repo / "README.md").write_text("Public documentation")
     subprocess.run(["git", "add", "README.md"], check=True)
     hook = ["sh", str(git_repo / ".githooks/pre-commit")]
-    assert subprocess.run(hook, capture_output=True).returncode == 0
+    assert subprocess.run(hook, capture_output=True, env=env).returncode == 0
     (git_repo / "holdings.csv").write_text("id,name,shares\nexample,Synthetic,1\n")
     subprocess.run(["git", "add", "-f", "holdings.csv"], check=True)
-    result = subprocess.run(hook, capture_output=True, text=True)
+    result = subprocess.run(hook, capture_output=True, text=True, env=env)
     assert result.returncode == 1
     assert "holdings.csv" in result.stderr
 

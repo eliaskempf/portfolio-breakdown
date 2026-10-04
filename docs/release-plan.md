@@ -741,3 +741,43 @@ below before candidate acceptance. Windows 10 with Python installed is available
 for native packaging checks; Windows 11 acceptance on another machine remains a
 separate user test. Neither this integration nor producing a candidate authorizes
 an official release or Pages publication.
+
+### Combined regression and native installation validation
+
+The full native Windows regression run passed **977 tests, no skips**, including
+required Chromium suites. Linux covered all 977 tests across the full run and
+focused follow-up: the full run passed 976, and its ETF chart test passed after
+waiting for the selected chart before opening the next dropdown. The 83 affected
+privacy, exposure, refresh and position browser tests also passed together after
+the Windows portability fixes. Browser fixtures now explicitly use en-US where
+their assertions assume decimal points. Privacy tests stage a real Git symlink
+entry and reuse the current uv environment without requiring OS symlink privileges;
+the real hook still rejects force-staged synthetic data.
+
+Both locally built, extracted packages passed browser navigation and lifecycle
+checks. The Windows package additionally passed startup, all tabs/charts, actual
+F11 input, exact borderless monitor/client bounds, repeated-instance focus,
+bundled offline help and normal shutdown. The installed executable passed native
+Open/Save dialogs, CSV import/save, an invented attachment download with checked
+bytes, and an external link opened by the system browser. There is no in-app
+export feature: the download check injects a same-origin synthetic attachment
+through the test controller. These optional desktop checks can be repeated with
+`uv run python tools/window_smoke.py --interactive "path/to/Portfolio Breakdown.exe"`.
+They require an interactive Windows desktop and can briefly move keyboard focus.
+
+Setup installed and reinstalled into a dedicated test directory, with the normal
+and browser-fallback shortcuts verified. Uninstall removed the app and shortcuts
+while preserving a separate invented workspace. Tests used temporary synthetic
+workspaces only. The executable was launched outside the checkout with Python/uv
+removed from PATH and PYTHONHOME/PYTHONPATH cleared. The host was Windows 10 with
+Python installed: this does **not** establish clean-machine or Windows 11 acceptance.
+
+The final test/tool fixes are committed before rebuilding both local candidates;
+their manifests identify the exact source commit and matching documentation.
+Local candidates are for validation, not public distribution: the established
+clean hosted Windows/Linux candidate process and its privacy/content gates are
+still required before publication. No GitHub credentials, push, workflow dispatch,
+Pages publication or official release are part of this local validation step.
+The next user check is Windows 11 Setup, Start Menu launch, display scaling and
+normal interaction, then reinstall/uninstall with an invented workspace. Record
+its results and exact Setup checksum in the release checklist.

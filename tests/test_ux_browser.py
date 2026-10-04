@@ -44,7 +44,7 @@ def ux_page(tmp_path):
                 time.sleep(.1)
         with playwright.sync_playwright() as runner:
             browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
-            page = browser.new_page(viewport={'width': 1440, 'height': 1000})
+            page = browser.new_page(viewport={'width': 1440, 'height': 1000}, locale='en-US')
             page.set_default_timeout(10000)
             page.goto(f'http://127.0.0.1:{port}')
             page.locator('.js-plotly-plot').first.wait_for()

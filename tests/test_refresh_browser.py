@@ -69,7 +69,7 @@ render_app(directory, price_service=PriceService(StaticProvider(directory / 'pri
                 time.sleep(.1)
         with playwright.sync_playwright() as runner:
             browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
-            page = browser.new_page(viewport={'width': 1440, 'height': 1000})
+            page = browser.new_page(viewport={'width': 1440, 'height': 1000}, locale='en-US')
             page.goto(f'http://127.0.0.1:{port}')
             page.get_by_role('tab', name='Exposure', exact=True).click()
             refresh_status = page.locator('.st-key-refresh_status').get_by_text('Discovering and updating ETF holdings', exact=False)

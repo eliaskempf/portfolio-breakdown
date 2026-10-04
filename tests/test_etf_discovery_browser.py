@@ -83,6 +83,10 @@ def test_bond_summary_defaults_charts_and_security_details(fund_page):
     dialog.get_by_role('combobox', name='Summarize by').click()
     dialog.get_by_role('combobox', name='Summarize by').fill('Maturity')
     page.get_by_role('option', name='Maturity', exact=True).click()
+    # The caption below is also present for Issuer. Wait for the new chart,
+    # otherwise the previous selection's rerun can close the next dropdown.
+    page.wait_for_function("""[...document.querySelectorAll('[role=dialog] .js-plotly-plot')]
+        .some(chart => chart.layout?.yaxis?.title?.text === 'Maturity')""")
     playwright.expect(dialog.get_by_text('Calculated from holdings dated 2026-01-02; missing metadata remains Unknown.')).to_be_visible()
     dialog.get_by_role('combobox', name='Summarize by').click()
     dialog.get_by_role('combobox', name='Summarize by').fill('Credit quality')
