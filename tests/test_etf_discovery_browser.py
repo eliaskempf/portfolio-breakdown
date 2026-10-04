@@ -100,8 +100,13 @@ def test_overnight_economic_view_and_separate_basket(fund_page):
     dialog.get_by_role('radio', name='Holdings', exact=True).click()
     dialog.get_by_text('Actual substitute basket · excluded from portfolio exposure', exact=True).click()
     playwright.expect(dialog.get_by_text('Net basket coverage', exact=False)).to_be_visible()
+    # The caption arrives before the holdings component and the final Close
+    # control. Do not click the previous fragment's button during its replacement.
+    playwright.expect(dialog.get_by_role('table', name='Invented overnight fund holdings', exact=True)).to_be_visible()
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
     dialog.get_by_role('button', name='Close exposure details').click()
+    playwright.expect(dialog).to_have_count(0)
     page.get_by_role('button', name='Data & settings', exact=True).click()
     page.get_by_text('ETF refresh & snapshots', exact=True).click()
     playwright.expect(page.get_by_text('Set up a breakdown', exact=True)).to_be_visible()
