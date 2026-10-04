@@ -904,3 +904,16 @@ native smoke now closes at the welcome screen and watches for transient dialogs,
 also checking shutdown after entering the demo. That stronger smoke detects the
 error in the previous frozen executable. A rebuilt candidate must pass it before
 this correction is considered packaged and ready for another installation test.
+
+Validated in [candidate run 37203297546](https://github.com/eliaskempf/portfolio-breakdown/actions/runs/37203297546)
+at `c4e2399ee4f046daae4af7967c8cbf9428ed067f`: all jobs passed, including
+984 tests on each platform, packaged browser checks, both native shutdown paths,
+F11/monitor edges/relaunch/help and Ubuntu 24.04 compatibility. The corrected
+source also passed three native Windows welcome-screen closes with no error
+dialogs; the 19 startup/browser checks passed locally. All native probes used
+new synthetic workspaces, and their previews were stopped.
+
+Use this run's [Windows artifact](https://github.com/eliaskempf/portfolio-breakdown/actions/runs/37203297546/artifacts/11304455883)
+for the next installation test, replacing the earlier candidate. Check its own
+`SHA256SUMS` and manifest when identifying the Setup executable. Windows 11
+retesting remains a user acceptance step; no official release was published.
