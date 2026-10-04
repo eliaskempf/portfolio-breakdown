@@ -807,3 +807,12 @@ No application behavior or portfolio semantics change.
 The corrected candidate must complete the existing hosted build, packaged smoke
 and Linux compatibility gates. Windows 11 installation acceptance remains a
 separate manual gate, and no official release or Pages publication is authorized.
+
+Follow-up run `37192870139` passed all 982 Linux tests, Linux package checks and
+Windows installer creation. Its Windows packaged browser smoke lost the nested
+fund option list during pointer selection. Slowed Chromium reproduced the issue
+on Linux and the frozen Windows app; DOM diagnostics showed the server was idle
+when the list closed. The smoke now waits for the completed Exposure view, uses
+keyboard selection after the filtered option is visible, and checks both the
+committed selection and bound synthetic ISIN before uploading.
+The application and frozen executable code are unchanged by this follow-up.

@@ -85,14 +85,30 @@ def add_synthetic_fund(workspace):
 
 def exercise_manual_breakdown(page):
     page.get_by_role('tab', name='Exposure', exact=True).click()
-    page.get_by_role('button', name='Data & settings', exact=True).click()
+    settings = page.get_by_role('button', name='Data & settings', exact=True)
+    expect(settings).to_be_visible()
+    # Exposure streams the settings controls before its remaining results.
+    expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
+    settings.click()
     page.get_by_text('ETF refresh & snapshots', exact=True).click()
     page.get_by_text('Set up a breakdown', exact=True).click()
     position = page.get_by_role('combobox', name='Fund position', exact=True)
     position.click()
     position.fill('Synthetic bond fund')
-    page.get_by_role('option', name='Synthetic bond fund', exact=True).click()
+    # The nested popover can close its option list during pointer targeting
+    # even with the server idle. Select the single filtered option by keyboard;
+    # the bound ISIN below verifies a committed selection, not just search text.
+    expect(page.get_by_role('option', name='Synthetic bond fund', exact=True)).to_be_visible()
+    position.press('ArrowDown')
+    position.press('Enter')
+    expect(position).to_have_attribute('aria-expanded', 'false')
+    expect(position).to_have_value('Synthetic bond fund')
+    expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
     page.get_by_text('Normalized holdings CSV', exact=True).click()
+    # Check the bound instrument as well as the selector's search text before
+    # uploading: this proves the chosen fund survived both reruns.
+    expect(page.get_by_role('textbox', name='Fund ISIN', exact=True)).to_have_value('ZZ0000009991')
+    expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
     page.locator('input[type=file]').set_input_files({
         'name': 'invented-bonds.csv', 'mimeType': 'text/csv',
         'buffer': (b'constituent_id,name,ticker,isin,weight,instrument_type,issuer,country,market_currency,maturity\n'
