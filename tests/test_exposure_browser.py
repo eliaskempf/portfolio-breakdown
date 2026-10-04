@@ -76,12 +76,15 @@ def test_themes_include_unclassified_and_chart_navigation_updates_table(exposure
     box = label.bounding_box()
     page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
     playwright.expect(page.get_by_role('combobox', name='Detail view', exact=True)).to_have_value('Theme')
+    # The selector arrives before Plotly finishes replacing the previous view.
+    page.wait_for_function("document.querySelector('.st-key-exposure_results .js-plotly-plot')?.data?.[0]?.labels?.[0] === 'Theme'")
     assert chart.evaluate('el => el.data[0].labels[0]') == 'Theme'
     label = chart.locator('text.slicetext').filter(has_text='Theme').first
     label.scroll_into_view_if_needed()
     box = label.bounding_box()
     page.mouse.click(box['x'] + box['width']/2, box['y'] + box['height']/2)
     playwright.expect(page.get_by_role('combobox', name='Detail view', exact=True)).to_have_value('All selected labels')
+    page.wait_for_function("document.querySelector('.st-key-exposure_results .js-plotly-plot')?.data?.[0]?.labels?.[0] === 'Selected labels'")
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     page.get_by_role('combobox', name='Group by', exact=True).click()
     page.get_by_role('option', name='Labels', exact=True).click()

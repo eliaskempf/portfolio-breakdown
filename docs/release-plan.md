@@ -844,3 +844,8 @@ with the original loop and passes with the correction. The updated controller
 also passed locally against the frozen Windows executable, including real F11,
 monitor edges, repeat launch, bundled help and shutdown. This remains a test-tool
 correction; fresh hosted validation is required for the final candidate.
+
+Run `37196886950` exposed an independent exposure-chart test race: the Detail
+view selector had updated while Plotly still displayed its previous root. The
+test now waits for the expected chart root on both drill-down and return before
+continuing. It retains the original chart, selector and exception assertions.
