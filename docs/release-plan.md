@@ -859,3 +859,32 @@ and the rerun to finish before canceling; stale-write protection and dismissal
 assertions remain unchanged. The six UX browser tests and a deliberately delayed
 synthetic form passed. Main CI run `37197753233` passed all jobs; the additional
 reload synchronization is also being carried into its repair PR.
+
+### Verified hosted candidate — 2026-10-04
+
+[Candidate run 37198442048](https://github.com/eliaskempf/portfolio-breakdown/actions/runs/37198442048)
+passed every job at source commit `9d52cf84cb4d5d0f216eea92d18ad39edecb57f0`:
+
+- Windows 2022 and Ubuntu 22.04: 983 tests each, with no failures or skips.
+- Both platforms: source/package privacy checks, build and installed browser,
+  navigation and lifecycle smoke checks.
+- Windows: installer creation and native startup, charts/tabs, actual F11,
+  monitor edges, repeated launch, bundled help and shutdown checks.
+- Ubuntu 24.04: the downloaded Linux candidate passed compatibility smoke.
+
+Use the `candidate-windows-x64` artifact from this exact run for Windows 11
+installation acceptance. Its Setup executable is the installer; the portable
+ZIP is an alternative. Verify the installer checksum below and record the manual
+machine's results when checking Setup, Start Menu launch, scaling, file dialogs, external
+links, reinstall and uninstall. Hosted checks do not establish clean-machine
+Windows 11 acceptance. No official release or Pages publication has occurred.
+
+Downloaded Windows artifact checksums match `SHA256SUMS`. The installer is
+`portfolio-breakdown-0.1.0-windows-x64-setup.exe`, SHA-256
+`bbd7dede49e30705f991a25a9e015f3be203ba5a60ee918832e3b440ef6f6cd5`.
+
+The separate main repair is [PR #3](https://github.com/eliaskempf/portfolio-breakdown/pull/3),
+still unmerged. [CI run 37198430094](https://github.com/eliaskempf/portfolio-breakdown/actions/runs/37198430094)
+passed every job at `5db6e4480cde4d83a1fd908b79dace46ecf5a62a`.
+This handoff entry is documentation-only and is newer than the candidate's
+recorded source commit; it does not change its binaries.
