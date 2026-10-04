@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 
 from portfolio_app.holdings import DataError
-from portfolio_app import ishares, dws, amundi
+from portfolio_app import ishares, dws, amundi, vanguard, spdr
 
 ISHARES_CATALOG = ('https://www.ishares.com/varnish-api/blk-product-screener-server/api/v1/'
                    'product-screener/product-data?country=gb&language=en&siteName=ishares-uk&userType=individual')
@@ -124,10 +124,17 @@ def source_from_url(url, fetch, *, expected_isin=''):
         source = Source('isin_' + isin.lower(), name, (), 'Xtrackers', base + 'holdings', partial(dws.parse_holdings, allow_signed=basis == 'economic'),
                         asset_class=asset_class, replication=replication, breakdown_basis=basis, product_url=url,
                         wkn=str(facts.get('WKN', '')))
-    elif url.rstrip('/') == amundi.PRODUCT_URL:
-        isin, source = amundi.discover(fetch)
+    elif parsed.hostname in {'www.amundietf.lu', 'www.amundietf.com', 'www.amundietf.de', 'www.amundietf.co.uk'}:
+        candidate = parsed.path.rstrip('/').split('/')[-1].upper()
+        if not re.fullmatch('[A-Z]{2}[A-Z0-9]{9}[0-9]', candidate):
+            raise DataError('Use an official Amundi product page containing its ISIN')
+        isin, source = amundi.discover(fetch, candidate, product_url=url)
+    elif parsed.hostname == 'www.vanguard.co.uk':
+        isin, source = vanguard.source(url, fetch, expected_isin=expected_isin)
+    elif parsed.hostname == 'www.ssga.com':
+        isin, source = spdr.source(url, fetch, expected_isin=expected_isin)
     else:
-        raise DataError('Automatic sources support official iShares and Xtrackers pages and the supported Amundi overnight fund.')
+        raise DataError('Automatic sources support official iShares, Xtrackers, Amundi, Vanguard and State Street/SPDR product pages.')
     if not re.fullmatch('[A-Z]{2}[A-Z0-9]{9}[0-9]', isin) or (expected_isin and expected_isin != isin):
         raise DataError('Provider identity does not match the requested ISIN.')
     if source.asset_class == 'unknown':
@@ -143,6 +150,8 @@ class Discovery:
         self._urls = None
         self._german_catalog = None
         self.identity_lookup = identity_lookup
+        self._vanguard_catalog = None
+        self._spdr_catalog = None
 
     def _confirm_wkn(self, isin, source, wkn):
         if source.provider == 'iShares':
@@ -157,6 +166,8 @@ class Discovery:
             facts = {x['key']: x['value'] for x in walk(json.loads(self.fetch(url))) if 'key' in x and 'value' in x}
             if facts.get('ISIN') == isin and facts.get('WKN') == wkn:
                 return replace(source, wkn=wkn)
+        elif source.wkn and source.wkn == wkn:
+            return source
         return None
 
     def _resolve_identifier(self, identifier):
@@ -227,10 +238,41 @@ class Discovery:
             raise DataError('Ambiguous provider identity. Select an exact product page.')
         if not isin:
             return self._resolve_identifier({'wkn': wkn, 'ticker': ticker})
+        errors = []
         if self._urls is None:
-            root = ET.fromstring(self.fetch(DWS_SITEMAP))
-            self._urls = [node.text for node in root.iter() if node.tag.endswith('}loc') and node.text]
+            try:
+                root = ET.fromstring(self.fetch(DWS_SITEMAP))
+                self._urls = [node.text for node in root.iter() if node.tag.endswith('}loc') and node.text]
+            except (OSError, ValueError, ET.ParseError) as exc:
+                errors.append(str(exc))
+                self._urls = []
         urls = [u for u in self._urls if re.search('/' + re.escape(isin) + '-', u)]
         if len(urls) == 1:
             return source_from_url(urls[0], self.fetch, expected_isin=isin)
-        raise DataError('No supported official source found. Supply a product page or a normalized holdings CSV.')
+        # A catalogue outage must not hide a match at a different provider.
+        for provider, attribute in [(spdr, '_spdr_catalog'), (vanguard, '_vanguard_catalog')]:
+            try:
+                catalogue = getattr(self, attribute)
+                if catalogue is None:
+                    catalogue = provider.catalog(self.fetch)
+                    setattr(self, attribute, catalogue)
+            except (OSError, ValueError, KeyError, TypeError, ET.ParseError) as exc:
+                errors.append(str(exc))
+                continue
+            if provider is spdr:
+                urls = {url for identifiers, url in catalogue if isin in identifiers}
+            else:
+                urls = {url for profile, url in catalogue if vanguard.identity(profile).get('ISIN') == isin}
+            if len(urls) > 1:
+                raise DataError('Ambiguous provider identity. Select an exact product page.')
+            if urls:
+                return source_from_url(urls.pop(), self.fetch, expected_isin=isin)
+        try:
+            result = amundi.lookup(isin, self.fetch)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            errors.append(str(exc))
+        else:
+            if result:
+                return result
+        detail = ' Some provider catalogues were unavailable or unsupported; try an official product page.' if errors else ''
+        raise DataError('No supported official source found. Supply a product page or a normalized holdings CSV.' + detail)

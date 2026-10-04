@@ -968,3 +968,44 @@ A fresh hosted Windows/Linux candidate build is required. Native Windows and
 installer acceptance have not been performed for this change. Neither source
 tests nor Linux browser checks establish that acceptance; no installer or release
 was published by this task.
+
+## Additional ETF provider adapters (2026-10-04)
+
+Continues the isolated `fix/v1-etf-breakdown` worktree at
+`/tmp/portfolio-etf-v1-fixes`, after original regression fix `cacd96b`.
+The requested additional providers are Amundi, Vanguard and State Street/SPDR.
+The shared release-v1 checkout and its other sessions were not modified.
+
+- Added exact-ISIN discovery through Amundi's product API, Vanguard's official
+  sitemap/GPX catalogue, and State Street's European fund finder. Product-page
+  setup and subsequent refresh use the same provider adapters; no individual
+  ETF registration is required for these supported formats.
+- Amundi physical equity/bond compositions preserve whole-fund weights. Cash
+  borrowing or unsupported security types yield labeled top holdings plus Other.
+  The reviewed overnight economics and legacy same-index proxy remain separate.
+- Vanguard retrieves every holdings page, checking share-class identity, total
+  row counts, dates and repeated cursors before publication. Matching ISIN lots
+  combine; conflicting source geography remains unspecified. Derivatives/rights
+  are excluded, and short securities remain unsupported.
+- State Street validates the product page's replication and asset class, the
+  official daily XLSX link, and the workbook's ISIN/date/header. Cash placeholders
+  do not collapse different currencies into one security. Trading-country labels
+  are not treated as company geography.
+- A small excess in published weights yields explicitly partial top holdings,
+  never a rescaled full allocation. Malformed exports fail without replacing a
+  valid snapshot. New adapters use existing dependencies and aggregation models.
+
+Validation: 998 non-browser tests and all five ETF Chromium scenarios passed;
+139 focused ETF tests passed. Provider tests generate invented JSON, HTML and
+XLSX payloads entirely offline. Read-only live checks succeeded for physical
+Amundi equity/government bonds, Vanguard All-World/Eurozone government bonds,
+and SPDR S&P 500/Euro government bonds. Tested Amundi equity and SPDR exports
+required partial coverage; Vanguard Global Aggregate's short mortgage positions
+were correctly rejected rather than silently converted to unsigned exposure.
+
+Ruff, documentation build, wheel/sdist build and archive content checks passed.
+The owned preview at `http://127.0.0.1:60639` was restarted using the same synthetic
+workspace `/tmp/portfolio-etf-v1-preview` and offline launch options. Actual
+browser navigation verified provider setup, the partial bond chart and overnight
+summary without application exceptions. No private portfolio was used. A native
+Windows installer has not been built or verified for these commits.

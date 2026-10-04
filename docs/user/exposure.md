@@ -43,16 +43,33 @@ The app must be running for its background checks.
 Open **Data & settings → ETF refresh & snapshots** for status, source links and
 saved snapshots. Select an asset for its contributing positions and ETF breakdown.
 Automatic discovery covers supported physical equity/bond products from official
-iShares and Xtrackers listings, plus the Amundi Smart Overnight Return fund
-(`LU1190417599`) and existing explicit integrations. It is not universal ETF support.
+iShares, Xtrackers, Amundi, Vanguard and State Street/SPDR feeds, plus reviewed
+overnight-rate funds and existing explicit integrations. These are shared provider
+adapters, not a list of individually configured ETFs. Coverage depends on each
+provider’s published catalogue, replication method and export format.
 
 ISIN is authoritative; WKN/listing searches need a unique issuer-confirmed match.
-Use **Set up a breakdown** with an official iShares/Xtrackers product page, or the
-[supported Amundi product page](https://www.amundietf.lu/en/individual/products/fixed-income/amundi-smart-overnight-return-ucits-etf-acc/lu1190417599), when
-automatic discovery cannot resolve it. Names and bare tickers are insufficient.
+Use **Set up a breakdown** with an official iShares, Xtrackers, Amundi, Vanguard
+UK professional, or State Street/SPDR product page when automatic discovery
+cannot resolve it. Names and bare tickers are insufficient.
 Bare `SMH` is the US-listed fund, not a UCITS listing.
 The verified Xetra listings `EXS1.DE` (DAX) and `EUNA.DE` (Global Aggregate Bond)
 are available by ISIN in search even when live search omits the ETF listing.
+
+Amundi uses the exact ISIN in its product API; Vanguard and State Street use
+issuer catalogues and recheck the share-class identity. Vanguard holdings are
+collected across all pages before publication. Refresh reconstructs the adapter
+from the saved product page, so newly discovered funds remain refreshable.
+
+Published whole-fund weights are preserved. When full weights exceed 100% only
+because of small published rounding, a labeled view of up to ten top holdings
+keeps the rest in **Other**. Amundi compositions containing cash borrowing or
+unsupported security types also use a labeled partial view. No weights are
+rescaled to hide these limitations. Vanguard derivatives and rights are excluded;
+short security positions are rejected. Trading-country metadata is not substituted
+for company country, and missing issuer, currency or rating data remains unknown.
+Malformed, truncated, mismatched or unsupported exports retain the previous
+snapshot. A provider name alone does not guarantee support for every strategy.
 
 For a physical fund from another source, supply a normalized UTF-8 CSV, exact
 fund ISIN, holdings date and asset class. Required columns are

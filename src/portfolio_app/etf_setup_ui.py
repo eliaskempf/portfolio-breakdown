@@ -19,7 +19,7 @@ def render_setup(data_dir, holdings, funds, *, demo=False):
         product_url, content, stamp, kind = '', None, date.today(), 'equity'
         identifier = dict(row)
         if mode == 'Official product page':
-            product_url = st.text_input('Official iShares, Xtrackers or supported Amundi product URL', key='etf_setup_url')
+            product_url = st.text_input('Official iShares, Xtrackers, Amundi, Vanguard or State Street/SPDR product URL', key='etf_setup_url')
         else:
             st.caption('Physical holdings only. Required columns: constituent_id, name, ticker, isin, weight. '
                        'Weights are whole-fund fractions. Optional fields: instrument_type, issuer, country, market_currency, maturity (YYYY-MM-DD), credit_rating.')

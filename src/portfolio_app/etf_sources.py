@@ -38,6 +38,7 @@ class Source:
     wkn: str = ''
     summaries: dict = field(default_factory=dict)
     request_json: dict | None = None
+    load_content: Callable | None = None
 
 
 SOURCES = {
@@ -51,8 +52,9 @@ SOURCES = {
 }
 
 
-def download(url: str, *, json_body: dict | None = None) -> bytes:
+def download(url: str, *, json_body: dict | None = None, request_headers: dict | None = None) -> bytes:
     headers = {'User-Agent': 'Mozilla/5.0 (Portfolio breakdown)'}
+    headers.update(request_headers or {})
     body = None
     if json_body is not None:
         body = json.dumps(json_body).encode('utf-8')
@@ -160,7 +162,10 @@ def refresh_snapshot(fund: FundSnapshot, *, fetch: Callable[[str], bytes] | None
 
 
 def retrieve_snapshot(isin: str, source: Source, fetch=download):
-    content = fetch(source.url) if source.request_json is None else fetch(source.url, json_body=source.request_json)
+    if source.load_content is not None:
+        content = source.load_content(fetch)
+    else:
+        content = fetch(source.url) if source.request_json is None else fetch(source.url, json_body=source.request_json)
     stamp, frame, notes = source.parse(content)
     basket = None
     if source.breakdown_basis == 'economic':

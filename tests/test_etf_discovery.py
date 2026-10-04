@@ -62,7 +62,7 @@ class Provider:
         self.facts = metadata()
         self.holdings = holdings_json()
 
-    def __call__(self, url):
+    def __call__(self, url, **kwargs):
         self.calls.append(url)
         if url in {ISHARES_CATALOG, ISHARES_GERMAN_CATALOG}:
             return json.dumps({'999999': {'isin': FUND, 'wkn': '000999', 'productView': ['etf'],
@@ -73,6 +73,8 @@ class Provider:
             return self.holdings
         if 'component=keyFundFacts' in url:
             return self.facts
+        if any(host in url for host in ['ssga.com', 'vanguard.co.uk', 'amundietf.lu']):
+            raise OSError('Synthetic fixture: provider unavailable')
         raise AssertionError('Unexpected request: ' + url)
 
 
@@ -241,7 +243,7 @@ def test_bond_types_propagate_and_do_not_enter_company_exposure(tmp_path):
 
 def test_provider_verified_aliases_ignore_ambiguous_suggestions():
     class AliasProvider(Provider):
-        def __call__(self, url):
+        def __call__(self, url, **kwargs):
             if url in {ISHARES_CATALOG, ISHARES_GERMAN_CATALOG}:
                 return json.dumps({'999999': {'isin': FUND, 'productView': ['etf'],
                     'productPageUrl': '/uk/individual/en/products/999999/invented-fund'}}).encode()
