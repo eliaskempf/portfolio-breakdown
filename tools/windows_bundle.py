@@ -20,8 +20,24 @@ def download(url, destination):
 
 
 def compiler_path():
-    return (os.environ.get('PORTFOLIO_ISCC') or shutil.which('ISCC') or
-            str(Path(os.environ.get('ProgramFiles(x86)', 'C:/Program Files (x86)')) / 'Inno Setup 6/ISCC.exe'))
+    """Find the compiler installation, not a Chocolatey PATH shim.
+
+    Notices must come from the same installation used to compile the installer.
+    An explicit override is authoritative and must include its adjacent license.
+    """
+    override = os.environ.get('PORTFOLIO_ISCC')
+    candidates = [override] if override else [
+        shutil.which('ISCC'),
+        str(Path(os.environ.get('ProgramFiles(x86)', 'C:/Program Files (x86)')) / 'Inno Setup 6/ISCC.exe'),
+        str(Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'Inno Setup 6/ISCC.exe'),
+    ]
+    for candidate in candidates:
+        if candidate:
+            compiler = Path(candidate)
+            if compiler.is_file() and compiler.with_name('license.txt').is_file():
+                return str(compiler)
+    raise ValueError('Inno Setup compiler and adjacent license.txt not found. '
+                     'Set PORTFOLIO_ISCC to the installed ISCC.exe, not a launcher shim.')
 
 
 def signed_bootstrapper(cache):

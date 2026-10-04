@@ -462,7 +462,11 @@ def test_category_rows_keyboard_focus_and_target_confirmation(intro_page):
     page.keyboard.press('Tab')
     # The acknowledged allocation is unchanged, so explicit Continue remains available.
     playwright.expect(dialog.get_by_text('Target total: 100% of portfolio', exact=True)).to_be_visible()
-    dialog.get_by_role('button', name='Save categories & continue', exact=True).click()
+    # The total renders before Streamlit removes the previous form's controls.
+    playwright.expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
+    save = dialog.get_by_role('button', name='Save categories & continue', exact=True)
+    playwright.expect(save).to_have_count(1)
+    save.click()
     playwright.expect(page.get_by_role('dialog', name='Add position', exact=True)).to_be_visible()
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 

@@ -787,3 +787,23 @@ typing a fund class into the combobox search was not evidence that its option ha
 been selected. The smoke now clicks the actual fixed_income option, checks the
 closed selector, and waits for save completion before opening the summary. This
 changes test synchronization only; the app and saved-data semantics are unchanged.
+
+### Hosted candidate build corrections
+
+Candidate run `37190781253` at `ce0dd55` passed all Windows tests, then failed
+while collecting Inno Setup notices: PATH resolved Chocolatey's compiler shim,
+which has no adjacent installer license. Compiler discovery now requires a real
+compiler with its adjacent license, checks both standard installation locations,
+and preserves an explicit `PORTFOLIO_ISCC` override without silently substituting
+another installation. Synthetic regression tests cover shims, actual PATH
+installations, explicit overrides and missing licenses.
+
+The Linux job failed one onboarding browser check while Streamlit briefly kept
+the previous and replacement Save buttons. The check now waits for the completed
+rerun and a unique Save control. The separate main CI dialog-close and category
+roundtrip fixes are also included; these retain all existing behavior assertions.
+No application behavior or portfolio semantics change.
+
+The corrected candidate must complete the existing hosted build, packaged smoke
+and Linux compatibility gates. Windows 11 installation acceptance remains a
+separate manual gate, and no official release or Pages publication is authorized.
