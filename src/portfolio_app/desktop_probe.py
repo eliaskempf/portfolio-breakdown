@@ -90,13 +90,19 @@ def main(output: Path, mode='render'):
                     cocoa_snapshot(window, output / 'native-overview.png')
                     record('native WebKit snapshot captured')
                     from portfolio_app.desktop_controls import cocoa_interactions
-                    cocoa_interactions(window, root, record)
-                    report['gaps'].remove('native upload/save dialogs')
+                    try:
+                        cocoa_interactions(window, root, record)
+                        report['gaps'].remove('native upload/save dialogs')
+                    except Exception as exc:
+                        errors.append(f'{type(exc).__name__}: {exc}')
                 if mode == 'desktop':
                     from portfolio_app.desktop_controls import window_states
-                    window_states(window, workspace, record)
-                    report['gaps'].remove('desktop focus policy')
-                    report['gaps'].append('other desktop environments and physical displays')
+                    try:
+                        window_states(window, workspace, record)
+                        report['gaps'].remove('desktop focus policy')
+                        report['gaps'].append('other desktop environments and physical displays')
+                    except Exception as exc:
+                        errors.append(f'{type(exc).__name__}: {exc}')
                 # Native top-level navigation must invoke the system-browser
                 # adapter and leave the app loaded. Do not open a real website.
                 window.evaluate_js("location.href = 'https://example.invalid/synthetic-external'")
@@ -149,6 +155,7 @@ def main(output: Path, mode='render'):
             else:
                 os.environ['PORTFOLIO_STATE_DIR'] = previous_state
             report['errors'] = errors
+            report['status'] = 'failed' if errors else 'passed'
             (output / 'native-result.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     if errors:
         raise SystemExit(1)

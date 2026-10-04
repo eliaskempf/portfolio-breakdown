@@ -1,4 +1,5 @@
 """Opt-in synthetic native-panel and window-state checks, never normal startup."""
+import os
 import sys
 import threading
 import time
@@ -61,6 +62,7 @@ def cocoa_interactions(window, root, record):
     """Send local native input to WebKit and its real modal file panels."""
     import AppKit as A
     import Foundation as F
+    import Quartz as Q
     from webview.platforms.cocoa import BrowserView
     browser = BrowserView.instances[window.uid]
     app = A.NSApplication.sharedApplication()
@@ -70,11 +72,13 @@ def cocoa_interactions(window, root, record):
     download = root / 'invented-download.txt'
 
     def key(chars, code, modifiers=0):
-        number = app.keyWindow().windowNumber()
-        for kind in [A.NSEventTypeKeyDown, A.NSEventTypeKeyUp]:
-            event = A.NSEvent.keyEventWithType_location_modifierFlags_timestamp_windowNumber_context_characters_charactersIgnoringModifiers_isARepeat_keyCode_(
-                kind, (0, 0), modifiers, time.monotonic(), number, None, chars, chars, False, code)
-            app.sendEvent_(event)
+        # AppKit-only synthetic events cannot drive the NSRemoteView used by
+        # modern file panels. Post Quartz events only to this test process.
+        for pressed in [True, False]:
+            event = Q.CGEventCreateKeyboardEvent(None, code, pressed)
+            Q.CGEventSetFlags(event, modifiers)
+            Q.CGEventKeyboardSetUnicodeString(event, len(chars), chars)
+            Q.CGEventPostToPid(os.getpid(), event)
 
     def click():
         view = browser.webview

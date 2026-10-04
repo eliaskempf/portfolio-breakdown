@@ -26,12 +26,17 @@ def run(executable, output, desktop=False):
     results = []
     for mode in (['desktop'] if desktop else ['render']) + ['welcome', 'early-close']:
         with (output / f'{mode}.log').open('w') as log:
-            result = subprocess.run([str(executable), '--native-self-test', str(output / mode), mode],
-                                    cwd=output, stdout=log, stderr=subprocess.STDOUT, timeout=150)
-        if result.returncode:
-            raise RuntimeError(f'{mode} failed; inspect synthetic log in {output}')
-        report = json.loads((output / mode / 'native-result.json').read_text())
-        assert report['status'] == 'passed'
+            try:
+                result = subprocess.run([str(executable), '--native-self-test', str(output / mode), mode],
+                                        cwd=output, stdout=log, stderr=subprocess.STDOUT, timeout=150)
+                code = result.returncode
+            except subprocess.TimeoutExpired:
+                code = 'timeout'
+        path = output / mode / 'native-result.json'
+        report = json.loads(path.read_text()) if path.exists() else {'mode': mode, 'status': 'failed'}
+        if code:
+            report['status'] = 'failed'
+            report['process_exit'] = code
         results.append(report)
     # Kill the actual window process and confirm its independently supervised
     # server exits. Browser fallback uses the same isolated workspace afterward.
@@ -85,11 +90,14 @@ def run(executable, output, desktop=False):
     from package_smoke import smoke as browser_smoke
     console = executable.with_name('portfolio-cli') if sys.platform == 'darwin' else executable
     browser_smoke([str(console), '--browser'])
-    summary = {'status': 'passed', 'native': results,
+    passed = all(result['status'] == 'passed' for result in results)
+    summary = {'status': 'passed' if passed else 'failed', 'native': results,
                'browser': ['packaged portfolio edit, save, restart, CSV/Excel import, backup/restore'],
                'lifecycle': ['repeat launch', 'window crash cleanup', 'browser fallback', 'restart preserves data'],
                'shipping': 'experimental only; review native test gaps and signing'}
     (output / 'summary.json').write_text(json.dumps(summary, indent=2))
+    if not passed:
+        raise RuntimeError(f'Native checks failed; inspect synthetic summary in {output}')
 
 
 if __name__ == '__main__':
