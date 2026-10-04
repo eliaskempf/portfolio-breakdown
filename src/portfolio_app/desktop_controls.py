@@ -64,7 +64,7 @@ def cocoa_interactions(window, root, record):
     from webview.platforms.cocoa import BrowserView
     browser = BrowserView.instances[window.uid]
     app = A.NSApplication.sharedApplication()
-    timers, events, errors = [], [], []
+    timers, events, errors, trace = [], [], [], []
     upload = root / 'invented-upload.txt'
     upload.write_text('Invented native upload', encoding='utf-8')
     download = root / 'invented-download.txt'
@@ -90,6 +90,9 @@ def cocoa_interactions(window, root, record):
         def tick(timer):
             try:
                 panel = app.modalWindow()
+                current = app.keyWindow()
+                trace.append([phase[0], str(current.className()) if current else None,
+                              str(current.firstResponder().className()) if current and current.firstResponder() else None])
                 if time.monotonic() > deadline[0]:
                     timer.invalidate()
                     errors.append(f'File panel timed out at phase {phase[0]}')
@@ -105,19 +108,22 @@ def cocoa_interactions(window, root, record):
                         panel.setNameFieldStringValue_(path.name)
                         phase[0] = 4
                     else:
-                        key('g', 5, A.NSEventModifierFlagCommand | A.NSEventModifierFlagShift)
+                        key('G', 5, A.NSEventModifierFlagCommand | A.NSEventModifierFlagShift)
                         phase[0] = 1
                 elif phase[0] == 1:
-                    key(str(path), 0)
+                    for char in str(path):
+                        key(char, 0)
                     phase[0] = 2
                 elif phase[0] == 2:
                     key('\r', 36)
                     phase[0] = 3
                 elif phase[0] == 3:
                     key('\r', 36)
-                    timer.invalidate()
+                    phase[0] = 5
                 elif phase[0] == 4:
                     panel.ok_(None)
+                    phase[0] = 5
+                elif phase[0] == 5 and panel is None:
                     timer.invalidate()
             except Exception as exc:
                 errors.append(f'{type(exc).__name__}: {exc}')
@@ -159,7 +165,7 @@ def cocoa_interactions(window, root, record):
         record('native Cocoa save panel writes exact downloaded bytes')
         window.evaluate_js("document.querySelector('#native-probe-download').remove()")
     except Exception as exc:
-        raise AssertionError(f'Cocoa file interaction failed: panels={events}, errors={errors}; {exc}') from exc
+        raise AssertionError(f'Cocoa file interaction failed: panels={events}, errors={errors}, trace={trace}; {exc}') from exc
     finally:
         def stop():
             for timer in timers:

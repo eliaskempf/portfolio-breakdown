@@ -47,6 +47,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb openbox libxcb-cursor0 libxkbcommon-x11-0 libegl1 libopengl0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-randr0 libxcb-shape0 libxcb-xfixes0
       - name: Verify native GUI session before packaging
+        id: source_native
+        continue-on-error: true
+        timeout-minutes: 3
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
             xvfb-run -a uv run --extra window portfolio-window --native-self-test "$RUNNER_TEMP/source-native" render
@@ -109,6 +112,9 @@ jobs:
             dist/desktop-experiment/source/*.tar.gz
           if-no-files-found: warn
           retention-days: 14
+      - name: Require source native checks to pass
+        if: ${{ !cancelled() && steps.source_native.outcome != 'success' }}
+        run: exit 1
   linux-compatibility:
     if: ${{ always() && !cancelled() }}
     needs: build

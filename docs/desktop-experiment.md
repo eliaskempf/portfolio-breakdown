@@ -62,6 +62,7 @@ can also be run directly:
 ```sh
 portfolio-window --native-self-test /tmp/new-synthetic-results render
 portfolio-window --native-self-test /tmp/new-early-close-results early-close
+portfolio-window --native-self-test /tmp/new-desktop-results desktop
 ```
 
 These opt-in checks always allocate their own offline synthetic workspace and
@@ -69,6 +70,18 @@ state directory. They refuse existing output directories and additional
 workspace options. There is no remote debugging/evaluation endpoint. Fixed
 JavaScript checks run inside the actual packaged renderer; ordinary Chromium
 browser tests and health endpoints are supporting evidence only.
+
+The extended matrix tests native Cocoa file panels and minimize/restore/focus,
+an Openbox X11 session and a headless Weston Wayland session, plus the same
+macOS 14-built DMG on macOS 15 and 26. The `desktop` mode requires a window
+manager/compositor; bare Xvfb is insufficient for activation checks.
+
+`tools/desktop_gatekeeper.py APP --output NEW_DIRECTORY` checks a disposable
+quarantined copy on macOS without changing system policy. For this ad-hoc-signed
+prototype, a valid bundle signature combined with Gatekeeper rejection is the
+expected result. It does not verify Safari's quarantine propagation or a user's
+interactive Open Anyway approval. All detailed results and any unsupported
+desktop behavior remain visible in the synthetic reports.
 
 Checks cover native creation, default chart rendering, navigation and exceptions,
 authenticated repeated launch, early close, server cleanup after the window is
