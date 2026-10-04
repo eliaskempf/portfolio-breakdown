@@ -917,3 +917,54 @@ Use this run's [Windows artifact](https://github.com/eliaskempf/portfolio-breakd
 for the next installation test, replacing the earlier candidate. Check its own
 `SHA256SUMS` and manifest when identifying the Setup executable. Windows 11
 retesting remains a user acceptance step; no official release was published.
+
+## ETF discovery and breakdown fixes
+
+Prepared on `fix/v1-etf-breakdown` from release-v1 commit `f2db5ab`.
+The shared release checkout and other sessions' previews were not modified.
+
+### Changes
+
+- Search and discovery reuse exchange-verified Xetra aliases for DAX
+  (`DE0005933931`, `EXS1.DE`) and Global Aggregate Bond EUR Hedged
+  (`IE00BDBRDM35`, `EUNA.DE`). Issuer identity is still verified before importing.
+- The bond fund retains strict full-export validation. A reconciliation failure
+  can produce a labeled top-ten bond snapshot at published whole-fund weights,
+  with the remaining allocation in Other. Malformed data remains an error.
+  Missing security ISINs retain stable provider-specific identities.
+- Amundi Smart Overnight Return (`LU1190417599`) has an exact-product adapter
+  using its public product API. The snapshot represents EUR overnight-rate
+  exposure; the partial substitute basket is separately stored and displayed.
+  Xtrackers' distinct overnight benchmark remains unchanged.
+- The internal source/downloader supports optional JSON POST requests. Existing
+  GET integrations and snapshot storage remain compatible; no migration or new
+  dependency is required.
+
+### Verification
+
+- Broad pytest run excluding the dedicated ETF browser file: 1,009 passed.
+- After the final parser adjustments: 99 relevant calculation, discovery and
+  refresh tests passed. These include missing-ISIN handling and 29 new regression
+  cases using invented compositions and public fund identifiers.
+- All five ETF browser scenarios passed: bond summary/navigation, economic
+  benchmark and separate basket, settings access, partial coverage/Other, and
+  DAX ISIN search filling the Xetra identity. The search scenario was rerun after
+  correcting its test selector to the existing `ISIN (optional)` field label.
+- Read-only live provider probes succeeded for all three fund identifiers;
+  no provider downloads were saved or committed as fixtures.
+- The task's synthetic preview was restarted after module changes and checked in
+  Chromium: DAX Holdings default, bond Summary chart and partial coverage,
+  Amundi economic Summary and separate basket, setup controls, no app exceptions.
+- Ruff, diff whitespace checks, privacy checks, and wheel/source archive content
+  checks passed. Tests and previews used temporary synthetic workspaces.
+
+### Release integration
+
+Integrate the focused fix branch into the current release branch without resetting
+other sessions' changes. Existing saved snapshots and positions remain intact;
+use **Refresh ETF holdings now** to retry previously unavailable breakdowns.
+
+A fresh hosted Windows/Linux candidate build is required. Native Windows and
+installer acceptance have not been performed for this change. Neither source
+tests nor Linux browser checks establish that acceptance; no installer or release
+was published by this task.

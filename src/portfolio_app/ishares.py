@@ -20,6 +20,11 @@ from portfolio_app.holdings import DataError
 NS = 'urn:schemas-microsoft-com:office:spreadsheet'
 CASH_CLASSES = {'Money Market', 'Cash', 'Cash Collateral and Margins', 'FX'}
 
+
+class IncompleteHoldings(ValueError):
+    """Structurally readable rows cannot be reconciled as a complete portfolio."""
+
+
 # These fund securities appear as "Equity" in the provider's export. Keep
 # their fund wrappers visible rather than count them as individual companies.
 # Public issuer metadata: ishares.com product pages for these two ISINs.
@@ -108,7 +113,7 @@ def parse_holdings(content: bytes) -> tuple[date, pd.DataFrame, str]:
         raise DataError(f'Invalid iShares holdings export: {exc}') from exc
 
 
-def _normalize_rows(parsed, as_of, tolerance):
+def _normalize_rows(parsed, as_of, tolerance, *, partial_bonds=False):
     if not parsed or len({r[1] for r in parsed}) != 1:
         raise ValueError('Expected holdings valued in one fund currency')
     total = sum(r[2] for r in parsed)
@@ -116,11 +121,13 @@ def _normalize_rows(parsed, as_of, tolerance):
         raise ValueError('Nonpositive net assets')
     records, net_cash = [], Decimal(0)
     for row, _, amount, published_pct in parsed:
-        weight = amount / total
+        weight = published_pct / 100 if partial_bonds else amount / total
+        if partial_bonds and (abs(published_pct) > 100 or amount * published_pct < 0):
+            raise ValueError('Invalid published holding weight')
         # Allow half a displayed percentage unit plus a tiny allowance for
         # provider double rounding near a display boundary.
-        if abs(weight * 100 - published_pct) > tolerance:
-            raise ValueError('Market values disagree with published weights; export may be incomplete')
+        if not partial_bonds and abs(weight * 100 - published_pct) > tolerance:
+            raise IncompleteHoldings('Market values disagree with published weights; export may be incomplete')
         kind = row['Asset Class']
         if kind in CASH_CLASSES:
             net_cash += amount
@@ -154,6 +161,18 @@ def _normalize_rows(parsed, as_of, tolerance):
         if instrument_type == 'bond' and not record['issuer']:
             record['issuer'] = row['Issuer Ticker']
         records.append(record)
+    if partial_bonds:
+        bonds = [r for r in records if r['instrument_type'] == 'bond']
+        if len({r['constituent_id'] for r in bonds}) != len(bonds):
+            raise ValueError('Duplicate bond identities')
+        selected = sorted(bonds, key=lambda r: r['weight'], reverse=True)[:10]
+        if not selected or any(r['weight'] <= 0 for r in selected):
+            raise ValueError('Partial bond holdings require positive weights')
+        notes = ('Partial breakdown: top 10 bonds at published whole-fund weights. '
+                 'The full export could not be reconciled with published weights. '
+                 'Other retains all remaining exposure, including omitted holdings, liquidity and hedges; '
+                 'selected bonds are never rescaled to 100%. Missing ISINs retain provider-specific identities.')
+        return as_of, validate_constituents(pd.DataFrame(selected)), notes
     if net_cash < 0:
         raise ValueError('Net cash borrowing requires a signed exposure model')
     records.append({'constituent_id': 'ishares:net-cash', 'name': 'Net cash and cash equivalents',
@@ -171,8 +190,9 @@ def holdings_url(product_id: str) -> str:
             f'&portfolioId={product_id}&targetSite=ishares-uk&userType=individual')
 
 
-def parse_holdings_json(content: bytes) -> tuple[date, pd.DataFrame, str]:
-    """Complete named arrays include security ISINs and unrounded market values."""
+def parse_holdings_json(content: bytes, *, allow_partial_bonds: bool = False) -> tuple[date, pd.DataFrame, str]:
+    """Validate named arrays; the reviewed bond source may retain partial weights."""
+    from portfolio_app.instruments import valid_isin
     try:
         doc = json.loads(content)
         node = doc['componentsByNameMap']['holdings']['containersByNameMap']['all']
@@ -194,13 +214,21 @@ def parse_holdings_json(content: bytes) -> tuple[date, pd.DataFrame, str]:
             raise ValueError('Missing fund currency')
         parsed = []
         for i in range(count):
-            row = {label: str(points.get(key, [''] * count)[i] or '').strip() for key, label in mapping.items()}
+            row = {label: str((points[key][i] if key in points else '') or '').strip() for key, label in mapping.items()}
+            if allow_partial_bonds and row['ISIN'] not in {'', '-'}:
+                if not valid_isin(row['ISIN']):
+                    raise ValueError('Invalid published security ISIN')
             for key in ('Maturity', 'Effective Date'):
                 if row[key]:
                     row[key] = datetime.strptime(row[key], '%Y%m%d').date().isoformat()
             amount = _number(str(points['marketValue'][i]))
             percentage = _number(str(points['holdingPercent'][i]))
             parsed.append((row, currency, amount, percentage))
-        return _normalize_rows(parsed, as_of, Decimal('0.000006'))
+        try:
+            return _normalize_rows(parsed, as_of, Decimal('0.000006'))
+        except IncompleteHoldings:
+            if not allow_partial_bonds:
+                raise
+            return _normalize_rows(parsed, as_of, Decimal('0.000006'), partial_bonds=True)
     except (KeyError, ValueError, TypeError, IndexError, InvalidOperation) as exc:
         raise DataError(f'Invalid iShares holdings JSON: {exc}') from exc

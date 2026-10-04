@@ -117,18 +117,23 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
 def render_fund_summary(fund, *, key_prefix=''):
     from portfolio_app.fund_summary import composition_summary, DIMENSIONS
     if fund.breakdown_basis == 'economic':
-        st.info('EUR overnight-rate-linked exposure · Solactive €STR +8.5 Daily Total Return Index. '
-                'This represents the economic benchmark, not a bank deposit. The substitute basket is available under Holdings.')
+        description = ' · '.join(fund.constituents['name'].astype(str))
+        basket_note = 'The substitute basket is available under Holdings.' if fund.basket is not None else 'Substitute basket unavailable.'
+        st.info(f'{description}. This represents the economic benchmark, not a bank deposit. {basket_note}')
         st.caption('100% economic representation · Basket coverage is reported separately. No basket securities enter portfolio allocation.')
         return
     dimension = st.selectbox('Summarize by', list(DIMENSIONS), key=f'{key_prefix}fund_summary_{fund.fund_id}')
     frame = composition_summary(fund, dimension)
     provider = fund.summaries.get(dimension)
-    if provider and 'rows' in provider and frame[dimension].eq('Unknown').all():
+    if provider and 'rows' in provider and frame[dimension].isin(['Unknown', 'Other']).all():
         frame = pd.DataFrame(provider['rows']).rename(columns={'label': dimension, 'percentage': 'Fund allocation %'})
         st.caption(f"Provider aggregate · {provider['as_of']} · These categories are not assigned to individual securities.")
         st.markdown(f"[Summary source]({provider['source']})")
     else:
+        coverage = fund.constituents.weight.sum()
+        if coverage < 1 - 1e-8:
+            st.caption(f'Partial holdings summary · {coverage:.2%} covered; Other retains the remainder. '
+                       'These are not whole-fund issuer, country or currency totals.')
         st.caption(f'Calculated from holdings dated {fund.as_of}; missing metadata remains Unknown.')
     if dimension == 'Denomination currency':
         st.caption('Security denomination, not net currency risk after hedging.')

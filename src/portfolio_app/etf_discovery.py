@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 
 from portfolio_app.holdings import DataError
-from portfolio_app import ishares, dws
+from portfolio_app import ishares, dws, amundi
 
 ISHARES_CATALOG = ('https://www.ishares.com/varnish-api/blk-product-screener-server/api/v1/'
                    'product-screener/product-data?country=gb&language=en&siteName=ishares-uk&userType=individual')
@@ -51,6 +51,9 @@ def ishares_metadata(product_id, fetch, *, german=False):
     facts['listing_tickers'] = [ticker + suffixes[exchange] for ticker, exchange in
                                 zip(listings.get('ticker', []) or [], listings.get('exchange', []) or [])
                                 if isinstance(ticker, str) and exchange in suffixes]
+    from portfolio_app.instruments import CATALOG
+    facts['listing_tickers'] = list(dict.fromkeys([
+        *facts['listing_tickers'], *(item.ticker for item in CATALOG if item.isin == facts.get('isin'))]))
     summaries = {}
     for item in walk(components.get('fundamentalsAndRisk', {})):
         if item.get('name') in {'effectiveDuration', 'weightedAverageMaturity', 'weightedAverageYieldToMaturity',
@@ -92,7 +95,8 @@ def source_from_url(url, fetch, *, expected_isin=''):
         structure = str(facts.get('productStructure', '')).lower()
         if structure != 'physical':
             raise DataError('Economic breakdown is not yet supported for this iShares replication method.')
-        source = Source('isin_' + isin.lower(), name, tuple(facts['listing_tickers']), 'iShares', ishares.holdings_url(pid), ishares.parse_holdings_json,
+        parser = partial(ishares.parse_holdings_json, allow_partial_bonds=True) if isin == 'IE00BDBRDM35' else ishares.parse_holdings_json
+        source = Source('isin_' + isin.lower(), name, tuple(facts['listing_tickers']), 'iShares', ishares.holdings_url(pid), parser,
                         asset_class=asset_class, replication='physical', product_url=url, summaries=summaries)
     elif parsed.hostname == 'etf.dws.com':
         match = re.fullmatch(r'/(?:en-gb|de-de)/([A-Z]{2}[A-Z0-9]{9}\d-[a-z0-9-]+)/?', parsed.path)
@@ -120,8 +124,10 @@ def source_from_url(url, fetch, *, expected_isin=''):
         source = Source('isin_' + isin.lower(), name, (), 'Xtrackers', base + 'holdings', partial(dws.parse_holdings, allow_signed=basis == 'economic'),
                         asset_class=asset_class, replication=replication, breakdown_basis=basis, product_url=url,
                         wkn=str(facts.get('WKN', '')))
+    elif url.rstrip('/') == amundi.PRODUCT_URL:
+        isin, source = amundi.discover(fetch)
     else:
-        raise DataError('Automatic sources currently support official iShares and Xtrackers product pages.')
+        raise DataError('Automatic sources support official iShares and Xtrackers pages and the supported Amundi overnight fund.')
     if not re.fullmatch('[A-Z]{2}[A-Z0-9]{9}[0-9]', isin) or (expected_isin and expected_isin != isin):
         raise DataError('Provider identity does not match the requested ISIN.')
     if source.asset_class == 'unknown':
@@ -155,12 +161,13 @@ class Discovery:
 
     def _resolve_identifier(self, identifier):
         """Search suggestions are only candidates; the issuer must confirm the identifier."""
-        from portfolio_app.instruments import lookup_isin_candidates
+        from portfolio_app.instruments import CATALOG_BY_TICKER, lookup_isin_candidates
         wkn, ticker = identifier.get('wkn', ''), identifier.get('ticker', '')
         if not wkn and not re.fullmatch(r'[A-Z0-9^=-]+\.[A-Z]{1,4}', ticker):
             raise DataError('Supply an ISIN or connect an exchange-qualified listing in Positions → Connect live prices.')
-        candidates = []
-        if ticker and not wkn:
+        listing = CATALOG_BY_TICKER.get(ticker)
+        candidates = [listing.isin] if listing and listing.isin and not wkn else []
+        if ticker and not wkn and not candidates:
             catalogues = [self._catalog or {}]
             if ticker.endswith('.DE'):
                 if self._german_catalog is None:
@@ -202,6 +209,8 @@ class Discovery:
             return resolved, source
         if isin in SOURCES:
             return isin, SOURCES[isin]
+        if isin == amundi.ISIN:
+            return amundi.discover(self.fetch)
         if self._catalog is None:
             try:
                 self._catalog = json.loads(self.fetch(ISHARES_CATALOG))

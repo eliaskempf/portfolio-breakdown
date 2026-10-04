@@ -43,13 +43,16 @@ The app must be running for its background checks.
 Open **Data & settings → ETF refresh & snapshots** for status, source links and
 saved snapshots. Select an asset for its contributing positions and ETF breakdown.
 Automatic discovery covers supported physical equity/bond products from official
-iShares and Xtrackers listings, alongside existing explicit integrations. It is
-not universal ETF support.
+iShares and Xtrackers listings, plus the Amundi Smart Overnight Return fund
+(`LU1190417599`) and existing explicit integrations. It is not universal ETF support.
 
 ISIN is authoritative; WKN/listing searches need a unique issuer-confirmed match.
-Use **Set up a breakdown** with an official iShares/Xtrackers product page when
+Use **Set up a breakdown** with an official iShares/Xtrackers product page, or the
+[supported Amundi product page](https://www.amundietf.lu/en/individual/products/fixed-income/amundi-smart-overnight-return-ucits-etf-acc/lu1190417599), when
 automatic discovery cannot resolve it. Names and bare tickers are insufficient.
 Bare `SMH` is the US-listed fund, not a UCITS listing.
+The verified Xetra listings `EXS1.DE` (DAX) and `EUNA.DE` (Global Aggregate Bond)
+are available by ISIN in search even when live search omits the ETF listing.
 
 For a physical fund from another source, supply a normalized UTF-8 CSV, exact
 fund ISIN, holdings date and asset class. Required columns are
@@ -73,12 +76,25 @@ use the snapshot date. Unknown metadata stays unknown. Published aggregate ratin
 are not assigned to individual bonds. Duration, yield and other provider metrics
 retain their own dates. Denomination currency does not measure hedged net FX risk.
 
+For iShares Core Global Aggregate Bond EUR Hedged (`IE00BDBRDM35`), an export
+that cannot be reconciled as complete falls back to its ten largest published
+bond positions. Their whole-fund weights are preserved; **Other** retains the
+rest. Coverage and partial summaries are labeled explicitly. Missing ISINs use
+provider-specific identities, without guessing price tickers or merging issuers.
+
 XEON's economic view represents its EUR overnight-rate benchmark. Its actual
 substitute basket is available separately under Holdings with signed weights;
 that basket does not enter portfolio company, country or bond allocations.
 Economic representation and basket coverage are separate. Provider cash netting
 can form a net liquidity pool without a country/currency assignment; it must not
 be read as extra equity exposure. Unsupported net borrowing is rejected.
+
+Amundi Smart Overnight Return uses the same separation: its economic view is EUR
+overnight-rate exposure to the **ESTR Compounded Index**, while available top
+substitute-basket holdings appear separately at their published weights. Basket
+coverage is partial and never rescaled. This fund's benchmark does not include
+XEON's +8.5bp spread. A changed provider identity, benchmark, currency or replication
+method requires review rather than silently changing the economic interpretation.
 
 ## Review company merges and display groups {#merges}
 

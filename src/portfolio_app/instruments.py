@@ -30,6 +30,11 @@ class Instrument:
 # Public listing metadata, not portfolio holdings. VanEck trading information:
 # https://www.vaneck.com/uk/en/library/fact-sheets/smh-fact-sheet.pdf
 CATALOG = (
+    # Exchange-verified Yahoo listing aliases; issuer display tickers differ.
+    # https://live.deutsche-boerse.com/etf/ishares-core-dax-ucits-etf-de-eur-acc
+    Instrument("EXS1.DE", "iShares Core DAX UCITS ETF (DE) EUR (Acc)", "Xetra", "ETF", "DE0005933931", "EUR"),
+    # https://live.deutsche-boerse.com/etf/ishares-core-global-aggregate-bond-ucits-etf-eur-hedged-acc
+    Instrument("EUNA.DE", "iShares Core Global Aggregate Bond UCITS ETF EUR Hedged (Acc)", "Xetra", "ETF", "IE00BDBRDM35", "EUR"),
     # Yahoo's broad crypto search can omit EUR quotes; keep verified pairs
     # discoverable by both name and symbol without guessing token identities.
     # https://finance.yahoo.com/quote/ETH-EUR/

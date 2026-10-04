@@ -1,6 +1,8 @@
 """Real app navigation using invented bond/rate funds and offline prices."""
 from datetime import date
+from dataclasses import replace
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -19,7 +21,14 @@ playwright = pytest.importorskip('playwright.sync_api')
 
 @pytest.fixture
 def fund_page(tmp_path):
-    install_snapshot(tmp_path / 'etfs', FUND, fetch=Provider())
+    full = install_snapshot(tmp_path / 'etfs', FUND, fetch=Provider())
+    partial = replace(full, fund_id='partial', name='Invented partial bonds', isin=invented_isin(444),
+                      manifest_path=tmp_path / 'etfs/partial.yaml')
+    partial_frame = full.constituents.iloc[:1].copy()
+    partial_frame['name'] = 'Invented partial bond'
+    partial_frame['constituent_id'] = 'partial:bond'
+    partial_frame['isin'] = invented_isin(445)
+    publish_snapshot(partial, partial_frame, full.as_of, notes='Partial breakdown: invented top holdings.')
     rate_isin = invented_isin(333)
     frame = pd.DataFrame([dict(constituent_id='overnight:invented', name='Invented overnight exposure', isin='', ticker='',
         weight=1., instrument_type='overnight_rate', exposure_kind='non_equity', market_currency='EUR')])
@@ -31,6 +40,7 @@ def fund_page(tmp_path):
     publish_snapshot(rate, frame, date(2026, 1, 2), basket=basket)
     (tmp_path / 'holdings.csv').write_text('id,name,isin,shares,instrument_type,manual_price,manual_price_currency,manual_price_date,quantity_unit\n'
         f'fund,Invented fund,{FUND},1,etf,100,EUR,2026-01-02,units\n'
+        f'partial,Invented partial bonds,{partial.isin},1,etf,100,EUR,2026-01-02,units\n'
         f'rate,Invented overnight fund,{rate_isin},1,etf,100,EUR,2026-01-02,units\n')
     app = tmp_path / 'app.py'
     app.write_text('''from pathlib import Path
@@ -101,6 +111,8 @@ def test_overnight_economic_view_and_separate_basket(fund_page):
     page = fund_page
     dialog = detail(page, 'Invented overnight exposure', 'Invented overnight fund')
     playwright.expect(dialog.get_by_text('100% economic representation', exact=False)).to_be_visible()
+    playwright.expect(dialog.get_by_text('Invented overnight exposure. This represents', exact=False)).to_be_visible()
+    playwright.expect(dialog.get_by_text('Solactive', exact=False)).to_have_count(0)
     dialog.get_by_role('radio', name='Holdings', exact=True).click()
     dialog.get_by_text('Actual substitute basket · excluded from portfolio exposure', exact=True).click()
     playwright.expect(dialog.get_by_text('Net basket coverage', exact=False)).to_be_visible()
@@ -132,4 +144,30 @@ def test_saved_breakdown_accessible_from_settings_without_live_listing(fund_page
     page.get_by_role('radio', name='Holdings', exact=True).click()
     playwright.expect(page.get_by_text('Fund composition is available independently of position pricing.')).to_be_visible()
     page.get_by_role('table', name='Invented fund holdings', exact=True).wait_for()
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
+def test_partial_bond_summary_shows_coverage_other_and_holdings(fund_page):
+    page = fund_page
+    dialog = detail(page, 'Invented partial bond', 'Invented partial bonds')
+    playwright.expect(dialog.get_by_text('Partial holdings summary · 60.00% covered', exact=False)).to_be_visible()
+    playwright.expect(dialog.locator('.js-plotly-plot')).to_be_visible()
+    page.wait_for_function("""[...document.querySelectorAll('[role=dialog] .js-plotly-plot')]
+        .some(chart => chart.data?.some(trace => trace.y?.includes('Other')))""")
+    dialog.get_by_role('radio', name='Holdings', exact=True).click()
+    table = dialog.get_by_role('table', name='Invented partial bonds holdings', exact=True)
+    playwright.expect(table.get_by_text('Invented partial bonds / Other', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
+def test_dax_isin_search_fills_verified_xetra_identity(fund_page):
+    page = fund_page
+    page.get_by_role('tab', name='Positions', exact=True).click()
+    page.get_by_role('button', name=re.compile(r'Add position$')).click()
+    dialog = page.get_by_role('dialog')
+    dialog.get_by_role('searchbox', name='Find an investment', exact=True).fill('DE0005933931')
+    dialog.get_by_role('button', name='Select EXS1.DE on Xetra', exact=True).click()
+    playwright.expect(dialog.get_by_text('Selected EXS1.DE · Xetra.', exact=False)).to_be_visible()
+    playwright.expect(dialog.get_by_role('textbox', name='Ticker', exact=True)).to_have_value('EXS1.DE')
+    playwright.expect(dialog.get_by_role('textbox', name='ISIN (optional)', exact=True)).to_have_value('DE0005933931')
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

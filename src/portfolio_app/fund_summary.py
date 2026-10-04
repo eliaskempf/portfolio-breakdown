@@ -36,6 +36,7 @@ def composition_summary(fund, dimension: str) -> pd.DataFrame:
     column = DIMENSIONS[dimension]
     labels = frame.get(column, pd.Series('', index=frame.index)).fillna('').astype(str)
     labels = labels.where(~labels.isin(['', '-', 'nan']), 'Unknown')
+    labels = labels.mask(frame.constituent_id.str.startswith('etf-other:'), 'Other')
     paths = {row.constituent_id: {'summary': ((label,),)} for row, label in zip(frame.itertuples(), labels, strict=True)}
     exposure = frame.rename(columns={'constituent_id': 'asset_id', 'name': 'asset_name', 'weight': 'value'})
     tree = build_tree(classify_exposures(exposure, paths, 'summary'))

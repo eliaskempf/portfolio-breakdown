@@ -5,6 +5,7 @@ interface and never change saved positions. Files stay in the private workspace.
 """
 
 import argparse
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -36,6 +37,7 @@ class Source:
     product_url: str = ''
     wkn: str = ''
     summaries: dict = field(default_factory=dict)
+    request_json: dict | None = None
 
 
 SOURCES = {
@@ -49,8 +51,13 @@ SOURCES = {
 }
 
 
-def download(url: str) -> bytes:
-    with urlopen(Request(url, headers={'User-Agent': 'Mozilla/5.0 (Portfolio breakdown)'}), timeout=25) as response:
+def download(url: str, *, json_body: dict | None = None) -> bytes:
+    headers = {'User-Agent': 'Mozilla/5.0 (Portfolio breakdown)'}
+    body = None
+    if json_body is not None:
+        body = json.dumps(json_body).encode('utf-8')
+        headers['Content-Type'] = 'application/json'
+    with urlopen(Request(url, data=body, headers=headers), timeout=25) as response:
         content = response.read(15 * 1024 * 1024 + 1)
     if len(content) > 15 * 1024 * 1024:
         raise DataError('ETF export exceeds the expected size')
@@ -153,17 +160,23 @@ def refresh_snapshot(fund: FundSnapshot, *, fetch: Callable[[str], bytes] | None
 
 
 def retrieve_snapshot(isin: str, source: Source, fetch=download):
-    stamp, frame, notes = source.parse(fetch(source.url))
+    content = fetch(source.url) if source.request_json is None else fetch(source.url, json_body=source.request_json)
+    stamp, frame, notes = source.parse(content)
     basket = None
     if source.breakdown_basis == 'economic':
-        if isin != 'LU0290358497':
+        economic = {
+            'LU0290358497': ('overnight:eur-estr-plus-8.5bp', 'EUR overnight rate · Solactive €STR +8.5 Daily Total Return Index'),
+            'LU1190417599': ('overnight:eur-estr', 'EUR overnight rate · ESTR Compounded Index'),
+        }
+        if isin not in economic:
             raise DataError('No verified economic interpretation for this synthetic ETF')
-        basket = frame
-        frame = pd.DataFrame([dict(constituent_id='overnight:eur-estr-plus-8.5bp',
-            name='EUR overnight rate · Solactive €STR +8.5 Daily Total Return Index', ticker='', isin='', weight=1.,
+        basket = frame if not frame.empty else None
+        identity, name = economic[isin]
+        frame = pd.DataFrame([dict(constituent_id=identity,
+            name=name, ticker='', isin='', weight=1.,
             instrument_type='overnight_rate', exposure_kind='non_equity', market_currency='EUR')])
         notes = ('Economic exposure represents the overnight-rate benchmark, not a deposit or a portfolio of bonds. '
-                 'The substitute basket is shown separately and is excluded from portfolio allocation. ' + notes)
+                 'Substitute basket securities are excluded from portfolio allocation. ' + notes)
     return stamp, frame, notes, basket
 
 
