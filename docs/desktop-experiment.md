@@ -40,6 +40,9 @@ uninstallation do not delete per-user portfolio data. Closing the only window
 quits the app and its owned server. The POSIX pipe supervisor survives window
 crashes, holds the child's process ID until its process group is terminated, and
 never signals a process identified by a saved PID or port.
+An explicit repeated launch on Wayland remaps the existing window because
+xdg-shell provides no unminimize request. The document and its unsaved input
+must survive this operation; the native probe checks both.
 
 ## Automated verification
 

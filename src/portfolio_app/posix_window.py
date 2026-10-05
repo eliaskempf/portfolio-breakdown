@@ -159,6 +159,14 @@ class PosixWindowPresentation:
             while not finished.wait(.2) and not self.closed.is_set():
                 if self.focus_requested.is_set():
                     self.focus_requested.clear()
+                    if sys.platform == 'linux':
+                        from qtpy.QtGui import QGuiApplication
+                        if QGuiApplication.platformName().startswith('wayland'):
+                            # xdg-shell cannot unminimize a toplevel, and Qt
+                            # clears its minimized flag immediately. Remap the
+                            # existing widget for an explicit repeat launch;
+                            # keep its WebEngine document and server intact.
+                            self.window.hide()
                     self.window.restore()
                     self.window.show()
             stopped.set()

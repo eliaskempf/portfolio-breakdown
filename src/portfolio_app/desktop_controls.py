@@ -54,8 +54,13 @@ def window_states(window, workspace, record, output):
         result = subprocess.run(['weston-debug', 'scene-graph'], env=system_environment(),
                                 capture_output=True, text=True, check=True, timeout=5)
         (output / f'wayland-scene-{phase}.txt').write_text(result.stdout, encoding='utf-8')
-        present = bool(re.search(rf'View \d+ \(role .*?, PID {os.getpid()},', result.stdout))
+        present = bool(re.search(rf'View \d+ \(role xdg_toplevel, PID {os.getpid()},', result.stdout))
         return present == expected
+    window.evaluate_js("""(() => {
+        const input = document.createElement('input'); input.id = 'native-focus-preserved';
+        input.value = 'Invented unsaved input'; document.body.append(input);
+        window.__nativeFocusDocument = 'Invented document sentinel';
+    })()""")
     try:
         if wayland:
             wait(lambda: scene_visible(True, 'initial'), timeout=15)
@@ -78,8 +83,13 @@ def window_states(window, workspace, record, output):
         assert request_instance(workspace, 'focus')
         wait(lambda: matches(visible=True, active=True), timeout=15)
         record('repeat-launch focus shows and activates hidden native window')
+        assert window.evaluate_js("document.querySelector('#native-focus-preserved')?.value") == 'Invented unsaved input'
+        assert window.evaluate_js('window.__nativeFocusDocument') == 'Invented document sentinel'
+        record('focus changes preserve the existing document and unsaved input')
     except TimeoutError as exc:
         raise AssertionError(f'Window state did not converge: {last}') from exc
+    finally:
+        window.evaluate_js("document.querySelector('#native-focus-preserved')?.remove()")
 
 
 def cocoa_interactions(window, root, record):
