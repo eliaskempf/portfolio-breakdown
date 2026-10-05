@@ -184,6 +184,7 @@ def initialize_live_demo(directory: Path, valued) -> bool:
             price = prices[row['id']]
             row['shares'] = str(round(value / price, 6))
             row['acquisition_price'] = str(round(price * cost_ratio, 4))
+            row['acquisition_currency'] = valued.reporting_currency.iloc[0]
         with NamedTemporaryFile(mode='w', encoding='utf-8', newline='', dir=directory, delete=False) as handle:
             temporary = Path(handle.name)
             writer = csv.DictWriter(handle, fieldnames=columns)

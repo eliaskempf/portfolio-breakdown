@@ -197,6 +197,23 @@ def test_settings_default_revision_and_roundtrip(tmp_path):
     assert load_settings(tmp_path).reporting_currency == 'EUR'
 
 
+def test_live_demo_initialization_uses_selected_cost_currency(tmp_path):
+    from portfolio_app.demo import create_demo_data, initialize_live_demo
+    from portfolio_app.prices import StaticProvider
+    from portfolio_app.valuation import value_holdings
+    live = create_demo_data(tmp_path / 'live', live=True)
+    offline = create_demo_data(tmp_path / 'invented-quotes')
+    prices = PriceService(StaticProvider(offline / 'demo_prices.json'))
+    valued = value_holdings(read_snapshot(live / 'holdings.csv').holdings, prices, reporting_currency='USD')
+    assert initialize_live_demo(live, valued)
+    holdings = read_snapshot(live / 'holdings.csv').holdings
+    assert holdings.acquisition_currency.eq('USD').all()
+    result = prepare_portfolio(holdings, prices, reporting_currency='USD')
+    assert result.unrealized_gain_reporting.notna().all()
+    assert (result.unrealized_gain_reporting > 0).sum() == 4
+    assert (result.unrealized_gain_reporting < 0).sum() == 2
+
+
 def test_missing_one_component_excludes_entire_position(prices):
     frame = holding(shares=2)
     parts = [component(1, 100, 'EUR'), component(1, 100, 'USD')]
