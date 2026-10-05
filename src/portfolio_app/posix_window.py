@@ -31,6 +31,13 @@ def install_navigation(renderer, origin):
         return action == 'allow'
     if renderer == 'qtwebengine':
         from webview.platforms.qt import BrowserView
+        original_handler_init = BrowserView.NavigationHandler.__init__
+        def handler_init(handler, page):
+            original_handler_init(handler, page)
+            # pywebview's popup page shares the profile but has no QObject
+            # owner. Destroy it with the document, before releasing the profile.
+            handler.setParent(page)
+        BrowserView.NavigationHandler.__init__ = handler_init
         def navigate(page, url, kind, is_main_frame):
             return allow(url.toString(), is_main_frame)
         def popup(page, url, kind, is_main_frame):
@@ -180,6 +187,12 @@ class PosixWindowPresentation:
                 webview.start(worker, gui='qt' if sys.platform == 'linux' else 'cocoa',
                               private_mode=True, storage_path=cache, debug=False,
                               icon=str(icon_path()))
+                if sys.platform == 'linux':
+                    from qtpy.QtCore import QCoreApplication, QEvent
+                    # pywebview queues page deletion then exits the event loop.
+                    # Finish that deletion while our window still owns its
+                    # profile, rather than relying on Python shutdown order.
+                    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         except Exception as exc:
             self.failures.append(exc)
         finally:

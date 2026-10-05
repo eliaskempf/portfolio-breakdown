@@ -96,6 +96,21 @@ normal startup never enables this input path. No accessibility or Gatekeeper
 policy is changed by these tests.
 Set `mac_candidate_run` to an existing experimental workflow run ID to repeat
 the browser workflows against its verified Mac installer instead of source.
+Set `linux_candidate_run` instead to run Linux-only diagnostics: three native
+cycles per backend against both the selected installer (under GDB) and current
+source, retaining crash backtraces and window-manager state. These runs do not
+build new installers. For example:
+
+```sh
+gh workflow run desktop-experiment.yml --ref experiment/linux-macos-desktop \
+  -f diagnostics_only=true -f linux_candidate_run=37336981212
+```
+
+The X11 hide/restore probe waits until the window manager removes the hidden
+window from its client list before requesting focus. Qt's visibility flag alone
+changes before the desktop processes the hide request. The Wayland probe waits
+for the equivalent scene-graph change. Qt page-lifetime checks require both the
+main document and popup helper to be destroyed before releasing their profile.
 
 `tools/desktop_gatekeeper.py APP --output NEW_DIRECTORY` checks a disposable
 quarantined copy on macOS without changing system policy. For this ad-hoc-signed
@@ -123,9 +138,40 @@ behavior, and macOS Gatekeeper/signing/notarization. Native probe reports carry
 explicit gaps; GUI tests that cannot run are failures, not silent skips. GUI
 sessions in hosted CI may impose limits that differ from end-user desktops.
 
-Current local source evidence: on an Ubuntu 20.04 development host with Xvfb and
-Qt WebEngine, the default chart, four tabs, repeat-launch request, blocked file
-navigation, native upload/save dialogs with exact bytes, external-link routing,
-and close/server cleanup passed. This is supplemental evidence, not
-acceptance for Ubuntu 22.04/24.04 or macOS. Hosted and packaged results are recorded
-in workflow artifacts and the implementation handoff.
+Latest completed installer matrix: [run 37336981212 at 8897023](https://github.com/eliaskempf/portfolio-breakdown/actions/runs/37336981212).
+
+| Target | Observed result |
+| --- | --- |
+| macOS 14, 15 and 26, Apple Silicon | Same DMG passed native rendering, all four tabs, exact upload/download bytes through system file panels, minimize/restore/focus, preserved unsaved input, welcome/early close, process cleanup and packaged browser workflows. Quarantined copies were rejected as expected. |
+| Ubuntu 22.04 x64 / X11 | Installed native, browser/lifecycle and reinstall/uninstall checks passed. |
+| Ubuntu 24.04 x64 / X11 | Rendering, file dialogs and other workflows passed; hidden-window focus intermittently reported visible but inactive in Qt. |
+| Ubuntu 24.04 x64 / Wayland | Actual Wayland desktop interactions, minimize/restore/focus and preserved document/input passed. A subsequent welcome-mode process exited with SIGSEGV. |
+
+The full installer matrix therefore remains **failed**, despite all Mac jobs
+passing. Subsequent [focused verification at 6b16b96](https://github.com/eliaskempf/portfolio-breakdown/actions/runs/37339481998)
+passed Mac native controls, five independent packaged Mac browser workflows,
+and the Wayland source workflow. The browser-test change waits for panel motion
+to finish and verifies that the nested setup section opened before locating its
+selector; captured failures showed the section still collapsed.
+
+Further local investigation reproduced an orphaned Qt popup-helper page and
+corrected its ownership and deferred deletion. The new native lifetime assertion
+fails against the previous adapter and passes with the correction. This removes
+the profile/page shutdown warning, but does not yet prove the hosted Wayland
+SIGSEGV is resolved. The local host uses Ubuntu 20.04 and Qt 6.7; it cannot replace
+fresh installer checks with the locked runtime on supported targets.
+
+Fresh hosted diagnostics could not start because hosted CI capacity was
+unavailable. Rootless containers using checksum-verified official Ubuntu Base
+images provide a local alternative. On Ubuntu 24.04 with the locked Qt runtime,
+three source cycles each of desktop, welcome and early-close passed on Weston
+Wayland. X11 repeated testing confirmed that the server owns keyboard focus even
+when Qt's activity flag remains false. The updated probe therefore verifies
+server-side focus and actual key delivery to an invented input after both
+restores; all nine source runs then passed. These containers use virtual displays
+and the host's WSL Linux kernel; they do not emulate macOS or physical hardware.
+The newer page-lifetime correction still requires a fresh built-artifact matrix. Keep macOS Developer ID signing /
+notarization, interactive Open Anyway approval, real browser quarantine
+propagation, physical displays and other desktop environments explicitly outside
+the verified evidence. This is stronger evidence for technical feasibility, not
+approval to ship either platform as supported in v1.

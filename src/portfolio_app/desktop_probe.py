@@ -42,6 +42,7 @@ def main(output: Path, mode='render'):
     previous_state = os.environ.get('PORTFOLIO_STATE_DIR')
     errors = []
     worker_done = threading.Event()
+    deleted_pages = []
     def record(name):
         report['checks'].append(name)
     with TemporaryDirectory(prefix='portfolio-native-synthetic-') as temporary:
@@ -128,7 +129,12 @@ def main(output: Path, mode='render'):
         def create(*args, **kwargs):
             window = original_create(*args, **kwargs)
             if sys.platform == 'linux':
-                window.events.before_show += lambda: qt_dispatch(window)
+                def before_show():
+                    qt_dispatch(window)
+                    page = window.native.webview.page()
+                    page.destroyed.connect(lambda: deleted_pages.append('document'))
+                    page.nav_handler.destroyed.connect(lambda: deleted_pages.append('popup'))
+                window.events.before_show += before_show
             inspection_started = False
             inspection_lock = threading.Lock()
             def first_show():
@@ -150,6 +156,9 @@ def main(output: Path, mode='render'):
                 if exc.code not in {None, 0}:
                     errors.append(f'Application exit: {exc.code}')
             assert worker_done.wait(5), 'Native inspection did not finish'
+            if sys.platform == 'linux':
+                assert set(deleted_pages) == {'document', 'popup'}, f'Browser pages survived event-loop exit: {deleted_pages}'
+                record('document and popup pages destroyed before profile release')
             assert request_instance(workspace) is None, 'Managed server remained after window close'
             assert marker.read_text(encoding='utf-8') == 'Invented preservation sentinel'
             record('window close stops managed server and preserves workspace')

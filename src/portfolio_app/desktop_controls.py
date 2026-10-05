@@ -28,6 +28,37 @@ def gui(window, callback):
     return result[0]
 
 
+def x11_keyboard(wid, type_key=False):
+    """Observe X server keyboard ownership; optionally type into our own window."""
+    import ctypes as C
+    x = C.CDLL('libX11.so.6')
+    x.XOpenDisplay.argtypes = [C.c_char_p]
+    x.XOpenDisplay.restype = C.c_void_p
+    x.XGetInputFocus.argtypes = [C.c_void_p, C.POINTER(C.c_ulong), C.POINTER(C.c_int)]
+    x.XCloseDisplay.argtypes = [C.c_void_p]
+    display = x.XOpenDisplay(None)
+    assert display, 'Could not inspect the synthetic X11 session'
+    try:
+        focused, revert = C.c_ulong(), C.c_int()
+        x.XGetInputFocus(display, C.byref(focused), C.byref(revert))
+        owned = focused.value == wid
+        if type_key:
+            assert owned, 'Synthetic app does not own keyboard focus'
+            x.XKeysymToKeycode.argtypes = [C.c_void_p, C.c_ulong]
+            x.XKeysymToKeycode.restype = C.c_ubyte
+            x.XFlush.argtypes = [C.c_void_p]
+            xt = C.CDLL('libXtst.so.6')
+            xt.XTestFakeKeyEvent.argtypes = [C.c_void_p, C.c_uint, C.c_int, C.c_ulong]
+            code = x.XKeysymToKeycode(display, ord('z'))
+            assert code, 'Synthetic key has no keyboard mapping'
+            for pressed in (1, 0):
+                assert xt.XTestFakeKeyEvent(display, code, pressed, 0)
+            x.XFlush(display)
+        return owned
+    finally:
+        x.XCloseDisplay(display)
+
+
 def window_states(window, workspace, record, output):
     from portfolio_app.launcher import request_instance
     wayland = False
@@ -41,7 +72,9 @@ def window_states(window, workspace, record, output):
             return dict(minimized=bool(native.isMiniaturized()), active=bool(native.isKeyWindow()),
                         visible=bool(native.isVisible()))
         native = window.native
-        return dict(minimized=native.isMinimized(), active=native.isActiveWindow(), visible=native.isVisible())
+        return dict(minimized=native.isMinimized(),
+                    active=native.isActiveWindow() if wayland else x11_keyboard(int(native.winId())),
+                    visible=native.isVisible(), qt_active=native.isActiveWindow())
     last = {}
     def matches(**expected):
         last.update(gui(window, state))
@@ -56,11 +89,40 @@ def window_states(window, workspace, record, output):
         (output / f'wayland-scene-{phase}.txt').write_text(result.stdout, encoding='utf-8')
         present = bool(re.search(rf'View \d+ \(role xdg_toplevel, PID {os.getpid()},', result.stdout))
         return present == expected
+    def desktop_hidden():
+        if sys.platform != 'linux':
+            return True
+        if wayland:
+            return scene_visible(False, 'hidden')
+        import re
+        import subprocess
+        from portfolio_app.desktop import system_environment
+        wid = gui(window, lambda: int(window.native.winId()))
+        result = subprocess.run(['xprop', '-root', '_NET_CLIENT_LIST'],
+                                env=system_environment(), capture_output=True, text=True,
+                                check=True, timeout=5)
+        (output / 'x11-hidden.txt').write_text(result.stdout, encoding='utf-8')
+        return wid not in {int(value, 16) for value in re.findall(r'0x[0-9a-fA-F]+', result.stdout)}
     window.evaluate_js("""(() => {
         const input = document.createElement('input'); input.id = 'native-focus-preserved';
         input.value = 'Invented unsaved input'; document.body.append(input);
         window.__nativeFocusDocument = 'Invented document sentinel';
+        const keyboard = document.createElement('input'); keyboard.id = 'native-focus-delivery';
+        document.body.append(keyboard);
     })()""")
+    key_count = 0
+    def keyboard_delivery():
+        nonlocal key_count
+        if sys.platform != 'linux' or wayland:
+            return
+        # Qt can retain a stale inactive flag after hide/show even though the
+        # server gives this window keyboard focus. Verify actual OS key delivery
+        # to WebEngine, without directing an event to a widget or changing focus.
+        window.evaluate_js("document.querySelector('#native-focus-delivery').focus()")
+        gui(window, lambda: x11_keyboard(int(window.native.winId()), type_key=True))
+        key_count += 1
+        wait(lambda: window.evaluate_js("document.querySelector('#native-focus-delivery').value") == 'z' * key_count,
+             timeout=5)
     try:
         if wayland:
             wait(lambda: scene_visible(True, 'initial'), timeout=15)
@@ -77,12 +139,18 @@ def window_states(window, workspace, record, output):
             record('desktop confirms window minimized')
             assert request_instance(workspace, 'focus')
             wait(lambda: matches(minimized=False, active=True, visible=True), timeout=15)
+            keyboard_delivery()
             record('repeat-launch focus restores and activates minimized native window')
         window.hide()
-        wait(lambda: matches(visible=False), timeout=15)
+        # Client visibility changes before the desktop processes UnmapNotify.
+        # Require actual removal before testing a subsequent user focus request.
+        wait(lambda: matches(visible=False) and desktop_hidden(), timeout=15)
         assert request_instance(workspace, 'focus')
         wait(lambda: matches(visible=True, active=True), timeout=15)
+        keyboard_delivery()
         record('repeat-launch focus shows and activates hidden native window')
+        if key_count:
+            record('X11 server keyboard focus and real key delivery verified after both restores')
         assert window.evaluate_js("document.querySelector('#native-focus-preserved')?.value") == 'Invented unsaved input'
         assert window.evaluate_js('window.__nativeFocusDocument') == 'Invented document sentinel'
         record('focus changes preserve the existing document and unsaved input')
@@ -96,10 +164,11 @@ def window_states(window, workspace, record, output):
                              ['-id', wid, '_NET_WM_STATE', 'WM_STATE', '_NET_WM_USER_TIME']]:
                     subprocess.run(['xprop', *args], stdout=log, stderr=log,
                                    env=system_environment(), timeout=5)
+                log.write(f'X11 keyboard ownership: {gui(window, lambda: x11_keyboard(int(wid)))}\n')
                 log.write(f'Owned window: {wid}; Qt state: {last}\n')
         raise AssertionError(f'Window state did not converge: {last}') from exc
     finally:
-        window.evaluate_js("document.querySelector('#native-focus-preserved')?.remove()")
+        window.evaluate_js("document.querySelector('#native-focus-preserved')?.remove(); document.querySelector('#native-focus-delivery')?.remove()")
 
 
 def cocoa_interactions(window, root, record):

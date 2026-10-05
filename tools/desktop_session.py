@@ -46,7 +46,9 @@ def session(backend, executable, output, native_repeats=0):
                     for mode in ['desktop', 'welcome', 'early-close']:
                         target = output / f'{attempt + 1}-{mode}'
                         command = [str(executable), '--native-self-test', str(target), mode]
-                        if not executable.read_bytes()[:2] == b'#!':
+                        with executable.open('rb') as binary:
+                            frozen = binary.read(2) != b'#!'
+                        if frozen:
                             command = ['gdb', '--batch', '--return-child-result',
                                        '-ex', 'set pagination off', '-ex', 'run',
                                        '-ex', 'thread apply all bt', '--args', *command]
