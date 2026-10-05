@@ -47,7 +47,7 @@ def test_add_fractional_position_with_total_cost_and_reopen(tmp_path):
     stored = load_holdings(path)
     assert stored.acquisition_price.iloc[0] == pytest.approx(3950.4)
     assert stored.acquisition_currency.iloc[0] == 'EUR'
-    performance = position_performance(stored.assign(quote_currency='EUR', current_price=4800., current_value_eur=150.))
+    performance = position_performance(stored.assign(quote_currency='EUR', current_price=4800., current_value_reporting=150.))
     assert performance.cost_basis.iloc[0] == pytest.approx(123.45)
     assert performance.unrealized_gain.iloc[0] == pytest.approx(26.55)
     position_action(app, 'Edit position')

@@ -12,20 +12,20 @@ from portfolio_app.display_names import instrument_name
 def test_category_performance_uses_total_cost_and_disjoint_source_rows():
     config = Allocation((Bucket('core', 'Core'), Bucket('active', 'Active')))
     rows = pd.DataFrame([
-        dict(position_id='a', name='Invented A', shares=1., bucket_id='core', acquisition_price=100., acquisition_currency='EUR', quote_currency='EUR', current_price=150., current_value_eur=150.),
-        dict(position_id='b', name='Invented B', shares=1., bucket_id='core', acquisition_price=300., acquisition_currency='EUR', quote_currency='EUR', current_price=270., current_value_eur=270.),
-        dict(position_id='c', name='Invented C', shares=1., bucket_id='active', acquisition_price=float('nan'), acquisition_currency='EUR', quote_currency='EUR', current_price=50., current_value_eur=50.),
-        dict(position_id='d', name='Invented D', shares=1., bucket_id='active', acquisition_price=0., acquisition_currency='EUR', quote_currency='EUR', current_price=20., current_value_eur=20.),
+        dict(position_id='a', name='Invented A', shares=1., bucket_id='core', acquisition_price=100., acquisition_currency='EUR', quote_currency='EUR', current_price=150., current_value_reporting=150.),
+        dict(position_id='b', name='Invented B', shares=1., bucket_id='core', acquisition_price=300., acquisition_currency='EUR', quote_currency='EUR', current_price=270., current_value_reporting=270.),
+        dict(position_id='c', name='Invented C', shares=1., bucket_id='active', acquisition_price=float('nan'), acquisition_currency='EUR', quote_currency='EUR', current_price=50., current_value_reporting=50.),
+        dict(position_id='d', name='Invented D', shares=1., bucket_id='active', acquisition_price=0., acquisition_currency='EUR', quote_currency='EUR', current_price=20., current_value_reporting=20.),
     ])
     table = strategic_performance(position_performance(rows), config).set_index('Category')
-    assert table.loc['Core', 'Gain (EUR)'] == 20
+    assert table.loc['Core', 'Gain'] == 20
     assert table.loc['Core', 'Return (%)'] == 5
-    assert table.loc['Active', 'Gain (EUR)'] == 20
+    assert table.loc['Active', 'Gain'] == 20
     assert pd.isna(table.loc['Active', 'Return (%)'])
     assert table.loc['Active', 'Status'] == 'Partial'
     assert table.loc['Active', 'Coverage'] == '1 of 2'
     child = strategic_performance(position_performance(rows), config, 'core')
-    assert child['Gain (EUR)'].sum() == table.loc['Core', 'Gain (EUR)']
+    assert child['Gain'].sum() == table.loc['Core', 'Gain']
 
 
 def test_short_name_is_instrument_metadata_and_round_trips_across_accounts(tmp_path):

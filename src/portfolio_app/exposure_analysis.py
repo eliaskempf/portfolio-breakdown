@@ -26,11 +26,11 @@ def select_sources(valued, classifications, *, metadata=None, asset_ids=None,
                               asset_ids=asset_ids, taxonomy_branches=taxonomy_branches)
     if scope:
         selected = bucket_positions(selected, allocation, scope) if allocation else selected.loc[selected.portfolio.eq(scope)].copy()
-    selected['portfolio_weight'] = portfolio_weights(selected.current_value_eur)
-    return ExposureSelection(selected, float(valued.current_value_eur.sum()),
-                             float(selected.current_value_eur.sum()),
-                             int(selected.current_value_eur.isna().sum()),
-                             int(valued.current_value_eur.isna().sum()))
+    selected['portfolio_weight'] = portfolio_weights(selected.current_value_reporting)
+    return ExposureSelection(selected, float(valued.current_value_reporting.sum()),
+                             float(selected.current_value_reporting.sum()),
+                             int(selected.current_value_reporting.isna().sum()),
+                             int(valued.current_value_reporting.isna().sum()))
 
 
 def prepare_exposures(selected, funds, holdings, *, lookthrough):

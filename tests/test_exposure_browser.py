@@ -36,7 +36,7 @@ def test_assets_first_filters_breakdown_and_source_dialog(exposure_page):
     value_card = summary.locator('.st-key-exposure_value')
     value_card.get_by_role('button', name='Show gain as percentage', exact=True).click()
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+22.22%')
-    value_card.get_by_role('button', name='Show gain in euros', exact=True).press('Enter')
+    value_card.get_by_role('button', name='Show gain as amount', exact=True).press('Enter')
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+€60.00')
     page.screenshot(path=str(directory / 'exposure.png'))
     table.locator('tr[data-position-id="c"]').click()
@@ -141,7 +141,7 @@ def test_sources_show_direct_and_each_etf_with_asset_relative_percentages(exposu
     table = page.get_by_role('table', name='Exposure assets', exact=True)
     row = table.locator('tr[data-position-id="c"]')
     playwright.expect(row).to_contain_text('3 positions')
-    playwright.expect(table.get_by_role('columnheader', name='Direct (EUR)', exact=True)).to_have_count(0)
+    playwright.expect(table.get_by_role('columnheader', name='Direct', exact=True)).to_have_count(0)
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     sent.clear()
     # The DOM must expand in the click handler itself, without a server response.
@@ -163,7 +163,7 @@ def test_sources_show_direct_and_each_etf_with_asset_relative_percentages(exposu
     def assert_tree_alignment():
         boxes = row.evaluate("""el => {
             const headers = [...el.closest('table').querySelector('thead tr').children];
-            const index = headers.findIndex(th => th.textContent.includes('Total (EUR)'));
+            const index = headers.findIndex(th => th.textContent.includes('Total'));
             const parent = el.children[index].getBoundingClientRect();
             const panel = el.nextElementSibling.querySelector('.preview-panel');
             const childElement = panel.querySelector('.tree-amount');

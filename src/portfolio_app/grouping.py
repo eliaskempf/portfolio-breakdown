@@ -31,7 +31,7 @@ def group_exposures(exposures: pd.DataFrame, group: InstrumentGroup) -> pd.DataF
     result.loc[mask, "asset_name"] = group.name
     result.loc[mask, ["ticker", "isin"]] = ""
     result.loc[mask, "source_type"] = "instrument_group"
-    for field in ("shares", "acquisition_price", "current_price", "fx_to_eur", "target_allocation", "portfolio_weight"):
+    for field in ("shares", "acquisition_price", "current_price", "fx_to_reporting", "target_allocation", "portfolio_weight"):
         if field in result:
             result.loc[mask, field] = float("nan")
     return result
@@ -50,9 +50,9 @@ def group_classifications(classifications: Classifications, group: InstrumentGro
 def group_members_table(valued: pd.DataFrame, group: InstrumentGroup) -> pd.DataFrame:
     """Show the original fund and stocks, including explicitly unvalued members."""
     rows = valued.loc[valued["id"].isin(group.members)]
-    table = rows.groupby(["id", "name"], sort=False, as_index=False)["current_value_eur"].sum(min_count=1)
-    total = table["current_value_eur"].sum()
-    table["Within group (%)"] = 100 * table["current_value_eur"] / total if total else float("nan")
-    return table.rename(columns={"name": "Investment", "current_value_eur": "EUR value"}).sort_values(
-        "EUR value", ascending=False, kind="stable", na_position="last", ignore_index=True,
-    )[["Investment", "EUR value", "Within group (%)"]]
+    table = rows.groupby(["id", "name"], sort=False, as_index=False)["current_value_reporting"].sum(min_count=1)
+    total = table["current_value_reporting"].sum()
+    table["Within group (%)"] = 100 * table["current_value_reporting"] / total if total else float("nan")
+    return table.rename(columns={"name": "Investment", "current_value_reporting": "Value"}).sort_values(
+        "Value", ascending=False, kind="stable", na_position="last", ignore_index=True,
+    )[["Investment", "Value", "Within group (%)"]]

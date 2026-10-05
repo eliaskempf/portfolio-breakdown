@@ -1,4 +1,6 @@
 """Interactive, read-only position plans, shared by legacy and category scopes."""
+
+from portfolio_app.currency_display import currency_symbol, money_label
 from hashlib import sha256
 
 import pandas as pd
@@ -24,7 +26,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
     st.caption(f'Targets relative to {scope or "portfolio"}.' + (' Selling is protected for this category.' if sell_protected else ''))
     mode_col, amount_col, options_col = st.columns([3, 2, 1], vertical_alignment='bottom')
     mode = mode_col.selectbox("Rebalancing mode", MODES, key="rebalance_mode")
-    new_money = amount_col.number_input("New money (EUR)", min_value=0., value=500., step=100., key="rebalance_cash") if mode == MODES[2] else 0.
+    new_money = amount_col.number_input(money_label("New money"), min_value=0., value=500., step=100., key="rebalance_cash") if mode == MODES[2] else 0.
     with options_col.popover('Options', width='stretch'):
         st.markdown('**Positions**')
         valued = planning_positions(valued)
@@ -49,10 +51,10 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
             if distribution == "Rebalance selected positions":
                 buy_all = st.selectbox("Selection intent", ["Buy every selected position", "Allow skipping positions"],
                                        key="rebalance_buy_intent") == "Buy every selected position"
-                minimum_purchase = st.number_input("Minimum purchase (EUR)", min_value=.01, value=25., step=5.,
+                minimum_purchase = st.number_input(money_label("Minimum purchase"), min_value=.01, value=25., step=5.,
                                                     key="rebalance_minimum_purchase")
                 if buy_all:
-                    st.caption(f'Minimum contribution for this selection: €{len(eligible_ids) * minimum_purchase:,.2f}')
+                    st.caption((f'Minimum contribution for this selection: €{len(eligible_ids) * minimum_purchase:,.2f}').replace('€', currency_symbol()))
                 else:
                     prefer_fewer = st.toggle("Prefer fewer trades", key="rebalance_prefer_fewer",
                         help="Choose the fewest trades within your allowed extra target error, while investing as much as possible.")
@@ -99,7 +101,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
     except RebalanceError as exc:
         st.info(str(exc))
         return
-    fields = [column for column in ("position_id", "id", "name", "ticker", "account", "portfolio", "shares", "current_value_eur", "target_allocation") if column in valued]
+    fields = [column for column in ("position_id", "id", "name", "ticker", "account", "portfolio", "shares", "current_value_reporting", "target_allocation") if column in valued]
     fingerprint = sha256((valued[fields].to_json() + repr((st.session_state.get("ignore_empty_positions"), scope, portfolio_value, sell_protected, cap_scope, mode, tolerance_type, tolerance, no_new, new_money, max_trades, distribution, buy_all, minimum_purchase, prefer_fewer, extra_error, tuple(sorted(max_allocations.items())), None if eligible_ids is None else tuple(sorted(eligible_ids))))).encode()).hexdigest()
     entered_caps = max_allocations.copy()
     if scope and cap_scope == 'portfolio' and max_allocations:
@@ -151,13 +153,13 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
             frontier = pd.DataFrame({
                 "Trades": [plan.trade_count for plan in plans],
                 **({"RMS target gap (pp)": [plan.target_rms for plan in plans]} if balancing else {}),
-                "Unallocated cash (EUR)": [plan.unallocated_cash for plan in plans],
+                "Unallocated cash": [plan.unallocated_cash for plan in plans],
                 "Deviation outside ranges (pp)": [plan.deviation_after for plan in plans],
                 "All positions in range": [plan.within_bands for plan in plans],
             })
             show_table(frontier)
             index = st.selectbox("Plan to inspect", list(range(len(plans))), index=index,
-                                 format_func=lambda i: f"{plans[i].trade_count} trades · €{plans[i].unallocated_cash:.2f} unallocated",
+                                 format_func=lambda i: (f"{plans[i].trade_count} trades · €{plans[i].unallocated_cash:.2f} unallocated").replace('€', currency_symbol()),
                                  key=f"rebalance_plan_{fingerprint}")
         plan = plans[index]
         st.metric("Deviation outside ranges", f"{plan.deviation_after:.3f} pp",
@@ -175,7 +177,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
             table['Max allocation %'] = positions.position_id.map(entered_caps).to_numpy() * 100
         st.markdown('**Full allocation**')
         st.caption(f'Percentages of {scope or "portfolio"}, including unallocated contribution. Targets use the current planning options.')
-        show_table(table.sort_values('After (EUR)', ascending=False, kind='stable'), scope=scope or 'portfolio',
+        show_table(table.sort_values('After', ascending=False, kind='stable'), scope=scope or 'portfolio',
                    cap_scope='category' if cap_scope == 'bucket' else 'portfolio')
     with results:
         render_summary(table, plan.new_money, plan.unallocated_cash, minimum=mode == MODES[1])
@@ -188,6 +190,6 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
         render_trades(table)
         if allocation is not None and portfolio_positions is not None:
             after = portfolio_positions.copy()
-            after['current_value_eur'] += after.position_id.map(plan.table.set_index('position_id')['Trade (EUR)']).fillna(0.)
+            after['current_value_reporting'] += after.position_id.map(plan.table.set_index('position_id')['Trade']).fillna(0.)
             render_impact(portfolio_positions, after, allocation, cash=plan.unallocated_cash, key='rebalance_impact_parent')
     return plan

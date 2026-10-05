@@ -91,10 +91,10 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
             if fund.asset_class in {'fixed_income', 'money_market'}:
                 columns += [c for c in ('isin', 'instrument_type', 'issuer', 'market_currency', 'maturity', 'credit_rating') if c in table]
             if fund_positions:
-                values = pd.Series([row["current_value_eur"] for row in fund_positions])
+                values = pd.Series([row["current_value_reporting"] for row in fund_positions])
                 if values.notna().any():
-                    table["Selected ETF exposure (EUR)"] = table["weight"] * values.sum()
-                    columns.append("Selected ETF exposure (EUR)")
+                    table["Selected ETF exposure"] = table["weight"] * values.sum()
+                    columns.append("Selected ETF exposure")
                 if values.isna().any():
                     st.caption("Exposure amounts exclude ETF positions that could not be valued.")
             elif percentages_only:
@@ -106,7 +106,7 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
             labels = {'name': 'Holding', 'ticker': 'Ticker'}
             specs = [ListColumn(column, labels.get(column, column.removeprefix('classification:').replace('_', ' ').title()
                                 if column.startswith('classification:') else column),
-                                numeric=column in {'Fund allocation %', 'Selected ETF exposure (EUR)'})
+                                numeric=column in {'Fund allocation %', 'Selected ETF exposure'})
                      for column in columns if column != 'ticker' or show_tickers]
             render_list(frame_rows(table[columns]), specs, key=f'{key_prefix}etf_holdings_{fund.fund_id}',
                         context=f'{key_prefix}etf_holdings_{fund.fund_id}', title=f'{label} holdings', max_height=BOUNDED_LIST_HEIGHT,

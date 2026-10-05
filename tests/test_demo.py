@@ -18,12 +18,12 @@ def test_demo_targets_gaps_performance_and_plans(tmp_path):
     holdings = load_holdings(tmp_path / 'holdings.csv')
     config = load_allocation(tmp_path / 'allocation.yaml', holdings)
     valued = value_holdings(analysis_targets(holdings, config), PriceService(StaticProvider(tmp_path / 'demo_prices.json')))
-    assert valued.current_value_eur.sum() == pytest.approx(100000.)
+    assert valued.current_value_reporting.sum() == pytest.approx(100000.)
     assert valued.target_allocation.tolist() == pytest.approx([.42, .18, .25, .10, .03, .02])
     summary = macro_table(valued, config).set_index('Bucket')
     assert summary['Current portfolio %'].to_dict() == pytest.approx({'Equities': 61, 'Money market': 24, 'Gold': 11, 'Crypto': 4})
     assert summary['Gap (pp)'].to_dict() == pytest.approx({'Equities': 1, 'Money market': -1, 'Gold': 1, 'Crypto': -1})
-    gains = position_performance(valued).set_index('id').unrealized_gain_eur
+    gains = position_performance(valued).set_index('id').unrealized_gain_reporting
     assert gains.to_dict() == pytest.approx({'world': 5670, 'emerging': -1472, 'money-market': 352,
                                            'gold': 1947, 'bitcoin': 300, 'ethereum': -240})
     # A zero-tolerance sell/buy plan reaches all targets while conserving capital.
@@ -32,7 +32,7 @@ def test_demo_targets_gaps_performance_and_plans(tmp_path):
     assert plan.deviation_after == pytest.approx(0, abs=1e-6)
     assert plan.buy_count > 0 and plan.sell_count > 0 and plan.new_money == 0
     contribution = portfolio_contribution(valued, config, 5000., eligible_ids=valued.position_id.tolist())
-    assert contribution.after.current_value_eur.sum() + contribution.unallocated_cash == pytest.approx(105000.)
+    assert contribution.after.current_value_reporting.sum() + contribution.unallocated_cash == pytest.approx(105000.)
 
 
 def test_demo_breakdown_conserves_each_source_and_labels_synthetic_weights(tmp_path):
@@ -46,7 +46,7 @@ def test_demo_breakdown_conserves_each_source_and_labels_synthetic_weights(tmp_p
     expanded = prepare_exposures(valued, funds, holdings, lookthrough=True)
     assert len(expanded) > len(intact)
     assert expanded.groupby('source_position_id').value.sum().to_dict() == pytest.approx(
-        valued.set_index('position_id').current_value_eur.to_dict())
+        valued.set_index('position_id').current_value_reporting.to_dict())
     assert expanded.loc[expanded.source_type.eq('etf_other'), 'value'].sum() == pytest.approx(45000 * .81 + 16000 * .79)
     assert set(expanded.loc[expanded.direct_or_indirect.eq('direct'), 'asset_id']) == {'money-market', 'gold', 'bitcoin', 'ethereum'}
 
@@ -63,7 +63,7 @@ def test_live_demo_sizes_once_from_quotes_and_preserves_targets_and_edits(tmp_pa
     valued = value_holdings(holdings, prices)
     original = (live / 'holdings.csv').read_bytes()
     missing = valued.copy()
-    missing.loc[0, 'fx_to_eur'] = float('nan')
+    missing.loc[0, 'fx_to_reporting'] = float('nan')
     assert not initialize_live_demo(live, missing)
     assert (live / 'holdings.csv').read_bytes() == original
     assert live_demo_pending(live)
@@ -73,10 +73,10 @@ def test_live_demo_sizes_once_from_quotes_and_preserves_targets_and_edits(tmp_pa
     config = load_allocation(live / 'allocation.yaml', holdings)
     assert analysis_targets(holdings, config).target_allocation.tolist() == pytest.approx([.42, .18, .25, .10, .03, .02])
     valued = value_holdings(holdings, prices)
-    assert valued.set_index('id').current_value_eur.to_dict() == pytest.approx(
+    assert valued.set_index('id').current_value_reporting.to_dict() == pytest.approx(
         {k: v[0] for k, v in LIVE_EXAMPLES.items()}, abs=.04)
-    assert 93000 < valued.current_value_eur.sum() < 93500
-    gains = position_performance(valued).unrealized_gain_eur
+    assert 93000 < valued.current_value_reporting.sum() < 93500
+    gains = position_performance(valued).unrealized_gain_reporting
     assert (gains > 0).sum() == 4 and (gains < 0).sum() == 2
     snapshot = read_snapshot(live / 'holdings.csv')
     save_position(live / 'holdings.csv', {'shares': '123'}, expected_revision=snapshot.revision,

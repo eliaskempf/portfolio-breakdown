@@ -232,7 +232,7 @@ def test_maturity_boundaries_and_missing_data():
 def test_bond_types_propagate_and_do_not_enter_company_exposure(tmp_path):
     fund = install_snapshot(tmp_path / 'etfs', FUND, fetch=Provider())
     owned = pd.DataFrame([{'id': 'fund', 'position_id': 'p', 'name': 'Invented fund', 'isin': FUND,
-                          'ticker': '', 'shares': 2, 'current_value_eur': 100., 'instrument_type': 'etf'}])
+                          'ticker': '', 'shares': 2, 'current_value_reporting': 100., 'instrument_type': 'etf'}])
     from portfolio_app.exposures import normalize_exposures
     expanded = expand_etfs(normalize_exposures(owned), [fund], owned)
     assert expanded.value.sum() == pytest.approx(100)
@@ -286,7 +286,7 @@ def test_synthetic_basket_is_separate_signed_and_not_company_or_country_exposure
     with pytest.raises(DataError, match='weights'):
         validate_constituents(basket)
     owned = pd.DataFrame([dict(id='fund', position_id='p', name='Invented overnight fund', isin=rate_isin,
-                              ticker='', shares=1., current_value_eur=100., instrument_type='etf')])
+                              ticker='', shares=1., current_value_reporting=100., instrument_type='etf')])
     expanded = expand_etfs(normalize_exposures(owned), [loaded], owned)
     assert expanded.asset_id.tolist() == ['overnight:invented'] and expanded.value.sum() == 100
     assert inventory(owned, [loaded], {}) == []
@@ -357,7 +357,7 @@ def test_cash_in_equity_fund_is_not_declared_equity():
                                  dict(constituent_id='cash', name='Invented cash', ticker='', isin='', weight=.1, instrument_type='cash')])
     fund = FundSnapshot('invented', 'Invented equity fund', FUND, (), date(2026, 1, 2), '', constituents, equity_fund=True)
     holdings = pd.DataFrame([dict(id='fund', position_id='p', name='Invented equity fund', ticker='', isin=FUND,
-                                 current_value_eur=100., shares=1., instrument_type='etf', wkn='000999')])
+                                 current_value_reporting=100., shares=1., instrument_type='etf', wkn='000999')])
     result = expand_etfs(normalize_exposures(holdings), [fund], holdings)
     assert result.loc[result.exposure_kind.eq('equity'), 'value'].sum() == 90
     assert result.loc[result.exposure_kind.eq('non_equity'), 'value'].sum() == 10

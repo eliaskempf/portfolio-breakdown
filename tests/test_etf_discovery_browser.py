@@ -98,6 +98,7 @@ def test_bond_summary_defaults_charts_and_security_details(fund_page):
     page.wait_for_function("""[...document.querySelectorAll('[role=dialog] .js-plotly-plot')]
         .some(chart => chart.layout?.yaxis?.title?.text === 'Maturity')""")
     playwright.expect(dialog.get_by_text('Calculated from holdings dated 2026-01-02; missing metadata remains Unknown.')).to_be_visible()
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     dialog.get_by_role('combobox', name='Summarize by').click()
     dialog.get_by_role('combobox', name='Summarize by').fill('Credit quality')
     page.get_by_role('option', name='Credit quality', exact=True).click()

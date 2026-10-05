@@ -18,7 +18,8 @@ import pandas as pd
 from portfolio_app.holdings import DataError, parse_holdings
 from portfolio_app.positions import EMPTY_CSV, save_position
 
-COLUMNS = ("date", "shares", "price", "fees")
+COLUMNS = ("date", "shares", "price", "fees", "fx_rate")
+LEGACY_COLUMNS = COLUMNS[:4]
 HISTORY_COLUMN = "purchase_history"
 
 
@@ -47,10 +48,11 @@ class Purchase:
     shares: Decimal
     price: Decimal | None
     fees: Decimal
+    fx_rate: Decimal | None = None
 
     def record(self) -> dict[str, str]:
         return {"date": self.date, "shares": str(self.shares),
-                "price": "" if self.price is None else str(self.price), "fees": str(self.fees)}
+                "price": "" if self.price is None else str(self.price), "fees": str(self.fees), **({"fx_rate": str(self.fx_rate)} if self.fx_rate is not None else {})}
 
 
 def validate_purchases(rows: Sequence[Mapping], *, today: date | None = None) -> list[Purchase]:
@@ -73,9 +75,12 @@ def validate_purchases(rows: Sequence[Mapping], *, today: date | None = None) ->
         shares = _number(row.get("shares"), f"Purchase {index} shares")
         if not shares:
             raise DataError(f"Purchase {index}: shares must be greater than zero.")
+        ratio = _number(row.get('fx_rate'), f'Purchase {index} FX rate', optional=True)
+        if ratio is not None and ratio <= 0:
+            raise DataError('FX rate must be positive.')
         result.append(Purchase(day, shares,
                                _number(row.get("price"), f"Purchase {index} price", optional=True),
-                               _number(_text(row.get("fees")) or "0", f"Purchase {index} fees")))
+                               _number(_text(row.get("fees")) or "0", f"Purchase {index} fees"), ratio))
     if not result:
         raise DataError("Enter at least one purchase.")
     return result
@@ -131,12 +136,12 @@ def read_purchase_history(value: str) -> list[dict]:
     try:
         batches = json.loads(value)
         if not isinstance(batches, list) or any(
-            not isinstance(batch, dict) or batch.get("version") != 1
+            not isinstance(batch, dict) or batch.get("version") not in (1, 2)
             or batch.get("mode") not in {"add", "reconcile"}
             or not isinstance(batch.get("purchases"), list)
             or not isinstance(batch.get("currency"), str)
             or not isinstance(batch.get("saved_at"), str)
-            or any(not isinstance(row, dict) or set(row) != set(COLUMNS)
+            or any(not isinstance(row, dict) or not set(LEGACY_COLUMNS) <= set(row) or set(row) - set(COLUMNS)
                    or any(not isinstance(cell, str) for cell in row.values()) for row in batch["purchases"])
             for batch in batches
         ):
@@ -198,9 +203,7 @@ def summarize_purchases(purchases: Sequence[Purchase], currency: str, opening: M
             old_currency = opening.get("acquisition_currency", "").upper()
             if previous and old_price and not old_currency:
                 raise DataError("The existing buy-in has no currency. Set its currency in Edit position before combining purchases.")
-            if previous and old_price and old_currency != currency:
-                raise DataError("Purchase currency must match the existing buy-in currency. Use original settlement costs in one currency; today's FX is not used.")
-            known = cost is not None and (not previous or bool(old_price))
+            known = cost is not None and (not previous or (bool(old_price) and old_currency == currency))
             average = (cost + previous * Decimal(old_price or "0")) / total if known else None
         return PurchaseSummary(previous, batch_shares, total, cost, fees, average, currency)
 
@@ -208,7 +211,7 @@ def summarize_purchases(purchases: Sequence[Purchase], currency: str, opening: M
 def save_purchase_batch(
     path: Path, fields: Mapping[str, str], rows: Sequence[Mapping], *, currency: str,
     expected_revision: str | None, position_id: str | None = None, mode: str = "add",
-    allow_repeat: bool = False,
+    allow_repeat: bool = False, reporting_currency: str = 'EUR', historical=None, components=None,
     validate: Callable[[pd.DataFrame], None] | None = None,
 ) -> str:
     purchases = validate_purchases(rows)
@@ -222,7 +225,7 @@ def save_purchase_batch(
         raise DataError("This batch matches purchases saved earlier. Confirm they are additional purchases before saving again.")
     history = read_purchase_history(opening.get(HISTORY_COLUMN, ""))
     history.append({
-        "version": 1, "batch_id": uuid4().hex, "saved_at": datetime.now(timezone.utc).isoformat(),
+        "version": 2, "batch_id": uuid4().hex, "saved_at": datetime.now(timezone.utc).isoformat(),
         "mode": mode, "currency": summary.currency, "purchases": [p.record() for p in purchases],
         "opening": {key: opening.get(key, "") for key in ("shares", "acquisition_price", "acquisition_currency")},
         "result_shares": str(summary.total_shares),
@@ -235,4 +238,20 @@ def save_purchase_batch(
                    "acquisition_price": "" if summary.average is None else str(summary.average),
                    "acquisition_currency": summary.currency if summary.average is not None else "",
                    HISTORY_COLUMN: json.dumps(history, separators=(",", ":"))})
+    from portfolio_app.cost_basis import FIELD, encode_components, freeze_historical
+    parts = components if components is not None else purchase_components(purchases, currency, opening, mode=mode, reporting_currency=reporting_currency)
+    parts = freeze_historical(parts, reporting_currency, historical)
+    values[FIELD] = encode_components(parts, values)
     return save_position(path, values, expected_revision=expected_revision, position_id=position_id, validate=validate)
+
+
+def purchase_components(purchases, currency, opening, *, mode='add', reporting_currency='EUR'):
+    from portfolio_app.cost_basis import active_components, component, supplied_conversion
+    parts = active_components(opening) if mode == 'add' and Decimal(opening.get('shares') or '0') else []
+    for purchase in purchases:
+        part = component(purchase.shares, None if purchase.price is None else purchase.shares * purchase.price + purchase.fees,
+                         currency.strip().upper(), purchase.date)
+        if purchase.fx_rate is not None:
+            supplied_conversion(part, reporting_currency, rate=purchase.fx_rate)
+        parts.append(part)
+    return parts

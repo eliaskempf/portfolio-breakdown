@@ -1,5 +1,7 @@
 """Shared visual styling for the local app; no portfolio calculations."""
 
+from portfolio_app.currency_display import currency_symbol
+
 from html import escape
 
 import streamlit as st
@@ -84,7 +86,7 @@ def empty_overview() -> None:
 
 
 def allocation_total(label: str, value: float) -> None:
-    st.html(f'<div class="allocation-total"><span>{escape(label)}</span><span>€{value:,.2f} · 100%</span></div>')
+    st.html((f'<div class="allocation-total"><span>{escape(label)}</span><span>€{value:,.2f} · 100%</span></div>').replace('€', currency_symbol()))
 
 
 def performance_metric(label: str, value: str, amount, *, key: str) -> None:
@@ -96,12 +98,14 @@ def performance_metric(label: str, value: str, amount, *, key: str) -> None:
 
 def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None):
     """One value card with an adjacent, optionally clickable unrealized gain."""
-    gain = performance.return_pct if percent else performance.gain_eur
-    gain_text = 'Unavailable' if gain is None else f'{gain:+,.2f}%' if percent else f'{"-" if gain < 0 else "+"}€{abs(gain):,.2f}'
+    gain = performance.return_pct if percent else performance.gain_reporting
+    gain_text = 'Unavailable' if gain is None else f'{gain:+,.2f}%' if percent else (f'{"-" if gain < 0 else "+"}€{abs(gain):,.2f}').replace('€', currency_symbol())
     with st.container(key=key):
-        st.metric('Priced value' if missing else 'Current value', f'€{value:,.2f}',
+        st.metric('Priced value' if missing else 'Current value', (f'€{value:,.2f}').replace('€', currency_symbol()),
                   delta=gain_text, delta_color='normal' if gain else 'off', delta_arrow='off',
                   delta_description='Return on cost' if percent else 'Unrealized gain / loss',
-                  help=f'{missing} missing prices. Performance coverage: {performance.covered_count} of {performance.held_count} held positions with EUR buy-ins and available prices. Excludes dividends and realized gains.')
+                  help=f'{missing} missing prices. Performance coverage: {performance.covered_count} of {performance.held_count} held positions with converted costs and available prices. Excludes dividends and realized gains.')
+    if performance.estimated_count:
+        st.caption(f'Estimated gains · {performance.estimated_count} positions use confirmed FX approximations')
     if on_toggle_gain:
         toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain, container_key=key)

@@ -33,8 +33,8 @@ config = Allocation((Bucket("first category:α", "First category", target=.65),
                      Bucket("second", "Second category", target=.25),
                      Bucket("empty", "Empty category", target=.1)))
 positions = pd.DataFrame([
-    dict(position_id="p1", name="Invented Alpha", bucket_id="first category:α", account="", shares=1., current_value_eur=75., within_bucket_target=1.),
-    dict(position_id="p2", name="Invented Beta", bucket_id="second", account="", shares=1., current_value_eur=25., within_bucket_target=1.),
+    dict(position_id="p1", name="Invented Alpha", bucket_id="first category:α", account="", shares=1., current_value_reporting=75., within_bucket_target=1.),
+    dict(position_id="p2", name="Invented Beta", bucket_id="second", account="", shares=1., current_value_reporting=25., within_bucket_target=1.),
 ])
 render_strategic_overview(positions, config)
 render_search_box("", [], "")

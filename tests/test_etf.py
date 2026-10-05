@@ -33,9 +33,9 @@ def fund():
 @pytest.fixture
 def positions():
     return pd.DataFrame([
-        {"position_id": "p1", "id": "my-nvidia", "name": "Nvidia", "ticker": "NVDA", "isin": "US67066G1040", "current_value_eur": 2000., "portfolio": "AI", "account": "A"},
-        {"position_id": "p2", "id": "semis", "name": "SMH UCITS", "ticker": "VVSM.DE", "isin": "IE00BMC38736", "current_value_eur": 10000., "portfolio": "AI", "account": "B"},
-        {"position_id": "p3", "id": "us-smh", "name": "US SMH", "ticker": "SMH", "isin": "US92189F6768", "current_value_eur": 500., "portfolio": "Core", "account": "B"},
+        {"position_id": "p1", "id": "my-nvidia", "name": "Nvidia", "ticker": "NVDA", "isin": "US67066G1040", "current_value_reporting": 2000., "portfolio": "AI", "account": "A"},
+        {"position_id": "p2", "id": "semis", "name": "SMH UCITS", "ticker": "VVSM.DE", "isin": "IE00BMC38736", "current_value_reporting": 10000., "portfolio": "AI", "account": "B"},
+        {"position_id": "p3", "id": "us-smh", "name": "US SMH", "ticker": "SMH", "isin": "US92189F6768", "current_value_reporting": 500., "portfolio": "Core", "account": "B"},
     ])
 
 
@@ -52,9 +52,9 @@ def test_partial_weights_and_source_values_are_conserved(fund, positions):
     assert exposures.loc[exposures["asset_id"] == "us-smh", "value"].iloc[0] == 500
     table = effective_exposure_table(exposures)
     nvidia = table.loc[table["Ticker"] == "NVDA"].iloc[0]
-    assert nvidia["Direct (EUR)"] == 2000
-    assert nvidia["ETF-derived (EUR)"] == 800
-    assert nvidia["Total (EUR)"] == 2800
+    assert nvidia["Direct"] == 2000
+    assert nvidia["ETF-derived"] == 800
+    assert nvidia["Total"] == 2800
     assert nvidia["Allocation %"] == pytest.approx(22.4)
 
 
@@ -108,13 +108,13 @@ def test_group_classifications_and_filtered_members_preserve_original_data(fund,
     nodes = aggregate(exposures, result, taxonomy="labels")
     assert nodes.loc[nodes.label == "Funds", "value"].tolist() == [12000]
     detail = group_members_table(positions.loc[positions.id == "my-nvidia"], group)
-    assert detail["EUR value"].tolist() == [2000]
+    assert detail["Value"].tolist() == [2000]
     assert detail["Within group (%)"].tolist() == [100]
     # Unvalued positions remain visible and do not turn into zero-valued holdings.
-    positions.loc[positions.id == "my-nvidia", "current_value_eur"] = float("nan")
+    positions.loc[positions.id == "my-nvidia", "current_value_reporting"] = float("nan")
     detail = group_members_table(positions, group)
     assert detail.iloc[-1]["Investment"] == "Nvidia"
-    assert pd.isna(detail.iloc[-1]["EUR value"])
+    assert pd.isna(detail.iloc[-1]["Value"])
     with pytest.raises(DataError, match="conflicts"):
         group_exposures(exposures, group)
 
@@ -122,13 +122,13 @@ def test_group_classifications_and_filtered_members_preserve_original_data(fund,
 def test_grouping_multiple_accounts_and_empty_selections(fund, positions):
     group = InstrumentGroup("view-group:example", "Synthetic group", frozenset({"semis", "my-nvidia"}), frozenset({"semis"}))
     extra = positions.iloc[[0]].copy()
-    extra["position_id"], extra["account"], extra["current_value_eur"] = "p4", "C", 500.
+    extra["position_id"], extra["account"], extra["current_value_reporting"] = "p4", "C", 500.
     positions = pd.concat([positions, extra], ignore_index=True)
     exposures = expand_etfs(normalize_exposures(positions), [fund], positions)
     result = group_exposures(exposures, group)
     assert result.loc[result.asset_id == group.asset_id, "value"].sum() == 12500
     detail = group_members_table(positions, group)
-    assert detail["EUR value"].tolist() == [10000, 2500]
+    assert detail["Value"].tolist() == [10000, 2500]
     assert detail["Within group (%)"].sum() == 100
     assert group_exposures(exposures.iloc[:0], group).empty
     assert group_members_table(positions.iloc[:0], group).empty
@@ -231,20 +231,20 @@ def test_only_ucits_listings_match(fund):
 def test_multiple_etf_positions_merge_exposure(fund, positions):
     extra = positions.iloc[[1]].copy()
     extra["position_id"] = "p4"
-    extra["current_value_eur"] = 5000.
+    extra["current_value_reporting"] = 5000.
     extra["account"] = "C"
     positions = pd.concat([positions, extra], ignore_index=True)
     exposures = expand_etfs(normalize_exposures(positions), [fund], positions)
     table = effective_exposure_table(exposures)
-    assert table.loc[table["Ticker"] == "NVDA", "Total (EUR)"].iloc[0] == 3200
-    assert table["Total (EUR)"].sum() == 17500
+    assert table.loc[table["Ticker"] == "NVDA", "Total"].iloc[0] == 3200
+    assert table["Total"].sum() == 17500
 
 
 def test_zero_unvalued_and_unsupported_positions(fund, positions):
-    positions["current_value_eur"] = 0.
+    positions["current_value_reporting"] = 0.
     result = expand_etfs(normalize_exposures(positions), [fund], positions)
     assert effective_exposure_table(result)["Allocation %"].isna().all()
-    positions["current_value_eur"] = float("nan")
+    positions["current_value_reporting"] = float("nan")
     result = expand_etfs(normalize_exposures(positions), [fund], positions)
     assert result.empty
     assert effective_exposure_table(result).empty

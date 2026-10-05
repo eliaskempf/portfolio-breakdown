@@ -29,7 +29,7 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                     st.session_state['portfolio_workspace_context'] = context
             offline = demo and not (data_dir / '.live-demo').exists()
             refresh = st.button('Refresh prices', icon=':material/refresh:', type='tertiary', disabled=offline)
-            settings = st.popover('Settings', icon=':material/tune:')
+            settings = st.popover('Settings', icon=':material/tune:', key='workspace_settings', on_change='rerun')
             with st.popover('?', help='Help and demo guide'):
                 from portfolio_app.documentation import guide_url
                 st.link_button('User guide', guide_url(), icon=':material/menu_book:')

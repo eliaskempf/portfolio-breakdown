@@ -18,7 +18,7 @@ def history(returns):
 
 def held(ids, values, kinds=None):
     return pd.DataFrame(dict(id=ids, name=['Invented ' + key for key in ids], shares=1.,
-        ticker=ids, current_value_eur=values, instrument_type=kinds or ['equity'] * len(ids), quote_currency='EUR'))
+        ticker=ids, current_value_reporting=values, instrument_type=kinds or ['equity'] * len(ids), quote_currency='EUR'))
 
 
 def market():

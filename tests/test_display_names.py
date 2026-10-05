@@ -103,7 +103,7 @@ def test_allocation_total_never_participates_in_table_sorting():
     table = hierarchy_table(nodes)
     assert len(table) == 2
     assert "Path" not in table and "Classification path" not in table
-    assert table["EUR value"].sum() == nodes.iloc[0].value
+    assert table["Value"].sum() == nodes.iloc[0].value
     for column in table:
         for ascending in (True, False):
             assert "holding" not in table.sort_values(column, ascending=ascending)["Category"].tolist()

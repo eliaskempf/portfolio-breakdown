@@ -1,4 +1,6 @@
 """Overview with a single authoritative category scope."""
+
+from portfolio_app.currency_display import currency_symbol, reporting_currency
 from hashlib import sha256
 import json
 
@@ -17,7 +19,7 @@ from portfolio_app.strategic import bucket_paths, category_labels, bucket_positi
 
 
 def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None):
-    if 'unrealized_gain_eur' not in valued:
+    if 'unrealized_gain_reporting' not in valued:
         valued = position_performance(valued)
     paths = bucket_paths(config)
     names = {b.id: b.name for b in config.buckets} | {'unassigned': 'Unassigned'}
@@ -44,16 +46,18 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 on_click=lambda: st.session_state.update({key: paths[bucket][-2] if len(paths[bucket]) > 1 else ''}))
     scope = names.get(bucket, 'Portfolio')
     selected = bucket_positions(valued, config, bucket)
-    subtotal = float(selected.current_value_eur.sum())
-    missing = int(selected.current_value_eur.isna().sum())
-    whole = float(valued.current_value_eur.sum())
+    subtotal = float(selected.current_value_reporting.sum())
+    missing = int(selected.current_value_reporting.isna().sum())
+    whole = float(valued.current_value_reporting.sum())
     performance = summarize_performance(selected)
     first, second = st.columns([2, 1])
     with first:
         value_metric(subtotal, performance, missing=missing, percent=percent,
                      key='overview_value', on_toggle_gain=on_toggle_gain)
-    second.metric('Portfolio share', f'{100 * subtotal / whole:.1f}%' if not missing and valued.current_value_eur.notna().all() and whole else '—')
-    st.caption(f'{scope} · {len(selected)} positions · Performance coverage: {performance.covered_count} of {performance.held_count} held positions · EUR buy-ins · Excludes dividends and realized gains')
+    second.metric('Portfolio share', f'{100 * subtotal / whole:.1f}%' if not missing and valued.current_value_reporting.notna().all() and whole else '—')
+    if performance.estimated_count:
+        st.warning(f'Performance includes {performance.estimated_count} positions with estimated FX costs.')
+    st.caption(f'{scope} · {len(selected)} positions · Performance coverage: {performance.covered_count} of {performance.held_count} held positions · converted buy-ins · Excludes dividends and realized gains')
     if missing:
         st.warning(f'{missing} position(s) missing prices. Chart areas use priced value; full allocation percentages are unavailable.')
     mode = st.segmented_control('Overview view', ['Allocation', 'Performance', *(['Analytics'] if analytics else [])], default='Allocation', key='strategic_view', selection_mode='single', label_visibility='collapsed')
@@ -62,28 +66,28 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         return
     if mode == 'Performance':
         table = strategic_performance(valued, config, bucket)
-        measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain (EUR)'],
+        measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'],
             default='Return (%)', key='strategic_performance_measure') or 'Return (%)'
         chart_percent = measure == 'Return (%)'
         st.caption('Return compares unrealized gain with recorded buy-in cost. Euro gain shows the amount gained or lost. Both are shown in the tables and on hover.')
         available = table.dropna(subset=[measure]).sort_values(measure)
         if not available.empty:
-            hover = [[f'€{row["Cost (EUR)"]:,.2f}', f'{row["Gain (EUR)"]:+,.2f} EUR',
+            hover = [[(f'€{row["Cost"]:,.2f}').replace('€', currency_symbol()), f'{row["Gain"]:+,.2f} {reporting_currency()}',
                       f'{row["Return (%)"]:+,.2f}%' if pd.notna(row['Return (%)']) else 'Unavailable',
                       row['Coverage'], row['Status']] for _, row in available.iterrows()]
             figure = style_figure(go.Figure(go.Bar(x=available[measure], y=available.Category, orientation='h',
                 marker_color=[LOSS_COLOR if value < 0 else GAIN_COLOR for value in available[measure]],
-                text=[f'{value:+,.2f}' + ('%' if chart_percent else ' €') for value in available[measure]], textposition='auto',
+                text=[f'{value:+,.2f}' + ('%' if chart_percent else (' €').replace('€', currency_symbol())) for value in available[measure]], textposition='auto',
                 customdata=hover, hovertemplate='%{y}<br>Return: %{customdata[2]}<br>Gain: %{customdata[1]}<br>Buy-in cost: %{customdata[0]}<br>Coverage: %{customdata[3]} · %{customdata[4]}<extra></extra>')))
             figure.update_layout(height=max(260, 36 * len(available)), xaxis_title=measure, margin=dict(l=12, r=12, t=12, b=30))
             st.plotly_chart(figure, width='stretch', config={'displayModeBar': False})
-        elif chart_percent and table['Gain (EUR)'].notna().any():
-            st.info('Percentage return is unavailable for zero buy-in cost. Choose Gain (EUR) to see the euro amounts.')
+        elif chart_percent and table['Gain'].notna().any():
+            st.info('Percentage return is unavailable for zero buy-in cost. Choose Gain to see the monetary amounts.')
         else:
-            st.info('Add EUR buy-ins to see performance for this category.')
+            st.info('Add convertible buy-ins to see performance for this category.')
         render_list(frame_rows(table), [ListColumn(column, column,
-                    numeric=column in {'Cost (EUR)', 'Gain (EUR)', 'Return (%)'},
-                    signed=column in {'Gain (EUR)', 'Return (%)'}) for column in table],
+                    numeric=column in {'Cost', 'Gain', 'Return (%)'},
+                    signed=column in {'Gain', 'Return (%)'}) for column in table],
                     key='strategic_performance_table', context=f'{position_context}_{bucket}_performance',
                     title='Category performance', default_sort=measure)
     else:
@@ -96,7 +100,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     reference = strategic_tree(valued, config) if bucket else tree
                     colors = dict(zip(reference.node_id, strategic_colors(reference, config)))
                     figure.update_traces(maxdepth=3, insidetextorientation='auto', marker_colors=[colors[node] for node in tree.node_id],
-                        hovertemplate='%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of ' + ('priced value' if missing else scope.replace('<', '&lt;')) + '<extra></extra>')
+                        hovertemplate=('%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of ').replace('€', currency_symbol()) + ('priced value' if missing else scope.replace('<', '&lt;')) + '<extra></extra>')
                     figure.update_layout(height=420, uniformtext=None, margin=dict(t=10, b=10, l=10, r=10))
                     signature = sha256(repr((config, list(valued.position_id), bucket)).encode()).hexdigest()[:16]
                     chart_key = f'strategic_chart_{signature}'
@@ -113,15 +117,15 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 st.markdown('**Allocation**')
                 st.caption(f'Current and target percentages are relative to {scope}.')
                 table = strategic_summary(valued, config, bucket)
-                for col in ['Value (EUR)', 'Current (%)', 'Target (%)', 'Gap (pp)']:
+                for col in ['Value', 'Current (%)', 'Target (%)', 'Gap (pp)']:
                     table[col] = pd.to_numeric(table[col], errors='coerce')
                 if table['Status'].eq('').all():
                     table = table.drop(columns='Status')
                 render_list(frame_rows(table), [ListColumn(column, f'% of {scope}' if column == 'Current (%)' else column,
-                            numeric=column in {'Value (EUR)', 'Current (%)', 'Target (%)', 'Gap (pp)'},
+                            numeric=column in {'Value', 'Current (%)', 'Target (%)', 'Gap (pp)'},
                             signed=column == 'Gap (pp)', color_signed=False) for column in table],
                             key='strategic_allocation_table', context=f'{position_context}_{bucket}_allocation',
-                            title='Allocation', default_sort='Value (EUR)')
+                            title='Allocation', default_sort='Value')
     st.subheader('Positions')
     st.caption('Select a position for details and price history. Use the pencil to edit.')
     render_overview_positions(selected, config, context=f'overview_{position_context}_{bucket}', scope=scope,

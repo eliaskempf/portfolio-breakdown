@@ -259,8 +259,15 @@ def render_list(rows, columns, *, key, context, title, on_open=None, editable=Fa
         if event.get('action') == 'details' or (editable and event.get('action') == 'edit'):
             on_open(event)
 
+    from portfolio_app.currency_display import money_label
+    monetary = {'Value', 'Cost', 'Gain', 'Total', 'Direct', 'ETF-derived', 'Position', 'Contribution',
+                'Exposure', 'Reserved', 'Invested', 'Unallocated', 'Trade', 'Current', 'After', 'Budget'}
+    specs = [asdict(column) for column in columns]
+    for spec in specs:
+        if spec['numeric'] and spec['label'] in monetary:
+            spec['label'] = money_label(spec['label'])
     component = st.components.v2.component('portfolio_data_list', html=HTML, css=CSS, js=JS)
-    component(key=key, data={'rows': rows, 'columns': [asdict(column) for column in columns],
+    component(key=key, data={'rows': rows, 'columns': specs,
         'revision': revision, 'context': context, 'title': title, 'interactive': bool(on_open),
         'editable': editable, 'maxHeight': max_height, 'searchLabel': search_label,
         'searchFields': search_fields, 'defaultSort': default_sort,

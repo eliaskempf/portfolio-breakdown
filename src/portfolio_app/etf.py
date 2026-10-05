@@ -143,7 +143,7 @@ def validate_fund_listings(holdings: pd.DataFrame, funds: list[FundSnapshot]) ->
     for row in holdings.to_dict("records"):
         fund = matching_fund(row, funds)
         if fund and fund.isin == "IE00BMC38736" and row["ticker"] == "SMH":
-            raise DataError("SMH is the US-listed fund's price ticker. For the UCITS fund use a qualified ticker such as SMH.L (USD) or VVSM.DE (EUR).")
+            raise DataError("SMH is the US-listed fund's price ticker. For the UCITS fund use a qualified ticker such as SMH.L (USD) or VVSM.DE.")
 
 
 def fund_breakdown(fund: FundSnapshot) -> pd.DataFrame:
@@ -238,7 +238,7 @@ def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd
             row["source_type"] = "etf_other" if constituent["constituent_id"].startswith("etf-other:") else "etf_constituent"
             row["direct_or_indirect"] = "indirect"
             # Instrument quantities, quotes, and targets do not describe its constituents.
-            for field in ("shares", "acquisition_price", "current_price", "fx_to_eur", "target_allocation", "portfolio_weight"):
+            for field in ("shares", "acquisition_price", "current_price", "fx_to_reporting", "target_allocation", "portfolio_weight"):
                 if field in row:
                     row[field] = float("nan")
             records.append(row)
@@ -246,17 +246,17 @@ def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd
 
 
 def effective_exposure_table(exposures: pd.DataFrame) -> pd.DataFrame:
-    columns = ["Asset", "Ticker", "Direct (EUR)", "ETF-derived (EUR)", "Total (EUR)", "Allocation %"]
+    columns = ["Asset", "Ticker", "Direct", "ETF-derived", "Total", "Allocation %"]
     if exposures.empty:
         return pd.DataFrame(columns=columns)
     records = []
     for _, rows in exposures.groupby("asset_id", sort=False):
         records.append({
             "Asset": rows.iloc[0]["asset_name"], "Ticker": rows.iloc[0]["ticker"],
-            "Direct (EUR)": rows.loc[rows["direct_or_indirect"] == "direct", "value"].sum(),
-            "ETF-derived (EUR)": rows.loc[rows["direct_or_indirect"] == "indirect", "value"].sum(),
-            "Total (EUR)": rows["value"].sum(),
+            "Direct": rows.loc[rows["direct_or_indirect"] == "direct", "value"].sum(),
+            "ETF-derived": rows.loc[rows["direct_or_indirect"] == "indirect", "value"].sum(),
+            "Total": rows["value"].sum(),
         })
     result = pd.DataFrame(records)
-    result["Allocation %"] = 100 * portfolio_weights(result["Total (EUR)"])
-    return result[columns].sort_values("Total (EUR)", ascending=False, ignore_index=True)
+    result["Allocation %"] = 100 * portfolio_weights(result["Total"])
+    return result[columns].sort_values("Total", ascending=False, ignore_index=True)

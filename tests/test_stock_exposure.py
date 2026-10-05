@@ -12,7 +12,7 @@ from portfolio_app.stock_exposure import stock_exposure
 
 def sources():
     frame = parse_holdings('id,name,shares,isin,ticker,bucket_id,instrument_type\ndirect,Invented company,1,TEST-STOCK-1,EXAMPLE,active,equity\nfund1,Invented broad fund,1,TEST-FUND-01,FUND1,core,etf\nfund2,Invented narrow fund,1,TEST-FUND-02,FUND2,active,etf\nmetal,Invented metal,1,,,reserve,physical\ntoken,Invented token,1,,TOKEN-EUR,reserve,crypto\n')
-    frame['current_value_eur'] = [100., 200., 100., 40., 60.]
+    frame['current_value_reporting'] = [100., 200., 100., 40., 60.]
     return frame
 
 
@@ -25,19 +25,19 @@ def funds():
 def test_source_exclusion_preserves_core_company_and_global_denominator():
     all_sources = sources()
     result = stock_exposure(all_sources, funds())
-    assert result.companies['Total (EUR)'].tolist() == [175.]
+    assert result.companies['Total'].tolist() == [175.]
     assert result.stock_value == 400.
-    assert result.unresolved['EUR value'].sum() == 225.
+    assert result.unresolved['Value'].sum() == 225.
     assert result.sources['Source position'].nunique() == 3
     without = stock_exposure(all_sources, funds(), excluded_buckets=['active'])
     row = without.companies.iloc[0]
-    assert row['Total (EUR)'] == 50.
-    assert row['Direct (EUR)'] == 0.
+    assert row['Total'] == 50.
+    assert row['Direct'] == 0.
     assert row['Selected stock-universe %'] == 25.
     assert row['Whole-portfolio %'] == 10.
     assert without.whole_value == 500.
-    assert without.unresolved['EUR value'].sum() == 150.
-    assert all_sources.current_value_eur.sum() == 500.
+    assert without.unresolved['Value'].sum() == 150.
+    assert all_sources.current_value_reporting.sum() == 500.
 
 
 def test_unknown_composition_and_missing_values_do_not_become_zero():
@@ -49,9 +49,9 @@ def test_unknown_composition_and_missing_values_do_not_become_zero():
     assert 'Unknown composition' in set(result.unresolved.Status)
     unsupported = stock_exposure(sources(), [])
     assert unsupported.stock_value is None
-    assert unsupported.unresolved['EUR value'].sum() == 300.
+    assert unsupported.unresolved['Value'].sum() == 300.
     rows = sources()
-    rows.loc[0, 'current_value_eur'] = float('nan')
+    rows.loc[0, 'current_value_reporting'] = float('nan')
     missing = stock_exposure(rows, funds())
     assert missing.whole_value is None
     assert missing.companies['Whole-portfolio %'].isna().all()
@@ -63,7 +63,7 @@ def test_explicit_company_identity_and_conflicting_listing_are_distinct():
     separate = stock_exposure(rows, funds())
     assert len(separate.companies) == 2
     merged = stock_exposure(rows, funds(), identities={'security:TEST-ADR-001': 'invented-company', 'security:TEST-STOCK-1': 'invented-company'})
-    assert merged.companies['Total (EUR)'].tolist() == [175.]
+    assert merged.companies['Total'].tolist() == [175.]
     constituent = funds()[0].constituents.iloc[0].to_dict()
     assert resolve_constituent_asset(constituent, rows)[0] == 'company'
     constituent['constituent_id'] = 'direct'
@@ -79,7 +79,7 @@ def test_known_non_equity_component_is_excluded_from_stock_denominator():
     constituents = pd.concat([constituents, pd.DataFrame([{'constituent_id': 'cash', 'name': 'Cash component', 'ticker': '', 'isin': '', 'weight': .2, 'instrument_type': 'cash'}])])
     result = stock_exposure(sources(), [replace(fund, constituents=constituents), funds()[1]])
     assert result.stock_value == 360.
-    assert result.companies['Total (EUR)'].sum() == 285.
+    assert result.companies['Total'].sum() == 285.
 
 
 def test_nested_equity_fund_keeps_value_but_is_not_a_company():
@@ -89,16 +89,16 @@ def test_nested_equity_fund_keeps_value_but_is_not_a_company():
     snapshots[0] = replace(snapshots[0], constituents=nested)
     result = stock_exposure(sources(), snapshots)
     assert result.stock_value == 400.
-    assert result.companies['Total (EUR)'].tolist() == [125.]
+    assert result.companies['Total'].tolist() == [125.]
     unresolved_fund = result.unresolved.loc[result.unresolved.Status == 'Unresolved equity fund']
-    assert unresolved_fund['EUR value'].sum() == 50.
-    assert result.companies['Total (EUR)'].sum() + result.unresolved['EUR value'].sum() == 400.
+    assert unresolved_fund['Value'].sum() == 50.
+    assert result.companies['Total'].sum() + result.unresolved['Value'].sum() == 400.
 
 
 def test_zero_value_unknown_positions_do_not_reduce_coverage():
     rows = sources()
     rows.loc[0, 'instrument_type'] = 'unknown'
-    rows.loc[0, 'current_value_eur'] = 0.
+    rows.loc[0, 'current_value_reporting'] = 0.
     rows.loc[0, 'shares'] = 0.
     result = stock_exposure(rows, funds())
     assert result.stock_value == 300.
@@ -109,7 +109,7 @@ def test_declared_non_equity_fund_and_unresolved_equity_are_distinct():
     rows['exposure_kind'] = ['equity', 'equity', 'non_equity', 'non_equity', 'non_equity']
     result = stock_exposure(rows, [])
     assert result.stock_value == 300.
-    assert result.unresolved['EUR value'].sum() == 200.
+    assert result.unresolved['Value'].sum() == 200.
     assert result.whole_value == 500.
     assert set(result.unresolved.Status) == {'Unresolved equity'}
 
@@ -119,7 +119,7 @@ def test_other_instrument_type_remains_unresolved():
     rows.loc[0, 'instrument_type'] = 'other'
     result = stock_exposure(rows, funds())
     assert result.stock_value is None
-    assert result.unresolved['EUR value'].sum() == 325.
+    assert result.unresolved['Value'].sum() == 325.
 
 
 def test_reviewed_receipt_link_merges_analysis_and_labels_without_changing_security():
@@ -149,9 +149,9 @@ def test_reviewed_receipt_link_merges_analysis_and_labels_without_changing_secur
     expanded = expand_etfs(normalize_exposures(rows), linked, rows)
     merged = effective_exposure_table(expanded)
     company = merged.loc[merged.Asset == 'Invented company'].iloc[0]
-    assert company['Direct (EUR)'] == 100.
-    assert company['ETF-derived (EUR)'] == 75.
-    assert merged['Total (EUR)'].sum() == 500.
+    assert company['Direct'] == 100.
+    assert company['ETF-derived'] == 75.
+    assert merged['Total'].sum() == 500.
     assert expanded.loc[expanded.source_type == 'etf_constituent', 'isin'].eq('').all()
     labels = {'direct': {'sector': (('My', 'Category'),)}}
     assert fund_classifications(labels, linked, rows)['direct']['sector'] == (('My', 'Category'),)
@@ -159,7 +159,7 @@ def test_reviewed_receipt_link_merges_analysis_and_labels_without_changing_secur
     assert targets.known.loc[targets.known.asset_id == 'direct', 'value'].sum() == pytest.approx(.35)
     assert targets.known.value.sum() == pytest.approx(1.)
     companies = stock_exposure(rows, linked, identities=mappings)
-    assert companies.companies['Total (EUR)'].tolist() == [175.]
+    assert companies.companies['Total'].tolist() == [175.]
     without_direct = rows.loc[rows.id != 'direct']
     expanded_subset = expand_etfs(normalize_exposures(without_direct), linked, rows)
     assert expanded_subset.loc[expanded_subset.asset_id == 'direct', 'value'].sum() == 75.

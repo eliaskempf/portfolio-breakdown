@@ -1,5 +1,7 @@
 """Rendering adapters; all portfolio math is already present in the node table."""
 
+from portfolio_app.currency_display import currency_symbol, reporting_currency
+
 from html import escape
 from textwrap import wrap
 import colorsys
@@ -65,7 +67,7 @@ def hierarchy_chart(nodes: pd.DataFrame, chart_type: str) -> go.Figure:
         ids=nodes["node_id"], parents=nodes["parent_id"], labels=nodes["label"],
         values=nodes["value"], branchvalues="total", sort=False,
         customdata=nodes[["percentage"]].to_numpy(),
-        hovertemplate="%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>",
+        hovertemplate=("%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>").replace('€', currency_symbol()),
         marker=dict(line=dict(color="rgba(127,127,127,0.7)", width=2)),
     )).update_layout(margin=dict(t=24, l=24, r=24, b=24), height=480, treemapcolorway=PALETTE))
     if chart_type == "Sunburst":
@@ -111,9 +113,9 @@ def bar_chart(nodes: pd.DataFrame) -> go.Figure:
     return style_figure(go.Figure(go.Bar(
         x=leaves["value"], y=labels, orientation="h",
         customdata=leaves[["percentage"]].to_numpy(),
-        hovertemplate="%{y}<br>€%{x:,.2f}<br>%{customdata[0]:.2%}<extra></extra>",
+        hovertemplate=("%{y}<br>€%{x:,.2f}<br>%{customdata[0]:.2%}<extra></extra>").replace('€', currency_symbol()),
         text=[f"{value:.1%}" for value in leaves["percentage"]], textposition="auto",
-    )).update_layout(xaxis_title="EUR", margin=dict(t=15, b=0), height=max(350, 32 * len(leaves))))
+    )).update_layout(xaxis_title=reporting_currency(), margin=dict(t=15, b=0), height=max(350, 32 * len(leaves))))
 
 
 def pie_chart(nodes: pd.DataFrame) -> go.Figure:
@@ -124,7 +126,7 @@ def pie_chart(nodes: pd.DataFrame) -> go.Figure:
         ids=leaves["node_id"], labels=labels, values=leaves["value"],
         customdata=leaves[["percentage"]].to_numpy(),
         textinfo="percent", hole=.52, marker=dict(colors=PALETTE, line=dict(color="rgba(127,127,127,0.25)", width=1)),
-        hovertemplate="%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>",
+        hovertemplate=("%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>").replace('€', currency_symbol()),
     )).update_layout(margin=dict(t=20, l=15, r=15, b=20), height=480, legend=dict(orientation="h", y=-.08)))
 
 
@@ -135,7 +137,7 @@ def hierarchy_table(nodes: pd.DataFrame, *, show_paths: bool = False) -> pd.Data
     rows = ordered.loc[ordered["parent_id"] != ""]
     table = pd.DataFrame({
         "Category": ["　" * max(0, row.depth - 1) + row.label for row in rows.itertuples()],
-        "EUR value": rows["value"].to_numpy(),
+        "Value": rows["value"].to_numpy(),
         "Allocation %": (100 * rows["percentage"]).to_numpy(),
     })
     if show_paths:

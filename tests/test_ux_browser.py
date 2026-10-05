@@ -97,7 +97,7 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     page.keyboard.press('Escape')
     # The metric text can arrive before the rerun finishes attaching controls.
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
-    value_card.get_by_role('button', name='Show gain in euros').press('Enter')
+    value_card.get_by_role('button', name='Show gain as amount').press('Enter')
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+€60.00')
     page.get_by_role('button', name='tune Settings', exact=True).click()
     playwright.expect(page.get_by_role('radio', name='€', exact=True)).to_be_checked()
@@ -155,8 +155,8 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     playwright.expect(page.get_by_role('radio', name='Return (%)', exact=True)).to_be_checked()
     assert chart.evaluate('el => Array.from(el._fullData[0].x)') == pytest.approx([-100 / 6, 25])
     assert chart.evaluate('el => el.data[0].customdata[0].slice(1,3)') == ['-10.00 EUR', '-16.67%']
-    page.get_by_role('radio', name='Gain (EUR)', exact=True).click()
-    page.wait_for_function("document.querySelector('.js-plotly-plot')?.layout.xaxis.title.text === 'Gain (EUR)'")
+    page.get_by_role('radio', name='Gain', exact=True).click()
+    page.wait_for_function("document.querySelector('.js-plotly-plot')?.layout.xaxis.title.text === 'Gain'")
     assert chart.evaluate('el => Array.from(el._fullData[0].x)') == [-10, 40]
     page.get_by_role('radio', name='Return (%)', exact=True).click()
     page.wait_for_function("document.querySelector('.js-plotly-plot')?.layout.xaxis.title.text === 'Return (%)'")
@@ -220,7 +220,7 @@ def test_overview_list_matches_positions_and_opens_sorted_filtered_rows(ux_page)
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('ETF core')
     table = page.get_by_role('table', name='Positions', exact=True)
     playwright.expect(table.get_by_role('columnheader', name='Return (%)')).to_have_count(1)
-    playwright.expect(table.get_by_role('columnheader', name='Gain (EUR)')).to_have_count(1)
+    playwright.expect(table.get_by_role('columnheader', name='Gain')).to_have_count(1)
     playwright.expect(table.get_by_role('checkbox')).to_have_count(0)
     playwright.expect(table.get_by_role('radio')).to_have_count(0)
     table.get_by_role('button', name='Return (%)', exact=True).click()

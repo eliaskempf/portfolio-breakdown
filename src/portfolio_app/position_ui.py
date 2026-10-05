@@ -1,5 +1,7 @@
 """Create and maintain summary positions without transaction accounting."""
 
+from portfolio_app.currency_display import reporting_currency
+
 from pathlib import Path
 
 import pandas as pd
@@ -257,7 +259,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         if physical:
             ticker, isin = '', ''
             if live_gold:
-                st.caption('Gold spot price × fine-gold weight, converted to EUR. Source: Gold API. Use Refresh prices to update; quotes are cached for 15 minutes.')
+                st.caption(f'Gold spot price × fine-gold weight, converted to {reporting_currency()}. Source: Gold API. Use Refresh prices to update; quotes are cached for 15 minutes.')
             else:
                 st.caption('Enter a dated value per unit, or leave it blank to track quantity only.')
         else:
@@ -271,7 +273,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
                     min_value=0., value=_optional_number(row.get('manual_price')), key=prefix + 'manual_price',
                     help='Leave blank to track quantity with an unknown value.' if physical else 'Overrides market quotes. Clear to return to provider pricing.')
                 manual_currency = st.text_input('Price currency' if physical else 'Manual price currency',
-                                                value=row.get('manual_price_currency') or ('EUR' if physical else ''), key=prefix + 'manual_currency')
+                                                value=row.get('manual_price_currency') or (reporting_currency() if physical else ''), key=prefix + 'manual_currency')
                 if physical:
                     from datetime import date
                     initial_date = date.fromisoformat(row['manual_price_date']) if row.get('manual_price_date') else date.today()
@@ -289,8 +291,23 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
                                          help='Total cost of the quantity currently held, including purchase fees.')
             else:
                 buy_in = st.number_input('Average buy-in per unit (optional)', min_value=0.0, value=initial_buy_in, format='%.6f', key=prefix + 'buy_in')
-            currency = st.text_input('Buy-in currency', value=row.get('acquisition_currency', '' if editing else 'EUR'),
+            currency = st.text_input('Buy-in currency', value=row.get('acquisition_currency', '') if editing else reporting_currency(),
                                      help='Currency of your purchase cost; it can differ from the current price currency.', key=prefix + 'currency')
+            from portfolio_app.cost_basis import (FIELD, active_components, aggregate_component, encode_components,
+                fingerprint, same_summary)
+            from portfolio_app.currency_ui import cost_conversion_controls, ui_prices
+            cost_row = dict(shares=shares, acquisition_price=(average_from_total(buy_in, shares) if total_buy_in and buy_in is not None and shares else buy_in),
+                            acquisition_currency=currency.upper() if buy_in is not None else '')
+            unchanged_cost = editing and same_summary(fingerprint(row), fingerprint(cost_row))
+            parts = active_components(row) if unchanged_cost else [aggregate_component(cost_row)]
+            if len(parts) > 1:
+                st.caption('Original purchase components are preserved. Changing quantity or buy-in replaces their active cost basis. Use Bulk add purchases to add purchases.')
+            try:
+                parts = cost_conversion_controls(parts, reporting_currency(), path.parent, ui_prices(path.parent, demo), key=prefix + reporting_currency() + str(fingerprint(cost_row)) + '_conversion_', demo=demo)
+                conversion_error = None
+            except DataError as exc:
+                st.warning(str(exc))
+                conversion_error = str(exc)
         with st.expander('Target (optional)'):
             target_field = 'within_bucket_target' if allocation else 'target_allocation'
             initial_target = _optional_number(row.get(target_field))
@@ -345,6 +362,9 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
             new_buy_in = not editing or buy_in != _optional_number(row.get("acquisition_price"))
             if buy_in is not None and not currency.strip() and new_buy_in:
                 raise DataError("Enter the currency of the buy-in price, for example EUR.")
+            if conversion_error:
+                raise DataError(conversion_error)
+            values[FIELD] = encode_components(parts, values)
             asset_id = save_position(
                 path, values, expected_revision=st.session_state["position_edit_revision"], position_id=position_id,
                 validate=lambda frame: validate_fund_listings(frame, funds),

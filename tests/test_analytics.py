@@ -15,7 +15,7 @@ from portfolio_app.holdings import DataError
 def positions():
     return pd.DataFrame(dict(id=['a', 'a', 'b', 'fund'], name=['Invented A', 'Invented A', 'Invented B', 'Invented fund'],
         ticker=['AAA', 'AAA', 'BBB', 'FFF'], shares=[1., 1., 1., 1.],
-        instrument_type=['equity', 'equity', 'equity', 'etf'], current_value_eur=[100., 100., 200., 100.]))
+        instrument_type=['equity', 'equity', 'equity', 'etf'], current_value_reporting=[100., 100., 200., 100.]))
 
 
 def snapshots():
@@ -34,8 +34,8 @@ def test_harmonic_pe_costs_income_and_merged_concentration():
     assert result.metrics['forward_pe'].value == 8
     assert result.metrics['forward_pe'].covered_value == 200
     assert result.metrics['forward_pe'].excluded_count == 1
-    assert result.metrics['fee_eur'].value == .5
-    assert result.metrics['distribution_yield_eur'].value == 4.
+    assert result.metrics['fee_reporting'].value == .5
+    assert result.metrics['distribution_yield_reporting'].value == 4.
     assert result.metrics['distribution_yield'].covered_value == 300
     assert result.metrics['distribution_yield'].value == pytest.approx(4 / 300)
     pd.testing.assert_frame_equal(original, positions())
@@ -43,14 +43,14 @@ def test_harmonic_pe_costs_income_and_merged_concentration():
 
 def test_unknown_valuation_and_metric_are_not_zero():
     frame = positions()
-    frame.loc[2, 'current_value_eur'] = float('nan')
+    frame.loc[2, 'current_value_reporting'] = float('nan')
     data = snapshots()
     data['fund'] = Fundamentals('FFF', 'etf')
     result = snapshot_analytics(frame, data)
     assert not result.valuation_complete
     assert result.missing_valuations == 1
     assert result.known_value == 300
-    assert result.metrics['fee_eur'].value is None
+    assert result.metrics['fee_reporting'].value is None
     assert result.metrics['fee'].excluded_count == 1
     assert result.metrics['trailing_pe'].value == 10
     assert snapshot_analytics(frame.iloc[:0], {}).effective_holdings is None

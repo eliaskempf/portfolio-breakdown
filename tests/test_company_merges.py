@@ -17,7 +17,7 @@ def universe(names=('Invented Photon NV', 'INVENTED PHOTON'), isins=('ZZ11111111
     holdings = parse_holdings('id,name,ticker,isin,shares,instrument_type,target_allocation\n'
                              'fund-a,Invented Blue Fund,BLUE,ZZ2222222222,1,etf,0.4\n'
                              'fund-b,Invented Green Fund,GREEN,ZZ3333333333,1,etf,0.6\n')
-    holdings['current_value_eur'] = [80., 120.]
+    holdings['current_value_reporting'] = [80., 120.]
     funds = []
     for i, row in enumerate(holdings.to_dict('records')):
         constituents = pd.DataFrame([{'constituent_id': f'provider-{i}', 'name': names[i], 'isin': isins[i],
@@ -27,7 +27,7 @@ def universe(names=('Invented Photon NV', 'INVENTED PHOTON'), isins=('ZZ11111111
     if third:
         direct = holdings.iloc[[0]].copy()
         direct['id'], direct['name'], direct['ticker'], direct['isin'], direct['instrument_type'] = 'direct', 'Invented Photon', 'PHOTON', isins[0], 'equity'
-        direct['position_id'], direct['current_value_eur'], direct['target_allocation'] = 'direct-pos', 50., 0.
+        direct['position_id'], direct['current_value_reporting'], direct['target_allocation'] = 'direct-pos', 50., 0.
         holdings = pd.concat([holdings, direct], ignore_index=True)
     return holdings, funds
 
@@ -47,15 +47,15 @@ def test_cross_fund_merge_without_direct_position_conserves_exposure_and_targets
     linked, snapshots, labels = plan.apply(rows, funds, {'provider-0': {'theme': (('Invented', 'Devices'),)}})
     merged = totals(linked, snapshots)
     company = merged.loc[~merged.Asset.str.contains('/ Other')]
-    assert len(company) == 1 and company['Total (EUR)'].iloc[0] == 150.
+    assert len(company) == 1 and company['Total'].iloc[0] == 150.
     assert company.Asset.iloc[0].endswith(' *') == (kind == 'estimated')
-    assert merged['Total (EUR)'].sum() == 200.
+    assert merged['Total'].sum() == 200.
     assert snapshots[1].constituents['isin'].tolist() == funds[1].constituents['isin'].tolist()
     assert labels[group.asset_id]['theme'] == (('Invented', 'Devices'),)
     targets = target_exposures(linked, snapshots, lookthrough=True, holdings=linked)
     assert targets.known.loc[targets.known.asset_id == group.asset_id, 'value'].sum() == pytest.approx(.75)
     stocks = stock_exposure(linked, snapshots)
-    assert stocks.companies['Total (EUR)'].tolist() == [150.]
+    assert stocks.companies['Total'].tolist() == [150.]
     assert stocks.sources['Source instrument'].nunique() == 2
     assert 'analysis_asset_id' not in rows and 'analysis_asset_id' not in funds[0].constituents
 
@@ -92,7 +92,7 @@ def test_exact_identity_can_be_split_even_in_stock_view():
     plan = build_plan(rows, funds, {}, MergeSettings(disabled))
     linked, snapshots, _ = plan.apply(rows, funds, {})
     assert len(stock_exposure(linked, snapshots).companies) == 3
-    assert totals(linked, snapshots)['Total (EUR)'].sum() == 250.
+    assert totals(linked, snapshots)['Total'].sum() == 250.
 
 
 @pytest.mark.parametrize('names', [
@@ -166,6 +166,6 @@ def test_reviewed_links_survive_identifier_enrichment_and_plain_provider_refresh
         plan = build_plan(rows, snapshots, reviewed, MergeSettings(set()))
         assert plan.groups[0].basis == 'Reviewed company mapping'
         linked, funds, _ = plan.apply(rows, snapshots, {})
-        assert stock_exposure(linked, funds).companies['Total (EUR)'].tolist() == [150.]
+        assert stock_exposure(linked, funds).companies['Total'].tolist() == [150.]
         disabled.update(m['node'] for m in plan.groups[0].members)
         assert not build_plan(rows, snapshots, reviewed, MergeSettings(disabled)).groups[0].enabled

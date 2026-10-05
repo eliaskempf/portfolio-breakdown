@@ -57,6 +57,12 @@ class YahooHistoryProvider:
 class DemoHistoryProvider:
     """Deterministic invented prices; never fetches or substitutes live data."""
     def history(self, ticker, period):
+        if ticker.endswith('EUR=X'):
+            rate = {'USD': .9, 'GBP': 1.2}.get(ticker[:-5])
+            if rate is None:
+                return HistoryResult(note='No synthetic FX history')
+            dates = pd.date_range(end="2026-09-01", periods={"1mo": 30, "6mo": 180, "1y": 365, "5y": 1825, "max": 2200}[period])
+            return replace(normalize_history(pd.DataFrame({'Close': rate}, index=dates), 'EUR'), note='Synthetic demo FX history')
         count = {"1mo": 30, "6mo": 180, "1y": 365, "5y": 1825, "max": 2200}[period]
         dates = pd.date_range(end="2026-09-01", periods=count)
         frame = pd.DataFrame({"Close": [80 + i * .03 + 3 * math.sin(i / 12) for i in range(count)]}, index=dates)
@@ -130,3 +136,24 @@ class HistoryService:
                     temporary.unlink(missing_ok=True)
         self._memory[ticker, period] = result
         return result
+
+
+def convert_price_history(result, target, legs):
+    """Convert unadjusted closes on dates with available historical FX."""
+    if result.currency == target:
+        return result
+    prices = pd.Series(result.prices, index=pd.DatetimeIndex(result.dates).tz_localize(None).normalize())
+    statuses = [result.status]
+    for currency, inverse in ((result.currency, False), (target, True)):
+        if currency == 'EUR':
+            continue
+        fx = legs.get(currency)
+        if fx is None or not fx.prices or fx.currency != 'EUR':
+            return HistoryResult(currency=target, note='Historical FX unavailable or loading. Native-currency history remains available.')
+        rates = pd.Series(fx.prices, index=pd.DatetimeIndex(fx.dates).tz_localize(None).normalize())
+        prices = prices / rates.reindex(prices.index) if inverse else prices * rates.reindex(prices.index)
+        statuses.append(fx.status)
+    prices = prices.replace([float('inf'), -float('inf')], float('nan')).dropna()
+    return replace(result, dates=tuple(stamp.isoformat() for stamp in prices.index), prices=tuple(prices), currency=target,
+                   status='stale' if 'stale' in statuses else result.status,
+                   note='Dates without historical FX are omitted.' if len(prices) < len(result.prices) else result.note)

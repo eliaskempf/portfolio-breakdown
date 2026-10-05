@@ -106,22 +106,22 @@ def test_optional_smh_grouping_stock_choice_lookthrough_and_filters(grouped_data
         by_label(app.toggle, "Break down ETFs").set_value(representation == "ETF look-through").run()
         assert not app.exception
         table = app.tabs[1].dataframe[-1].value
-        assert table["EUR value"].sum() == 944
-        assert table.loc[table.Category == "SMH + related stocks", "EUR value"].tolist() == [560]
+        assert table["Value"].sum() == 944
+        assert table.loc[table.Category == "SMH + related stocks", "Value"].tolist() == [560]
         assert table["Allocation %"].sum() == pytest.approx(100)
     by_label(app.get('button_group'), 'Exposure view').set_value('Assets').run()
     effective = list_frame(app, 'Exposure assets')
-    assert effective.loc[effective.Asset == "Nvidia", "Total (EUR)"].tolist() == [256]
+    assert effective.loc[effective.Asset == "Nvidia", "Total"].tolist() == [256]
     theme_view(app)
     by_label(app.checkbox, "Show tickers").check().run()
     assert app.tabs[1].dataframe[-1].value.Category.str.contains("view-group").sum() == 0
     by_label(app.multiselect, "Stocks in the SMH group").set_value(["nvda"]).run()
     assert not app.exception
     table = app.tabs[1].dataframe[-1].value
-    assert table.loc[table.Category == "SMH + related stocks", "EUR value"].tolist() == [440]
+    assert table.loc[table.Category == "SMH + related stocks", "Value"].tolist() == [440]
     by_label(app.multiselect, "Holdings").set_value(["nvda"]).run()
     assert not app.exception
-    assert app.tabs[1].dataframe[-1].value["EUR value"].tolist() == [240]
+    assert app.tabs[1].dataframe[-1].value["Value"].tolist() == [240]
     by_label(app.checkbox, "Group SMH with related stocks").uncheck().run()
     assert not app.exception
     assert app.tabs[1].dataframe[-1].value.Category.tolist() == ["Nvidia (NVDA)"]
@@ -136,17 +136,17 @@ def test_smh_group_uses_fund_labels_and_shows_original_members(grouped_data):
     by_label(app.checkbox, "Group SMH with related stocks").check().run()
     by_label(app.toggle, "Break down ETFs").set_value(True).run()
     assert not app.exception
-    assert app.tabs[1].dataframe[-1].value["EUR value"].sum() == 944  # Includes Unclassified.
+    assert app.tabs[1].dataframe[-1].value["Value"].sum() == 944  # Includes Unclassified.
     root = (Label("labels", ("Group A",)).key,)
     by_label(app.selectbox, "Detail view").set_value(root).run()
     assert not app.exception
     assert app.tabs[1].dataframe[-1].value.Investment.tolist() == ["SMH + related stocks"]
     detail = next(item.value for item in app.dataframe if "Within group (%)" in item.value)
-    assert detail["EUR value"].sum() == 560
+    assert detail["Value"].sum() == 560
     assert set(detail.Investment) == {"Synthetic Fund", "Nvidia", "TSMC"}
     by_label(app.multiselect, "Stocks in the SMH group").set_value([]).run()
     assert not app.exception
-    assert app.tabs[1].dataframe[-1].value["EUR value"].sum() == 560  # Fund and stocks separate within Group A.
+    assert app.tabs[1].dataframe[-1].value["Value"].sum() == 560  # Fund and stocks separate within Group A.
 
 
 def test_demo_launch_and_subset_selection(sample_data_dir):
@@ -210,7 +210,7 @@ def test_hierarchy_controls_charts_and_branch_filters(sample_data_dir):
     by_label(app.selectbox, "View depth").set_value(1).run()
     assert not app.exception
     table = app.tabs[1].dataframe[-1].value
-    assert table["EUR value"].sum() == 384
+    assert table["Value"].sum() == 384
     assert set(table["Category"].str.strip()) == {"Energy", "Networking"}
     assert "Classification path" not in table
     by_label(app.checkbox, "Show classification paths").check().run()
@@ -344,21 +344,21 @@ def test_etf_breakdown_and_look_through(tmp_path, sample_data_dir):
     assert not app.exception
     effective = list_frame(app, 'Exposure assets')
     nvidia = effective.loc[effective["Ticker"] == "NVDA"].iloc[0]
-    assert nvidia["Direct (EUR)"] == 800
-    assert nvidia["ETF-derived (EUR)"] == pytest.approx(nvidia_indirect)
-    assert effective["Total (EUR)"].sum() == pytest.approx(1800)
+    assert nvidia["Direct"] == 800
+    assert nvidia["ETF-derived"] == pytest.approx(nvidia_indirect)
+    assert effective["Total"].sum() == pytest.approx(1800)
     assert selected_value(app) == "€1,800.00"
     theme_view(app, "taxonomy:ai")
     by_label(app.selectbox, "Hierarchy root").set_value(("AI", "Compute", "GPUs")).run()
     assert not app.exception
     assert app.tabs[1].dataframe[-1].value.empty  # The selected leaf is shown as the separate total.
     by_label(app.checkbox, "Show holdings beneath labels").check().run()
-    assert app.tabs[1].dataframe[-1].value.iloc[0]["EUR value"] == pytest.approx(800 + nvidia_indirect)
+    assert app.tabs[1].dataframe[-1].value.iloc[0]["Value"] == pytest.approx(800 + nvidia_indirect)
     by_label(app.selectbox, "Chart").set_value("Pie").run()
     assert not app.exception
     by_label(app.toggle, "Break down ETFs").set_value(False).run()
     assert not app.exception
-    assert not any("ETF-derived (EUR)" in table.value.columns for table in app.dataframe)
+    assert not any("ETF-derived" in table.value.columns for table in app.dataframe)
 
 
 def test_plain_smh_with_ucits_isin_is_actionable(tmp_path, sample_data_dir):
@@ -396,7 +396,7 @@ def test_show_tickers_preserves_merged_hierarchy_leaf_across_exchanges(tmp_path,
     table = app.tabs[1].dataframe[-1].value
     leaf = table.loc[table.Category.str.strip() == "Synthetic Supplier (NVD.DE)"]
     assert len(leaf) == 1
-    assert leaf.iloc[0]["EUR value"] == pytest.approx(80 + 1000 * weight)
+    assert leaf.iloc[0]["Value"] == pytest.approx(80 + 1000 * weight)
 
 
 def test_stale_snapshot_warning_and_update_failure(monkeypatch, sample_data_dir):

@@ -14,7 +14,7 @@ windows. Read the sample size, exclusions and coverage alongside each result.
 The calculation applies **today's weights held constant** to historical weekly
 returns. It is a hypothetical allocation, not your personal historical portfolio
 return or a forecast. It uses dividend/split-adjusted prices and historical FX to
-EUR, selecting the last observation in each completed Friday-ending week. Missing
+the portfolio reporting currency, selecting the last observation in each completed Friday-ending week. Missing
 weeks are not filled, and returns do not bridge missing endpoints. All included
 holdings and the benchmark need at least 52 common weekly returns.
 
@@ -23,7 +23,7 @@ annualizes weekly variation using the square root of 52. Correlation measures
 co-movement, not the size of a possible loss. Volatility contributions sum to the
 portfolio estimate; negative contributions can reflect diversification.
 
-Explicit EUR cash has zero returns. Manual or unlisted assets without suitable
+Cash in the reporting currency has zero FX returns; foreign cash uses historical FX returns. Manual or unlisted assets without suitable
 history are excluded. Covered weights are renormalized; missing valuations prevent
 claiming whole-portfolio coverage. Funds use their own histories, not expanded
 constituents. Category risk still uses the selected benchmark, even for non-equity

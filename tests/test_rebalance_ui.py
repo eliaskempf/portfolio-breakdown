@@ -110,9 +110,9 @@ def test_overview_filter_does_not_change_trade_universe(rebalance_data):
     activate(app, "Exposure")
     assert any("No holdings match" in item.value for item in app.info)
     activate(app, "Rebalance", "Plan")
-    plan = next(item.value for item in app.dataframe if "After (EUR)" in item.value)
+    plan = next(item.value for item in app.dataframe if "After" in item.value)
     assert len(plan) == 3
-    assert plan["After (EUR)"].sum() == pytest.approx(100)
+    assert plan["After"].sum() == pytest.approx(100)
 
 
 def test_missing_targets_and_incomplete_redistribution_are_explained(rebalance_data):
@@ -158,7 +158,7 @@ def test_buy_selection_constrains_cash_and_invalidates_previous_plan(rebalance_d
     calculate(app)
     plan = list_frame(app, 'Suggested trades')
     assert plan.Investment.tolist() == ["Synthetic B"]
-    assert plan["Trade (EUR)"].tolist() == pytest.approx([100])
+    assert plan["Trade"].tolist() == pytest.approx([100])
     by_label(app.multiselect, "Positions eligible for buying").set_value(["position-1", "position-2"]).run()
     assert "Trades" not in metrics(app)
     activate(app, "Exposure")
@@ -208,14 +208,14 @@ def test_target_gap_balancing_is_default_for_selected_positions(rebalance_data):
     assert metrics(app)["Trades"] == "3"
     plan = list_frame(app, 'Suggested trades')
     assert plan.Investment.tolist() == ["Synthetic B", "Synthetic C", "Synthetic A"]
-    assert plan["Trade (EUR)"].tolist() == pytest.approx([37.5, 37.5, 25])
+    assert plan["Trade"].tolist() == pytest.approx([37.5, 37.5, 25])
     assert "squared percentage-point gaps" in by_label(app.selectbox, "Distribution").proto.help
     assert not any("closest allocation" in item.value for item in app.info)
     by_label(app.selectbox, "Distribution").set_value("Spread by target weights").run()
     assert "Trades" not in metrics(app)
     calculate(app)
     plan = list_frame(app, 'Suggested trades')
-    assert plan["Trade (EUR)"].tolist() == pytest.approx([40, 30, 30])
+    assert plan["Trade"].tolist() == pytest.approx([40, 30, 30])
     by_label(app.selectbox, "Distribution").set_value("Optimize rebalancing").run()
     assert any(item.label == "Maximum trades" for item in app.number_input)
     assert (rebalance_data / "holdings.csv").read_bytes() == original
@@ -229,7 +229,7 @@ def test_purchase_intent_minimum_and_fewer_trade_comparison(rebalance_data):
     by_label(app.toggle, "Limit buys to selected positions").set_value(True).run()
     by_label(app.multiselect, "Positions eligible for buying").set_value(["position-0", "position-1", "position-2"]).run()
     calculate(app)
-    assert any("at least €75.00" in item.value for item in app.error)
+    assert any("at least 75.00" in item.value for item in app.error)
     by_label(app.number_input, "Minimum purchase (EUR)").set_value(20).run()
     calculate(app)
     assert metrics(app)["Trades"] == "3"
@@ -301,7 +301,7 @@ def test_temporary_caps_redirect_buys_show_cash_and_never_save_targets(rebalance
     edit_caps(app, {1: 20})
     calculate(app)
     plan = list_frame(app, 'Suggested trades')
-    assert plan.set_index('Investment')['Trade (EUR)'].to_dict() == {'Synthetic A': 10, 'Synthetic B': 30, 'Synthetic C': 60}
+    assert plan.set_index('Investment')['Trade'].to_dict() == {'Synthetic A': 10, 'Synthetic B': 30, 'Synthetic C': 60}
     edit_caps(app, {0: 45, 1: 15, 2: 15})
     app.run()
     assert 'Trades' not in metrics(app)
@@ -331,4 +331,4 @@ def test_cap_conflicts_and_selection_changes_clear_limits(rebalance_data):
     calculate(app)
     plan = list_frame(app, 'Suggested trades')
     assert plan.Investment.tolist() == ['Synthetic A']
-    assert plan['Trade (EUR)'].tolist() == [100]
+    assert plan['Trade'].tolist() == [100]

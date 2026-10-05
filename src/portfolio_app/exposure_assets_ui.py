@@ -1,4 +1,6 @@
 """One searchable exposure table, with on-demand source and fund details."""
+
+from portfolio_app.currency_display import currency_symbol
 from hashlib import sha256
 import pandas as pd
 import plotly.graph_objects as go
@@ -19,20 +21,20 @@ def source_previews(exposures, selected, table):
     counts = contributions.asset_id.value_counts().to_dict()
     previews = {}
     # One sort and a linear pass also keep initial rendering cheap for large ETFs.
-    for row in contributions.sort_values('Value (EUR)', ascending=False, na_position='last').to_dict('records'):
+    for row in contributions.sort_values('Value', ascending=False, na_position='last').to_dict('records'):
         asset = row['asset_id']
         if asset not in previews:
             previews[asset] = dict(items=[], more=max(0, counts[asset] - 4))
         items = previews[asset]['items']
         if len(items) == 4:
             continue
-        amount = row['Value (EUR)']
+        amount = row['Value']
         share = row['% of asset exposure']
         label = ('Direct · ' if row['Exposure'] == 'Direct' else '') + row['Source']
         if row['Account']:
             label += f' · {row["Account"]}'
         items.append(dict(label=label,
-                          amount='Unavailable' if pd.isna(amount) else f'€{amount:,.2f}',
+                          amount='Unavailable' if pd.isna(amount) else (f'€{amount:,.2f}').replace('€', currency_symbol()),
                           share='—' if pd.isna(share) else f'{share:.2f}%'))
     return previews
 
@@ -61,19 +63,19 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
     columns = [ListColumn('Asset', 'Asset', width=260)]
     if show_tickers:
         columns.append(ListColumn('Ticker', 'Ticker', width=110))
-    columns += [ListColumn('Total (EUR)', 'Total (EUR)', numeric=True, width=140),
+    columns += [ListColumn('Total', 'Total', numeric=True, width=140),
                 ListColumn('Allocation %', '% of selected portfolio', numeric=True, width=190),
                 ListColumn('Sources', 'Sources', width=190),
                 ListColumn('Labels', titles[taxonomy], badges=taxonomy_colors(classifications, taxonomy))]
     render_list(frame_rows(table, id_column='asset_id'), columns, key=key, context=key, title='Exposure assets',
-                on_open=select, max_height=BOUNDED_LIST_HEIGHT if breakdown else None, default_sort='Total (EUR)',
-                preview_column='Sources', preview_value_column='Total (EUR)', preview_share_column='Allocation %', previews=source_previews(exposures, selected, table))
+                on_open=select, max_height=BOUNDED_LIST_HEIGHT if breakdown else None, default_sort='Total',
+                preview_column='Sources', preview_value_column='Total', preview_share_column='Allocation %', previews=source_previews(exposures, selected, table))
     if footer:
         st.caption(footer)
     if show_chart:
-        largest = table.dropna(subset=['Total (EUR)']).head(12).iloc[::-1]
-        figure = style_figure(go.Figure(go.Bar(x=largest['Total (EUR)'], y=largest.Asset, orientation='h')))
-        figure.update_layout(height=max(260, 30 * len(largest)), xaxis_title='Exposure (EUR)', margin=dict(t=12, b=20, l=12, r=12))
+        largest = table.dropna(subset=['Total']).head(12).iloc[::-1]
+        figure = style_figure(go.Figure(go.Bar(x=largest['Total'], y=largest.Asset, orientation='h')))
+        figure.update_layout(height=max(260, 30 * len(largest)), xaxis_title='Exposure', margin=dict(t=12, b=20, l=12, r=12))
         st.plotly_chart(figure, width='stretch', config={'displayModeBar': False})
     asset = st.session_state.get('exposure_asset_detail')
     if asset not in set(table.asset_id):
@@ -85,7 +87,7 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
     def details():
         row = table.loc[table.asset_id.eq(asset)].iloc[0]
         st.subheader(row.Asset)
-        st.caption('Unknown values remain unavailable; they are not treated as zero.') if pd.isna(row['Total (EUR)']) else st.metric('Total exposure', f'€{row["Total (EUR)"]:,.2f}')
+        st.caption('Unknown values remain unavailable; they are not treated as zero.') if pd.isna(row['Total']) else st.metric('Total exposure', (f'€{row["Total"]:,.2f}').replace('€', currency_symbol()))
         for name in taxonomy_names(classifications):
             st.write(f'{titles.get(name, name.replace("_", " ").title())}: {describe(classifications, asset, name)}')
         if geography is not None:
@@ -95,11 +97,11 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
         sources = exposure_sources(exposures, selected, asset)
         st.caption('Asset weight is the share of each contributing position invested in this asset. The final percentage is that source’s share of your total exposure to this asset.')
         render_list(frame_rows(sources), [ListColumn('Source', 'Source'), ListColumn('Account', 'Account'),
-                    ListColumn('Exposure', 'Source type'), ListColumn('Position value (EUR)', 'Position (EUR)', numeric=True),
+                    ListColumn('Exposure', 'Source type'), ListColumn('Position value', 'Position', numeric=True),
                     ListColumn('Asset weight (%)', 'Asset weight (%)', numeric=True),
-                    ListColumn('Value (EUR)', 'Contribution (EUR)', numeric=True),
+                    ListColumn('Value', 'Contribution', numeric=True),
                     ListColumn('% of asset exposure', '% of asset exposure', numeric=True)],
-                    key=f'{key}_sources', context=f'{key}_{asset}_sources', title='Exposure sources', default_sort='Value (EUR)')
+                    key=f'{key}_sources', context=f'{key}_{asset}_sources', title='Exposure sources', default_sort='Value')
         source_ids = exposures.loc[exposures.asset_id.eq(asset), 'source_position_id']
         source_positions = selected.loc[selected.position_id.isin(source_ids)]
         relevant = {f.isin for position in source_positions.to_dict('records') if (f := matching_fund(position, funds)) is not None}

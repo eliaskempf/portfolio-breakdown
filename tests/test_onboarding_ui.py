@@ -152,7 +152,7 @@ def test_guided_categories_targets_and_first_physical_position(tmp_path):
     assert row.quantity_unit == 'troy oz' and row.instrument_type == 'physical'
     assert row.ticker == '' and row.bucket_id == gold
     assert row.manual_price == 2000.
-    assert value_holdings(saved, PriceService(UnavailableProvider())).current_value_eur.iloc[0] == 5000.
+    assert value_holdings(saved, PriceService(UnavailableProvider())).current_value_reporting.iloc[0] == 5000.
     assert app.session_state['onboarding_step'] == 'done'
     assert not list(personal.glob('*.json'))
 
@@ -197,7 +197,7 @@ def test_physical_unit_change_clears_amounts_and_edit_keeps_unit(tmp_path):
     by_label(app.button, 'Save position').click().run()
     assert not app.exception and not app.error
     saved = read_snapshot(personal / 'holdings.csv').holdings
-    assert value_holdings(saved, PriceService(UnavailableProvider())).current_value_eur.iloc[0] == 600.
+    assert value_holdings(saved, PriceService(UnavailableProvider())).current_value_reporting.iloc[0] == 600.
     position_action(app, 'Edit position')
     assert by_label(app.selectbox, 'Quantity unit').disabled
     assert by_label(app.selectbox, 'Quantity unit').value == 'grams'
@@ -284,7 +284,7 @@ def test_physical_gold_spot_save_edit_and_explicit_manual_switch(tmp_path):
     saved = read_snapshot(personal / 'holdings.csv').holdings
     assert saved.price_source.tolist() == ['']
     prices = PriceService(SimpleNamespace(price=lambda _: None), now=lambda: datetime.now(timezone.utc))
-    assert value_holdings(saved, prices).current_value_eur.tolist() == [6000.]
+    assert value_holdings(saved, prices).current_value_reporting.tolist() == [6000.]
     position_action(app, 'Edit position')
     assert by_label(app.radio, 'Valuation method').value == 'Manual price'
     by_label(app.radio, 'Valuation method').set_value('Gold spot price').run()

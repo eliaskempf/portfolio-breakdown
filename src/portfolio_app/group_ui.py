@@ -1,5 +1,7 @@
 """Controls for the optional SMH and direct-stock display group."""
 
+from portfolio_app.currency_display import currency_symbol
+
 from hashlib import sha256
 
 import streamlit as st
@@ -37,6 +39,6 @@ def render_group_members(selected, group: InstrumentGroup) -> None:
             st.info("No group members match the current position filters.")
         else:
             st.dataframe(table, hide_index=True, height="content", width="stretch", column_config={
-                "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
+                "Value": st.column_config.NumberColumn(format=("€ %.2f").replace('€', currency_symbol())),
                 "Within group (%)": st.column_config.NumberColumn(format="%.2f %%"),
             })

@@ -1,4 +1,6 @@
 """Position-list views and instrument metrics inside the existing detail dialog."""
+
+from portfolio_app.currency_display import reporting_currency
 from datetime import date
 
 import pandas as pd
@@ -42,12 +44,12 @@ def position_metric_toolbar(holdings, data_dir, *, demo=False):
         refresh = st.button('Refresh metrics', icon=':material/refresh:', disabled=demo, key=key + '_refresh_' + view)
     snapshots, risk = {}, None
     if view == 'Risk':
-        if 'current_value_eur' not in holdings:
+        if 'current_value_reporting' not in holdings:
             st.info('Current valuations are needed to calculate risk.')
         elif benchmark:
             with st.spinner('Calculating risk…'):
                 risk, status = load_risk(holdings, data_dir, demo, benchmark, years, refresh)
-            st.caption(f'{benchmark} · {years}-year window · EUR weekly returns · {risk.observations} common observations')
+            st.caption(f'{benchmark} · {years}-year window · {reporting_currency()} weekly returns · {risk.observations} common observations')
             if risk.excluded:
                 st.caption(f'{len(risk.excluded)} instruments lack comparable history or valuation. Open data details for exclusions.')
             if status.Status.eq('stale').any():
@@ -70,7 +72,7 @@ def position_metric_toolbar(holdings, data_dir, *, demo=False):
                 value = finite(risk.holdings.loc[identity, 'Beta' if name == 'beta' else 'Annual volatility']) if risk and identity in risk.holdings.index else None
                 if name == 'volatility' and value is not None:
                     value *= 100
-                entry[field + '_note'] = f'{benchmark} · {years} years · EUR weekly returns'
+                entry[field + '_note'] = f'{benchmark} · {years} years · {reporting_currency()} weekly returns'
             else:
                 snapshot = snapshots.get(identity)
                 metric = snapshot.metrics.get(name, Metric()) if snapshot else Metric()

@@ -154,9 +154,9 @@ def geography_table(allocations: pd.DataFrame, *, level: str = 'Regions',
                                     path[-1] if path[-1] != COUNTRY_UNSPECIFIED else
                                     f'{path[0]} / {COUNTRY_UNSPECIFIED}')
     grouped = rows.groupby('Category', sort=False).value
-    table = grouped.sum(min_count=1).rename('EUR value').to_frame()
+    table = grouped.sum(min_count=1).rename('Value').to_frame()
     table['Missing valuations'] = grouped.size() - grouped.count()
-    table['% of selected portfolio'] = (100 * table['EUR value'] / denominator
+    table['% of selected portfolio'] = (100 * table['Value'] / denominator
                                         if complete and denominator > 0 else float('nan'))
-    return table.reset_index().sort_values(['EUR value', 'Category'], ascending=[False, True],
+    return table.reset_index().sort_values(['Value', 'Category'], ascending=[False, True],
                                            na_position='last', ignore_index=True)

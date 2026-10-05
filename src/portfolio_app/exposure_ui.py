@@ -1,5 +1,7 @@
 """Streamlit controls and presentation; calculations live in pure modules."""
 
+from portfolio_app.currency_display import currency_symbol
+
 import json
 from collections import Counter
 from hashlib import sha256
@@ -355,10 +357,10 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                     allocation["Labels"] = [asset_badges(classifications, json.loads(node.node_id)[1][0], label_set)
                                             for node in nodes.loc[nodes["parent_id"] != ""].itertuples()]
                     label_config["Labels"] = badge_column("Labels", taxonomy_colors(classifications, label_set))
-                table_area.dataframe(allocation, column_order=['Category', 'EUR value', 'Allocation %', *(['Labels'] if 'Labels' in allocation else []), *(['Classification path'] if show_paths else [])], hide_index=True, width="stretch", height="content", column_config={
+                table_area.dataframe(allocation, column_order=['Category', 'Value', 'Allocation %', *(['Labels'] if 'Labels' in allocation else []), *(['Classification path'] if show_paths else [])], hide_index=True, width="stretch", height="content", column_config={
                     "Category": "Investment" if view == "holding" else "Category",
                     "Classification path": st.column_config.TextColumn(help="Full breadcrumb within the selected taxonomy."),
-                    "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
+                    "Value": st.column_config.NumberColumn(format=("€ %.2f").replace('€', currency_symbol())),
                     "Allocation %": st.column_config.NumberColumn(format="%.2f %%"),
                 } | label_config | target_column_config() | performance_column_config(percent=performance_percent))
 
@@ -367,8 +369,8 @@ def render_source_positions(selected, valued, names, classifications, show_ticke
     displayed_classifications = ['labels'] if 'labels' in names else names
     table = selected.sort_values("portfolio_weight", ascending=False, kind="stable", na_position="last").copy()
     if 'within_bucket_target' in table:
-        bucket_values = valued.groupby('bucket_id').current_value_eur.agg(lambda values: values.sum() if values.notna().all() else float('nan'))
-        table['Current bucket %'] = 100 * table.current_value_eur / table.bucket_id.map(bucket_values).replace(0, float('nan'))
+        bucket_values = valued.groupby('bucket_id').current_value_reporting.agg(lambda values: values.sum() if values.notna().all() else float('nan'))
+        table['Current bucket %'] = 100 * table.current_value_reporting / table.bucket_id.map(bucket_values).replace(0, float('nan'))
         table['Target bucket %'] = table.within_bucket_target * 100
     table["name"] = table["name"].map(display_name)
     for name in names:
@@ -376,12 +378,12 @@ def render_source_positions(selected, valued, names, classifications, show_ticke
     if "labels" in displayed_classifications:
         table["classification:labels"] = table["id"].map(lambda asset_id: asset_badges(classifications, asset_id, "labels"))
     table["portfolio_weight"] *= 100
-    columns = ["id", "name", "shares", "ticker", "quote_currency", "current_price", "fx_to_eur", "current_value_eur", "portfolio_weight", *dimensions]
+    columns = ["id", "name", "shares", "ticker", "quote_currency", "current_price", "fx_to_reporting", "current_value_reporting", "portfolio_weight", *dimensions]
     if "target_allocation" in table and table["target_allocation"].notna().any():
         table["target_allocation"] *= 100
         columns.insert(columns.index("portfolio_weight") + 1, "target_allocation")
     if table["acquisition_price"].notna().any():
-        table["Performance"] = table.return_pct.where(table.unrealized_gain_eur.notna()) if performance_percent else table.unrealized_gain_eur
+        table["Performance"] = table.return_pct.where(table.unrealized_gain_reporting.notna()) if performance_percent else table.unrealized_gain_reporting
         performance_columns = ["Performance"]
         if "acquisition_currency" in table:
             performance_columns.append("acquisition_currency")
@@ -401,8 +403,8 @@ def render_source_positions(selected, valued, names, classifications, show_ticke
         'Current bucket %': st.column_config.NumberColumn('Current (% of bucket)', format='%.2f %%'),
         'Target bucket %': st.column_config.NumberColumn('Target (% of bucket)', format='%.2f %%'),
         'holdings_confirmed_on': 'Holdings last confirmed', 'quantity_unit': 'Quantity unit',
-        "quote_currency": "Currency", "fx_to_eur": None,
-        "current_value_eur": st.column_config.NumberColumn("Current value (EUR)", format="€ %.2f"),
+        "quote_currency": "Currency", "fx_to_reporting": None,
+        "current_value_reporting": st.column_config.NumberColumn("Current value", format=("€ %.2f").replace('€', currency_symbol())),
         "portfolio_weight": st.column_config.NumberColumn("Selected weight (%)", format="%.2f %%"),
         "target_allocation": st.column_config.NumberColumn("Target allocation (% of whole portfolio)", format="%.2f %%"),
         "current_price": st.column_config.NumberColumn("Price (quote currency)", format="%.4f"),

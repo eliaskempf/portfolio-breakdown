@@ -50,7 +50,7 @@ def test_portfolio_results_are_trades_only_readable_and_display_changes_keep_pla
     assert not app.exception and not app.error
     trades = list_frame(app, 'Suggested trades')
     assert len(trades) == 1
-    assert trades['Trade (EUR)'].ne(0).all()
+    assert trades['Trade'].ne(0).all()
     assert trades.Category.iloc[0].endswith('category')
     for item in app.dataframe:
         assert not {'position_id', 'id', 'ticker', 'Bucket ID', 'Parent'} & set(item.value.columns)
@@ -63,7 +63,7 @@ def test_portfolio_results_are_trades_only_readable_and_display_changes_keep_pla
     activate(app, 'Rebalance', 'Targets')
     activate(app, 'Rebalance', 'Plan')
     assert any(item.label == 'Trades' for item in app.metric)
-    by_label(app.number_input, 'Contribution (EUR)').set_value(600).run()
+    by_label(app.number_input, 'Contribution').set_value(600).run()
     assert not any(item.label == 'Trades' for item in app.metric)
     assert all((workspace / name).read_bytes() == content for name, content in before.items())
 

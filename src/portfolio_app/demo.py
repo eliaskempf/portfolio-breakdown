@@ -57,7 +57,7 @@ def create_demo_data(directory: Path, *, live: bool = False) -> Path:
               for ticker, price in [('XDWD.DE', 100.), ('IS3N.DE', 50.), ('XEON.DE', 150.),
                                     ('EWG2.SG', 100.), ('BTC-EUR', 70000.), ('ETH-EUR', 2000.)]}
     if not live:
-        (directory / 'demo_prices.json').write_text(json.dumps({'prices': prices, 'fx': {}}), encoding='utf-8')
+        (directory / 'demo_prices.json').write_text(json.dumps({'prices': prices, 'fx': {c: dict(price=r, currency='EUR', observed_at=STAMP) for c, r in [('USD', .9), ('GBP', 1.2)]}}), encoding='utf-8')
 
     classifications = {
         'world': {'asset_class': [['Equity', 'Developed markets']]},
@@ -134,7 +134,7 @@ def initialize_live_demo(directory: Path, valued) -> bool:
     with write_lock(directory / '.holdings.csv.lock'):
         if not live_demo_pending(directory):
             return False
-        prices = {row.id: row.current_price * row.fx_to_eur for row in valued.itertuples()}
+        prices = {row.id: row.current_price * row.fx_to_reporting for row in valued.itertuples()}
         if set(prices) != set(LIVE_EXAMPLES) or any(not math.isfinite(p) or p <= 0 for p in prices.values()):
             return False
         path = directory / 'holdings.csv'

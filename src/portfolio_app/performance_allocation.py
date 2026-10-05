@@ -14,9 +14,10 @@ class PerformanceExposures:
     cost: pd.DataFrame
     current: pd.DataFrame
     missing: pd.DataFrame
+    estimated: pd.DataFrame
 
     def measures(self):
-        return self.cost, self.current, self.missing
+        return self.cost, self.current, self.missing, self.estimated
 
 
 def performance_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *, lookthrough: bool = False,
@@ -27,16 +28,16 @@ def performance_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *,
     complete. Zero-share plans neither contribute cost nor reduce coverage.
     """
     held = positions.shares > 0
-    known = held & positions.unrealized_gain_eur.notna()
+    known = held & positions.unrealized_gain_reporting.notna()
     grouped = positions.id.isin(group.members) if group else pd.Series(False, index=positions.index)
     if lookthrough:
         expanded = pd.Series([matching_fund(row, funds) is not None for row in positions.to_dict("records")], index=positions.index)
         known &= ~expanded | grouped
     frames = []
-    for measure in (positions.cost_basis.where(known, 0), positions.current_value_eur.where(known, 0),
-                    (held & ~known).astype(float)):
+    for measure in (positions.cost_basis_reporting.where(known, 0), positions.current_value_reporting.where(known, 0),
+                    (held & ~known).astype(float), (known & positions.get('cost_estimated', pd.Series(False, index=positions.index))).astype(float)):
         source = positions.copy()
-        source["current_value_eur"] = measure
+        source["current_value_reporting"] = measure
         frame = normalize_exposures(source)
         if lookthrough:
             # Grouped instruments keep their whole value and cost, even when
@@ -54,12 +55,13 @@ def add_performance_column(table: pd.DataFrame, keys: list, measures: list[pd.Da
     """Align grouped costs and matching current values, never average returns."""
     totals = [frame.groupby(key)[value].sum() for frame in measures]
     result = table.copy()
-    cost, current, missing = [pd.Series([total.get(identity, 0.) for identity in keys], index=result.index) for total in totals]
+    cost, current, missing, estimated = [pd.Series([total.get(identity, 0.) for identity in keys], index=result.index) for total in totals]
     covered = (cost > 0) | (current > 0)
     gain = (current - cost).where(covered)
     result["Performance"] = (100 * gain / cost.where(cost > 0)) if percent else gain
     result["Performance coverage"] = ["Unavailable" if not has_cost else "Partial" if unknown > 1e-12 else "Complete"
                                       for has_cost, unknown in zip(covered, missing)]
+    result['Performance coverage'] = [label + (' · Estimated' if count > 1e-12 else '') for label, count in zip(result['Performance coverage'], estimated)]
     columns = list(table.columns)
     anchor = columns.index("Investment") + 1 if "Investment" in columns else 1
     return result[[*columns[:anchor], "Performance", "Performance coverage", *columns[anchor:]]]
