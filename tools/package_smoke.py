@@ -83,13 +83,22 @@ def add_synthetic_fund(workspace):
     preferences.write_text(json.dumps({'enabled': False, 'minimum_age_days': 1}), encoding='utf-8')
 
 
-def open_setup_selector(page, name):
+def open_setup_selector(page, name, evidence=None):
     """Finish nested-expander motion and scrolling before opening an option list."""
     page.wait_for_function("""() => !document.querySelector('[data-testid=stPopoverBody]')
         .getAnimations({subtree: true}).some(animation => animation.playState === 'running'
             && animation.effect.getTiming().iterations !== Infinity)""")
     control = page.get_by_role('combobox', name=name, exact=True)
-    control.evaluate("el => el.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'})")
+    try:
+        control.evaluate("el => el.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'})")
+    except Exception:
+        if evidence is not None:
+            # This entrypoint owns an invented workspace; never attach these
+            # diagnostics to an arbitrary running user portfolio.
+            page.screenshot(path=str(evidence / 'selector-failure.png'), full_page=True)
+            (evidence / 'selector-failure.html').write_text(page.content(), encoding='utf-8')
+            (evidence / 'selector-failure.txt').write_text(page.locator('body').inner_text(), encoding='utf-8')
+        raise
     # React Aria closes the list on ancestor scroll. Let the browser deliver that
     # scroll event before the click opens it; no fixed delay or forced click.
     control.evaluate('el => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
@@ -97,7 +106,7 @@ def open_setup_selector(page, name):
     return control
 
 
-def exercise_manual_breakdown(page):
+def exercise_manual_breakdown(page, evidence=None):
     page.get_by_role('tab', name='Exposure', exact=True).click()
     settings = page.get_by_role('button', name='Data & settings', exact=True)
     expect(settings).to_be_visible()
@@ -106,7 +115,7 @@ def exercise_manual_breakdown(page):
     settings.click()
     page.get_by_text('ETF refresh & snapshots', exact=True).click()
     page.get_by_text('Set up a breakdown', exact=True).click()
-    position = open_setup_selector(page, 'Fund position')
+    position = open_setup_selector(page, 'Fund position', evidence)
     # This fixture has four options. Choose directly from the full list, avoiding
     # an asynchronous filtered-popup resize inside the settings popover.
     page.get_by_role('option', name='Synthetic bond fund', exact=True).click()
@@ -128,7 +137,7 @@ def exercise_manual_breakdown(page):
     # the dropdown, which would otherwise be detached mid-selection.
     expect(page.get_by_role('button', name='Preview breakdown', exact=True)).to_be_enabled()
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
-    asset_class = open_setup_selector(page, 'Physical fund asset class')
+    asset_class = open_setup_selector(page, 'Physical fund asset class', evidence)
     # Confirm the actual option: the combobox's search text can match without
     # committing a selection, so its value alone is not sufficient evidence.
     asset_class.fill('fixed_income')
@@ -151,7 +160,9 @@ def exercise_manual_breakdown(page):
     expect(page.get_by_test_id('stException')).to_have_count(0)
 
 
-def smoke(command):
+def smoke(command, evidence=None):
+    if evidence is not None:
+        evidence.mkdir(parents=True, exist_ok=False)
     command = [*command, '--offline-demo']
     with TemporaryDirectory(prefix='portfolio smoke ü ') as temporary:
         root = Path(temporary)
@@ -278,7 +289,7 @@ def smoke(command):
                     expect(page.get_by_role('table', name='Positions', exact=True)
                            .get_by_text('Synthetic persistent position', exact=True)).to_be_visible()
                     expect(page.get_by_test_id('stException')).to_have_count(0)
-                    exercise_manual_breakdown(page)
+                    exercise_manual_breakdown(page, evidence)
                     browser.close()
                 subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,
                                check=True, capture_output=True, timeout=30)
@@ -351,5 +362,6 @@ def smoke(command):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('executable', nargs='?', type=Path)
+    parser.add_argument('--evidence', type=Path)
     args = parser.parse_args()
-    smoke([str(args.executable.resolve())] if args.executable else [sys.executable, '-m', 'portfolio_app.app'])
+    smoke([str(args.executable.resolve())] if args.executable else [sys.executable, '-m', 'portfolio_app.app'], args.evidence)

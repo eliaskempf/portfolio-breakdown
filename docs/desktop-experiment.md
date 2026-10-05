@@ -82,6 +82,14 @@ report minimized state, and Qt deliberately clears its client-side flag. That
 acceptance gap keeps the extended Wayland job failing until compositor-side
 verification is available; it is not evidence of a broken minimize action.
 
+The workflow's `diagnostics_only` manual input runs native Mac controls and five
+independent synthetic browser workflows without rebuilding installers. Selector
+failures retain synthetic screenshots and page state. Mac file-panel keyboard
+input uses the system event stream only in an explicitly opted-in GitHub-hosted
+job while this test app owns the foreground. Local probes remain process-targeted;
+normal startup never enables this input path. No accessibility or Gatekeeper
+policy is changed by these tests.
+
 `tools/desktop_gatekeeper.py APP --output NEW_DIRECTORY` checks a disposable
 quarantined copy on macOS without changing system policy. For this ad-hoc-signed
 prototype, a valid bundle signature combined with Gatekeeper rejection is the

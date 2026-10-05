@@ -82,13 +82,24 @@ def cocoa_interactions(window, root, record):
     download = root / 'invented-download.txt'
 
     def key(chars, code, modifiers=0):
-        # AppKit-only synthetic events cannot drive the NSRemoteView used by
-        # modern file panels. Post Quartz events only to this test process.
+        # Modern file panels live in another process. System input is allowed
+        # only in explicitly opted-in, disposable GitHub-hosted test sessions,
+        # and only while our synthetic app owns the foreground window.
+        hosted_input = (os.environ.get('PORTFOLIO_TEST_HOSTED_INPUT') == '1'
+                        and os.environ.get('GITHUB_ACTIONS') == 'true'
+                        and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted')
+        if hosted_input:
+            front = A.NSWorkspace.sharedWorkspace().frontmostApplication()
+            assert front and front.processIdentifier() == os.getpid(), 'Synthetic app lost foreground ownership'
         for pressed in [True, False]:
             event = Q.CGEventCreateKeyboardEvent(None, code, pressed)
             Q.CGEventSetFlags(event, modifiers)
-            Q.CGEventKeyboardSetUnicodeString(event, len(chars), chars)
-            Q.CGEventPostToPid(os.getpid(), event)
+            if chars:
+                Q.CGEventKeyboardSetUnicodeString(event, len(chars), chars)
+            if hosted_input:
+                Q.CGEventPost(Q.kCGHIDEventTap, event)
+            else:
+                Q.CGEventPostToPid(os.getpid(), event)
 
     def click():
         view = browser.webview
@@ -122,20 +133,20 @@ def cocoa_interactions(window, root, record):
                         panel.setNameFieldStringValue_(path.name)
                         phase[0] = 4
                     else:
-                        key('G', 5, A.NSEventModifierFlagCommand | A.NSEventModifierFlagShift)
+                        key('', 5, A.NSEventModifierFlagCommand | A.NSEventModifierFlagShift)
                         phase[0] = 1
                 elif phase[0] == 1:
                     for char in str(path):
                         key(char, 0)
                     phase[0] = 2
                 elif phase[0] == 2:
-                    key('\r', 36)
+                    key('', 36)
                     phase[0] = 3
                 elif phase[0] == 3:
-                    key('\r', 36)
+                    key('', 36)
                     phase[0] = 5
                 elif phase[0] == 4:
-                    panel.ok_(None)
+                    key('', 36)
                     phase[0] = 5
                 elif phase[0] == 5 and panel is None:
                     timer.invalidate()

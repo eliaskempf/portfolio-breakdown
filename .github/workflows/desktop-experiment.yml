@@ -1,15 +1,54 @@
 name: Experimental desktop candidates
 on:
   workflow_dispatch:
+    inputs:
+      diagnostics_only:
+        description: Run focused source diagnostics without building installers
+        type: boolean
+        default: false
   push:
     branches: [experiment/linux-macos-desktop]
 permissions:
   contents: read
 concurrency:
-  group: desktop-experiment-${{ github.sha }}
+  group: desktop-experiment-${{ github.sha }}-${{ inputs.diagnostics_only || false }}
   cancel-in-progress: true
+env:
+  PORTFOLIO_TEST_HOSTED_INPUT: '1'
 jobs:
+  diagnostics:
+    if: ${{ inputs.diagnostics_only }}
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: '0.12.10'
+          python-version: '3.13'
+      - run: uv sync --locked --extra window --all-groups
+      - run: uv run playwright install chromium
+      - name: Native source controls
+        timeout-minutes: 3
+        run: uv run portfolio-window --native-self-test "$RUNNER_TEMP/diagnostics/native" desktop
+      - name: Repeated synthetic browser workflow
+        if: ${{ !cancelled() }}
+        run: |
+          failed=0
+          for attempt in 1 2 3 4 5; do
+            uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/diagnostics/browser-$attempt" > "$RUNNER_TEMP/diagnostics/browser-$attempt.log" 2>&1 || failed=1
+          done
+          exit "$failed"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: desktop-diagnostics
+          path: ${{ runner.temp }}/diagnostics
+          retention-days: 14
   build:
+    if: ${{ !inputs.diagnostics_only }}
     strategy:
       fail-fast: false
       matrix:
@@ -116,7 +155,7 @@ jobs:
         if: ${{ !cancelled() && steps.source_native.outcome != 'success' }}
         run: exit 1
   linux-compatibility:
-    if: ${{ always() && !cancelled() }}
+    if: ${{ always() && !cancelled() && !inputs.diagnostics_only }}
     needs: build
     runs-on: ubuntu-24.04
     strategy:
@@ -159,7 +198,7 @@ jobs:
           path: ${{ runner.temp }}/compat-native
           retention-days: 14
   macos-compatibility:
-    if: ${{ always() && !cancelled() }}
+    if: ${{ always() && !cancelled() && !inputs.diagnostics_only }}
     needs: build
     strategy:
       fail-fast: false
