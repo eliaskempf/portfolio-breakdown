@@ -243,7 +243,7 @@ def test_intro_welcome_navigation_and_help(intro_page):
     playwright.expect(page.locator('.js-plotly-plot').first).to_be_visible()
     playwright.expect(frame).to_have_count(0)
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
-    assert read_snapshot(directory / 'demo' / 'holdings.csv').holdings.shares.iloc[0] == 450
+    assert read_snapshot(directory / 'demo' / 'holdings.csv').holdings.shares.iloc[0] == pytest.approx(449.6327)
     page.screenshot(path=str(directory / 'synthetic-header.png'))
 
 

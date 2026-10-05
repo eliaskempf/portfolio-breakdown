@@ -1093,3 +1093,33 @@ not an application test result. Fresh supported candidate and optional desktop
 builds/native checks remain pending until hosted execution is available.
 No old installer is promoted, and no tag, official release or Pages publication
 is authorized by this merge.
+
+## Demo breakdown and allocation correction (2026-10-05)
+
+Both public demo modes now share invented initial values around EUR 93,184.35,
+with equity/money-market gaps of approximately +5.37/-3.06 percentage points
+and uneven allocations within equity and crypto. Targets and one-time live
+quote sizing remain unchanged. The offline demo has 19 named equity constituents
+across sectors and regions, 1–1.5% residual fund weights, and XEON overnight-rate
+economic exposure. All example quantities, costs and fund weights are invented.
+
+Themes & sectors prefers populated sector metadata when curated labels are absent,
+including after an initial live download; explicit selections remain unchanged.
+Geography separates verified overnight-rate exposure as Money market and never
+uses the substitute basket's countries. The registered Emerging Markets source
+now uses the existing iShares JSON parser: the older XML document lacks country
+metadata. First-download failures surface a direction to the retry controls.
+
+The geography mapper also accepts the iShares country label “Korea (South)”.
+Read-only live checks successfully resolved World, Emerging Markets and XEON
+with issuer snapshots dated 2026-10-02. Browser checks of separately launched
+live and offline synthetic portfolios covered assets, sector charts, geography
+and drill-down, ETF toggling, and Rebalance navigation. No provider exports or
+runtime portfolios are included in source. New synthetic regressions cover
+initial download failures/retry, country metadata on install/refresh, residual
+conservation, geography coverage and delayed classification defaults.
+
+Validation: 1,023 non-browser tests passed (one skipped); the new demo browser
+regression, existing geography/ETF browser checks and onboarding browser check
+passed. Ruff, diff checks and the staged privacy check passed. Installer binaries
+were not rebuilt as part of this source change.
