@@ -10,6 +10,8 @@ from decimal import Decimal, InvalidOperation
 import json
 import math
 
+import pandas as pd
+
 from portfolio_app.holdings import DataError
 from portfolio_app.fx import valid_currency, current_rate
 
@@ -28,8 +30,16 @@ def fingerprint(row):
     return [str(decimal(row.get(k))) if decimal(row.get(k)) is not None else '' for k in ('shares', 'acquisition_price')] + [row.get('acquisition_currency') or '']
 
 
+def _summary_number(value):
+    number = decimal(value)
+    # Match the holdings parser's numeric representation. A CSV decimal
+    # can round when parsed; this alone must not invalidate saved costs.
+    # Original decimal strings in cost records remain untouched.
+    return pd.to_numeric(str(number), errors='coerce') if number is not None else None
+
+
 def same_summary(a, b):
-    return all((decimal(x) == decimal(y) if i < 2 else x == y) for i, (x, y) in enumerate(zip(a, b)))
+    return all((_summary_number(x) == _summary_number(y) if i < 2 else x == y) for i, (x, y) in enumerate(zip(a, b)))
 
 
 def component(shares, amount, currency, day='', conversions=None):
@@ -128,7 +138,8 @@ def _legacy_components(row):
                                        batch['currency'], purchase['date']))
             previous = fingerprint(dict(shares=batch.get('result_shares'), acquisition_price=batch.get('result_average'),
                                         acquisition_currency=batch['currency'] if batch.get('result_average') else ''))
-        if previous is not None and same_summary(previous, fingerprint(row)) and sum(decimal(p['shares']) for p in parts) == decimal(row['shares']):
+        if (previous is not None and same_summary(previous, fingerprint(row))
+                and _summary_number(sum(decimal(p['shares']) for p in parts)) == _summary_number(row['shares'])):
             return parts
     except (DataError, KeyError, TypeError):
         pass

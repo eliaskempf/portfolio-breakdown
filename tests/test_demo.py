@@ -68,7 +68,7 @@ def test_live_demo_sizes_once_from_quotes_and_preserves_targets_and_edits(tmp_pa
     valued = value_holdings(holdings, prices)
     original = (live / 'holdings.csv').read_bytes()
     missing = valued.copy()
-    missing.loc[0, 'fx_to_eur'] = float('nan')
+    missing.loc[0, 'fx_to_reporting'] = float('nan')
     assert not initialize_live_demo(live, missing)
     assert (live / 'holdings.csv').read_bytes() == original
     assert live_demo_pending(live)

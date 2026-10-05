@@ -148,9 +148,36 @@ def test_metadata_roundtrip_and_cost_replacement(tmp_path):
     assert FIELD not in metadata_dimensions(read_snapshot(path).holdings)
 
 
-def test_legacy_batch_reconstructs_only_matching_summary(tmp_path):
+def test_fractional_csv_roundtrip_preserves_conversions_and_detects_edits(tmp_path, prices):
+    from portfolio_app.balances import patch_holdings
     path = tmp_path / 'holdings.csv'
-    save_purchase_batch(path, dict(name='Invented'), [dict(shares='1', price='100', date='2026-09-04')], currency='USD', expected_revision=None)
+    # An invented fractional quantity has more digits on disk than the
+    # numeric holdings parser retains. Saving FX must preserve the original.
+    quantity = '449.63269999999994'
+    fields = dict(name='Invented fractional holding', shares=quantity,
+                  acquisition_price='87.4', acquisition_currency='EUR')
+    save_position(path, fields, expected_revision=None)
+    snap = read_snapshot(path)
+    row = snap.holdings.iloc[0]
+    parts = estimate_missing(active_components(row), 'USD', prices)
+    patch_holdings(path, {row.position_id: {FIELD: encode_components(parts, row)}},
+                   expected_revision=snap.revision)
+    snap = read_snapshot(path)
+    assert resolve_cost(active_components(snap.holdings.iloc[0]), 'USD').estimated
+    assert pd.read_csv(path, dtype=str).shares.iloc[0] == quantity
+    save_position(path, {'short_name': 'Invented alias'}, expected_revision=snap.revision,
+                  position_id=row.position_id)
+    snap = read_snapshot(path)
+    assert active_components(snap.holdings.iloc[0]) == parts
+    # Actual quantity changes must still invalidate incompatible conversions.
+    patch_holdings(path, {row.position_id: {'shares': '449.63271'}}, expected_revision=snap.revision)
+    assert resolve_cost(active_components(read_snapshot(path).holdings.iloc[0]), 'USD').amount is None
+
+
+@pytest.mark.parametrize('shares', ['1', '449.63269999999994'])
+def test_legacy_batch_reconstructs_only_matching_summary(tmp_path, shares):
+    path = tmp_path / 'holdings.csv'
+    save_purchase_batch(path, dict(name='Invented'), [dict(shares=shares, price='100', date='2026-09-04')], currency='USD', expected_revision=None)
     row = read_snapshot(path).holdings.iloc[0].to_dict()
     row.pop(FIELD)
     assert active_components(row)[0]['date'] == '2026-09-04'
