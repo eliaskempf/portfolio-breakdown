@@ -75,6 +75,12 @@ The extended matrix tests native Cocoa file panels and minimize/restore/focus,
 an Openbox X11 session and a headless Weston Wayland session, plus the same
 macOS 14-built DMG on macOS 15 and 26. The `desktop` mode requires a window
 manager/compositor; bare Xvfb is insufficient for activation checks.
+The Cocoa upload and save checks run independently so a picker automation
+failure cannot prevent collecting download evidence. Wayland checks hide/show
+activation but leave minimize/restore explicitly unverified: xdg-shell does not
+report minimized state, and Qt deliberately clears its client-side flag. That
+acceptance gap keeps the extended Wayland job failing until compositor-side
+verification is available; it is not evidence of a broken minimize action.
 
 `tools/desktop_gatekeeper.py APP --output NEW_DIRECTORY` checks a disposable
 quarantined copy on macOS without changing system policy. For this ad-hoc-signed

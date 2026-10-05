@@ -30,6 +30,10 @@ def gui(window, callback):
 
 def window_states(window, workspace, record):
     from portfolio_app.launcher import request_instance
+    wayland = False
+    if sys.platform == 'linux':
+        from qtpy.QtGui import QGuiApplication
+        wayland = QGuiApplication.platformName().startswith('wayland')
     def state():
         if sys.platform == 'darwin':
             from webview.platforms.cocoa import BrowserView
@@ -43,17 +47,23 @@ def window_states(window, workspace, record):
         last.update(gui(window, state))
         return all(last[k] == v for k, v in expected.items())
     try:
-        window.minimize()
-        wait(lambda: matches(minimized=True), timeout=15)
-        record('desktop confirms window minimized')
-        assert request_instance(workspace, 'focus')
-        wait(lambda: matches(minimized=False, active=True, visible=True), timeout=15)
-        record('repeat-launch focus restores and activates minimized native window')
+        if not wayland:
+            window.minimize()
+            wait(lambda: matches(minimized=True), timeout=15)
+            record('desktop confirms window minimized')
+            assert request_instance(workspace, 'focus')
+            wait(lambda: matches(minimized=False, active=True, visible=True), timeout=15)
+            record('repeat-launch focus restores and activates minimized native window')
         window.hide()
         wait(lambda: matches(visible=False), timeout=15)
         assert request_instance(workspace, 'focus')
         wait(lambda: matches(visible=True, active=True), timeout=15)
         record('repeat-launch focus shows and activates hidden native window')
+        if wayland:
+            # Qt deliberately clears WindowMinimized: xdg-shell never reports
+            # that state. A client-side flag cannot prove compositor behavior.
+            # Keep this acceptance check explicitly unverified, never green.
+            raise AssertionError('Unverified Wayland minimize/restore: xdg-shell does not report minimized state; compositor-side verification is required')
     except TimeoutError as exc:
         raise AssertionError(f'Window state did not converge: {last}') from exc
 
@@ -141,6 +151,13 @@ def cocoa_interactions(window, root, record):
             timers.append(timer)
         gui(window, start)
 
+    def stop():
+        for timer in timers:
+            timer.invalidate()
+        if app.modalWindow():
+            app.modalWindow().cancel_(None)
+
+    failures = []
     try:
         window.evaluate_js("""(() => {
             const input = document.createElement('input'); input.type = 'file';
@@ -154,7 +171,15 @@ def cocoa_interactions(window, root, record):
         wait(lambda: window.evaluate_js('window.__probeUpload') == 'Invented native upload', timeout=25)
         assert events == ['open'], (events, errors)
         record('native Cocoa open panel supplies exact uploaded bytes to WebKit')
-        window.evaluate_js("document.querySelector('#native-probe-input').remove()")
+    except Exception as exc:
+        failures.append(f'open: panels={events}, errors={errors}, trace={trace}; {exc}')
+    finally:
+        gui(window, stop)
+        window.evaluate_js("document.querySelector('#native-probe-input')?.remove()")
+    events.clear()
+    errors.clear()
+    trace.clear()
+    try:
         window.evaluate_js("""(() => {
             const link = document.createElement('a'); link.id = 'native-probe-download';
             link.href = URL.createObjectURL(new Blob(['Invented native download'], {type:'text/plain'}));
@@ -165,15 +190,12 @@ def cocoa_interactions(window, root, record):
         arm(download, True)
         gui(window, click)
         wait(lambda: download.is_file() and download.read_text() == 'Invented native download', timeout=25)
-        assert events == ['open', 'save'], (events, errors)
+        assert events == ['save'], (events, errors)
         record('native Cocoa save panel writes exact downloaded bytes')
-        window.evaluate_js("document.querySelector('#native-probe-download').remove()")
     except Exception as exc:
-        raise AssertionError(f'Cocoa file interaction failed: panels={events}, errors={errors}, trace={trace}; {exc}') from exc
+        failures.append(f'save: panels={events}, errors={errors}, trace={trace}; {exc}')
     finally:
-        def stop():
-            for timer in timers:
-                timer.invalidate()
-            if app.modalWindow():
-                app.modalWindow().cancel_(None)
         gui(window, stop)
+        window.evaluate_js("document.querySelector('#native-probe-download')?.remove()")
+    if failures:
+        raise AssertionError(f'Cocoa file interaction failed: {failures}')
