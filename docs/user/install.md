@@ -6,6 +6,9 @@ Download a release from the repository's Releases page. Before the first officia
 release, download a successful **Build candidate** Actions artifact while signed
 into GitHub. Extract that download once to find the installer and portable archive;
 candidates are test builds, not official releases.
+Verified local candidates may also be provided directly when Actions is
+unavailable. Use the installer supplied with that candidate's checksum and test
+record; a Windows Setup EXE does not need an additional ZIP wrapper.
 
 **Windows:** run `portfolio-breakdown-<version>-windows-x64-setup.exe`. Setup installs
 for your current user, creates a Start Menu entry, and optionally a desktop

@@ -5,6 +5,10 @@
 Before the first official release, open the successful **Build candidate** run
 under GitHub Actions. Download `candidate-windows-x64` or `candidate-linux-x64`
 while signed into GitHub. These are test artifacts, not official releases.
+While Actions is unavailable, a verified local candidate can supply the same
+installer and archives directly. Its manifest and SHA256SUMS identify the source
+and exact files; retain its test/acceptance record. Local build instructions are
+in `docs/release-plan.md`.
 Inside that download, extract the platform application archive. Keep the entire
 `portfolio-app` directory together; the executable needs its `_internal` folder.
 Use a permanent application location outside your portfolio folder.
