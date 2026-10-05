@@ -1043,3 +1043,53 @@ Record its run and packaged smoke results before treating the new installer as
 verified. Existing portfolios can use **Refresh ETF holdings now** to retry
 previously unavailable breakdowns. No official release or tag is authorized by
 this integration.
+
+### Optional Linux/macOS desktop integration (2026-10-05)
+
+Merged PR #4, `experiment/linux-macos-desktop` through
+`4b90f91ba2d8c3df657eef0830395d93075aac1a`, into the release based on
+`dbaca0172ea0dd9599bb43da727b961d453fc609`. Integration used the isolated
+`/tmp/portfolio-v1-desktop-integration` worktree and
+`integrate/v1-desktop-experiment` branch. The merge was conflict-free and retains
+the ETF/search adapters, setup, gold valuation and Windows shutdown correction.
+
+The Qt Linux `.deb` and Cocoa Apple Silicon macOS DMG remain optional experiments.
+Their workflow, dependency extra and acceptance are separate from supported
+Windows-window/Linux-browser candidates and official publishing. Developer ID
+signing/notarization is not planned for v1; ad-hoc signing does not establish
+Gatekeeper trust. Historical native evidence and remaining gaps are documented
+in `docs/desktop-experiment.md`; earlier experimental installers are not final
+integrated v1 artifacts.
+
+Integration review found that the existing required-browser gate would reject
+the new POSIX-only test skips on Windows. It now rejects skipped browser tests
+and modules while allowing platform-specific unit skips. Five synthetic gate
+regressions cover this distinction and missing-browser/empty-suite failures;
+the Windows-skip case failed before the correction and passes afterward.
+
+The combined full suite recorded **1,069 passed and one browser timing failure**
+in category-to-Performance navigation. That unchanged browser file passed all
+six tests on rerun. Review found that the category value arrives before the
+view switch and scoped chart finish rendering; the test now waits for the scoped
+chart and completed rerun before clicking Performance. No application behavior,
+assertions or timeouts were weakened. After this test-only correction, all six
+UX browser tests and all five new CI-gate regressions passed together (**11
+passed**). The full suite was not repeated after these test-harness changes.
+
+Local verification uses only synthetic workspaces; no other session's preview
+or private portfolio is used. Ruff, privacy, strict documentation and all help
+links, wheel/source archive builds and release content checks pass. The revised
+shared package smoke passes against source, including lifecycle and ETF setup.
+The documentation browser smoke passes navigation, search and narrow layout at
+the temporary `http://127.0.0.1:41817/portfolio-breakdown/dev/` preview, stopped
+after verification. These source checks do not establish native acceptance of
+new packaged installers.
+
+The earlier ETF/search candidate [37232831332](https://github.com/eliaskempf/portfolio-breakdown/actions/runs/37232831332)
+at `dbaca01` passed Windows, Ubuntu 22.04 and Ubuntu 24.04 compatibility. It
+predates this desktop integration. GitHub's latest PR #4 job annotations confirm
+that jobs could not start because of account payments/spending limits; this is
+not an application test result. Fresh supported candidate and optional desktop
+builds/native checks remain pending until hosted execution is available.
+No old installer is promoted, and no tag, official release or Pages publication
+is authorized by this merge.

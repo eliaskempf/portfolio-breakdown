@@ -101,3 +101,24 @@ the untested operating systems still need acceptance.
 - [ ] Candidate docs identify the same source SHA as both binary manifests.
       Docs build, internal links, search, mobile layout and task walkthrough pass.
 - [ ] Pages publication and official release publication remain separately approved.
+
+## Optional experimental Linux/macOS installers
+
+These checks are independent of supported Windows-window and Linux-browser
+acceptance. Defer an experimental artifact if it cannot be verified; it must not
+block the supported release or inherit acceptance from an older installer.
+
+- [ ] Build from the final integrated source and record its commit, lock hash,
+      installer SHA256 and native reports. Earlier experimental artifacts are
+      not final v1 builds.
+- [ ] Keep `.deb`/DMG artifacts explicitly experimental and outside automatic
+      supported-candidate promotion. Publication still requires approval.
+- [ ] Ubuntu 22.04/24.04: verify installed X11/Wayland rendering, file dialogs,
+      exact download bytes, focus/restore, repeated launch and complete shutdown.
+      Upgrade/removal preserves the synthetic workspace.
+- [ ] Apple Silicon macOS: verify the exact final DMG's native workflows and
+      document ad-hoc signing, Gatekeeper rejection and any unverified interactive
+      approval/download-quarantine behavior. No paid signing/notarization is
+      planned for v1; do not describe the app as notarized or routinely trusted.
+- [ ] Rerun hosted checks when the billing block is resolved. Local unit/browser
+      results do not replace native acceptance of the new packaged artifacts.

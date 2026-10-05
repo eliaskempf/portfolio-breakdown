@@ -26,6 +26,15 @@ and all other files beside it. `--browser` selects the browser fallback.
 **Linux:** extract the application `.tar.gz` archive and run `./portfolio-app`.
 Keep its whole folder together. Linux continues to use your browser.
 
+Optional **experimental** native-window installers are developed separately:
+an Ubuntu 22.04/24.04 x64 `.deb` and an Apple Silicon macOS 14+ DMG. They are not
+covered by the supported-release acceptance above. Use only an explicitly
+identified experimental candidate; earlier artifacts may omit newer app fixes.
+The Mac app has ad-hoc integrity signing only, with no Developer ID signature or
+notarization planned for v1. Gatekeeper rejects quarantined copies; interactive
+approval and normal browser-download behavior remain unverified. These installers
+can be deferred independently of the Windows and Linux browser release.
+
 Initial acceptance targets are Windows 11 and Ubuntu 22.04/24.04 x64. An unsigned
 candidate may trigger Windows reputation warnings; a successful build alone is
 not native acceptance. Verify that the file came from the intended candidate.
