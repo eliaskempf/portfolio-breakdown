@@ -147,8 +147,8 @@ Latest completed installer matrix: [run 37336981212 at 8897023](https://github.c
 | Ubuntu 24.04 x64 / X11 | Rendering, file dialogs and other workflows passed; hidden-window focus intermittently reported visible but inactive in Qt. |
 | Ubuntu 24.04 x64 / Wayland | Actual Wayland desktop interactions, minimize/restore/focus and preserved document/input passed. A subsequent welcome-mode process exited with SIGSEGV. |
 
-The full installer matrix therefore remains **failed**, despite all Mac jobs
-passing. Subsequent [focused verification at 6b16b96](https://github.com/eliaskempf/portfolio-breakdown/actions/runs/37339481998)
+That hosted installer matrix failed on the two Linux jobs; all Mac jobs
+passed. Subsequent [focused verification at 6b16b96](https://github.com/eliaskempf/portfolio-breakdown/actions/runs/37339481998)
 passed Mac native controls, five independent packaged Mac browser workflows,
 and the Wayland source workflow. The browser-test change waits for panel motion
 to finish and verifies that the nested setup section opened before locating its
@@ -170,7 +170,32 @@ when Qt's activity flag remains false. The updated probe therefore verifies
 server-side focus and actual key delivery to an invented input after both
 restores; all nine source runs then passed. These containers use virtual displays
 and the host's WSL Linux kernel; they do not emulate macOS or physical hardware.
-The newer page-lifetime correction still requires a fresh built-artifact matrix. Keep macOS Developer ID signing /
+A fresh Linux installer was then built from clean commit `c76868c` inside Ubuntu
+22.04 (Python 3.12.14, glibc 2.35). Its SHA-256 is
+`a7227854789d0a431e073fc452cd30827ed8c1d3c73d376b79042b9fe5c722d7`.
+The same `.deb` passed the full installed native, browser and lifecycle checks
+on Ubuntu 22.04/X11 and Ubuntu 24.04/X11 and Wayland. Nine additional installed
+Wayland runs under GDB passed without a crash or profile/page warning, and
+reinstall/removal preserved the synthetic workspace. The full local test run had
+1,006 passes and one chart-view browser timeout; that test passed in isolation,
+and all six tests in its file passed on rerun. The earlier installer also
+passed nine debugger runs, so the original hosted SIGSEGV has not been
+conclusively attributed to the corrected lifetime defect.
+
+These local tests use Bubblewrap user namespaces, official Ubuntu Base images,
+non-root GUI processes, owned Xvfb/Openbox or Weston desktops, and network-isolated
+runtime checks. Only a source-only checkout and synthetic outputs are mounted;
+no personal portfolio, host display, credentials or Docker socket is exposed.
+Docker or a dev container can supply the same Linux userspace and virtual display.
+Neither supplies macOS Cocoa/WKWebView or Gatekeeper on a Linux host. Native test
+commands are unchanged inside the container; a bare Xvfb display still does not
+replace the required window manager/compositor.
+
+Documentation-only pushes no longer rebuild the experimental installers. Use
+focused source or existing-artifact diagnostics while investigating failures,
+and reserve the full hosted matrix for candidate acceptance.
+
+Keep macOS Developer ID signing /
 notarization, interactive Open Anyway approval, real browser quarantine
 propagation, physical displays and other desktop environments explicitly outside
 the verified evidence. This is stronger evidence for technical feasibility, not

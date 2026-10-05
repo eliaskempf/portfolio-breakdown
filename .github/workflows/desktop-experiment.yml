@@ -16,6 +16,7 @@ on:
         default: ''
   push:
     branches: [experiment/linux-macos-desktop]
+    paths-ignore: ["docs/**", "**/*.md"]
 permissions:
   contents: read
   actions: read
