@@ -105,5 +105,10 @@ if __name__ == '__main__':
     parser.add_argument('executable', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--desktop', action='store_true', help='Require real window-state/focus checks')
+    parser.add_argument('--browser-only', action='store_true')
     args = parser.parse_args()
-    run(args.executable.resolve(), args.output.resolve(), desktop=args.desktop)
+    if args.browser_only:
+        from package_smoke import smoke
+        smoke([str(args.executable.resolve()), '--browser'], evidence=args.output.resolve())
+    else:
+        run(args.executable.resolve(), args.output.resolve(), desktop=args.desktop)

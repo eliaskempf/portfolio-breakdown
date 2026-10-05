@@ -167,8 +167,10 @@ class PosixWindowPresentation:
                             # existing widget for an explicit repeat launch;
                             # keep its WebEngine document and server intact.
                             self.window.hide()
-                    self.window.restore()
                     self.window.show()
+                    # Qt ignores activation requests for an unmapped widget.
+                    # Show it before restore() raises and activates it.
+                    self.window.restore()
             stopped.set()
             thread.join(timeout=3)
         try:

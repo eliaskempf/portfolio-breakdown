@@ -94,6 +94,8 @@ input uses the system event stream only in an explicitly opted-in GitHub-hosted
 job while this test app owns the foreground. Local probes remain process-targeted;
 normal startup never enables this input path. No accessibility or Gatekeeper
 policy is changed by these tests.
+Set `mac_candidate_run` to an existing experimental workflow run ID to repeat
+the browser workflows against its verified Mac installer instead of source.
 
 `tools/desktop_gatekeeper.py APP --output NEW_DIRECTORY` checks a disposable
 quarantined copy on macOS without changing system policy. For this ad-hoc-signed

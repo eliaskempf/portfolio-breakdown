@@ -6,10 +6,15 @@ on:
         description: Run focused source diagnostics without building installers
         type: boolean
         default: false
+      mac_candidate_run:
+        description: Optional workflow run ID whose Mac installer should receive repeated browser tests
+        type: string
+        default: ''
   push:
     branches: [experiment/linux-macos-desktop]
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: desktop-experiment-${{ github.sha }}-${{ inputs.diagnostics_only || false }}
   cancel-in-progress: true
@@ -34,6 +39,23 @@ jobs:
           python-version: '3.13'
       - run: uv sync --locked --extra window --all-groups
       - run: uv run playwright install --with-deps chromium
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: ${{ runner.os == 'macOS' && inputs.mac_candidate_run != '' }}
+        with:
+          name: desktop-experiment-macos-arm64
+          path: dist/diagnostic-candidate
+          run-id: ${{ inputs.mac_candidate_run }}
+          github-token: ${{ github.token }}
+      - name: Install existing diagnostic candidate
+        if: ${{ runner.os == 'macOS' && inputs.mac_candidate_run != '' }}
+        run: |
+          cd dist/diagnostic-candidate
+          shasum -a 256 -c SHA256SUMS
+          mkdir -p "$RUNNER_TEMP/diagnostic-mount" "$RUNNER_TEMP/diagnostic-installed"
+          hdiutil attach ./*.dmg -nobrowse -mountpoint "$RUNNER_TEMP/diagnostic-mount"
+          ditto "$RUNNER_TEMP/diagnostic-mount/Portfolio Breakdown Experimental.app" "$RUNNER_TEMP/diagnostic-installed/Portfolio Breakdown Experimental.app"
+          hdiutil detach "$RUNNER_TEMP/diagnostic-mount"
+          echo "MAC_BROWSER_EXECUTABLE=$RUNNER_TEMP/diagnostic-installed/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-cli" >> "$GITHUB_ENV"
       - name: Linux diagnostic desktop
         if: runner.os == 'Linux'
         run: |
@@ -57,7 +79,11 @@ jobs:
         run: |
           failed=0
           for attempt in 1 2 3 4 5; do
-            uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/diagnostics/browser-$attempt" > "$RUNNER_TEMP/diagnostics/browser-$attempt.log" 2>&1 || failed=1
+            if [ -n "${MAC_BROWSER_EXECUTABLE:-}" ]; then
+              uv run python tools/desktop_smoke.py "$MAC_BROWSER_EXECUTABLE" --browser-only --output "$RUNNER_TEMP/diagnostics/browser-$attempt" > "$RUNNER_TEMP/diagnostics/browser-$attempt.log" 2>&1 || failed=1
+            else
+              uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/diagnostics/browser-$attempt" > "$RUNNER_TEMP/diagnostics/browser-$attempt.log" 2>&1 || failed=1
+            fi
           done
           exit "$failed"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
