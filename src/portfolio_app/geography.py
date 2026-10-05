@@ -12,11 +12,11 @@ import pandas as pd
 
 from portfolio_app.aggregation import classify_exposures
 from portfolio_app.countries import COUNTRIES
-from portfolio_app.etf import FundSnapshot, constituent_resolver
+from portfolio_app.etf import FundSnapshot, constituent_resolver, matching_fund
 from portfolio_app.taxonomy import Classifications, TaxonomyPath
 
 UNKNOWN = 'Unknown geography'
-SPECIAL = {'Gold', 'Crypto', 'Cash'}
+SPECIAL = {'Gold', 'Crypto', 'Cash', 'Money market'}
 REGIONS = {'United States', 'Other North America', 'Latin America & Caribbean',
            'Europe', 'Asia', 'Africa', 'Oceania'}
 COUNTRY_UNSPECIFIED = 'Country unspecified'
@@ -42,7 +42,7 @@ def country_lookup() -> dict[str, TaxonomyPath]:
         for alias in (name, country, alpha2, alpha3):
             result[alias.casefold()] = path
     for alias, code in {'UK': 'GB', 'U.K.': 'GB', 'U.S.': 'US', 'U.S.A.': 'US',
-                        'Korea': 'KR', 'Korea, Republic of': 'KR', 'Republic of Korea': 'KR',
+                        'Korea': 'KR', 'Korea (South)': 'KR', 'Korea, Republic of': 'KR', 'Republic of Korea': 'KR',
                         'Taiwan, Province of China': 'TW', 'Taiwan, China': 'TW',
                         'Czech Republic': 'CZ', 'Hong Kong SAR': 'HK', 'Macau': 'MO',
                         'United Kingdom of Great Britain and Northern Ireland': 'GB'}.items():
@@ -89,6 +89,14 @@ def resolve_geography(holdings: pd.DataFrame, funds: list[FundSnapshot],
     for row in holdings.to_dict('records'):
         asset = _text(row.get('analysis_asset_id')) or row['id']
         records[asset].append((row, 'Instrument metadata'))
+        fund = matching_fund(row, funds)
+        if (fund is not None and fund.breakdown_basis == 'economic'
+                and fund.asset_class == 'money_market' and not fund.constituents.empty
+                and 'instrument_type' in fund.constituents
+                and fund.constituents.instrument_type.eq('overnight_rate').all()
+                and abs(fund.constituents.weight.sum() - 1.) <= 1e-12):
+            records[asset].append(({'instrument_type': 'overnight_rate'},
+                                   f'{fund.name} · {fund.as_of} · Economic exposure'))
     resolve = constituent_resolver(holdings)
     for fund in funds:
         source = f'{fund.name} · {fund.as_of}' + (' (proxy)' if fund.proxy_source else '')
@@ -118,13 +126,16 @@ def resolve_geography(holdings: pd.DataFrame, funds: list[FundSnapshot],
             if kind in {'crypto', 'cash'}:
                 candidates.add((kind.title(),))
                 evidence.add(source)
+            if kind == 'overnight_rate':
+                candidates.add(('Money market',))
+                evidence.add(source)
             # Exact public issuer identity already supported by the listing catalog:
             # https://www.euwax-gold.de/ewg2ld/ . Physical/ETC alone is insufficient.
             if _text(row.get('isin')).upper() == 'DE000EWG2LD7':
                 candidates.add(('Gold',))
                 evidence.add('Verified gold instrument (ISIN)')
             country = _text(row.get('country'))
-            if country and kind not in {'etf', 'etc', 'cash', 'crypto', 'physical', 'non_equity'}:
+            if country and kind not in {'etf', 'etc', 'cash', 'crypto', 'physical', 'non_equity', 'overnight_rate'}:
                 normalized = country_lookup().get(country.casefold())
                 if normalized:
                     country_candidates.add(normalized)

@@ -33,6 +33,7 @@ def fund(country='DE', *, asset='constituent', kind='equity', fund_id='fund', is
     ('DEU', ('Europe', 'Germany')), ('United Kingdom', ('Europe', 'United Kingdom')),
     ('UK', ('Europe', 'United Kingdom')), ('US', ('United States', 'United States')),
     ('Taiwan', ('Asia', 'Taiwan')), ('Hong Kong', ('Asia', 'Hong Kong')),
+    ('Korea (South)', ('Asia', 'South Korea')),
     ('MX', ('Latin America & Caribbean', 'Mexico')), ('Canada', ('Other North America', 'Canada')),
     ('Europe', ('Europe', 'Country unspecified')), ('Gold', ('Gold',)),
     ('Invented territory', (UNKNOWN,)),
@@ -173,3 +174,23 @@ def test_geography_does_not_change_ai_membership_values_targets_or_percentages()
         new = compare_labels(exposures, enriched, labels, overlap='split')
         pd.testing.assert_frame_equal(old.table, new.table)
         pd.testing.assert_frame_equal(old.allocations, new.allocations)
+
+
+def test_overnight_economic_exposure_is_non_geographic_and_basket_is_excluded():
+    from dataclasses import replace
+    held = holdings().iloc[[1]].copy()
+    rate = pd.DataFrame([dict(constituent_id='invented-rate', name='Invented overnight rate',
+                             ticker='', isin='', weight=1., instrument_type='overnight_rate', country='LU')])
+    snapshot = replace(fund(), constituents=rate, asset_class='money_market', breakdown_basis='economic',
+                       basket=fund('Germany').constituents)
+    geography = resolve_geography(held, [snapshot], {})
+    assert geography.paths['fund'] == (('Money market',),)
+    assert geography.paths['invented-rate'] == (('Money market',),)
+    assert 'constituent' not in geography.paths
+    assert resolve_geography(held, [snapshot], {'fund': {'geography': (('Cash',),)}}).paths['fund'] == (('Cash',),)
+    # An ordinary money-market-labelled fund without verified economic holdings
+    # does not establish a country or overnight-rate exposure.
+    ordinary = replace(snapshot, breakdown_basis='holdings')
+    assert resolve_geography(held, [ordinary], {}).paths['fund'] == ((UNKNOWN,),)
+    partial = replace(snapshot, constituents=rate.assign(weight=.5))
+    assert resolve_geography(held, [partial], {}).paths['fund'] == ((UNKNOWN,),)

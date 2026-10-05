@@ -11,7 +11,7 @@ from portfolio_app.geography import (
 
 def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete: bool, query: str = ''):
     st.caption('Company country from local classifications and ETF metadata; this does not describe revenue by region. '
-               'Europe includes the UK. Gold, crypto, and cash are shown separately.')
+               'Europe includes the UK. Gold, crypto, cash and money market are shown separately.')
     allocations = geography_allocations(exposures, geography)
     total = exposures.value.sum()
     unknown = allocations.loc[allocations.path.map(lambda p: p[0] == UNKNOWN), 'value'].sum()

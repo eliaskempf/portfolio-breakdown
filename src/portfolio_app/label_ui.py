@@ -33,9 +33,13 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         st.info("Add classification labels to your investments to compare their allocation.")
         return
     with choose.popover("Choose labels"):
-        if st.session_state.get('label_compare_set') not in names:
-            st.session_state['label_compare_set'] = 'labels' if 'labels' in names else names[0]
-        taxonomy = st.selectbox("Label set", names, key="label_compare_set")
+        # A first live download can add sectors after this view has mounted.
+        # Adopt the useful default until the user explicitly chooses a label set.
+        if (st.session_state.get('label_compare_set') not in names
+                or not st.session_state.get('label_compare_set_chosen', False)):
+            st.session_state['label_compare_set'] = next((name for name in ('labels', 'sector') if name in names), names[0])
+        taxonomy = st.selectbox("Label set", names, key="label_compare_set",
+                                on_change=lambda: st.session_state.update(label_compare_set_chosen=True))
         choices = available_labels(classifications, taxonomy)
         by_key = {label.key: label for label in choices}
         unclassified = any(paths_for(classifications, asset, taxonomy) == (UNCLASSIFIED,) for asset in exposures.asset_id.unique())

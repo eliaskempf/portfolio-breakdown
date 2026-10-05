@@ -98,7 +98,7 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     assert not app.exception
     assert by_label(app.selectbox, "Portfolio workspace").value == "My portfolio"
     by_label(app.selectbox, "Portfolio workspace").set_value("Demo portfolio").run()
-    assert app.metric[0].value == "€100,000.00"
+    assert app.metric[0].value == "€93,184.35"
     position_action(app, "Edit position")
     by_label(app.number_input, "Quantity held (total)").set_value(9.)
     by_label(app.button, "Save position").click().run()
@@ -123,7 +123,7 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     second_demo = create_demo_data(tmp_path / "second-start")
     restarted = launch_workspaces(personal, second_demo, start_demo=True)
     assert not restarted.exception
-    assert restarted.metric[0].value == "€100,000.00"
+    assert restarted.metric[0].value == "€93,184.35"
     by_label(restarted.selectbox, "Portfolio workspace").set_value("My portfolio").run()
     restarted.session_state['exposure_sources_open'] = True
     activate(restarted, 'Exposure')

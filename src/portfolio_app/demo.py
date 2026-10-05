@@ -13,6 +13,16 @@ from portfolio_app.holdings import DataError
 
 STAMP = '2026-09-04T20:00:00+00:00'
 
+# Invented starting values and buy-in ratios, shared by both demo modes.
+# Category weights: 65.37/21.94/8.54/4.15%; targets: 60/25/10/5%.
+LIVE_EXAMPLES = {
+    'world': (44963.27, .874), 'emerging': (15954.84, 1.092),
+    'money-market': (20441.67, .9853), 'gold': (7958.32, .823),
+    'bitcoin': (2264.71, .8929), 'ethereum': (1601.54, 1.20),
+}
+OFFLINE_PRICES = {'XDWD.DE': 100., 'IS3N.DE': 50., 'XEON.DE': 150.,
+                  'EWG2.SG': 100., 'BTC-EUR': 70000., 'ETH-EUR': 2000.}
+
 
 def _write_csv(path, columns, rows):
     with path.open('w', newline='', encoding='utf-8') as handle:
@@ -29,7 +39,7 @@ def create_demo_data(directory: Path, *, live: bool = False) -> Path:
     if directory.exists() and any(directory.iterdir()):
         raise DataError('The demo directory is not empty. Use an empty directory; existing data will not be replaced.')
     directory.mkdir(parents=True, exist_ok=True)
-    # Actual sleeve values: 61/24/11/4 percent. Targets: 60/25/10/5.
+    # All ownership and costs are invented; public identities identify the instruments.
     # Buy-ins deliberately give both gains and losses; nothing is sampled at runtime.
     instruments = [
         ('world', 'Xtrackers MSCI World UCITS ETF 1C', 'XDWD.DE', 'IE00BJ0KDQ92',
@@ -43,6 +53,10 @@ def create_demo_data(directory: Path, *, live: bool = False) -> Path:
         ('bitcoin', 'Bitcoin', 'BTC-EUR', '', .04, 62500., 'crypto', .60, 'crypto', 'non_equity'),
         ('ethereum', 'Ethereum', 'ETH-EUR', '', .60, 2400., 'crypto', .40, 'crypto', 'non_equity'),
     ]
+    if not live:
+        instruments = [(*row[:4], LIVE_EXAMPLES[row[0]][0] / OFFLINE_PRICES[row[2]],
+                        round(OFFLINE_PRICES[row[2]] * LIVE_EXAMPLES[row[0]][1], 4), *row[6:])
+                       for row in instruments]
     _write_csv(directory / 'holdings.csv',
                ['id', 'name', 'ticker', 'isin', 'shares', 'acquisition_price', 'bucket_id',
                 'within_bucket_target', 'instrument_type', 'exposure_kind', 'acquisition_currency', 'account'],
@@ -54,31 +68,45 @@ def create_demo_data(directory: Path, *, live: bool = False) -> Path:
         dict(id='crypto', name='Crypto', target=.05),
     ]}, sort_keys=False), encoding='utf-8')
     prices = {ticker: dict(price=price, currency='EUR', observed_at=STAMP)
-              for ticker, price in [('XDWD.DE', 100.), ('IS3N.DE', 50.), ('XEON.DE', 150.),
-                                    ('EWG2.SG', 100.), ('BTC-EUR', 70000.), ('ETH-EUR', 2000.)]}
+              for ticker, price in OFFLINE_PRICES.items()}
     if not live:
         (directory / 'demo_prices.json').write_text(json.dumps({'prices': prices, 'fx': {}}), encoding='utf-8')
 
     classifications = {
         'world': {'asset_class': [['Equity', 'Developed markets']]},
         'emerging': {'asset_class': [['Equity', 'Emerging markets']]},
-        'money-market': {'asset_class': [['Money market', 'EUR overnight']]},
+        'money-market': {'asset_class': [['Money market', 'EUR overnight']],
+                         'geography': [['Money market']]},
         'gold': {'asset_class': [['Commodities', 'Precious metals', 'Gold']]},
         'bitcoin': {'asset_class': [['Crypto', 'Bitcoin']]},
         'ethereum': {'asset_class': [['Crypto', 'Ethereum']]},
     }
-    # Small, deliberately partial snapshots exercise constituents and residual
-    # Other without shipping provider exports or needing a network connection.
+    # Deliberately invented allocations, not scaled samples of actual issuer
+    # holdings. Public company metadata provides varied sectors and countries.
+    # A small residual still demonstrates honest incomplete-coverage handling.
     snapshots = [
         ('world', 'xtrackers_world', [
-            ('nvda', 'Nvidia', 'NVDA', 'US67066G1040', .08, 'Semiconductors', 'United States'),
-            ('msft', 'Microsoft', 'MSFT', 'US5949181045', .06, 'Software', 'United States'),
-            ('aapl', 'Apple', 'AAPL', 'US0378331005', .05, 'Hardware', 'United States'),
+            ('nvda', 'Nvidia', 'NVDA', 'US67066G1040', .135, 'Technology', 'United States'),
+            ('msft', 'Microsoft', 'MSFT', 'US5949181045', .125, 'Technology', 'United States'),
+            ('aapl', 'Apple', 'AAPL', 'US0378331005', .115, 'Technology', 'United States'),
+            ('jpm', 'JPMorgan Chase', 'JPM', '', .105, 'Financials', 'United States'),
+            ('novo', 'Novo Nordisk', 'NOVO-B.CO', '', .10, 'Health Care', 'Denmark'),
+            ('nestle', 'Nestlé', 'NESN.SW', '', .095, 'Consumer Staples', 'Switzerland'),
+            ('toyota', 'Toyota', '7203.T', '', .09, 'Consumer Discretionary', 'Japan'),
+            ('siemens', 'Siemens', 'SIE.DE', '', .08, 'Industrials', 'Germany'),
+            ('schneider', 'Schneider Electric', 'SU.PA', '', .075, 'Industrials', 'France'),
+            ('bhp', 'BHP', 'BHP.AX', '', .065, 'Materials', 'Australia'),
         ]),
         ('emerging', 'ishares_em_imi', [
-            ('tsmc', 'TSMC', '2330.TW', 'TW0002330008', .12, 'Semiconductors', 'Taiwan'),
-            ('tencent', 'Tencent', '0700.HK', 'KYG875721634', .05, 'Internet services', 'China'),
-            ('samsung', 'Samsung Electronics', '005930.KS', 'KR7005930003', .04, 'Hardware', 'South Korea'),
+            ('tsmc', 'TSMC', '2330.TW', 'TW0002330008', .22, 'Technology', 'Taiwan'),
+            ('tencent', 'Tencent', '0700.HK', 'KYG875721634', .15, 'Communication Services', 'China'),
+            ('samsung', 'Samsung Electronics', '005930.KS', 'KR7005930003', .12, 'Technology', 'South Korea'),
+            ('reliance', 'Reliance Industries', 'RELIANCE.NS', '', .11, 'Energy', 'India'),
+            ('hdfc', 'HDFC Bank', 'HDFCBANK.NS', '', .10, 'Financials', 'India'),
+            ('alibaba', 'Alibaba', '9988.HK', '', .09, 'Consumer Discretionary', 'China'),
+            ('vale', 'Vale', 'VALE3.SA', '', .08, 'Materials', 'Brazil'),
+            ('alrajhi', 'Al Rajhi Bank', '1120.SR', '', .065, 'Financials', 'Saudi Arabia'),
+            ('naspers', 'Naspers', 'NPN.JO', '', .055, 'Consumer Discretionary', 'South Africa'),
         ]),
     ]
     etfs = directory / 'etfs'
@@ -87,8 +115,8 @@ def create_demo_data(directory: Path, *, live: bool = False) -> Path:
     for asset, fund_id, constituents in ([] if live else snapshots):
         _, name, ticker, isin, *_ = by_id[asset]
         manifest = dict(fund_id=fund_id, name=name, isin=isin, tickers=[ticker],
-                        as_of=STAMP[:10], source='Synthetic demo — invented partial constituent weights',
-                        equity_fund=True, holdings_file=f'{fund_id}.csv',
+                        as_of=STAMP[:10], source='Synthetic demo — invented constituent weights',
+                        equity_fund=True, asset_class='equity', replication='physical', holdings_file=f'{fund_id}.csv',
                         notes='Offline illustration only; weights are invented, not actual fund holdings. '
                               'The remaining weight is shown as Other.')
         (etfs / f'{fund_id}.yaml').write_text(yaml.safe_dump(manifest, sort_keys=False), encoding='utf-8')
@@ -97,9 +125,27 @@ def create_demo_data(directory: Path, *, live: bool = False) -> Path:
         for identity, _, _, _, _, sector, country in constituents:
             classifications[identity] = {
                 'asset_class': [['Equity', 'Developed markets' if asset == 'world' else 'Emerging markets']],
-                'sector': [['Technology', sector]],
-                'geography': [['North America' if country == 'United States' else 'Asia', country]],
+                'sector': [[sector]],
+                'geography': [[country]],
             }
+    if not live:
+        # Mirror the live integration's economic model; its substitute basket
+        # is neither the investment exposure nor a company-country allocation.
+        fund_id = 'xtrackers_overnight'
+        _, name, ticker, isin, *_ = by_id['money-market']
+        (etfs / f'{fund_id}.yaml').write_text(yaml.safe_dump(dict(
+            fund_id=fund_id, name=name, isin=isin, tickers=[ticker], as_of=STAMP[:10],
+            source='Synthetic demo — invented offline snapshot',
+            holdings_file=f'{fund_id}.csv', asset_class='money_market',
+            replication='synthetic', breakdown_basis='economic',
+            notes='Offline illustration with invented position values. Economic exposure follows the '
+                  'overnight-rate benchmark, not a deposit or the substitute basket.'), sort_keys=False), encoding='utf-8')
+        _write_csv(etfs / f'{fund_id}.csv',
+                   ['constituent_id', 'name', 'ticker', 'isin', 'weight', 'instrument_type',
+                    'exposure_kind', 'market_currency'],
+                   [('overnight:eur-estr-plus-8.5bp',
+                     'EUR overnight rate · Solactive €STR +8.5 Daily Total Return Index',
+                     '', '', 1., 'overnight_rate', 'non_equity', 'EUR')])
     (directory / 'classifications.yaml').write_text(yaml.safe_dump({
         asset: {'classifications': paths} for asset, paths in classifications.items()
     }), encoding='utf-8')
@@ -107,14 +153,6 @@ def create_demo_data(directory: Path, *, live: bool = False) -> Path:
     if live:
         (directory / '.live-demo').write_text(sha256((directory / 'holdings.csv').read_bytes()).hexdigest(), encoding='ascii')
     return directory
-
-
-# Deliberately uneven values and buy-in ratios; these are examples, not observations.
-LIVE_EXAMPLES = {
-    'world': (40287.43, .874), 'emerging': (17432.18, 1.092),
-    'money-market': (22596.77, .9853), 'gold': (8951.62, .823),
-    'bitcoin': (2536.91, .8929), 'ethereum': (1379.44, 1.20),
-}
 
 
 def live_demo_pending(directory: Path) -> bool:
