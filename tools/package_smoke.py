@@ -83,21 +83,45 @@ def add_synthetic_fund(workspace):
     preferences.write_text(json.dumps({'enabled': False, 'minimum_age_days': 1}), encoding='utf-8')
 
 
-def open_setup_selector(page, name, evidence=None):
-    """Finish nested-expander motion and scrolling before opening an option list."""
+def settle_settings_panel(page):
     page.wait_for_function("""() => !document.querySelector('[data-testid=stPopoverBody]')
         .getAnimations({subtree: true}).some(animation => animation.playState === 'running'
             && animation.effect.getTiming().iterations !== Infinity)""")
+
+
+def capture_setup_failure(page, evidence):
+    if evidence is not None:
+        # This entrypoint owns an invented workspace; never attach these
+        # diagnostics to an arbitrary running user portfolio.
+        page.screenshot(path=str(evidence / 'selector-failure.png'), full_page=True)
+        (evidence / 'selector-failure.html').write_text(page.content(), encoding='utf-8')
+        (evidence / 'selector-failure.txt').write_text(page.locator('body').inner_text(), encoding='utf-8')
+
+
+def open_setup_section(page, name, evidence=None):
+    """Open a nested section only after its parent has finished moving."""
+    try:
+        settle_settings_panel(page)
+        summary = page.locator('summary').filter(has=page.get_by_text(name, exact=True))
+        summary.evaluate("el => el.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'})")
+        summary.evaluate('el => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        settle_settings_panel(page)
+        summary.click()
+        expect(summary.locator('..')).to_have_attribute('open', '')
+        settle_settings_panel(page)
+    except Exception:
+        capture_setup_failure(page, evidence)
+        raise
+
+
+def open_setup_selector(page, name, evidence=None):
+    """Finish nested-expander motion and scrolling before opening an option list."""
+    settle_settings_panel(page)
     control = page.get_by_role('combobox', name=name, exact=True)
     try:
         control.evaluate("el => el.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'})")
     except Exception:
-        if evidence is not None:
-            # This entrypoint owns an invented workspace; never attach these
-            # diagnostics to an arbitrary running user portfolio.
-            page.screenshot(path=str(evidence / 'selector-failure.png'), full_page=True)
-            (evidence / 'selector-failure.html').write_text(page.content(), encoding='utf-8')
-            (evidence / 'selector-failure.txt').write_text(page.locator('body').inner_text(), encoding='utf-8')
+        capture_setup_failure(page, evidence)
         raise
     # React Aria closes the list on ancestor scroll. Let the browser deliver that
     # scroll event before the click opens it; no fixed delay or forced click.
@@ -113,8 +137,8 @@ def exercise_manual_breakdown(page, evidence=None):
     # Exposure streams the settings controls before its remaining results.
     expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
     settings.click()
-    page.get_by_text('ETF refresh & snapshots', exact=True).click()
-    page.get_by_text('Set up a breakdown', exact=True).click()
+    open_setup_section(page, 'ETF refresh & snapshots', evidence)
+    open_setup_section(page, 'Set up a breakdown', evidence)
     position = open_setup_selector(page, 'Fund position', evidence)
     # This fixture has four options. Choose directly from the full list, avoiding
     # an asynchronous filtered-popup resize inside the settings popover.
