@@ -1,4 +1,6 @@
 """First-use choices use isolated, invented workspaces and existing save flows."""
+import pytest
+
 from portfolio_app.demo import create_demo_data
 from portfolio_app.positions import read_snapshot
 from test_startup import launch_workspaces
@@ -23,7 +25,7 @@ def test_welcome_demo_and_manual_save_are_isolated(tmp_path):
     by_label(app.button, 'Explore demo').click().run()
     assert not app.exception
     assert by_label(app.selectbox, 'Portfolio workspace').value == 'Demo portfolio'
-    assert app.metric[0].value == '€100,000.00'
+    assert app.metric[0].value == '€93,184.35'
     assert not (personal / 'holdings.csv').exists()
     by_label(app.selectbox, 'Portfolio workspace').set_value('My portfolio').run()
     by_label(app.button, 'Start my portfolio').click().run()
@@ -35,7 +37,7 @@ def test_welcome_demo_and_manual_save_are_isolated(tmp_path):
     by_label(app.button, 'Save position').click().run()
     assert not app.exception
     assert read_snapshot(personal / 'holdings.csv').holdings.shares.tolist() == [2.]
-    assert read_snapshot(demo / 'holdings.csv').holdings.shares.iloc[0] == 450
+    assert read_snapshot(demo / 'holdings.csv').holdings.shares.iloc[0] == pytest.approx(449.6327)
     restarted = launch_workspaces(personal, demo)
     assert not restarted.exception and restarted.tabs
     assert 'Explore demo' not in {button.label for button in restarted.button}

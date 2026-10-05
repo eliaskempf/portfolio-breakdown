@@ -106,6 +106,10 @@ Economic representation and basket coverage are separate. Provider cash netting
 can form a net liquidity pool without a country/currency assignment; it must not
 be read as extra equity exposure. Unsupported net borrowing is rejected.
 
+Verified overnight-rate economic exposure is shown separately as **Money market**
+in Geography, including when the ETF is shown whole. Substitute-basket countries
+do not describe this exposure and are excluded.
+
 Amundi Smart Overnight Return uses the same separation: its economic view is EUR
 overnight-rate exposure to the **ESTR Compounded Index**, while available top
 substitute-basket holdings appear separately at their published weights. Basket

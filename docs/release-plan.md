@@ -1093,3 +1093,170 @@ not an application test result. Fresh supported candidate and optional desktop
 builds/native checks remain pending until hosted execution is available.
 No old installer is promoted, and no tag, official release or Pages publication
 is authorized by this merge.
+
+## Demo breakdown and allocation correction (2026-10-05)
+
+Both public demo modes now share invented initial values around EUR 93,184.35,
+with equity/money-market gaps of approximately +5.37/-3.06 percentage points
+and uneven allocations within equity and crypto. Targets and one-time live
+quote sizing remain unchanged. The offline demo has 19 named equity constituents
+across sectors and regions, 1–1.5% residual fund weights, and XEON overnight-rate
+economic exposure. All example quantities, costs and fund weights are invented.
+
+Themes & sectors prefers populated sector metadata when curated labels are absent,
+including after an initial live download; explicit selections remain unchanged.
+Geography separates verified overnight-rate exposure as Money market and never
+uses the substitute basket's countries. The registered Emerging Markets source
+now uses the existing iShares JSON parser: the older XML document lacks country
+metadata. First-download failures surface a direction to the retry controls.
+
+The geography mapper also accepts the iShares country label “Korea (South)”.
+Read-only live checks successfully resolved World, Emerging Markets and XEON
+with issuer snapshots dated 2026-10-02. Browser checks of separately launched
+live and offline synthetic portfolios covered assets, sector charts, geography
+and drill-down, ETF toggling, and Rebalance navigation. No provider exports or
+runtime portfolios are included in source. New synthetic regressions cover
+initial download failures/retry, country metadata on install/refresh, residual
+conservation, geography coverage and delayed classification defaults.
+
+Validation: 1,023 non-browser tests passed (one skipped); the new demo browser
+regression, existing geography/ETF browser checks and onboarding browser check
+passed. Ruff, diff checks and the staged privacy check passed. Installer binaries
+were not rebuilt as part of this source change.
+
+### Building candidates locally while Actions is unavailable
+
+GitHub Actions is an orchestration option, not a packaging dependency. Use the
+existing build scripts on clean, isolated clones of the same exact commit, with
+the committed `uv.lock`. Do not build from a personal working checkout or copy
+its `data/`. Record the commit, OS, Python and uv versions, test results and
+artifact checksums. Local supported candidates identify their run as `local`;
+do not forge a GitHub run ID or treat older hosted artifacts as these builds.
+
+For Windows x64, use native Windows Python 3.12 and Inno Setup 6.5.4 (the existing
+candidate compiler version). Run from PowerShell in the isolated clone; use a
+fresh clone/output directory for each candidate. Git, uv and Git's `sh.exe` must
+be on this process's PATH; a minimal Git installation's `cmd` directory alone
+does not expose the shell needed to verify the real privacy hook. Add its
+`usr/bin` directory for the build process as needed:
+
+```powershell
+git config core.autocrlf false
+git config core.hooksPath .githooks
+Get-Command git, sh, uv
+# Set this to the actual compiler installation with its adjacent license.txt.
+$env:PORTFOLIO_ISCC = 'C:\build-tools\Inno Setup 6\ISCC.exe'
+$env:PORTFOLIO_REQUIRE_BROWSER = '1'
+uv sync --locked --all-groups --python 3.12
+uv run portfolio-check-private --tracked
+uv run ruff check src tests tools
+uv run playwright install chromium
+uv run pytest -q --junitxml=dist/test-results.xml
+uv run python tools/release.py build
+uv run python tools/release.py test
+```
+
+Check every command's exit code and stop on failure; PowerShell does not normally
+stop for a nonzero native exit code. The build downloads and verifies the
+Microsoft WebView2 prerequisite and matching license notices. It does not install
+or upgrade the application on the build host. The test step extracts the bundle
+outside the checkout and exercises synthetic browser/native workflows. A clean
+Windows 11 install/upgrade check remains separate from building on a development
+machine with Python installed.
+
+For supported Linux x64 browser bundles, run the equivalent commands in Ubuntu
+22.04, installing Chromium's required OS libraries. Test the same resulting bytes
+on Ubuntu 24.04 as well:
+
+```sh
+uv sync --locked --all-groups --python 3.12
+uv run portfolio-check-private --tracked
+uv run ruff check src tests tools
+uv run playwright install --with-deps chromium
+PORTFOLIO_REQUIRE_BROWSER=1 uv run pytest -q --junitxml=dist/test-results.xml
+uv run python tools/release.py build
+uv run python tools/release.py test
+```
+
+Use a dedicated Ubuntu VM/container or the isolated userspace procedure in
+`docs/desktop-experiment.md`; do not change the main development host's libraries
+to emulate a target. Build/test temporary files can live in a memory-backed
+namespace while completed artifacts and logs go to a larger disk. Read-only
+base images, independent scratch directories and synthetic workspaces keep
+other sessions and private portfolio data outside the build.
+
+Supported outputs are in `dist/candidate`: Windows Setup EXE, portable platform
+archive, corresponding source/wheel, frozen docs, notices, dependency inventory,
+manifest and SHA256SUMS. Keep each platform's directory intact. The Windows Setup
+EXE can be transferred directly to the tester without wrapping it in another ZIP.
+For an experimental Linux `.deb`, add the `window` extra and follow
+`tools/desktop_build.py` plus native X11/Wayland and install/removal checks from
+`docs/desktop-experiment.md`; those results remain separate from supported
+release acceptance.
+
+macOS installers are deferred: no Apple Silicon Mac is available for a fresh
+native build and verification. Existing Mac artifacts must not be renamed or
+represented as the current release. Paid signing/notarization remains out of
+scope.
+
+Local builds do not authorize publication. The current automatic promotion
+script specifically requires a successful Actions candidate from the default
+branch. When an official release is approved, either restore that workflow or
+review an explicit local-artifact publication path that preserves exact source,
+lock, docs and checksum verification and publishes the accepted bytes without
+rebuilding. Do not weaken the existing hosted-promotion checks merely to obtain
+a local installer.
+
+#### Local build evidence, 2026-10-05
+
+Built clean source `a39cf4f1de709ba14eacb4895d98eedba41db57b` with uv 0.12.10
+and Python 3.12.14. Windows and Linux supported manifests both record `run_id:
+local`, `source_clean: true`, and dependency lock SHA256
+`cc8c50abfd04e79e1b04d13a37ac44ce318105ec1a24e4b0e9ffe7ebd13d8ac1`.
+Their frozen documentation identities match. These are test candidates, not a
+final v1 release; later source changes require new builds.
+While these builds were running, another session advanced `release-v1` with
+demo/ETF/geography fixes at `d31305769bc8fe3a643cbd92f8d99319133f860e`.
+Those newer changes are not included in the `a39cf4f` artifacts. Rebuild the
+chosen final source after remaining integrations instead of relabeling these
+proof-of-process candidates as the latest release.
+
+- Ubuntu 22.04 full suite: **1,075 passed**. Supported browser bundle passed
+  extracted navigation/lifecycle checks on both Ubuntu 22.04 and 24.04.
+- Windows full suite initially had **1,071 passed, three expected POSIX skips**
+  and one privacy-hook failure because the local process PATH omitted the
+  existing Git shell. After adding Git's `usr/bin`, all **1,023 unit tests passed**
+  with the same three expected skips. Application source was unchanged.
+- Windows Setup/portable builds, content/privacy and license checks passed.
+  Extracted browser workflows and native welcome-screen close passed. The full
+  native smoke did **not** pass: the F11 control failed to transition on one run;
+  a diagnostic run on a fresh extraction could not acquire foreground focus.
+  This does not establish whether F11 works reliably for the user. Manual
+  Windows 11 installation, F11/monitor edges, upload/save dialogs, external links,
+  repeated launch and shutdown remain pending. The local host has Python
+  installed; the launched frozen process had Python/uv removed from PATH.
+- Experimental Linux payload passed native X11 checks on Ubuntu 22.04. The same
+  `.deb` was checksum-verified, extracted and tested on Ubuntu 24.04 under both
+  X11 and actual Wayland: rendering/navigation, native upload/download bytes,
+  focus/restore with preserved input, repeated launch and shutdown passed.
+  All nine desktop/welcome/early-close reports passed. Package-manager
+  installation/removal was not repeated for this build. Virtual desktops under
+  the WSL kernel do not establish physical-desktop acceptance.
+- Build workspaces and tests were synthetic and isolated. Ubuntu images were
+  mounted read-only, temporary Linux work lived in memory, and completed files
+  went to a separate disk. No other session's checkout, preview or portfolio was
+  used. macOS remains deferred.
+
+Delivered a `Portfolio-Breakdown-local-a39cf4f` folder with separate platform
+directories, source/notices/checksums and `local-validation.json`. Every copied
+artifact is checked against its supplied checksum list. Key SHA256 values:
+
+| Artifact | SHA256 |
+| --- | --- |
+| Windows Setup EXE | `00c65936550a6430a02ac17c18152cf3b27acf910c7ac8dccd2dd94c5d61edac` |
+| Linux browser archive | `359cd366a550df3d8d952b12a755af2128b4d8af5cbf09a666e2cde703cc8da5` |
+| Experimental Linux `.deb` | `ee4d3cacdfcd9248fe06e8eb2fea95882abbcbfd93cf07d6ea5850f687921e62` |
+
+Do not promote these files automatically or mark the remaining Windows native
+checks complete. The setup executable is ready to transfer for manual testing,
+without an additional ZIP wrapper.

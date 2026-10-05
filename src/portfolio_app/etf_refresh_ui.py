@@ -29,8 +29,11 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False):
         else:
             records = read_json(Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json') if not demo else {}
             failed = sum(records.get(f.isin, {}).get('status') == 'failed' for f in funds)
+            unavailable = sum(record.get('status') == 'unavailable' for record in records.values())
             old = sum(snapshot_age_days(f) > 7 for f in funds)
             parts = ([f'{old} outdated ETF snapshot(s)'] if old else []) + ([f'{failed} refresh(es) failed; saved data retained'] if failed else [])
+            if unavailable:
+                parts.append(f'{unavailable} ETF breakdown(s) unavailable · See Exposure → Data & settings → ETF refresh & snapshots to retry')
             if coordinator.error(data_dir) and not demo:
                 parts.append('ETF refresh unavailable')
             if parts:

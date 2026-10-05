@@ -19,12 +19,24 @@ For an explicitly synthetic example without market-data requests, use:
 uv run portfolio-app --demo --offline-demo
 ```
 
-The offline demo includes invented prices, history and deliberately partial ETF
-snapshots. Large residual **Other** values illustrate incomplete coverage; they
-are not claims about actual funds. Both demo modes use temporary files separate
+The offline demo includes invented prices, history and broad illustrative ETF
+snapshots. World and Emerging Markets show named companies across sectors and
+countries, with a small **Other** remainder (1–1.5%). These weights are invented,
+not claims about actual fund holdings. XEON shows its overnight-rate economic
+exposure, with **Money market** separate from countries in Geography.
+Both demo modes use temporary files separate
 from your persistent portfolio. Edits last for that server session and reset on
 restart. The app also offers **Explore demo** when starting from an empty
 portfolio.
+
+Both modes start around €93,184 with deliberately uneven positions: equities
+approximately 65.37% against a 60% target, money market 21.94% against 25%, gold
+8.54% against 10%, and crypto 4.15% against 5%. Within equities, World/EM is about
+73.81/26.19 against 70/30; Bitcoin/Ethereum is about 58.58/41.42 against 60/40.
+Live prices subsequently move those weights. **Exposure → Themes & sectors**
+opens on Sector when no curated theme labels are available. Actual live sector
+and geography coverage depends on the issuer downloads; missing metadata stays
+visible rather than being inferred from the fund's domicile.
 
 ## Start an empty portfolio {#empty}
 

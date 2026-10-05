@@ -45,7 +45,7 @@ SOURCES = {
     'IE00BJ0KDQ92': Source('xtrackers_world', 'Xtrackers MSCI World UCITS ETF 1C', ('XDWD.L', 'XDWD.DE'),
                           'Xtrackers', dws.SOURCE, dws.parse_holdings),
     'IE00BKM4GZ66': Source('ishares_em_imi', 'iShares Core MSCI EM IMI UCITS ETF', ('EIMI.L', 'IS3N.DE'),
-                          'iShares', ishares.download_url('264659'), ishares.parse_holdings),
+                          'iShares', ishares.holdings_url('264659'), ishares.parse_holdings_json),
     'LU1681041460': Source('amundi_europe_momentum', 'Amundi MSCI Europe Momentum UCITS ETF', ('MCEU.PA',),
                           'iShares', ishares.download_url('272019'), ishares.parse_holdings,
                           'iShares Edge MSCI Europe Momentum Factor UCITS ETF; same-index proxy, not Amundi holdings'),

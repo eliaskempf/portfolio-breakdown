@@ -216,7 +216,7 @@ def smoke(command, evidence=None):
                     expect(page.get_by_role('heading', name='Welcome to Portfolio Breakdown', exact=True)).to_be_visible()
                     page.get_by_role('button', name='Explore demo', exact=True).click()
                     page.locator('.js-plotly-plot').first.wait_for()
-                    expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('100,000.00', timeout=20000)
+                    expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('93,184.35', timeout=20000)
                     favicon = page.locator('link[rel="shortcut icon"]')
                     expect(favicon).to_have_attribute('href', re.compile(r'^data:image/svg\+xml;base64,'))
                     assert page.evaluate('''async href => {
@@ -327,7 +327,7 @@ def smoke(command, evidence=None):
                     browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
                     page = browser.new_page()
                     page.goto(re.search(r'http://127\.0\.0\.1:\d+', desktop.stdout)[0])
-                    expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('100,000.00', timeout=20000)
+                    expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('93,184.35', timeout=20000)
                     page.get_by_role('tab', name='Positions', exact=True).click()
                     page.get_by_role('table', name='Positions', exact=True).wait_for()
                     expect(page.get_by_role('table', name='Positions', exact=True)
@@ -351,7 +351,7 @@ def smoke(command, evidence=None):
                         browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
                         page = browser.new_page()
                         page.goto(gui_url)
-                        expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('100,000.00', timeout=20000)
+                        expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('93,184.35', timeout=20000)
                         expect(page.get_by_test_id('stException')).to_have_count(0)
                         browser.close()
                     subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,

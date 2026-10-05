@@ -140,7 +140,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             render_market_status(market_workspace, market_revision)
         if initialize_live_demo(data_dir, valued):
             st.rerun()
-        st.info('Preparing the demo with public quotes. Initial quantities will keep the category allocations close to their targets.')
+        st.info('Preparing the demo with public quotes. Initial quantities will include deliberate gaps from category and position targets.')
         if not market_coordinator.pending(market_workspace):
             st.warning('Some quotes are unavailable. Use Refresh prices to retry. Synthetic prices are never substituted for live data.')
             st.dataframe(valued.loc[valued.current_value_reporting.isna(), ['name', 'valuation_note']], hide_index=True)

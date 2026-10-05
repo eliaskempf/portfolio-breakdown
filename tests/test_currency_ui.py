@@ -58,14 +58,14 @@ def test_currency_change_cancel_then_exclusions_and_roundtrip(tmp_path):
     change_review(app, 'USD')
     by_label(app.button, 'Apply currency change').click().run()
     assert not app.exception
-    assert app.metric[0].value == '$111,111.11'
+    assert app.metric[0].value == '$103,538.17'
     assert (directory / 'holdings.csv').read_bytes() == original
     for tab in ['Positions', 'Exposure', 'Rebalance', 'Overview']:
         activate(app, tab)
         assert not app.exception
     change_review(app, 'EUR')
     by_label(app.button, 'Apply currency change').click().run()
-    assert app.metric[0].value == '€100,000.00'
+    assert app.metric[0].value == '€93,184.35'
     assert (directory / 'holdings.csv').read_bytes() == original
 
 

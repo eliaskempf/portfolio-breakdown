@@ -382,3 +382,26 @@ def test_workspace_copy_preserves_basket_and_refuses_external_basket(tmp_path):
     with pytest.raises(DataError, match='inside the workspace'):
         copy_workspace(directory, tmp_path / 'rejected')
     assert not (tmp_path / 'rejected').exists()
+
+
+def test_registered_emerging_fund_retains_json_country_metadata(tmp_path):
+    # The old document endpoint has no country column. Exercise the registered
+    # source and publication pipeline, using invented holdings in its response.
+    provider = Provider()
+    doc = json.loads(provider.holdings)
+    points = doc['componentsByNameMap']['holdings']['containersByNameMap']['all']['dataPointsByNameMap']
+    points['countryOfRisk']['value'] = ['Taiwan', 'India', '', '']
+    points['assetClass']['value'] = ['Equity', 'Equity', 'Money Market', 'Cash']
+    points['sectorName']['value'] = ['Technology', 'Financials', '', '']
+    points.pop('maturityDate')
+    provider.holdings = json.dumps(doc).encode()
+    fund = install_snapshot(tmp_path / 'etfs', 'IE00BKM4GZ66', fetch=provider)
+    restored = load_funds(tmp_path / 'etfs')[0]
+    assert fund.isin == 'IE00BKM4GZ66'
+    assert any('component=holdings&' in url for url in provider.calls)
+    assert not any('get-fund-document' in url for url in provider.calls)
+    assert restored.constituents.country.fillna('').tolist() == ['Taiwan', 'India', '']
+    assert restored.constituents.sector.fillna('').tolist() == ['Technology', 'Financials', '']
+    assert restored.constituents.weight.sum() == pytest.approx(1)
+    updated = refresh_snapshot(restored, fetch=provider)
+    pd.testing.assert_frame_equal(updated.constituents, fund.constituents)
