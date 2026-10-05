@@ -8,7 +8,7 @@ import time
 from desktop_smoke import run
 
 
-def session(backend, executable, output):
+def session(backend, executable, output, native_repeats=0):
     output.mkdir(parents=True, exist_ok=False)
     desktop_env = dict(os.environ)
     if backend == 'wayland':
@@ -39,7 +39,32 @@ def session(backend, executable, output):
                 time.sleep(.1)
             else:
                 raise TimeoutError('Wayland socket did not appear')
-            run(executable, output / 'app', desktop=True)
+            if native_repeats:
+                import json
+                reports = []
+                for attempt in range(native_repeats):
+                    for mode in ['desktop', 'welcome', 'early-close']:
+                        target = output / f'{attempt + 1}-{mode}'
+                        command = [str(executable), '--native-self-test', str(target), mode]
+                        if not executable.read_bytes()[:2] == b'#!':
+                            command = ['gdb', '--batch', '--return-child-result',
+                                       '-ex', 'set pagination off', '-ex', 'run',
+                                       '-ex', 'thread apply all bt', '--args', *command]
+                        with target.with_suffix('.log').open('w') as log:
+                            try:
+                                result = subprocess.run(command, stdout=log, stderr=log, timeout=180)
+                                code = result.returncode
+                            except subprocess.TimeoutExpired:
+                                code = 'timeout'
+                        report_path = target / 'native-result.json'
+                        report = json.loads(report_path.read_text()) if report_path.exists() else {}
+                        reports.append(dict(attempt=attempt + 1, mode=mode, exit=code,
+                                            status=report.get('status', 'missing')))
+                (output / 'repeated-results.json').write_text(json.dumps(reports, indent=2))
+                if any(r['exit'] or r['status'] != 'passed' for r in reports):
+                    raise RuntimeError('Repeated native checks failed; inspect diagnostic evidence')
+            else:
+                run(executable, output / 'app', desktop=True)
         finally:
             desktop.terminate()
             try:
@@ -54,5 +79,6 @@ if __name__ == '__main__':
     parser.add_argument('backend', choices=['x11', 'wayland'])
     parser.add_argument('executable', type=Path)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--native-repeats', type=int, default=0)
     args = parser.parse_args()
-    session(args.backend, args.executable.resolve(), args.output.resolve())
+    session(args.backend, args.executable.resolve(), args.output.resolve(), args.native_repeats)

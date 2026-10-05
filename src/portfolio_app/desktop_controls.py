@@ -87,6 +87,16 @@ def window_states(window, workspace, record, output):
         assert window.evaluate_js('window.__nativeFocusDocument') == 'Invented document sentinel'
         record('focus changes preserve the existing document and unsaved input')
     except TimeoutError as exc:
+        if sys.platform == 'linux' and not wayland:
+            import subprocess
+            from portfolio_app.desktop import system_environment
+            wid = gui(window, lambda: str(int(window.native.winId())))
+            with (output / 'x11-focus.txt').open('w') as log:
+                for args in [['-root', '_NET_ACTIVE_WINDOW', '_NET_CLIENT_LIST'],
+                             ['-id', wid, '_NET_WM_STATE', 'WM_STATE', '_NET_WM_USER_TIME']]:
+                    subprocess.run(['xprop', *args], stdout=log, stderr=log,
+                                   env=system_environment(), timeout=5)
+                log.write(f'Owned window: {wid}; Qt state: {last}\n')
         raise AssertionError(f'Window state did not converge: {last}') from exc
     finally:
         window.evaluate_js("document.querySelector('#native-focus-preserved')?.remove()")

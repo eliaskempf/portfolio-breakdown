@@ -92,6 +92,51 @@ jobs:
           name: desktop-diagnostics-${{ matrix.os }}
           path: ${{ runner.temp }}/diagnostics
           retention-days: 14
+  linux-diagnostics:
+    if: ${{ inputs.diagnostics_only }}
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [x11, wayland]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --locked --extra window --all-groups
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: desktop-experiment-linux-x64
+          path: dist/diagnostic-linux
+          run-id: '37336981212'
+          github-token: ${{ github.token }}
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y gdb xvfb openbox weston x11-utils libxcb-cursor0 libxkbcommon-x11-0 libegl1 libopengl0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-randr0 libxcb-shape0 libxcb-xfixes0
+          cd dist/diagnostic-linux
+          sha256sum -c SHA256SUMS
+          sudo apt-get install -y ./*.deb
+      - name: Repeat installed native checks with crash backtraces
+        id: frozen
+        continue-on-error: true
+        run: xvfb-run -a uv run python tools/desktop_session.py ${{ matrix.backend }} /opt/portfolio-breakdown-experimental/portfolio-window --native-repeats 3 --output "$RUNNER_TEMP/linux-diagnostics/frozen"
+      - name: Repeat source native checks with window-manager evidence
+        id: source
+        continue-on-error: true
+        run: xvfb-run -a uv run python tools/desktop_session.py ${{ matrix.backend }} .venv/bin/portfolio-window --native-repeats 3 --output "$RUNNER_TEMP/linux-diagnostics/source"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: desktop-linux-diagnostics-${{ matrix.backend }}
+          path: ${{ runner.temp }}/linux-diagnostics
+          retention-days: 14
+      - if: steps.frozen.outcome == 'failure' || steps.source.outcome == 'failure'
+        run: exit 1
   build:
     if: ${{ !inputs.diagnostics_only }}
     strategy:
