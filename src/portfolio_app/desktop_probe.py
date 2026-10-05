@@ -98,7 +98,7 @@ def main(output: Path, mode='render'):
                 if mode == 'desktop':
                     from portfolio_app.desktop_controls import window_states
                     try:
-                        window_states(window, workspace, record)
+                        window_states(window, workspace, record, output)
                         report['gaps'].remove('desktop focus policy')
                         report['gaps'].append('other desktop environments and physical displays')
                     except Exception as exc:

@@ -10,18 +10,26 @@ from desktop_smoke import run
 
 def session(backend, executable, output):
     output.mkdir(parents=True, exist_ok=False)
+    desktop_env = dict(os.environ)
     if backend == 'wayland':
+        if not os.environ.get('DISPLAY'):
+            raise RuntimeError('Wayland activation checks require an input seat; run this command under xvfb-run -a')
         runtime = output / 'runtime'
         runtime.mkdir(mode=0o700)
-        os.environ.update(XDG_RUNTIME_DIR=str(runtime), WAYLAND_DISPLAY='portfolio-test', QT_QPA_PLATFORM='wayland')
+        os.environ.update(XDG_RUNTIME_DIR=str(runtime), WAYLAND_DISPLAY='portfolio-test',
+                          QT_QPA_PLATFORM='wayland', PORTFOLIO_TEST_WESTON_SCENE='1')
+        desktop_env.update(XDG_RUNTIME_DIR=str(runtime))
+        desktop_env.pop('WAYLAND_DISPLAY', None)
+        # Weston gets a virtual keyboard/pointer from Xvfb. The app itself has
+        # no DISPLAY and must connect to our private Wayland socket.
         os.environ.pop('DISPLAY', None)
-        command = ['weston', '--backend=headless-backend.so', '--use-gl', '--socket=portfolio-test',
+        command = ['weston', '--backend=x11-backend.so', '--debug', '--socket=portfolio-test',
                    '--idle-time=0', '--width=1280', '--height=900']
     else:
         os.environ['QT_QPA_PLATFORM'] = 'xcb'
         command = ['openbox']
     with (output / 'desktop.log').open('w') as log:
-        desktop = subprocess.Popen(command, stdout=log, stderr=log)
+        desktop = subprocess.Popen(command, stdout=log, stderr=log, env=desktop_env)
         try:
             for _ in range(100):
                 if desktop.poll() is not None:

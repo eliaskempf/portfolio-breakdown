@@ -28,7 +28,7 @@ def gui(window, callback):
     return result[0]
 
 
-def window_states(window, workspace, record):
+def window_states(window, workspace, record, output):
     from portfolio_app.launcher import request_instance
     wayland = False
     if sys.platform == 'linux':
@@ -46,8 +46,27 @@ def window_states(window, workspace, record):
     def matches(**expected):
         last.update(gui(window, state))
         return all(last[k] == v for k, v in expected.items())
+    def scene_visible(expected, phase):
+        import re
+        import subprocess
+        from portfolio_app.desktop import system_environment
+        assert os.environ.get('PORTFOLIO_TEST_WESTON_SCENE') == '1', 'Wayland compositor-side verification unavailable'
+        result = subprocess.run(['weston-debug', 'scene-graph'], env=system_environment(),
+                                capture_output=True, text=True, check=True, timeout=5)
+        (output / f'wayland-scene-{phase}.txt').write_text(result.stdout, encoding='utf-8')
+        present = bool(re.search(rf'View \d+ \(role .*?, PID {os.getpid()},', result.stdout))
+        return present == expected
     try:
-        if not wayland:
+        if wayland:
+            wait(lambda: scene_visible(True, 'initial'), timeout=15)
+            window.minimize()
+            wait(lambda: scene_visible(False, 'minimized'), timeout=15)
+            assert matches(visible=True), 'Minimize unexpectedly hid/destroyed the client window'
+            record('Wayland compositor confirms minimized window removed from visible scene')
+            assert request_instance(workspace, 'focus')
+            wait(lambda: scene_visible(True, 'restored') and matches(active=True, visible=True), timeout=15)
+            record('repeat-launch focus restores and activates minimized native window')
+        else:
             window.minimize()
             wait(lambda: matches(minimized=True), timeout=15)
             record('desktop confirms window minimized')
@@ -59,11 +78,6 @@ def window_states(window, workspace, record):
         assert request_instance(workspace, 'focus')
         wait(lambda: matches(visible=True, active=True), timeout=15)
         record('repeat-launch focus shows and activates hidden native window')
-        if wayland:
-            # Qt deliberately clears WindowMinimized: xdg-shell never reports
-            # that state. A client-side flag cannot prove compositor behavior.
-            # Keep this acceptance check explicitly unverified, never green.
-            raise AssertionError('Unverified Wayland minimize/restore: xdg-shell does not report minimized state; compositor-side verification is required')
     except TimeoutError as exc:
         raise AssertionError(f'Window state did not converge: {last}') from exc
 

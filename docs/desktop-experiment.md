@@ -72,18 +72,20 @@ JavaScript checks run inside the actual packaged renderer; ordinary Chromium
 browser tests and health endpoints are supporting evidence only.
 
 The extended matrix tests native Cocoa file panels and minimize/restore/focus,
-an Openbox X11 session and a headless Weston Wayland session, plus the same
+an Openbox X11 session and an isolated Weston Wayland session, plus the same
 macOS 14-built DMG on macOS 15 and 26. The `desktop` mode requires a window
 manager/compositor; bare Xvfb is insufficient for activation checks.
 The Cocoa upload and save checks run independently so a picker automation
-failure cannot prevent collecting download evidence. Wayland checks hide/show
-activation but leave minimize/restore explicitly unverified: xdg-shell does not
-report minimized state, and Qt deliberately clears its client-side flag. That
-acceptance gap keeps the extended Wayland job failing until compositor-side
-verification is available; it is not evidence of a broken minimize action.
+failure cannot prevent collecting download evidence. Weston is nested inside
+Xvfb to supply a keyboard/pointer seat, which the older headless backend lacks.
+The app has no `DISPLAY` and must use the private Wayland socket. Its minimize
+check inspects Weston's scene graph because xdg-shell does not report minimized
+state and Qt deliberately clears its client-side flag. Weston debugging is
+enabled only on this disposable compositor, with a private runtime directory.
 
-The workflow's `diagnostics_only` manual input runs native Mac controls and five
-independent synthetic browser workflows without rebuilding installers. Selector
+The workflow's `diagnostics_only` manual input runs native Mac controls, five
+independent synthetic browser workflows, and a Wayland source test without
+rebuilding installers. Selector
 failures retain synthetic screenshots and page state. Mac file-panel keyboard
 input uses the system event stream only in an explicitly opted-in GitHub-hosted
 job while this test app owns the foreground. Local probes remain process-targeted;

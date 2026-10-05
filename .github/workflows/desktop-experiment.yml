@@ -18,7 +18,11 @@ env:
 jobs:
   diagnostics:
     if: ${{ inputs.diagnostics_only }}
-    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -29,12 +33,27 @@ jobs:
           version: '0.12.10'
           python-version: '3.13'
       - run: uv sync --locked --extra window --all-groups
-      - run: uv run playwright install chromium
+      - run: uv run playwright install --with-deps chromium
+      - name: Linux diagnostic desktop
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb weston libxcb-cursor0 libxkbcommon-x11-0 libegl1 libopengl0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-randr0 libxcb-shape0 libxcb-xfixes0
       - name: Native source controls
+        if: runner.os == 'macOS'
         timeout-minutes: 3
         run: uv run portfolio-window --native-self-test "$RUNNER_TEMP/diagnostics/native" desktop
+      - name: Wayland source controls
+        if: runner.os == 'Linux'
+        run: xvfb-run -a uv run python tools/desktop_session.py wayland .venv/bin/portfolio-window --output "$RUNNER_TEMP/diagnostics/wayland"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() && runner.os == 'macOS' }}
+        with:
+          name: desktop-diagnostics-native-macos
+          path: ${{ runner.temp }}/diagnostics/native
+          retention-days: 14
       - name: Repeated synthetic browser workflow
-        if: ${{ !cancelled() }}
+        if: ${{ runner.os == 'macOS' && !cancelled() }}
         run: |
           failed=0
           for attempt in 1 2 3 4 5; do
@@ -44,7 +63,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: desktop-diagnostics
+          name: desktop-diagnostics-${{ matrix.os }}
           path: ${{ runner.temp }}/diagnostics
           retention-days: 14
   build:
@@ -189,7 +208,7 @@ jobs:
           if [ "${{ matrix.backend }}" = x11 ]; then
             xvfb-run -a uv run python tools/desktop_session.py x11 /opt/portfolio-breakdown-experimental/portfolio-window --output "$RUNNER_TEMP/compat-native"
           else
-            uv run python tools/desktop_session.py wayland /opt/portfolio-breakdown-experimental/portfolio-window --output "$RUNNER_TEMP/compat-native"
+            xvfb-run -a uv run python tools/desktop_session.py wayland /opt/portfolio-breakdown-experimental/portfolio-window --output "$RUNNER_TEMP/compat-native"
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
