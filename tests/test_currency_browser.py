@@ -30,9 +30,22 @@ def test_currency_review_estimates_and_all_main_tabs(ux_page):
     dialog.get_by_role('button', name='Apply currency change').click()
     playwright.expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('$412.50')
     playwright.expect(page.get_by_role('columnheader', name='Value (USD)', exact=False).first).to_be_visible()
+    views = {
+        'Positions': page.get_by_role('table', name='Positions', exact=True),
+        'Exposure': page.get_by_role('table', name='Exposure assets', exact=True),
+        'Rebalance': page.get_by_role('button', name='Calculate plan', exact=True),
+        'Overview': page.get_by_role('radio', name='Allocation', exact=True),
+    }
     for tab in ['Positions', 'Exposure', 'Rebalance', 'Overview']:
-        page.get_by_role('tab', name=tab, exact=True).click()
+        navigation = page.get_by_role('tab', name=tab, exact=True)
+        playwright.expect(navigation).to_have_count(1)
+        navigation.click()
+        # Idle can briefly describe the previous run. Wait for this view's
+        # content before advancing through the next navigation interaction.
+        playwright.expect(views[tab]).to_be_visible()
         page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
+        playwright.expect(navigation).to_have_count(1)
+        playwright.expect(navigation).to_have_attribute('aria-selected', 'true')
         playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
     assert (directory / 'holdings.csv').read_bytes() == original
     page.reload()
