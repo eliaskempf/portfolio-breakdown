@@ -20,7 +20,13 @@ def pytest_sessionfinish(session, exitstatus):
     import os
     if os.environ.get('PORTFOLIO_REQUIRE_BROWSER') == '1':
         reporter = session.config.pluginmanager.get_plugin('terminalreporter')
-        if reporter and (reporter.stats.get('skipped') or session.testscollected == 0):
+        skipped_browsers = reporter and any(
+            report.nodeid.split('::', 1)[0].endswith('browser.py')
+            for report in reporter.stats.get('skipped', [])
+        )
+        # POSIX-only lifecycle tests legitimately skip on Windows. Browser
+        # test/module skips must still fail the required-browser job.
+        if skipped_browsers or session.testscollected == 0:
             session.exitstatus = 1
 
 

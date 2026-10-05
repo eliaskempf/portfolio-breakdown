@@ -149,6 +149,14 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('Portfolio')
     click_slice(page, 'ETF core')
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('ETF core')
+    # Category is rendered before the view switch and chart. Wait for the
+    # scoped rerun to finish so Performance is not clicked during replacement.
+    page.wait_for_function("""() => {
+        const categories = document.querySelectorAll('[role=combobox][aria-label="Category"]');
+        return document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'
+            && categories.length === 1 && categories[0].value === 'ETF core'
+            && document.querySelector('.js-plotly-plot')?.data?.[0]?.labels?.[0] === 'ETF core';
+    }""")
     page.get_by_role('radio', name='Performance', exact=True).click()
     playwright.expect(page.get_by_text('Cost (EUR)', exact=True)).to_have_count(1)
     assert page.locator('.js-plotly-plot').first.evaluate('el => el.data[0].type') == 'bar'

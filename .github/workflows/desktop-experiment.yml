@@ -1,0 +1,340 @@
+name: Experimental desktop candidates
+on:
+  workflow_dispatch:
+    inputs:
+      diagnostics_only:
+        description: Run focused source diagnostics without building installers
+        type: boolean
+        default: false
+      mac_candidate_run:
+        description: Optional workflow run ID whose Mac installer should receive repeated browser tests
+        type: string
+        default: ''
+      linux_candidate_run:
+        description: Optional workflow run ID whose Linux installer should receive native crash diagnostics
+        type: string
+        default: ''
+  push:
+    branches: [experiment/linux-macos-desktop]
+    paths-ignore: ["docs/**", "**/*.md"]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: desktop-experiment-${{ github.sha }}-${{ inputs.diagnostics_only || false }}
+  cancel-in-progress: true
+env:
+  PORTFOLIO_TEST_HOSTED_INPUT: '1'
+jobs:
+  diagnostics:
+    if: ${{ inputs.diagnostics_only && inputs.linux_candidate_run == '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: '0.12.10'
+          python-version: '3.13'
+      - run: uv sync --locked --extra window --all-groups
+      - run: uv run playwright install --with-deps chromium
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: ${{ runner.os == 'macOS' && inputs.mac_candidate_run != '' }}
+        with:
+          name: desktop-experiment-macos-arm64
+          path: dist/diagnostic-candidate
+          run-id: ${{ inputs.mac_candidate_run }}
+          github-token: ${{ github.token }}
+      - name: Install existing diagnostic candidate
+        if: ${{ runner.os == 'macOS' && inputs.mac_candidate_run != '' }}
+        run: |
+          cd dist/diagnostic-candidate
+          shasum -a 256 -c SHA256SUMS
+          mkdir -p "$RUNNER_TEMP/diagnostic-mount" "$RUNNER_TEMP/diagnostic-installed"
+          hdiutil attach ./*.dmg -nobrowse -mountpoint "$RUNNER_TEMP/diagnostic-mount"
+          ditto "$RUNNER_TEMP/diagnostic-mount/Portfolio Breakdown Experimental.app" "$RUNNER_TEMP/diagnostic-installed/Portfolio Breakdown Experimental.app"
+          hdiutil detach "$RUNNER_TEMP/diagnostic-mount"
+          echo "MAC_BROWSER_EXECUTABLE=$RUNNER_TEMP/diagnostic-installed/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-cli" >> "$GITHUB_ENV"
+      - name: Linux diagnostic desktop
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb weston libxcb-cursor0 libxkbcommon-x11-0 libegl1 libopengl0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-randr0 libxcb-shape0 libxcb-xfixes0
+      - name: Native source controls
+        if: runner.os == 'macOS'
+        timeout-minutes: 3
+        run: uv run portfolio-window --native-self-test "$RUNNER_TEMP/diagnostics/native" desktop
+      - name: Wayland source controls
+        if: runner.os == 'Linux'
+        run: xvfb-run -a uv run python tools/desktop_session.py wayland .venv/bin/portfolio-window --output "$RUNNER_TEMP/diagnostics/wayland"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() && runner.os == 'macOS' }}
+        with:
+          name: desktop-diagnostics-native-macos
+          path: ${{ runner.temp }}/diagnostics/native
+          retention-days: 14
+      - name: Repeated synthetic browser workflow
+        if: ${{ runner.os == 'macOS' && !cancelled() }}
+        run: |
+          failed=0
+          for attempt in 1 2 3 4 5; do
+            if [ -n "${MAC_BROWSER_EXECUTABLE:-}" ]; then
+              uv run python tools/desktop_smoke.py "$MAC_BROWSER_EXECUTABLE" --browser-only --output "$RUNNER_TEMP/diagnostics/browser-$attempt" > "$RUNNER_TEMP/diagnostics/browser-$attempt.log" 2>&1 || failed=1
+            else
+              uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/diagnostics/browser-$attempt" > "$RUNNER_TEMP/diagnostics/browser-$attempt.log" 2>&1 || failed=1
+            fi
+          done
+          exit "$failed"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: desktop-diagnostics-${{ matrix.os }}
+          path: ${{ runner.temp }}/diagnostics
+          retention-days: 14
+  linux-diagnostics:
+    if: ${{ inputs.diagnostics_only && inputs.linux_candidate_run != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [x11, wayland]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --locked --extra window --all-groups
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: desktop-experiment-linux-x64
+          path: dist/diagnostic-linux
+          run-id: ${{ inputs.linux_candidate_run }}
+          github-token: ${{ github.token }}
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y gdb xvfb openbox weston x11-utils libxcb-cursor0 libxkbcommon-x11-0 libegl1 libopengl0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-randr0 libxcb-shape0 libxcb-xfixes0
+          cd dist/diagnostic-linux
+          sha256sum -c SHA256SUMS
+          sudo apt-get install -y ./*.deb
+      - name: Repeat installed native checks with crash backtraces
+        id: frozen
+        continue-on-error: true
+        run: xvfb-run -a uv run python tools/desktop_session.py ${{ matrix.backend }} /opt/portfolio-breakdown-experimental/portfolio-window --native-repeats 3 --output "$RUNNER_TEMP/linux-diagnostics/frozen"
+      - name: Repeat source native checks with window-manager evidence
+        id: source
+        continue-on-error: true
+        run: xvfb-run -a uv run python tools/desktop_session.py ${{ matrix.backend }} .venv/bin/portfolio-window --native-repeats 3 --output "$RUNNER_TEMP/linux-diagnostics/source"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: desktop-linux-diagnostics-${{ matrix.backend }}
+          path: ${{ runner.temp }}/linux-diagnostics
+          retention-days: 14
+      - if: steps.frozen.outcome == 'failure' || steps.source.outcome == 'failure'
+        run: exit 1
+  build:
+    if: ${{ !inputs.diagnostics_only }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: linux-x64
+            python: '3.12'
+          - os: macos-14
+            target: macos-arm64
+            python: '3.13'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      QT_QPA_PLATFORM: xcb
+      LIBGL_DEBUG: verbose
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked --extra window --all-groups
+      - run: uv run portfolio-check-private --tracked
+      - run: uv run ruff check src tests tools
+      - name: POSIX policy and containment tests
+        run: uv run pytest tests/test_posix_desktop.py -q --junitxml=dist/posix-results.xml
+      - name: Linux native display dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb openbox x11-utils libxcb-cursor0 libxkbcommon-x11-0 libegl1 libopengl0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-randr0 libxcb-shape0 libxcb-xfixes0
+      - name: Verify native GUI session before packaging
+        id: source_native
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a uv run --extra window portfolio-window --native-self-test "$RUNNER_TEMP/source-native" render
+          else
+            uv run --extra window portfolio-window --native-self-test "$RUNNER_TEMP/source-native" render
+          fi
+      - run: uv run playwright install --with-deps chromium
+      # The PR's existing browser job runs the full browser suite. This job
+      # exercises the native renderer and the installed-package browser suite.
+      - name: Application and lifecycle unit tests
+        run: uv run pytest -q --ignore-glob='*browser*' --ignore=tests/test_posix_desktop.py --junitxml=dist/unit-results.xml
+      - run: uv run python tools/desktop_build.py
+      - name: Install Linux artifact and test native binary
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y ./dist/desktop-experiment/*.deb
+          xvfb-run -a uv run python tools/desktop_session.py x11 /opt/portfolio-breakdown-experimental/portfolio-window --output "$RUNNER_TEMP/installed-native"
+          uv run python -c 'import os; from pathlib import Path; from portfolio_app.demo import create_demo_data; create_demo_data(Path(os.environ["RUNNER_TEMP"]) / "upgrade-workspace")'
+          sha256sum "$RUNNER_TEMP/upgrade-workspace/holdings.csv" > "$RUNNER_TEMP/preserved.sha256"
+          sudo apt-get install --reinstall -y ./dist/desktop-experiment/*.deb
+          sudo apt-get remove -y portfolio-breakdown-experimental
+          sha256sum -c "$RUNNER_TEMP/preserved.sha256"
+          test ! -e /opt/portfolio-breakdown-experimental/portfolio-window
+      - name: Copy Mac app from DMG and test installed binary
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p "$RUNNER_TEMP/desktop-mount" "$RUNNER_TEMP/desktop-installed"
+          hdiutil attach dist/desktop-experiment/*.dmg -nobrowse -mountpoint "$RUNNER_TEMP/desktop-mount"
+          ditto "$RUNNER_TEMP/desktop-mount/Portfolio Breakdown Experimental.app" "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app"
+          hdiutil detach "$RUNNER_TEMP/desktop-mount"
+          codesign --verify --deep --strict "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app"
+          open -W -n "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app" --args --native-self-test "$RUNNER_TEMP/launch-services-native" render
+          uv run python tools/desktop_smoke.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-window" --desktop --output "$RUNNER_TEMP/installed-native"
+      - name: Verify unsigned Gatekeeper behavior
+        if: runner.os == 'macOS' && !cancelled()
+        run: uv run python tools/desktop_gatekeeper.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app" --output "$RUNNER_TEMP/gatekeeper"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: desktop-evidence-${{ matrix.target }}
+          path: |
+            dist/*-results.xml
+            ${{ runner.temp }}/source-native
+            ${{ runner.temp }}/installed-native
+            ${{ runner.temp }}/launch-services-native
+            ${{ runner.temp }}/gatekeeper/*.json
+            ${{ runner.temp }}/gatekeeper/*.log
+          retention-days: 14
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: desktop-experiment-${{ matrix.target }}
+          path: |
+            dist/desktop-experiment/*.deb
+            dist/desktop-experiment/*.dmg
+            dist/desktop-experiment/*.json
+            dist/desktop-experiment/*.txt
+            dist/desktop-experiment/SHA256SUMS
+            dist/desktop-experiment/source/*.whl
+            dist/desktop-experiment/source/*.tar.gz
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Require source native checks to pass
+        if: ${{ !cancelled() && steps.source_native.outcome != 'success' }}
+        run: exit 1
+  linux-compatibility:
+    if: ${{ always() && !cancelled() && !inputs.diagnostics_only }}
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [x11, wayland]
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: xcb
+      LIBGL_DEBUG: verbose
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: desktop-experiment-linux-x64
+          path: dist/downloaded
+      - run: uv sync --locked --extra window --all-groups
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb openbox weston x11-utils ./*.deb
+          sha256sum -c SHA256SUMS
+        working-directory: dist/downloaded
+      - run: uv run playwright install --with-deps chromium
+      - run: |
+          if [ "${{ matrix.backend }}" = x11 ]; then
+            xvfb-run -a uv run python tools/desktop_session.py x11 /opt/portfolio-breakdown-experimental/portfolio-window --output "$RUNNER_TEMP/compat-native"
+          else
+            xvfb-run -a uv run python tools/desktop_session.py wayland /opt/portfolio-breakdown-experimental/portfolio-window --output "$RUNNER_TEMP/compat-native"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: desktop-evidence-linux-24-${{ matrix.backend }}
+          path: ${{ runner.temp }}/compat-native
+          retention-days: 14
+  macos-compatibility:
+    if: ${{ always() && !cancelled() && !inputs.diagnostics_only }}
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: '0.12.10'
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: desktop-experiment-macos-arm64
+          path: dist/downloaded
+      - run: uv sync --locked --all-groups
+      - run: uv run playwright install chromium
+      - name: Verify and install the macOS 14-built DMG
+        run: |
+          cd dist/downloaded
+          shasum -a 256 -c SHA256SUMS
+          mkdir -p "$RUNNER_TEMP/desktop-mount" "$RUNNER_TEMP/desktop-installed"
+          hdiutil attach ./*.dmg -nobrowse -mountpoint "$RUNNER_TEMP/desktop-mount"
+          ditto "$RUNNER_TEMP/desktop-mount/Portfolio Breakdown Experimental.app" "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app"
+          hdiutil detach "$RUNNER_TEMP/desktop-mount"
+          codesign --verify --deep --strict "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app"
+      - name: Installed native and application checks
+        run: uv run python tools/desktop_smoke.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-window" --desktop --output "$RUNNER_TEMP/compat-native"
+      - name: Unsigned Gatekeeper behavior
+        if: ${{ !cancelled() }}
+        run: uv run python tools/desktop_gatekeeper.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app" --output "$RUNNER_TEMP/gatekeeper"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: desktop-evidence-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/compat-native
+            ${{ runner.temp }}/gatekeeper/*.json
+            ${{ runner.temp }}/gatekeeper/*.log
+          retention-days: 14

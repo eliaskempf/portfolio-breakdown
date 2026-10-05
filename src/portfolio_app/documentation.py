@@ -12,6 +12,8 @@ import threading
 def documentation_server():
     root = (Path(sys.executable).parent / 'documentation' if getattr(sys, 'frozen', False)
             else Path(__file__).resolve().parents[2] / 'dist/docs-site')
+    if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
+        root = Path(sys.executable).parent.parent / 'Resources/documentation'
     if not (root / 'build-info.json').is_file():
         yield
         return
