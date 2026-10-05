@@ -94,6 +94,14 @@ def cocoa_interactions(window, root, record):
     upload = root / 'invented-upload.txt'
     upload.write_text('Invented native upload', encoding='utf-8')
     download = root / 'invented-download.txt'
+    original_download_delegate = BrowserView.DownloadDelegate
+    download_events = []
+    class SyntheticDownloadDelegate(original_download_delegate):
+        def downloadDidFinish_(self, download):
+            download_events.append('finished')
+        def download_didFailWithError_resumeData_(self, download, error, data):
+            download_events.append(str(error))
+    BrowserView.DownloadDelegate = SyntheticDownloadDelegate
 
     def key(chars, code, modifiers=0):
         # Modern file panels live in another process. System input is allowed
@@ -126,6 +134,7 @@ def cocoa_interactions(window, root, record):
 
     def arm(path, saving):
         phase, deadline = [0], [time.monotonic() + 20]
+        active_panel = [None]
         def tick(timer):
             try:
                 panel = app.modalWindow()
@@ -141,16 +150,14 @@ def cocoa_interactions(window, root, record):
                 if phase[0] == 0:
                     if not isinstance(panel, A.NSSavePanel):
                         return
+                    active_panel[0] = panel
                     events.append('save' if saving else 'open')
                     if saving:
-                        panel.setDirectoryURL_(F.NSURL.fileURLWithPath_(str(path.parent)))
                         panel.setNameFieldStringValue_(path.name)
-                        phase[0] = 4
-                    else:
-                        key('', 5, A.NSEventModifierFlagCommand | A.NSEventModifierFlagShift)
-                        phase[0] = 1
+                    key('', 5, A.NSEventModifierFlagCommand | A.NSEventModifierFlagShift)
+                    phase[0] = 1
                 elif phase[0] == 1:
-                    for char in str(path):
+                    for char in str(path.parent if saving else path):
                         key(char, 0)
                     phase[0] = 2
                 elif phase[0] == 2:
@@ -159,10 +166,9 @@ def cocoa_interactions(window, root, record):
                 elif phase[0] == 3:
                     key('', 36)
                     phase[0] = 5
-                elif phase[0] == 4:
-                    key('', 36)
-                    phase[0] = 5
                 elif phase[0] == 5 and panel is None:
+                    selected = active_panel[0].URL()
+                    trace.append(['selected', str(selected.path()) if selected else None])
                     timer.invalidate()
             except Exception as exc:
                 errors.append(f'{type(exc).__name__}: {exc}')
@@ -218,8 +224,9 @@ def cocoa_interactions(window, root, record):
         assert events == ['save'], (events, errors)
         record('native Cocoa save panel writes exact downloaded bytes')
     except Exception as exc:
-        failures.append(f'save: panels={events}, errors={errors}, trace={trace}; {exc}')
+        failures.append(f'save: panels={events}, errors={errors}, trace={trace}, download={download_events}; {exc}')
     finally:
+        BrowserView.DownloadDelegate = original_download_delegate
         gui(window, stop)
         window.evaluate_js("document.querySelector('#native-probe-download')?.remove()")
     if failures:
