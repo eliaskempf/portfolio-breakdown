@@ -129,7 +129,18 @@ def main(output: Path, mode='render'):
             window = original_create(*args, **kwargs)
             if sys.platform == 'linux':
                 window.events.before_show += lambda: qt_dispatch(window)
-            window.events.shown += lambda: threading.Thread(target=inspect, args=(window,), daemon=True).start()
+            inspection_started = False
+            inspection_lock = threading.Lock()
+            def first_show():
+                nonlocal inspection_started
+                with inspection_lock:
+                    if inspection_started:
+                        return
+                    inspection_started = True
+                # Qt also emits shown when focus restores a hidden/minimized
+                # window. Those events must not start competing test workers.
+                threading.Thread(target=inspect, args=(window,), daemon=True).start()
+            window.events.shown += first_show
             return window
         webview.create_window = create
         try:
