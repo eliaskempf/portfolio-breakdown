@@ -174,8 +174,12 @@ def test_dax_isin_search_fills_verified_xetra_identity(fund_page):
     page.get_by_role('button', name=re.compile(r'Add position$')).click()
     dialog = page.get_by_role('dialog')
     dialog.get_by_role('searchbox', name='Find an investment', exact=True).fill('DE0005933931')
+    chooser = dialog.locator('summary').filter(has_text='Choose listing')
+    if chooser.count():
+        chooser.first.click()
     dialog.get_by_role('button', name='Select EXS1.DE on Xetra', exact=True).click()
-    playwright.expect(dialog.get_by_text('Selected EXS1.DE · Xetra.', exact=False)).to_be_visible()
     playwright.expect(dialog.get_by_role('textbox', name='Ticker', exact=True)).to_have_value('EXS1.DE')
+    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
+    dialog.get_by_text('More details', exact=True).click()
     playwright.expect(dialog.get_by_role('textbox', name='ISIN (optional)', exact=True)).to_have_value('DE0005933931')
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

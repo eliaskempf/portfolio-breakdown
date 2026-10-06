@@ -1,6 +1,7 @@
 """Overview with a single authoritative category scope."""
 
 from portfolio_app.currency_display import currency_symbol, reporting_currency
+from portfolio_app.ui_help import column_help
 from hashlib import sha256
 import json
 
@@ -37,13 +38,13 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             for index, node in enumerate(crumbs):
                 if index:
                     st.caption('›')
-                st.button(names.get(node, 'Portfolio'), key=f'strategic_crumb_{node}', type='tertiary',
+                st.button(names.get(node, 'Portfolio'), help='Navigate to this category and show its holdings and allocation.', key=f'strategic_crumb_{node}', type='tertiary',
                           disabled=node == bucket, on_click=lambda node=node: st.session_state.update({key: node}))
     with st.container(key='tour_overview_scope'):
         navigation, back = st.columns([5, 1], vertical_alignment='bottom')
-        bucket = navigation.selectbox('Category', options, key=key,
+        bucket = navigation.selectbox('Category', options, help='Choose the category to inspect; figures use that category’s current holdings.', key=key,
             format_func=labels.get)
-        back.button('Back', disabled=not bucket, width='stretch',
+        back.button('Back', help='Return to the preceding level of this view.', disabled=not bucket, width='stretch',
                     on_click=lambda: st.session_state.update({key: paths[bucket][-2] if len(paths[bucket]) > 1 else ''}))
         scope = names.get(bucket, 'Portfolio')
         selected = bucket_positions(valued, config, bucket)
@@ -55,20 +56,20 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         with first:
             value_metric(subtotal, performance, missing=missing, percent=percent,
                          key='overview_value', on_toggle_gain=on_toggle_gain)
-        second.metric('Portfolio share', f'{100 * subtotal / whole:.1f}%' if not missing and valued.current_value_reporting.notna().all() and whole else '—')
+        second.metric('Portfolio share', f'{100 * subtotal / whole:.1f}%' if not missing and valued.current_value_reporting.notna().all() and whole else '—', help='Current value of this selection divided by total portfolio value.')
     if performance.estimated_count:
         st.warning(f'Performance includes {performance.estimated_count} positions with estimated FX costs.')
     st.caption(f'{scope} · {len(selected)} positions · Performance coverage: {performance.covered_count} of {performance.held_count} held positions · converted buy-ins · Excludes dividends and realized gains')
     if missing:
         st.warning(f'{missing} position(s) missing prices. Chart areas use priced value; full allocation percentages are unavailable.')
-    mode = st.segmented_control('Overview view', ['Allocation', 'Performance', *(['Analytics'] if analytics else [])], default='Allocation', key='strategic_view', selection_mode='single', label_visibility='collapsed')
+    mode = st.segmented_control('Overview view', ['Allocation', 'Performance', *(['Analytics'] if analytics else [])], help='Switch between allocation, unrealized performance and available portfolio analytics.', default='Allocation', key='strategic_view', selection_mode='single', label_visibility='collapsed')
     if mode == 'Analytics':
         analytics(selected, scope)
         return
     if mode == 'Performance':
         with st.container(key='tour_performance'):
             table = strategic_performance(valued, config, bucket)
-            measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'],
+            measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'], help='Choose the financial measure represented by the chart.',
                 default='Return (%)', key='strategic_performance_measure') or 'Return (%)'
             chart_percent = measure == 'Return (%)'
             st.caption('Return compares unrealized gain with recorded buy-in cost. Monetary gain shows the amount gained or lost. Both are shown in the tables and on hover.')
@@ -87,7 +88,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 st.info('Percentage return is unavailable for zero buy-in cost. Choose Gain to see the monetary amounts.')
             else:
                 st.info('Add convertible buy-ins to see performance for this category.')
-            render_list(frame_rows(table), [ListColumn(column, column,
+            render_list(frame_rows(table), [ListColumn(column, column, help=column_help(column, scope=scope),
                         numeric=column in {'Cost', 'Gain', 'Return (%)'},
                         signed=column in {'Gain', 'Return (%)'}) for column in table],
                         key='strategic_performance_table', context=f'{position_context}_{bucket}_performance',
@@ -123,7 +124,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     table[col] = pd.to_numeric(table[col], errors='coerce')
                 if table['Status'].eq('').all():
                     table = table.drop(columns='Status')
-                render_list(frame_rows(table), [ListColumn(column, f'% of {scope}' if column == 'Current (%)' else column,
+                render_list(frame_rows(table), [ListColumn(column, f'% of {scope}' if column == 'Current (%)' else column, help=column_help(column, scope=scope),
                             numeric=column in {'Value', 'Current (%)', 'Target (%)', 'Gap (pp)'},
                             signed=column == 'Gap (pp)', color_signed=False) for column in table],
                             key='strategic_allocation_table', context=f'{position_context}_{bucket}_allocation',

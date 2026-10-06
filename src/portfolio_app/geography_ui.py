@@ -12,38 +12,32 @@ from portfolio_app.geography import (
 
 
 def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete: bool, query: str = ''):
-    st.caption('Company country from local classifications and ETF metadata; this does not describe revenue by region. '
-               'Europe includes the UK. Gold, crypto, cash and money market are shown separately.')
     allocations = geography_allocations(exposures, geography)
     total = exposures.value.sum()
     unknown = allocations.loc[allocations.path.map(lambda p: p[0] == UNKNOWN), 'value'].sum()
     regional_only = allocations.loc[allocations.path.map(lambda p: p[-1] == COUNTRY_UNSPECIFIED), 'value'].sum()
     special = allocations.loc[allocations.path.map(lambda p: p[0] in SPECIAL), 'value'].sum()
     country_value = total - unknown - regional_only - special
-    if total > 0:
-        st.caption((f'Country coverage: {country_value / total:.1%} of {"selected" if complete else "priced"} value · '
-                   f'Non-geographic: €{special:,.2f} · Region only: €{regional_only:,.2f} · Unknown geography: €{unknown:,.2f}').replace('€', currency_symbol()))
-    if not complete:
-        st.caption('Amounts include known values only; full-portfolio percentages are unavailable while prices are missing.')
     if query.strip():
         terms = exposures[['asset_name', 'ticker']].fillna('').agg(' '.join, axis=1).str.casefold()
         matching = set(exposures.loc[terms.str.contains(query.strip().casefold(), regex=False), 'asset_id'])
         allocations = allocations.loc[allocations.asset_id.isin(matching)]
-        st.caption('Search keeps percentages relative to the selected portfolio.')
     if allocations.empty:
         st.info('No assets match this search.')
         return
     level_col, detail_col = st.columns([1, 2])
-    level = level_col.segmented_control('Geography granularity', ['Regions', 'Countries'], default='Regions',
+    level = level_col.segmented_control('Geography granularity', ['Regions', 'Countries'],
+                                       help='Company country from local classifications and ETF metadata, not revenue by region. '
+                                            'Group by country or region; Europe includes the UK. Gold, crypto, cash and money market are shown separately.', default='Regions',
                                        key='geography_level') or 'Regions'
     paths = sorted({p[:i] for p in allocations.path for i in range(1, len(p) + 1)})
     if st.session_state.get('geography_detail', ()) not in [(), *paths]:
         st.session_state['geography_detail'] = ()
-    root = detail_col.selectbox('Geography detail', [(), *paths],
+    root = detail_col.selectbox('Geography detail', [(), *paths], help='Choose the geography breakdown to inspect. Search and drill-down keep percentages relative to the selected portfolio.',
                                format_func=lambda p: 'Entire selection' if not p else ' › '.join(p),
                                key='geography_detail')
     if root:
-        st.button('Back to geography overview', on_click=lambda: st.session_state.update(geography_detail=()))
+        st.button('Back to geography overview', help='Return from this geographic detail to the full geography view.', on_click=lambda: st.session_state.update(geography_detail=()))
     rows = allocations.loc[allocations.path.map(lambda p: p[:len(root)] == root)]
     assets = bool(root) and (len(root) == 2 or root[0] in SPECIAL | {UNKNOWN})
     if assets:
@@ -75,6 +69,11 @@ def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete:
     if not table['Missing valuations'].any():
         table = table.drop(columns='Missing valuations')
     table_area.dataframe(table, hide_index=True, width='stretch', column_config={
-        'Value': st.column_config.NumberColumn('Value' if complete else 'Known Value', format=('€ %.2f').replace('€', currency_symbol())),
+        'Value': st.column_config.NumberColumn('Value' if complete else 'Known Value', help='Exposure in the portfolio currency with available valuations; unavailable prices remain excluded.', format=('€ %.2f').replace('€', currency_symbol())),
         '% of selected portfolio': st.column_config.NumberColumn(format='%.2f %%'),
     })
+    if total > 0:
+        st.caption((f'Country coverage: {country_value / total:.1%} of {"selected" if complete else "priced"} value · '
+                   f'Non-geographic: €{special:,.2f} · Region only: €{regional_only:,.2f} · Unknown geography: €{unknown:,.2f}').replace('€', currency_symbol()))
+    if not complete:
+        st.caption('Amounts include known values only; full-portfolio percentages are unavailable while prices are missing.')

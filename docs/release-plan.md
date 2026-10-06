@@ -1351,3 +1351,194 @@ Source-installed lifecycle/import/ETF smoke checks passed; these do not establis
 frozen-executable acceptance. Installer rebuilds are explicitly deferred until
 all approved branches are integrated. Final Windows/native currency and tour
 checks remain on the release checklist. Nothing is tagged or published.
+
+## V1 position-entry and contextual-help polish (2026-10-05)
+
+Prepared on `feature/v1-ui-polish`, based on release-v1 `dbaca01`.
+
+- Position entry keeps quantity, linked average/total purchase cost, category and
+  target visible. Compact decimal inputs preserve unchanged saved precision;
+  the last edited cost remains authoritative when quantity changes. Account and
+  manual pricing move into More details, except essential physical-asset valuation.
+- Search uses explicit selection actions and verified-ISIN listing groups, removes
+  interest-specific suggestion chips, and retains manual entry and existing
+  instrument reuse. Reusing an existing identity retains the new position draft.
+- Optional purchase rows calculate a new holding through existing purchase
+  validation and atomic persistence. Manual drafts and table drafts survive mode
+  changes and dismissal. Sales accounting remains excluded.
+- Native control help and shared table-header help explain actions, units and
+  percentage scopes. Portfolio settings is distinct from Streamlit appearance;
+  launcher configuration hides developer menu controls while retaining themes.
+- Updated the positions/getting-started/reference guide and candidate checklist.
+  Holdings and purchase-history formats and dependencies are unchanged.
+
+Automated validation used temporary invented workspaces and offline market inputs.
+The complete 1,070-test suite ran with browser and documentation dependencies:
+1,068 passed; two browser assertions still expected the previous manual-entry
+visibility and absence of category help. Those assertions were updated to the
+intended controls, including real tooltip visibility, and both passed on rerun.
+The final focused 59-test run covered position entry, search, precision, purchase
+rows, draft recovery and the updated welcome flow; the category keyboard/help
+regression passed separately. All 1,070 cases are covered across these runs, with
+no skipped tests. Ruff correctness checks and the changed/untracked-file privacy
+scan passed; the staged index was not modified.
+
+The source application's browser/navigation/lifecycle smoke check passed,
+including import, save/restart and workspace recovery. The isolated preview was
+restarted after Python changes and checked in Chromium across Overview, Exposure,
+Positions and Rebalance, Light/Dark themes, linked cost entry and narrow layout,
+without application exceptions. No personal portfolio was read or changed.
+
+These source changes require a new candidate build and normal native-platform
+acceptance before release. No candidate, tag or release was published here.
+
+
+Follow-up UI review simplified identity to one row: an editable name and the
+read-only price ticker selected by search. Optional ISIN metadata appears only
+under More details; missing ISIN does not prevent ticker-based pricing. Explicit
+manual entry still permits typing a ticker. Listing detail enrichment accepts
+checksum-valid ISINs from exact-ticker metadata before optional lookup, and
+selected listing fields survive reruns and draft resumption.
+
+The buy-in currency selector is beside quantity and offers only EUR for new
+positions until acquisition FX support is implemented. Saved foreign costs remain
+in their original currency with a locked selector; unlabelled legacy costs stay
+unlabelled unless explicitly assigned EUR. No conversion or relabelling occurs.
+Full reporting-currency and historical acquisition FX support remains separate.
+
+The identity/currency browser checks passed, covering a single editable name,
+locked ticker, retained ISIN, EUR-only options, linked costs and narrow layouts.
+The restarted online synthetic preview passed live Apple search and the same
+form checks without saving a position or accessing personal data. Automated
+regressions use synthetic workspaces and offline inputs. Test fixtures now use
+the explicit manual-entry action when adding a holding without search.
+
+Field-help spacing now keeps Streamlit’s native help button 6 px beside its
+label instead of stretching to the input’s far edge. Three form browser tests
+passed. The restarted online preview was verified at 1440, 620 and 390 px with
+6 px gaps, mouse hover, keyboard focus and touch activation; column-heading
+hover/focus help also passed. Public demo quotes required one refresh retry.
+
+Pre-merge review (2026-10-05): corrected copied help text for sell protection,
+immediate category assignment, temporary caps and minimum purchases, and removed
+the getting-started guide’s incorrect claim that foreign purchase costs convert.
+The 1,076-case regression run had 1,073 passes and three legacy manual-entry test
+failures. Those tests now explicitly choose Enter manually; all three passed on
+rerun, and the relevant 26-test UI/startup suite passed. No tests were skipped.
+Documentation checks passed (11 tests), as did lint, diff whitespace checks and
+the changed-file privacy scan. The installed source application’s browser,
+navigation, import/save/restart and lifecycle smoke passed. The online preview
+was restarted and checked across all main tabs and corrected category help.
+
+The feature worktree is based on dbaca01. As of the 2026-10-06 merge handoff,
+release-v1 has advanced to cb7d348 with desktop packaging and demo fixes; those
+changes require integration checks when merging this branch. Currency support is
+a separate feature. A new candidate build and native-platform acceptance remain
+release gates, not prerequisites for this source merge.
+
+### UI integration handoff (2026-10-06)
+
+Integrate the complete `feature/v1-ui-polish` branch from the isolated worktree
+`/tmp/portfolio-v1-ui-polish`, including the geography follow-up after `4a0f9af`.
+That follow-up keeps the controls together, puts interpretation in tooltips and
+moves coverage/missing-price notes below the chart and table. No calculations or
+portfolio files change.
+
+Reviewed against release-v1 `cb7d348e9ab9270b9d9f523cc8e8146c76847e69`.
+A read-only three-way comparison identifies three conflicts for the release
+session to resolve during integration:
+
+- `docs/release-plan.md`: retain both sessions' appended handoffs.
+- `src/portfolio_app/label_ui.py`: retain release's sector-default selection and
+  explicit-selection callback, adding this branch's control help.
+- `src/portfolio_app/geography_ui.py`: retain this branch's controls-first layout
+  and move release's money-market explanation into the granularity tooltip.
+
+Preserve release's newer demo allocations/fixtures, ETF availability status,
+packaging changes and browser synchronization fixes in the files that merge
+without text conflicts. This branch changes no dependencies, lockfile, package
+configuration, file formats or core exposure/valuation calculations. Source
+smoke selectors were updated for the new manual-entry action and text quantities.
+
+Currency support remains an independent integration with substantial UI overlap.
+Adapt its cost-conversion controls to `holding_amounts` and the purchase-row save
+path; do not restore the old average/total switch. Replace EUR-only choices and
+EUR-specific help/docs only with the validated conversion feature, preserve saved
+foreign/unspecified costs and purchase components, and test both features
+combined. Buy/sell accounting remains deferred; optional rows cover purchases
+making up the current holding without intervening sales or splits.
+
+Source browser/navigation/import/save/restart/lifecycle smoke passed in this
+session. The online preview on port 8617 was restarted after the last Python
+change and checked again for live search, identity/currency fields, linked costs,
+geography controls/coverage/tooltips, country mode and narrow layouts. It uses
+an isolated invented demo; no personal portfolio was accessed or saved. Native
+Windows/macOS/Linux installer acceptance was not performed by this session.
+After integration, rerun combined tests and source smoke, build a fresh candidate,
+and perform the existing platform acceptance checklist for that exact build.
+No merge, publication or release tag was created here.
+
+Final branch validation: `uv run pytest -q` passed all 1,076 tests in 440.58 s
+with Chromium configured and browser checks required; no skips. Inputs were
+synthetic temporary workspaces with offline fixtures. Documentation checks passed
+separately (11 tests), as did Ruff, diff whitespace and tracked-file privacy
+checks. The complete branch is ready for integration with the above conflict
+resolutions; the merged release and the combined currency feature have not been
+validated by this run. The final handoff commit contains documentation only.
+
+## UI polish integrated with currency and tour (2026-10-06)
+
+The complete `feature/v1-ui-polish` history through
+`a1b27312be6126f0e860170d5b2d71f6503f037e` is integrated on top of release
+`c776a78bd538b2b15ddcae6b89902a45d360808d`, which already contains the currency
+and optional-tour branches. Integration uses an isolated worktree,
+`/tmp/portfolio-v1-polish-integration`, branch `integrate/v1-ui-polish`.
+The earlier EUR-only UI handoff describes its branch before this reconciliation;
+the combined app supports EUR/USD/GBP reporting and original purchase currencies.
+
+The compact form, explicit investment selection, linked average/total costs,
+optional purchase rows, contextual help, Portfolio settings menu and geography
+notes below results are retained. Currency conversion controls sit below the
+linked costs. Purchase rows accept per-row FX rates and use historical dates
+when supplied rates are absent; unavailable conversions exclude gains without
+removing available current valuations. Existing cost components and conversions
+survive metadata-only edits. A regression exposed scientific notation in saved
+costs being rejected by the editor; stored values now pass through decimal
+formatting before comparison with the draft.
+
+Tables and help use the reporting currency and neutral calculation fields.
+Tour containers, invitation/restoration state and disabled settings during the
+tour remain in place. The release's automatic sector/default-label selection
+is preserved alongside its new help, and money market remains explained in the
+geography tooltip. No dependency, lockfile or production packaging changes are
+introduced; the `uv run` workflow is preserved.
+
+Validation: the combined suite passed **1,185 tests** (1,124 non-browser and
+61 required Chromium browser tests), with no failures or skips. Final focused
+checks also passed: 12 rebalancing UI tests and the strengthened search test
+that preserves a foreign buy-in currency. Browser tests now wait for the manual
+position form to finish rerendering before opening its currency dropdown.
+An earlier run had Chromium tab crashes while the host's disk was nearly full;
+the successful full rerun used temporary browser profiles in RAM. This is a
+local test-environment workaround, not an application or packaging dependency.
+
+Source-installed startup, navigation, CSV/Excel import, save/restart, repeated
+launch, shutdown and backup/restore smoke checks passed. Ruff, whitespace,
+documentation generation (14 HTML pages, 30 help topics), wheel/source-archive
+content checks and staged privacy review passed. The commit hook remains enabled.
+All tests and previews use synthetic data.
+
+The final source preview was restarted after Python changes and browser-checked
+at `http://127.0.0.1:60919`, using its own temporary workspace under
+`/tmp/portfolio-v1-polish-preview`. Checks covered the Overview chart, GBP settings
+and valuation, linked foreign purchase costs, narrow forms, dark geography,
+tour restoration and GBP-labelled category planning. No application exceptions
+were observed and no positions were saved during inspection. This preview is
+unrelated to other sessions' previews or personal portfolios.
+
+Installer rebuilds remain deferred at the user's request until all intended v1
+branches have been integrated. Existing installers do not include this merge.
+Final combined native Windows/WebView2 acceptance, optional Linux installer
+acceptance and clean-machine checks remain required for newly built candidate
+bytes. macOS remains deferred. This integration does not authorize a release tag
+or publication.

@@ -21,7 +21,7 @@ def render_company_merges(plan: MergePlan, settings: MergeSettings, path: Path) 
             return
         context = sha256(str(path.resolve()).encode()).hexdigest()[:12]
         choices = {group.key: group for group in plan.groups}
-        selected = st.selectbox('Review company', list(choices), key=f'merge_review_{context}',
+        selected = st.selectbox('Review company', list(choices), help='Inspect suggested company identity matches before combining their exposures.', key=f'merge_review_{context}',
                                 format_func=lambda key: choices[key].name + (' *' if choices[key].basis == 'Estimated name match' else '')
                                 + (' · Separate' if not choices[key].enabled else ''))
         group = choices[selected]
@@ -39,6 +39,6 @@ def render_company_merges(plan: MergePlan, settings: MergeSettings, path: Path) 
                 save_settings(path, replace(settings, disabled=disabled))
             except (DataError, OSError) as exc:
                 st.session_state[error_key] = str(exc)
-        st.button(label, key=f'merge_action_{context}_{group.key}_{group.enabled}', on_click=change_merge)
+        st.button(label, help='Enable or disable this reviewed company-identity merge in exposure calculations.', key=f'merge_action_{context}_{group.key}_{group.enabled}', on_click=change_merge)
         if error := st.session_state.pop(error_key, None):
             st.error(error)

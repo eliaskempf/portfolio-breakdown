@@ -24,7 +24,7 @@ market closures. Crypto quotes older than 24 hours have a continuous-market note
 
 ## Unrealized performance {#performance}
 
-Choose **EUR**, **USD** or **GBP** during manual setup or in **Settings → Portfolio currency**.
+Choose **EUR**, **USD** or **GBP** during manual setup or in **Portfolio settings → Portfolio currency**.
 Existing portfolios default to EUR. Changing this setting recalculates values and
 gains from original records; it does not change purchase amounts or currencies.
 Review affected positions before applying. Monetary planning inputs and previous

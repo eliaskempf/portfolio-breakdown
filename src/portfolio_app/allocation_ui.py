@@ -24,7 +24,7 @@ def render_balances(path, snapshot):
     for column, default in [('holdings_confirmed_on', ''), ('acquisition_currency', '')]:
         if column not in rows:
             rows[column] = default
-    total_buy_in = st.radio('Buy-in entry', ['Average per unit', 'Total buy-in'], horizontal=True,
+    total_buy_in = st.radio('Buy-in entry', ['Average per unit', 'Total buy-in'], help='Enter average cost per unit or total cost of the remaining holding.', horizontal=True,
                            key=f'balance_buy_in_mode_{path}') == 'Total buy-in'
     cost_field = 'total_buy_in' if total_buy_in else 'acquisition_price'
     if total_buy_in:
@@ -34,12 +34,12 @@ def render_balances(path, snapshot):
     with st.form(key):
         edited = persistent_editor(rows[['position_id', 'name', 'account', *fields]], key=key + '_rows', hide_index=True,
                                 disabled=['position_id', 'name', 'account'], width='stretch',
-                                column_config={'position_id': None, 'shares': st.column_config.NumberColumn('Quantity', min_value=0., format='%.10f'),
+                                column_config={'position_id': None, 'shares': st.column_config.NumberColumn('Quantity', help='Number of held units, including fractional quantities.', min_value=0., format='%.10f'),
                                                cost_field: st.column_config.NumberColumn('Total buy-in (optional)' if total_buy_in else 'Average buy-in (optional)', min_value=0., format='%.8f',
                                                                                         help='Cost of the quantity currently held, in the buy-in currency.' if total_buy_in else None),
                                                'acquisition_currency': 'Buy-in currency',
                                                'holdings_confirmed_on': 'Holdings confirmed (YYYY-MM-DD)'})
-        confirm_today = st.checkbox('Confirm all displayed balances as of today')
+        confirm_today = st.checkbox('Confirm all displayed balances as of today', help='Mark today as the date these quantities were checked against your records.')
         submit = st.form_submit_button('Save replacement balances')
     if submit:
         try:
@@ -75,13 +75,13 @@ def _bucket_editor(config, key, holdings=None):
     drafts = st.session_state.setdefault('targets_drafts', {})
     draft = drafts.setdefault(key, {'rows': frame, 'generation': 0})
     add, delete, _ = st.columns([1, 1, 3])
-    with add.popover('Add category', width='stretch'):
+    with add.popover('Add category', help='Add a category to the draft hierarchy; save to make it persistent.', width='stretch'):
         with st.form(key + '_add'):
-            name = st.text_input('Category name')
+            name = st.text_input('Category name', help='Display name for this category in charts and target editors.')
             parent = st.selectbox('Parent category', ['', *labels], format_func=lambda v: labels.get(v, 'Portfolio'),
                                   help='Save a new category before selecting it as a parent.')
-            target = st.number_input('Target (% of parent)', min_value=0., max_value=100., value=None)
-            protected = st.toggle('Protect from selling')
+            target = st.number_input('Target (% of parent)', help='Desired share of the parent category; top-level categories use the whole portfolio.', min_value=0., max_value=100., value=None)
+            protected = st.toggle('Protect from selling', help='Prevent sell suggestions when rebalancing this category or its descendants.')
             if st.form_submit_button('Add to draft'):
                 if not name.strip():
                     st.error('Enter a category name.')
@@ -91,11 +91,11 @@ def _bucket_editor(config, key, holdings=None):
                     draft['rows'] = pd.concat([draft['rows'], pd.DataFrame([row])], ignore_index=True)
                     draft['generation'] += 1
                     st.rerun()
-    with delete.popover('Delete categories', width='stretch'):
+    with delete.popover('Delete categories', help='Choose categories to remove from the draft hierarchy.', width='stretch'):
         names = dict(zip(draft['rows'].ID, draft['rows'].Name))
-        selected = st.multiselect('Categories to delete', list(names), format_func=lambda v: labels.get(v, names[v]),
+        selected = st.multiselect('Categories to delete', list(names), help='Select the categories to remove; review the remaining hierarchy before saving.', format_func=lambda v: labels.get(v, names[v]),
                                   key=key + '_delete_selection')
-        if st.button('Remove from draft', disabled=not selected, key=key + '_delete'):
+        if st.button('Remove from draft', help='Remove the selected categories from this unsaved draft.', disabled=not selected, key=key + '_delete'):
             try:
                 candidate = _config_from_rows(draft['rows'], config)
                 candidate = Allocation(tuple(b for b in candidate.buckets if b.id not in selected))
@@ -152,7 +152,7 @@ def category_position_editor(positions, config, *, key, extra=(), filtered=False
             options.append('')
         if st.session_state.get(key + '_filter', '*') not in options:
             st.session_state[key + '_filter'] = '*'
-        selected = st.selectbox('Position category', options,
+        selected = st.selectbox('Position category', options, help='Choose the category that owns each selected position.',
             format_func=lambda v: 'All categories' if v == '*' else labels.get(v, 'Unassigned'), key=key + '_filter')
     if selected != draft['filter']:
         draft['generation'] += 1
@@ -190,7 +190,7 @@ def render_allocation_editor(path: Path, snapshot, config):
         edited = category_position_editor(preview, proposed, key=f'targets_migration_positions_{snapshot.revision}', extra=['portfolio', 'Legacy target (% of portfolio)'])
         st.caption('Existing target numbers are copied without normalization. Review each bucket total before enabling; incomplete totals remain visible and block only calculations that require them.')
         _target_summary(edited, proposed)
-        if st.button('Enable reviewed allocation', type='primary'):
+        if st.button('Enable reviewed allocation', help='Save and enable the allocation hierarchy after reviewing its targets.', type='primary'):
             try:
                 candidate = _config_from_rows(rows, proposed)
                 preview['bucket_id'] = edited.bucket_id.fillna('')
@@ -206,8 +206,8 @@ def render_allocation_editor(path: Path, snapshot, config):
         category_key = f'targets_categories_{stamp}_{snapshot.revision}'
         rows = _bucket_editor(config, category_key, snapshot.holdings)
         save, discard, _ = st.columns([1, 1, 3])
-        discard.button('Discard changes', key=category_key + '_discard', on_click=_discard_draft, args=(category_key,))
-        if save.button('Save categories', type='primary'):
+        discard.button('Discard changes', help='Restore the saved values and discard this editor’s changes.', key=category_key + '_discard', on_click=_discard_draft, args=(category_key,))
+        if save.button('Save categories', help='Validate and save the category hierarchy and its targets.', type='primary'):
             try:
                 if revision(path) != snapshot.revision:
                     raise DataError('Positions changed. Reload before saving categories.')
@@ -227,8 +227,8 @@ def render_allocation_editor(path: Path, snapshot, config):
         edited = category_position_editor(positions, config, key=position_key, extra=['account'], filtered=True)
         _target_summary(edited, config)
         save, discard, _ = st.columns([1, 1, 3])
-        discard.button('Discard changes', key=position_key + '_discard', on_click=_discard_draft, args=(position_key,))
-        if save.button('Save position targets', type='primary'):
+        discard.button('Discard changes', help='Restore the saved values and discard this editor’s changes.', key=position_key + '_discard', on_click=_discard_draft, args=(position_key,))
+        if save.button('Save position targets', help='Save the displayed position targets within their assigned categories.', type='primary'):
             try:
                 if revision(config_path) != stamp:
                     raise DataError('Category settings changed. Reload before saving.')
@@ -248,19 +248,19 @@ def render_allocation_editor(path: Path, snapshot, config):
 def render_bulk_bucket_assignment(path, snapshot, config, stamp):
     if snapshot.holdings.empty or not config.leaves():
         return
-    with st.popover('Assign positions'):
+    with st.popover('Assign positions', help='Choose positions and a destination category; Assign saves the changes to holdings.'):
         labels = {r.position_id: f'{r["name"]} · {r.account}' if r.account else r['name']
                   for _, r in snapshot.holdings.iterrows()}
         key = f'bulk_bucket_positions_{path}_{snapshot.revision}'
         all_button, clear_button, _ = st.columns([1, 1, 3])
-        all_button.button('Select all', on_click=lambda: st.session_state.update({key: list(labels)}))
-        clear_button.button('Clear selection', on_click=lambda: st.session_state.update({key: []}))
-        selected = st.multiselect('Positions to assign', list(labels), format_func=labels.get, key=key)
+        all_button.button('Select all', help='Select every displayed position for this operation.', on_click=lambda: st.session_state.update({key: list(labels)}))
+        clear_button.button('Clear selection', help='Deselect all positions without changing saved data.', on_click=lambda: st.session_state.update({key: []}))
+        selected = st.multiselect('Positions to assign', list(labels), help='Choose the holdings whose category assignment should change.', format_func=labels.get, key=key)
         names = category_labels(config)
         destination = st.selectbox('Destination category', sorted(config.leaves()),
                                    format_func=lambda value: names[value],
                                    help='Only the category changes. Quantities, costs, labels and within-category target percentages stay unchanged.')
-        if st.button(f'Assign {len(selected)} positions', disabled=not selected, type='primary'):
+        if st.button(f'Assign {len(selected)} positions', help='Save the selected category assignment to these holdings immediately.', disabled=not selected, type='primary'):
             try:
                 if revision(path.parent / 'allocation.yaml') != stamp:
                     raise DataError('Category settings changed. Reload before assigning positions.')

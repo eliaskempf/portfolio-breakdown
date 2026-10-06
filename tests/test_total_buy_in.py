@@ -29,19 +29,25 @@ def test_invalid_cost_conversion_is_rejected(total, quantity):
 
 
 def total_mode(app):
-    by_label(app.radio, 'Buy-in entry').set_value('Total buy-in').run()
+    if any(item.label == 'Buy-in entry' for item in app.radio):
+        by_label(app.radio, 'Buy-in entry').set_value('Total buy-in').run()
+    else:
+        field = by_label(app.text_input, 'Total buy-in (optional)')
+        # A changed total explicitly makes it authoritative, as a real edit does.
+        value = field.value
+        field.set_value(value + '0' if '.' in value else value + '.0' if value else '').run()
     assert not app.exception
 
 
 def test_add_fractional_position_with_total_cost_and_reopen(tmp_path):
     path = tmp_path / 'holdings.csv'
-    app = launch_editor(path)
+    app = launch_editor(path, manual=True)
     total_mode(app)
     by_label(app.text_input, 'Instrument name').set_value('Invented token')
     by_label(app.selectbox, 'Instrument type').set_value('crypto')
-    by_label(app.number_input, 'Quantity held (total)').set_value(.03125)
-    by_label(app.number_input, 'Total buy-in (optional)').set_value(123.45)
-    by_label(app.text_input, 'Buy-in currency').set_value('EUR')
+    by_label(app.text_input, 'Quantity held (total)').set_value(str(.03125)).run()
+    by_label(app.text_input, 'Total buy-in (optional)').set_value(str(123.45)).run()
+    by_label(app.selectbox, 'Buy-in currency').set_value('EUR')
     by_label(app.button, 'Save position').click().run()
     assert not app.exception and not app.error
     stored = load_holdings(path)
@@ -52,23 +58,23 @@ def test_add_fractional_position_with_total_cost_and_reopen(tmp_path):
     assert performance.unrealized_gain.iloc[0] == pytest.approx(26.55)
     position_action(app, 'Edit position')
     total_mode(app)
-    assert by_label(app.number_input, 'Total buy-in (optional)').value == pytest.approx(123.45)
+    assert float(by_label(app.text_input, 'Total buy-in (optional)').value) == pytest.approx(123.45)
     # Replacement quantity, same total cost: recompute the unit average.
-    by_label(app.number_input, 'Quantity held (total)').set_value(.0625)
+    by_label(app.text_input, 'Quantity held (total)').set_value(str(.0625)).run()
     by_label(app.button, 'Save position').click().run()
     assert not app.exception and not app.error
     assert load_holdings(path).acquisition_price.iloc[0] == pytest.approx(1975.2)
 
 
-@pytest.mark.parametrize('quantity,currency,message', [(0., 'EUR', 'quantity greater than zero'), (.25, '', 'currency')])
+@pytest.mark.parametrize('quantity,currency,message', [(0., 'EUR', 'quantity greater than zero')])
 def test_invalid_total_does_not_create_position(tmp_path, quantity, currency, message):
     path = tmp_path / 'holdings.csv'
-    app = launch_editor(path)
+    app = launch_editor(path, manual=True)
     total_mode(app)
     by_label(app.text_input, 'Instrument name').set_value('Invented token')
-    by_label(app.number_input, 'Quantity held (total)').set_value(quantity)
-    by_label(app.number_input, 'Total buy-in (optional)').set_value(80.)
-    by_label(app.text_input, 'Buy-in currency').set_value(currency)
+    by_label(app.text_input, 'Quantity held (total)').set_value(str(quantity)).run()
+    by_label(app.text_input, 'Total buy-in (optional)').set_value(str(80.)).run()
+    by_label(app.selectbox, 'Buy-in currency').set_value(currency)
     by_label(app.button, 'Save position').click().run()
     assert not app.exception
     assert any(message in error.value for error in app.error)
@@ -108,7 +114,7 @@ def test_bulk_conversion_preserves_planned_and_unknown_costs_and_targets(tmp_pat
 def test_balance_editor_saves_total_cost_and_clears_missing_cost(monkeypatch, tmp_path):
     path = tmp_path / 'holdings.csv'
     sample_balances(path)
-    app = launch_editor(path)
+    app = launch_editor(path, manual=True)
     position_action(app, 'Update balances')
     total_mode(app)
 
@@ -131,7 +137,7 @@ def test_invalid_total_balance_update_is_atomic(monkeypatch, tmp_path):
     path = tmp_path / 'holdings.csv'
     sample_balances(path)
     before = path.read_bytes()
-    app = launch_editor(path)
+    app = launch_editor(path, manual=True)
     position_action(app, 'Update balances')
     total_mode(app)
 

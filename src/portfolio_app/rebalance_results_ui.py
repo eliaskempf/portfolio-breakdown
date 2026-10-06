@@ -1,6 +1,7 @@
 """Shared result layout for portfolio and category plans."""
 
 from portfolio_app.currency_display import currency_symbol
+from portfolio_app.ui_help import column_help
 import streamlit as st
 
 from portfolio_app.list_ui import ListColumn, frame_rows, render_list
@@ -11,13 +12,13 @@ from portfolio_app.strategic import category_labels
 def show_table(table, *, scope='portfolio', cap_scope='portfolio'):
     config = {column: st.column_config.NumberColumn(format=('€ %.2f').replace('€', currency_symbol())) for column in table if column in {'Trade', 'Current', 'After', 'Reserved', 'Invested', 'Unallocated', 'Budget', 'Value', 'Known subtotal'}}
     config.update({column: st.column_config.NumberColumn(
-        f'{"Planned" if column == "After %" else column.removesuffix(" %")} (% of {scope})', format='%.2f %%')
+        f'{"Planned" if column == "After %" else column.removesuffix(" %")} (% of {scope})', help='Allocation as a percentage of the scope named in this column.', format='%.2f %%')
         for column in table if column.endswith(' %')})
-    config.update({'After': st.column_config.NumberColumn('Planned value', format=('€ %.2f').replace('€', currency_symbol())),
-                   'Current': st.column_config.NumberColumn('Current value', format=('€ %.2f').replace('€', currency_symbol())),
-                   'Trade': st.column_config.NumberColumn('Amount', format=('€ %.2f').replace('€', currency_symbol())),
-                   'Max allocation %': st.column_config.NumberColumn(f'Maximum (% of {cap_scope})', format='%.2f %%'),
-                   'Gap (pp)': st.column_config.NumberColumn('Planned − target (pp)', format='%+.2f')})
+    config.update({'After': st.column_config.NumberColumn('Planned value', help='Estimated value after applying the suggested contribution plan.', format=('€ %.2f').replace('€', currency_symbol())),
+                   'Current': st.column_config.NumberColumn('Current value', help='Current quantity multiplied by its price and converted to the portfolio currency where available.', format=('€ %.2f').replace('€', currency_symbol())),
+                   'Trade': st.column_config.NumberColumn('Amount', help='Suggested purchase amount in the portfolio currency; no trade is placed.', format=('€ %.2f').replace('€', currency_symbol())),
+                   'Max allocation %': st.column_config.NumberColumn(f'Maximum (% of {cap_scope})', help='Allocation as a percentage of the scope named in this column.', format='%.2f %%'),
+                   'Gap (pp)': st.column_config.NumberColumn('Planned − target (pp)', help='Planned allocation minus its target, in percentage points.', format='%+.2f')})
     st.dataframe(table, hide_index=True, height='content', width='stretch', column_config=config)
 
 
@@ -26,7 +27,7 @@ def render_summary(table, amount, cash, *, minimum=False):
     trades = table['Trade']
     columns[0].metric('Trades', int(trades.ne(0).sum()),
                       help=f'{int(trades.gt(0).sum())} buys · {int(trades.lt(0).sum())} sells')
-    columns[1].metric('Minimum new money' if minimum else 'New money', (f'€{amount:,.2f}').replace('€', currency_symbol()))
+    columns[1].metric('Minimum new money' if minimum else 'New money', (f'€{amount:,.2f}').replace('€', currency_symbol()), help='Additional contribution used by this plan.')
     columns[2].metric('Invested contribution', (f'€{amount - cash:,.2f}').replace('€', currency_symbol()),
                       help='New money invested, excluding sale proceeds reinvested within the plan.')
     columns[3].metric('Unallocated cash', (f'€{cash:,.2f}').replace('€', currency_symbol()),
@@ -43,7 +44,7 @@ def render_trades(table):
     else:
         labels = {'Trade': 'Amount', 'Current': 'Current value',
                   'After': 'Planned value'}
-        columns = [ListColumn(column, labels.get(column, column),
+        columns = [ListColumn(column, labels.get(column, column), help=column_help(column),
                               numeric=column in {'Trade', 'Current', 'After', 'Reserved', 'Invested', 'Unallocated', 'Budget', 'Value', 'Known subtotal'},
                               prefix=('€ ').replace('€', currency_symbol()) if column in {'Trade', 'Current', 'After', 'Reserved', 'Invested', 'Unallocated', 'Budget', 'Value', 'Known subtotal'} else '', color_signed=False)
                    for column in trades]
@@ -58,7 +59,7 @@ def render_impact(before, after, allocation, *, cash=0., key):
         parents = ['', *[b.id for b in allocation.buckets if allocation.children(b.id)]]
         if st.session_state.get(key, '') not in parents:
             st.session_state[key] = ''
-        parent = st.selectbox('Compare categories within', parents, format_func=names.get, key=key)
+        parent = st.selectbox('Compare categories within', parents, help='Choose the parent whose child-category allocations should be compared.', format_func=names.get, key=key)
         st.caption(f'Percentages of {names[parent]}. Planned values include this plan’s trades.' +
                    (' Unallocated contribution is included in the portfolio total.' if cash and not parent else ''))
         show_table(portfolio_impact(before, after, allocation, extra_cash=cash, parent=parent), scope=names[parent])

@@ -88,8 +88,9 @@ def test_manual_invitation_waits_for_setup_and_returns_to_manual(tmp_path, route
         if route == 'later':
             click(app, 'Finish later')
         else:
+            click(app, 'Enter manually')
             by_label(app.text_input, 'Instrument name').set_value('Invented holding')
-            by_label(app.number_input, 'Quantity held (total)').set_value(1.)
+            by_label(app.text_input, 'Quantity held (total)').set_value('1')
             click(app, 'Save position')
     assert app.session_state['tour_welcome']
     assert app.session_state['main_tabs'] == 'Overview'

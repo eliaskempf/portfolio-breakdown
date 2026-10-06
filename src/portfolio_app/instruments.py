@@ -92,8 +92,12 @@ def merge_search_results(query: str, local: list[Instrument], remote: list[Instr
 
 def result_groups(results: list[Instrument]) -> list[dict]:
     groups = {}
+    seen = set()
     for item in results:
-        key = item.isin or item.ticker
+        if item.ticker in seen:
+            continue
+        seen.add(item.ticker)
+        key = valid_isin(item.isin) or item.ticker
         if key not in groups:
             groups[key] = {"name": display_name(item.name), "kind": {"ETF": "ETF", "ETC": "ETC", "CRYPTOCURRENCY": "Crypto"}.get(item.kind, "Equity"),
                            "isin": item.isin, "ucits": "UCITS" in item.name.upper(), "listings": []}
@@ -206,6 +210,9 @@ class InstrumentSearch:
         result = replace(listing, currency=str(info.get("currency") or listing.currency))
         if listing.kind == "CRYPTOCURRENCY":
             return result
+        # Metadata fetched for this exact ticker can provide an identifier even
+        # when search suggestions omit it. Invalid provider values stay unknown.
+        result = replace(result, isin=result.isin or valid_isin(info.get("isin")))
         if result.isin:
             return result
         for query in dict.fromkeys([listing.ticker, listing.name]):

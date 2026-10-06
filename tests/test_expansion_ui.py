@@ -62,8 +62,9 @@ def test_optional_stock_view_and_manual_position_entry(tmp_path, sample_data_dir
     assert not app.exception
     assert any('stock-universe total is unknown' in item.value for item in app.info)
     position_action(app, 'Add position')
+    by_label(app.button, 'Enter manually').click().run()
     by_label(app.text_input, 'Instrument name').set_value('Invented physical holding')
-    by_label(app.number_input, 'Quantity held (total)').set_value(2.5)
+    by_label(app.text_input, 'Quantity held (total)').set_value(str(2.5)).run()
     by_label(app.selectbox, 'Instrument type').set_value('physical')
     by_label(app.text_input, 'Quantity unit').set_value('grams')
     by_label(app.number_input, 'Manual unit price (optional)').set_value(12.)

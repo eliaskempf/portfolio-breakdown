@@ -61,7 +61,7 @@ def render_import(path, snapshot, funds):
     if not snapshot.holdings.empty:
         st.info('Import currently requires an empty portfolio. Use Update balances for existing positions.')
         return
-    st.button('Cancel import', on_click=clear_import)
+    st.button('Cancel import', help='Discard the staged import without changing saved holdings.', on_click=clear_import)
     st.info('FinanzManager column recognition is provisional. Export a current holdings report, not a transaction ledger. '
             'Check the report date and choose Bank or FinanzManager quantity explicitly if both are present.')
     with st.expander('Export and privacy help'):
@@ -154,7 +154,7 @@ def render_import(path, snapshot, funds):
         live = (draft.positions.manual_price.eq('') & draft.positions.ticker.ne('')).sum()
         st.caption(f'{priced} dated snapshot prices · {live} live-price tickers (availability not verified). '
                    'Missing prices remain unknown. Allocation and targets are not inferred.')
-    if st.button('Import reviewed positions', type='primary', disabled=failed or bool(draft.issues) or draft.positions.empty):
+    if st.button('Import reviewed positions', help='Save the reviewed holdings and optional dated prices to the active workspace.', type='primary', disabled=failed or bool(draft.issues) or draft.positions.empty):
         try:
             save_import(path, draft, expected_revision=st.session_state['import_revision'],
                         validate=lambda frame: validate_fund_listings(frame, funds))
@@ -174,15 +174,15 @@ def render_import_next_steps():
         return
     st.success('Portfolio imported. Allocation, targets, buy-ins and classifications can be completed whenever you need them.')
     allocation, prices, done = st.columns(3)
-    if allocation.button('Set up allocation'):
+    if allocation.button('Set up allocation', help='Create categories and assign targets for the imported portfolio.'):
         st.session_state['main_tabs'] = 'Rebalance'
         st.session_state['rebalance_tabs'] = 'Targets'
         st.rerun()
-    if prices.button('Connect live prices'):
+    if prices.button('Connect live prices', help='Link imported instruments to verified exchange listings for live quotes.'):
         st.session_state['main_tabs'] = 'Positions'
         st.session_state['positions_workflow_request'] = 'Connect live prices'
         st.rerun()
-    if done.button('Dismiss import tips'):
+    if done.button('Dismiss import tips', help='Hide these next-step suggestions for the current session.'):
         st.session_state.pop('import_complete', None)
         st.rerun()
 
@@ -193,7 +193,7 @@ def render_listing_link(path, snapshot, funds, *, demo=False):
         st.info('Import or add positions first.')
         return
     instruments = snapshot.holdings.drop_duplicates('id').set_index('id')
-    asset_id = st.selectbox('Instrument to link', list(instruments.index),
+    asset_id = st.selectbox('Instrument to link', list(instruments.index), help='Choose the saved instrument whose live-price listing should be configured.',
                             format_func=lambda value: str(instruments.loc[value, 'name']), key='import_link_asset')
     row = instruments.loc[asset_id]
     if row.get('price_source') == 'gold_spot':
@@ -201,8 +201,8 @@ def render_listing_link(path, snapshot, funds, *, demo=False):
         return
     prefix = f'import_link_{asset_id}_{snapshot.revision}_'
     st.caption('Listing changes apply to all accounts for this instrument. Quantities, costs and allocation assignments stay saved.')
-    query = st.text_input('Search by ISIN, WKN, ticker or name', value=row['isin'] or row.get('wkn', '') or row['name'], key=prefix + 'query')
-    if st.button('Search listings', key=prefix + 'search'):
+    query = st.text_input('Search by ISIN, WKN, ticker or name', help='Search public instrument metadata; verify identity and exchange before saving.', value=row['isin'] or row.get('wkn', '') or row['name'], key=prefix + 'query')
+    if st.button('Search listings', help='Find candidate quote listings for this instrument.', key=prefix + 'search'):
         try:
             results = catalog_search(query) if demo else InstrumentSearch(path.parent / '.cache' / 'yahoo').search(query)
             st.session_state[prefix + 'results'] = results
@@ -213,15 +213,15 @@ def render_listing_link(path, snapshot, funds, *, demo=False):
     if not results:
         st.caption('Search for an exchange listing; missing results do not prevent keeping the imported position.')
         return
-    index = st.selectbox('Price listing', range(len(results)), index=None,
+    index = st.selectbox('Price listing', range(len(results)), help='Choose the exchange and trading currency to use for live prices.', index=None,
                          format_func=lambda value: results[value].label, key=prefix + 'listing')
     if index is None:
         return
     listing = results[index]
     st.write(f'ISIN: {listing.isin or "not yet verified"} · Currency: {listing.currency or "not supplied"}')
-    live = st.checkbox('Switch to live prices and clear dated manual prices for this instrument', key=prefix + 'live')
-    confirmed = st.checkbox('I confirm this is the same instrument/share class and intended exchange listing', key=prefix + 'confirm')
-    if st.button('Save listing', disabled=not confirmed, key=prefix + 'save'):
+    live = st.checkbox('Switch to live prices and clear dated manual prices for this instrument', help='Remove manual-price overrides for this instrument so provider prices can be used.', key=prefix + 'live')
+    confirmed = st.checkbox('I confirm this is the same instrument/share class and intended exchange listing', help='Confirm identity and listing; similar names alone are insufficient.', key=prefix + 'confirm')
+    if st.button('Save listing', help='Save the verified ticker and selected pricing changes for this instrument.', disabled=not confirmed, key=prefix + 'save'):
         try:
             if not demo:
                 listing = InstrumentSearch(path.parent / '.cache' / 'yahoo').details(listing)

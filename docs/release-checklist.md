@@ -36,8 +36,8 @@ data. A checked checklist is specific to one build, not a blanket approval.
 - [ ] Guided setup starts with an empty category form; examples are help only.
       Enter adds a row and focuses/highlights the next empty name. Complete targets
       totaling 100% open Continue/Keep editing; editing preserves the draft and
-      does not immediately reopen the same confirmation. Tab/Shift+Tab skip help
-      buttons, added rows have no tooltips, and All set? shows an aligned table.
+      does not immediately reopen the same confirmation. Tab/Shift+Tab preserve the input sequence, contextual help is accessible,
+      and All set? shows an aligned table.
 - [ ] Guided setup saves optional categories and optional whole-portfolio targets;
       blank/partial targets stay unknown or retain their entered percentages.
       Skip setup and Finish later work. The first position can be assigned to a
@@ -45,8 +45,8 @@ data. A checked checklist is specific to one build, not a blanket approval.
       retained and concurrent edits are rejected.
 - [ ] EUR/USD/GBP selection survives guided setup, Skip setup, Finish later and
       restart. New buy-ins default to the reporting currency; existing originals stay intact.
-- [ ] Settings currency review supports cancellation, exclusions and explicit
-      per-position FX-estimate confirmation. Settings closes before the review dialog.
+- [ ] Portfolio settings currency review supports cancellation, exclusions and explicit
+      per-position FX-estimate confirmation. Portfolio settings closes before the review dialog.
       Estimates remain labelled and fixed across refreshes; reverting currency restores
       original-currency costs. Missing purchase FX affects gains, not current-value totals.
 - [ ] Mixed-currency purchase batches, per-row dates/rates and supplied converted
@@ -57,8 +57,8 @@ data. A checked checklist is specific to one build, not a blanket approval.
       missing prices/FX and cached fallback stay visible. Manual pricing remains
       available and existing manual holdings stay unchanged until explicitly switched.
       Unit changes clear draft amounts; editing preserves the stored unit.
-- [ ] Header workspace dropdown, question-mark help and Settings work at desktop
-      and narrow widths; Settings retains recovery controls with invalid inputs.
+- [ ] Header workspace dropdown, question-mark help and Portfolio settings work at desktop
+      and narrow widths; Portfolio settings retains recovery controls with invalid inputs.
 - [ ] Demo targets (60/25/10/5), equity 70/30 split, mixed gains/losses, both
       equity ETF issuer breakdowns, real price history and rebalancing work with
       live public data. Retry/missing-data states are honest; quantities initialize
@@ -70,6 +70,17 @@ data. A checked checklist is specific to one build, not a blanket approval.
       the Windows native window and supported Linux browser. Finish, Skip tour
       and Escape restore the original workspace/view without changing holdings
       or targets; dismissal survives restart. Verify separately from the intro.
+
+- [ ] Position entry shows compact quantities, linked average/total buy-in and
+      adjacent category/target controls. Changing quantity retains the last edited
+      cost as authoritative; zero holdings and unknown costs remain supported.
+- [ ] Search has explicit selection actions, grouped verified listings and manual
+      entry, without investment-specific suggestion chips. Keyboard selection works.
+- [ ] Optional purchase rows calculate quantity and fee-inclusive cost; invalid
+      rows cannot save. Switching modes and dismiss/resume retain session drafts;
+      saving writes the holding and purchase records together once.
+- [ ] Action and column help is available on hover and keyboard focus. Native
+      Light/Dark/System themes work; normal launches hide developer menu options.
 - [ ] Futures sandbox absent from package, navigation and CLI.
 - [ ] CSV and Excel imports reviewed and saved; cancel writes nothing, workspace
       switching clears drafts, navigation retains uploads/mappings/edits, restart

@@ -29,7 +29,8 @@ def state_path() -> Path:
 
 
 def theme_options() -> list[str]:
-    return [f'--theme.primaryColor={PRIMARY_COLOR}', '--theme.baseRadius=small',
+    # Chrome is sent when the browser session starts, before UI code executes.
+    return ['--client.toolbarMode=viewer', f'--theme.primaryColor={PRIMARY_COLOR}', '--theme.baseRadius=small',
             f'--theme.light.backgroundColor={LIGHT_BACKGROUND}', '--theme.light.secondaryBackgroundColor=#f4f5f7',
             '--theme.light.textColor=#202632', f'--theme.dark.backgroundColor={DARK_BACKGROUND}',
             '--theme.dark.secondaryBackgroundColor=#1a202b', '--theme.dark.textColor=#e3e7ef']

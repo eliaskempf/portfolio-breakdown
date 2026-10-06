@@ -73,9 +73,10 @@ def test_pencil_after_sort_and_filter_opens_exact_account_and_renames(position_p
     rows = table.locator('tbody tr')
     playwright.expect(rows).to_have_count(1)
     rows.get_by_role('button', name='Edit Invented <b>Token</b> · Second', exact=True).click()
+    page.get_by_text('More details', exact=True).click()
     account = page.get_by_role('textbox', name='Account / broker', exact=True)
     playwright.expect(account).to_have_value('Second')
-    assert float(page.get_by_role('spinbutton', name='Quantity held (total)', exact=True).input_value()) == 2.
+    assert float(page.get_by_role('textbox', name='Quantity held (total)', exact=True).input_value()) == 2.
     name = page.get_by_role('textbox', name='Instrument name', exact=True)
     playwright.expect(name).to_be_enabled()
     name.fill('Custom browser name')
@@ -95,10 +96,12 @@ def test_keyboard_and_edit_button_open_rows_and_back_returns_to_list(position_pa
     page.keyboard.press('ArrowDown')
     page.keyboard.press('Enter')
     page.get_by_role('dialog').get_by_role('button', name='Edit position').click()
+    page.get_by_text('More details', exact=True).click()
     playwright.expect(page.get_by_role('textbox', name='Account / broker', exact=True)).to_have_value('Second')
     page.get_by_role('button', name='Cancel', exact=True).click()
     table.wait_for()
     table.get_by_role('button', name='Edit Other invented token · Third', exact=True).click()
+    page.get_by_text('More details', exact=True).click()
     playwright.expect(page.get_by_role('textbox', name='Account / broker', exact=True)).to_have_value('Third')
 
 

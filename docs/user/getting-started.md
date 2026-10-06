@@ -77,5 +77,11 @@ A useful first pass is:
 
 Use the portfolio/workspace selector to return from the demo to persistent data.
 Confirm the active workspace before saving. The header dropdown selects **My portfolio** or **Demo portfolio**; **?** opens
-the guide and **Settings** holds display and workspace controls. The portfolio
-currency defaults to EUR. Change it in **Settings → Portfolio currency** and review any missing historical conversions. New buy-in entries default to the selected reporting currency.
+the guide and **Portfolio settings** holds display and workspace controls. The portfolio
+currency defaults to EUR. Change it in **Portfolio settings → Portfolio currency** and review any missing historical conversions. New buy-in entries default to the selected reporting currency.
+
+Hover over buttons and column headings, or focus help controls with the keyboard,
+for explanations of actions, units and percentage scopes. **Portfolio settings**
+contains portfolio preferences; the top-right app menu provides Light, Dark and
+System appearance choices. Developer rerun, cache and deploy controls are hidden
+in the normal application.

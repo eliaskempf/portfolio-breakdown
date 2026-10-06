@@ -135,9 +135,9 @@ def render_category_setup(directory, snapshot, first_position):
                 f'<tbody>{rows}</tbody></table>')
         st.caption(f"Portfolio currency: {st.session_state.get('onboarding_currency_value', settings.reporting_currency)}")
         st.caption('Continuing saves these categories. Your first position is saved separately.')
-        if st.button('Continue to first position', type='primary', width='stretch'):
+        if st.button('Continue to first position', help='Open the position form using the saved categories.', type='primary', width='stretch'):
             save()
-        if st.button('Keep editing', width='stretch'):
+        if st.button('Keep editing', help='Return to the category draft without saving it yet.', width='stretch'):
             st.session_state['onboarding_reviewed'] = _signature()
             st.session_state['onboarding_review'] = False
             st.rerun()
@@ -150,11 +150,11 @@ def render_category_setup(directory, snapshot, first_position):
         for number, row in enumerate(_rows(), 1):
             with st.container(border=True):
                 name, target, remove = st.columns([3, 2, 1], vertical_alignment='bottom')
-                row['name'] = name.text_input(f'Category {number}', value=row['name'],
+                row['name'] = name.text_input(f'Category {number}', help='Name of this top-level allocation category.', value=row['name'],
                     key=f"onboarding_name_{row['id']}")
-                row['target'] = target.number_input(f'Target {number} (%)', value=row['target'],
+                row['target'] = target.number_input(f'Target {number} (%)', help='Target share of the portfolio in percent; all top-level category targets must sum to 100%.', value=row['target'],
                     min_value=0., max_value=100., step=1., key=f"onboarding_target_{row['id']}")
-                if remove.button('Remove', key=f"onboarding_remove_{row['id']}"):
+                if remove.button('Remove', help='Remove this category from the unsaved setup draft.', key=f"onboarding_remove_{row['id']}"):
                     _rows().remove(row)
                     st.rerun()
 
@@ -163,10 +163,10 @@ def render_category_setup(directory, snapshot, first_position):
             st.markdown('**Add a category**')
             with st.form(f'onboarding_add_{index}', border=False):
                 name, target = st.columns([3, 2])
-                name.text_input('Category name', key=f'onboarding_new_name_{index}', help=CATEGORY_HELP,
+                name.text_input('Category name', help=CATEGORY_HELP, key=f'onboarding_new_name_{index}',
                                 placeholder='Choose a name')
-                target.number_input('Target (%) · optional', min_value=0., max_value=100., value=None,
-                                    step=1., key=f'onboarding_new_target_{index}', help=TARGET_HELP)
+                target.number_input('Target (%) · optional', help=TARGET_HELP, min_value=0., max_value=100., value=None,
+                                    step=1., key=f'onboarding_new_target_{index}')
                 added = st.form_submit_button('Add category', on_click=_add, args=(index,))
             if st.session_state.get('onboarding_row_error'):
                 st.error(st.session_state['onboarding_row_error'])
@@ -188,9 +188,9 @@ def render_category_setup(directory, snapshot, first_position):
             st.session_state['onboarding_review'] = True
             st.rerun()
         proceed, skip = st.columns(2)
-        if proceed.button('Save categories & continue', type='primary', width='stretch', disabled=not _rows()):
+        if proceed.button('Save categories & continue', help='Save the category hierarchy, then add your first holding.', type='primary', width='stretch', disabled=not _rows()):
             save()
-        if skip.button('Skip setup', width='stretch'):
+        if skip.button('Skip setup', help='Continue without creating categories; they can be added later in Rebalance.', width='stretch'):
             try:
                 save_currency()
             except (DataError, OSError) as exc:

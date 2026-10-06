@@ -47,7 +47,7 @@ input{width:min(100%,360px);background:var(--st-secondary-background-color);bord
 input::placeholder{color:inherit;opacity:.55}.scroll{overflow-x:auto;border:1px solid color-mix(in srgb,currentColor 15%,transparent);border-radius:5px}
 table{width:100%;border-collapse:collapse;font-size:14px;text-align:left}th,td{padding:10px 12px;border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent);white-space:nowrap}
 table.sized{table-layout:fixed}table.sized tr[data-position-id]>td{overflow:hidden;text-overflow:ellipsis}
-th{position:sticky;top:0;background:var(--st-secondary-background-color);font-weight:600;z-index:1}th button{width:100%;padding:0;border:0;background:transparent;text-align:inherit;font-weight:inherit;cursor:pointer}
+th{position:sticky;top:0;background:var(--st-secondary-background-color);font-weight:600;z-index:1}.header-help{display:none;position:absolute;top:100%;left:0;white-space:normal;text-align:left;width:260px;padding:9px 12px;border-radius:5px;background:var(--st-secondary-background-color);color:var(--st-text-color);box-shadow:0 2px 8px #0003;font-size:12px;font-weight:400;z-index:5}th:hover,th:focus-within{z-index:3}th:hover .header-help,th:focus-within .header-help{display:block}th button{width:100%;padding:0;border:0;background:transparent;text-align:inherit;font-weight:inherit;cursor:pointer}
 section[data-interactive="true"] tbody tr{cursor:pointer}tbody tr:hover,tbody tr:focus{background:var(--st-secondary-background-color)}tbody tr:last-child td{border-bottom:0}
 tr:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:-2px}input:focus-visible,button:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:2px}
 td.number,th.number{text-align:right;font-variant-numeric:tabular-nums}td:first-child{font-weight:500}
@@ -180,13 +180,16 @@ export default function({parentElement:root,data,setTriggerValue}) {
       return direction*(numeric.has(key)?a[key]-b[key]:String(a[key]||'').localeCompare(String(b[key]||'')));
     });
     head.replaceChildren();body.replaceChildren();
-    for(const {key:field,label,width} of columns){
+    for(const {key:field,label,width,help} of columns){
       const th=element('th',''),button=element('button',label+(key===field?(direction===1?' ↑':' ↓'):''));
       if(width)th.style.width=width+'px';
       th.scope='col';if(numeric.has(field))th.className='number';
       if(key===field)th.setAttribute('aria-sort',direction===1?'ascending':'descending');
       button.type='button';button.onclick=()=>{state.key=field;state.direction=key===field?-direction:1;persist();render();head.querySelectorAll('button')[columns.findIndex(c=>c.key===field)].focus();};
-      th.appendChild(button);head.appendChild(th);
+      const explanation=(help?help+' ':'')+'Activate to sort by '+label+'.';
+      button.title=explanation;button.setAttribute('aria-description',explanation);
+      const hint=element('span',explanation);hint.className='header-help';hint.setAttribute('role','tooltip');hint.setAttribute('aria-hidden','true');
+      th.append(button,hint);head.appendChild(th);
     }
     if(data.editable){const actions=element('th','');actions.scope='col';actions.setAttribute('aria-label','Actions');head.appendChild(actions);}
     for(const row of rows){

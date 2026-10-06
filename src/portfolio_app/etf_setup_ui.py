@@ -13,26 +13,26 @@ def render_setup(data_dir, holdings, funds, *, demo=False):
     if not rows:
         return
     with st.expander('Set up a breakdown'):
-        asset = st.selectbox('Fund position', list(rows), format_func=lambda key: rows[key]['name'], key='etf_setup_asset')
+        asset = st.selectbox('Fund position', list(rows), help='Choose the fund whose look-through source should be configured.', format_func=lambda key: rows[key]['name'], key='etf_setup_asset')
         row = rows[asset]
-        mode = st.radio('Breakdown source', ['Official product page', 'Normalized holdings CSV'], key='etf_setup_mode')
+        mode = st.radio('Breakdown source', ['Official product page', 'Normalized holdings CSV'], help='Load a fund breakdown from an official product page or a normalized holdings file.', key='etf_setup_mode')
         product_url, content, stamp, kind = '', None, date.today(), 'equity'
         identifier = dict(row)
         if mode == 'Official product page':
-            product_url = st.text_input('Official iShares, Xtrackers, Amundi, Vanguard or State Street/SPDR product URL', key='etf_setup_url')
+            product_url = st.text_input('Official iShares, Xtrackers, Amundi, Vanguard or State Street/SPDR product URL', help='Official issuer product page for this exact fund and share class.', key='etf_setup_url')
         else:
             st.caption('Physical holdings only. Required columns: constituent_id, name, ticker, isin, weight. '
                        'Weights are whole-fund fractions. Optional fields: instrument_type, issuer, country, market_currency, maturity (YYYY-MM-DD), credit_rating.')
-            identifier['isin'] = st.text_input('Fund ISIN', value=row.get('isin', ''), key=f'etf_setup_isin_{asset}').strip().upper()
+            identifier['isin'] = st.text_input('Fund ISIN', help='Verified international identifier of this exact fund share class.', value=row.get('isin', ''), key=f'etf_setup_isin_{asset}').strip().upper()
             if row.get('isin') and identifier['isin'] != row['isin']:
                 st.warning('The snapshot ISIN must match this position.')
                 return
             upload = st.file_uploader('Normalized constituent CSV', type=['csv'], key='etf_setup_csv')
             content = upload.getvalue() if upload else None
             stamp = st.date_input('Holdings date', max_value=date.today(), key='etf_setup_date')
-            kind = st.selectbox('Physical fund asset class', ['equity', 'fixed_income', 'money_market'], key='etf_setup_class')
+            kind = st.selectbox('Physical fund asset class', ['equity', 'fixed_income', 'money_market'], help='Type of physical assets in the supplied fund holdings.', key='etf_setup_class')
         token = sha256(repr((str(data_dir.resolve()), identifier, mode, product_url, content, stamp, kind)).encode()).hexdigest()
-        if st.button('Preview breakdown', disabled=demo or (not product_url if mode == 'Official product page' else content is None)):
+        if st.button('Preview breakdown', help='Load and validate a proposed breakdown without saving it.', disabled=demo or (not product_url if mode == 'Official product page' else content is None)):
             try:
                 with st.spinner('Reading and validating fund holdings…'):
                     draft = prepare_draft(data_dir, identifier, product_url=product_url, content=content, as_of=stamp, asset_class=kind)
@@ -54,7 +54,7 @@ def render_setup(data_dir, holdings, funds, *, demo=False):
                           or row.get('ticker') and source and row['ticker'] in source.tickers)
             if not linked:
                 st.info('Connect this position to the matching ISIN in Positions → Connect live prices. Saving a snapshot does not change position identity or pricing.')
-            if st.button('Save breakdown', disabled=demo):
+            if st.button('Save breakdown', help='Save the validated fund source and snapshot for later exposure analysis.', disabled=demo):
                 try:
                     save_draft(data_dir, draft)
                     del st.session_state['etf_setup_preview']

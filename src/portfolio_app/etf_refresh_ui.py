@@ -44,9 +44,9 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False):
 def render_refresh_controls(data_dir, holdings, funds, *, demo=False):
     prefs = preferences(data_dir)
     context = str(Path(data_dir).resolve())
-    enabled = st.checkbox('Automatically refresh ETF holdings', value=prefs['enabled'], disabled=demo,
+    enabled = st.checkbox('Automatically refresh ETF holdings', help='Refresh stale fund snapshots in the background when supported sources are available.', value=prefs['enabled'], disabled=demo,
                           key=f'etf_auto_{context}')
-    days = st.number_input('Refresh snapshots at least this many days old', min_value=1, max_value=30,
+    days = st.number_input('Refresh snapshots at least this many days old', help='Minimum snapshot age before an automatic refresh is requested.', min_value=1, max_value=30,
                            value=prefs['minimum_age_days'], disabled=demo, key=f'etf_age_{context}')
     if not demo and (enabled != prefs['enabled'] or days != prefs['minimum_age_days']):
         try:
@@ -57,7 +57,7 @@ def render_refresh_controls(data_dir, holdings, funds, *, demo=False):
     st.caption('Checked at startup and while the app is in use; at most once per fund per 24 hours. Offline demos do not download data.')
     refreshable = [f for f in funds if supported(f) and any(row.get('shares', 0) > 0 and matching_fund(row, [f]) for row in holdings.to_dict('records'))]
     candidates = discovery_candidates(holdings, funds)
-    if st.button('Refresh ETF holdings now', disabled=demo or coordinator.running(data_dir) or not (refreshable or candidates)):
+    if st.button('Refresh ETF holdings now', help='Request fresh holdings from configured fund providers; failed downloads retain saved snapshots.', disabled=demo or coordinator.running(data_dir) or not (refreshable or candidates)):
         coordinator.schedule(data_dir, holdings, funds, force=True)
         st.rerun()
     records = read_json(Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json') if not demo else {}
