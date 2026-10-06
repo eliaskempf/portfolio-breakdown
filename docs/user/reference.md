@@ -1,5 +1,10 @@
 # Data formats and implementation reference
 
+Use the task guides for normal app operation. This page describes private file
+formats and calculation contracts for advanced editing and development. Back up
+the workspace and stop the app before editing files externally. All numeric
+examples here are invented; instrument identities are public metadata.
+
 ## Edit your data
 
 `holdings.csv` has one row per position. Required columns are `id`, `name`, and
@@ -18,13 +23,26 @@ example,Example Company,DEMO,,1,10.00,Demo portfolio,Demo account
 The stable `id` identifies an instrument. You may repeat it across account or
 portfolio rows; its name, ticker, and ISIN must be consistent. Holdings remain
 separate positions in the table and merge by asset ID for holding allocation.
-Different exchange listings need distinct IDs. Blank tickers are allowed and
-leave the position unvalued. Prices are looked up using tickers, not ISINs.
+Different exchange listings need distinct IDs. Blank tickers are allowed; without
+a manual price or supported gold-spot source, a nonzero holding stays unvalued.
+Ordinary listing prices are looked up using tickers, not ISINs.
 Tickers and ISINs are trimmed and normalized to uppercase on loading, including
 tickers displayed in holding selectors and allocation charts. Stable IDs remain
 unchanged so classification links are preserved.
 
-To display targets, add an optional `target_allocation` column. Enter a fraction
+### Strategic and legacy targets
+
+Current category-based portfolios use version 2 `allocation.yaml` for the category
+tree, `bucket_id` for each position's leaf category, and `within_bucket_target`
+for its fraction of that category. Category targets are relative to their parent;
+global targets multiply the fractions along that path. Configure these through
+[Rebalance → Targets](allocation.md#targets).
+
+The following whole-portfolio `target_allocation` rules describe **legacy
+portfolios without strategic allocation**. They are not a substitute for
+within-category targets in current portfolios.
+
+To display legacy targets, add an optional `target_allocation` column. Enter a fraction
 such as `0.15` or a percentage such as `15%`; leave unavailable values blank.
 Targets apply to each position as a share of the whole portfolio. The holdings
 table shows the column only when at least one selected position has a target,
@@ -56,7 +74,8 @@ in the private YAML file; otherwise they appear under Unclassified.
 The header’s **Portfolio settings → Hide empty positions** changes only visibility in Positions and Exposure.
 The separate Rebalance option **Exclude empty positions and redistribute targets**
 removes zero-share rows from the planning calculation. Their combined target is divided equally among
-remaining unique asset IDs, then equally among each asset’s held account rows.
+remaining unique asset IDs within each category (or the whole legacy portfolio),
+then equally among each asset’s held account rows.
 This is an equal percentage-point increment, not a proportional scaling. For
 example, removing an invented 20% planned target adds 10 pp to each of two
 remaining assets. Saved positions and targets remain unchanged and editable in
@@ -64,7 +83,13 @@ remaining assets. Saved positions and targets remain unchanged and editable in
 requires complete targets if any targets have been entered; it never treats an
 unknown target as zero. With no targets, the option simply hides empty positions.
 
-The **Rebalance** tab offers three read-only calculation modes:
+### Planning contracts
+
+The default strategic **Rebalance → Plan → Portfolio contribution** allocates
+a contribution across categories and then positions. It defaults to allowing
+skipped positions, with a minimum purchase of 25 in the reporting currency.
+Choose **Within a category** to access the following three modes. Legacy
+portfolios show these modes directly for the whole portfolio:
 
 - **Fewest trades (buys and sells)** reaches every target range with no new money,
   minimizing changed position/account rows first and total turnover second.
@@ -96,10 +121,11 @@ choose **Distribution**:
     amount of the best plan under the cap. Zero allows no additional error.
     The suggested plan is selected initially; any comparison plan can be inspected.
 - **Limit allocations for this rebalance** (within Rebalance selected positions):
-  enter an optional **Max allocation after rebalance (%)** for each selected
+  enter an optional **Maximum allocation (%)** for each selected
   instrument/account row. Blank means no cap; zero prevents further buys.
-  The cap uses final portfolio value including the entire contribution and
-  any unallocated cash. Saved targets keep guiding the allocation and are never
+  The cap uses the selected denominator (portfolio or category), including the
+  contribution and any unallocated cash. Saved targets keep guiding the allocation
+  and are never
   overwritten by temporary caps. A position already above its cap receives no
   buys; this buy-only calculation does not force a sale. A cap that conflicts
   with Buy every selected position or Minimum purchase produces an explanation.
@@ -110,14 +136,15 @@ choose **Distribution**:
   may total less than 100%. Fewer-trade suggestions preserve the maximum amount
   that can be invested; comparison rows also show each plan's unallocated cash.
 - **Spread by target weights**: divide the contribution in proportion to the
-  selected eligible targets. For example, targets of 20% and 10% receive two
+  selected eligible targets. For example, invented targets of 20% and 10% receive two
   thirds and one third of the new money. Zero targets receive nothing.
 - **Optimize rebalancing**: choose buys that improve the whole portfolio's
   allocation, with a trade limit and trade-count comparison. This can put the
   entire contribution into one position.
 
 RMS target gap is the square root of the mean squared percentage-point gap
-across all portfolio position rows. It measures the squared-deviation objective
+across the position rows in the selected planning scope. It measures the
+squared-deviation objective
 on a readable scale; it is separate from deviation outside tolerance ranges.
 Without caps, for a fixed number of buys with a uniform minimum, buying the
 largest target shortfalls is optimal. With caps, candidate choices also account
@@ -133,7 +160,7 @@ to fund every positive-weight recipient with at least one cent.
 with **Buy every selected position**, deselect those rows, allow skipping, or
 turn off Only buy existing positions; the calculator explains the conflict.
 Unselected positions receive no trades. Final weights and deviation still use
-whole-portfolio targets, so spreading can leave positions outside their ranges.
+targets in the planning scope, so spreading can leave positions outside their ranges.
 Changing the selection or distribution hides stale plans. Changing position
 identities clears the selection for you to choose again. These controls apply
 only to Allocate new money and never change saved holdings or targets.
@@ -143,8 +170,11 @@ relative to each target. For a 10% target, ±0.5 pp and ±5% relative both allow
 9.5–10.5%. Relative tolerance leaves a zero target at zero; absolute tolerance
 can allow a small holding. Bounds are clipped to 0–100%.
 
-Rebalancing uses whole-portfolio position targets totaling 100%, complete reporting-currency
-valuations, and final weights including the contribution. Overview filters,
+Within-category rebalancing requires position targets totaling 100% of that
+category; legacy planning requires whole-portfolio targets totaling 100%. Both
+require complete valuations in their scope and use final weights including the
+contribution. Portfolio contributions also require complete category targets.
+Overview filters,
 label selections and ETF display groups do not alter the tradable positions.
 **Only buy existing positions** forbids buying zero-share account rows while retaining
 their targets; **Exclude empty positions and redistribute targets** instead removes and redistributes
@@ -160,6 +190,8 @@ optimum; a solver limit or failed constraint check produces no trade plan.
 Each solve has a ten-second limit; interactive calculations support up to 100
 position rows. With zero invested capital, choose a budget in **Allocate new
 money** instead of asking for a minimum contribution.
+
+### Classification format
 
 `classifications.yaml` maps asset IDs to any number of named taxonomies:
 
@@ -253,7 +285,8 @@ spreadsheet forms and analytical diagnostic tables retain their native grid
 controls. Search within a displayed list does not recalculate allocation weights.
 
 Exposure's main list shows how many source positions contribute to each asset.
-Opening an asset shows each direct or ETF position's euro contribution and its
+Opening an asset shows each direct or ETF position's reporting-currency
+contribution and its
 percentage of that asset's exposure, with separate account positions preserved.
 Missing source valuations leave contribution percentages unavailable.
 
@@ -262,15 +295,16 @@ Missing source valuations leave contribution percentages unavailable.
 Use a separate Git worktree and branch for each coding session, with one session
 responsible for integrating shared UI changes. Run each demo on a different port
 and use generated synthetic data. Personal data and the private handoff remain
-outside Git; consult the original handoff read-only when working in a worktree.
+outside Git. Use the tracked release handoff and applicable specifications for
+product context; tests and demos must not read private working data.
 Run `uv run pytest` after integration. Browser checks are optional locally:
 `uv run --with playwright pytest tests/test_ux_browser.py tests/test_dashboard_browser.py`.
 Set `PORTFOLIO_TEST_CHROMIUM` to an available Chromium binary if needed.
 
 ## Analytics development notes
 
-Source-only continuation notes, updated 2026-09-27. See the task guides
-for application usage and formulas, and [contributor instructions](https://github.com/eliaskempf/portfolio-breakdown/blob/main/AGENTS.md) for privacy and
+These implementation notes are also published with the guide. See the task
+guides for application usage and formulas, and [contributor instructions](https://github.com/eliaskempf/portfolio-breakdown/blob/main/AGENTS.md) for privacy and
 development requirements. These notes contain no working portfolio data.
 
 ### Current product state
@@ -399,23 +433,9 @@ Use `uv run pytest`. Focused analytics tests are `tests/test_analytics.py`,
 `tests/test_ux_browser.py`. Tests must never read the working portfolio or require
 live market-data access. Browser screenshots must remain in temporary directories.
 
-The final integration preserves the completed UI refactor and background
-market-data implementation checkpointed in `83b3f11`. Analytics uses the shared
-`ListColumn` renderer, including numeric sorting and optional display text, and
-its presets and benchmark settings survive lazy tab changes. The earlier
-in-progress integration snapshot and its failing lazy-view tests are obsolete.
-Integration validation: 651 core tests passed (8 optional browser modules skipped),
-and all 15 selected browser checks passed across analytics, shared position lists,
-navigation, background market-data loading, and exposure. The background-loading
-test waits for the synthetic worker to acknowledge startup before inspecting its
-call log. Re-run validation against the current tree when continuing development.
-
-Continue new work from `main` after this integration. The original feature branch
-is `codex/portfolio-analytics`; the final reconciliation was prepared separately
-on `codex/analytics-final-merge`. Earlier temporary integration worktrees may
-contain obsolete attempts. Inspect `git status`, `git worktree list`, and the
-actual diff before merging or cleaning up. Future sessions may have uncommitted
-work: do not reset, stash, delete, or commit it just to make a tree clean.
+Run checks against the exact intended source commit. Previous test counts and
+another checkout's running preview do not establish that the current app works.
+Use a separate linked worktree per task and preserve other sessions' changes.
 
 For a separate preview:
 

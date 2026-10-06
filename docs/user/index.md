@@ -1,8 +1,8 @@
 # Portfolio Breakdown {#home}
 
 Understand what you own, how it is allocated, and how a proposed contribution
-would change it. Portfolio Breakdown runs locally in your browser. It supports
-current holdings, hierarchical categories, ETF exposure and planning; it does
+would change it. Portfolio Breakdown runs locally, in a standalone window on
+Windows or in your browser. It supports current holdings, hierarchical categories, ETF exposure and planning; it does
 not execute trades or maintain tax accounts.
 
 Start with [installation](install.md#install), then

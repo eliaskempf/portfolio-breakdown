@@ -110,7 +110,7 @@ After a balance replacement, additional purchase dates must be after the balance
 confirmation date. Retained batches are context, not a complete transaction
 ledger; do not sum old and recalculated batches to reconstruct the holding.
 
-## Physical gold
+## Physical gold {#physical-gold}
 
 In **Add position → Physical asset → Gold spot price**, enter fine-gold weight
 in troy ounces, grams or kilograms. One troy ounce is 31.1034768 grams. The app

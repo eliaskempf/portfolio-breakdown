@@ -63,6 +63,18 @@ On Windows, `uv run portfolio-desktop` starts the standalone window directly fro
 source; no executable rebuild is needed while iterating. Restart after Python
 changes. `uv run portfolio-app` retains the browser development workflow.
 
+To open the guide locally from a source checkout, build it before launching:
+
+```sh
+uv sync --locked --group docs
+uv run mkdocs build --strict
+uv run portfolio-app
+```
+
+Without a local documentation build, source help links to the published development
+guide, which may be unavailable before Pages publication. Packaged candidates
+include their matching guide and need no documentation build.
+
 Use a locked checkout or frozen candidate to reproduce a tested environment.
 A `uv tool install` installation resolves its dependencies separately and does
 not consume the checkout's lockfile.

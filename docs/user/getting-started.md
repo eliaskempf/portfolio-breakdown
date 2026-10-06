@@ -1,87 +1,194 @@
 # Your first portfolio {#first-portfolio}
 
+This walkthrough follows the app tour: understand an allocation, look inside
+funds, inspect positions, then try a contribution plan. Afterwards, switch to
+your own workspace, save a holding and make a backup. If you have not installed
+the app, start with [Install and run](install.md#install).
+
 ## Explore a temporary demo {#demo}
 
-```sh
-uv run portfolio-app --demo
-```
-
-The demo's positions, costs and targets are invented. Normal demo mode requests
-public quotes, price history, analytics and issuer ETF downloads. Its quantities
-are sized once using available initial quotes and FX; refreshing prices does not
-reset quantities or edits. If initialization lacks prices, use the status/retry
-controls rather than treating missing values as zero. Missing ETF downloads leave
-the fund whole.
-
-For an explicitly synthetic example without market-data requests, use:
+Open the app and choose **Explore demo** in the welcome dialog. From source,
+this command opens a repeatable example with invented prices and no market-data
+requests:
 
 ```sh
 uv run portfolio-app --demo --offline-demo
 ```
 
-The offline demo includes invented prices, history and broad illustrative ETF
-snapshots. World and Emerging Markets show named companies across sectors and
-countries, with a small **Other** remainder (1–1.5%). These weights are invented,
-not claims about actual fund holdings. XEON shows its overnight-rate economic
-exposure, with **Money market** separate from countries in Geography.
-Both demo modes use temporary files separate
-from your persistent portfolio. Edits last for that server session and reset on
-restart. The app also offers **Explore demo** when starting from an empty
-portfolio.
+The header should say **Demo portfolio**. Its holdings, quantities, buy-ins,
+targets and offline ETF weights are deliberately invented. You can edit them;
+they last for this server session and reset when the app restarts. They are
+separate from **My portfolio** and are not a starting copy of your own holdings.
 
-Both modes start around €93,184 with deliberately uneven positions: equities
-approximately 65.37% against a 60% target, money market 21.94% against 25%, gold
-8.54% against 10%, and crypto 4.15% against 5%. Within equities, World/EM is about
-73.81/26.19 against 70/30; Bitcoin/Ethereum is about 58.58/41.42 against 60/40.
-Live prices subsequently move those weights. **Exposure → Themes & sectors**
-opens on Sector when no curated theme labels are available. Actual live sector
-and geography coverage depends on the issuer downloads; missing metadata stays
-visible rather than being inferred from the fund's domicile.
+Without `--offline-demo`, **Explore demo** and `--demo` use public quotes, history,
+analytics and issuer ETF downloads. Initial quantities are sized once from
+available quotes and FX; subsequent refreshes preserve quantities and edits.
+If initialization cannot obtain prices, use **Refresh prices** or restart with
+the offline command above. Missing fund downloads leave that fund whole.
 
-## Start an empty portfolio {#empty}
+### Take the tour {#tour}
 
-Launch with a new `--data-dir`, or use your default persistent workspace. Choose **Start my portfolio** in the welcome dialog. The optional guide lets you
-choose EUR, USD or GBP as the reporting currency, add categories and targets one row at a time, then add a first position. Enter
-adds a category and focuses the next empty name. When complete targets reach
-100%, **All set?** shows a confirmation table. Blank or unfinished targets can be
-saved for later; finishing or skipping setup saves the selected currency and opens **Overview**. Use **Positions**
-to add a position or open [Import portfolio — experimental](import.md#import).
-Save a manual form or accept a reviewed import to persist holdings. Buy-in costs,
-classifications and targets can be added later. Existing portfolios load directly.
+Choose **Take the tour** at the optional welcome prompt, or **? → Take the tour**
+anytime. **Not now** dismisses the prompt. The app remembers dismissal for this
+computer's user account.
 
-After choosing the demo or finishing/skipping manual setup, an optional welcome
-prompt offers a guided tour. Choose **Take the tour** or **Not now**.
+The tour opens its own fresh synthetic demo, even if you started from an empty
+or personal portfolio. Use **Back**, **Next**, or the chapter shortcuts. Try the
+highlighted chart when invited. Risk and a €500 contribution example are
+calculated for you. **Finish**, **Skip tour**, or **Escape** returns to your
+original workspace and view, including filters, without changing saved holdings
+or targets. You can then repeat these actions yourself:
 
-The tour temporarily opens a fresh **Demo portfolio**, with invented holdings,
-prices, ETF weights and risk history. It visits **Overview**, **Exposure**,
-**Positions**, and **Rebalance**, switching their views and highlighting the
-relevant controls and results. Risk and an example contribution plan are
-calculated automatically from the synthetic data.
+### 1. Understand Overview
 
-Use **Back**, **Next**, or the chapter shortcut at your own pace. **Finish**,
-**Skip tour**, and **Escape** all return to your original portfolio and view,
-including its filters. The tour does not change your holdings or targets. Empty
-portfolios see the same populated demo; first-position setup remains separate.
+1. Open **Overview → Allocation**. The offline demo starts at about €93,184,
+   with deliberately uneven current weights against its saved targets.
+2. Select **Equities** in **Category**, or click that chart segment. The chart,
+   table and value cards now describe that category. Its World and Emerging
+   Markets position targets are 70% and 30% **of Equities**. Click the chart
+   center or select **Portfolio** to return to the whole portfolio.
+3. Choose **Performance**. Compare **Return (%)** with **Gain**. These figures
+   use recorded costs of currently held positions and exclude dividends and
+   realized gains. Missing costs leave gaps rather than zero returns.
+4. Choose **Analytics**, then **Calculate risk**. The default uses three years
+   against a global equity ETF benchmark. Read coverage and exclusions beside
+   the result. It models today's allocation held constant, not your personal
+   historical return. Offline history is invented.
 
-The app remembers dismissal across restarts for this computer's user account.
-Replay anytime from **? → Take the tour**; the menu closes before the tour starts.
+The demo's top-level targets are Equities 60%, Money market 25%, Gold 10% and
+Crypto 5%. Live quotes move current weights, so do not expect live mode to match
+the offline figures exactly. See [categories](allocation.md#overview),
+[performance](performance.md#performance) and [risk](analytics.md#risk) for details.
 
-A useful first pass is:
+### 2. Look inside funds in Exposure
 
-1. Add or import current quantities and instrument identities.
-2. Check prices, currencies and [valuation status](performance.md#prices).
-3. In **Rebalance → Targets**, configure categories, assign positions and review
-   [within-category targets](allocation.md#targets).
-4. Explore Overview, Exposure, Positions and Rebalance. Overview follows owned
-   positions; Exposure can show what is inside funds.
+1. Open **Exposure → Assets**. **Break down ETFs** starts enabled. Turn it off
+   to see whole securities, then on to see supported fund constituents combined
+   with matching direct holdings. Your owned quantities do not change.
+2. Open an asset to inspect its contributing positions. **Other** retains the
+   uncovered fund weight; it is not another position you own directly.
+3. Choose **Themes & sectors**. The demo opens on Sector because it has no
+   curated theme labels. Then choose **Geography** to explore regions and
+   countries. Unknown geography stays explicit; overnight-rate exposure appears
+   separately as **Money market**.
+4. Use **Data & settings → ETF refresh & snapshots** to check source dates and
+   coverage. **Individual ETFs** controls which available funds expand.
 
-Use the portfolio/workspace selector to return from the demo to persistent data.
-Confirm the active workspace before saving. The header dropdown selects **My portfolio** or **Demo portfolio**; **?** opens
-the guide and **Portfolio settings** holds display and workspace controls. The portfolio
-currency defaults to EUR. Change it in **Portfolio settings → Portfolio currency** and review any missing historical conversions. New buy-in entries default to the selected reporting currency.
+Offline World and Emerging Markets snapshots contain invented company weights
+and small Other remainders of 1–1.5%. Live coverage depends on issuer downloads.
+Bond summaries and overnight-rate substitute baskets have separate meanings;
+read [Exposure and ETFs](exposure.md#look-through) before interpreting them.
 
-Hover over buttons and column headings, or focus help controls with the keyboard,
-for explanations of actions, units and percentage scopes. **Portfolio settings**
-contains portfolio preferences; the top-right app menu provides Light, Dark and
-System appearance choices. Developer rerun, cache and deploy controls are hidden
-in the normal application.
+### 3. Inspect positions
+
+Open **Positions** and select a row for details and available price history.
+Use its pencil to edit, or **Add position** to try a new holding. A demo edit
+changes only the temporary demo. **Position tools** also offers **Bulk add
+purchases**, **Update balances**, **Connect live prices** and **Import portfolio**
+(experimental). Import requires an empty portfolio, so try that after switching
+to your own empty workspace below.
+
+A price chart is instrument history, not your return history. **Update balances**
+replaces current quantities; **Bulk add purchases** adds purchases or calculates
+the cost of shares already held. These are different actions. See
+[Positions and buy-ins](positions.md#positions).
+
+### 4. Try targets and a contribution plan
+
+1. Open **Rebalance → Targets**. Inspect category targets relative to their
+   parent and position targets relative to their own category. Complete sibling
+   targets must total 100%; blank means unknown.
+2. Return to **Plan**. Keep **Portfolio contribution**, enter **500** in
+   **Contribution**, then choose **Calculate plan**. Amounts use the portfolio
+   currency. The demo already has the targets needed for this exercise.
+3. Read **Suggested trades**, **Portfolio impact**, and **Plan details**.
+   The plan proposes purchases; it neither places orders nor saves new holdings.
+   Purchase restrictions can leave money unallocated.
+4. To explore the three rebalancing modes, choose **Within a category**, then a
+   **Planning category**. This reveals **Rebalancing mode**. Portfolio contribution
+   has its own options and does not offer that mode selector.
+
+For your own portfolio, missing targets or valuations can block a plan.
+[Rebalance](rebalance.md#planning) explains tolerances, minimum purchases and caps.
+
+## Start your own portfolio {#empty}
+
+### Switch out of the demo
+
+Finish or skip the tour first. In the header's **Portfolio workspace** dropdown,
+select **My portfolio**. Demo holdings are not copied. An empty workspace offers
+**Start my portfolio**; an existing workspace loads its saved holdings.
+
+Open **Portfolio settings → App & workspace** to confirm the actual folder
+before saving. A packaged app uses its default persistent workspace. For a
+separate source workspace, launch with a new path:
+
+```sh
+uv run portfolio-app --data-dir /path/to/my-portfolio
+```
+
+Replace the placeholder with your chosen folder. Use the same launch path on
+subsequent starts; [Storage](storage.md#location) explains default folders and
+remembered restored-workspace selections.
+
+### Choose currency and optional categories
+
+Choose **Start my portfolio**. In **Set up your portfolio**, select **EUR**,
+**USD** or **GBP** as the reporting currency; EUR is the default. Add categories
+one row at a time with optional targets. Enter adds the row and focuses the next
+empty name. Complete targets totaling 100% open **All set?**; review the table
+and choose **Continue to first position**. Unfinished targets can instead be
+saved with **Save categories & continue** and completed later.
+
+**Skip setup** saves the selected currency without creating categories and opens
+Overview after the optional tour prompt. Choose **Positions** to add or import.
+If you save categories, the first-position form opens; **Finish later** leaves
+the categories saved without creating a holding. After saving or finishing that
+form, you return to Overview and the optional tour prompt.
+
+### Save a first holding, or import
+
+For manual entry, choose **Positions → Add position**. Search and select the
+correct listing, checking its exchange and currency, or choose **Enter manually**.
+Enter the quantity you currently hold. Buy-in cost and allocation targets are
+optional. **Save position** writes to My portfolio; check the saved row and its
+valuation status. A blank price is unknown, not zero. For an asset without a
+quote, provide a dated manual price under **More details**. For physical gold,
+choose **Physical asset → Gold spot price** and enter fine-gold weight; see
+[physical gold](positions.md#physical-gold).
+
+For a holdings report, keep the portfolio empty and choose **Position tools →
+Import portfolio** (experimental), or the empty-list **Import portfolio —
+experimental** button. Upload, map and review the report before
+**Import reviewed positions**. Check number formats, units and dates; saving
+cannot be undone by canceling the review afterwards. FinanzManager recognition
+is provisional. See [Import](import.md#import) for supported files and later
+live-price linking.
+
+Next, check [prices and cost coverage](performance.md#valuation), then assign
+positions and complete targets in **Rebalance → Targets**. Category changes and
+position targets have separate saves. Missing buy-ins do not prevent allocation
+analysis. Change reporting currency later through **Portfolio settings → Portfolio
+currency → Review currency change**; inspect conversion gaps before applying.
+New buy-ins default to the reporting currency; original saved costs keep theirs.
+
+## Make a backup and verify persistence {#first-backup}
+
+1. With **My portfolio** selected, save or cancel open edits. Open **Portfolio
+   settings → Create backup** and wait for archive verification.
+2. Choose **Download backup** and save the `.portfolio-backup.zip` file to a
+   protected backup location. It contains saved workspace files, including costs,
+   currency, targets and ETF snapshots. Unsaved forms are not included. Demo and
+   tour workspaces cannot be backed up through this action.
+3. Stop the app using **Portfolio settings → App & workspace → Stop application**
+   or close its standalone Windows window. Closing a browser tab alone does not
+   stop the server. Relaunch the same shortcut or data path and check your saved
+   holding and reporting currency.
+
+Keep backups private: they are unencrypted. [Storage and recovery](storage.md#backup)
+explains verified restore into a new folder, review/cancel behavior and switching
+workspaces. A backup should exist before you change files outside the app.
+
+Use **? → User guide** for version-matched help. **Portfolio settings** holds
+portfolio and workspace controls; the top-right app menu offers Light, Dark and
+System appearance. Hover or keyboard-focus help controls for units and scope.

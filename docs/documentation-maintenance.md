@@ -80,18 +80,26 @@ ordinary doc tests. Build outputs remain ignored artifacts, not Git source.
 
 ## Stable app-help contract
 
-The authoritative proposed topic map is `TOPICS` in `tools/docs_site.py`, exported
+The authoritative topic map is `TOPICS` in `tools/docs_site.py`, exported
 in every `build-info.json` and checked against generated anchors. Topic IDs are
 independent of sidebar/header layout. Example: `buy-ins` maps to
 `positions/#buy-ins`; `etf-other` maps to `exposure/#other`; `risk` maps to
-`analytics/#risk`. There are 30 topics. Integration owns application-side link code.
+`analytics/#risk`. There are 30 topics. Application links are rendered by `workspace_ui.py` using
+`documentation.guide_url`. Bundled-help behavior is tested in
+`tests/test_bundled_documentation.py`.
 
-App help resolves as `DOCS_BASE_URL + docs_route + topic_route`. The base URL is
-the repository Pages root including its project subpath and trailing slash.
-Set it once during integration; the local example.invalid URL is deliberately
-not a production destination. Keep relative page links and explicit anchors.
-Do not rename an exposed topic/anchor without retaining compatibility in future
-source docs. A frozen version is never retroactively edited.
+Packaged app help opens the exact bundled public guide on a separate loopback
+server, independently of Pages publication. A source checkout also serves its
+`dist/docs-site` output locally when it contains `build-info.json`; build it with
+the commands above before starting the app. Without that output the current
+source app links to `https://eliaskempf.github.io/portfolio-breakdown/dev/`.
+Source developers must rebuild docs and restart the owning app after guide edits.
+
+`DOCS_BASE_URL` configures the published site root, including the project subpath
+and trailing slash. The real root is `https://eliaskempf.github.io/portfolio-breakdown/`;
+`example.invalid` below is a local validation placeholder. Keep relative page
+links and explicit anchors. Do not rename an exposed topic/anchor without
+retaining compatibility. A frozen version is never retroactively edited.
 
 | App build | Documentation route |
 | --- | --- |
@@ -100,10 +108,11 @@ source docs. A frozen version is never retroactively edited.
 | Official release | `releases/<package-version>/`, an exact copy of approved candidate bytes |
 
 Candidates can share package version 0.1.0; the full source SHA distinguishes them.
-A released app must carry its chosen docs route in build metadata rather than
-infer it from whichever main is current. Missing matching docs must report
-unavailability or offer an explicitly labeled development guide; never silently
-fall back to newer main documentation. Do not transmit portfolio data in URLs.
+Candidate packaging records the documentation source SHA, route and build-info
+checksum in its manifest and bundles that exact site with the executable. The
+installed app serves those bytes locally. Verify their identity before release;
+missing matching docs must not be accepted as a valid release package. Do not
+transmit portfolio data in URLs.
 
 ## Versioning and promotion
 
@@ -128,26 +137,36 @@ existing release. The version must match the candidate's package version. The
 release alias retains candidate provenance/canonical URLs, intentionally pointing
 to the same immutable documentation. Relative navigation and search remain valid
 under either route. An erratum needs a newly reviewed candidate/version, not a
-silent overwrite. This source archive is proposed and locally tested; integration
-must connect it to the actual package candidate manifest and promotion gates.
+silent overwrite. Candidate schema 2 connects the frozen documentation ZIP and
+build-info checksum
+to the app source SHA. `tools/docs_candidate.py` validates the selected successful
+Build candidate run; publication consumes those archived bytes. An older schema 1
+candidate does not establish this app/help identity.
 
-The manual `docs-pages.yml` workflow is dormant unless `DOCS_PUBLISH_APPROVED` is
-explicitly set to `true`, acceptance is checked, and dispatch is from the default
-branch. It restores the latest successful workflow's complete archive, preserves
-older versions, adds dev/candidate or promotes an archived candidate, validates all
-versions, then uploads and deploys. An expired/missing previous artifact fails
-closed. Before enabling it, establish a durable independent copy of each published
-archive; Actions retention (90 days here) is not permanent preservation. Restore
-an expired archive through a separately reviewed workflow change. Do not delete
-prior run history to force an empty archive. Existing Pages content from another
-workflow requires an explicit archive migration before first use. Deleting a
-workflow/run is not a safe release-doc maintenance operation.
+Guide source stays with the application in `docs/user/`. Only generated static
+output belongs on `gh-pages`. The manual `docs-pages.yml` workflow is dormant
+unless `DOCS_PUBLISH_APPROVED` is explicitly `true`, acceptance is checked, and
+dispatch is from the default branch. It fetches the existing `gh-pages` branch,
+preserves older versions, assembles dev/candidate or promotes archived candidate
+bytes, validates every retained version, and commits the static archive back to
+`gh-pages`. It then removes Git metadata from the deployment directory and sends
+only static files to the Pages Actions deployment. The 90-day Actions archive is
+an additional copy, not the source of version retention.
 
-Publication prerequisites: human approval; real `DOCS_BASE_URL`; Pages Actions
+Before enabling publication, verify access to the existing `gh-pages` archive and
+back it up independently. The workflow can initialize a new branch when its
+remote branch check fails, so a failed fetch/check must not be interpreted as
+permission to replace an existing archive. Existing Pages content from another
+workflow requires explicit migration. Do not delete versions, branches or run
+history to force an empty archive.
+
+Publication prerequisites: human approval; correct `DOCS_BASE_URL`; Pages Actions
 source and protected `github-pages` environment reviewed by the repository owner;
-source-to-app candidate identity verified; initial archive checked; permanent
-archive retention arranged; hosted workflow accepted. None is enabled by this task.
-Build/test/upload in `docs.yml` grants only read permissions and never deploys.
+source-to-app candidate identity verified; existing archive and retention reviewed;
+hosted workflow accepted. A local candidate with `run_id: local` is not accepted
+by the hosted candidate-publication gate. Build/test/upload in `docs.yml` grants
+only read permissions and never deploys. No publication is authorized by running
+local documentation checks.
 
 Implementation references: [MkDocs configuration](https://www.mkdocs.org/user-guide/configuration/)
 for strict link diagnostics and [GitHub custom Pages workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)

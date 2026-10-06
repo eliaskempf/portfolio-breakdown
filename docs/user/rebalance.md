@@ -1,8 +1,10 @@
 # Rebalance {#planning}
 
 Configure [targets](allocation.md#targets), then open **Rebalance → Plan**.
-Select the planning scope, mode and any contribution, adjust Options, and choose
-**Calculate plan**. Source instrument/account rows are the tradable units;
+The default **Portfolio contribution** scope offers **Contribution** and
+**Options**, then **Calculate plan**. To use **Rebalancing mode**, select
+**Within a category** and choose a **Planning category**. Legacy portfolios
+without categories show the mode selector directly. Source instrument/account rows are the tradable units;
 Overview/Exposure filters and ETF display groups do not alter this scope.
 
 ## Choose scope and mode {#modes}
@@ -12,6 +14,8 @@ contributions first allocate budgets across categories and then within them.
 Required sibling targets must be complete and total 100%; unrelated category
 position targets are unnecessary for a within-category plan. Relevant valuations
 must be complete. Protected categories and their descendants cannot be sold.
+
+The following modes apply within a category (or to a legacy whole portfolio):
 
 | Mode | Meaning |
 | --- | --- |
@@ -26,6 +30,13 @@ rebalancing** minimizes deviation outside ranges and may concentrate the budget
 in one position. These distributions serve different purposes.
 
 ## Purchase rules and tolerances {#constraints}
+
+Portfolio contribution defaults to 500 in the reporting currency, all positions
+eligible, **Allow skipping positions**, and a minimum purchase of 25. Category
+and position tolerances each start at ±0.5 percentage points. Within-category
+**Allocate new money** uses **New money**, and exposes the distribution controls
+below when **Limit buys to selected positions** is enabled. Its selected-position
+distribution defaults to **Buy every selected position**.
 
 **Buy every selected position** requires its minimum purchase for each row;
 insufficient budgets produce a shortfall. **Allow skipping positions** permits a

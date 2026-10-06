@@ -11,8 +11,8 @@ export/version has been verified. Look for a current depot/holdings report and
 **Bericht exportieren**. Available formats and columns depend on your version.
 Use CSV, delimited TXT/TSV or Excel XLS/XLSX. QIF and PDF are unsupported.
 
-1. In **Positions**, open **Import portfolio — experimental** and upload one or
-   more files, for example separate depot reports.
+1. In **Positions**, choose **Position tools → Import portfolio** (or the empty-list
+   **Import portfolio — experimental** button) and upload one or more files, for example separate depot reports.
 2. Check worksheet, header row, delimiter, encoding and German/English number
    formatting. Inspect the preview before trusting suggested mappings.
 3. Map instrument name and quantity. When both Bank and FinanzManager quantities

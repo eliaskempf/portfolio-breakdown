@@ -49,7 +49,7 @@ return of the entire category. Zero cost permits an absolute gain but no percent
 return.
 
 For old costs without dates, supply a converted total or exchange rate, or
-explicitly confirm a **latest FX estimate**. Settings lets you select affected
+explicitly confirm a **latest FX estimate**. **Portfolio settings** lets you select affected
 positions and review their rates before confirming. Estimates may hide currency
 gains or losses, remain labelled, and keep their confirmed rates across refreshes
 and restarts. An undated conversion or estimate applies only to its saved target

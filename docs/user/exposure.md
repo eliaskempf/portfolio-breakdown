@@ -8,7 +8,7 @@ In **Exposure**, Assets combines direct holdings and fund-derived exposure.
 Unsupported, missing or disabled breakdowns remain whole instruments. Expansion
 never creates owned positions or changes quantities and strategic categories.
 
-Each constituent contribution equals the fund position's EUR value times the
+Each constituent contribution equals the fund position's reporting-currency value times the
 stored constituent weight. Matching identities combine direct and indirect value;
 source details preserve account and portfolio contributions. Source-position
 filters apply **before** expansion. Search hides resulting assets without changing

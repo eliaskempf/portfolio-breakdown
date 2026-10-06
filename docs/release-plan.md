@@ -1781,3 +1781,208 @@ must pass Windows/WebView2 upload/Save-dialog cancellation, downloaded archive
 fidelity, confirmed switching, same-shortcut restart, repeated-launch focus and
 shutdown acceptance from the release checklist. Private data and other sessions'
 working files were not used or changed.
+
+## Independent documentation and investment-privacy audit (2026-10-06)
+
+### Scope and isolation
+
+Reviewed release-v1 at `d0852b26008299ff39caa9f970ad1223e52824b5` and local
+main at `330ef27c9e13b83407d0eb185f673a0d36b8b4a4`. Main is an ancestor of the
+release. Work started in a clean linked worktree on
+`audit/v0.1.0-docs-privacy`, explicitly based on that release SHA. The original
+checkout's unrelated modifications and all other sessions' worktrees were left
+alone. Only documentation changes belong to this audit; no application code,
+dependency lock, installer or publication workflow was changed.
+
+The Git audit covers all 127 commits reachable from those two exact refs (38
+reachable from main), 1,307 unique file blobs and 304 historical paths. All 304
+release-tip files and 156 main-tip files were included. Full tree enumeration
+and a merge-aware deletion search found no deleted historical paths in this
+reachable history. This is a complete, non-shallow local history; unrelated
+branches, unreachable objects, reflogs and remote-only commits are outside scope.
+Commit bodies were scanned separately; author/committer headers retain two normal
+Git identities, whose values are not repeated here.
+
+No working portfolio, `data/`, personal `handoff.md`, transaction export or private
+screenshot was opened for comparison. Browser and persistence checks created
+invented workspaces from source fixtures under temporary directories. Runtime
+screenshots inspected were synthetic and remain outside Git.
+
+### Documentation findings and corrections
+
+Every Markdown guide under `docs/user/` was read against implementation and
+relevant tests. Browser coverage is real Chromium interaction, not a health check.
+
+| Guide / task | Implementation and evidence reviewed | Result |
+| --- | --- | --- |
+| index, install; platform installation | app/launcher/settings, Windows Setup and desktop scripts; launcher/window/package tests and source browser smoke | Clarified Windows window versus browser, source-local help build; Windows 11 and Ubuntu remain acceptance targets, optional Linux/macOS windows experimental. Native OS acceptance was not repeated. |
+| getting-started; onboarding and tour | onboarding/category setup, tour state and all 15 tour steps; intro/tour browser suites and independent walkthrough | Replaced overview prose with actions, expected results and next steps; documented demo → My portfolio, currency/setup choices, first save, backup and restart. |
+| positions; physical gold and buy-ins | position entry, purchase/balance transformations, physical-assets/gold pricing; position-entry and gold browser tests | Checked exact field/workflow labels, linked costs, fine-gold units, manual prices and missing history; retained existing limitations. |
+| import | importer/readers/listing linking; CSV/XLSX browser and source-smoke uploads | Corrected Position tools label; README now makes experimental status and provisional FinanzManager recognition explicit. |
+| exposure | selection, analysis, ETF provider/setup/refresh and geography code; ETF discovery/exposure/geography browser suites | Corrected EUR-only value wording; verified enabled breakdown default, whole-fund/Other treatment, physical bonds and separate overnight baskets. |
+| performance, analytics; currencies | valuation/cost basis, currency settings, history/risk; currency, performance, analytics and tour-return tests | Corrected settings label; checked EUR/USD/GBP, review/apply, original cost retention, missing conversion coverage and historical-risk limitations. |
+| allocation, rebalance | target/strategic/scoped planning code; allocation, target and rebalance browser/calculation tests | Distinguished default Portfolio contribution from Within a category's three modes and their differing defaults. |
+| storage; backup/restore/persistence | backup, workspace selection/activation and UI; real upload/download, cancel, switch and restart browser tests | Added currency/cost records to file inventory; verified new-folder restore and remembered launch context; updated the older installation guide's backup description. |
+| reference, troubleshooting | data loaders, metadata exclusions, planners and analytics contracts; full regression suite and documented CLI recovery tests | Distinguished legacy whole-portfolio targets from current category targets, corrected cap label and currency wording, removed obsolete branch/test-count continuation instructions. Troubleshooting claims remain consistent. |
+
+The maintenance guide now describes the implemented contract: guide source stays
+with the app, only generated static output is archived on `gh-pages`, candidate
+help is served locally from exact bundled bytes, and manual Pages deployment
+preserves versioned routes. No stable topic ID or existing explicit anchor was
+removed. README remains a short product/install entry point.
+
+Checks: **1,256 tests passed in 528.58 seconds**, including **63 browser tests**,
+with required-browser enforcement and no skips. After the guide edits, the
+focused documentation/bundled-help/privacy suite passed **86 tests**. Strict
+MkDocs and generated link/anchor/inventory validation passed **14 HTML pages,
+30 help topics and 41 generated files**. The documentation browser passed desktop
+navigation, search, all topics and a 390px layout with external requests blocked.
+Its final review URL was `http://127.0.0.1:38325/portfolio-breakdown/dev/`.
+
+The independent walkthrough used this audit checkout and a newly generated
+synthetic workspace at `http://127.0.0.1:59629`, then `http://127.0.0.1:33543`
+after restart. It visited all tour steps, Overview Allocation/Performance/Analytics,
+Exposure Assets/Themes & sectors/Geography, both planning scopes, the empty import
+entry, gold entry, backup download and restore review/cancel. Saved gold and GBP
+survived restart; downloaded backup inventory matched the saved workspace. No
+application or browser exception occurred. The separate source-installed
+browser/import/save/restart/recovery/lifecycle smoke also passed. These previews
+were stopped by their owning harnesses; no other preview was restarted.
+
+External-link checks returned 200 for uv installation, MkDocs configuration and
+GitHub Pages workflow documentation. The Pages root/dev routes returned 404.
+Anonymous repository links also returned 404; authenticated API inspection
+confirmed the repository is private and Pages is disabled. This is an access/
+publication prerequisite, not evidence that internal documentation links fail.
+No repository visibility or Pages settings were changed.
+
+### Application/tooling findings — not changed by this audit
+
+- **Missing bundled help silently falls back to development docs.** At the audited
+  release SHA, `src/portfolio_app/documentation.py` returns without starting a
+  local server when `build-info.json` is absent, while `guide_url()` unconditionally
+  falls back to the public dev URL, even for a frozen application. Reproduced with
+  a temporary frozen-layout stub and no docs override. A damaged/incomplete
+  install therefore loses version-matched help and currently reaches a 404.
+  Report missing matching documentation explicitly; offer any dev fallback only
+  with a clear label. Normal inspected candidate bundles do contain matching help.
+- **Publication failure handling needs review before enabling Pages.** The
+  `docs-pages.yml` branch probe uses one `else` for both an absent `gh-pages` ref
+  and other `ls-remote` failures. Distinguish absence from access/network failure.
+  No overwrite was demonstrated: the subsequent ordinary push would normally
+  reject a conflicting remote history. Publication was not run during this audit.
+
+### Privacy findings and example provenance
+
+No personal holdings, quantities, acquisition costs, allocations, account records,
+credentials or recognizable personal home paths were found in the audited tracked
+source/history. This is a bounded finding, not proof that arbitrary prose cannot
+encode private information. Automated scans covered all blobs and commit bodies;
+manual review concentrated on numerical examples, fixture generators, provider
+catalogues, README history, tracked handoffs and all pattern matches by category.
+The check is not merely the current index's path allowlist.
+
+The initial demo generator was introduced at
+`e85e11f26ae6e99ad126e08be7b3e1f180aab5c0`, already explicitly labeling quantities,
+costs, accounts and weights as invented and refusing to read/copy working data.
+`6fd87c6bd13729bd61fedfd6ef5a285fc90cde5f` retained that dataset in
+`tests/synthetic_sample.py` and introduced the user-facing demo. Its later live
+sizing and uneven allocation changes are traceable through `9f1877d`, `f4b53b6`
+and `d313057`; current values are derived from explicit `LIVE_EXAMPLES`, fixed
+price tables and buy-in ratios in `demo.py`, not from an input portfolio.
+Test imports and browser workspaces are likewise constructed in test code.
+Guide purchase/category examples are deliberately invented. Public ISINs,
+tickers, issuer names and catalogues are instrument metadata, not ownership
+records. The historical broker-name matches are public support links, not account
+details. Email-like matches are credential/parser test cases; long-number matches
+are public run/product identifiers and precision-test literals. Normal Git author
+metadata remains in history. Instrument selection can still suggest interests;
+this audit cannot establish the author's intentions or attest provenance beyond
+the repository evidence.
+
+All four tracked images have one reachable blob each. The PNG has only IHDR,
+IDAT and IEND chunks; no text/EXIF metadata. The ICO reports image-size information
+and no EXIF. SVGs contain no metadata block, scripts or external file/image
+references. No portfolio screenshots are tracked.
+
+### Available artifact inspection
+
+The hosted artifact inventory listed 13 binary candidate archives. The newest
+successful Windows/Linux pair was downloaded read-only from **run 37232831332,
+attempt 1**, source **`dbaca0172ea0dd9599bb43da727b961d453fc609`**. Older hosted
+archives were inventoried but not downloaded. This pair is an ancestor of the
+audited release base and predates current tour/currency/backup changes.
+
+- Both candidate manifests and every listed file checksum passed validation.
+  Both wheel/source content checks passed. Each source archive's **260 Git input
+  files** matched the recorded commit byte-for-byte; generated package metadata
+  was scanned separately. Each guide passed 14-page/30-topic checks; bundled
+  guide files matched the respective downloadable documentation ZIP exactly.
+- Linux: scanned **2,607 bundle files**, **155 nested ZIP files**, **10 executable
+  bootstrap modules** and **4,820 decompressed PYZ modules**. Archive UID/GID are
+  zero and owner/group names are empty.
+- Windows: scanned **3,337 portable-bundle files**, **155 nested ZIP files**,
+  **22 bootstrap modules** and **9,816 PYZ modules** across both executables
+  (module instances, including duplicates). Setup checksum/raw bytes were checked;
+  its compressed Inno payload was not independently unpacked or installed here.
+- Dependency matches include public examples, typing/parser constants and
+  upstream/CI build paths in runtime binaries, metadata and modules. Locations
+  include `base_library.zip!ntpath.pyc`, `PYZ!_sysconfigdata__linux_x86_64-linux-gnu`,
+  `PYZ!scipy.__config__`, Arrow binaries and dependency `.dist-info` metadata.
+  Arrow's DLL contains four private-key header markers but no complete PEM-key
+  block; these markers do not establish a credential leak. No first-party
+  investment data or credential payload was identified. Opaque native binaries
+  and compressed formats are not exhaustively proven free of secrets by these
+  pattern scans.
+
+An accessible older local Linux candidate was also inspected, source
+**`a7ec30205f1e33e26eb0a8fc050dd4a1b5b32ff6`**, schema 1, `run_id: local`.
+Its five manifest checksums and wheel/source checks passed. Expanded inspection
+covered **2,540 tar files**, **155 nested ZIP files**, **10 bootstrap modules**
+and **4,796 PYZ modules**. **Do not distribute these old local bytes:** tar ownership
+records disclose the local builder identity, and the embedded
+`_sysconfigdata__linux_x86_64-linux-gnu` module contains that builder's home path.
+The suspicious locations are recorded without the identifying values. These are
+build-environment disclosures, not evidence of personal investment records.
+The current source's ownership-normalization code and inspected hosted Linux
+archive avoid the old tar-owner issue; final candidates still need inspection.
+
+Artifact identities useful for independently locating these exact bytes:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Old local Linux tar | `2ce5311046a290c2de3712cb66abc86f3efa690fafdbc3e5e093c44d57ecd6c6` |
+| Hosted Linux tar | `312ef47662327199102408e9a2a8734b2fee468e9e89c26fe66fa04de62011ef` |
+| Hosted Windows portable ZIP | `3d77e6787b86c150ff9b3b4d3478cdb21acc3b99498fce5dcd8ed868b7d5daaa` |
+| Hosted Windows Setup | `b636372a2e671de46c8a63039632213c4ad5c993514f96e5d78318eeec7a5da5` |
+| Shared hosted docs build-info | `9a1bd30ccc1b5996df65110fc98ef6144bd6d9225a14826ff18f1962aedc49c0` |
+
+The newer local Windows installer recorded earlier at `2797a0d` was not accessible
+as candidate bytes in this audit environment; its prior handoff is not substituted
+for an independent content check. Locally generated docs and wheel/source packages
+for the documentation changes were also checked; they are audit outputs, not new
+installers or approved release candidates. No downloaded artifact was modified.
+
+### Remaining release questions and final-artifact gates
+
+- Address or explicitly disposition the missing-bundled-help defect; review the
+  Pages branch-probe failure path before enabling publication.
+- Select the exact final source commit after documentation integration. Build
+  new candidates in the authorized release process, then repeat content/privacy,
+  checksum, image-metadata and matched-help checks on the downloaded final bytes.
+  This audit does not authorize that build, a merge, tag or publication.
+- Verify the Windows Setup's extracted payload, native WebView2 upload/Save-dialog
+  cancellation, install/update/uninstall, same-shortcut restore/restart and
+  clean-machine Windows 11 acceptance. Repeat supported Ubuntu acceptance.
+  Experimental macOS/Linux native-window artifacts remain separate and unverified
+  by this audit. Live issuer availability was not probed; real broker exports
+  were not used, so FinanzManager recognition remains provisional.
+- Decide repository/download accessibility and Pages publication/retention before
+  public release. Existing version routes must survive publication; frozen docs
+  must not be silently replaced by these corrections.
+- Confirm whether normal Git author metadata and the public instrument selection
+  are acceptable for release. No history rewrite, private-file deletion or
+  attempt to infer actual holdings was performed.
+
+Staged privacy checking, enabled pre-commit hooks and manual documentation diff
+review are required for the audit commits as for any other release change.

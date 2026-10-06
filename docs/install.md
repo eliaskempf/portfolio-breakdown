@@ -25,7 +25,7 @@ keep its whole directory together and launch `Portfolio Breakdown.exe`.
 The installed **Portfolio Breakdown (browser)** shortcut or `--browser` selects
 browser mode. Keep `portfolio-app.exe` for CLI operations and diagnostics.
 On Linux, `./portfolio-app` opens the browser; closing its tab leaves the server
-running until **Settings → App & workspace → Stop application** or `--stop`.
+running until **Portfolio settings → App & workspace → Stop application** or `--stop`.
 Portable installs can add a shortcut with `--install-shortcut`.
 
 The app's **? → User guide** opens the exact bundled public documentation, even
@@ -91,7 +91,10 @@ source or invalid portfolio stops the copy rather than silently dropping files.
 
 ## Backup, restore, upgrade and uninstall
 
-Stop the app before a complete backup:
+For a portable archive while the app runs, use **Portfolio settings → Create
+backup**, then **Download backup**. [Storage and recovery](user/storage.md#backup)
+explains review, restore and confirmed switching. For the separate folder-copy
+commands below, stop the app first:
 
 ```sh
 portfolio-app --data-dir /path/to/workspace --stop
@@ -128,13 +131,14 @@ application restart. Starting your own portfolio offers optional categories and
 targets, then your first position. Add a name and optional percentage per row;
 Enter adds it and focuses the next blank name. Complete targets totaling 100%
 open an **All set?** confirmation table before saving. You can also save unfinished targets for later.
-Skip setup to open empty Positions, where Add
-position and provisional FinanzManager CSV/Excel import remain available. Saving
+Skip setup to save the selected currency and open Overview after the optional
+tour prompt. Open Positions for Add position or the experimental holdings import. Saving
 categories is separate from saving holdings; Finish later creates no position.
-Portfolio totals and rebalancing use EUR; foreign-currency quotes and buy-ins
-are converted. Existing portfolios skip the welcome dialog.
+Portfolio totals and rebalancing use the selected EUR, USD or GBP reporting
+currency; EUR is the default. Foreign-currency quotes and buy-ins are converted
+when the required FX or cost evidence is available. Existing portfolios skip the welcome dialog.
 
-The header dropdown switches portfolios, **?** opens help, and **Settings** holds
+The header dropdown switches portfolios, **?** opens help, and **Portfolio settings** holds
 display and workspace controls. The animation respects reduced motion and finishes
 automatically. A failed component times out after eight seconds; `--skip-intro`
 disables it for a development server. It plays once per browser
@@ -144,13 +148,13 @@ controls, see [Startup development](startup-development.md).
 Use **Update balances** to replace quantities and optional average buy-ins. In
 **Rebalance → Targets**, configure strategic categories and position targets.
 Analytical label hierarchies are maintained in `classifications.yaml`; see the
-README's data reference. ETF look-through requires a supported/configured snapshot,
+[data reference](user/reference.md). ETF look-through requires a supported/configured snapshot,
 and partial coverage remains visible. Missing prices and buy-ins are unknown,
 not zero. The app is for local analysis and planning; it does not execute trades.
 
 Physical gold is available under **Add position → Physical asset → Gold spot price**.
 Enter fine-gold weight in troy ounces, grams or kilograms. The spot quote is
-converted to EUR and follows the normal refresh/cache behavior. Manual prices
+converted to the reporting currency and follows the normal refresh/cache behavior. Manual prices
 remain available; existing manually valued holdings are not switched automatically.
 
 ## Building and testing packages

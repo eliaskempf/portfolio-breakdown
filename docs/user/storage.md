@@ -18,7 +18,8 @@ uv run portfolio-app --data-dir /path/to/workspace --show-data-dir
 uv run portfolio-app --data-dir /path/to/workspace --open-data-dir
 ```
 
-The workspace contains `holdings.csv`, optional `classifications.yaml`, strategic
+The workspace contains `holdings.csv` (including saved purchase/cost records),
+optional `portfolio.yaml` currency settings, `classifications.yaml`, strategic
 `allocation.yaml`, ETF snapshots under `etfs/`, private overrides, `.cache` and
 per-document `.backups`. Keep the whole directory private. App-managed saves
 validate data, check file revisions and back up previous files before atomic
