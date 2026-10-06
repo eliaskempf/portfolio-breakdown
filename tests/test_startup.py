@@ -100,7 +100,7 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     by_label(app.selectbox, "Portfolio workspace").set_value("Demo portfolio").run()
     assert app.metric[0].value == "€100,000.00"
     position_action(app, "Edit position")
-    by_label(app.number_input, "Quantity held (total)").set_value(9.)
+    by_label(app.text_input, "Quantity held (total)").set_value(str(9.)).run()
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     assert load_holdings(demo / "holdings.csv").iloc[0]["shares"] == 9
@@ -112,9 +112,10 @@ def test_demo_edits_survive_rerun_and_workspace_switch_but_not_new_start(tmp_pat
     by_label(app.button, 'Start my portfolio').click().run()
     by_label(app.button, 'Skip setup').click().run()
     by_label(app.button, 'Add position').click().run()
+    by_label(app.button, "Enter manually").click().run()
     assert by_label(app.text_input, "Instrument name").value == ""
     by_label(app.text_input, "Instrument name").set_value("Synthetic personal position")
-    by_label(app.number_input, "Quantity held (total)").set_value(4.)
+    by_label(app.text_input, "Quantity held (total)").set_value(str(4.)).run()
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     assert load_holdings(personal / "holdings.csv").iloc[0]["shares"] == 4
@@ -149,6 +150,7 @@ def test_switching_workspaces_discards_unsubmitted_form_and_filters(tmp_path):
     activate(app, "Exposure")
     by_label(app.multiselect, "Holdings").set_value([]).run()
     position_action(app, 'Add position')
+    by_label(app.button, "Enter manually").click().run()
     by_label(app.text_input, "Instrument name").set_value("Unsubmitted dummy edit")
     by_label(app.selectbox, "Portfolio workspace").set_value("My portfolio").run()
     assert not app.exception
@@ -156,6 +158,7 @@ def test_switching_workspaces_discards_unsubmitted_form_and_filters(tmp_path):
     assert "position_draft" not in app.session_state.filtered_state
     by_label(app.selectbox, "Portfolio workspace").set_value("Demo portfolio").run()
     position_action(app, 'Add position')
+    by_label(app.button, "Enter manually").click().run()
     assert by_label(app.text_input, "Instrument name").value == ""
     by_label(app.button, "Cancel").click().run()
     activate(app, "Exposure")

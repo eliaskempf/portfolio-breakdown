@@ -9,9 +9,9 @@ def render_performance_summary(performance) -> None:
     summary = summarize_performance(performance)
     if summary.covered_count:
         first, second, third = st.columns(3)
-        first.metric("Unrealized gain / loss (EUR)", f"€{summary.gain_eur:+,.2f}")
-        second.metric("Return on cost", f"{summary.return_pct:+.2f}%" if summary.return_pct is not None else "—")
-        third.metric("Cost basis (EUR)", f"€{summary.cost_eur:,.2f}")
+        first.metric("Unrealized gain / loss (EUR)", f"€{summary.gain_eur:+,.2f}", help='Current value minus known purchase cost in EUR. Missing or incompatible costs are excluded.')
+        second.metric("Return on cost", f"{summary.return_pct:+.2f}%" if summary.return_pct is not None else "—", help='Unrealized gain divided by matching known purchase cost; partial coverage remains indicated.')
+        third.metric("Cost basis (EUR)", f"€{summary.cost_eur:,.2f}", help='Recorded purchase cost for holdings covered by EUR cost data.')
         st.caption(f"Coverage: {summary.covered_count} of {summary.held_count} held positions · EUR buy-ins only")
     else:
         st.info("Add average buy-in prices and their currencies in Manage positions to see performance. "

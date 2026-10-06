@@ -28,8 +28,8 @@ def display_value(metric, key):
 
 
 def risk_settings(key):
-    benchmark = st.text_input('Benchmark ticker', DEFAULT_BENCHMARK, key=key + '_benchmark').strip().upper()
-    years = st.selectbox('History window', [1, 3, 5], index=1,
+    benchmark = st.text_input('Benchmark ticker', DEFAULT_BENCHMARK, help='Quote ticker for the comparison benchmark; this does not add a holding.', key=key + '_benchmark').strip().upper()
+    years = st.selectbox('History window', [1, 3, 5], help='Historical period used to estimate returns and risk; insufficient data remains visible.', index=1,
                          format_func=lambda years: f'{years} year' + ('s' if years != 1 else ''), key=key + '_years')
     st.caption('Default: MSCI ACWI ETF (IUSQ.DE). Adjusted weekly returns in EUR; at least 52 common observations.')
     return benchmark, years

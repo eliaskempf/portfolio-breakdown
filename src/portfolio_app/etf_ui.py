@@ -1,4 +1,5 @@
 """ETF snapshot presentation, separate from portfolio calculations."""
+from portfolio_app.ui_help import column_help
 
 import pandas as pd
 import plotly.express as px
@@ -19,7 +20,7 @@ def render_snapshot_controls(funds: list[FundSnapshot], *, demo: bool = False) -
         if fund.isin == "IE00BMC38736" or source is not None:
             provider = source.provider if source else 'VanEck'
             label = f'Update from {provider}' + (' (proxy)' if fund.proxy_source else '')
-            if st.button(label, disabled=demo, key=f"refresh_etf_{fund.fund_id}"):
+            if st.button(label, help='Download and validate a fund snapshot from its configured provider. Offline demos retain their synthetic snapshots.', disabled=demo, key=f"refresh_etf_{fund.fund_id}"):
                 try:
                     with st.spinner(f"Downloading and validating {provider} holdings…"):
                         fund = (refresh_provider_snapshot if source else refresh_snapshot)(fund)
@@ -68,7 +69,7 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
             st.caption(f'{len(fund.constituents):,} components · {100 * fund.constituents.weight.sum():.2f}% covered')
             if fund.notes:
                 st.caption(fund.notes)
-            view = st.segmented_control('Breakdown view', ['Holdings', 'Summary'],
+            view = st.segmented_control('Breakdown view', ['Holdings', 'Summary'], help='Choose between fund composition summaries and individual underlying holdings.',
                 default='Summary' if fund.asset_class in {'fixed_income', 'money_market'} else 'Holdings',
                 key=f'{key_prefix}fund_view_{fund.fund_id}')
             if view == 'Summary':
@@ -122,7 +123,7 @@ def render_fund_summary(fund, *, key_prefix=''):
         st.info(f'{description}. This represents the economic benchmark, not a bank deposit. {basket_note}')
         st.caption('100% economic representation · Basket coverage is reported separately. No basket securities enter portfolio allocation.')
         return
-    dimension = st.selectbox('Summarize by', list(DIMENSIONS), key=f'{key_prefix}fund_summary_{fund.fund_id}')
+    dimension = st.selectbox('Summarize by', list(DIMENSIONS), help='Choose the dimension used to summarize fund holdings.', key=f'{key_prefix}fund_summary_{fund.fund_id}')
     frame = composition_summary(fund, dimension)
     provider = fund.summaries.get(dimension)
     if provider and 'rows' in provider and frame[dimension].isin(['Unknown', 'Other']).all():

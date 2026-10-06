@@ -32,16 +32,16 @@ def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete:
         st.info('No assets match this search.')
         return
     level_col, detail_col = st.columns([1, 2])
-    level = level_col.segmented_control('Geography granularity', ['Regions', 'Countries'], default='Regions',
+    level = level_col.segmented_control('Geography granularity', ['Regions', 'Countries'], help='Group exposure into countries or broader geographic regions.', default='Regions',
                                        key='geography_level') or 'Regions'
     paths = sorted({p[:i] for p in allocations.path for i in range(1, len(p) + 1)})
     if st.session_state.get('geography_detail', ()) not in [(), *paths]:
         st.session_state['geography_detail'] = ()
-    root = detail_col.selectbox('Geography detail', [(), *paths],
+    root = detail_col.selectbox('Geography detail', [(), *paths], help='Choose the geography breakdown to inspect.',
                                format_func=lambda p: 'Entire selection' if not p else ' › '.join(p),
                                key='geography_detail')
     if root:
-        st.button('Back to geography overview', on_click=lambda: st.session_state.update(geography_detail=()))
+        st.button('Back to geography overview', help='Return from this geographic detail to the full geography view.', on_click=lambda: st.session_state.update(geography_detail=()))
     rows = allocations.loc[allocations.path.map(lambda p: p[:len(root)] == root)]
     assets = bool(root) and (len(root) == 2 or root[0] in SPECIAL | {UNKNOWN})
     if assets:
@@ -73,6 +73,6 @@ def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete:
     if not table['Missing valuations'].any():
         table = table.drop(columns='Missing valuations')
     table_area.dataframe(table, hide_index=True, width='stretch', column_config={
-        'EUR value': st.column_config.NumberColumn('EUR value' if complete else 'Known EUR value', format='€ %.2f'),
+        'EUR value': st.column_config.NumberColumn('EUR value' if complete else 'Known EUR value', help='EUR exposure with available valuations; unavailable prices remain excluded.', format='€ %.2f'),
         '% of selected portfolio': st.column_config.NumberColumn(format='%.2f %%'),
     })

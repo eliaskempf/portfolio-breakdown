@@ -228,6 +228,7 @@ def smoke(command):
                     page.get_by_role('button', name='Start my portfolio', exact=True).click()
                     page.get_by_role('button', name='Skip setup', exact=True).click()
                     page.get_by_role('button', name=re.compile('Add position$')).click()
+                    page.get_by_role('button', name='Enter manually', exact=True).click()
                     expect(page.get_by_role('textbox', name='Instrument name', exact=True)).to_have_value('')
                     page.get_by_role('button', name='Cancel', exact=True).click()
                     assert not (workspace / 'holdings.csv').exists()
@@ -248,8 +249,9 @@ def smoke(command):
                     for name in ['Synthetic imported CSV', 'Synthetic imported Excel']:
                         expect(page.get_by_role('table', name='Positions', exact=True).get_by_text(name, exact=True)).to_be_visible()
                     page.get_by_role('button', name=re.compile(r'Add position$')).click()
+                    page.get_by_role('button', name='Enter manually', exact=True).click()
                     page.get_by_role('textbox', name='Instrument name', exact=True).fill('Synthetic persistent position')
-                    page.get_by_role('spinbutton', name='Quantity held (total)', exact=True).fill('1')
+                    page.get_by_role('textbox', name='Quantity held (total)', exact=True).fill('1')
                     page.get_by_role('button', name='Save position', exact=True).click()
                     expect(page.get_by_role('dialog')).to_have_count(0)
                     expect(page.get_by_role('table', name='Positions', exact=True)

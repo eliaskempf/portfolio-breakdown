@@ -12,6 +12,9 @@ CSS = """
 <style>
 .block-container {max-width:1440px;padding:2rem 2.5rem 3rem;}
 [data-testid="stHeader"] {background:transparent;}
+/* Keep native, keyboard-accessible field help beside its label, not at the
+   far edge of the input. Use semantic test IDs instead of generated classes. */
+[data-testid="stWidgetLabel"] > div:has(> [data-testid="stTooltipIcon"]) {flex:0 0 auto;margin-inline-start:6px;}
 .st-key-app_header {border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent);padding-bottom:16px;margin-bottom:8px;}
 .app-brand {display:flex;align-items:center;gap:10px;font-size:1.3rem;font-weight:650;letter-spacing:-.5px;}
 .app-brand img {width:38px;height:38px;flex-shrink:0;}

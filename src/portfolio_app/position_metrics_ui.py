@@ -27,19 +27,19 @@ def position_metric_toolbar(holdings, data_dir, *, demo=False):
     key = context_key(data_dir, demo) + '_positions'
     toolbar, settings = st.columns([5, 1], vertical_alignment='center')
     with toolbar:
-        view = st.segmented_control('Position view', ['Holdings', *PRESETS], default='Holdings',
+        view = st.segmented_control('Position view', ['Holdings', *PRESETS], help='Switch the position list between holdings, performance, fundamentals and risk views.', default='Holdings',
                                     key=key + '_view', label_visibility='collapsed') or 'Holdings'
     if view == 'Holdings':
         return view, [], {}, None
-    with settings, st.popover('Options', icon=':material/tune:', width='stretch'):
+    with settings, st.popover('Options', help='Choose visible columns and market-data options for this position view.', icon=':material/tune:', width='stretch'):
         choices = list(PRESETS[view])
         choices += (['price_book', 'price_sales', 'market_cap', 'fund_pb', 'revenue_growth',
                      'earnings_growth', 'profit_margin', 'return_equity'] if view == 'Valuation' else
                     ['payout_ratio', 'fund_assets'] if view == 'Income & fees' else [])
-        chosen = st.multiselect('Visible metrics', choices, default=PRESETS[view],
+        chosen = st.multiselect('Visible metrics', choices, help='Choose which metric columns appear in the position list.', default=PRESETS[view],
                                 format_func=LABELS.get, key=key + '_columns_' + view)
         benchmark, years = risk_settings(key) if view == 'Risk' else ('', 3)
-        refresh = st.button('Refresh metrics', icon=':material/refresh:', disabled=demo, key=key + '_refresh_' + view)
+        refresh = st.button('Refresh metrics', help='Request fresh fundamentals for the displayed instruments.', icon=':material/refresh:', disabled=demo, key=key + '_refresh_' + view)
     snapshots, risk = {}, None
     if view == 'Risk':
         if 'current_value_eur' not in holdings:
@@ -107,7 +107,7 @@ def render_instrument_metrics(row, data_dir, *, demo=False):
     key = context_key(data_dir, demo) + '_detail_' + row['id']
     header, refresh_column = st.columns([4, 1], vertical_alignment='center')
     header.markdown('**Key metrics**')
-    refresh = refresh_column.button('Refresh', icon=':material/refresh:', type='tertiary',
+    refresh = refresh_column.button('Refresh', help='Request updated market data for this view.', icon=':material/refresh:', type='tertiary',
                                     disabled=demo, key=key + '_refresh')
     try:
         with st.spinner('Loading metrics…'):
@@ -149,11 +149,11 @@ def render_fee_editor(row, data_dir, key):
         path = data_dir / 'fund-fees.json'
         current = load_fee_overrides(path).get(fee_key(row))
         with st.form(key + '_fee'):
-            rate = st.number_input('Annual fund fee (%)', min_value=0., max_value=100.,
+            rate = st.number_input('Annual fund fee (%)', help='Annual ongoing fund charge in percent, used as an indicative fee estimate.', min_value=0., max_value=100.,
                                     value=current.rate * 100 if current else None, step=.01, format='%.4f')
-            source = st.text_input('Fee source', value=current.source if current else '')
+            source = st.text_input('Fee source', help='Reference supporting the fund fee entered here.', value=current.source if current else '')
             verified = st.date_input('Fee verification date', value=date.fromisoformat(current.verified_on) if current else date.today(), max_value=date.today())
-            accumulating = st.checkbox('Verified accumulating share class', value=current.accumulating if current else False)
+            accumulating = st.checkbox('Verified accumulating share class', help='Confirm the share class reinvests distributions; this affects interpretation of its price history.', value=current.accumulating if current else False)
             save = st.form_submit_button('Save private fee', type='primary')
             remove = st.form_submit_button('Remove private fee', disabled=current is None)
         if save or remove:

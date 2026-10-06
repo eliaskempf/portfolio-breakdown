@@ -74,7 +74,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         remember_unit()
     with display_settings:
         st.markdown('**Display**')
-        percent = st.segmented_control('Performance display', ['€', '%'],
+        percent = st.segmented_control('Performance display', ['€', '%'], help='Show unrealized performance as a currency amount or a percentage of known cost.',
             default=st.session_state.get('performance_preferences', {}).get(context_key, '€'),
             key=unit_key, on_change=remember_unit) == '%'
         hide_empty = st.checkbox('Hide empty positions', key='hide_empty_positions',
@@ -124,7 +124,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             problems = valued.loc[valued.shares.gt(0) & (valued.unrealized_gain_eur.isna() | (valued.price_status.isin(['cached fallback', 'stale']) | valued.fx_status.isin(['cached fallback', 'stale'])))]
             st.dataframe(problems[['name', 'performance_note', 'valuation_note']], hide_index=True, width='stretch')
             st.caption('Edit a position to complete its buy-in or pricing details.')
-            if st.button('Complete buy-ins'):
+            if st.button('Complete buy-ins', help='Open Positions to complete missing purchase cost or pricing details.'):
                 st.session_state['main_tabs'] = 'Positions'
                 st.session_state['positions_workflow_request'] = 'Update balances'
     elif not offline_demo and not valued.price_status.eq('manual').any():

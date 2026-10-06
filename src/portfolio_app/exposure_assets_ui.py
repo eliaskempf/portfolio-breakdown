@@ -1,4 +1,5 @@
 """One searchable exposure table, with on-demand source and fund details."""
+from portfolio_app.ui_help import column_help
 from hashlib import sha256
 import pandas as pd
 import plotly.graph_objects as go
@@ -40,7 +41,7 @@ def source_previews(exposures, selected, table):
 def render_assets(exposures, selected, holdings, funds, classifications, *, query='', show_tickers=False, show_chart=False, complete=True, breakdown=False, context='exposure', footer='', geography=None):
     default = 'labels' if any('labels' in item for item in classifications.values()) else 'sector'
     titles = {'labels': 'Themes', 'sector': 'Sector', 'geography': 'Geography'}
-    taxonomy = st.selectbox('Asset classifications', list(titles), index=list(titles).index(default),
+    taxonomy = st.selectbox('Asset classifications', list(titles), help='Inspect the classifications used to aggregate this asset’s exposure.', index=list(titles).index(default),
                             format_func=titles.get, key='exposure_asset_classifications')
     if geography is not None:
         classifications = {asset: dict(entry) for asset, entry in classifications.items()}
@@ -58,13 +59,13 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
     key = f'exposure_assets_{signature}'
     def select(event):
         st.session_state['exposure_asset_detail'] = event['id']
-    columns = [ListColumn('Asset', 'Asset', width=260)]
+    columns = [ListColumn('Asset', 'Asset', help=column_help('Asset'), width=260)]
     if show_tickers:
-        columns.append(ListColumn('Ticker', 'Ticker', width=110))
-    columns += [ListColumn('Total (EUR)', 'Total (EUR)', numeric=True, width=140),
-                ListColumn('Allocation %', '% of selected portfolio', numeric=True, width=190),
-                ListColumn('Sources', 'Sources', width=190),
-                ListColumn('Labels', titles[taxonomy], badges=taxonomy_colors(classifications, taxonomy))]
+        columns.append(ListColumn('Ticker', 'Ticker', help=column_help('Ticker'), width=110))
+    columns += [ListColumn('Total (EUR)', 'Total (EUR)', help=column_help('Total (EUR)'), numeric=True, width=140),
+                ListColumn('Allocation %', '% of selected portfolio', help=column_help('Allocation %'), numeric=True, width=190),
+                ListColumn('Sources', 'Sources', help=column_help('Sources'), width=190),
+                ListColumn('Labels', titles[taxonomy], help=column_help('Labels'), badges=taxonomy_colors(classifications, taxonomy))]
     render_list(frame_rows(table, id_column='asset_id'), columns, key=key, context=key, title='Exposure assets',
                 on_open=select, max_height=BOUNDED_LIST_HEIGHT if breakdown else None, default_sort='Total (EUR)',
                 preview_column='Sources', preview_value_column='Total (EUR)', preview_share_column='Allocation %', previews=source_previews(exposures, selected, table))
@@ -85,7 +86,7 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
     def details():
         row = table.loc[table.asset_id.eq(asset)].iloc[0]
         st.subheader(row.Asset)
-        st.caption('Unknown values remain unavailable; they are not treated as zero.') if pd.isna(row['Total (EUR)']) else st.metric('Total exposure', f'€{row["Total (EUR)"]:,.2f}')
+        st.caption('Unknown values remain unavailable; they are not treated as zero.') if pd.isna(row['Total (EUR)']) else st.metric('Total exposure', f'€{row["Total (EUR)"]:,.2f}', help='Combined direct and indirect exposure to this asset in EUR.')
         for name in taxonomy_names(classifications):
             st.write(f'{titles.get(name, name.replace("_", " ").title())}: {describe(classifications, asset, name)}')
         if geography is not None:
@@ -94,18 +95,18 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
                 st.caption(reason)
         sources = exposure_sources(exposures, selected, asset)
         st.caption('Asset weight is the share of each contributing position invested in this asset. The final percentage is that source’s share of your total exposure to this asset.')
-        render_list(frame_rows(sources), [ListColumn('Source', 'Source'), ListColumn('Account', 'Account'),
-                    ListColumn('Exposure', 'Source type'), ListColumn('Position value (EUR)', 'Position (EUR)', numeric=True),
-                    ListColumn('Asset weight (%)', 'Asset weight (%)', numeric=True),
-                    ListColumn('Value (EUR)', 'Contribution (EUR)', numeric=True),
-                    ListColumn('% of asset exposure', '% of asset exposure', numeric=True)],
+        render_list(frame_rows(sources), [ListColumn('Source', 'Source', help=column_help('Source')), ListColumn('Account', 'Account', help=column_help('Account')),
+                    ListColumn('Exposure', 'Source type', help=column_help('Exposure')), ListColumn('Position value (EUR)', 'Position (EUR)', help=column_help('Position value (EUR)'), numeric=True),
+                    ListColumn('Asset weight (%)', 'Asset weight (%)', help=column_help('Asset weight (%)'), numeric=True),
+                    ListColumn('Value (EUR)', 'Contribution (EUR)', help=column_help('Value (EUR)'), numeric=True),
+                    ListColumn('% of asset exposure', '% of asset exposure', help=column_help('% of asset exposure'), numeric=True)],
                     key=f'{key}_sources', context=f'{key}_{asset}_sources', title='Exposure sources', default_sort='Value (EUR)')
         source_ids = exposures.loc[exposures.asset_id.eq(asset), 'source_position_id']
         source_positions = selected.loc[selected.position_id.isin(source_ids)]
         relevant = {f.isin for position in source_positions.to_dict('records') if (f := matching_fund(position, funds)) is not None}
         render_fund_details([f for f in funds if f.isin in relevant], source_positions, holdings=holdings,
                             classifications=classifications, show_tickers=show_tickers)
-        if st.button('Close exposure details'):
+        if st.button('Close exposure details', help='Return to the exposure overview.'):
             dismiss()
             st.rerun()
     details()

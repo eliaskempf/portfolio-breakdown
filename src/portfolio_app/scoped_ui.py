@@ -17,7 +17,7 @@ from portfolio_app.scoped_rebalancing import portfolio_contribution, sleeve_posi
 def render_scoped_rebalancing(valued, config):
     if st.session_state.get('planning_scope') == 'Within a bucket':
         st.session_state['planning_scope'] = 'Within a category'
-    workflow = st.segmented_control('Planning scope', key='planning_scope',
+    workflow = st.segmented_control('Planning scope', help='Choose the part of the portfolio whose targets the plan should address.', key='planning_scope',
         options=['Portfolio contribution', 'Within a category'], default='Portfolio contribution') or 'Portfolio contribution'
     if valued is None or valued.empty:
         st.info('Load positions before planning.')
@@ -31,7 +31,7 @@ def render_scoped_rebalancing(valued, config):
             return
         if st.session_state.get('planning_bucket') not in leaves:
             st.session_state['planning_bucket'] = leaves[0]
-        selected = st.selectbox('Planning category', key='planning_bucket', options=leaves, format_func=names.get)
+        selected = st.selectbox('Planning category', help='Category within which purchases and target deviations are calculated.', key='planning_bucket', options=leaves, format_func=names.get)
         try:
             positions = sleeve_positions(valued, config, selected)
             protected = False
@@ -48,31 +48,31 @@ def render_scoped_rebalancing(valued, config):
         return
     st.caption('Allocate across category targets, then balance positions within each category.')
     amount_col, options_col = st.columns([3, 1], vertical_alignment='bottom')
-    amount = amount_col.number_input('Contribution (EUR)', key='planning_amount', min_value=.01, value=500., step=50.)
+    amount = amount_col.number_input('Contribution (EUR)', help='Additional money available for purchases within the chosen planning scope.', key='planning_amount', min_value=.01, value=500., step=50.)
     original = valued
-    with options_col.popover('Options', width='stretch'):
+    with options_col.popover('Options', help='Configure eligible positions, purchase limits and contribution constraints.', width='stretch'):
         st.markdown('**Positions**')
         valued = planning_positions(valued, config)
         labels = position_labels(valued, config)
         identity = sha256(repr(tuple(labels)).encode()).hexdigest()[:12]
-        ids = st.multiselect('Positions eligible for buying', key=f'planning_eligible_{identity}',
+        ids = st.multiselect('Positions eligible for buying', help='Limit purchase suggestions to these positions.', key=f'planning_eligible_{identity}',
                             options=list(labels), default=list(labels), format_func=labels.get)
         no_new = st.toggle('Only buy existing positions', key='planning_no_new',
                            help='Do not buy zero-quantity positions. Their targets remain unless redistribution is enabled.')
         st.markdown('**Purchase rules**')
-        buy_all = st.selectbox('Selection intent', key='planning_intent',
+        buy_all = st.selectbox('Selection intent', help='Choose how the selected positions participate in the contribution plan.', key='planning_intent',
                                options=['Allow skipping positions', 'Buy every selected position']) == 'Buy every selected position'
-        minimum = st.number_input('Minimum purchase (EUR)', key='planning_minimum', min_value=.01, value=25.)
-        max_trades = int(st.number_input('Maximum trades', key=f'planning_max_trades_{len(valued)}',
+        minimum = st.number_input('Minimum purchase (EUR)', help='Minimum size of each suggested purchase; this affects which plans are feasible.', key='planning_minimum', min_value=.01, value=25.)
+        max_trades = int(st.number_input('Maximum trades', help='Upper limit on the number of suggested purchases.', key=f'planning_max_trades_{len(valued)}',
                          min_value=1, max_value=max(1, len(valued)), value=max(1, len(valued))))
         fewer = st.toggle('Compare fewer trades', key='planning_fewer')
         st.markdown('**Tolerances & caps**')
         macro_tolerance = st.number_input('Category tolerance (pp of parent)', key='planning_macro_tolerance', min_value=0., max_value=100., value=.5,
             help='A 10% target with 0.5 percentage points of tolerance has a 9.5–10.5% range.')
-        position_tolerance = st.number_input('Position tolerance (pp of category)', key='planning_position_tolerance', min_value=0., max_value=100., value=.5)
+        position_tolerance = st.number_input('Position tolerance (pp of category)', help='Allowed deviation from a position target, measured in percentage points of its category.', key='planning_position_tolerance', min_value=0., max_value=100., value=.5)
         caps, cap_scope = {}, 'portfolio'
         if st.toggle('Temporary allocation caps', key='planning_caps_enabled'):
-            cap_scope = st.selectbox('Cap denominator', key='planning_cap_scope', options=['portfolio', 'bucket'],
+            cap_scope = st.selectbox('Cap denominator', help='Choose the total against which contribution caps are measured.', key='planning_cap_scope', options=['portfolio', 'bucket'],
                                      format_func=lambda value: '% of portfolio' if value == 'portfolio' else '% of category')
             rows = pd.DataFrame({'position_id': ids, 'Position': [labels[k] for k in ids], 'Maximum %': [float('nan')] * len(ids)})
             edited = persistent_editor(rows, disabled=['position_id', 'Position'], hide_index=True, height='content',
@@ -88,7 +88,7 @@ def render_scoped_rebalancing(valued, config):
     fields = [c for c in ('position_id', 'id', 'name', 'ticker', 'account', 'portfolio', 'shares', 'current_value_eur', 'target_allocation', 'bucket_id', 'within_bucket_target') if c in valued]
     fingerprint = sha256((valued[fields].to_json() + repr((config, amount, ids, buy_all, minimum, no_new, max_trades, macro_tolerance, position_tolerance, caps, cap_scope, fewer,
                                                          st.session_state.get('ignore_empty_positions')))).encode()).hexdigest()
-    if st.button('Calculate plan', key='planning_calculate', type='primary'):
+    if st.button('Calculate plan', help='Calculate suggestions from the current inputs; no holdings are changed and no trades are placed.', key='planning_calculate', type='primary'):
         st.session_state.pop('portfolio_contribution_result', None)
         try:
             options = dict(eligible_ids=ids, minimum_purchase=minimum, buy_all=buy_all, no_new_positions=no_new,
@@ -112,7 +112,7 @@ def render_scoped_rebalancing(valued, config):
     # Mount this below the main results, but obtain the selection before rendering them.
     results = st.container()
     with st.expander('Plan details'):
-        index = st.selectbox('Plan to inspect', key=f'planning_plan_{fingerprint}', options=range(len(plans)), index=len(plans)-1,
+        index = st.selectbox('Plan to inspect', help='Choose a calculated candidate plan to review.', key=f'planning_plan_{fingerprint}', options=range(len(plans)), index=len(plans)-1,
             format_func=lambda i: f'{int(plans[i].trades["Trade (EUR)"].ne(0).sum())} trades · €{plans[i].unallocated_cash:.2f} unallocated') if len(plans) > 1 else 0
         plan = plans[index]
         positions = original.copy()

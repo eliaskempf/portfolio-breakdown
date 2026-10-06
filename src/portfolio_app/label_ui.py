@@ -25,17 +25,17 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                             performance: PerformanceExposures | None = None, performance_percent: bool = True) -> None:
     st.subheader("Themes & sectors")
     choose, navigation, options = st.columns([1.2, 3, 1.2], vertical_alignment='bottom')
-    controls = options.popover('Chart options')
+    controls = options.popover('Chart options', help='Adjust the grouping, hierarchy and display of this chart.')
     with st.container(key="exposure_theme_results"):
         chart_area, table_area = st.columns([1, 1.3], gap="large", vertical_alignment="center")
     names = taxonomy_names(classifications)
     if not names:
         st.info("Add classification labels to your investments to compare their allocation.")
         return
-    with choose.popover("Choose labels"):
+    with choose.popover("Choose labels", help='Choose the classification labels included in this comparison.'):
         if st.session_state.get('label_compare_set') not in names:
             st.session_state['label_compare_set'] = 'labels' if 'labels' in names else names[0]
-        taxonomy = st.selectbox("Label set", names, key="label_compare_set")
+        taxonomy = st.selectbox("Label set", names, help='Select the classification system used for this analysis.', key="label_compare_set")
         choices = available_labels(classifications, taxonomy)
         by_key = {label.key: label for label in choices}
         unclassified = any(paths_for(classifications, asset, taxonomy) == (UNCLASSIFIED,) for asset in exposures.asset_id.unique())
@@ -70,7 +70,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                 return
             policy = "split" if choice == "Split equally" else "overlap"
         chart_types = ["Bar"] if has_overlap and policy == "overlap" else ["Bar", "Pie", "Sunburst", "Treemap"]
-        chart_type = st.selectbox("Chart", chart_types, index=chart_types.index("Sunburst") if "Sunburst" in chart_types else 0,
+        chart_type = st.selectbox("Chart", chart_types, help='Choose how the selected analysis is visualized.', index=chart_types.index("Sunburst") if "Sunburst" in chart_types else 0,
                                   key=f"label_compare_chart_{policy}")
     comparison = compare_labels(exposures, classifications, labels, overlap=policy)
     if comparison.unmatched_value:
@@ -99,8 +99,8 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                             key=detail_key,
                             help="Choose a label or subcategory to update both the chart and its individual-assets table.")
         if root:
-            navigation.button("Back to overview", on_click=lambda: st.session_state.update({detail_key: ()}))
-        assets_only = (controls.checkbox("Show individual assets directly", key="label_compare_assets_only")
+            navigation.button("Back to overview", help='Return to the overview of all labels in this selection.', on_click=lambda: st.session_state.update({detail_key: ()}))
+        assets_only = (controls.checkbox("Show individual assets directly", help='Display individual investments instead of grouping them beneath labels.', key="label_compare_assets_only")
                        if root or chart_type in {"Sunburst", "Treemap"} else False)
         tree = sort_allocation_nodes(comparison_tree(comparison, labels, root=root, assets_only=assets_only))
         if root:
@@ -152,7 +152,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             table_area.dataframe(assets, column_order=['Investment', 'EUR value', 'Allocation %', 'Labels'], hide_index=True, height="content", width="stretch", column_config={
                 "Labels": badge_column("Labels", colors),
                 "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
-                "Allocation %": st.column_config.NumberColumn("Within this detail (%)", format="%.2f %%"),
+                "Allocation %": st.column_config.NumberColumn("Within this detail (%)", help='Share normalized within this selected detail, not the entire portfolio.', format="%.2f %%"),
             } | target_column_config() | performance_column_config(percent=performance_percent))
             return
         allocation_total("Assets matching the selected labels — counted once", comparison.matched_value)
@@ -170,6 +170,6 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
         "Selected labels %": st.column_config.NumberColumn("% of labels", format="%.2f %%",
                                                            help="Share of the unique value matching any selected label."),
-        "Portfolio %": st.column_config.NumberColumn("% of scope", format="%.2f %%"),
+        "Portfolio %": st.column_config.NumberColumn("% of scope", help='Share of the value in the current portfolio scope.', format="%.2f %%"),
         "Assets": st.column_config.NumberColumn(help="Unique matching assets; direct and ETF-derived exposure to the same asset count once."),
     } | target_column_config() | performance_column_config(percent=performance_percent))

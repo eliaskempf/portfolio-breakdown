@@ -18,7 +18,7 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                 image = f'<img alt="" src="data:image/svg+xml;base64,{b64encode(icon.read_bytes()).decode()}" />' if icon else ''
                 st.html(f'<div class="app-brand">{image}<span>Breakdown</span></div>')
             if demo_dir is not None:
-                workspace = st.selectbox('Portfolio workspace', ['My portfolio', 'Demo portfolio'],
+                workspace = st.selectbox('Portfolio workspace', ['My portfolio', 'Demo portfolio'], help='Switch between your local portfolio and the separate demonstration workspace.',
                     index=1 if demo else 0, key='active_portfolio', label_visibility='collapsed', width=200)
                 demo = workspace == 'Demo portfolio'
                 if demo:
@@ -28,8 +28,10 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                     reset_workspace()
                     st.session_state['portfolio_workspace_context'] = context
             offline = demo and not (data_dir / '.live-demo').exists()
-            refresh = st.button('Refresh prices', icon=':material/refresh:', type='tertiary', disabled=offline)
-            settings = st.popover('Settings', icon=':material/tune:')
+            refresh = st.button('Refresh prices', help='Request updated quotes and exchange rates. Unavailable in the synthetic offline demo.', icon=':material/refresh:', type='tertiary', disabled=offline)
+            settings = st.popover('Portfolio settings', icon=':material/tune:', help='Portfolio display preferences and local workspace controls.')
+            with settings:
+                st.caption('Appearance: choose Light, Dark or System from the top-right app menu.')
             with st.popover('?', help='Help and demo guide'):
                 from portfolio_app.documentation import guide_url
                 st.link_button('User guide', guide_url(), icon=':material/menu_book:')
@@ -47,14 +49,14 @@ def workspace_info(active: Path, persistent: Path, *, demo: bool) -> None:
         st.caption(f'Portfolio Breakdown {app_version()} · GPL-3.0-only')
         st.caption('Temporary demo folder' if demo else 'Portfolio folder')
         st.code(str(active.resolve()), language=None)
-        if st.button('Open data folder'):
+        if st.button('Open data folder', help='Open the active portfolio’s local storage folder in the file manager.'):
             from portfolio_app.desktop import open_folder
             try:
                 open_folder(active)
             except OSError as exc:
                 st.error(f'Could not open the folder: {exc}')
         st.caption('Back up the complete folder with the app stopped. Closing the app window stops it; closing a browser tab does not.')
-        if st.button('Stop application'):
+        if st.button('Stop application', help='Stop this local app process; saved portfolio files remain on disk.'):
             from portfolio_app.launcher import stop_instance
             st.info('Stopping the local application. You can close this tab.')
             timer = threading.Timer(.5, stop_instance, args=(persistent,))

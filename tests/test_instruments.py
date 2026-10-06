@@ -165,3 +165,30 @@ def test_explicit_crypto_currency_and_token_identity_are_preserved():
     groups = result_groups(catalog_search("ETH"))
     assert len(groups) == 2
     assert [group["listings"][0]["currency"] for group in groups] == ["EUR", "USD"]
+
+
+def test_grouping_deduplicates_tickers_without_merging_names_or_invalid_isins():
+    # Invented listings with a public ISIN used only as instrument metadata.
+    listings = [Instrument('SYN-A', 'Invented fund', 'Exchange A', 'ETF', 'IE00BMC38736'),
+                Instrument('SYN-A', 'Duplicate', 'Exchange A', 'ETF', 'IE00BMC38736'),
+                Instrument('SYN-B', 'Invented fund', 'Exchange B', 'ETF', 'IE00BMC38736'),
+                Instrument('SYN-C', 'Invented fund', 'Exchange A', 'ETF', 'invalid'),
+                Instrument('SYN-D', 'Invented fund', 'Exchange B', 'ETF', 'invalid')]
+    groups = result_groups(listings)
+    assert len(groups) == 3
+    assert [item['ticker'] for item in groups[0]['listings']] == ['SYN-A', 'SYN-B']
+
+
+@pytest.mark.parametrize('identifier,expected', [('US0378331005', 'US0378331005'), ('US0378331006', ''), (None, '')])
+def test_details_use_valid_exact_ticker_metadata_before_optional_isin_lookup(monkeypatch, tmp_path, identifier, expected):
+    monkeypatch.setattr('portfolio_app.instruments.yf.Ticker', lambda symbol:
+        SimpleNamespace(get_info=lambda: {'currency': 'USD', 'isin': identifier}))
+    queries = []
+    def lookup(query):
+        queries.append(query)
+        return []
+    monkeypatch.setattr('portfolio_app.instruments.lookup_isin_candidates', lookup)
+    result = InstrumentSearch(tmp_path).details(Instrument('AAPL', 'Apple Inc.'))
+    assert result.isin == expected
+    assert result.currency == 'USD'
+    assert bool(queries) == (not expected)

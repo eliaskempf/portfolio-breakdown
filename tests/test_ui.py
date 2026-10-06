@@ -442,11 +442,12 @@ def test_create_position_from_empty_app_and_reopen(tmp_path, sample_data_dir):
     # No holdings or classifications file is needed to create the first position.
     app = launch(tmp_path)
     assert not app.exception
+    by_label(app.button, "Enter manually").click().run()
     by_label(app.text_input, "Instrument name").set_value("New asset")
-    by_label(app.number_input, "Quantity held (total)").set_value(1.23456789)
+    by_label(app.text_input, "Quantity held (total)").set_value(str(1.23456789)).run()
     by_label(app.text_input, "Portfolio / sleeve").set_value("AI")
     by_label(app.text_input, "Account / broker").set_value("Broker")
-    by_label(app.number_input, "Average buy-in per unit (optional)").set_value(42.50)
+    by_label(app.text_input, "Average buy-in per unit (optional)").set_value(str(42.50)).run()
     by_label(app.number_input, "Target allocation % (optional)").set_value(10.0)
     by_label(app.button, "Save position").click().run()
     assert not app.exception
@@ -473,8 +474,8 @@ def test_edit_position_updates_total_shares_buy_in_and_currency(tmp_path, sample
     )
     app = launch(tmp_path)
     position_action(app, "Edit position")
-    by_label(app.number_input, "Quantity held (total)").set_value(15.0)
-    by_label(app.number_input, "Average buy-in per unit (optional)").set_value(106.666667)
+    by_label(app.text_input, "Quantity held (total)").set_value(str(15.0)).run()
+    by_label(app.text_input, "Average buy-in per unit (optional)").set_value(str(106.666667)).run()
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     frame = load_holdings(tmp_path / "holdings.csv")
@@ -487,7 +488,7 @@ def test_edit_position_updates_total_shares_buy_in_and_currency(tmp_path, sample
 
 def test_create_position_validation_error_does_not_save(tmp_path):
     app = launch(tmp_path)
-    by_label(app.number_input, "Quantity held (total)").set_value(1.0)
+    by_label(app.text_input, "Quantity held (total)").set_value(str(1.0)).run()
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     assert any("nonempty name" in item.value for item in app.error)
@@ -502,7 +503,7 @@ def test_edit_stale_file_prompts_reload_without_overwrite(tmp_path, sample_data_
     position_action(app, "Edit position")
     changed = "id,name,ticker,shares\nnvda,Nvidia,NVDA,20\n"
     path.write_text(changed)
-    by_label(app.number_input, "Quantity held (total)").set_value(15.0)
+    by_label(app.text_input, "Quantity held (total)").set_value(str(15.0))
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     assert any("Holdings changed" in item.value for item in app.warning)
@@ -514,10 +515,11 @@ def test_edit_stale_file_prompts_reload_without_overwrite(tmp_path, sample_data_
 def test_new_ucits_position_rejects_bare_smh_before_save(tmp_path, sample_data_dir):
     shutil.copytree(sample_data_dir / "etfs", tmp_path / "etfs")
     app = launch(tmp_path)
+    by_label(app.button, "Enter manually").click().run()
     by_label(app.text_input, "Instrument name").set_value("VanEck UCITS")
     by_label(app.text_input, "Ticker").set_value("smh")
     by_label(app.text_input, "ISIN (optional)").set_value("IE00BMC38736")
-    by_label(app.number_input, "Quantity held (total)").set_value(1.0)
+    by_label(app.text_input, "Quantity held (total)").set_value(str(1.0)).run()
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     assert any("SMH.L" in item.value for item in app.error)
@@ -530,9 +532,10 @@ def test_new_position_is_visible_after_filters_were_cleared(tmp_path, sample_dat
     app = launch(tmp_path)
     by_label(app.multiselect, "Holdings").set_value([]).run()
     position_action(app, 'Add position')
+    by_label(app.button, "Enter manually").click().run()
     by_label(app.text_input, "Instrument name").set_value("Arista")
     by_label(app.text_input, "Ticker").set_value("anet")
-    by_label(app.number_input, "Quantity held (total)").set_value(1.0)
+    by_label(app.text_input, "Quantity held (total)").set_value(str(1.0)).run()
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     activate(app, 'Exposure')
@@ -548,14 +551,14 @@ def test_new_buy_in_requires_currency_but_legacy_amount_is_not_guessed(tmp_path,
     path.write_text("id,name,ticker,shares,acquisition_price\nnvda,Nvidia,NVDA,10,100\n")
     app = launch(tmp_path)
     position_action(app, "Edit position")
-    assert by_label(app.text_input, "Buy-in currency").value == ""
-    by_label(app.number_input, "Average buy-in per unit (optional)").set_value(110.)
+    assert by_label(app.selectbox, "Buy-in currency").value == ""
+    by_label(app.text_input, "Average buy-in per unit (optional)").set_value(str(110.)).run()
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     assert any("Enter the currency" in item.value for item in app.error)
     assert load_holdings(path)["acquisition_price"].iloc[0] == 100
-    by_label(app.number_input, "Average buy-in per unit (optional)").set_value(100.)
-    by_label(app.number_input, "Quantity held (total)").set_value(11.)
+    by_label(app.text_input, "Average buy-in per unit (optional)").set_value(str(100.)).run()
+    by_label(app.text_input, "Quantity held (total)").set_value(str(11.)).run()
     by_label(app.button, "Save position").click().run()
     assert not app.exception
     assert load_holdings(path)["shares"].iloc[0] == 11

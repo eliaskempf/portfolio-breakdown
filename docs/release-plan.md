@@ -1043,3 +1043,87 @@ Record its run and packaged smoke results before treating the new installer as
 verified. Existing portfolios can use **Refresh ETF holdings now** to retry
 previously unavailable breakdowns. No official release or tag is authorized by
 this integration.
+
+## V1 position-entry and contextual-help polish (2026-10-05)
+
+Prepared on `feature/v1-ui-polish`, based on release-v1 `dbaca01`.
+
+- Position entry keeps quantity, linked average/total purchase cost, category and
+  target visible. Compact decimal inputs preserve unchanged saved precision;
+  the last edited cost remains authoritative when quantity changes. Account and
+  manual pricing move into More details, except essential physical-asset valuation.
+- Search uses explicit selection actions and verified-ISIN listing groups, removes
+  interest-specific suggestion chips, and retains manual entry and existing
+  instrument reuse. Reusing an existing identity retains the new position draft.
+- Optional purchase rows calculate a new holding through existing purchase
+  validation and atomic persistence. Manual drafts and table drafts survive mode
+  changes and dismissal. Sales accounting remains excluded.
+- Native control help and shared table-header help explain actions, units and
+  percentage scopes. Portfolio settings is distinct from Streamlit appearance;
+  launcher configuration hides developer menu controls while retaining themes.
+- Updated the positions/getting-started/reference guide and candidate checklist.
+  Holdings and purchase-history formats and dependencies are unchanged.
+
+Automated validation used temporary invented workspaces and offline market inputs.
+The complete 1,070-test suite ran with browser and documentation dependencies:
+1,068 passed; two browser assertions still expected the previous manual-entry
+visibility and absence of category help. Those assertions were updated to the
+intended controls, including real tooltip visibility, and both passed on rerun.
+The final focused 59-test run covered position entry, search, precision, purchase
+rows, draft recovery and the updated welcome flow; the category keyboard/help
+regression passed separately. All 1,070 cases are covered across these runs, with
+no skipped tests. Ruff correctness checks and the changed/untracked-file privacy
+scan passed; the staged index was not modified.
+
+The source application's browser/navigation/lifecycle smoke check passed,
+including import, save/restart and workspace recovery. The isolated preview was
+restarted after Python changes and checked in Chromium across Overview, Exposure,
+Positions and Rebalance, Light/Dark themes, linked cost entry and narrow layout,
+without application exceptions. No personal portfolio was read or changed.
+
+These source changes require a new candidate build and normal native-platform
+acceptance before release. No candidate, tag or release was published here.
+
+
+Follow-up UI review simplified identity to one row: an editable name and the
+read-only price ticker selected by search. Optional ISIN metadata appears only
+under More details; missing ISIN does not prevent ticker-based pricing. Explicit
+manual entry still permits typing a ticker. Listing detail enrichment accepts
+checksum-valid ISINs from exact-ticker metadata before optional lookup, and
+selected listing fields survive reruns and draft resumption.
+
+The buy-in currency selector is beside quantity and offers only EUR for new
+positions until acquisition FX support is implemented. Saved foreign costs remain
+in their original currency with a locked selector; unlabelled legacy costs stay
+unlabelled unless explicitly assigned EUR. No conversion or relabelling occurs.
+Full reporting-currency and historical acquisition FX support remains separate.
+
+The identity/currency browser checks passed, covering a single editable name,
+locked ticker, retained ISIN, EUR-only options, linked costs and narrow layouts.
+The restarted online synthetic preview passed live Apple search and the same
+form checks without saving a position or accessing personal data. Automated
+regressions use synthetic workspaces and offline inputs. Test fixtures now use
+the explicit manual-entry action when adding a holding without search.
+
+Field-help spacing now keeps Streamlit’s native help button 6 px beside its
+label instead of stretching to the input’s far edge. Three form browser tests
+passed. The restarted online preview was verified at 1440, 620 and 390 px with
+6 px gaps, mouse hover, keyboard focus and touch activation; column-heading
+hover/focus help also passed. Public demo quotes required one refresh retry.
+
+Pre-merge review (2026-10-05): corrected copied help text for sell protection,
+immediate category assignment, temporary caps and minimum purchases, and removed
+the getting-started guide’s incorrect claim that foreign purchase costs convert.
+The 1,076-case regression run had 1,073 passes and three legacy manual-entry test
+failures. Those tests now explicitly choose Enter manually; all three passed on
+rerun, and the relevant 26-test UI/startup suite passed. No tests were skipped.
+Documentation checks passed (11 tests), as did lint, diff whitespace checks and
+the changed-file privacy scan. The installed source application’s browser,
+navigation, import/save/restart and lifecycle smoke passed. The online preview
+was restarted and checked across all main tabs and corrected category help.
+
+The feature worktree is based on dbaca01. As of the 2026-10-06 merge handoff,
+release-v1 has advanced to cb7d348 with desktop packaging and demo fixes; those
+changes require integration checks when merging this branch. Currency support is
+a separate feature. A new candidate build and native-platform acceptance remain
+release gates, not prerequisites for this source merge.

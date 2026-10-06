@@ -30,8 +30,9 @@ def test_welcome_demo_and_manual_save_are_isolated(tmp_path):
     by_label(app.button, 'Skip setup').click().run()
     by_label(app.button, 'Add position').click().run()
     assert not app.exception
+    by_label(app.button, 'Enter manually').click().run()
     by_label(app.text_input, 'Instrument name').set_value('Invented first position')
-    by_label(app.number_input, 'Quantity held (total)').set_value(2.)
+    by_label(app.text_input, 'Quantity held (total)').set_value(str(2.)).run()
     by_label(app.button, 'Save position').click().run()
     assert not app.exception
     assert read_snapshot(personal / 'holdings.csv').holdings.shares.tolist() == [2.]
@@ -141,7 +142,7 @@ def test_guided_categories_targets_and_first_physical_position(tmp_path):
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
     by_label(app.radio, 'Valuation method').set_value('Manual price').run()
     by_label(app.text_input, 'Instrument name').set_value('Invented gold coins')
-    by_label(app.number_input, 'Quantity held (total)').set_value(2.5)
+    by_label(app.text_input, 'Quantity held (total)').set_value(str(2.5)).run()
     by_label(app.number_input, 'Current price per troy oz (optional)').set_value(2000.)
     gold = next(b.id for b in config.buckets if b.name == 'Invented gold')
     by_label(app.selectbox, 'Category').set_value(gold)
@@ -187,12 +188,12 @@ def test_physical_unit_change_clears_amounts_and_edit_keeps_unit(tmp_path):
     by_label(app.button, 'Add position').click().run()
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
     by_label(app.radio, 'Valuation method').set_value('Manual price').run()
-    by_label(app.number_input, 'Quantity held (total)').set_value(2.)
+    by_label(app.text_input, 'Quantity held (total)').set_value(str(2.)).run()
     by_label(app.number_input, 'Current price per troy oz (optional)').set_value(2000.).run()
     by_label(app.selectbox, 'Quantity unit').set_value('grams').run()
-    assert by_label(app.number_input, 'Quantity held (total)').value == 0
+    assert by_label(app.text_input, 'Quantity held (total)').value == ''
     assert by_label(app.number_input, 'Current price per grams (optional)').value is None
-    by_label(app.number_input, 'Quantity held (total)').set_value(10.)
+    by_label(app.text_input, 'Quantity held (total)').set_value(str(10.)).run()
     by_label(app.number_input, 'Current price per grams (optional)').set_value(60.)
     by_label(app.button, 'Save position').click().run()
     assert not app.exception and not app.error
@@ -267,7 +268,7 @@ def test_physical_gold_spot_save_edit_and_explicit_manual_switch(tmp_path):
     assert by_label(app.radio, 'Valuation method').value == 'Gold spot price'
     assert set(by_label(app.selectbox, 'Quantity unit').options) == {'troy oz', 'grams', 'kg'}
     by_label(app.selectbox, 'Quantity unit').set_value('kg').run()
-    by_label(app.number_input, 'Quantity held (total)').set_value(.1)
+    by_label(app.text_input, 'Quantity held (total)').set_value(str(.1)).run()
     by_label(app.text_input, 'Instrument name').set_value('Invented gold weight')
     by_label(app.button, 'Save position').click().run()
     assert not app.exception and not app.error
@@ -302,8 +303,8 @@ def test_new_manual_units_cannot_be_reinterpreted_as_gold_ounces(tmp_path):
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
     by_label(app.radio, 'Valuation method').set_value('Manual price').run()
     by_label(app.selectbox, 'Quantity unit').set_value('units').run()
-    by_label(app.number_input, 'Quantity held (total)').set_value(10.).run()
+    by_label(app.text_input, 'Quantity held (total)').set_value(str(10.)).run()
     by_label(app.radio, 'Valuation method').set_value('Gold spot price').run()
     assert not app.exception
-    assert by_label(app.number_input, 'Quantity held (total)').value == 0.
+    assert by_label(app.text_input, 'Quantity held (total)').value == ''
     assert by_label(app.selectbox, 'Quantity unit').value == 'troy oz'

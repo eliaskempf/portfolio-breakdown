@@ -54,21 +54,21 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                 scope_labels.update({name: name for name in sorted(set(holdings.portfolio) - {''})})
             if st.session_state.get('exposure_scope', '') not in scope_labels:
                 st.session_state['exposure_scope'] = ''
-            scope = st.selectbox('Source scope', list(scope_labels), format_func=scope_labels.get, key='exposure_scope')
+            scope = st.selectbox('Source scope', list(scope_labels), help='Choose the portfolio positions contributing to this exposure calculation.', format_func=scope_labels.get, key='exposure_scope')
         with search_col:
-            query = st.text_input('Search exposure', placeholder='Investment or ticker…', key='exposure_search')
+            query = st.text_input('Search exposure', help='Filter the displayed exposures by name or identifier.', placeholder='Investment or ticker…', key='exposure_search')
         with breakdown_col:
             lookthrough = render_etf_toggle(data_dir)
         with filter_col:
-            filters = st.popover('Filters', width='stretch')
+            filters = st.popover('Filters', help='Limit the holdings contributing to the exposure analysis.', width='stretch')
         with settings_col:
-            settings_panel = st.popover('Data & settings', width='stretch')
+            settings_panel = st.popover('Data & settings', help='Configure fund breakdowns, refresh sources and exposure-specific settings.', width='stretch')
     # Place results before the settings content in the page's document order.
     summary_area = st.container(key='exposure_summary')
     results_area = st.container(key='exposure_results')
     with settings_panel:
-        show_tickers = st.checkbox('Show tickers', value=False, key='display_tickers')
-        show_chart = st.checkbox('Show largest exposures chart', key='exposure_show_chart')
+        show_tickers = st.checkbox('Show tickers', help='Display quote tickers alongside investment names.', value=False, key='display_tickers')
+        show_chart = st.checkbox('Show largest exposures chart', help='Show a chart of the largest exposures in the current selection.', key='exposure_show_chart')
         with st.expander('Individual ETFs'):
             expanded_funds = render_etf_choices(holdings, funds, data_dir, enabled=lookthrough)
         refresh_panel = st.expander('ETF refresh & snapshots')
@@ -105,7 +105,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             for dimension in dimensions:
                 choices = sorted(holdings[dimension].unique())
                 metadata[dimension] = st.multiselect(
-                    dimension.replace("_", " ").title(), choices, default=choices,
+                    dimension.replace("_", " ").title(), choices, help='Filter contributing positions by this saved classification.', default=choices,
                     format_func=lambda value: value or "Unspecified", key=f"filter_meta_{dimension}",
                 )
             ids = list(holdings["id"].unique())
@@ -128,7 +128,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                 st.caption("Include whole instruments matching any selected branch, before ETF expansion. Filters across taxonomies are combined.")
                 for name in names:
                     selected = st.multiselect(
-                        f"{name} branches", branches(classifications, ids, name),
+                        f"{name} branches", branches(classifications, ids, name), help='Limit the displayed hierarchy to these branches.',
                         format_func=lambda path: " > ".join(path), key=f"filter_taxonomy_{name}",
                     )
                     if selected:
@@ -147,7 +147,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                 st.session_state[f'filter_meta_{dimension}'] = sorted(holdings[dimension].unique())
             for name in names:
                 st.session_state[f'filter_taxonomy_{name}'] = []
-        st.button('Clear filters', on_click=clear_filters)
+        st.button('Clear filters', help='Restore the full source selection for this analysis.', on_click=clear_filters)
     if price_service is None:
         try:
             provider = StaticProvider(data_dir / "demo_prices.json") if demo else SpotGoldProvider(YahooProvider(data_dir / ".cache" / "yahoo"))
@@ -172,7 +172,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         with first:
             value_metric(selected_total, summarize_performance(selected), missing=missing,
                          percent=performance_percent, key='exposure_value', on_toggle_gain=on_toggle_gain)
-        second.metric('Portfolio share', f'{100 * selected_total / total:.1f}%' if not missing and not all_missing and total else '—')
+        second.metric('Portfolio share', f'{100 * selected_total / total:.1f}%' if not missing and not all_missing and total else '—', help='Current value of this selection divided by total portfolio value.')
     with refresh_panel:
         if lookthrough:
             intact = sum(row.get('shares', 0) > 0 and row.get('instrument_type') == 'etf'
@@ -197,7 +197,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         lambda asset: f'{source_names.get(asset, "ETF")} / Other')
     effective_exposures = exposures
     saved_classifications = classifications
-    mode = results_area.segmented_control('Exposure view', ['Assets', 'Themes & sectors', 'Geography'], default='Assets', key='exposure_view')
+    mode = results_area.segmented_control('Exposure view', ['Assets', 'Themes & sectors', 'Geography'], help='Choose the exposure analysis to display.', default='Assets', key='exposure_view')
     if mode == 'Themes & sectors':
         targets = None
         if display_group is not None:
@@ -258,10 +258,10 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                *[(f'metadata:{name}', name.replace('_', ' ').title()) for name in dimensions],
                ('holding', 'Investment')]
     view_col, root_col, options_col = st.columns([2, 3, 1.4], vertical_alignment='bottom')
-    view = view_col.selectbox('Group by', [key for key, _ in options], format_func=dict(options).get, key='exposure_group')
+    view = view_col.selectbox('Group by', [key for key, _ in options], help='Choose the taxonomy or dimension used to combine exposures.', format_func=dict(options).get, key='exposure_group')
     root, depth, include_holdings = (), None, False
     show_paths = False
-    chart_settings = options_col.popover('Chart options') if view != 'selected_labels' else None
+    chart_settings = options_col.popover('Chart options', help='Adjust the grouping, hierarchy and display of this chart.') if view != 'selected_labels' else None
     if view.startswith('taxonomy:'):
         taxonomy = view.removeprefix('taxonomy:')
         if taxonomy == 'ai':
@@ -271,17 +271,17 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
         if st.session_state.get(root_key, ()) not in roots:
             st.session_state[root_key] = ()
         navigation, back = root_col.columns([5, 1], vertical_alignment='bottom')
-        root = navigation.selectbox('Hierarchy root', roots, format_func=lambda path: ' › '.join(path) if path else 'Entire taxonomy', key=root_key)
+        root = navigation.selectbox('Hierarchy root', roots, help='Start the chart at this taxonomy node and show its descendants.', format_func=lambda path: ' › '.join(path) if path else 'Entire taxonomy', key=root_key)
         if root:
-            back.button('Back', on_click=lambda: st.session_state.update({root_key: root[:-1]}))
+            back.button('Back', help='Return to the preceding level of this view.', on_click=lambda: st.session_state.update({root_key: root[:-1]}))
         with chart_settings:
             max_depth = max((len(path) - len(root) for path in roots if path[:len(root)] == root), default=0)
-            depth = st.selectbox('View depth', [None, *range(1, max_depth + 1)], format_func=lambda value: 'Full tree' if value is None else f'{value} level(s) below root', key=f'depth_{taxonomy}_{root}')
-            include_holdings = st.checkbox('Show holdings beneath labels', key='exposure_control_holdings')
+            depth = st.selectbox('View depth', [None, *range(1, max_depth + 1)], help='Number of hierarchy levels displayed beneath the current root.', format_func=lambda value: 'Full tree' if value is None else f'{value} level(s) below root', key=f'depth_{taxonomy}_{root}')
+            include_holdings = st.checkbox('Show holdings beneath labels', help='Include individual holdings as leaves beneath classification labels.', key='exposure_control_holdings')
             show_paths = st.checkbox('Show classification paths', key='exposure_control_paths', help='Show the taxonomy breadcrumb for each category.')
     if view != 'selected_labels':
         with chart_settings:
-            chart_type = st.selectbox('Chart', ['Sunburst', 'Treemap', 'Bar', 'Pie'], key='exposure_control_chart')
+            chart_type = st.selectbox('Chart', ['Sunburst', 'Treemap', 'Bar', 'Pie'], help='Choose how the selected analysis is visualized.', key='exposure_control_chart')
     if query:
         st.caption('Search applies in Assets. Theme percentages cover the selected source scope.')
     chart_exposures = exposures.copy()
@@ -397,19 +397,19 @@ def render_source_positions(selected, valued, names, classifications, show_ticke
     if st.checkbox("Show price details", key="exposure_show_price_details", help="Quote timestamps, FX status and valuation notes"):
         columns += ["price_status", "price_observed_at", "price_age_hours", "fx_status", "fx_observed_at", "fx_age_hours", "valuation_note"]
     st.dataframe(table[columns], hide_index=True, width="stretch", height="content", column_config={
-        "id": None, "name": "Investment", "ticker": "Ticker" if show_tickers else None, "shares": st.column_config.NumberColumn('Quantity', format='%.10f'),
-        'Current bucket %': st.column_config.NumberColumn('Current (% of bucket)', format='%.2f %%'),
-        'Target bucket %': st.column_config.NumberColumn('Target (% of bucket)', format='%.2f %%'),
+        "id": None, "name": "Investment", "ticker": "Ticker" if show_tickers else None, "shares": st.column_config.NumberColumn('Quantity', help='Number of held units, including fractional quantities.', format='%.10f'),
+        'Current bucket %': st.column_config.NumberColumn('Current (% of bucket)', help='Current position value divided by the current value of its category.', format='%.2f %%'),
+        'Target bucket %': st.column_config.NumberColumn('Target (% of bucket)', help='Desired share of this position’s assigned category.', format='%.2f %%'),
         'holdings_confirmed_on': 'Holdings last confirmed', 'quantity_unit': 'Quantity unit',
         "quote_currency": "Currency", "fx_to_eur": None,
-        "current_value_eur": st.column_config.NumberColumn("Current value (EUR)", format="€ %.2f"),
-        "portfolio_weight": st.column_config.NumberColumn("Selected weight (%)", format="%.2f %%"),
-        "target_allocation": st.column_config.NumberColumn("Target allocation (% of whole portfolio)", format="%.2f %%"),
-        "current_price": st.column_config.NumberColumn("Price (quote currency)", format="%.4f"),
-        "acquisition_price": st.column_config.NumberColumn("Average buy-in per unit", format="%.6f"),
-        "acquisition_currency": st.column_config.TextColumn("Buy-in currency"),
-        "cost_basis": st.column_config.NumberColumn("Cost basis (buy-in currency)", format="%.2f"),
-        "performance_note": st.column_config.TextColumn("Performance details"),
+        "current_value_eur": st.column_config.NumberColumn("Current value (EUR)", help='Current quantity multiplied by its price and converted to EUR where available.', format="€ %.2f"),
+        "portfolio_weight": st.column_config.NumberColumn("Selected weight (%)", help='Share of the currently selected exposure, normalized within that selection.', format="%.2f %%"),
+        "target_allocation": st.column_config.NumberColumn("Target allocation (% of whole portfolio)", help='Desired position value as a share of the entire portfolio.', format="%.2f %%"),
+        "current_price": st.column_config.NumberColumn("Price (quote currency)", help='Current price per unit in the listing’s trading currency.', format="%.4f"),
+        "acquisition_price": st.column_config.NumberColumn("Average buy-in per unit", help='Average recorded purchase cost per held unit, including known purchase fees.', format="%.6f"),
+        "acquisition_currency": st.column_config.TextColumn("Buy-in currency", help='Currency of recorded purchase costs; it may differ from the live quote currency.'),
+        "cost_basis": st.column_config.NumberColumn("Cost basis (buy-in currency)", help='Recorded average purchase cost multiplied by the quantity held.', format="%.2f"),
+        "performance_note": st.column_config.TextColumn("Performance details", help='Reasons performance is incomplete or undefined, such as missing purchase cost or currency.'),
     } | {f"classification:{name}": (badge_column("Labels", taxonomy_colors(classifications, name)) if name == "labels" else
                                     "AI theme" if name == "ai" else name.replace("_", " ").title()) for name in names} | performance_column_config(percent=performance_percent))
     st.caption("Latest available daily close · Prices may be delayed")

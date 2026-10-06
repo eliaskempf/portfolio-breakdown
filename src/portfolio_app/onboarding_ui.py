@@ -27,14 +27,14 @@ def render_welcome(*, demo_available: bool) -> bool:
                 st.markdown('### Explore a demo')
                 st.write('Discover allocations, ETF holdings and rebalancing with a ready-made portfolio.')
                 st.caption('Try freely. Demo edits reset on restart.')
-                if st.button('Explore demo', on_click=_start, args=('demo',), type='primary', width='stretch'):
+                if st.button('Explore demo', help='Explore invented holdings in a separate demonstration workspace.', on_click=_start, args=('demo',), type='primary', width='stretch'):
                     st.rerun()
         with columns[-1], st.container(key='welcome_personal', border=True):
             st.html('<div class="welcome-symbol" aria-hidden="true">＋</div>')
             st.markdown('### Start my portfolio')
             st.write('Set up optional categories, then add your first position. You can skip setup.')
             st.caption('Your portfolio stays saved on this computer.')
-            if st.button('Start my portfolio', on_click=_start, args=('manual',), width='stretch'):
+            if st.button('Start my portfolio', help='Set up your own categories and first holding in the local workspace.', on_click=_start, args=('manual',), width='stretch'):
                 st.rerun()
     welcome()
     return True

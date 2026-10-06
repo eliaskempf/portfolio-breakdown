@@ -76,12 +76,27 @@ def _render_table(rows, columns, *, context, revision, on_open, interactive=True
     for row in rows:
         row['title'] = ' · '.join(value for value in [row['fullName'], row['ticker'], row['isin'], row['account']] if value)
         row['editLabel'] = 'Edit ' + row['name'] + (' · ' + row['account'] if row['account'] else '')
+    from portfolio_app.fundamentals import DEFINITIONS
+    def metric_help(field):
+        definition = DEFINITIONS.get(field.removeprefix('metric_'))
+        return definition.description if definition else 'Saved position attribute; missing values appear as a dash.'
     numeric = {'quantity', 'value', 'allocation', 'gain', 'returnPct', 'gainEur'}
     column_specs = [ListColumn(field, label, numeric=field in numeric or field.startswith('metric_'), decimals=10 if field == 'quantity' else 2,
                               signed=field in {'gain', 'returnPct', 'gainEur'},
                               tooltip='title' if field == 'name' else field + '_note' if field.startswith('metric_') else '',
                               display=field + '_display' if field.startswith('metric_') else '',
-                              help='Unrealized gain on recorded EUR cost') for field, label in columns]
+                              help={'name': 'Investment name; select a row for position details.',
+                                    'quantity': 'Total units currently held, including fractional units.',
+                                    'value': 'Current value in EUR at the available unit price and exchange rate.',
+                                    'allocation': 'Current position value as a percentage of ' + (label.removeprefix('% of ') if label.startswith('% of ') else 'the displayed portfolio selection') + '.',
+                                    'portfolio': 'Optional portfolio or strategy grouping saved with this position.',
+                                    'account': 'Account or storage location saved with this position.',
+                                    'returnPct': 'Unrealized gain divided by known recorded purchase cost, in percent.',
+                                    'gainEur': 'Unrealized gain in EUR on known recorded purchase cost.',
+                                    'gain': 'Unrealized gain divided by known purchase cost, in percent.' if label == 'Return (%)' else 'Unrealized gain on known recorded purchase cost.',
+                                    'bucket': 'Category owning this position in the saved allocation hierarchy.',
+                                    'metric_beta': 'Sensitivity to the selected benchmark on common weekly EUR returns.',
+                                    'metric_volatility': 'Annualized variability estimated from historical weekly EUR returns.'}.get(field, metric_help(field))) for field, label in columns]
     render_list(rows, column_specs, key=f'position_list_{context}', context=context, title='Positions',
                 revision=revision, on_open=on_open if interactive else None, editable=editable,
                 search_label='Filter positions', search_fields=['name', 'fullName', 'ticker', 'isin', 'account', 'portfolio', 'bucket'],

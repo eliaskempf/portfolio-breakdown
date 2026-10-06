@@ -23,9 +23,9 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
     original = valued
     st.caption(f'Targets relative to {scope or "portfolio"}.' + (' Selling is protected for this category.' if sell_protected else ''))
     mode_col, amount_col, options_col = st.columns([3, 2, 1], vertical_alignment='bottom')
-    mode = mode_col.selectbox("Rebalancing mode", MODES, key="rebalance_mode")
-    new_money = amount_col.number_input("New money (EUR)", min_value=0., value=500., step=100., key="rebalance_cash") if mode == MODES[2] else 0.
-    with options_col.popover('Options', width='stretch'):
+    mode = mode_col.selectbox("Rebalancing mode", MODES, help='Choose how purchases should move the portfolio toward its saved targets.', key="rebalance_mode")
+    new_money = amount_col.number_input("New money (EUR)", help='Additional cash available for this contribution plan.', min_value=0., value=500., step=100., key="rebalance_cash") if mode == MODES[2] else 0.
+    with options_col.popover('Options', help='Configure minimum purchases, trade limits and contribution constraints.', width='stretch'):
         st.markdown('**Positions**')
         valued = planning_positions(valued)
         no_new = st.toggle("Only buy existing positions", key="rebalance_no_new",
@@ -37,7 +37,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
         cap_scope = 'portfolio'
         labels = position_labels(valued)
         identity = sha256(valued[[c for c in ('position_id', 'name', 'account', 'portfolio') if c in valued]].to_json().encode()).hexdigest()[:16]
-        limited = mode == MODES[2] and st.toggle("Limit buys to selected positions", key="rebalance_limit_buys")
+        limited = mode == MODES[2] and st.toggle("Limit buys to selected positions", help='Allow purchase suggestions only for selected holdings; other targets remain in the plan.', key="rebalance_limit_buys")
         if limited:
             eligible_ids = st.multiselect("Positions eligible for buying", list(labels), format_func=labels.get,
                                           key=f"rebalance_buy_positions_{identity}",
@@ -47,9 +47,9 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
             distribution = st.selectbox("Distribution", ["Rebalance selected positions", "Spread by target weights", "Optimize rebalancing"],
                 key="rebalance_distribution", help="Rebalance selected positions minimizes squared percentage-point gaps to exact targets. Spread by target weights divides the contribution proportionally. Optimize rebalancing minimizes deviation outside tolerance ranges.")
             if distribution == "Rebalance selected positions":
-                buy_all = st.selectbox("Selection intent", ["Buy every selected position", "Allow skipping positions"],
+                buy_all = st.selectbox("Selection intent", ["Buy every selected position", "Allow skipping positions"], help='Choose how the selected positions participate in the contribution plan.',
                                        key="rebalance_buy_intent") == "Buy every selected position"
-                minimum_purchase = st.number_input("Minimum purchase (EUR)", min_value=.01, value=25., step=5.,
+                minimum_purchase = st.number_input("Minimum purchase (EUR)", help='Minimum size of each suggested purchase; this affects which plans are feasible.', min_value=.01, value=25., step=5.,
                                                     key="rebalance_minimum_purchase")
                 if buy_all:
                     st.caption(f'Minimum contribution for this selection: €{len(eligible_ids) * minimum_purchase:,.2f}')
@@ -61,18 +61,18 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
                             key="rebalance_extra_error", help="Additional RMS target gap compared with the best plan under your trade limit. Separate from tolerance ranges.")
         spreading = distribution != "Optimize rebalancing"
         balancing = distribution == "Rebalance selected positions"
-        max_trades = int(st.number_input("Maximum trades", min_value=1, max_value=max(1, len(valued)),
+        max_trades = int(st.number_input("Maximum trades", help='Upper limit on the number of suggested purchases.', min_value=1, max_value=max(1, len(valued)),
             value=min(4, max(1, len(valued))), step=1, key=f"rebalance_max_trades_{len(valued)}")) if mode == MODES[2] and (not spreading or prefer_fewer) else len(valued)
         st.markdown('**Tolerances & caps**')
         tolerance_type = st.selectbox("Tolerance type", ["Percentage points", "Relative to target"], key="rebalance_tolerance_type",
             help="A 10% target with ±0.5 percentage points or 5% relative tolerance has a 9.5–10.5% range. Zero targets have a zero relative range.")
         relative = tolerance_type == "Relative to target"
-        tolerance = st.number_input("Allowed deviation (% of target)" if relative else "Allowed deviation (pp)",
+        tolerance = st.number_input("Allowed deviation (% of target)" if relative else "Allowed deviation (pp)", help='Allowed distance from the target, using the unit shown in the label.',
                                     min_value=0., max_value=100., value=5. if relative else .5, step=.1,
                                     key=f"rebalance_tolerance_{relative}")
-        if balancing and st.toggle("Limit allocations for this rebalance", key="rebalance_limit_allocations"):
+        if balancing and st.toggle("Limit allocations for this rebalance", help='Set temporary maximum allocations for this contribution plan.', key="rebalance_limit_allocations"):
             if scope:
-                cap_scope = st.selectbox('Cap denominator', ['portfolio', 'bucket'], key='rebalance_cap_scope',
+                cap_scope = st.selectbox('Cap denominator', ['portfolio', 'bucket'], help='Choose the total against which contribution caps are measured.', key='rebalance_cap_scope',
                                          format_func=lambda v: '% of portfolio' if v == 'portfolio' else '% of category')
             active = valued.loc[valued.position_id.isin(eligible_ids)]
             cap_rows = active[["position_id", "target_allocation"]].copy().reset_index(drop=True)
@@ -83,7 +83,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
             cap_rows = persistent_editor(cap_rows.drop(columns="target_allocation"), hide_index=True, width="stretch", height='content',
                 disabled=["position_id", "Investment", "Target %"], key=f"rebalance_caps_{cap_key}",
                 column_config={"position_id": None,
-                    "Target %": st.column_config.NumberColumn(f"Target (% of {scope or 'portfolio'})", format="%.2f %%"),
+                    "Target %": st.column_config.NumberColumn(f"Target (% of {scope or 'portfolio'})", help='Desired position share within the planning scope shown in the label.', format="%.2f %%"),
                     "Max allocation %": st.column_config.NumberColumn("Maximum allocation (%)", min_value=0., max_value=100., step=.1, format="%.2f %%",
                         help="Blank means no cap. Uses final value including unallocated contribution. Limits are temporary and reset when the selection changes.")})
             max_allocations = {row.position_id: float(row["Max allocation %"]) / 100 for _, row in cap_rows.iterrows()
@@ -107,7 +107,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
             st.info('Whole-portfolio caps require complete portfolio valuation; select category-relative caps instead.')
             return
         max_allocations = {key: min(1., cap * (portfolio_value + new_money) / (problem.total + new_money)) for key, cap in max_allocations.items()}
-    if st.button("Calculate plan", type="primary", key="rebalance_calculate"):
+    if st.button("Calculate plan", help='Calculate suggestions from the current inputs; no holdings are changed and no trades are placed.', type="primary", key="rebalance_calculate"):
         st.session_state.pop("rebalance_result", None)
         try:
             with st.spinner("Calculating your trade plan…"):
@@ -156,7 +156,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
                 "All positions in range": [plan.within_bands for plan in plans],
             })
             show_table(frontier)
-            index = st.selectbox("Plan to inspect", list(range(len(plans))), index=index,
+            index = st.selectbox("Plan to inspect", list(range(len(plans))), help='Choose a calculated candidate plan to review.', index=index,
                                  format_func=lambda i: f"{plans[i].trade_count} trades · €{plans[i].unallocated_cash:.2f} unallocated",
                                  key=f"rebalance_plan_{fingerprint}")
         plan = plans[index]

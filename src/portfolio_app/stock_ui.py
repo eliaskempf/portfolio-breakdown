@@ -5,10 +5,10 @@ from portfolio_app.stock_exposure import load_company_identities, stock_exposure
 
 
 def render_stock_exposure(valued, funds, data_dir):
-    if not st.checkbox('Show stock-only company exposure', key='exposure_stock_enabled'):
+    if not st.checkbox('Show stock-only company exposure', help='Show direct shares and supported equity holdings inside funds, excluding non-equity exposure.', key='exposure_stock_enabled'):
         return
     buckets = sorted(set(valued.get('bucket_id', [])) - {''})
-    excluded = st.multiselect('Exclude source buckets from stock exposure', buckets, key='exposure_stock_excluded')
+    excluded = st.multiselect('Exclude source buckets from stock exposure', buckets, help='Omit positions owned by these categories before calculating company exposure.', key='exposure_stock_excluded')
     st.caption('Exclusions apply to source positions before looking through funds. Companies held through included funds remain visible regardless of their theme labels.')
     try:
         result = stock_exposure(valued, funds, excluded_buckets=excluded,
