@@ -1127,3 +1127,53 @@ release-v1 has advanced to cb7d348 with desktop packaging and demo fixes; those
 changes require integration checks when merging this branch. Currency support is
 a separate feature. A new candidate build and native-platform acceptance remain
 release gates, not prerequisites for this source merge.
+
+### UI integration handoff (2026-10-06)
+
+Integrate the complete `feature/v1-ui-polish` branch from the isolated worktree
+`/tmp/portfolio-v1-ui-polish`, including the geography follow-up after `4a0f9af`.
+That follow-up keeps the controls together, puts interpretation in tooltips and
+moves coverage/missing-price notes below the chart and table. No calculations or
+portfolio files change.
+
+Reviewed against release-v1 `cb7d348e9ab9270b9d9f523cc8e8146c76847e69`.
+A read-only three-way comparison identifies three conflicts for the release
+session to resolve during integration:
+
+- `docs/release-plan.md`: retain both sessions' appended handoffs.
+- `src/portfolio_app/label_ui.py`: retain release's sector-default selection and
+  explicit-selection callback, adding this branch's control help.
+- `src/portfolio_app/geography_ui.py`: retain this branch's controls-first layout
+  and move release's money-market explanation into the granularity tooltip.
+
+Preserve release's newer demo allocations/fixtures, ETF availability status,
+packaging changes and browser synchronization fixes in the files that merge
+without text conflicts. This branch changes no dependencies, lockfile, package
+configuration, file formats or core exposure/valuation calculations. Source
+smoke selectors were updated for the new manual-entry action and text quantities.
+
+Currency support remains an independent integration with substantial UI overlap.
+Adapt its cost-conversion controls to `holding_amounts` and the purchase-row save
+path; do not restore the old average/total switch. Replace EUR-only choices and
+EUR-specific help/docs only with the validated conversion feature, preserve saved
+foreign/unspecified costs and purchase components, and test both features
+combined. Buy/sell accounting remains deferred; optional rows cover purchases
+making up the current holding without intervening sales or splits.
+
+Source browser/navigation/import/save/restart/lifecycle smoke passed in this
+session. The online preview on port 8617 was restarted after the last Python
+change and checked again for live search, identity/currency fields, linked costs,
+geography controls/coverage/tooltips, country mode and narrow layouts. It uses
+an isolated invented demo; no personal portfolio was accessed or saved. Native
+Windows/macOS/Linux installer acceptance was not performed by this session.
+After integration, rerun combined tests and source smoke, build a fresh candidate,
+and perform the existing platform acceptance checklist for that exact build.
+No merge, publication or release tag was created here.
+
+Final branch validation: `uv run pytest -q` passed all 1,076 tests in 440.58 s
+with Chromium configured and browser checks required; no skips. Inputs were
+synthetic temporary workspaces with offline fixtures. Documentation checks passed
+separately (11 tests), as did Ruff, diff whitespace and tracked-file privacy
+checks. The complete branch is ready for integration with the above conflict
+resolutions; the merged release and the combined currency feature have not been
+validated by this run. The final handoff commit contains documentation only.
