@@ -121,11 +121,13 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
             confirmed = st.checkbox('Use these FX estimates for the selected positions', key='currency_estimate_confirm_' + token)
         if st.button('Apply currency change', type='primary', disabled=bool(selection) and not confirmed):
             try:
-                if revision(directory / 'holdings.csv') != snapshot.revision or load_settings(directory).revision != settings.revision:
-                    raise DataError('Portfolio changed during review. Reopen the currency review.')
-                if selection:
-                    patch_holdings(directory / 'holdings.csv', saved['changes'], expected_revision=snapshot.revision)
-                save_settings(directory, target, settings.revision)
+                from portfolio_app.workspace_lock import workspace_lock
+                with workspace_lock(directory):
+                    if revision(directory / 'holdings.csv') != snapshot.revision or load_settings(directory).revision != settings.revision:
+                        raise DataError('Portfolio changed during review. Reopen the currency review.')
+                    if selection:
+                        patch_holdings(directory / 'holdings.csv', saved['changes'], expected_revision=snapshot.revision)
+                    save_settings(directory, target, settings.revision)
             except (DataError, OSError) as exc:
                 st.error(f'Currency change was not completed: {exc}')
             else:

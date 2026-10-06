@@ -124,11 +124,13 @@ class HistoryService:
         if path:
             temporary = None
             try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                with NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as handle:
-                    temporary = Path(handle.name)
-                    json.dump(vars(result), handle)
-                temporary.replace(path)
+                from portfolio_app.workspace_lock import workspace_lock, document_workspace
+                with workspace_lock(document_workspace(path)):
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    with NamedTemporaryFile(mode="w", dir=path.parent, suffix='.tmp', delete=False) as handle:
+                        temporary = Path(handle.name)
+                        json.dump(vars(result), handle)
+                    temporary.replace(path)
             except OSError:
                 result = replace(result, note="History loaded, but its cache could not be saved.")
             finally:

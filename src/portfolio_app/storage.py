@@ -2,6 +2,7 @@
 from hashlib import sha256
 import os
 from pathlib import Path
+from portfolio_app.workspace_lock import document_write
 from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ def revision(path: Path) -> str | None:
     return sha256(path.read_bytes()).hexdigest() if path.exists() else None
 
 
+@document_write
 def save_document(path: Path, content: str, expected_revision: str | None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with _write_lock(path.with_name(f'.{path.name}.lock')):

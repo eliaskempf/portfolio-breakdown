@@ -92,28 +92,30 @@ def refresh_snapshot(
     prior_ids = {row.isin: row.constituent_id for row in fund.constituents.itertuples() if row.isin}
     frame["constituent_id"] = [prior_ids.get(row.isin, row.constituent_id) for row in frame.itertuples()]
     frame = validate_constituents(frame)
-    manifest = fund.manifest_path
-    raw = yaml.safe_load(manifest.read_text(encoding="utf-8"))
-    if raw["isin"].upper() != fund.isin:
-        raise DataError("ETF configuration changed during the update; reload the page and try again.")
-    csv = frame.to_csv(index=False)
-    filename = f"{manifest.stem}-{stamp}-{sha256(csv.encode()).hexdigest()[:12]}.csv"
-    destination = manifest.parent / filename
-    staged: list[Path] = []
-    try:
-        if not destination.exists():
+    from portfolio_app.workspace_lock import workspace_lock
+    with workspace_lock(fund.manifest_path.parent.parent):
+        manifest = fund.manifest_path
+        raw = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        if raw["isin"].upper() != fund.isin:
+            raise DataError("ETF configuration changed during the update; reload the page and try again.")
+        csv = frame.to_csv(index=False)
+        filename = f"{manifest.stem}-{stamp}-{sha256(csv.encode()).hexdigest()[:12]}.csv"
+        destination = manifest.parent / filename
+        staged: list[Path] = []
+        try:
+            if not destination.exists():
+                with NamedTemporaryFile(mode="w", encoding="utf-8", dir=manifest.parent, suffix=".tmp", delete=False) as handle:
+                    staged.append(Path(handle.name))
+                    handle.write(csv)
+                staged[-1].replace(destination)
+            raw.update(as_of=stamp, holdings_file=filename, source=SOURCE)
             with NamedTemporaryFile(mode="w", encoding="utf-8", dir=manifest.parent, suffix=".tmp", delete=False) as handle:
                 staged.append(Path(handle.name))
-                handle.write(csv)
-            staged[-1].replace(destination)
-        raw.update(as_of=stamp, holdings_file=filename, source=SOURCE)
-        with NamedTemporaryFile(mode="w", encoding="utf-8", dir=manifest.parent, suffix=".tmp", delete=False) as handle:
-            staged.append(Path(handle.name))
-            yaml.safe_dump(raw, handle, sort_keys=False)
-        staged[-1].replace(manifest)
-    finally:
-        for path in staged:
-            path.unlink(missing_ok=True)
+                yaml.safe_dump(raw, handle, sort_keys=False)
+            staged[-1].replace(manifest)
+        finally:
+            for path in staged:
+                path.unlink(missing_ok=True)
     return replace(fund, as_of=as_of, source=SOURCE, constituents=frame)
 
 

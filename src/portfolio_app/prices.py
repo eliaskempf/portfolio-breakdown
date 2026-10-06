@@ -144,19 +144,21 @@ class PriceService:
         temporary = None
         try:
             from portfolio_app.locking import write_lock as _write_lock
-            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-            with _write_lock(self.cache_path.with_suffix('.lock')):
-                try:
-                    saved = json.loads(self.cache_path.read_text())
-                    if not isinstance(saved, dict):
+            from portfolio_app.workspace_lock import workspace_lock, document_workspace
+            with workspace_lock(document_workspace(self.cache_path)):
+                self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+                with _write_lock(self.cache_path.with_suffix('.lock')):
+                    try:
+                        saved = json.loads(self.cache_path.read_text())
+                        if not isinstance(saved, dict):
+                            saved = {}
+                    except (OSError, ValueError):
                         saved = {}
-                except (OSError, ValueError):
-                    saved = {}
-                saved[key] = self._entries[key]
-                with NamedTemporaryFile(mode='w', dir=self.cache_path.parent, delete=False) as stream:
-                    temporary = Path(stream.name)
-                    json.dump(saved, stream)
-                temporary.replace(self.cache_path)
+                    saved[key] = self._entries[key]
+                    with NamedTemporaryFile(mode='w', dir=self.cache_path.parent, suffix='.tmp', delete=False) as stream:
+                        temporary = Path(stream.name)
+                        json.dump(saved, stream)
+                    temporary.replace(self.cache_path)
         except OSError as exc:
             self.cache_warning = f"Price cache could not be saved: {exc}"
         finally:

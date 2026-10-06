@@ -152,7 +152,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         st.button('Clear filters', help='Restore the full source selection for this analysis.', on_click=clear_filters)
     if price_service is None:
         try:
-            provider = StaticProvider(data_dir / "demo_prices.json") if demo else SpotGoldProvider(YahooProvider(data_dir / ".cache" / "yahoo"))
+            from portfolio_app.market_data import provider_cache
+            provider = StaticProvider(data_dir / "demo_prices.json") if demo else SpotGoldProvider(YahooProvider(provider_cache()))
             price_service = PriceService(provider, None if demo else data_dir / ".cache" / "prices.json")
         except (OSError, ValueError) as exc:
             st.error(f"Cannot load demo prices: {exc}")

@@ -27,10 +27,28 @@ from portfolio_app.market_data import coordinator as market_coordinator, prices_
 from portfolio_app.view_state import preserve_view_inputs
 
 
-def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None, intro: bool = False) -> None:
+def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None, intro: bool = False, ignore_selection: bool = False) -> None:
     from portfolio_app.settings import icon_path
     from portfolio_app.workspace_ui import app_header, workspace_info
     persistent_data_dir = data_dir
+    from portfolio_app.workspace_selection import selection, Selection
+    from portfolio_app.workspace_lock import write_context, bind_workspace
+    write_context.set(None)
+    try:
+        chosen = Selection(data_dir.resolve()) if ignore_selection else selection(data_dir)
+    except DataError as exc:
+        st.error(str(exc))
+        return
+    context = (str(persistent_data_dir.resolve()), chosen)
+    if st.session_state.get('active_workspace_selection', context) != context:
+        from portfolio_app.view_state import reset_workspace
+        from portfolio_app.backup_ui import clear_backup
+        clear_backup()
+        reset_workspace()
+        st.session_state['active_workspace_selection'] = context
+        st.rerun()
+    st.session_state['active_workspace_selection'] = context
+    data_dir = chosen.directory
     icon = icon_path('favicon.svg')
     st.set_page_config(page_title="Portfolio breakdown", layout="wide", page_icon=str(icon) if icon else None)
     apply_style()
@@ -40,8 +58,18 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return
     preserve_view_inputs()
     data_dir, demo, refresh, settings_panel = app_header(data_dir, demo_dir, demo=demo)
+    from portfolio_app.backup_ui import backup_controls, render_backup_dialog
+    if not demo and not ignore_selection:
+        bind_workspace(persistent_data_dir, chosen)
+    if settings_panel is not None:
+        with settings_panel:
+            backup_controls(demo=demo, recovery=ignore_selection)
+    if not demo and render_backup_dialog(data_dir, persistent_data_dir, chosen.generation):
+        mark_view_ready()
+        return
     from portfolio_app.tour import active as tour_active
     if tour_active():
+        write_context.set(None)
         # Always value the isolated tour with its own synthetic quotes.
         price_service = PriceService(StaticProvider(data_dir / 'demo_prices.json'))
     from portfolio_app.portfolio_settings import load_settings
@@ -260,6 +288,7 @@ if __name__ == "__main__":
     parser.add_argument("--data-dir", type=Path, default=Path.cwd() / "data" / "portfolio")
     parser.add_argument("--demo-dir", type=Path)
     parser.add_argument("--demo", action="store_true")
+    parser.add_argument("--ignore-workspace-selection", action="store_true")
     parser.add_argument("--skip-intro", action="store_true")
     args = parser.parse_args()
-    render_app(args.data_dir, demo=args.demo, demo_dir=args.demo_dir, intro=not args.skip_intro)
+    render_app(args.data_dir, demo=args.demo, demo_dir=args.demo_dir, intro=not args.skip_intro, ignore_selection=args.ignore_workspace_selection)

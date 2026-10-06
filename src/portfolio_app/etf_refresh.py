@@ -3,10 +3,12 @@
 Workers never call Streamlit. Provider adapters validate and atomically publish
 snapshots; readers can continue using the previous snapshot during a download.
 """
+from contextvars import copy_context
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+from portfolio_app.workspace_lock import document_write
 from tempfile import NamedTemporaryFile
 from threading import Lock, Thread
 
@@ -51,9 +53,10 @@ def read_json(path):
         return {}
 
 
+@document_write
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as stream:
+    with NamedTemporaryFile(mode='w', dir=path.parent, suffix='.tmp', delete=False) as stream:
         temporary = Path(stream.name)
         json.dump(value, stream)
     try:
@@ -120,7 +123,7 @@ class RefreshCoordinator:
             if key in self._workers and self._workers[key].is_alive():
                 return False
             self._errors.pop(key, None)
-            worker = Thread(target=self._run, args=(directory, eligible, force, prefs['minimum_age_days'], candidates), daemon=True)
+            worker = Thread(target=copy_context().run, args=(self._run, directory, eligible, force, prefs['minimum_age_days'], candidates), daemon=True)
             self._workers[key] = worker
             worker.start()
         return True

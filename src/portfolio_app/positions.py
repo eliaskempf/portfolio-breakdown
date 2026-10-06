@@ -7,6 +7,7 @@ from hashlib import sha256
 from io import StringIO
 import os
 from pathlib import Path
+from portfolio_app.workspace_lock import document_write
 import re
 from tempfile import NamedTemporaryFile
 from uuid import uuid4
@@ -58,6 +59,7 @@ def _new_asset_id(fields: Mapping[str, str], holdings: pd.DataFrame) -> str:
     return asset_id
 
 
+@document_write
 def save_position(
     path: Path,
     fields: Mapping[str, str],

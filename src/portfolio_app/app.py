@@ -20,6 +20,7 @@ def main(*, presentation: Presentation | None = None) -> None:
     parser = argparse.ArgumentParser(description='Local portfolio allocation explorer')
     parser.add_argument('--version', action='version', version=app_version())
     parser.add_argument('--data-dir', type=Path, help='Private workspace (default: platform user-data directory)')
+    parser.add_argument('--ignore-workspace-selection', action='store_true', help='Open exactly --data-dir, ignoring the remembered restore (recovery mode)')
     parser.add_argument('--demo', action='store_true', help='Editable demo with public market data, reset on each server start')
     parser.add_argument('--offline-demo', action='store_true', help='Use synthetic offline data in the demo workspace')
     parser.add_argument('--skip-intro', action='store_true', help='Skip the startup animation for this server')
@@ -39,8 +40,11 @@ def main(*, presentation: Presentation | None = None) -> None:
     args, streamlit_args = parser.parse_known_args()
     directory = workspace_path(args.data_dir)
     try:
+        from portfolio_app.workspace_selection import selection
+        # Stop remains available even if a remembered target is unavailable.
+        effective = directory if args.ignore_workspace_selection or args.stop else selection(directory).directory
         if args.show_data_dir:
-            print(directory)
+            print(effective)
             return
         if args.stop:
             print('Stopped.' if stop_instance(directory) else 'No managed server is running for this workspace.')
@@ -48,20 +52,27 @@ def main(*, presentation: Presentation | None = None) -> None:
         if args.open_data_dir or args.install_shortcut:
             from portfolio_app.desktop import install_shortcut, open_folder
             if args.open_data_dir:
-                open_folder(directory)
+                open_folder(effective)
             else:
                 print(install_shortcut(directory))
             return
         if args.migrate_from or args.restore_from or args.backup_to:
             from portfolio_app.workspace import copy_workspace
-            source = args.migrate_from or args.restore_from or directory
+            source = args.migrate_from or args.restore_from or effective
             print(copy_workspace(source, args.backup_to or directory))
             return
         if args.port is not None and not 1 <= args.port <= 65535:
             parser.error('--server.port must be between 1 and 65535')
         browser = not args.no_browser and args.headless != 'true'
+        if args.ignore_workspace_selection:
+            from portfolio_app.launcher import request_instance
+            existing = request_instance(directory)
+            if existing and existing.get('workspace', {}).get('directory', str(directory)) != str(directory):
+                raise DataError('Stop this launch context before opening its original folder in recovery mode.')
         if presentation is None and not args.foreground and (args.desktop or getattr(sys, 'frozen', False)):
             forwarded = ['--data-dir', str(directory), '--server.headless', args.headless, *streamlit_args]
+            if args.ignore_workspace_selection:
+                forwarded.append('--ignore-workspace-selection')
             if args.demo:
                 forwarded.append('--demo')
             if args.offline_demo:
@@ -91,11 +102,15 @@ def main(*, presentation: Presentation | None = None) -> None:
                 if getattr(sys, 'frozen', False):
                     command += ['--server.fileWatcherType=none', '--global.developmentMode=false']
                 command += ['--', '--data-dir', str(directory), '--demo-dir', str(demo_dir)]
+                if args.ignore_workspace_selection:
+                    command.append('--ignore-workspace-selection')
                 if args.skip_intro:
                     command.append('--skip-intro')
                 if args.demo:
                     command.append('--demo')
                 options = {'presentation': presentation} if presentation else {}
+                if args.ignore_workspace_selection:
+                    options['ignore_selection'] = True
                 from portfolio_app.documentation import documentation_server
                 with documentation_server():
                     raise SystemExit(run_server(command, directory, port=port, browser=browser, demo=args.demo, **options))

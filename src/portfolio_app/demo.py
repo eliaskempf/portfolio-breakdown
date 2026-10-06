@@ -169,7 +169,8 @@ def initialize_live_demo(directory: Path, valued) -> bool:
     never change quantities again when prices move or the workspace is revisited.
     """
     from portfolio_app.locking import write_lock
-    with write_lock(directory / '.holdings.csv.lock'):
+    from portfolio_app.workspace_lock import workspace_lock
+    with workspace_lock(directory), write_lock(directory / '.holdings.csv.lock'):
         if not live_demo_pending(directory):
             return False
         prices = {row.id: row.current_price * row.fx_to_reporting for row in valued.itertuples()}

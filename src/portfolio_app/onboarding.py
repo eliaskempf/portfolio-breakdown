@@ -23,11 +23,13 @@ def initial_categories(names, targets=None):
 
 def save_initial_categories(directory, names, targets, expected_holdings_revision):
     config = initial_categories(names, targets)
-    directory.mkdir(parents=True, exist_ok=True)
-    with write_lock(directory / '.holdings.csv.lock'):
-        snapshot = read_snapshot(directory / 'holdings.csv')
-        if not snapshot.holdings.empty or snapshot.revision != expected_holdings_revision:
-            raise DataError('The portfolio changed while setup was open. Reopen setup before saving.')
-        # Never replace an existing allocation, even if another session created it.
-        save_allocation(directory / 'allocation.yaml', config, snapshot.holdings, expected_revision=None)
+    from portfolio_app.workspace_lock import workspace_lock
+    with workspace_lock(directory):
+        directory.mkdir(parents=True, exist_ok=True)
+        with write_lock(directory / '.holdings.csv.lock'):
+            snapshot = read_snapshot(directory / 'holdings.csv')
+            if not snapshot.holdings.empty or snapshot.revision != expected_holdings_revision:
+                raise DataError('The portfolio changed while setup was open. Reopen setup before saving.')
+            # Never replace an existing allocation, even if another session created it.
+            save_allocation(directory / 'allocation.yaml', config, snapshot.holdings, expected_revision=None)
     return config

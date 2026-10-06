@@ -51,14 +51,15 @@ def session_files(directory: Path) -> tuple[Path, Path]:
     return root / f'{key}.lock', root / f'{key}.json'
 
 
-def request_instance(directory: Path, action: str = 'status') -> dict | None:
+def request_instance(directory: Path, action: str = 'status', *, payload: dict | None = None) -> dict | None:
     _, record = session_files(directory)
     try:
         info = json.loads(record.read_text(encoding='utf-8'))
         request = Request(f'http://127.0.0.1:{int(info["control_port"])}/{action}',
                           headers={'Authorization': 'Bearer ' + info['token']},
-                          method='POST' if action in {'stop', 'focus'} else 'GET')
-        with urlopen(request, timeout=2) as response:
+                          data=json.dumps(payload).encode() if payload is not None else None,
+                          method='POST' if action in {'stop', 'focus', 'activate'} else 'GET')
+        with urlopen(request, timeout=60 if action == 'activate' else 2) as response:
             result = json.load(response)
         return result if result.get('instance') == info['token'] else None
     except (OSError, ValueError, KeyError, TypeError):
@@ -103,7 +104,7 @@ def ready(url: str) -> bool:
 
 
 @contextmanager
-def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool, focus: Callable[[], None] | None = None):
+def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool, focus: Callable[[], None] | None = None, activation=None):
     token = secrets.token_urlsafe(32)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -114,6 +115,8 @@ def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool,
                 self.send_error(403)
                 return
             actions = {('GET', '/status'), ('POST', '/stop')}
+            if activation is not None:
+                actions.add(('POST', '/activate'))
             if focus is not None:
                 actions.add(('POST', '/focus'))
             if (self.command, self.path) not in actions:
@@ -123,8 +126,25 @@ def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool,
                 stopped.set()
             if self.path == '/focus':
                 focus()
-            body = json.dumps(dict(instance=token, url=url, ready=ready(url), demo=demo,
-                                   presentation='window' if focus is not None else 'browser')).encode()
+            error = ''
+            if self.path == '/activate':
+                try:
+                    if stopped.is_set():
+                        raise DataError('The application is stopping. Relaunch before switching.')
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= 4 * 1024**2:
+                        raise DataError('Invalid activation request size.')
+                    raw = json.loads(self.rfile.read(length))
+                    if type(raw['generation']) is not int or not isinstance(raw['digests'], dict):
+                        raise ValueError
+                    activation.activate(Path(raw['directory']), raw['generation'], raw['digests'])
+                except (DataError, OSError, ValueError, KeyError, TypeError) as exc:
+                    error = str(exc) or 'Invalid activation request.'
+            result = dict(instance=token, url=url, ready=ready(url), demo=demo,
+                          presentation='window' if focus is not None else 'browser')
+            if activation is not None:
+                result.update(workspace=activation.status(), error=error)
+            body = json.dumps(result).encode()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(body)))
@@ -138,21 +158,42 @@ def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool,
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    _, record = session_files(directory)
-    temporary = record.with_suffix('.tmp')
+    records = []
+    def register(directory):
+        _, record = session_files(directory)
+        if record in records:
+            return False
+        temporary = record.with_suffix('.tmp')
+        try:
+            with temporary.open('w', encoding='utf-8') as handle:
+                if os.name != 'nt':
+                    os.chmod(temporary, 0o600)
+                json.dump(dict(control_port=server.server_port, token=token), handle)
+            temporary.replace(record)
+            records.append(record)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return True
+    def unregister(directory):
+        _, record = session_files(directory)
+        if record in records:
+            record.unlink(missing_ok=True)
+            records.remove(record)
     try:
-        with temporary.open('w', encoding='utf-8') as handle:
-            if os.name != 'nt':
-                os.chmod(temporary, 0o600)
-            json.dump(dict(control_port=server.server_port, token=token), handle)
-        temporary.replace(record)
+        register(directory)
+        if activation is not None:
+            register(activation.current.directory)
+            activation.register = register
+            activation.unregister = unregister
         yield
     finally:
-        record.unlink(missing_ok=True)
-        temporary.unlink(missing_ok=True)
+        if activation is not None:
+            activation.stop()
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+        for record in records:
+            record.unlink(missing_ok=True)
 
 
 @contextmanager
@@ -194,16 +235,18 @@ def monitor_server(child, url: str, stopped: threading.Event, on_ready: Callable
 
 
 def run_server(command: list[str], directory: Path, *, port: int, browser: bool, demo: bool,
-               presentation: Presentation | None = None) -> int:
+               presentation: Presentation | None = None, ignore_selection: bool = False) -> int:
     """Supervise only our own child; never kill a process based on a stale PID."""
     url = f'http://127.0.0.1:{port}'
     stopped = threading.Event()
     previous = signal.signal(signal.SIGTERM, lambda *args: stopped.set())
     try:
-        child_context = presentation.child(command) if presentation else owned_child(command)
-        with child_context as child:
+        from portfolio_app.workspace_activation import WorkspaceActivation
+        with WorkspaceActivation(directory, ignore_selection=ignore_selection) as activation, ExitStack() as children:
+            child_context = presentation.child(command) if presentation else owned_child(command)
+            child = children.enter_context(child_context)
             with instance(directory, url, stopped, demo=demo,
-                          focus=presentation.focus if presentation else None):
+                          focus=presentation.focus if presentation else None, activation=activation):
                 def monitor(on_ready):
                     return monitor_server(child, url, stopped, on_ready)
                 if presentation:

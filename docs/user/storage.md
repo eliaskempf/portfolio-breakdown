@@ -9,7 +9,8 @@ The persistent default is independent of the launch directory:
 | Linux | `$XDG_DATA_HOME/portfolio-breakdown/portfolio`, normally `~/.local/share/portfolio-breakdown/portfolio` |
 | Windows | `%LOCALAPPDATA%\portfolio-breakdown\portfolio` |
 
-`--data-dir` overrides it. These commands identify or open the chosen directory:
+`--data-dir` chooses a launch path. A confirmed restore can remember a different
+active folder for that path (see below). These commands identify or open the chosen directory:
 
 ```sh
 uv run portfolio-app --show-data-dir
@@ -25,8 +26,73 @@ replacement. Those backups do not protect against loss of the entire drive.
 
 ## Back up and restore {#backup}
 
-Stop the app and external editors before copying. Replace these placeholders
-with distinct private directories; backup and restore destinations must be new.
+Open **Portfolio settings → Create backup** while **My portfolio** is selected.
+Wait for verification, then choose **Download backup** and save the
+`.portfolio-backup.zip` file. Browser mode uses the browser download flow; the
+Windows window uses its native Save dialog. Canceling the download leaves your
+portfolio unchanged. Unsaved forms are not included.
+
+The versioned archive preserves saved holdings and purchase-cost components/FX,
+reporting currency, categories and targets, classifications, ETF holdings and
+substitute baskets, overrides, portfolio caches and hidden document backups.
+Runtime locks and temporary files are excluded. The app briefly coordinates
+persistent writes while capturing a consistent snapshot; network requests and
+compression do not hold that barrier. Close external editors first: they cannot
+participate in the app's locks, and a detected external change aborts the backup.
+Third-party provider runtime caches are stored separately from portfolio data.
+
+To restore:
+
+1. Open **Portfolio settings → Restore backup** and select the archive.
+2. Choose **Review backup**. The app checks format compatibility, paths, file
+   sizes, checksums and portfolio data before showing the review.
+3. Review the saved currency, position/category/classification/ETF counts and
+   destination. You can edit **New workspace folder** to another new folder on
+   the computer running the app; its parent must already exist.
+4. Choose **Restore and switch**. The app creates and verifies that new workspace,
+   then switches in the same window or browser tab. Your old workspace remains
+   intact. Unsaved forms are discarded when switching.
+
+**Cancel restore** or dismissing the review creates no destination and does not
+change the active portfolio. Existing destinations are always refused. If files
+restore successfully but switching fails, the new folder is preserved and
+**Retry switch** retries activation. Cancel at that point leaves that verified
+folder available for later use.
+
+The same shortcut or launch path, including the same `--data-dir`, remembers the
+confirmed selection after restart. **App & workspace** shows the actual active
+folder. Selection is local application state; it is not embedded in the portable
+archive. Different original launch paths retain independent selections. Previous
+workspace leases remain reserved until this app stops, preventing another app
+from opening a folder still referenced by an old tab or background task.
+
+To open the original launch folder directly, stop that app, then use:
+
+```sh
+uv run portfolio-app --data-dir /path/to/original --stop
+uv run portfolio-app --data-dir /path/to/original --ignore-workspace-selection
+```
+
+This recovery mode ignores the remembered selection without deleting it. It
+supports backup and editing; restore-and-switch requires a normal launch.
+A missing/invalid remembered workspace reports an error instead of silently
+opening a different portfolio. **Restore backup** also remains available when
+portfolio currency or holdings files cannot load in an otherwise available folder.
+The temporary demo and tour cannot create or restore backups.
+
+Backups are private and unencrypted. Store them on another protected device or
+backup service to protect against drive loss. SHA-256 detects damage; it does
+not prove who created an archive. Archives are limited to 200 MiB compressed,
+1 GiB expanded and 10,000 files. Links, unsafe/non-portable filenames and absolute
+ETF file references are refused. Unsupported archive versions require a compatible
+app; they are never silently converted. CSV/Excel **Import holdings** remains a
+separate workflow under Positions.
+
+### Existing folder-copy commands
+
+These commands still copy complete folders with the app and external editors
+stopped. Their arguments are directories, not `.portfolio-backup.zip` archives.
+Use new destinations:
 
 ```sh
 uv run portfolio-app --data-dir /path/to/workspace --stop
@@ -35,11 +101,10 @@ uv run portfolio-app --data-dir /path/to/new-restored-workspace --restore-from /
 uv run portfolio-app --data-dir /path/to/new-restored-workspace
 ```
 
-Open and verify the restored workspace before adopting it. Restore never
-overwrites an existing directory. Copy-based operations preserve source files,
-classifications, snapshots, caches and hidden backups, omitting transient locks
-and temporary files. Symlinks and ETF references outside the workspace must be
-resolved first. A changed or invalid source stops the operation.
+The backup source follows the remembered selection. Add
+`--ignore-workspace-selection` to copy the original folder instead. Folder copies
+preserve the source and refuse overwrite, symbolic links, external ETF references
+and changed or invalid data. Open and verify a copied workspace before adopting it.
 
 ## Move an older workspace {#migration}
 

@@ -10,6 +10,7 @@ from typing import Protocol
 from portfolio_app.analytics_cache import AnalyticsCache, atomic_json, utc_now
 from portfolio_app.holdings import DataError
 from portfolio_app.locking import write_lock as _write_lock
+from portfolio_app.workspace_lock import document_write
 
 
 @dataclass(frozen=True)
@@ -183,6 +184,7 @@ def load_fee_overrides(path: Path) -> dict[str, FundFee]:
         raise DataError('Invalid private fund fee overrides') from exc
 
 
+@document_write
 def save_fee_override(path: Path, key: str, fee: FundFee | None):
     path.parent.mkdir(parents=True, exist_ok=True)
     with _write_lock(path.with_suffix('.lock')):

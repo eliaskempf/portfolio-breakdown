@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 from pathlib import Path
+from portfolio_app.workspace_lock import document_write
 from tempfile import NamedTemporaryFile
 
 
@@ -11,11 +12,12 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
+@document_write
 def atomic_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
-        with NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, delete=False) as handle:
+        with NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, suffix='.tmp', delete=False) as handle:
             temporary = Path(handle.name)
             json.dump(value, handle, allow_nan=False)
         temporary.replace(path)

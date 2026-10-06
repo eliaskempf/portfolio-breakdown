@@ -1,5 +1,6 @@
 """Nonblocking market-data requests. Workers never access Streamlit state."""
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from pathlib import Path
 from threading import RLock
 
@@ -24,7 +25,7 @@ class RequestCoordinator:
             if identity in self._pending or len(self._pending) >= self.capacity:
                 return False
             # Hold the lock until registration is complete, even for instant jobs.
-            self._pending[identity] = self._pool.submit(self._run, identity, work)
+            self._pending[identity] = self._pool.submit(copy_context().run, self._run, identity, work)
         return True
 
     def _run(self, identity, work):
@@ -114,7 +115,7 @@ def services(data_dir):
         if workspace not in _services:
             cache = Path(workspace) / '.cache'
             _services[workspace] = (
-                PriceService(SpotGoldProvider(YahooProvider(cache / 'yahoo')), cache / 'prices.json'),
+                PriceService(SpotGoldProvider(YahooProvider(provider_cache())), cache / 'prices.json'),
                 HistoryService(YahooHistoryProvider(), cache / 'history'),
             )
         return _services[workspace]
@@ -126,3 +127,11 @@ def prices_for(data_dir):
 
 def history_for(data_dir):
     return BackgroundHistory(services(data_dir)[1], coordinator, Path(data_dir).resolve())
+
+
+def provider_cache():
+    # yfinance owns SQLite transactions and a process-global cache location.
+    # It is provider runtime state, not a portfolio document or snapshot input.
+    import os
+    from portfolio_app.settings import state_path
+    return state_path() / 'provider-cache' / str(os.getpid())

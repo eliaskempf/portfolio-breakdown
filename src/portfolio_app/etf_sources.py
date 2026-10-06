@@ -119,19 +119,21 @@ def publish_snapshot(fund: FundSnapshot, frame: pd.DataFrame, stamp: date, *, so
                 'replication', 'breakdown_basis', 'wkn', 'summaries'):
         raw[key] = getattr(updated, key)
     payloads.append((manifest, yaml.safe_dump(raw, sort_keys=False)))
-    manifest.parent.mkdir(parents=True, exist_ok=True)
-    staged = []
-    try:
-        for destination, text in payloads:
-            with NamedTemporaryFile(mode='w', encoding='utf-8', dir=manifest.parent, suffix='.tmp', delete=False) as handle:
-                staged.append(Path(handle.name))
-                handle.write(text)
-            if destination == manifest and (manifest.read_bytes() if manifest.exists() else None) != prior:
-                raise DataError('ETF configuration changed during download; reload before updating')
-            staged[-1].replace(destination)
-    finally:
-        for path in staged:
-            path.unlink(missing_ok=True)
+    from portfolio_app.workspace_lock import workspace_lock
+    with workspace_lock(manifest.parent.parent):
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        staged = []
+        try:
+            for destination, text in payloads:
+                with NamedTemporaryFile(mode='w', encoding='utf-8', dir=manifest.parent, suffix='.tmp', delete=False) as handle:
+                    staged.append(Path(handle.name))
+                    handle.write(text)
+                if destination == manifest and (manifest.read_bytes() if manifest.exists() else None) != prior:
+                    raise DataError('ETF configuration changed during download; reload before updating')
+                staged[-1].replace(destination)
+        finally:
+            for path in staged:
+                path.unlink(missing_ok=True)
     return updated
 
 

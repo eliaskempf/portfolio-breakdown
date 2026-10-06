@@ -10,12 +10,12 @@ from portfolio_app.holdings import DataError
 from portfolio_app.locking import write_lock
 
 
-def validate_workspace(directory: Path) -> None:
+def validate_workspace(directory: Path, *, allow_empty: bool = False) -> None:
     from portfolio_app.positions import read_snapshot
     from portfolio_app.allocation import load_allocation
     from portfolio_app.taxonomy import load_classifications
     from portfolio_app.etf import load_funds
-    if not (directory / 'holdings.csv').is_file():
+    if not allow_empty and not (directory / 'holdings.csv').is_file():
         raise DataError('Workspace must contain holdings.csv.')
     from portfolio_app.portfolio_settings import load_settings
     load_settings(directory)
@@ -36,15 +36,28 @@ def validate_workspace(directory: Path) -> None:
                     if not target.is_relative_to(directory.resolve()):
                         raise DataError('ETF holdings and basket files must be inside the workspace before copying.')
     load_funds(directory / 'etfs')
+    from portfolio_app.company_merges import load_settings as load_merges, load_company_names
+    from portfolio_app.stock_exposure import load_company_identities
+    from portfolio_app.fundamentals import load_fee_overrides
+    load_merges(directory / 'company-merges.yaml')
+    load_company_names(directory / 'company-names.yaml')
+    load_company_identities(directory / 'company-identities.yaml')
+    load_fee_overrides(directory / 'fund-fees.json')
 
 
 def inventory(directory: Path) -> dict[str, str]:
     result = {}
     for path in sorted(directory.rglob('*')):
-        if path.is_symlink():
+        if path.is_symlink() or (hasattr(path, 'is_junction') and path.is_junction()):
             raise DataError('Workspace copies do not follow symbolic links. Use ordinary files.')
+        if not path.is_file() and not path.is_dir():
+            raise DataError('Workspace contains a special file.')
         if path.is_file() and not path.name.endswith(('.lock', '.tmp')):
-            result[path.relative_to(directory).as_posix()] = sha256(path.read_bytes()).hexdigest()
+            digest = sha256()
+            with path.open('rb') as handle:
+                while chunk := handle.read(1024 * 1024):
+                    digest.update(chunk)
+            result[path.relative_to(directory).as_posix()] = digest.hexdigest()
     return result
 
 

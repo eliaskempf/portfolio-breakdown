@@ -1635,3 +1635,72 @@ process. This local test installer is not automatically publishable by that
 process. No main merge, release tag, official publication, Linux rebuild or
 macOS rebuild was performed. All tests used isolated synthetic workspaces;
 existing installations, private data and other sessions' work were left intact.
+
+## Complete portfolio archives and confirmed restore (2026-10-06)
+
+Prepared on `feature/v1-backup-restore` from release-v1
+`9f925f1ce4ca8678d37d2a8978819d1810fc334b`, in a separate linked worktree. The
+shared working checkout and release branch remain unchanged.
+
+Portfolio settings now creates portable `.portfolio-backup.zip` archives and
+reviews uploaded archives separately from holdings CSV/Excel import. Format v1
+records creation/app versions and an exact size/SHA-256 inventory. Restore rejects
+unsafe/non-portable paths, links, duplicate/colliding entries, unsupported formats,
+excessive expansion, damaged files and invalid portfolio schemas, including cost
+metadata, currency, company mappings and fund-fee overrides. Arbitrary auxiliary
+files, hidden document backups and portfolio caches retain their exact bytes.
+Limits are 200 MiB compressed, 1 GiB expanded and 10,000 payload files.
+
+A reentrant cross-process workspace barrier coordinates persisted writes and
+snapshot capture. Holdings, settings, multi-file currency changes, ETF publication,
+fees and background cache publication participate. Network requests and archive
+compression stay outside the barrier. Third-party provider SQLite caches now use
+application state; existing portfolio cache files are retained. External editors
+must be closed because they do not participate in these advisory locks.
+
+Restore stages and validates privately, shows a summary and editable absolute
+new-folder path, then creates/verifies the destination exclusively after the user
+chooses Restore and switch. The old workspace remains intact. Cancel before
+confirmation creates no destination. Failed activation retains the verified new
+folder for retry; failed selection persistence removes provisional launcher aliases.
+
+The launcher owns active-workspace leases and authenticated activation. One atomic
+selection record per original launch path persists the confirmed directory and
+generation across restarts. The window/tab and URL remain unchanged; old forms,
+dialog fragments and background jobs cannot save after a switch. Previous leases
+remain reserved until shutdown, and shutdown coordinates with activation. Stop and
+repeated-launch focus work through the original and active-workspace aliases.
+`--ignore-workspace-selection` provides exact-folder recovery after stopping the
+app, without removing the remembered selection; restore-and-switch is disabled in
+that recovery mode. Existing stopped-folder copy/migration CLI commands remain.
+
+User storage/recovery instructions and the release checklist now distinguish full
+archives from holdings import and legacy directory copies. No dependencies, lockfile,
+installer configuration, financial calculations or release version changed.
+
+Validation uses only synthetic temporary workspaces and offline injected providers.
+The complete suite passed **1,252 tests with no failures or skips**, including
+required Chromium browser coverage. The final Windows reserved-name guard was
+then checked in a **68-test** archive/activation/recovery run (including four new
+path cases), also without failures or skips. A separate **139-test** focused run
+covered ZIP normalization, concurrency, stale fragments, shutdown, cancellation,
+restore/restart and the Windows presentation contract. All six existing UX browser
+checks passed after making their settings-opening helper preserve an already-open
+popover and assert visibility; no retry, timeout increase or feature assertion
+was removed. An earlier full run mixed fresh UI code with stale imported modules
+while review changes were still being made; the complete successful run used a
+fresh process. A later isolated path-guard change adds no new import/API surface.
+
+Source-installed navigation/import/save/restart/legacy recovery/lifecycle smoke
+passed. The source preview was restarted after Python changes and checked in
+Chromium for the Overview default/chart, all four tabs, GBP settings, archive
+creation/download and narrow restore review/cancel, without application exceptions
+or saved portfolio edits. Dedicated browser tests verified confirmed in-place
+activation, edited destinations, stale dialogs, cancellation and restart selection.
+Ruff, diff whitespace, documentation generation/link checks (14 HTML pages and
+30 help topics), staged privacy checking and manual staged-diff review passed.
+The pre-commit hook remains enabled. No private working portfolio was read or used.
+Native Windows/WebView2 upload/Save-dialog cancellation, archive-byte fidelity,
+in-place activation, same-shortcut restart, focus and shutdown still require
+acceptance on newly built candidate bytes. This session does not rebuild installers,
+merge release-v1, publish, or create a release tag.

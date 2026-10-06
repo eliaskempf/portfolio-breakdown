@@ -81,7 +81,12 @@ def open_settings(page):
     # Metric text arrives before Streamlit finishes replacing the header. Opening
     # its popover during that rerun can lose the click when the header is replaced.
     playwright.expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
-    page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+    # A metric rerun can retain the already-open popover. Opening settings must
+    # not toggle that visible panel closed before checking its controls.
+    panel = page.get_by_test_id('stPopoverBody')
+    if not panel.is_visible():
+        page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+    playwright.expect(panel).to_be_visible()
 
 
 def assert_gain_color(locator, *, positive):

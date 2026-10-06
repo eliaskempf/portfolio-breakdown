@@ -69,7 +69,7 @@ def workspace_info(active: Path, persistent: Path, *, demo: bool) -> None:
                 open_folder(active)
             except OSError as exc:
                 st.error(f'Could not open the folder: {exc}')
-        st.caption('Back up the complete folder with the app stopped. Closing the app window stops it; closing a browser tab does not.')
+        st.caption('Create backup saves a complete archive while the app runs. Closing the app window stops it; closing a browser tab does not.')
         if st.button('Stop application', help='Stop this local app process; saved portfolio files remain on disk.'):
             from portfolio_app.launcher import stop_instance
             st.info('Stopping the local application. You can close this tab.')

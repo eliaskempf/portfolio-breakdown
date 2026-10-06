@@ -54,3 +54,9 @@ The site is prepared for publication; until it is enabled, use the guide bundled
 with the candidate or [guide source](docs/user/index.md).
 
 [GPL-3.0-only](LICENSE).
+
+Complete portfolio archives are available under **Portfolio settings → Create backup /
+Restore backup**. Restore reviews and verifies the archive, creates a new workspace
+and switches only after confirmation. The previous workspace remains intact. See
+[storage and recovery](docs/user/storage.md#backup) for restart behavior and the
+separate stopped-folder CLI commands. CSV/Excel holdings import remains separate.

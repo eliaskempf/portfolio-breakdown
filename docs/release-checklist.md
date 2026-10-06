@@ -111,6 +111,21 @@ automatically by the supported publisher.
 - [ ] Spaces and non-ASCII paths work.
 - [ ] Offline/stale/missing data states are understandable.
 - [ ] Migration, backup and restoration preserve an invented complete workspace.
+- [ ] Portfolio settings creates a `.portfolio-backup.zip` with currency settings,
+      purchase-cost/FX metadata, categories/targets, classifications, ETF holdings
+      and baskets, overrides, caches and document backups. Verify downloaded bytes.
+- [ ] In browser and Windows WebView2 modes, native upload/Save dialogs work and
+      cancel cleanly. Invalid/unsafe/incompatible archives and existing destinations
+      are refused before activation. Review cancellation creates no workspace.
+- [ ] Restore to an edited new path containing spaces/non-ASCII characters; confirm
+      review, switch in the same window/tab, visit all tabs, and restart through
+      the same shortcut. The restored portfolio stays selected; the old folder
+      remains intact. Repeated launch focuses the same instance; Stop/close works.
+- [ ] Backup during ETF/quote refresh and a portfolio save produces a complete
+      consistent snapshot. Old tabs and pending workers cannot save after a switch.
+- [ ] Activation failure preserves both folders and offers retry. Missing remembered
+      targets fail visibly; `--ignore-workspace-selection` opens the original after
+      stopping the app. Native acceptance must use newly built candidate bytes.
 - [ ] Upgrade from an earlier candidate preserves files and shortcuts are refreshed.
 - [ ] Uninstall removes application files/shortcuts only, leaving portfolio data.
 - [ ] Final icon approved and checked as favicon, shortcut and executable icon.
