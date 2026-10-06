@@ -1542,3 +1542,47 @@ Final combined native Windows/WebView2 acceptance, optional Linux installer
 acceptance and clean-machine checks remain required for newly built candidate
 bytes. macOS remains deferred. This integration does not authorize a release tag
 or publication.
+
+## Final hosted-build preflight (2026-10-06)
+
+The chosen first release is **v0.1.0**, without a beta suffix or beta text in the
+product/release name. The package already declares `0.1.0`. Paying for a final
+hosted build is under consideration; no paid workflow dispatch or publication
+has been authorized by this preflight work.
+
+An isolated `fix/v1-release-preflight` worktree starts from combined release
+`b3ffe2c9cc0f890fadb25d88c9977327db4ebe52`. Both candidate workflows now run
+`uv run python tools/release.py preflight` before expensive packaging. This
+checks the build interpreter/dependency notices, wheel/source contents and
+documentation in disposable directories. Local documentation validation permits
+an uncommitted fix; actual candidate builds retain their clean-source requirement.
+Both workflows also rehearse the synthetic source application smoke before
+freezing, while retaining the tests against the eventual frozen binaries.
+
+The native source-window check now stops its build immediately on failure;
+previously it continued through packaging and only failed at the end. Failure
+artifacts retain synthetic source-smoke evidence. Unbuffered Python output and
+named native unit tests with durations make stalled steps easier to identify.
+No dependency upgrade, test retry, weakened assertion or increased job timeout
+is introduced. Existing `uv run` commands and installer acceptance remain intact.
+
+One complete dispatch of each existing build workflow retains configured job
+limits of 45 Windows, 145 Linux and 85 macOS runner-minutes. These are execution
+ceilings for one attempt, not a guarantee of a successful build or a complete
+billing cap. Main CI, publication, storage, overhead and another attempt are
+additional. Confirm the final source SHA and billing budget before dispatch.
+The supported publisher verifies a common run attempt: use a fresh complete
+candidate run after failure instead of mixing selectively rebuilt artifacts.
+Native Linux/macOS artifacts still require separate review and attachment;
+the supported publisher does not attach them automatically.
+
+Local verification uses only synthetic data and an isolated Python environment.
+Packaging preflight, source application lifecycle/import/save/restart smoke,
+22 release-tool tests (including the newly added missing-license early-failure
+regression), Ruff and actionlint passed. The full combined suite also passed:
+1,185 tests, including 61 required browser tests, with no skips or failures.
+Temporary test/browser data and this worktree's Python environment used RAM
+because the local Linux disk was nearly full; no private data or other worktree
+was deleted to make space. No installer was rebuilt, no GitHub workflow was dispatched and
+no release was tagged or published. Native Windows and macOS final acceptance
+cannot be inferred from this Linux source rehearsal.

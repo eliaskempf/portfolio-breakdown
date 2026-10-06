@@ -3,6 +3,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  PYTHONUNBUFFERED: '1'
 jobs:
   build:
     strategy:
@@ -36,11 +38,15 @@ jobs:
         run: uv run python tools/windows_bundle.py --ensure-runtime
       - run: uv run portfolio-check-private --tracked
       - run: uv run ruff check src tests tools
+      - name: Source packages, documentation and license preflight
+        run: uv run python tools/release.py preflight
       - run: uv run playwright install --with-deps chromium
       - name: Tests (including required browser suites)
         env:
           PORTFOLIO_REQUIRE_BROWSER: '1'
         run: uv run pytest -v --durations=20 --junitxml=dist/test-results.xml
+      - name: Source application smoke before freezing
+        run: uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/source-smoke"
       - run: uv run python tools/release.py build
       - run: uv run python tools/release.py test
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -49,6 +55,13 @@ jobs:
           path: dist/candidate/*
           if-no-files-found: error
           retention-days: 30
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: candidate-source-smoke-${{ matrix.platform }}
+          path: ${{ runner.temp }}/source-smoke
+          if-no-files-found: ignore
+          retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

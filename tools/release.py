@@ -10,10 +10,28 @@ import shutil
 import subprocess
 import sys
 import tarfile
+from tempfile import TemporaryDirectory
 import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def preflight():
+    """Check source packages, documentation and licenses before expensive GUI builds."""
+    from docs_site import build as build_docs
+    (ROOT / 'dist').mkdir(exist_ok=True)
+    with TemporaryDirectory(prefix='portfolio-release-preflight-') as temporary:
+        directory = Path(temporary)
+        notices(directory)
+        subprocess.run(['uv', 'build', '--out-dir', str(directory / 'source')], cwd=ROOT, check=True)
+        package_check(directory / 'source')
+        # Disposable validation also works before committing a local fix. Real
+        # builds still require clean, immutable candidate documentation.
+        # The documentation builder deliberately confines output to ignored dist/.
+        with TemporaryDirectory(prefix='preflight-docs-', dir=ROOT / 'dist') as docs:
+            build_docs(Path(docs), 'dev', 'https://eliaskempf.github.io/portfolio-breakdown/')
+    print('Release preflight passed: interpreter/dependency notices, source archives and documentation.', flush=True)
 
 
 def digest(path):
@@ -208,11 +226,13 @@ def extract_bundle(directory, destination):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['build', 'check', 'test'])
+    parser.add_argument('action', choices=['preflight', 'build', 'check', 'test'])
     parser.add_argument('--directory', type=Path, default=ROOT / 'dist/candidate')
     args = parser.parse_args()
     directory = args.directory.resolve()
-    if args.action == 'build':
+    if args.action == 'preflight':
+        preflight()
+    elif args.action == 'build':
         build(directory)
     elif args.action == 'check':
         package_check(directory)

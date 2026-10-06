@@ -12,6 +12,10 @@ data. A checked checklist is specific to one build, not a blanket approval.
 
 ## Automated gates
 
+- [ ] Install the locked tooling with `uv sync --locked --all-groups`, then run
+      `uv run python tools/release.py preflight` and the synthetic source
+      smoke (`uv run python tools/package_smoke.py`) before spending hosted build
+      minutes. Use the locked dependencies and a clean final commit for candidates.
 - [ ] Windows/Linux unit and AppTest suites pass.
 - [ ] Required Chromium browser suites run with no skipped modules.
 - [ ] Package content/privacy and source-install checks pass.
@@ -19,6 +23,19 @@ data. A checked checklist is specific to one build, not a blanket approval.
       provenance or personal build paths; archive owner metadata is neutral.
 - [ ] Extracted binaries pass lifecycle and browser navigation checks on both OSes.
 - [ ] Linux binary tested on Ubuntu 22.04 and 24.04.
+
+For paid runs, dispatch **Build candidate** and **Experimental desktop candidates**
+once each on the same final source SHA; leave diagnostics-only disabled for the
+installer build. The existing timeouts cap configured execution at 45 Windows,
+145 Linux and 85 macOS runner-minutes, excluding unrelated CI/publication jobs
+and reruns. Do not raise timeouts or add automatic test retries to obtain a green
+candidate. Investigate failures locally before another paid attempt.
+
+The supported publisher requires both platform artifacts from the same run
+attempt. After a failed supported candidate, dispatch a fresh complete candidate
+run; do not combine selectively rebuilt artifacts or reuse old manifests.
+Experimental desktop artifacts remain separately reviewed and are not attached
+automatically by the supported publisher.
 
 ## Manual gates (clean machines, no Python or uv)
 

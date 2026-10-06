@@ -25,6 +25,7 @@ concurrency:
   cancel-in-progress: true
 env:
   PORTFOLIO_TEST_HOSTED_INPUT: '1'
+  PYTHONUNBUFFERED: '1'
 jobs:
   diagnostics:
     if: ${{ inputs.diagnostics_only && inputs.linux_candidate_run == '' }}
@@ -173,6 +174,8 @@ jobs:
       - run: uv sync --locked --extra window --all-groups
       - run: uv run portfolio-check-private --tracked
       - run: uv run ruff check src tests tools
+      - name: Source packages, documentation and license preflight
+        run: uv run python tools/release.py preflight
       - name: POSIX policy and containment tests
         run: uv run pytest tests/test_posix_desktop.py -q --junitxml=dist/posix-results.xml
       - name: Linux native display dependencies
@@ -182,7 +185,6 @@ jobs:
           sudo apt-get install -y xvfb openbox x11-utils libxcb-cursor0 libxkbcommon-x11-0 libegl1 libopengl0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-randr0 libxcb-shape0 libxcb-xfixes0
       - name: Verify native GUI session before packaging
         id: source_native
-        continue-on-error: true
         timeout-minutes: 3
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
@@ -194,7 +196,9 @@ jobs:
       # The PR's existing browser job runs the full browser suite. This job
       # exercises the native renderer and the installed-package browser suite.
       - name: Application and lifecycle unit tests
-        run: uv run pytest -q --ignore-glob='*browser*' --ignore=tests/test_posix_desktop.py --junitxml=dist/unit-results.xml
+        run: uv run pytest -v --durations=20 --ignore-glob='*browser*' --ignore=tests/test_posix_desktop.py --junitxml=dist/unit-results.xml
+      - name: Source application smoke before freezing
+        run: uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/source-smoke"
       - run: uv run python tools/desktop_build.py
       - name: Install Linux artifact and test native binary
         if: runner.os == 'Linux'
@@ -227,6 +231,7 @@ jobs:
           path: |
             dist/*-results.xml
             ${{ runner.temp }}/source-native
+            ${{ runner.temp }}/source-smoke
             ${{ runner.temp }}/installed-native
             ${{ runner.temp }}/launch-services-native
             ${{ runner.temp }}/gatekeeper/*.json
@@ -246,9 +251,6 @@ jobs:
             dist/desktop-experiment/source/*.tar.gz
           if-no-files-found: warn
           retention-days: 14
-      - name: Require source native checks to pass
-        if: ${{ !cancelled() && steps.source_native.outcome != 'success' }}
-        run: exit 1
   linux-compatibility:
     if: ${{ always() && !cancelled() && !inputs.diagnostics_only }}
     needs: build

@@ -53,6 +53,20 @@ def test_notices_require_interpreter_license_not_checkout_license(tmp_path, monk
     assert not (tmp_path / 'THIRD_PARTY_NOTICES.txt').exists()
 
 
+def test_preflight_stops_before_build_when_interpreter_license_is_missing(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import sysconfig
+    monkeypatch.syspath_prepend(str(ROOT / 'tools'))
+    monkeypatch.setattr(release_build, 'sys', SimpleNamespace(base_prefix=str(tmp_path / 'missing-python')))
+    monkeypatch.setattr(sysconfig, 'get_path', lambda name: str(tmp_path / 'missing-python' / 'Lib'))
+    monkeypatch.setattr(release_build.metadata, 'distributions', lambda: [])
+    calls = []
+    monkeypatch.setattr(release_build.subprocess, 'run', lambda *a, **kw: calls.append(a))
+    with pytest.raises(ValueError, match='Python license not found'):
+        release_build.preflight()
+    assert calls == []
+
+
 @pytest.mark.parametrize('tainted', [None, 'wheel', 'sdist'])
 def test_package_check_inspects_content_inside_archives(tmp_path, tainted):
     private_path = b'/' + b'home/invented-person/portfolio'
