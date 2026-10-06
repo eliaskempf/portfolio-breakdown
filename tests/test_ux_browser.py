@@ -77,6 +77,13 @@ def click_slice(page, label):
     page.mouse.click(bounds['x'] + bounds['width'] / 2, bounds['y'] + bounds['height'] / 2)
 
 
+def open_settings(page):
+    # Metric text arrives before Streamlit finishes replacing the header. Opening
+    # its popover during that rerun can lose the click when the header is replaced.
+    playwright.expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
+    page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+
+
 def assert_gain_color(locator, *, positive):
     color = locator.evaluate('el => getComputedStyle(el).color')
     channels = [int(value) for value in re.findall(r'\d+', color)[:3]]
@@ -92,14 +99,14 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     playwright.expect(page.locator('.st-key-strategic_crumb_')).to_have_count(0)
     value_card.get_by_role('button', name='Show gain as percentage').click()
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+22.22%')
-    page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+    open_settings(page)
     playwright.expect(page.get_by_role('radio', name='%', exact=True)).to_be_checked()
     page.keyboard.press('Escape')
     # The metric text can arrive before the rerun finishes attaching controls.
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     value_card.get_by_role('button', name='Show gain as amount').press('Enter')
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+€60.00')
-    page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+    open_settings(page)
     playwright.expect(page.get_by_role('radio', name='€', exact=True)).to_be_checked()
     page.keyboard.press('Escape')
     value_box = value_card.get_by_test_id('stMetricValue').bounding_box()
@@ -130,7 +137,7 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     value_card.get_by_role('button', name='Show gain as percentage').press('Space')
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+13.64%')
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('ETF core')
-    page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+    open_settings(page)
     page.get_by_role('radio', name='€', exact=True).click()
     page.keyboard.press('Escape')
     playwright.expect(value_card.get_by_role('button', name='Show gain as percentage')).to_contain_text('+€30.00')
@@ -345,7 +352,7 @@ def test_tiny_labels_reappear_when_scoped_and_losses_are_red(ux_page):
     card = page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))
     playwright.expect(card.get_by_test_id('stMetricDelta')).to_contain_text('-€49.00')
     assert_gain_color(card.get_by_test_id('stMetricDelta'), positive=False)
-    page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+    open_settings(page)
     page.get_by_role('radio', name='%', exact=True).click()
     page.keyboard.press('Escape')
     playwright.expect(card.get_by_test_id('stMetricDelta')).to_contain_text('-98.00%')
