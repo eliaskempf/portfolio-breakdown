@@ -1586,3 +1586,52 @@ because the local Linux disk was nearly full; no private data or other worktree
 was deleted to make space. No installer was rebuilt, no GitHub workflow was dispatched and
 no release was tagged or published. Native Windows and macOS final acceptance
 cannot be inferred from this Linux source rehearsal.
+
+
+## Windows 11 test installer before merging main (2026-10-06)
+
+The user requested one fresh Windows installer for their Windows 11 machine,
+with main integration after that acceptance. Built locally from clean source
+`2797a0d7e1e19a029aeed77be8cce723448938ca`, version **0.1.0**, with the locked
+runtime and existing release scripts. The manifest records `run_id: local` and
+`source_clean: true`. No GitHub Actions minutes were used. This handoff is newer
+than the binary's recorded source commit and does not change those bytes.
+
+The initial native-Windows full suite had 1,182 passes, three expected POSIX-only
+skips and one browser timing failure. A metric's new text appeared before
+Streamlit finished replacing the header, so opening Portfolio settings could
+lose the popover. The test now waits for that rerun to finish before opening
+settings; no application behavior, assertions or timeouts changed. The corrected
+flow passed in three fresh Windows sessions. All 61 required Windows browser
+tests then passed without skips. The unchanged non-browser suite had 1,122 passes
+and the three expected platform skips. The build source includes that committed
+test fix, and its working tree was clean throughout packaging.
+
+Windows privacy/lint, interpreter and dependency notices, wheel/source contents,
+documentation and source application smoke passed. The new frozen application
+passed extracted browser/import/save/restart/backup/lifecycle checks outside the
+checkout. Native WebView2 checks passed welcome-screen close without transient
+errors, startup and chart/tab navigation, real F11, borderless monitor edges,
+repeated launch, bundled help and shutdown. The launched executable's PATH
+excluded Python/uv directories. The build host is Windows 10 with tools installed;
+this does not establish clean-machine or Windows 11 installation acceptance.
+Native upload/save dialogs and external-link behavior remain on the manual list.
+
+The delivered folder is `Downloads/Portfolio-Breakdown-0.1.0-test-2797a0d`:
+`windows/` retains the complete candidate, corresponding source, frozen guides,
+notices, manifest and checksum list. `TESTING.txt` gives the Win11 steps and
+`local-validation.json` records the automated results and remaining acceptance.
+Each copied candidate file was verified against SHA256SUMS. The Setup executable
+can be transferred directly; no outer ZIP is required.
+
+- Installer: `portfolio-breakdown-0.1.0-windows-x64-setup.exe`
+- SHA256: `c782f608177f1a8b2ecd1f6f93a28d8569ffbf18605f364211207a3c5e1c271f`
+
+Next: user Windows 11 installation/workflow acceptance, fix and retest any
+blocker, then merge release-v1 into main. Main was checked as an ancestor of the
+release branch; recheck before choosing a fast-forward. Final hosted builds must
+use the accepted main commit and go through the existing candidate/promotion
+process. This local test installer is not automatically publishable by that
+process. No main merge, release tag, official publication, Linux rebuild or
+macOS rebuild was performed. All tests used isolated synthetic workspaces;
+existing installations, private data and other sessions' work were left intact.
