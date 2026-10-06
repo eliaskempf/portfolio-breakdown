@@ -56,6 +56,11 @@ data. A checked checklist is specific to one build, not a blanket approval.
       once and survive refreshes. Explicit --offline-demo works without network.
       Demo changes never affect the persistent workspace and reset on restart.
 - [ ] Demo, all main tabs/modes, dialogs, charts and lists work.
+- [ ] Optional tour invitation, Not now and Help replay work. All 15 steps,
+      chart interaction, chapter navigation and light/dark spotlights work in
+      the Windows native window and supported Linux browser. Finish, Skip tour
+      and Escape restore the original workspace/view without changing holdings
+      or targets; dismissal survives restart. Verify separately from the intro.
 - [ ] Futures sandbox absent from package, navigation and CLI.
 - [ ] CSV and Excel imports reviewed and saved; cancel writes nothing, workspace
       switching clears drafts, navigation retains uploads/mappings/edits, restart

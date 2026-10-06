@@ -11,6 +11,7 @@ def test_public_demo_breakdown_sectors_geography_and_rebalance(intro_page):
     page.emulate_media(reduced_motion='reduce')
     page.goto(url)
     page.get_by_role('button', name='Explore demo', exact=True).click()
+    page.get_by_role('button', name='Not now', exact=True).click()
     playwright.expect(page.get_by_test_id('stMetric').filter(
         has=page.get_by_text('Current value', exact=True))).to_contain_text('93,184.35')
     page.get_by_role('tab', name='Exposure', exact=True).click()

@@ -52,7 +52,7 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
     if message := st.session_state.pop('position_saved_notice', None):
         st.success(message)
     action, secondary = st.columns([1, 3])
-    if action.button('Add position', type='primary', icon=':material/add:'):
+    if action.button('Add position', type='primary', icon=':material/add:', key='tour_add_position'):
         _clear_editor()
         st.session_state.update(position_edit_action='Add position', position_edit_dialog=True)
     if st.session_state.get('position_draft') or st.session_state.get('position_edit_action') in {'Edit position', 'Add position'}:
@@ -92,7 +92,8 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
             st.button('Import portfolio — experimental', on_click=start_import)
         else:
             st.caption('Select a position for details and price history. Use the pencil to edit.')
-            render_position_list(path, snapshot, allocation, valued=valued, percent=percent, demo=demo)
+            with st.container(key='tour_position_list'):
+                render_position_list(path, snapshot, allocation, valued=valued, percent=percent, demo=demo)
     if not defer_dialog:
         render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=valued)
 
@@ -214,7 +215,8 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
     if physical:
         def change_valuation_method():
             from portfolio_app.physical_assets import GOLD_WEIGHT_UNITS
-            if (not editing and not identity and st.session_state[prefix + 'valuation_method'] == 'Gold spot price'
+            # A queued browser event can arrive after saving cleared the dialog.
+            if (not editing and not identity and st.session_state.get(prefix + 'valuation_method') == 'Gold spot price'
                     and st.session_state.get(prefix + 'quantity_unit') not in GOLD_WEIGHT_UNITS):
                 st.session_state.pop(prefix + 'quantity_unit', None)
                 st.session_state.get('position_draft', {}).pop(prefix + 'quantity_unit', None)

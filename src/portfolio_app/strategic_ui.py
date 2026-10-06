@@ -37,22 +37,23 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     st.caption('›')
                 st.button(names.get(node, 'Portfolio'), key=f'strategic_crumb_{node}', type='tertiary',
                           disabled=node == bucket, on_click=lambda node=node: st.session_state.update({key: node}))
-    navigation, back = st.columns([5, 1], vertical_alignment='bottom')
-    bucket = navigation.selectbox('Category', options, key=key,
-        format_func=labels.get)
-    back.button('Back', disabled=not bucket, width='stretch',
-                on_click=lambda: st.session_state.update({key: paths[bucket][-2] if len(paths[bucket]) > 1 else ''}))
-    scope = names.get(bucket, 'Portfolio')
-    selected = bucket_positions(valued, config, bucket)
-    subtotal = float(selected.current_value_eur.sum())
-    missing = int(selected.current_value_eur.isna().sum())
-    whole = float(valued.current_value_eur.sum())
-    performance = summarize_performance(selected)
-    first, second = st.columns([2, 1])
-    with first:
-        value_metric(subtotal, performance, missing=missing, percent=percent,
-                     key='overview_value', on_toggle_gain=on_toggle_gain)
-    second.metric('Portfolio share', f'{100 * subtotal / whole:.1f}%' if not missing and valued.current_value_eur.notna().all() and whole else '—')
+    with st.container(key='tour_overview_scope'):
+        navigation, back = st.columns([5, 1], vertical_alignment='bottom')
+        bucket = navigation.selectbox('Category', options, key=key,
+            format_func=labels.get)
+        back.button('Back', disabled=not bucket, width='stretch',
+                    on_click=lambda: st.session_state.update({key: paths[bucket][-2] if len(paths[bucket]) > 1 else ''}))
+        scope = names.get(bucket, 'Portfolio')
+        selected = bucket_positions(valued, config, bucket)
+        subtotal = float(selected.current_value_eur.sum())
+        missing = int(selected.current_value_eur.isna().sum())
+        whole = float(valued.current_value_eur.sum())
+        performance = summarize_performance(selected)
+        first, second = st.columns([2, 1])
+        with first:
+            value_metric(subtotal, performance, missing=missing, percent=percent,
+                         key='overview_value', on_toggle_gain=on_toggle_gain)
+        second.metric('Portfolio share', f'{100 * subtotal / whole:.1f}%' if not missing and valued.current_value_eur.notna().all() and whole else '—')
     st.caption(f'{scope} · {len(selected)} positions · Performance coverage: {performance.covered_count} of {performance.held_count} held positions · EUR buy-ins · Excludes dividends and realized gains')
     if missing:
         st.warning(f'{missing} position(s) missing prices. Chart areas use priced value; full allocation percentages are unavailable.')
@@ -61,31 +62,32 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         analytics(selected, scope)
         return
     if mode == 'Performance':
-        table = strategic_performance(valued, config, bucket)
-        measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain (EUR)'],
-            default='Return (%)', key='strategic_performance_measure') or 'Return (%)'
-        chart_percent = measure == 'Return (%)'
-        st.caption('Return compares unrealized gain with recorded buy-in cost. Euro gain shows the amount gained or lost. Both are shown in the tables and on hover.')
-        available = table.dropna(subset=[measure]).sort_values(measure)
-        if not available.empty:
-            hover = [[f'€{row["Cost (EUR)"]:,.2f}', f'{row["Gain (EUR)"]:+,.2f} EUR',
-                      f'{row["Return (%)"]:+,.2f}%' if pd.notna(row['Return (%)']) else 'Unavailable',
-                      row['Coverage'], row['Status']] for _, row in available.iterrows()]
-            figure = style_figure(go.Figure(go.Bar(x=available[measure], y=available.Category, orientation='h',
-                marker_color=[LOSS_COLOR if value < 0 else GAIN_COLOR for value in available[measure]],
-                text=[f'{value:+,.2f}' + ('%' if chart_percent else ' €') for value in available[measure]], textposition='auto',
-                customdata=hover, hovertemplate='%{y}<br>Return: %{customdata[2]}<br>Gain: %{customdata[1]}<br>Buy-in cost: %{customdata[0]}<br>Coverage: %{customdata[3]} · %{customdata[4]}<extra></extra>')))
-            figure.update_layout(height=max(260, 36 * len(available)), xaxis_title=measure, margin=dict(l=12, r=12, t=12, b=30))
-            st.plotly_chart(figure, width='stretch', config={'displayModeBar': False})
-        elif chart_percent and table['Gain (EUR)'].notna().any():
-            st.info('Percentage return is unavailable for zero buy-in cost. Choose Gain (EUR) to see the euro amounts.')
-        else:
-            st.info('Add EUR buy-ins to see performance for this category.')
-        render_list(frame_rows(table), [ListColumn(column, column,
-                    numeric=column in {'Cost (EUR)', 'Gain (EUR)', 'Return (%)'},
-                    signed=column in {'Gain (EUR)', 'Return (%)'}) for column in table],
-                    key='strategic_performance_table', context=f'{position_context}_{bucket}_performance',
-                    title='Category performance', default_sort=measure)
+        with st.container(key='tour_performance'):
+            table = strategic_performance(valued, config, bucket)
+            measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain (EUR)'],
+                default='Return (%)', key='strategic_performance_measure') or 'Return (%)'
+            chart_percent = measure == 'Return (%)'
+            st.caption('Return compares unrealized gain with recorded buy-in cost. Euro gain shows the amount gained or lost. Both are shown in the tables and on hover.')
+            available = table.dropna(subset=[measure]).sort_values(measure)
+            if not available.empty:
+                hover = [[f'€{row["Cost (EUR)"]:,.2f}', f'{row["Gain (EUR)"]:+,.2f} EUR',
+                          f'{row["Return (%)"]:+,.2f}%' if pd.notna(row['Return (%)']) else 'Unavailable',
+                          row['Coverage'], row['Status']] for _, row in available.iterrows()]
+                figure = style_figure(go.Figure(go.Bar(x=available[measure], y=available.Category, orientation='h',
+                    marker_color=[LOSS_COLOR if value < 0 else GAIN_COLOR for value in available[measure]],
+                    text=[f'{value:+,.2f}' + ('%' if chart_percent else ' €') for value in available[measure]], textposition='auto',
+                    customdata=hover, hovertemplate='%{y}<br>Return: %{customdata[2]}<br>Gain: %{customdata[1]}<br>Buy-in cost: %{customdata[0]}<br>Coverage: %{customdata[3]} · %{customdata[4]}<extra></extra>')))
+                figure.update_layout(height=max(260, 36 * len(available)), xaxis_title=measure, margin=dict(l=12, r=12, t=12, b=30))
+                st.plotly_chart(figure, width='stretch', config={'displayModeBar': False})
+            elif chart_percent and table['Gain (EUR)'].notna().any():
+                st.info('Percentage return is unavailable for zero buy-in cost. Choose Gain (EUR) to see the euro amounts.')
+            else:
+                st.info('Add EUR buy-ins to see performance for this category.')
+            render_list(frame_rows(table), [ListColumn(column, column,
+                        numeric=column in {'Cost (EUR)', 'Gain (EUR)', 'Return (%)'},
+                        signed=column in {'Gain (EUR)', 'Return (%)'}) for column in table],
+                        key='strategic_performance_table', context=f'{position_context}_{bucket}_performance',
+                        title='Category performance', default_sort=measure)
     else:
         with st.container(key='overview_allocation'):
             chart_column, table_column = st.columns([1, 1.3], gap='large', vertical_alignment='center')

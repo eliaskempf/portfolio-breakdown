@@ -142,6 +142,7 @@ def file_and_link_checks(page, frame, api, callback, handle, root):
     frame.get_by_role('option', name='My portfolio', exact=True).click()
     frame.get_by_role('button', name='Start my portfolio', exact=True).click()
     frame.get_by_role('button', name='Skip setup', exact=True).click()
+    frame.get_by_role('tab', name='Positions', exact=True).click()
     frame.get_by_role('button', name='Import portfolio — experimental', exact=True).click()
     upload = root / 'invented-native-upload.csv'
     upload.write_text('Name;Quantity\nInvented native upload;2,5\n', encoding='utf-8')
@@ -254,6 +255,7 @@ def smoke(executable, *, interactive=False, welcome_only=False):
                     print('Frozen window: welcome-screen close without error dialogs and session cleanup passed.')
                     return
                 frame.get_by_role('button', name='Explore demo', exact=True).click()
+                frame.get_by_role('button', name='Not now', exact=True).click()
                 expect(frame.locator('.js-plotly-plot').first).to_be_visible(timeout=30000)
                 for tab in ['Exposure', 'Positions', 'Rebalance', 'Overview']:
                     frame.get_by_role('tab', name=tab, exact=True).click()

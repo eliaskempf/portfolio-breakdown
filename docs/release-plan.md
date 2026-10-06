@@ -1260,3 +1260,47 @@ artifact is checked against its supplied checksum list. Key SHA256 values:
 Do not promote these files automatically or mark the remaining Windows native
 checks complete. The setup executable is ready to transfer for manual testing,
 without an additional ZIP wrapper.
+
+## Optional guided tour integration (2026-10-06)
+
+Integrated the complete `feature/quick-app-tour` branch through
+`04821372b151b502628037c5c36aed4d84673a39`, based on release target
+`cb7d348e9ab9270b9d9f523cc8e8146c76847e69`. The isolated integration branch
+is `integrate/v1-quick-tour`. Newer demo/ETF corrections, gold valuation,
+guided setup and native installer support are retained. Pending currency and
+UI-polish branches are not included in this integration.
+
+The optional 15-step tour uses a separate temporary synthetic portfolio, with
+invented prices/history and automatic risk/contribution examples. It restores
+the original workspace and view on Finish, Skip tour or Escape; dismissal is
+remembered and Help offers replay. This is separate from the startup animation.
+There are no dependency or lockfile changes. Getting started documents the tour
+and the Overview landing after manual setup.
+
+Integration also updates the existing demo regression and package/Windows smoke
+scripts to dismiss the new invitation and explicitly open Positions after
+manual setup. This prevents the welcome dialog from blocking their unrelated
+navigation/import checks. Dedicated tour tests retain full walkthrough coverage.
+
+Validation on the combined source: all **1,046 non-browser tests passed**.
+With the locally installed Chromium path configured, the full browser run had
+**54 passed and one failed**: the newer demo test had not dismissed the tour
+invitation. After adding that explicit click, the affected test passed, giving
+passing coverage of all **55 browser tests**, without skips. The application
+source was unchanged by this test correction. All five dedicated tour browser
+cases also passed independently. Ruff, staged privacy/diff review, documentation
+build/link checks and wheel/source content checks passed. The adjusted package
+smoke passed against the source-installed app, including import/save/restart,
+ETF setup and lifecycle checks; this is not frozen-executable acceptance.
+
+The integration preview uses checkout `/tmp/portfolio-v1-tour-integration`,
+its own Python environment, synthetic workspaces under
+`/tmp/portfolio-v1-tour-preview`, and `http://127.0.0.1:60917`. Browser verification
+covered the highlighted allocation chart, Escape restoration and all main tabs
+without application exceptions; a synthetic screenshot was visually reviewed.
+
+Native Windows WebView2 tour acceptance remains pending on the final candidate,
+including both themes, chart interaction, skipping/replay and restoration.
+The release checklist now records this explicitly. No installer was rebuilt
+for this merge; older local artifacts do not contain the tour. Hosted CI remains
+unavailable, macOS remains deferred, and nothing is tagged or published.

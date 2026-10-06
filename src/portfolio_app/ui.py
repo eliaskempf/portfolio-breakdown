@@ -40,10 +40,17 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return
     preserve_view_inputs()
     data_dir, demo, refresh, settings_panel = app_header(data_dir, demo_dir, demo=demo)
-    with settings_panel:
-        display_settings = st.container()
-        # Recovery controls must also be available when loading inputs fails.
-        workspace_info(data_dir, persistent_data_dir, demo=demo)
+    display_settings = None
+    if settings_panel is not None:
+        with settings_panel:
+            display_settings = st.container()
+            # Recovery controls must also be available when loading inputs fails.
+            workspace_info(data_dir, persistent_data_dir, demo=demo)
+    from portfolio_app.tour import active as tour_active
+    if tour_active():
+        # Tour prices are always synthetic, including when an external service
+        # was injected into the regular workspace.
+        price_service = PriceService(StaticProvider(data_dir / 'demo_prices.json'))
     offline_demo = demo and not (data_dir / '.live-demo').exists()
     from portfolio_app.import_ui import render_import_next_steps
     render_import_next_steps()
@@ -72,13 +79,15 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     def toggle_unit():
         st.session_state[unit_key] = '€' if st.session_state.get(unit_key) == '%' else '%'
         remember_unit()
-    with display_settings:
-        st.markdown('**Display**')
-        percent = st.segmented_control('Performance display', ['€', '%'],
-            default=st.session_state.get('performance_preferences', {}).get(context_key, '€'),
-            key=unit_key, on_change=remember_unit) == '%'
-        hide_empty = st.checkbox('Hide empty positions', key='hide_empty_positions',
-            help='Hide zero-quantity rows in Positions and Exposure. Saved targets and planning weights stay unchanged.')
+    percent, hide_empty = False, False
+    if display_settings is not None:
+        with display_settings:
+            st.markdown('**Display**')
+            percent = st.segmented_control('Performance display', ['€', '%'],
+                default=st.session_state.get('performance_preferences', {}).get(context_key, '€'),
+                key=unit_key, on_change=remember_unit) == '%'
+            hide_empty = st.checkbox('Hide empty positions', key='hide_empty_positions',
+                help='Hide zero-quantity rows in Positions and Exposure. Saved targets and planning weights stay unchanged.')
     if holdings.empty and not demo:
         from portfolio_app.onboarding_ui import render_welcome, render_guided_setup
         if render_welcome(demo_available=demo_dir is not None):
@@ -133,6 +142,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         st.caption(f"{valued.price_status.eq('manual').sum()} dated manual/snapshot prices · These do not refresh automatically.")
     if 'main_tabs' not in st.session_state:
         st.session_state['main_tabs'] = 'Positions' if holdings.empty else 'Overview'
+    from portfolio_app.tour import prepare_tour, render_tour
+    prepare_tour()
     overview, exposure, positions, rebalance = st.tabs(['Overview', 'Exposure', 'Positions', 'Rebalance'],
         default='Overview', key='main_tabs', on_change='rerun')
     visible = valued.loc[valued.shares.gt(0)].copy() if hide_empty else valued
@@ -177,7 +188,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             if targets_tab.open:
                 with targets_tab:
                     from portfolio_app.allocation_ui import render_allocation_editor
-                    render_allocation_editor(data_dir / 'holdings.csv', snapshot, allocation)
+                    with st.container(key='tour_targets'):
+                        render_allocation_editor(data_dir / 'holdings.csv', snapshot, allocation)
             if plan_tab.open:
                 with plan_tab:
                     try:
@@ -190,6 +202,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued)
     if background_prices:
         render_market_status(market_workspace, market_revision)
+    render_tour(empty=holdings.empty)
     mark_view_ready()
 
 

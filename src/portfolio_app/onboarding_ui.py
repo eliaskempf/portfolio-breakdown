@@ -3,6 +3,8 @@ import streamlit as st
 
 
 def _start(choice):
+    from portfolio_app.tour import request_tour
+    request_tour(choice)
     if choice == 'demo':
         st.session_state['active_portfolio'] = 'Demo portfolio'
         return

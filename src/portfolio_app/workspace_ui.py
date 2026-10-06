@@ -11,6 +11,10 @@ from portfolio_app.view_state import reset_workspace
 
 def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
     """Workspace selection and global actions; no persistent portfolio writes."""
+    from portfolio_app.tour import active, demo_directory
+    touring = active()
+    if touring:
+        data_dir, demo = demo_directory(), True
     with st.container(key='app_header'):
         with st.container(horizontal=True, vertical_alignment='center', gap='small'):
             with st.container(width='stretch'):
@@ -19,26 +23,36 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                 st.html(f'<div class="app-brand">{image}<span>Breakdown</span></div>')
             if demo_dir is not None:
                 workspace = st.selectbox('Portfolio workspace', ['My portfolio', 'Demo portfolio'],
-                    index=1 if demo else 0, key='active_portfolio', label_visibility='collapsed', width=200)
+                    index=None if 'active_portfolio' in st.session_state else (1 if demo else 0), key='active_portfolio', label_visibility='collapsed', width=200, disabled=touring)
                 demo = workspace == 'Demo portfolio'
-                if demo:
+                if demo and not touring:
                     data_dir = demo_dir
                 context = (str(data_dir.resolve()), demo)
-                if st.session_state.get('portfolio_workspace_context') != context:
+                if not touring and st.session_state.get('portfolio_workspace_context') != context:
+                    from portfolio_app.tour import workspace_changed
+                    workspace_changed(demo=demo)
                     reset_workspace()
                     st.session_state['portfolio_workspace_context'] = context
             offline = demo and not (data_dir / '.live-demo').exists()
             refresh = st.button('Refresh prices', icon=':material/refresh:', type='tertiary', disabled=offline)
-            settings = st.popover('Settings', icon=':material/tune:')
-            with st.popover('?', help='Help and demo guide'):
-                from portfolio_app.documentation import guide_url
-                st.link_button('User guide', guide_url(), icon=':material/menu_book:')
-                st.link_button('Getting started', guide_url('getting-started/'))
-                st.link_button('Categories and targets', guide_url('allocation/'))
-                st.link_button('ETF breakdowns', guide_url('exposure/'))
-                if demo:
-                    st.caption('Invented holdings and buy-ins. Demo changes reset on restart.')
-                    st.caption('Synthetic offline prices.' if offline else 'Public market quotes and history; availability varies.')
+            if touring:
+                st.button('Settings', icon=':material/tune:', disabled=True)
+                st.button('?', disabled=True)
+                settings = None
+            else:
+                settings = st.popover('Settings', icon=':material/tune:', key='settings_menu', on_change='rerun')
+                with st.popover('?', help='Help and demo guide', key='help_menu', on_change='rerun'):
+                    from portfolio_app.documentation import guide_url
+                    from portfolio_app.tour import request_tour
+                    st.button('Take the tour', on_click=request_tour, args=('demo' if demo else 'manual',),
+                              kwargs={'replay': True})
+                    st.link_button('User guide', guide_url(), icon=':material/menu_book:')
+                    st.link_button('Getting started', guide_url('getting-started/'))
+                    st.link_button('Categories and targets', guide_url('allocation/'))
+                    st.link_button('ETF breakdowns', guide_url('exposure/'))
+                    if demo and not touring:
+                        st.caption('Invented holdings and buy-ins. Demo changes reset on restart.')
+                        st.caption('Synthetic offline prices.' if offline else 'Public market quotes and history; availability varies.')
     return data_dir, demo, refresh, settings
 
 
