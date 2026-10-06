@@ -88,7 +88,10 @@ def render_scoped_rebalancing(valued, config):
     fields = [c for c in ('position_id', 'id', 'name', 'ticker', 'account', 'portfolio', 'shares', 'current_value_eur', 'target_allocation', 'bucket_id', 'within_bucket_target') if c in valued]
     fingerprint = sha256((valued[fields].to_json() + repr((config, amount, ids, buy_all, minimum, no_new, max_trades, macro_tolerance, position_tolerance, caps, cap_scope, fewer,
                                                          st.session_state.get('ignore_empty_positions')))).encode()).hexdigest()
-    if st.button('Calculate plan', key='planning_calculate', type='primary'):
+    from portfolio_app.tour import demo_plan_requested
+    tour_result = demo_plan_requested()
+    calculate = st.button('Calculate plan', key='planning_calculate', type='primary')
+    if calculate or (tour_result and st.session_state.get('portfolio_contribution_result', (None,))[0] != fingerprint):
         st.session_state.pop('portfolio_contribution_result', None)
         try:
             options = dict(eligible_ids=ids, minimum_purchase=minimum, buy_all=buy_all, no_new_positions=no_new,
@@ -110,7 +113,7 @@ def render_scoped_rebalancing(valued, config):
         return
     plans = saved[1]
     # Mount this below the main results, but obtain the selection before rendering them.
-    results = st.container()
+    results = st.container(key='tour_plan_results')
     with st.expander('Plan details'):
         index = st.selectbox('Plan to inspect', key=f'planning_plan_{fingerprint}', options=range(len(plans)), index=len(plans)-1,
             format_func=lambda i: f'{int(plans[i].trades["Trade (EUR)"].ne(0).sum())} trades · €{plans[i].unallocated_cash:.2f} unallocated') if len(plans) > 1 else 0

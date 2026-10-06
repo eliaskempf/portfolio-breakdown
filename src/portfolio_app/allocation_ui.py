@@ -201,46 +201,48 @@ def render_allocation_editor(path: Path, snapshot, config):
             else:
                 st.rerun()
         return
-    st.subheader('Categories')
-    category_key = f'targets_categories_{stamp}_{snapshot.revision}'
-    rows = _bucket_editor(config, category_key, snapshot.holdings)
-    save, discard, _ = st.columns([1, 1, 3])
-    discard.button('Discard changes', key=category_key + '_discard', on_click=_discard_draft, args=(category_key,))
-    if save.button('Save categories', type='primary'):
-        try:
-            if revision(path) != snapshot.revision:
-                raise DataError('Positions changed. Reload before saving categories.')
-            save_allocation(config_path, _config_from_rows(rows, config), snapshot.holdings, stamp)
-        except (DataError, OSError, ValueError) as exc:
-            st.error(str(exc))
-        else:
-            _discard_draft(category_key)
-            st.rerun()
-    st.subheader('Position targets')
-    render_bulk_bucket_assignment(path, snapshot, config, stamp)
-    positions = snapshot.holdings.copy()
-    positions['bucket_id'] = positions.get('bucket_id', '')
-    positions['within_bucket_target'] = positions.get('within_bucket_target', float('nan')) * 100
-    position_key = f'targets_positions_{snapshot.revision}_{stamp}'
-    edited = category_position_editor(positions, config, key=position_key, extra=['account'], filtered=True)
-    _target_summary(edited, config)
-    save, discard, _ = st.columns([1, 1, 3])
-    discard.button('Discard changes', key=position_key + '_discard', on_click=_discard_draft, args=(position_key,))
-    if save.button('Save position targets', type='primary'):
-        try:
-            if revision(config_path) != stamp:
-                raise DataError('Category settings changed. Reload before saving.')
-            candidate = snapshot.holdings.copy()
-            changes = edited.set_index('position_id')
-            candidate['bucket_id'] = candidate.position_id.map(changes.bucket_id).fillna('')
-            validate_allocation(config, candidate)
-            patch_holdings(path, {r.position_id: {'bucket_id': r.bucket_id or '', 'within_bucket_target': r.within_bucket_target / 100}
-                                  for r in edited.itertuples()}, expected_revision=snapshot.revision)
-        except (DataError, OSError) as exc:
-            st.error(str(exc))
-        else:
-            _discard_draft(position_key)
-            st.rerun()
+    with st.container(key='tour_category_targets'):
+        st.subheader('Categories')
+        category_key = f'targets_categories_{stamp}_{snapshot.revision}'
+        rows = _bucket_editor(config, category_key, snapshot.holdings)
+        save, discard, _ = st.columns([1, 1, 3])
+        discard.button('Discard changes', key=category_key + '_discard', on_click=_discard_draft, args=(category_key,))
+        if save.button('Save categories', type='primary'):
+            try:
+                if revision(path) != snapshot.revision:
+                    raise DataError('Positions changed. Reload before saving categories.')
+                save_allocation(config_path, _config_from_rows(rows, config), snapshot.holdings, stamp)
+            except (DataError, OSError, ValueError) as exc:
+                st.error(str(exc))
+            else:
+                _discard_draft(category_key)
+                st.rerun()
+    with st.container(key='tour_position_targets'):
+        st.subheader('Position targets')
+        render_bulk_bucket_assignment(path, snapshot, config, stamp)
+        positions = snapshot.holdings.copy()
+        positions['bucket_id'] = positions.get('bucket_id', '')
+        positions['within_bucket_target'] = positions.get('within_bucket_target', float('nan')) * 100
+        position_key = f'targets_positions_{snapshot.revision}_{stamp}'
+        edited = category_position_editor(positions, config, key=position_key, extra=['account'], filtered=True)
+        _target_summary(edited, config)
+        save, discard, _ = st.columns([1, 1, 3])
+        discard.button('Discard changes', key=position_key + '_discard', on_click=_discard_draft, args=(position_key,))
+        if save.button('Save position targets', type='primary'):
+            try:
+                if revision(config_path) != stamp:
+                    raise DataError('Category settings changed. Reload before saving.')
+                candidate = snapshot.holdings.copy()
+                changes = edited.set_index('position_id')
+                candidate['bucket_id'] = candidate.position_id.map(changes.bucket_id).fillna('')
+                validate_allocation(config, candidate)
+                patch_holdings(path, {r.position_id: {'bucket_id': r.bucket_id or '', 'within_bucket_target': r.within_bucket_target / 100}
+                                      for r in edited.itertuples()}, expected_revision=snapshot.revision)
+            except (DataError, OSError) as exc:
+                st.error(str(exc))
+            else:
+                _discard_draft(position_key)
+                st.rerun()
 
 
 def render_bulk_bucket_assignment(path, snapshot, config, stamp):

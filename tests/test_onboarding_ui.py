@@ -2,7 +2,7 @@
 from portfolio_app.demo import create_demo_data
 from portfolio_app.positions import read_snapshot
 from test_startup import launch_workspaces
-from test_ui import by_label
+from test_ui import activate, by_label
 
 
 def add_category(app, name, target=None):
@@ -28,6 +28,8 @@ def test_welcome_demo_and_manual_save_are_isolated(tmp_path):
     by_label(app.selectbox, 'Portfolio workspace').set_value('My portfolio').run()
     by_label(app.button, 'Start my portfolio').click().run()
     by_label(app.button, 'Skip setup').click().run()
+    assert app.session_state['main_tabs'] == 'Overview'
+    activate(app, 'Positions')
     by_label(app.button, 'Add position').click().run()
     assert not app.exception
     by_label(app.text_input, 'Instrument name').set_value('Invented first position')
@@ -47,6 +49,8 @@ def test_import_choice_and_workspace_switch_clear_first_use_state(tmp_path):
     app = launch_workspaces(personal, demo)
     by_label(app.button, 'Start my portfolio').click().run()
     by_label(app.button, 'Skip setup').click().run()
+    assert app.session_state['main_tabs'] == 'Overview'
+    activate(app, 'Positions')
     by_label(app.button, 'Import portfolio — experimental').click().run()
     assert not app.exception
     assert app.session_state['main_tabs'] == 'Positions'
@@ -184,6 +188,8 @@ def test_physical_unit_change_clears_amounts_and_edit_keeps_unit(tmp_path):
     app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
     by_label(app.button, 'Start my portfolio').click().run()
     by_label(app.button, 'Skip setup').click().run()
+    assert app.session_state['main_tabs'] == 'Overview'
+    activate(app, 'Positions')
     by_label(app.button, 'Add position').click().run()
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
     by_label(app.radio, 'Valuation method').set_value('Manual price').run()
@@ -249,6 +255,7 @@ def test_guided_duplicate_remove_partial_targets_and_skip(tmp_path):
     app.button(key='onboarding_remove_0').click().run()
     assert by_label(app.text_input, 'Category 1').value == 'Invented reserve'
     by_label(app.button, 'Skip setup').click().run()
+    assert app.session_state['main_tabs'] == 'Overview'
     assert not app.exception and not (personal / 'allocation.yaml').exists()
 
 
@@ -262,6 +269,8 @@ def test_physical_gold_spot_save_edit_and_explicit_manual_switch(tmp_path):
     app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
     by_label(app.button, 'Start my portfolio').click().run()
     by_label(app.button, 'Skip setup').click().run()
+    assert app.session_state['main_tabs'] == 'Overview'
+    activate(app, 'Positions')
     by_label(app.button, 'Add position').click().run()
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
     assert by_label(app.radio, 'Valuation method').value == 'Gold spot price'
@@ -298,6 +307,8 @@ def test_new_manual_units_cannot_be_reinterpreted_as_gold_ounces(tmp_path):
     app = launch_workspaces(tmp_path / 'invented-gold', create_demo_data(tmp_path / 'demo'))
     by_label(app.button, 'Start my portfolio').click().run()
     by_label(app.button, 'Skip setup').click().run()
+    assert app.session_state['main_tabs'] == 'Overview'
+    activate(app, 'Positions')
     by_label(app.button, 'Add position').click().run()
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
     by_label(app.radio, 'Valuation method').set_value('Manual price').run()

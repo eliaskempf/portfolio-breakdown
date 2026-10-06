@@ -34,6 +34,8 @@ def launch(tmp_path, monkeypatch, content=None, *, workspaces=False):
     if workspaces:
         by_label(app.button, 'Start my portfolio').click().run()
         by_label(app.button, 'Skip setup').click().run()
+        from test_ui import activate
+        activate(app, 'Positions')
     by_label(app.button, 'Import portfolio — experimental').click().run()
     return app, directory / 'holdings.csv'
 

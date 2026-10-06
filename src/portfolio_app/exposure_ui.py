@@ -57,7 +57,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             scope = st.selectbox('Source scope', list(scope_labels), format_func=scope_labels.get, key='exposure_scope')
         with search_col:
             query = st.text_input('Search exposure', placeholder='Investment or ticker…', key='exposure_search')
-        with breakdown_col:
+        with breakdown_col, st.container(key='tour_etf_breakdown'):
             lookthrough = render_etf_toggle(data_dir)
         with filter_col:
             filters = st.popover('Filters', width='stretch')
@@ -225,13 +225,15 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     match_note = '* Estimated company match · Review or undo in Data & settings → Company merges' if lookthrough and any(group.enabled and group.basis == 'Estimated name match' for group in plan.groups) else ''
     with results_area:
         if mode == 'Geography':
-            render_geography(complete_exposures(effective_exposures, selected), geography, complete=missing == 0, query=query)
+            with st.container(key='tour_geography'):
+                render_geography(complete_exposures(effective_exposures, selected), geography, complete=missing == 0, query=query)
             if match_note:
                 st.caption(match_note)
         elif mode != 'Themes & sectors':
-            render_assets(complete_exposures(effective_exposures, selected), selected, holdings, funds, saved_classifications,
-                          query=query, show_tickers=show_tickers, show_chart=show_chart, complete=missing == 0,
-                          breakdown=lookthrough, context=str(data_dir.resolve()), footer=match_note, geography=geography)
+            with st.container(key='tour_exposure_assets'):
+                render_assets(complete_exposures(effective_exposures, selected), selected, holdings, funds, saved_classifications,
+                              query=query, show_tickers=show_tickers, show_chart=show_chart, complete=missing == 0,
+                              breakdown=lookthrough, context=str(data_dir.resolve()), footer=match_note, geography=geography)
         else:
             render_theme_view(exposures, selected, holdings, classifications, names, dimensions, targets, performance,
                               total, all_missing, selected_total, show_tickers, performance_percent, query)

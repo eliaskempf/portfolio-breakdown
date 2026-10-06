@@ -34,21 +34,24 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
         st.info('No held positions in this category and account selection.')
         return
     st.caption(f'{scope} · {len(selected)} held positions' + (' · Account filter active' if set(selected_accounts) != set(accounts) else ''))
-    heading, action = st.columns([4, 1], vertical_alignment='center')
-    heading.markdown('**Historical risk**')
-    heading.caption(f'{benchmark or "Choose a benchmark in Options"} · {years} years · Weekly EUR returns')
-    loaded = st.session_state.get(key + '_risk_loaded', False)
-    calculate = action.button('Refresh risk' if loaded else 'Calculate risk', icon=':material/refresh:' if loaded else ':material/analytics:',
-                              type='secondary', disabled=not benchmark, key=key + '_risk_calculate', width='stretch')
-    if calculate:
-        st.session_state[key + '_risk_loaded'] = True
-        loaded = True
-    if loaded and benchmark:
-        with st.spinner('Calculating historical risk…'):
-            risk, status = load_risk(selected, data_dir, demo, benchmark, years, calculate and not demo)
-        render_risk_dashboard(risk, status, selected)
-    else:
-        st.caption('Estimate beta, volatility and diversification for today’s allocation. Uses market-price history; not personal historical returns.')
+    with st.container(key='tour_risk'):
+        with st.container(key='tour_risk_controls'):
+            heading, action = st.columns([4, 1], vertical_alignment='center')
+            heading.markdown('**Historical risk**')
+            heading.caption(f'{benchmark or "Choose a benchmark in Options"} · {years} years · Weekly EUR returns')
+            from portfolio_app.tour import active
+            loaded = st.session_state.get(key + '_risk_loaded', False) or (demo and active())
+            calculate = action.button('Refresh risk' if loaded else 'Calculate risk', icon=':material/refresh:' if loaded else ':material/analytics:',
+                                      type='secondary', disabled=not benchmark, key=key + '_risk_calculate', width='stretch')
+        if calculate:
+            st.session_state[key + '_risk_loaded'] = True
+            loaded = True
+        if loaded and benchmark:
+            with st.spinner('Calculating historical risk…'):
+                risk, status = load_risk(selected, data_dir, demo, benchmark, years, calculate and not demo)
+            render_risk_dashboard(risk, status, selected)
+        else:
+            st.caption('Estimate beta, volatility and diversification for today’s allocation. Uses market-price history; not personal historical returns.')
     st.divider()
     st.markdown('**Valuation & income**')
     try:
@@ -120,19 +123,20 @@ def render_company_exposure(valued, snapshots, funds, data_dir):
 
 
 def render_risk_dashboard(result, status, holdings):
-    ratio = result.covered_value / result.known_value if result.known_value > 0 else None
-    denominator = 'portfolio value' if result.valuation_complete else 'known valued assets; whole-portfolio coverage unavailable'
-    st.caption(f'History covers {ratio:.1%} of {denominator}' if ratio is not None else 'No valued assets with history.')
-    if result.status == 'partial':
-        st.warning('Covered-subportfolio estimate: weights are renormalized within holdings with usable history.')
-    if result.status == 'unavailable':
-        st.info(result.note)
-    columns = st.columns(3)
-    columns[0].metric('Beta', '—' if result.beta is None else f'{result.beta:.2f}', help='Sensitivity to the selected benchmark on the common weekly EUR sample.')
-    columns[1].metric('Annualized volatility', '—' if result.volatility is None else f'{result.volatility:.2%}')
-    columns[2].metric('Benchmark correlation', '—' if result.correlation is None else f'{result.correlation:.2f}')
-    if result.start:
-        st.caption(f'{result.observations} common weekly returns · {result.start} to {result.end} · Today’s weights held constant, not personal historical performance.')
+    with st.container(key='tour_risk_metrics'):
+        ratio = result.covered_value / result.known_value if result.known_value > 0 else None
+        denominator = 'portfolio value' if result.valuation_complete else 'known valued assets; whole-portfolio coverage unavailable'
+        st.caption(f'History covers {ratio:.1%} of {denominator}' if ratio is not None else 'No valued assets with history.')
+        if result.status == 'partial':
+            st.warning('Covered-subportfolio estimate: weights are renormalized within holdings with usable history.')
+        if result.status == 'unavailable':
+            st.info(result.note)
+        columns = st.columns(3)
+        columns[0].metric('Beta', '—' if result.beta is None else f'{result.beta:.2f}', help='Sensitivity to the selected benchmark on the common weekly EUR sample.')
+        columns[1].metric('Annualized volatility', '—' if result.volatility is None else f'{result.volatility:.2%}')
+        columns[2].metric('Benchmark correlation', '—' if result.correlation is None else f'{result.correlation:.2f}')
+        if result.start:
+            st.caption(f'{result.observations} common weekly returns · {result.start} to {result.end} · Today’s weights held constant, not personal historical performance.')
     if not result.holdings.empty:
         names = {row.id: instrument_name(row) for row in holdings.itertuples()}
         frame = result.holdings.copy()

@@ -32,9 +32,27 @@ Launch with a new `--data-dir`, or use your default persistent workspace. Choose
 add categories and targets one row at a time, then add a first position. Enter
 adds a category and focuses the next empty name. When complete targets reach
 100%, **All set?** shows a confirmation table. Blank or unfinished targets can be
-saved for later; skipping setup opens **Positions**. There, add a position or open [Import portfolio — experimental](import.md#import).
+saved for later; finishing or skipping setup opens **Overview**. Use **Positions**
+to add a position or open [Import portfolio — experimental](import.md#import).
 Save a manual form or accept a reviewed import to persist holdings. Buy-in costs,
 classifications and targets can be added later. Existing portfolios load directly.
+
+After choosing the demo or finishing/skipping manual setup, an optional welcome
+prompt offers a guided tour. Choose **Take the tour** or **Not now**.
+
+The tour temporarily opens a fresh **Demo portfolio**, with invented holdings,
+prices, ETF weights and risk history. It visits **Overview**, **Exposure**,
+**Positions**, and **Rebalance**, switching their views and highlighting the
+relevant controls and results. Risk and an example contribution plan are
+calculated automatically from the synthetic data.
+
+Use **Back**, **Next**, or the chapter shortcut at your own pace. **Finish**,
+**Skip tour**, and **Escape** all return to your original portfolio and view,
+including its filters. The tour does not change your holdings or targets. Empty
+portfolios see the same populated demo; first-position setup remains separate.
+
+The app remembers dismissal across restarts for this computer's user account.
+Replay anytime from **? → Take the tour**; the menu closes before the tour starts.
 
 A useful first pass is:
 
