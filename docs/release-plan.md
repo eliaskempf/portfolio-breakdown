@@ -1704,3 +1704,40 @@ Native Windows/WebView2 upload/Save-dialog cancellation, archive-byte fidelity,
 in-place activation, same-shortcut restart, focus and shutdown still require
 acceptance on newly built candidate bytes. This session does not rebuild installers,
 merge release-v1, publish, or create a release tag.
+
+### Integration review (2026-10-06)
+
+The complete `feature/v1-backup-restore` branch is ready for source integration.
+Both local and remote release-v1 still point to
+`9f925f1ce4ca8678d37d2a8978819d1810fc334b`, the feature's direct ancestor;
+there are no intervening release changes or conflicts to reconcile. Implementation
+commit `dfbf6f712874b83340a15b157e6d6568c1febebb` and this handoff update belong
+together. Integrate the complete branch: the persistence barriers, launcher leases,
+durable selection, stale-writer protection and UI form one coordinated change.
+If release-v1 advances, recheck overlapping launcher, workspace, persistence,
+currency/ETF UI and release-document changes before integration.
+
+A fresh **143-test** synthetic run passed with required Chromium coverage:
+`test_backup`, `test_backup_browser`, `test_backup_ui`, `test_workspace`,
+`test_workspace_activation`, `test_launcher`, `test_window`, `test_currency_ui`
+and `test_analytics`. It includes the final Windows reserved-path cases as well
+as round-trip fidelity, unsafe archives, concurrent writers, cancellation,
+confirmed activation and restart persistence. Ruff and diff whitespace checks
+passed. The source-installed browser/navigation/import/save/restart/legacy
+recovery/lifecycle smoke also passed with the configured Chromium executable;
+documentation build/link validation checked 14 pages, 30 help topics
+and 41 files. The existing synthetic preview at `http://127.0.0.1:8629`, owned by
+`/tmp/portfolio-v1-backup` with data in
+`/tmp/portfolio-v1-backup-preview/portfolio`, was checked in Chromium for the
+default Overview/chart, all four tabs, Create backup and restore review/cancel.
+No source modules changed during this integration review.
+
+There are no new dependencies, lockfile, version or packaging configuration
+changes. Existing v1 imports, currencies, ETF features, native-window contracts
+and the uv workflow are retained. This is source readiness, not release approval:
+the existing Windows installer predates these changes. A later packaging session
+must build a new candidate and perform the outstanding Windows/WebView2
+upload/save/cancel, archive-byte fidelity, activation, same-shortcut restart,
+focus and shutdown checks in the release checklist. No installer rebuild,
+release-branch merge, publication or tag was performed here. Private data and
+other sessions' worktrees remain untouched.
