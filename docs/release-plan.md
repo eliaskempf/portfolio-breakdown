@@ -1741,3 +1741,43 @@ upload/save/cancel, archive-byte fidelity, activation, same-shortcut restart,
 focus and shutdown checks in the release checklist. No installer rebuild,
 release-branch merge, publication or tag was performed here. Private data and
 other sessions' worktrees remain untouched.
+
+### Release integration of portable backups (2026-10-06)
+
+Integrated the complete `feature/v1-backup-restore` history through
+`da71f972f380dded1a36b2880d54ccaf079f8dcd`, including implementation commit
+`dfbf6f712874b83340a15b157e6d6568c1febebb`, from release-v1 base
+`9f925f1ce4ca8678d37d2a8978819d1810fc334b`. The integration is a clean
+fast-forward; no application or test changes were necessary. Review covered
+archive validation, coordinated snapshots, document/cache writers, launcher
+activation/leases, durable selection and stale-view protection. Dependencies,
+lockfile, packaging configuration, version 0.1.0 and the uv workflow are unchanged.
+
+The isolated integration checkout is `/tmp/portfolio-v1-backup-integration`,
+branch `integrate/v1-backup-restore`. Its managed synthetic preview is
+`http://127.0.0.1:60921/`, using
+`/tmp/portfolio-backup-integration-preview/synthetic-original` and separate
+application state. Offline injected providers keep preview verification
+independent of live services. Chromium verified the default Overview/chart,
+all four tabs, GBP archive creation/download with exact inventory comparison,
+and restore review/cancellation at a narrow viewport. No application exceptions
+occurred and the original synthetic workspace remained unchanged.
+
+Source-installed browser navigation/import/save/restart/legacy recovery/lifecycle
+smoke passed. Release preflight passed interpreter/dependency notices, wheel and
+source content checks, and documentation validation (14 pages, 30 help topics,
+41 files). The fresh combined regression suite passed **1,256 tests**, including
+**63 browser tests**, with required Chromium coverage and no failures or skips,
+in 9 minutes 2 seconds.
+This includes archive fidelity, concurrent writers, stale-dialog protection,
+confirmed activation/restart, currency, ETF, tour and native-window contract
+regressions. Ruff, diff whitespace and the complete tracked-file privacy audit
+passed. The pre-commit hook remains enabled.
+
+This is source integration only. The existing Windows installer from `2797a0d`
+predates portable backups. No installer was rebuilt, no hosted build dispatched,
+and main, release tags and public releases remain unchanged. The next candidate
+must pass Windows/WebView2 upload/Save-dialog cancellation, downloaded archive
+fidelity, confirmed switching, same-shortcut restart, repeated-launch focus and
+shutdown acceptance from the release checklist. Private data and other sessions'
+working files were not used or changed.
