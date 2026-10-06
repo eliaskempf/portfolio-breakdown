@@ -86,7 +86,7 @@ choose **Distribution**:
   split. Configure **Selection intent** and **Minimum purchase (reporting currency)**:
   - **Buy every selected position** (default): buy at least the minimum amount
     for every selected row, including overweight and zero-target rows. The
-    initial minimum is €25 and can be changed. Insufficient budgets show the
+    initial minimum is 25 in the portfolio currency and can be changed. Insufficient budgets show the
     required contribution and shortfall; positions are never silently skipped.
   - **Allow skipping positions**: choose the best allocation, with every
     suggested buy meeting the minimum. **Prefer fewer trades** is off by default.
