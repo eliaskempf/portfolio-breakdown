@@ -1,7 +1,9 @@
 """Public documentation contracts, using only invented temporary workspaces."""
 from importlib.util import module_from_spec, spec_from_file_location
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -129,3 +131,35 @@ def test_public_site_contract():
     assert 'reference/index.html' in pages
     assert not any('handoff' in name or 'release-plan' in name or name.startswith('data/') for name in info['files'])
     assert all('source <code>' in (ROOT / 'dist/docs-test' / page).read_text() for page in pages if page != '404.html')
+
+
+@pytest.mark.skipif(sys.platform == 'win32' or shutil.which('bash') is None,
+                    reason='Pages workflow runs in Bash on Ubuntu, not Windows/WSL')
+@pytest.mark.parametrize('probe_status,fetch_status', [(0, 0), (2, 0), (128, 0), (1, 0), (0, 128)])
+def test_pages_archive_probe_does_not_hide_remote_failures(tmp_path, probe_status, fetch_status):
+    import yaml
+    workflow = yaml.safe_load((ROOT / '.github/workflows/docs-pages.yml').read_text())
+    step = next(step for step in workflow['jobs']['build']['steps']
+                if step.get('name') == 'Restore the durable gh-pages archive')
+    # Execute the actual workflow shell with offline Git/auth stand-ins. The
+    # failure cases must stop before creating a replacement archive branch.
+    commands = tmp_path / 'commands.txt'
+    stub = '''
+git() {
+    printf '%s\\n' "$*" >> "$COMMAND_LOG"
+    case "$*" in
+        *ls-remote*) return "$PROBE_STATUS" ;;
+        *fetch*) return "$FETCH_STATUS" ;;
+    esac
+}
+gh() { :; }
+'''
+    result = subprocess.run([shutil.which('bash'), '-e', '-o', 'pipefail', '-c', stub + step['run']],
+                            cwd=tmp_path, capture_output=True, text=True,
+                            env={**os.environ, 'COMMAND_LOG': commands.as_posix(),
+                                 'GITHUB_REPOSITORY': 'invented/docs',
+                                 'PROBE_STATUS': str(probe_status), 'FETCH_STATUS': str(fetch_status)})
+    calls = commands.read_text()
+    assert ('checkout --orphan gh-pages' in calls) == (probe_status == 2)
+    assert ('checkout -B gh-pages FETCH_HEAD' in calls) == (probe_status == 0 and fetch_status == 0)
+    assert result.returncode == (fetch_status if probe_status == 0 else 0 if probe_status == 2 else probe_status)

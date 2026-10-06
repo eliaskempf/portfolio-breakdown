@@ -94,6 +94,9 @@ server, independently of Pages publication. A source checkout also serves its
 the commands above before starting the app. Without that output the current
 source app links to `https://eliaskempf.github.io/portfolio-breakdown/dev/`.
 Source developers must rebuild docs and restart the owning app after guide edits.
+If the packaged guide or its index is missing, the app's help menu reports it
+as unavailable and recommends reinstalling the complete app. It does not substitute
+development documentation; the in-app tour remains available.
 
 `DOCS_BASE_URL` configures the published site root, including the project subpath
 and trailing slash. The real root is `https://eliaskempf.github.io/portfolio-breakdown/`;
@@ -154,9 +157,9 @@ only static files to the Pages Actions deployment. The 90-day Actions archive is
 an additional copy, not the source of version retention.
 
 Before enabling publication, verify access to the existing `gh-pages` archive and
-back it up independently. The workflow can initialize a new branch when its
-remote branch check fails, so a failed fetch/check must not be interpreted as
-permission to replace an existing archive. Existing Pages content from another
+back it up independently. The workflow initializes a new branch only when Git
+reports no matching `gh-pages` ref (exit status 2). Access/network errors stop
+publication, as do fetch failures after finding an existing ref. Existing Pages content from another
 workflow requires explicit migration. Do not delete versions, branches or run
 history to force an empty archive.
 

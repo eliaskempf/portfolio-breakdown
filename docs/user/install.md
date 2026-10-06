@@ -74,6 +74,8 @@ uv run portfolio-app
 Without a local documentation build, source help links to the published development
 guide, which may be unavailable before Pages publication. Packaged candidates
 include their matching guide and need no documentation build.
+If packaged help reports that the bundled guide is unavailable, reinstall the
+complete app. The app will not silently open a different version's guide.
 
 Use a locked checkout or frozen candidate to reproduce a tested environment.
 A `uv tool install` installation resolves its dependencies separately and does

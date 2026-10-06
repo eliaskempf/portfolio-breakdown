@@ -67,6 +67,11 @@ jobs:
             git -C dist/pages fetch --depth=1 origin gh-pages
             git -C dist/pages checkout -B gh-pages FETCH_HEAD
           else
+            probe_status=$?
+            if [ "$probe_status" -ne 2 ]; then
+              echo "::error::Cannot check the gh-pages archive (git exit $probe_status). Publication stopped."
+              exit "$probe_status"
+            fi
             git -C dist/pages checkout --orphan gh-pages
           fi
       - name: Build a reviewed source or promote already archived bytes

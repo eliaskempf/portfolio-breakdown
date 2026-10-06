@@ -48,10 +48,13 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                     from portfolio_app.tour import request_tour
                     st.button('Take the tour', on_click=request_tour, args=('demo' if demo else 'manual',),
                               kwargs={'replay': True})
-                    st.link_button('User guide', guide_url(), icon=':material/menu_book:')
-                    st.link_button('Getting started', guide_url('getting-started/'))
-                    st.link_button('Categories and targets', guide_url('allocation/'))
-                    st.link_button('ETF breakdowns', guide_url('exposure/'))
+                    if guide_url() is None:
+                        st.warning('The guide bundled with this app is unavailable. Reinstall the complete app to restore version-matched help.')
+                    else:
+                        st.link_button('User guide', guide_url(), icon=':material/menu_book:')
+                        st.link_button('Getting started', guide_url('getting-started/'))
+                        st.link_button('Categories and targets', guide_url('allocation/'))
+                        st.link_button('ETF breakdowns', guide_url('exposure/'))
                     if demo and not touring:
                         st.caption('Invented holdings and buy-ins. Demo changes reset on restart.')
                         st.caption('Synthetic offline prices.' if offline else 'Public market quotes and history; availability varies.')

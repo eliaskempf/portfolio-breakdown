@@ -1986,3 +1986,48 @@ installers or approved release candidates. No downloaded artifact was modified.
 
 Staged privacy checking, enabled pre-commit hooks and manual documentation diff
 review are required for the audit commits as for any other release change.
+
+### Documentation audit integration and follow-up fixes (2026-10-06)
+
+Integrated the complete documentation/privacy audit commit
+`de71c050941106c37be0636e41cad255d5a3da90` onto release-v1 base
+`d0852b26008299ff39caa9f970ad1223e52824b5` in the isolated checkout
+`/tmp/portfolio-v010-audit-integration`, branch `integrate/v010-docs-privacy`.
+The documentation branch fast-forwards cleanly. The audit's scope, provenance
+findings and final-artifact limitations above remain applicable; its 1,256-test
+full regression result belongs to the audited source, not a new native build.
+
+Both application/tooling findings are addressed in this integration:
+
+- Packaged help requires the bundled manifest and index. If either is missing,
+  the launcher propagates an unavailable marker to its UI, including browser
+  fallback. The help menu explains how to recover the matching guide; it never
+  substitutes the development site. The in-app tour remains available. Complete
+  Windows/Linux/macOS guide layouts retain their existing local-server behavior.
+- The Pages archive probe initializes a new branch only for Git's no-matching-ref
+  status (2). Access/network failures and failed fetches stop publication. Tests
+  execute the workflow's actual shell with offline Git/auth stand-ins for all
+  these outcomes. Publication remains dormant and was not dispatched.
+
+A fresh **192-test** integration run passed, including **18 browser tests**, with
+no skips. It covers documentation, release tooling, launcher/window contracts,
+privacy and startup flows, including the new missing-help and branch-probe cases.
+Release preflight passed license notices, wheel/source content checks and strict
+documentation validation (14 pages, 30 topics, 41 files). Documentation browser
+checks passed navigation, search, all topics and 390px layouts with external
+requests blocked. Ruff, workflow actionlint and whitespace checks passed.
+
+The actual app preview at `http://127.0.0.1:60922/` used this integration checkout,
+an offline synthetic demo, launch path `/tmp/portfolio-audit-integration-preview/empty`
+and isolated state. Chromium verified Overview/chart, all four tabs, unavailable
+help with the tour retained, then the normal local Getting started link after
+building docs and restarting this same preview. Both checks passed without app
+exceptions. The integration-owned app and documentation previews were stopped
+after checking; no other session's preview was restarted.
+
+The old local Linux archive identified by the audit must not be distributed.
+No artifact was deleted or altered. New candidate bytes still need independent
+content/privacy inspection and Windows/Ubuntu acceptance, including backup/restore.
+No installer rebuild, paid CI, main merge, Pages deployment, tag or release was
+performed. The uv workflow, dependencies, version and installer configuration
+remain unchanged. Private working data was neither read nor modified.
