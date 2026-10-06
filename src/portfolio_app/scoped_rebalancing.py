@@ -73,7 +73,7 @@ def portfolio_contribution(valued: pd.DataFrame, config: Allocation, amount: flo
                            cap_scope: str = 'portfolio') -> ScopedPlan:
     cents = _positive_cents(amount, 'contribution')
     minimum = _positive_cents(minimum_purchase, 'minimum purchase')
-    if valued.current_value_eur.isna().any():
+    if valued.current_value_reporting.isna().any():
         raise RebalanceError('Portfolio routing needs complete EUR valuations. A sleeve-local calculation may still be available.')
     if (valued.bucket_id == '').any():
         raise RebalanceError('Assign positions to strategic buckets before routing a portfolio contribution.')
@@ -98,7 +98,7 @@ def portfolio_contribution(valued: pd.DataFrame, config: Allocation, amount: flo
         raise RebalanceError('Select at least one eligible source position.')
     if buy_all and int(allowed.sum()) > max_trades:
         raise RebalanceError('Maximum trades is smaller than the selected position count.')
-    total = float(valued.current_value_eur.sum()) + amount
+    total = float(valued.current_value_reporting.sum()) + amount
     capacities, floors = {}, {}
     for leaf in config.leaves():
         rows = valued.loc[valued.bucket_id.eq(leaf) & allowed]
@@ -107,8 +107,8 @@ def portfolio_contribution(valued: pd.DataFrame, config: Allocation, amount: flo
             cap = max_allocations.get(r.position_id)
             # Bucket-relative caps are applied after its budget is fixed. Their
             # conservative upper bound here is the largest possible bucket total.
-            denominator = total if cap_scope == 'portfolio' else float(valued.loc[valued.bucket_id.eq(leaf), 'current_value_eur'].sum()) + amount
-            upper = cents if cap is None else min(cents, max(0, math.floor((cap * denominator - r.current_value_eur) * 100 + 1e-7)))
+            denominator = total if cap_scope == 'portfolio' else float(valued.loc[valued.bucket_id.eq(leaf), 'current_value_reporting'].sum()) + amount
+            upper = cents if cap is None else min(cents, max(0, math.floor((cap * denominator - r.current_value_reporting) * 100 + 1e-7)))
             if buy_all and upper < minimum:
                 raise RebalanceError('A selected position cap cannot accommodate its minimum purchase.')
             capacity += upper if upper >= minimum else 0
@@ -124,7 +124,7 @@ def portfolio_contribution(valued: pd.DataFrame, config: Allocation, amount: flo
         if any(t is None for t in targets) or not math.isclose(sum(targets), 1., abs_tol=1e-9):
             raise RebalanceError('Complete sibling bucket targets must total 100% for portfolio routing.')
         subsets = [config.leaves(b.id) for b in children]
-        values = np.array([valued.loc[valued.bucket_id.isin(leaves), 'current_value_eur'].sum() * 100 for leaves in subsets])
+        values = np.array([valued.loc[valued.bucket_id.isin(leaves), 'current_value_reporting'].sum() * 100 for leaves in subsets])
         lower = [sum(floors[k] for k in leaves) for leaves in subsets]
         upper = [min(cents, sum(capacities[k] for k in leaves)) for leaves in subsets]
         split = _route(values, np.array(targets), budget, lower, upper, macro_tolerance / 100)
@@ -135,7 +135,7 @@ def portfolio_contribution(valued: pd.DataFrame, config: Allocation, amount: flo
     frontiers = []
     budget_rows = []
     for leaf, cash in sorted(budgets.items()):
-        budget_rows.append({'Bucket ID': leaf, 'Budget (EUR)': cash / 100})
+        budget_rows.append({'Bucket ID': leaf, 'Budget': cash / 100})
         if cash == 0:
             continue
         positions = sleeve_positions(valued, config, leaf)
@@ -172,9 +172,9 @@ def portfolio_contribution(valued: pd.DataFrame, config: Allocation, amount: flo
         raise RebalanceError('No plan fits the shared trade limit and purchase intent.')
     best = min(states.items(), key=lambda item: (-item[1][0], item[1][1], item[0]))[1]
     tables = [p.table for p in best[2]]
-    trades = pd.concat(tables, ignore_index=True) if tables else pd.DataFrame(columns=['position_id', 'Trade (EUR)'])
+    trades = pd.concat(tables, ignore_index=True) if tables else pd.DataFrame(columns=['position_id', 'Trade'])
     after = valued.copy()
-    delta = trades.set_index('position_id')['Trade (EUR)'] if not trades.empty else pd.Series(dtype=float)
-    after['current_value_eur'] += after.position_id.map(delta).fillna(0)
-    leftover = round(amount - float(trades['Trade (EUR)'].sum()), 2)
+    delta = trades.set_index('position_id')['Trade'] if not trades.empty else pd.Series(dtype=float)
+    after['current_value_reporting'] += after.position_id.map(delta).fillna(0)
+    leftover = round(amount - float(trades['Trade'].sum()), 2)
     return ScopedPlan(pd.DataFrame(budget_rows), trades, after, leftover, amount)

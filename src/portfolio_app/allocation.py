@@ -153,28 +153,28 @@ def ignore_empty_by_bucket(holdings: pd.DataFrame) -> pd.DataFrame:
 
 
 def macro_table(valued: pd.DataFrame, config: Allocation, *, extra_cash: float = 0.) -> pd.DataFrame:
-    complete = valued.current_value_eur.notna().all()
-    total = float(valued.current_value_eur.sum()) + extra_cash
+    complete = valued.current_value_reporting.notna().all()
+    total = float(valued.current_value_reporting.sum()) + extra_cash
     records = []
     for b in (*config.buckets, Bucket('unassigned', 'Unassigned')):
         if b.id == 'unassigned' and not valued.bucket_id.eq('').any():
             continue
         mask = valued.bucket_id.eq('') if b.id == 'unassigned' else valued.bucket_id.isin(config.leaves(b.id))
         rows = valued.loc[mask]
-        value = float(rows.current_value_eur.sum())
-        known = rows.current_value_eur.notna().all()
+        value = float(rows.current_value_reporting.sum())
+        known = rows.current_value_reporting.notna().all()
         target = config.global_target(b.id)
         current = value / total if complete and total > 0 else float('nan')
         parent_rows = valued.loc[valued.bucket_id.isin(config.leaves(b.parent))] if b.parent else valued
-        parent_value = float(parent_rows.current_value_eur.sum()) + (extra_cash if not b.parent else 0.)
-        parent_complete = parent_rows.current_value_eur.notna().all()
-        records.append({'Bucket': b.name, 'Parent': b.parent, 'EUR value': value if known else float('nan'),
-                        'Known EUR subtotal': value, 'Current portfolio %': current * 100,
+        parent_value = float(parent_rows.current_value_reporting.sum()) + (extra_cash if not b.parent else 0.)
+        parent_complete = parent_rows.current_value_reporting.notna().all()
+        records.append({'Bucket': b.name, 'Parent': b.parent, 'Value': value if known else float('nan'),
+                        'Known subtotal': value, 'Current portfolio %': current * 100,
                         'Current parent %': 100 * value / parent_value if known and parent_complete and parent_value > 0 else float('nan'),
                         'Target parent %': b.target * 100 if b.target is not None else float('nan'),
                         'Target portfolio %': target * 100, 'Gap (pp)': (current - target) * 100,
                         'Status': 'Missing prices' if not known else 'Planned capacity' if value == 0 else 'Valued'})
     if extra_cash:
-        records.append({'Bucket': 'Unallocated contribution', 'EUR value': extra_cash, 'Status': 'Unallocated cash',
+        records.append({'Bucket': 'Unallocated contribution', 'Value': extra_cash, 'Status': 'Unallocated cash',
                         'Current portfolio %': 100 * extra_cash / total if complete and total else float('nan')})
     return pd.DataFrame(records)

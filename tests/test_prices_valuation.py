@@ -27,11 +27,11 @@ class CountingProvider:
 
 
 def test_eur_and_fx_values_weights_and_unknowns(valued):
-    assert valued.loc[valued["id"] == "enr", "current_value_eur"].iloc[0] == 80
-    assert valued.loc[valued["id"] == "nvda", "current_value_eur"].tolist() == [160, 80]
-    assert valued["current_value_eur"].sum() == 744
+    assert valued.loc[valued["id"] == "enr", "current_value_reporting"].iloc[0] == 80
+    assert valued.loc[valued["id"] == "nvda", "current_value_reporting"].tolist() == [160, 80]
+    assert valued["current_value_reporting"].sum() == 744
     assert valued["portfolio_weight"].sum() == pytest.approx(1)
-    assert valued.loc[valued["id"] == "unpriced", "current_value_eur"].isna().all()
+    assert valued.loc[valued["id"] == "unpriced", "current_value_reporting"].isna().all()
     assert valued.loc[valued["id"] == "unpriced", "portfolio_weight"].isna().all()
 
 
@@ -41,10 +41,10 @@ def test_unique_requests_and_no_cost_basis_fallback(holdings, now):
     valued = value_holdings(holdings, service, refresh=True)
     assert len(provider.price_calls) == 5
     assert provider.fx_calls == ["USD"]
-    assert valued["current_value_eur"].notna().sum() == 6
+    assert valued["current_value_reporting"].notna().sum() == 6
     provider.fail = True
     unvalued = value_holdings(holdings, PriceService(provider, now=lambda: now))
-    assert unvalued["current_value_eur"].isna().all()
+    assert unvalued["current_value_reporting"].isna().all()
 
 
 def test_persistent_cache_and_expired_fallback(tmp_path, now):
@@ -93,7 +93,7 @@ def test_missing_fx_keeps_native_quote(holdings, now):
     provider = CountingProvider(now)
     provider.fx = lambda currency: (_ for _ in ()).throw(ValueError("no FX"))
     valued = value_holdings(holdings, PriceService(provider, now=lambda: now))
-    assert valued["current_value_eur"].isna().all()
+    assert valued["current_value_reporting"].isna().all()
     assert valued.iloc[0]["current_price"] == 100
     assert "Missing USD/EUR" in valued.iloc[0]["valuation_note"]
 
@@ -102,7 +102,7 @@ def test_fx_must_be_eur(holdings, now):
     provider = CountingProvider(now)
     provider.fx = lambda currency: Quote(1.2, "USD", now)
     valued = value_holdings(holdings, PriceService(provider, now=lambda: now))
-    assert valued["current_value_eur"].isna().all()
+    assert valued["current_value_reporting"].isna().all()
 
 
 def test_zero_and_unknown_denominator():

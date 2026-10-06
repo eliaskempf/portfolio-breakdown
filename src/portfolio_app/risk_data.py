@@ -43,6 +43,9 @@ class DemoRiskHistoryProvider:
     def fetch(self, ticker, years):
         end = pd.Timestamp(date.today())
         dates = pd.date_range(end - pd.DateOffset(years=years) - pd.Timedelta(days=14), end - pd.Timedelta(days=1), freq='B')
+        if ticker.endswith('EUR=X'):
+            rate = {'USD': .9, 'GBP': 1.2}.get(ticker[:-5])
+            return AdjustedHistory(pd.Series(rate, index=dates, dtype=float), 'EUR', note='Synthetic FX history')
         # Deterministic invented correlated series, never live demo data.
         seed = int(sha256(ticker.encode()).hexdigest()[:8], 16)
         market = np.random.default_rng(41).normal(.0002, .009, len(dates))
@@ -79,6 +82,9 @@ class RiskHistoryService:
             return AdjustedHistory(pd.Series(dtype=float), '', 'unavailable', note='Invalid cached history; refresh to retry.')
 
     def eur(self, ticker, years=3, *, refresh=False, memo=None):
+        return self.in_currency(ticker, 'EUR', years, refresh=refresh, memo=memo)
+
+    def in_currency(self, ticker, target, years=3, *, refresh=False, memo=None):
         memo = memo if memo is not None else {}
         def get(symbol):
             if symbol not in memo:
@@ -87,17 +93,31 @@ class RiskHistoryService:
         result = get(ticker)
         if result.prices.empty:
             return result
-        currency = quote_unit(result.currency)[0]
+        currency, factor = quote_unit(result.currency)
         if len(currency) != 3 or not currency.isalpha() or not currency.isupper():
             return AdjustedHistory(pd.Series(dtype=float), '', 'unavailable', note='History currency is unavailable')
-        fx = get(f'{currency}EUR=X') if currency != 'EUR' else None
-        if fx is not None and (fx.prices.empty or fx.currency != 'EUR'):
-            return AdjustedHistory(pd.Series(dtype=float), 'EUR', 'unavailable', note='Historical EUR exchange rates unavailable')
-        try:
-            prices = eur_prices(result.prices, result.currency, fx.prices if fx else None)
-        except ValueError as exc:
-            return AdjustedHistory(pd.Series(dtype=float), 'EUR', 'unavailable', note=str(exc))
-        stale = result.status == 'stale' or (fx is not None and fx.status == 'stale')
-        stamps = [r.fetched_at for r in (result, fx) if r is not None and r.fetched_at]
-        return AdjustedHistory(prices, 'EUR', 'stale' if stale else result.status, min(stamps, default=''),
+        prices = result.prices * factor
+        legs = [result]
+        if currency != target:
+            for units, inverse in ((currency, False), (target, True)):
+                if units == 'EUR':
+                    continue
+                fx = get(f'{units}EUR=X')
+                if fx.prices.empty or fx.currency != 'EUR':
+                    return AdjustedHistory(pd.Series(dtype=float), target, 'unavailable', note=f'Historical {target} exchange rates unavailable')
+                prices = prices / fx.prices.reindex(prices.index) if inverse else prices * fx.prices.reindex(prices.index)
+                legs.append(fx)
+        prices = daily_prices(prices)
+        stale = any(leg.status == 'stale' for leg in legs)
+        stamps = [leg.fetched_at for leg in legs if leg.fetched_at]
+        return AdjustedHistory(prices, target, 'stale' if stale else result.status, min(stamps, default=''),
                                'Cached market or FX history is stale.' if stale else result.note)
+
+    def cash(self, source, target, years=3, *, refresh=False, memo=None):
+        # EUR cash starts with a constant EUR value on target FX observation dates.
+        if source == 'EUR':
+            fx = self.get(f'{target}EUR=X', years, refresh=refresh)
+            if fx.currency != 'EUR':
+                return AdjustedHistory(pd.Series(dtype=float), target, 'unavailable', note='Historical cash FX unavailable')
+            return AdjustedHistory(daily_prices(1 / fx.prices), target, fx.status, fx.fetched_at, fx.note)
+        return self.in_currency(f'{source}EUR=X', target, years, refresh=refresh, memo=memo)

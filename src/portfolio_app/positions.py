@@ -103,6 +103,13 @@ def save_position(
             index = int(matches[0])
             if "id" in values and values["id"] != current.at[index, "id"]:
                 raise DataError("An existing position's asset ID cannot be changed here.")
+        # A changed balance/cost is a replacement, not an inferred disposal.
+        from portfolio_app.cost_basis import FIELD, encode_components, aggregate_component, fingerprint, same_summary
+        if position_id is not None and FIELD not in values:
+            before = current.loc[index].to_dict()
+            after = {**before, **values}
+            if not same_summary(fingerprint(before), fingerprint(after)):
+                values[FIELD] = encode_components([aggregate_component(after)], after)
         for column in values:
             if column not in raw:
                 raw[column] = ""

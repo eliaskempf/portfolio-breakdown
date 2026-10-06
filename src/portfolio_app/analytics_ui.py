@@ -1,4 +1,6 @@
 """Shared analytics display helpers and controls."""
+
+from portfolio_app.currency_display import reporting_currency
 from hashlib import sha256
 
 import pandas as pd
@@ -9,7 +11,7 @@ from portfolio_app.risk import DEFAULT_BENCHMARK
 
 
 def context_key(data_dir, demo=False):
-    return 'analytics_' + sha256(f'{data_dir.resolve()}:{demo}'.encode()).hexdigest()[:12]
+    return 'analytics_' + sha256(f'{data_dir.resolve()}:{demo}:{reporting_currency()}'.encode()).hexdigest()[:12]
 
 
 def display_value(metric, key):
@@ -31,7 +33,7 @@ def risk_settings(key):
     benchmark = st.text_input('Benchmark ticker', DEFAULT_BENCHMARK, key=key + '_benchmark').strip().upper()
     years = st.selectbox('History window', [1, 3, 5], index=1,
                          format_func=lambda years: f'{years} year' + ('s' if years != 1 else ''), key=key + '_years')
-    st.caption('Default: MSCI ACWI ETF (IUSQ.DE). Adjusted weekly returns in EUR; at least 52 common observations.')
+    st.caption(f'Default: MSCI ACWI ETF (IUSQ.DE). Adjusted weekly returns in {reporting_currency()}; at least 52 common observations.')
     return benchmark, years
 
 

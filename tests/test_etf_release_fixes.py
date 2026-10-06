@@ -163,7 +163,7 @@ def test_amundi_install_reload_refresh_and_economic_separation(tmp_path):
     assert 'ESTR Compounded Index' in fund.constituents.name.iloc[0]
     assert '+8.5' not in fund.constituents.name.iloc[0]
     owned = pd.DataFrame([dict(id='fund', position_id='p', name='Invented fund', isin=amundi.ISIN,
-                              shares=1, current_value_eur=100., instrument_type='etf')])
+                              shares=1, current_value_reporting=100., instrument_type='etf')])
     assert stock_exposure(owned, [fund]).stock_value == 0
     from portfolio_app.exposures import normalize_exposures
     from portfolio_app.etf import expand_etfs

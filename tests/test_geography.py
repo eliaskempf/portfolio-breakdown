@@ -16,9 +16,9 @@ from portfolio_app.company_merges import MergeSettings, build_plan
 def holdings():
     return pd.DataFrame([
         dict(id='company', name='Invented Company', isin='ZZ1111111111', ticker='SYN-A', instrument_type='equity',
-             position_id='p1', current_value_eur=100.),
+             position_id='p1', current_value_reporting=100.),
         dict(id='fund', name='Invented Fund', isin='ZZ2222222222', ticker='SYN-F', instrument_type='etf',
-             position_id='p2', current_value_eur=200.),
+             position_id='p2', current_value_reporting=200.),
     ])
 
 
@@ -58,12 +58,12 @@ def test_direct_and_indirect_country_and_residual_conserve_value():
     assert rows.loc[rows.asset_id.eq('company'), 'value'].sum() == 250
     for level in ['Regions', 'Countries']:
         table = geography_table(rows, level=level, denominator=300, complete=True)
-        assert table['EUR value'].sum() == 300
+        assert table['Value'].sum() == 300
         assert table['% of selected portfolio'].sum() == pytest.approx(100)
-        assert table.set_index('Category').loc[UNKNOWN, 'EUR value'] == 50
+        assert table.set_index('Category').loc[UNKNOWN, 'Value'] == 50
     assert geography.sources['company'].startswith('Invented Fund')
     whole = geography_allocations(normalize_exposures(held), geography)
-    assert geography_table(whole, denominator=300, complete=True).set_index('Category').loc[UNKNOWN, 'EUR value'] == 200
+    assert geography_table(whole, denominator=300, complete=True).set_index('Category').loc[UNKNOWN, 'Value'] == 200
 
 
 def test_manual_override_deduplicates_aliases_and_preserves_other_taxonomies():
@@ -77,7 +77,7 @@ def test_manual_override_deduplicates_aliases_and_preserves_other_taxonomies():
     assert repr(manual) == before
     rows = geography_allocations(normalize_exposures(held.iloc[:1]), geography)
     assert rows.value.tolist() == [50, 50]
-    assert geography_table(rows, root=('Europe',), level='Countries', denominator=100, complete=True)['EUR value'].tolist() == [50]
+    assert geography_table(rows, root=('Europe',), level='Countries', denominator=100, complete=True)['Value'].tolist() == [50]
 
 
 def test_provider_conflicts_do_not_depend_on_source_order():
@@ -126,16 +126,16 @@ def test_constituent_type_never_inherits_parent_and_fund_domicile_is_not_exposur
 
 def test_missing_values_region_only_and_search_denominator():
     held = holdings()
-    held.loc[0, 'current_value_eur'] = float('nan')
+    held.loc[0, 'current_value_reporting'] = float('nan')
     # Complete exposure rows include unpriced positions for visibility.
     exposures = pd.DataFrame([dict(asset_id='company', asset_name='Invented Company', value=float('nan')),
                               dict(asset_id='fund', asset_name='Invented Fund', value=200.)])
     geo = resolve_geography(held, [], {'company': {'geography': (('UK',),)}, 'fund': {'geography': (('Europe',),)}})
     rows = geography_allocations(exposures, geo)
     table = geography_table(rows, level='Countries', denominator=200, complete=False).set_index('Category')
-    assert pd.isna(table.loc['United Kingdom', 'EUR value'])
+    assert pd.isna(table.loc['United Kingdom', 'Value'])
     assert table.loc['United Kingdom', 'Missing valuations'] == 1
-    assert table.loc['Europe / Country unspecified', 'EUR value'] == 200
+    assert table.loc['Europe / Country unspecified', 'Value'] == 200
     assert table['% of selected portfolio'].isna().all()
     searched = geography_table(rows.loc[rows.asset_id.eq('fund')], denominator=800, complete=True)
     assert searched['% of selected portfolio'].tolist() == [25]

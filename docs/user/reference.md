@@ -83,10 +83,10 @@ choose **Distribution**:
   current holdings and final portfolio value, prioritizing larger shortfalls.
   Minimize the sum of squared percentage-point gaps to exact targets under your
   purchase constraints. Tolerance ranges affect the reported status, not this
-  split. Configure **Selection intent** and **Minimum purchase (EUR)**:
+  split. Configure **Selection intent** and **Minimum purchase (reporting currency)**:
   - **Buy every selected position** (default): buy at least the minimum amount
     for every selected row, including overweight and zero-target rows. The
-    initial minimum is €25 and can be changed. Insufficient budgets show the
+    initial minimum is 25 in the portfolio currency and can be changed. Insufficient budgets show the
     required contribution and shortfall; positions are never silently skipped.
   - **Allow skipping positions**: choose the best allocation, with every
     suggested buy meeting the minimum. **Prefer fewer trades** is off by default.
@@ -126,7 +126,7 @@ trade counts, including when all positions are in range.
 
 Only **Spread by target weights** ignores existing holdings when splitting the
 contribution. Minimum-purchase and selection-intent controls apply to
-**Rebalance selected positions**. Both distributions allocate whole EUR cents
+**Rebalance selected positions**. Both distributions allocate whole cents of reporting currency
 so buys plus any unallocated cash sum to the budget. Target-weight splitting rejects an amount too small
 to fund every positive-weight recipient with at least one cent.
 **Only buy existing positions** excludes selected rows with zero shares. If this conflicts
@@ -143,7 +143,7 @@ relative to each target. For a 10% target, ±0.5 pp and ±5% relative both allow
 9.5–10.5%. Relative tolerance leaves a zero target at zero; absolute tolerance
 can allow a small holding. Bounds are clipped to 0–100%.
 
-Rebalancing uses whole-portfolio position targets totaling 100%, complete EUR
+Rebalancing uses whole-portfolio position targets totaling 100%, complete reporting-currency
 valuations, and final weights including the contribution. Overview filters,
 label selections and ETF display groups do not alter the tradable positions.
 **Only buy existing positions** forbids buying zero-share account rows while retaining
@@ -154,7 +154,7 @@ Amounts assume fractional shares and exclude fees, taxes, spreads and lot-size
 constraints. New money is fully invested except when temporary allocation caps
 and purchase restrictions leave an unallocated remainder. This is a calculation
 result, not a saved cash account.
-EUR amounts are rounded only for display. Plans never place orders or write
+Reporting-currency amounts are rounded only for display. Plans never place orders or write
 holdings. SciPy’s HiGHS linear/mixed-integer optimizer must report a proven
 optimum; a solver limit or failed constraint check produces no trade plan.
 Each solve has a ten-second limit; interactive calculations support up to 100
@@ -196,7 +196,7 @@ in YAML. File data is read on each Streamlit rerun.
 Business logic is independent of Streamlit:
 
 ```text
-holdings → EUR valuation → normalized exposures → optional ETF expansion → classifications
+holdings → reporting-currency valuation → normalized exposures → optional ETF expansion → classifications
          → hierarchical aggregation → charts and tables
 ```
 
@@ -297,7 +297,7 @@ development requirements. These notes contain no working portfolio data.
 
 ### Calculation contracts
 
-- Snapshot weights use current EUR market values and combine repeated instrument
+- Snapshot weights use current reporting-currency market values and combine repeated instrument
   IDs across accounts. Buy-in performance belongs to Overview → Performance.
 - P/E is the inverse of value-weighted earnings yield among covered profitable
   direct equities. It is not an arithmetic average, and fund-reported P/E is not
@@ -308,7 +308,7 @@ development requirements. These notes contain no working portfolio data.
 - Cash yield is a trailing distribution estimate, not a forecast or actual
   dividends received. Verified accumulating share classes have zero cash yield.
 - Risk uses adjusted market-price histories, converted with historical FX to
-  EUR. The latest available price within each completed Friday-ending week is
+  the reporting currency. The latest available price within each completed Friday-ending week is
   used. Empty weeks are not filled, and returns do not bridge missing endpoints.
 - Default benchmark is IUSQ.DE, a global equity ETF proxy; windows are 1, 3, or
   5 years, default 3. All included holdings and the benchmark share the same
@@ -319,7 +319,7 @@ development requirements. These notes contain no working portfolio data.
   sum to portfolio volatility; negative contributions are possible.
 - This is a hypothetical constant-weight allocation, not the user's historical
   return series. It requires no transaction history and does not use buy-in prices.
-- EUR cash has zero returns. Manual/unlisted positions without supported history
+- Cash in the reporting currency has zero FX returns. Manual/unlisted positions without supported history
   are excluded. Covered weights are renormalized, and partial coverage is shown.
   Missing valuations prevent claiming whole-portfolio coverage.
 - ETFs use their own adjusted price histories for risk, not constituent expansion.
@@ -335,7 +335,7 @@ development requirements. These notes contain no working portfolio data.
 | `fundamentals.py` | Metric definitions, provider normalization, dated public fees, private overrides |
 | `analytics_cache.py` | Atomic optional-analytics cache, expiry, failed-request cooldown |
 | `analytics.py` | Pure snapshot aggregation and concentration |
-| `risk_data.py` | Adjusted price histories and historical EUR conversion |
+| `risk_data.py` | Adjusted price histories and historical reporting-currency conversion |
 | `risk.py` | Pure common-sample weekly risk calculations |
 | `analytics_service.py` | Provider/cache orchestration for fundamentals and risk, independent of Streamlit |
 | `analytics_ui.py` | Shared formatting, sources, benchmark settings |
@@ -426,3 +426,21 @@ uv run portfolio-app --data-dir /path/to/private/data --server.port 8502 --serve
 Use the intended persistent data directory explicitly when launching from a
 worktree. Restart that preview if imported modules remain stale; do not restart another session's app. Check the
 port before assuming which version a browser tab displays.
+
+## Portfolio currency storage {#currency-storage}
+
+`portfolio.yaml` stores version 1 settings with `reporting_currency` (EUR, USD or
+GBP). An absent file means EUR; opening a legacy workspace does not rewrite it.
+The optional app-managed `cost_basis_details` holdings column stores versioned
+active cost components, original currencies and target-specific conversions.
+It is excluded from classification/filter dimensions and exposure payloads.
+Legacy purchase batches remain readable. Their dates are used only if the recorded
+history reconciles with the current summary. External balance edits supersede
+incompatible purchase evidence instead of inventing disposal accounting.
+
+Calculated reporting amounts use currency-neutral interfaces: `current_value_reporting`,
+`cost_basis_reporting`, `unrealized_gain_reporting` and `reporting_currency`.
+Original native cost and return fields remain separate. Monetary table keys are
+currency-neutral; the interface identifies their active reporting currency.
+Include the complete private workspace in backups, including settings and cost
+records. These files must never be committed to Git.

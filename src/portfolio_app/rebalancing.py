@@ -56,7 +56,7 @@ def prepare_rebalance(valued: pd.DataFrame, *, tolerance: float = .5,
         raise RebalanceError("The interactive calculator supports up to 100 position rows.")
     if "target_allocation" not in valued or valued.target_allocation.isna().any():
         raise RebalanceError("Set a target for every position, including explicit zero targets, before calculating.")
-    values = valued.current_value_eur.to_numpy(dtype=float)
+    values = valued.current_value_reporting.to_numpy(dtype=float)
     targets = valued.target_allocation.to_numpy(dtype=float)
     shares = valued.shares.to_numpy(dtype=float)
     if not np.isfinite(values).all() or (values < 0).any():
@@ -119,9 +119,9 @@ def _result(problem: RebalanceInput, weights: np.ndarray, new_money: float, *, b
     table = problem.positions[[column for column in ("position_id", "id", "name", "ticker", "account", "portfolio")
                                if column in problem.positions]].copy()
     table["Action"] = np.where(delta > 0, "Buy", np.where(delta < 0, "Sell", "Hold"))
-    table["Trade (EUR)"] = delta
-    table["Current (EUR)"] = problem.values
-    table["After (EUR)"] = problem.values + delta
+    table["Trade"] = delta
+    table["Current"] = problem.values
+    table["After"] = problem.values + delta
     table["Current %"] = 100 * problem.values / problem.total if problem.total else np.nan
     table["After %"] = 100 * weights
     table["Target %"] = 100 * problem.targets
@@ -271,7 +271,7 @@ def allocate_new_money(problem: RebalanceInput, new_money: float, *, max_trades:
     result = model.solve(model.r)
     plan = _result(problem, result.x[model.x], new_money, buys_only=True,
                    no_new_positions=no_new_positions, require_bands=False)
-    if (plan.table.loc[~allowed, "Trade (EUR)"] != 0).any():
+    if (plan.table.loc[~allowed, "Trade"] != 0).any():
         raise RebalanceError("The solver changed a position outside the eligible selection; no plan is shown.")
     if plan.trade_count > max_trades:
         raise RebalanceError("The solver result exceeded the trade limit; no plan is shown.")
@@ -316,8 +316,8 @@ def balanced_cash_tradeoffs(problem: RebalanceInput, new_money: float, *, eligib
         raise RebalanceError(f"Buying every selected position requires {count} trades. Increase Maximum trades or allow skipping.")
     required = minimum * (count if buy_all else 1)
     if cents < required:
-        raise RebalanceError(f"This plan needs at least €{required / 100:,.2f} at the chosen minimum purchase. "
-                             f"Add €{(required - cents) / 100:,.2f}, lower the minimum purchase, or select fewer positions.")
+        raise RebalanceError((f"This plan needs at least {required / 100:,.2f} at the chosen minimum purchase. "
+                             f"Add {(required - cents) / 100:,.2f}, lower the minimum purchase, or select fewer positions."))
     deficits = (problem.targets[allowed] * (problem.total + new_money) - problem.values[allowed]) * 100
     caps = np.full(len(problem.values), np.nan)
     if max_allocations is not None:
@@ -393,7 +393,7 @@ def spread_new_money(problem: RebalanceInput, new_money: float, *, eligible_posi
     order = np.argsort(-(exact - pennies), kind="stable")
     pennies[order[:remainder]] += 1
     if method == "target" and ((exact > 0) & (pennies == 0)).any():
-        raise RebalanceError("This amount is too small to give every positive-weight recipient at least €0.01. Increase the amount or choose fewer positions.")
+        raise RebalanceError(("This amount is too small to give every positive-weight recipient at least 0.01. Increase the amount or choose fewer positions."))
     delta = pennies / 100
     return _result(problem, (problem.values + delta) / (problem.total + new_money), new_money,
                    buys_only=True, no_new_positions=no_new_positions, require_bands=False, trade_amounts=delta)

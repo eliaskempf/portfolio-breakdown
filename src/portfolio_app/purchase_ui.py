@@ -1,5 +1,7 @@
 """Batch purchase entry and review, separate from calculation and persistence."""
 
+from portfolio_app.currency_display import reporting_currency
+
 from pathlib import Path
 from hashlib import sha256
 
@@ -59,7 +61,7 @@ def render_bulk_purchases(path: Path, snapshot: HoldingsSnapshot, funds: list[Fu
         st.caption("Each row is an additional purchase for this instrument, account, and portfolio. Saved shares increase by the batch total.")
     else:
         st.caption("Enter the purchases making up all shares currently held. Their total must match the position; this updates buy-in without adding shares. Use this only when those purchases have no intervening sales or splits.")
-    context = (str(path.resolve()), destination, identity, mode)
+    context = (str(path.resolve()), destination, identity, mode, reporting_currency())
     if st.session_state.get("position_edit_bulk_context") != context:
         st.session_state["position_edit_bulk_context"] = context
         st.session_state["position_edit_bulk_revision"] = snapshot.revision
@@ -70,7 +72,7 @@ def render_bulk_purchases(path: Path, snapshot: HoldingsSnapshot, funds: list[Fu
         st.warning(str(exc))
         return "" if st.button("Reload position form") else None
     render_purchase_history(row)
-    prefix = f"position_edit_bulk_{destination}_{identity}_"
+    prefix = f"position_edit_bulk_{destination}_{identity}_{reporting_currency()}_"
     if not destination and not identity:
         render_instrument_search(prefix, holdings, path.parent / ".cache" / "yahoo", disabled=demo)
     fields = {"id": identity}
@@ -81,13 +83,13 @@ def render_bulk_purchases(path: Path, snapshot: HoldingsSnapshot, funds: list[Fu
     with right:
         for field, label in (("portfolio", "Portfolio / sleeve"), ("account", "Account / broker")):
             fields[field] = st.text_input(label, value=row.get(field, ""), disabled=bool(destination), key=prefix + field)
-        currency = st.text_input("Purchase currency", value=opening.get("acquisition_currency") or "EUR", key=prefix + "currency")
+        currency = st.text_input("Purchase currency", value=reporting_currency(), key=prefix + "currency")
     if not destination:
         for column in metadata_dimensions(holdings):
             if column not in {"portfolio", "account"}:
                 fields[column] = st.text_input(column.replace("_", " ").title(), key=prefix + "extra_" + column)
     source = st.radio("Purchase input", ["Table", "Paste CSV / TSV", "Upload CSV"], horizontal=True, key="position_edit_bulk_source")
-    st.caption("Columns: date (YYYY-MM-DD, optional), shares, price per share, fees (optional; blank means zero). Prices and fees must use the selected currency. Blank prices remain unknown. Use decimal points or commas without thousands separators.")
+    st.caption("Columns: date (YYYY-MM-DD, optional), shares, price per share, fees (optional; blank means zero), fx_rate (optional; reporting-currency units per purchase-currency unit). Prices and fees must use the selected currency. Blank prices remain unknown. Use decimal points or commas without thousands separators.")
     rows = []
     try:
         if source == "Table":
@@ -97,6 +99,7 @@ def render_bulk_purchases(path: Path, snapshot: HoldingsSnapshot, funds: list[Fu
                 "shares": st.column_config.TextColumn("Shares"),
                 "price": st.column_config.TextColumn("Price per share"),
                 "fees": st.column_config.TextColumn("Fees (optional)"),
+                "fx_rate": st.column_config.TextColumn(f"FX rate to {reporting_currency()} (optional)"),
             })
             rows = table.fillna("").to_dict("records")
             if not any(any(str(value).strip() for value in item.values()) for item in rows):
@@ -129,8 +132,33 @@ def render_bulk_purchases(path: Path, snapshot: HoldingsSnapshot, funds: list[Fu
         {"Measure": "Batch cost including fees", "Value": "Unknown" if summary.batch_cost is None else f"{summary.batch_cost} {summary.currency}"},
         {"Measure": "Average buy-in after save", "Value": "Unknown" if summary.average is None else f"{summary.average:.6f} {summary.currency}"},
     ]))
-    if summary.average is None:
+    from portfolio_app.purchases import purchase_components
+    from portfolio_app.currency_ui import historical_for, ui_prices
+    from portfolio_app.cost_basis import resolve_cost, estimate_missing, freeze_historical
+    historical = historical_for(path.parent, demo=demo)
+    parts = purchase_components(purchases, currency, opening, mode=mode, reporting_currency=reporting_currency())
+    resolved = resolve_cost(parts, reporting_currency(), historical)
+    if resolved.amount is None:
+        st.warning(resolved.note + ' Available current values remain included.')
+        if st.checkbox('Review latest FX approximation for missing conversions', key=prefix + 'estimate'):
+            try:
+                estimated_parts = estimate_missing(parts, reporting_currency(), ui_prices(path.parent, demo), historical)
+                converted = resolve_cost(estimated_parts, reporting_currency(), historical)
+                records = [dict(Currency=p['currency'], **p['conversions'][reporting_currency()]) for p in estimated_parts
+                           if p.get('conversions', {}).get(reporting_currency(), {}).get('method') == 'estimate']
+                st.dataframe(pd.DataFrame(records), hide_index=True)
+                st.warning('Using current FX for historical costs may hide currency gains or losses. Confirmed rates stay fixed.')
+                signature = sha256(repr([(p['currency'], p['amount'], p.get('conversions', {}).get(reporting_currency(), {}).get('rate')) for p in estimated_parts]).encode()).hexdigest()[:12]
+                if st.checkbox('Confirm these FX approximations', key=prefix + 'confirm_' + signature):
+                    parts, resolved = estimated_parts, converted
+            except DataError as exc:
+                st.warning(str(exc))
+    if resolved.amount is not None:
+        st.caption(f'Combined buy-in: {resolved.amount:,.2f} {reporting_currency()} · {resolved.note or "Recorded cost"}')
+    if summary.average is None and resolved.amount is None:
         st.warning("The resulting buy-in will remain unknown because some purchase prices or the existing position's cost are missing. Known purchase details will still be saved.")
+    from portfolio_app.currency_ui import render_fx_progress
+    render_fx_progress(path.parent)
     allow_repeat = False
     if repeat:
         st.warning("This batch matches a batch saved earlier. Saving again would increase your shares again.")
@@ -141,6 +169,7 @@ def render_bulk_purchases(path: Path, snapshot: HoldingsSnapshot, funds: list[Fu
         try:
             asset_id = save_purchase_batch(path, fields, rows, currency=currency, expected_revision=revision,
                                            position_id=position_id, mode=mode, allow_repeat=allow_repeat,
+                                           reporting_currency=reporting_currency(), historical=historical, components=freeze_historical(parts, reporting_currency(), historical),
                                            validate=lambda frame: validate_fund_listings(frame, funds))
         except (DataError, OSError, UnicodeError) as exc:
             st.error(f"Purchases were not saved: {exc}")

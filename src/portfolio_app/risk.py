@@ -67,9 +67,10 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
                    *, today=None, years=3, failures=None) -> RiskAnalytics:
     if years not in (1, 3, 5):
         raise ValueError('Risk window must be 1, 3 or 5 years')
+    target = valued.reporting_currency.iloc[0] if len(valued) and 'reporting_currency' in valued else 'EUR'
     held = valued.loc[valued.shares.gt(0)]
-    valid = held.current_value_eur.map(finite).notna() & held.current_value_eur.ge(0)
-    result = RiskAnalytics(known_value=float(held.loc[valid, 'current_value_eur'].sum()),
+    valid = held.current_value_reporting.map(finite).notna() & held.current_value_reporting.ge(0)
+    result = RiskAnalytics(known_value=float(held.loc[valid, 'current_value_reporting'].sum()),
                            valuation_complete=bool(valid.all()))
     end = pd.Timestamp(today or date.today()).normalize()
     start = end - pd.DateOffset(years=years)
@@ -78,13 +79,13 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
     returns, values = {}, {}
     for identity, rows in held.groupby('id', sort=False):
         label = str(rows.name.iloc[0])
-        if rows.current_value_eur.map(finite).isna().any():
+        if rows.current_value_reporting.map(finite).isna().any():
             result.excluded[identity] = f'{label}: missing current valuation'
             continue
-        value = float(rows.current_value_eur.sum())
+        value = float(rows.current_value_reporting.sum())
         if value <= 0:
             continue
-        cash = rows.get('instrument_type', pd.Series('', index=rows.index)).eq('cash').all() and rows.quote_currency.eq('EUR').all()
+        cash = rows.get('instrument_type', pd.Series('', index=rows.index)).eq('cash').all() and rows.quote_currency.eq(target).all()
         if cash:
             series = pd.Series(0., index=bench.index)
         elif identity in histories:

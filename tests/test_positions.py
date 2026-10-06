@@ -170,7 +170,7 @@ def test_rename_updates_same_instrument_across_accounts_only(tmp_path):
     after = load_holdings(path)
     assert after.name.tolist() == ['Custom token name', 'Custom token name', 'Invented Token']
     assert after.shares.tolist() == [.3, .5, 1.]
-    pd.testing.assert_frame_equal(before.drop(columns=['name', 'shares']), after.drop(columns=['name', 'shares']))
+    pd.testing.assert_frame_equal(before.drop(columns=['name', 'shares']), after.drop(columns=['name', 'shares', 'cost_basis_details']))
     assert next((tmp_path / '.backups').glob('*.csv')).read_bytes() == original
     saved = path.read_bytes()
     with pytest.raises(DataError, match='nonempty name'):

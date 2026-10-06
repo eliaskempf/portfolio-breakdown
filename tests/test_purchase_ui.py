@@ -63,15 +63,16 @@ def test_existing_position_historical_cost_entry_keeps_shares(tmp_path):
     assert read_purchase_history(stored[HISTORY_COLUMN])[0]["mode"] == "reconcile"
 
 
-def test_invalid_batch_or_currency_never_offers_save(tmp_path):
+def test_mixed_currency_offers_save_with_warning_but_invalid_batch_does_not(tmp_path):
     path = tmp_path / "holdings.csv"
     path.write_text("id,name,ticker,shares,acquisition_price,acquisition_currency\nexample,Synthetic,DEMO,5,80,USD\n")
     app = bulk(launch_editor(path))
     by_label(app.selectbox, "Purchase destination").set_value("position-0").run()
     by_label(app.text_input, "Purchase currency").set_value("EUR")
     paste(app)
-    assert any("must match" in item.value for item in app.error)
-    assert not any(item.label == "Save purchase batch" for item in app.button)
+    assert not app.error
+    assert any("excluded from gains" in item.value for item in app.warning)
+    assert any(item.label == "Save purchase batch" for item in app.button)
     by_label(app.text_input, "Purchase currency").set_value("USD")
     paste(app, "shares,price\n-1,2")
     assert app.error

@@ -37,14 +37,14 @@ def test_explicit_label_comparison_and_selection_recalculate_union(label_data):
     assert by_label(app.selectbox, "Group by").value == "selected_labels"
     assert by_label(app.selectbox, "Chart").value == "Sunburst"
     table = app.tabs[1].dataframe[-1].value
-    assert table["EUR value"].sum() == 200
+    assert table["Value"].sum() == 200
     assert table["Selected labels %"].sum() == 100
     assert table["Portfolio %"].sum() == 100
-    assert table["EUR value"].is_monotonic_decreasing
+    assert table["Value"].is_monotonic_decreasing
     by_label(app.multiselect, "Labels to compare").set_value([Label("labels", ("Group A",)).key, Label("labels", ("Group C",)).key]).run()
     assert not app.exception
     table = app.tabs[1].dataframe[-1].value
-    assert table["EUR value"].sum() == 120
+    assert table["Value"].sum() == 120
     assert table["Selected labels %"].sum() == pytest.approx(100)
     assert table["Portfolio %"].sum() == 60
     assert any("€80.00 falls outside" in item.value for item in app.caption)
@@ -85,7 +85,7 @@ def test_label_choices_survive_position_filters_and_no_matches_are_clear(label_d
     assert not app.exception
     assert by_label(app.multiselect, "Labels to compare").value == [a]
     assert any("No positive valued assets match" in item.value for item in app.info)
-    assert app.tabs[1].dataframe[-1].value["EUR value"].sum() == 0
+    assert app.tabs[1].dataframe[-1].value["Value"].sum() == 0
     by_label(app.multiselect, "Holdings").set_value(["a", "b"]).run()
     assert not app.exception
     assert app.tabs[1].dataframe[-1].value.iloc[0]["Portfolio %"] == 50
@@ -98,7 +98,7 @@ def test_detail_navigation_assets_tickers_and_back_to_overview(label_data):
     assert not app.exception
     table = app.tabs[1].dataframe[-1].value
     assert table["Investment"].tolist() == ["Synthetic A"]
-    assert table["EUR value"].tolist() == [80]
+    assert table["Value"].tolist() == [80]
     assert table["Allocation %"].tolist() == [100]
     for kind in ("Pie", "Sunburst", "Treemap", "Bar"):
         by_label(app.selectbox, "Chart").set_value(kind).run()
@@ -109,11 +109,11 @@ def test_detail_navigation_assets_tickers_and_back_to_overview(label_data):
     assert not app.exception
     assert app.tabs[1].dataframe[-1].value["Investment"].tolist() == ["Synthetic A (NVDA)"]
     by_label(app.selectbox, "Detail view").set_value((*root, "Child")).run()
-    assert app.tabs[1].dataframe[-1].value["EUR value"].sum() == 80
+    assert app.tabs[1].dataframe[-1].value["Value"].sum() == 80
     by_label(app.button, "Back to overview").click().run()
     assert not app.exception
     assert by_label(app.selectbox, "Detail view").value == ()
-    assert app.tabs[1].dataframe[-1].value["EUR value"].sum() == 200
+    assert app.tabs[1].dataframe[-1].value["Value"].sum() == 200
 
 
 def test_detail_resets_when_selected_labels_or_filters_remove_branch(label_data):

@@ -12,19 +12,19 @@ def test_default_exposure_is_all_assets_without_chart_or_label_requirement(multi
     assert by_label(app.get('button_group'), 'Exposure view').value == 'Assets'
     assert by_label(app.toggle, 'Break down ETFs').value
     table = effective(app)
-    assert table['Total (EUR)'].sum() == 300
+    assert table['Total'].sum() == 300
     assert table['Allocation %'].sum() == pytest.approx(100)
-    assert table.loc[table.Asset.eq('Invented Alpha'), 'Total (EUR)'].tolist() == [175]
+    assert table.loc[table.Asset.eq('Invented Alpha'), 'Total'].tolist() == [175]
     assert len(app.tabs[1].get('plotly_chart')) == 0
     assert by_label(app.tabs[1].metric, 'Current value').value == '€300.00'
     assert by_label(app.tabs[1].metric, 'Portfolio share').value == '100.0%'
     assert not any('source positions' in caption.value or 'use a proxy' in caption.value for caption in app.tabs[1].caption)
     assert list_data(app, 'Exposure assets')['maxHeight'] == 620
-    assert 'Direct (EUR)' not in {column['key'] for column in list_data(app, 'Exposure assets')['columns']}
+    assert 'Direct' not in {column['key'] for column in list_data(app, 'Exposure assets')['columns']}
     by_label(app.toggle, 'Break down ETFs').set_value(False).run()
     table = effective(app)
-    assert table['Total (EUR)'].sum() == 300
-    assert table['ETF-derived (EUR)'].sum() == 0
+    assert table['Total'].sum() == 300
+    assert table['ETF-derived'].sum() == 0
     assert list_data(app, 'Exposure assets')['maxHeight'] is None
 
 
@@ -40,13 +40,13 @@ def test_source_scope_filters_before_expansion_search_retains_denominator(multi_
     by_label(app.text_input, 'Search exposure').set_value('Alpha').run()
     table = effective(app)
     assert table.Asset.tolist() == ['Invented Alpha']
-    assert table['Direct (EUR)'].tolist() == [0]
-    assert table['ETF-derived (EUR)'].tolist() == [75]
+    assert table['Direct'].tolist() == [0]
+    assert table['ETF-derived'].tolist() == [75]
     assert table['Allocation %'].tolist() == [37.5]
     by_label(app.button, 'Clear filters').click().run()
     assert by_label(app.selectbox, 'Source scope').value == ''
     assert by_label(app.text_input, 'Search exposure').value == ''
-    assert effective(app)['Total (EUR)'].sum() == 300
+    assert effective(app)['Total'].sum() == 300
 
 
 def test_missing_source_value_stays_visible_and_percentages_are_unavailable(multi_fund_workspace):
@@ -55,6 +55,6 @@ def test_missing_source_value_stays_visible_and_percentages_are_unavailable(mult
     app = launch(multi_fund_workspace)
     assert not app.exception
     table = effective(app)
-    assert table.loc[table.Asset.eq('Unsupported Fund'), 'Total (EUR)'].isna().all()
+    assert table.loc[table.Asset.eq('Unsupported Fund'), 'Total'].isna().all()
     assert table['Allocation %'].isna().all()
     assert any('full portfolio percentages are blank' in warning.value for warning in app.warning)

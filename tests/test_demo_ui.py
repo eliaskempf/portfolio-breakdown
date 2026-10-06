@@ -20,7 +20,7 @@ def test_public_demo_sector_default_and_geography_drilldown(tmp_path):
     by_label(app.get('button_group'), 'Exposure view').set_value('Geography').run()
     assert not app.exception
     table = next(item.value for item in app.dataframe if 'Category' in item.value).set_index('Category')
-    assert table.loc['Money market', 'EUR value'] == pytest.approx(20441.67)
+    assert table.loc['Money market', 'Value'] == pytest.approx(20441.67)
     assert table.loc['Unknown geography', '% of selected portfolio'] < 1
     by_label(app.selectbox, 'Geography detail').set_value(('Europe', 'Germany')).run()
     assert any('Siemens' in item.value.get('Asset', []).tolist() for item in app.dataframe if 'Asset' in item.value)
@@ -28,8 +28,8 @@ def test_public_demo_sector_default_and_geography_drilldown(tmp_path):
     by_label(app.toggle, 'Break down ETFs').set_value(False).run()
     assert not app.exception
     table = next(item.value for item in app.dataframe if 'Category' in item.value).set_index('Category')
-    assert table.loc['Money market', 'EUR value'] == pytest.approx(20441.67)
-    assert table.loc['Unknown geography', 'EUR value'] == pytest.approx(60918.11)
+    assert table.loc['Money market', 'Value'] == pytest.approx(20441.67)
+    assert table.loc['Unknown geography', 'Value'] == pytest.approx(60918.11)
 
 
 def test_sector_default_arrives_with_metadata_without_overriding_user_choice(tmp_path):

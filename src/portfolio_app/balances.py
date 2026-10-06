@@ -61,6 +61,11 @@ def patch_holdings(path: Path, changes: Mapping[str, Mapping], *, expected_revis
             if column not in raw:
                 raw[column] = ''
             raw.at[index, column] = '' if value is None or pd.isna(value) else str(value).strip()
+        from portfolio_app.cost_basis import FIELD, encode_components, aggregate_component, fingerprint, same_summary
+        if not same_summary(fingerprint(current.loc[index]), fingerprint(raw.loc[index])):
+            if FIELD not in raw:
+                raw[FIELD] = ''
+            raw.at[index, FIELD] = encode_components([aggregate_component(raw.loc[index])], raw.loc[index])
         if replacement:
             price, currency = raw.at[index, 'acquisition_price'], raw.at[index, 'acquisition_currency'] if 'acquisition_currency' in raw else ''
             if price and not currency:

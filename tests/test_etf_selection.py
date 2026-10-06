@@ -57,14 +57,14 @@ def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(mul
     assert by_label(app.toggle, 'Synthetic Emerging').value
     assert any('No breakdown available: Unsupported Fund' in info.value for info in app.info)
     table = effective(app)
-    assert table.loc[table.Asset == 'Invented Alpha', 'Total (EUR)'].iloc[0] == 175.
-    assert table['Total (EUR)'].sum() == 300.
+    assert table.loc[table.Asset == 'Invented Alpha', 'Total'].iloc[0] == 175.
+    assert table['Total'].sum() == 300.
     by_label(app.toggle, 'Synthetic World').set_value(False).run()
     assert not app.exception and not app.error
     table = effective(app)
-    assert table.loc[table.Asset == 'Invented Alpha', 'Total (EUR)'].iloc[0] == 125.
-    assert table.loc[table.Asset == 'Synthetic World', 'Total (EUR)'].iloc[0] == 100.
-    assert table['Total (EUR)'].sum() == 300.
+    assert table.loc[table.Asset == 'Invented Alpha', 'Total'].iloc[0] == 125.
+    assert table.loc[table.Asset == 'Synthetic World', 'Total'].iloc[0] == 100.
+    assert table['Total'].sum() == 300.
     # Targets follow the same selective expansion, and the intact fund retains
     # its own performance instead of inheriting missing constituent history.
     theme_view(app)
@@ -86,8 +86,8 @@ def test_stock_view_respects_individual_fund_expansion(multi_fund_workspace):
     by_label(app.toggle, 'Synthetic World').set_value(False).run()
     by_label(app.checkbox, 'Show stock-only company exposure').check().run()
     assert not app.exception and not app.error
-    companies = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total (EUR)' in item.value)
-    assert companies['Total (EUR)'].sum() == 125.
+    companies = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total' in item.value)
+    assert companies['Total'].sum() == 125.
     unresolved = next(item.value for item in app.dataframe if 'Status' in item.value and 'Exposure' in item.value)
     assert 'Synthetic World' in unresolved.Exposure.tolist()
 
@@ -125,12 +125,12 @@ def test_reviewed_company_mapping_reaches_allocation_and_stock_ui(multi_fund_wor
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     assert not app.exception and not app.error
     company = effective(app).loc[lambda x: x.Asset == 'Invented Alpha'].iloc[0]
-    assert company['Direct (EUR)'] == 100.
-    assert company['ETF-derived (EUR)'] == 100.
+    assert company['Direct'] == 100.
+    assert company['ETF-derived'] == 100.
     by_label(app.checkbox, 'Show stock-only company exposure').check().run()
     assert not app.exception
-    companies = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total (EUR)' in item.value)
-    assert companies['Total (EUR)'].tolist() == [200.]
+    companies = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total' in item.value)
+    assert companies['Total'].tolist() == [200.]
 
 
 def test_estimated_merge_review_undo_restore_and_reload(multi_fund_workspace):
@@ -144,7 +144,7 @@ def test_estimated_merge_review_undo_restore_and_reload(multi_fund_workspace):
     app = launch(multi_fund_workspace)
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     assert not app.exception and not app.error
-    assert effective(app).loc[lambda x: x.Asset.str.endswith(' *'), 'Total (EUR)'].tolist() == [100.]
+    assert effective(app).loc[lambda x: x.Asset.str.endswith(' *'), 'Total'].tolist() == [100.]
     assert any('Estimated name match' in item.value for item in app.caption)
     provenance = next(item.value for item in app.dataframe if 'Original asset' in item.value)
     assert set(provenance.Source) == {'Synthetic World', 'Synthetic Emerging'}
@@ -153,14 +153,14 @@ def test_estimated_merge_review_undo_restore_and_reload(multi_fund_workspace):
     assert not effective(app).Asset.str.endswith(' *').any()
     assert len(effective(app).loc[lambda x: x.Asset.str.contains('Photon')]) == 2
     by_label(app.checkbox, 'Show stock-only company exposure').check().run()
-    stock = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total (EUR)' in item.value)
+    stock = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total' in item.value)
     assert len(stock) == 3  # The original direct stock plus two separate fund stocks.
     reloaded = launch(multi_fund_workspace)
     by_label(reloaded.toggle, 'Break down ETFs').set_value(True).run()
     assert not effective(reloaded).Asset.str.endswith(' *').any()
     by_label(reloaded.button, 'Restore merge').click().run()
     assert not reloaded.exception and not reloaded.error
-    assert effective(reloaded).loc[lambda x: x.Asset.str.endswith(' *'), 'Total (EUR)'].tolist() == [100.]
+    assert effective(reloaded).loc[lambda x: x.Asset.str.endswith(' *'), 'Total'].tolist() == [100.]
     assert all(path.read_bytes() == content for path, content in protected.items())
 
 

@@ -63,8 +63,8 @@ def test_union_denominator_split_overlap_and_unmatched_value(comparison_data):
     assert result.matched_value == 200
     assert result.unmatched_value == 50
     assert result.overlapping_value == 120
-    assert table.loc["Group A", "EUR value"] == 60
-    assert table.loc["Group B", "EUR value"] == 140
+    assert table.loc["Group A", "Value"] == 60
+    assert table.loc["Group B", "Value"] == 140
     assert table.loc["Group A", "Assets"] == 1
     assert table.loc["Group B", "Assets"] == 2
     assert table["Selected labels %"].sum() == 100
@@ -76,7 +76,7 @@ def test_full_overlap_keeps_unique_denominator_instead_of_normalizing_double_cou
     exposures, classified = comparison_data
     result = compare_labels(exposures, classified, [Label("labels", ("Group A",)), Label("labels", ("Group B",))], overlap="overlap")
     assert result.matched_value == 200
-    assert result.table["EUR value"].sum() == 320
+    assert result.table["Value"].sum() == 320
     assert result.table["Selected labels %"].sum() == 160
     assert result.table["Portfolio %"].sum() == 128
     assert result.nodes.loc[result.nodes.is_leaf, "percentage"].sum() == pytest.approx(1.6)
@@ -97,7 +97,7 @@ def test_parent_child_selection_is_explicit_overlap_and_labels_are_not_duplicate
     result = compare_labels(exposures, classified, [parent, parent, child], overlap="split")
     assert result.overlapping_value == result.matched_value == 120
     assert len(result.table) == 2
-    assert result.table["EUR value"].tolist() == [60, 60]
+    assert result.table["Value"].tolist() == [60, 60]
 
 
 def test_empty_unknown_and_zero_label_selections(comparison_data):
@@ -106,7 +106,7 @@ def test_empty_unknown_and_zero_label_selections(comparison_data):
     assert empty.table.empty and empty.nodes.empty
     assert empty.matched_value == 0 and empty.unmatched_value == 250
     missing = compare_labels(exposures, classified, [Label("labels", ("Absent",))], overlap="split")
-    assert missing.table.iloc[0]["EUR value"] == 0
+    assert missing.table.iloc[0]["Value"] == 0
     assert missing.table["Selected labels %"].isna().all()
     unclassified = compare_labels(exposures, classified, [Label("labels", ("Unclassified",))], overlap="split")
     assert unclassified.matched_value == 10  # Residual stays explicit, unpriced excluded.
@@ -143,7 +143,7 @@ def test_drill_preserves_assigned_label_value_and_conserves_every_branch(compari
     assert children.loc[children.is_leaf, "value"].tolist() == [assigned / 2, assigned / 2]
     assets = comparison_assets(comparison, root)
     assert assets["Investment"].tolist() == ["Synthetic A"]
-    assert assets["EUR value"].tolist() == [assigned]
+    assert assets["Value"].tolist() == [assigned]
     assert assets["Allocation %"].tolist() == [100]
     subdetail = comparison_tree(comparison, labels, root=(*root, "First"))
     assert subdetail.iloc[0]["value"] == assigned / 2

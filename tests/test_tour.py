@@ -122,7 +122,7 @@ def test_replay_restores_view_filters_drafts_and_closes_menu(tmp_path, view):
         expected = {'main_tabs':'Exposure', 'exposure_search':'Nvidia'}
     else:
         activate(app, 'Rebalance')
-        by_label(app.number_input, 'Contribution (EUR)').set_value(750.).run()
+        by_label(app.number_input, 'Contribution').set_value(750.).run()
         click(app, 'Calculate plan')
         expected = {'main_tabs':'Rebalance', 'planning_amount':750., 'rebalance_tabs':'Plan'}
     app.session_state['help_menu'] = True
@@ -152,6 +152,33 @@ def test_not_now_is_remembered_but_help_still_replays(tmp_path):
     click(restarted, 'Take the tour')
     assert_step(restarted, 0)
     click(restarted, 'Skip tour')
+
+
+@pytest.mark.parametrize('currency', ['USD', 'GBP'])
+@pytest.mark.parametrize('start_demo', [False, True])
+def test_tour_restores_currency_and_saved_plan(tmp_path, currency, start_demo):
+    from portfolio_app.portfolio_settings import load_settings, save_settings
+    personal = create_demo_data(tmp_path / 'invented-personal')
+    demo = create_demo_data(tmp_path / 'demo')
+    original = demo if start_demo else personal
+    save_settings(original, currency, None)
+    before = tree_bytes(original)
+    app = launch_workspaces(personal, demo, start_demo=start_demo)
+    activate(app, 'Rebalance')
+    by_label(app.number_input, 'Contribution').set_value(750.).run()
+    click(app, 'Calculate plan')
+    plan = app.session_state['portfolio_contribution_result']
+    context = app.session_state['currency_context']
+    click(app, 'Take the tour')
+    assert app.session_state['reporting_currency'] == 'EUR'
+    click(app, 'Skip tour')
+    assert app.session_state['reporting_currency'] == currency
+    assert app.session_state['currency_context'] == context
+    assert app.session_state['main_tabs'] == 'Rebalance'
+    assert by_label(app.number_input, 'Contribution').value == 750.
+    assert app.session_state['portfolio_contribution_result'][0] == plan[0]
+    assert load_settings(original).reporting_currency == currency
+    assert tree_bytes(original) == before
 
 
 def test_unwritable_preference_still_restores_workspace(tmp_path, monkeypatch):

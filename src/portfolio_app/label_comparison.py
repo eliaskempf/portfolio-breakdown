@@ -105,11 +105,11 @@ def compare_labels(exposures: pd.DataFrame, classifications: Classifications, la
     matched_value = math.fsum(matched)
     # Include explicitly chosen zero-value labels in the comparison table.
     table = pd.DataFrame([{
-        "Label": label.title, "EUR value": totals[label], "Assets": len(assets[label]),
+        "Label": label.title, "Value": totals[label], "Assets": len(assets[label]),
         "Selected labels %": 100 * totals[label] / matched_value if matched_value else float("nan"),
         "Portfolio %": 100 * totals[label] / portfolio_value if portfolio_value else float("nan"),
-    } for label in labels], columns=["Label", "EUR value", "Assets", "Selected labels %", "Portfolio %"])
-    table = table.sort_values(["EUR value", "Label"], ascending=[False, True], kind="stable", ignore_index=True)
+    } for label in labels], columns=["Label", "Value", "Assets", "Selected labels %", "Portfolio %"])
+    table = table.sort_values(["Value", "Label"], ascending=[False, True], kind="stable", ignore_index=True)
     nodes = build_tree(pd.DataFrame(allocations, columns=ALLOCATION_COLUMNS), root_label="Selected labels")
     titles = {label.key: label.title for label in labels}
     nodes.loc[nodes["depth"] == 1, "label"] = nodes.loc[nodes["depth"] == 1, "label"].map(titles)
@@ -149,6 +149,6 @@ def comparison_assets(comparison: LabelComparison, root: TaxonomyPath, *, includ
     assets = rows.groupby(["asset_id", "asset_name"], sort=False, as_index=False)["value"].sum()
     total = assets["value"].sum()
     assets["Allocation %"] = 100 * assets["value"] / total if total else float("nan")
-    return assets.rename(columns={"asset_name": "Investment", "value": "EUR value"}).sort_values(
-        ["EUR value", "Investment"], ascending=[False, True], kind="stable", ignore_index=True,
-    )[[*(["asset_id"] if include_ids else []), "Investment", "EUR value", "Allocation %"]]
+    return assets.rename(columns={"asset_name": "Investment", "value": "Value"}).sort_values(
+        ["Value", "Investment"], ascending=[False, True], kind="stable", ignore_index=True,
+    )[[*(["asset_id"] if include_ids else []), "Investment", "Value", "Allocation %"]]

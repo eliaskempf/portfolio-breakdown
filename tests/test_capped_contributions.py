@@ -14,7 +14,7 @@ def test_cap_redirects_money_while_saved_targets_remain_unchanged():
     original = p.positions.copy(deep=True)
     plan = balanced_cash_tradeoffs(p, 100, eligible_position_ids={'row-0', 'row-1', 'row-2'},
                                     minimum_purchase=5, buy_all=True, max_allocations={'row-1': .2})[-1]
-    assert plan.table['Trade (EUR)'].tolist() == [10, 30, 60]
+    assert plan.table['Trade'].tolist() == [10, 30, 60]
     assert plan.table['After %'].tolist() == [45, 20, 35]
     assert plan.unallocated_cash == 0
     assert p.positions.equals(original)
@@ -27,12 +27,12 @@ def test_all_caps_leave_cash_in_final_denominator():
     caps = {'row-0': .45, 'row-1': .15, 'row-2': .15}
     plan = balanced_cash_tradeoffs(p, 100, eligible_position_ids=set(caps), minimum_purchase=5,
                                     buy_all=True, max_allocations=caps)[-1]
-    assert plan.table['Trade (EUR)'].tolist() == [10, 20, 20]
+    assert plan.table['Trade'].tolist() == [10, 20, 20]
     assert plan.new_money == 100
     assert plan.unallocated_cash == 50
     assert plan.table['After %'].tolist() == [45, 15, 15]
-    assert plan.table['After (EUR)'].sum() + plan.unallocated_cash == 200
-    assert plan.table['Trade (EUR)'].sum() + plan.unallocated_cash == 100
+    assert plan.table['After'].sum() + plan.unallocated_cash == 200
+    assert plan.table['Trade'].sum() + plan.unallocated_cash == 100
 
 
 def test_already_above_cap_is_never_sold_and_all_blocked_returns_cash():
@@ -40,12 +40,12 @@ def test_already_above_cap_is_never_sold_and_all_blocked_returns_cash():
     ids = {'row-0', 'row-1', 'row-2'}
     plan = balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, minimum_purchase=5,
                                     max_allocations={'row-0': .1})[-1]
-    assert plan.table['Trade (EUR)'].tolist() == [0, 50, 50]
+    assert plan.table['Trade'].tolist() == [0, 50, 50]
     blocked = balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, minimum_purchase=5,
                                        max_allocations={key: 0. for key in ids})[-1]
     assert blocked.trade_count == 0
     assert blocked.unallocated_cash == 100
-    assert blocked.table['After (EUR)'].tolist() == [80, 10, 10]
+    assert blocked.table['After'].tolist() == [80, 10, 10]
     with pytest.raises(RebalanceError, match='less room than the minimum'):
         balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, buy_all=True,
                                 minimum_purchase=5, max_allocations={'row-0': .1})
@@ -71,7 +71,7 @@ def test_capped_trade_limits_match_exhaustive_integer_optimum(upper, limit, mini
         error = np.mean(((p.values + buys / 100) / final * 100 - p.targets * 100)**2)
         feasible.append((-int(buys.sum()), error))
     invested, error = min(feasible)
-    assert plan.table['Trade (EUR)'].sum() == pytest.approx(-invested/100)
+    assert plan.table['Trade'].sum() == pytest.approx(-invested/100)
     assert plan.target_rms**2 == pytest.approx(error, abs=1e-8)
     assert plan.unallocated_cash == pytest.approx((budget+invested)/100)
 

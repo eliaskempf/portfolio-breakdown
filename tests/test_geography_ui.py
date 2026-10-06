@@ -71,32 +71,32 @@ def test_region_country_drilldown_search_and_etf_toggle(geography_workspace):
     app = launch(geography_workspace)
     open_geography(app)
     table = breakdown(app).set_index('Category')
-    assert table['EUR value'].sum() == 800
+    assert table['Value'].sum() == 800
     assert table['% of selected portfolio'].sum() == pytest.approx(100)
-    assert table.loc['Europe', 'EUR value'] == 275
-    assert table.loc['United States', 'EUR value'] == 100
+    assert table.loc['Europe', 'Value'] == 275
+    assert table.loc['United States', 'Value'] == 100
     for name in ['Gold', 'Crypto', 'Cash']:
-        assert table.loc[name, 'EUR value'] == 100
-    assert table.loc['Unknown geography', 'EUR value'] == 125
+        assert table.loc[name, 'Value'] == 100
+    assert table.loc['Unknown geography', 'Value'] == 125
     by_label(app.get('button_group'), 'Geography granularity').set_value('Countries').run()
     table = breakdown(app).set_index('Category')
-    assert table.loc['Germany', 'EUR value'] == 175
-    assert table.loc['United Kingdom', 'EUR value'] == 100
+    assert table.loc['Germany', 'Value'] == 175
+    assert table.loc['United Kingdom', 'Value'] == 100
     by_label(app.selectbox, 'Geography detail').set_value(('Europe',)).run()
     assert set(breakdown(app).Category) == {'Germany', 'United Kingdom'}
     by_label(app.selectbox, 'Geography detail').set_value(('Europe', 'Germany')).run()
     assert breakdown(app).Asset.tolist() == ['Invented Alpha']
-    assert breakdown(app)['EUR value'].tolist() == [175]
+    assert breakdown(app)['Value'].tolist() == [175]
     by_label(app.button, 'Back to geography overview').click().run()
     by_label(app.text_input, 'Search exposure').set_value('Alpha').run()
     assert breakdown(app)['% of selected portfolio'].tolist() == [100 * 175 / 800]
     by_label(app.text_input, 'Search exposure').set_value('').run()
     by_label(app.toggle, 'Break down ETFs').set_value(False).run()
     table = breakdown(app).set_index('Category')
-    assert table.loc['Unknown geography', 'EUR value'] == 200
-    assert table['EUR value'].sum() == 800
+    assert table.loc['Unknown geography', 'Value'] == 200
+    assert table['Value'].sum() == 800
     by_label(app.multiselect, 'Holdings').set_value(['british']).run()
-    assert breakdown(app)['EUR value'].tolist() == [100]
+    assert breakdown(app)['Value'].tolist() == [100]
     assert breakdown(app)['% of selected portfolio'].tolist() == [100]
 
 

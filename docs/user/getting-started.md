@@ -41,10 +41,10 @@ visible rather than being inferred from the fund's domicile.
 ## Start an empty portfolio {#empty}
 
 Launch with a new `--data-dir`, or use your default persistent workspace. Choose **Start my portfolio** in the welcome dialog. The optional guide lets you
-add categories and targets one row at a time, then add a first position. Enter
+choose EUR, USD or GBP as the reporting currency, add categories and targets one row at a time, then add a first position. Enter
 adds a category and focuses the next empty name. When complete targets reach
 100%, **All set?** shows a confirmation table. Blank or unfinished targets can be
-saved for later; finishing or skipping setup opens **Overview**. Use **Positions**
+saved for later; finishing or skipping setup saves the selected currency and opens **Overview**. Use **Positions**
 to add a position or open [Import portfolio — experimental](import.md#import).
 Save a manual form or accept a reviewed import to persist holdings. Buy-in costs,
 classifications and targets can be added later. Existing portfolios load directly.
@@ -78,4 +78,4 @@ A useful first pass is:
 Use the portfolio/workspace selector to return from the demo to persistent data.
 Confirm the active workspace before saving. The header dropdown selects **My portfolio** or **Demo portfolio**; **?** opens
 the guide and **Settings** holds display and workspace controls. The portfolio
-currency is EUR; foreign-currency prices and costs are converted.
+currency defaults to EUR. Change it in **Settings → Portfolio currency** and review any missing historical conversions. New buy-in entries default to the selected reporting currency.

@@ -44,7 +44,7 @@ def test_equivalent_weights_value_identically_and_preserve_unit_cost(unit, quant
     provider = SyntheticProvider()
     rows = holdings(unit, quantity, acquisition_price=1200. / quantity, acquisition_currency='EUR')
     result = value_holdings(rows, PriceService(provider, now=lambda: NOW)).iloc[0]
-    assert result.current_value_eur == pytest.approx(1600.)
+    assert result.current_value_reporting == pytest.approx(1600.)
     assert result.current_price * quantity == pytest.approx(2000.)
     assert result.acquisition_price * quantity == pytest.approx(1200.)
     assert result.shares == pytest.approx(quantity) and result.quantity_unit == unit and result.ticker == ''
@@ -60,15 +60,15 @@ def test_one_request_across_weight_units_zero_positions_and_cached_failure(tmp_p
     prices = PriceService(provider, tmp_path / 'invented-cache.json', now=lambda: NOW)
     initial = value_holdings(rows, prices)
     assert provider.requests == [GOLD_SPOT_KEY]
-    assert initial.current_value_eur.iloc[2] == 0.
+    assert initial.current_value_reporting.iloc[2] == 0.
     provider.fail = True
     fallback = value_holdings(rows, prices, refresh=True)
-    assert fallback.current_value_eur.tolist() == initial.current_value_eur.tolist()
+    assert fallback.current_value_reporting.tolist() == initial.current_value_reporting.tolist()
     assert fallback.price_status.iloc[0] == 'cached fallback'
     assert 'Synthetic unavailable quote' in fallback.valuation_note.iloc[0]
     missing = value_holdings(rows, PriceService(provider, now=lambda: NOW))
-    assert missing.current_value_eur.iloc[:2].isna().all()
-    assert missing.current_value_eur.iloc[2] == 0.
+    assert missing.current_value_reporting.iloc[:2].isna().all()
+    assert missing.current_value_reporting.iloc[2] == 0.
 
 
 @pytest.mark.parametrize('fields', [dict(quantity_unit='units'), dict(quantity_unit='oz'),
@@ -83,7 +83,7 @@ def test_manual_physical_assets_are_not_automatically_repriced():
     provider = SyntheticProvider()
     result = value_holdings(holdings('grams', 10, price_source='', manual_price=60,
         manual_price_currency='EUR', manual_price_date='2026-01-01'), PriceService(provider, now=lambda: NOW))
-    assert result.current_value_eur.tolist() == [600.]
+    assert result.current_value_reporting.tolist() == [600.]
     assert provider.requests == []
 
 

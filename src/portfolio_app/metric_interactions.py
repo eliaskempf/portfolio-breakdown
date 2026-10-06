@@ -56,5 +56,5 @@ def toggle_gain_unit(*, percent: bool, on_toggle, container_key='overview_value'
     component = st.components.v2.component('overview_gain_toggle', js=JS)
     component(key=f'{container_key}_gain_toggle', data={
         'containerKey': container_key,
-        'label': 'Show gain in euros' if percent else 'Show gain as percentage',
+        'label': 'Show gain as amount' if percent else 'Show gain as percentage',
     }, on_toggle_change=on_toggle)

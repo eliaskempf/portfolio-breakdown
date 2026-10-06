@@ -3,7 +3,7 @@
 ## Valuation and freshness {#valuation}
 
 ```text
-EUR value = quantity × quote price × EUR per unit of quote currency
+Reporting value = quantity × quote price × reporting currency per unit of quote currency
 ```
 
 Provider prices use the latest available unadjusted daily close; the current
@@ -24,17 +24,36 @@ market closures. Crypto quotes older than 24 hours have a continuous-market note
 
 ## Unrealized performance {#performance}
 
-Overview Performance summarizes currently held source positions; ETF look-through
-does not redefine their costs. EUR gain is current EUR value minus recorded EUR
-cost for eligible positions. Category return divides their summed gain by their
-summed cost; it does not average individual percentage returns.
+Choose **EUR**, **USD** or **GBP** during manual setup or in **Settings → Portfolio currency**.
+Existing portfolios default to EUR. Changing this setting recalculates values and
+gains from original records; it does not change purchase amounts or currencies.
+Review affected positions before applying. Monetary planning inputs and previous
+plans are cleared when currency changes.
 
-Only positions with usable valuations and EUR costs enter EUR totals. Missing
-costs, unspecified currencies and foreign-currency costs reduce coverage. Native
-currency returns can be available in position details. Historical costs are never
-translated using today's FX. Zero cost permits an absolute gain but no percentage
-return. **Complete**, **Partial** and **Unavailable** describe coverage; a partial
-return is not the return of the entire category.
+Overview Performance summarizes currently held source positions; ETF look-through
+does not redefine their costs. Gain is current reporting value minus converted
+purchase cost. Category return divides summed covered gain by summed covered cost;
+it does not average individual percentage returns.
+
+Each purchase, including fees, is converted separately. A supplied converted cost
+takes precedence over a supplied rate, which takes precedence over historical
+market FX. Historical lookup uses the purchase date or the most recent available
+observation within the preceding seven days. It never uses a future observation.
+Market rates can differ from actual broker settlement rates. Same-currency costs
+need no purchase date or conversion.
+
+A position with incomplete costs is excluded from gains, while its available
+current value still counts toward portfolio value and allocation. **Complete**,
+**Partial** and **Unavailable** describe coverage. A partial return is not the
+return of the entire category. Zero cost permits an absolute gain but no percentage
+return.
+
+For old costs without dates, supply a converted total or exchange rate, or
+explicitly confirm a **latest FX estimate**. Settings lets you select affected
+positions and review their rates before confirming. Estimates may hide currency
+gains or losses, remain labelled, and keep their confirmed rates across refreshes
+and restarts. An undated conversion or estimate applies only to its saved target
+currency; switching again may create new coverage gaps.
 
 These figures exclude dividends and realized gains. Purchase fees affect results
 only when included in recorded cost. Reconcile remaining-position costs after
@@ -45,7 +64,7 @@ remains usable in instruments mode. Labels follow the same path splits as alloca
 ## Market-price history {#history}
 
 Position details provide 1M, 6M, 1Y, 5Y and Max views of closing prices in the
-listing currency without dividend reinvestment. This is instrument history,
+portfolio reporting currency, with a **Native currency** option without dividend reinvestment. This is instrument history,
 **not personal return history**. It does not know your purchase dates or cash flows.
 
 History loads in the background and caches for one hour. A failed request waits

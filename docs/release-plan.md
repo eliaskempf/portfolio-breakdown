@@ -1304,3 +1304,50 @@ including both themes, chart interaction, skipping/replay and restoration.
 The release checklist now records this explicitly. No installer was rebuilt
 for this merge; older local artifacts do not contain the tour. Hosted CI remains
 unavailable, macOS remains deferred, and nothing is tagged or published.
+
+## Reporting currency integration (2026-10-06)
+
+Integrated the complete `feature/v1-portfolio-currency` history through
+`8862e4fc9553180f22b215c86c39367a431a3439` into the tour-bearing release base
+`b90a038d712a41a313b9958813d66d2515748c94`, using the isolated branch
+`integrate/v1-currency`. This includes the original currency implementation,
+fractional-quantity persistence correction, live-demo cost currency fix and final
+guide correction; it is not a cherry-pick of the documentation-only tip.
+
+EUR/USD/GBP selection, current reporting valuations, historical/supplied purchase
+conversions and explicitly confirmed estimates are retained. Original costs stay
+in their recorded currencies. Missing purchase conversions exclude gains while
+available current values continue to count. Legacy workspaces default to EUR;
+`portfolio.yaml` and cost-component metadata remain private workspace files.
+
+Reconciled the shared overview, analytics, settings and rendering changes with
+the existing tour, keeping its spotlights and synthetic EUR workspace. Combined
+regressions cover USD/GBP portfolio and saved-plan restoration on leaving the
+tour. Settings and tour share the same popover state key. Also corrected a stale
+Settings selector after saving USD/GBP during setup; the regression failed before
+the fix. The README now lists the supported reporting currencies, and the guide
+retains the tour's Overview landing after setup.
+
+Subsequent UI work must use the `*_reporting` calculation fields and currency-neutral
+table keys. Keep portfolio currency explicit in calculations and format display
+labels from the selected currency. Do not reintroduce EUR-specific field names
+when reconciling the pending UI-polish branch.
+
+The fresh preview uses `/tmp/portfolio-v1-currency-integration`, its own Python
+environment and synthetic workspaces in `/tmp/portfolio-v1-currency-integration-preview`,
+served at `http://127.0.0.1:60918`. Browser inspection verified GBP valuation/chart
+labels and risk, all main tabs, EUR tour entry, Escape restoration and persisted
+currency after reload/reselection. Synthetic screenshot inspection passed.
+
+No dependency, lockfile or production packaging-script changes were needed.
+Validation: the full combined suite passed **1,150 tests without skips**. Two
+additional browser cases covering USD/GBP tour and saved-plan restoration were
+added during that run; both passed alongside the existing currency browser test.
+The focused currency/tour calculation and UI suite passed **61 tests**. Ruff,
+staged privacy and manual diff review, documentation build/link checks, and
+wheel/source archive content checks passed. The original currency and release
+worktrees were clean before integration; private portfolio data was not used.
+Source-installed lifecycle/import/ETF smoke checks passed; these do not establish
+frozen-executable acceptance. Installer rebuilds are explicitly deferred until
+all approved branches are integrated. Final Windows/native currency and tour
+checks remain on the release checklist. Nothing is tagged or published.

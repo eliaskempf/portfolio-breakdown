@@ -78,8 +78,8 @@ def test_deep_paths(exposures):
 
 def test_subset_relative_weights_and_branch_filters(valued, classifications):
     selected = filter_holdings(valued, classifications, metadata={"portfolio": ["AI Sleeve"]})
-    assert selected["current_value_eur"].sum() == 520
-    weights = portfolio_weights(selected["current_value_eur"])
+    assert selected["current_value_reporting"].sum() == 520
+    weights = portfolio_weights(selected["current_value_reporting"])
     assert weights.sum() == pytest.approx(1)
     assert weights.iloc[0] == pytest.approx(160 / 520)
     branch = filter_holdings(selected, classifications, taxonomy_branches={"ai": [("AI", "AI Infrastructure")]})

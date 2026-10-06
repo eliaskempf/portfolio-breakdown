@@ -40,17 +40,42 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return
     preserve_view_inputs()
     data_dir, demo, refresh, settings_panel = app_header(data_dir, demo_dir, demo=demo)
+    from portfolio_app.tour import active as tour_active
+    if tour_active():
+        # Always value the isolated tour with its own synthetic quotes.
+        price_service = PriceService(StaticProvider(data_dir / 'demo_prices.json'))
+    from portfolio_app.portfolio_settings import load_settings
+    from portfolio_app.currency_ui import render_currency_setting, render_currency_dialog, historical_for
+    from portfolio_app.currency_display import currency_symbol
+    try:
+        currency_settings = load_settings(data_dir)
+    except DataError as exc:
+        if settings_panel is not None:
+            with settings_panel:
+                workspace_info(data_dir, persistent_data_dir, demo=demo)
+        st.error(str(exc))
+        mark_view_ready()
+        return
+    currency_context = (str(data_dir.resolve()), currency_settings.revision)
+    initial_setup = st.session_state.get('onboarding_step') == 'position' and st.session_state.get('currency_context', (None, None))[1] is None
+    if st.session_state.get('currency_context', currency_context) != currency_context:
+        # Setup can save a currency after Settings already mounted its selector.
+        # Recreate that widget from the saved preference on the next render.
+        st.session_state.pop('currency_setting_choice', None)
+        if not initial_setup:
+            from portfolio_app.currency_ui import reset_currency_views
+            reset_currency_views()
+    st.session_state['currency_context'] = currency_context
+    reporting_currency = currency_settings.reporting_currency
+    st.session_state['reporting_currency'] = reporting_currency
+    historical = historical_for(data_dir, demo=demo and not (data_dir / '.live-demo').exists())
     display_settings = None
     if settings_panel is not None:
         with settings_panel:
+            render_currency_setting(data_dir, currency_settings)
             display_settings = st.container()
             # Recovery controls must also be available when loading inputs fails.
             workspace_info(data_dir, persistent_data_dir, demo=demo)
-    from portfolio_app.tour import active as tour_active
-    if tour_active():
-        # Tour prices are always synthetic, including when an external service
-        # was injected into the regular workspace.
-        price_service = PriceService(StaticProvider(data_dir / 'demo_prices.json'))
     offline_demo = demo and not (data_dir / '.live-demo').exists()
     from portfolio_app.import_ui import render_import_next_steps
     render_import_next_steps()
@@ -71,23 +96,27 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     with st.container(key='refresh_status'):
         render_refresh_status(data_dir, funds, etf_revision, demo=offline_demo)
     context_key = sha256(str(data_dir.resolve()).encode()).hexdigest()[:12]
-    unit_key = f'performance_unit_{context_key}'
+    unit_key = f'performance_unit_{context_key}_{reporting_currency}'
     def remember_unit():
         preferences = dict(st.session_state.get('performance_preferences', {}))
-        preferences[context_key] = st.session_state[unit_key] or '€'
+        preferences[context_key] = '%' if st.session_state[unit_key] == '%' else 'money'
         st.session_state['performance_preferences'] = preferences
     def toggle_unit():
-        st.session_state[unit_key] = '€' if st.session_state.get(unit_key) == '%' else '%'
+        st.session_state[unit_key] = currency_symbol() if st.session_state.get(unit_key) == '%' else '%'
         remember_unit()
     percent, hide_empty = False, False
     if display_settings is not None:
         with display_settings:
             st.markdown('**Display**')
-            percent = st.segmented_control('Performance display', ['€', '%'],
-                default=st.session_state.get('performance_preferences', {}).get(context_key, '€'),
+            percent = st.segmented_control('Performance display', [currency_symbol(), '%'],
+                default='%' if st.session_state.get('performance_preferences', {}).get(context_key) == '%' else currency_symbol(),
                 key=unit_key, on_change=remember_unit) == '%'
             hide_empty = st.checkbox('Hide empty positions', key='hide_empty_positions',
                 help='Hide zero-quantity rows in Positions and Exposure. Saved targets and planning weights stay unchanged.')
+    if holdings.empty and st.session_state.get('currency_change_requested'):
+        if render_currency_dialog(data_dir, snapshot, currency_settings, price_service or prices_for(data_dir), historical):
+            mark_view_ready()
+            return
     if holdings.empty and not demo:
         from portfolio_app.onboarding_ui import render_welcome, render_guided_setup
         if render_welcome(demo_available=demo_dir is not None):
@@ -110,7 +139,15 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             price_service = prices_for(data_dir)
     source = analysis_targets(holdings, allocation) if allocation else holdings
     with st.spinner('Valuing portfolio…'):
-        valued = prepare_portfolio(source, price_service, refresh=refresh)
+        valued = prepare_portfolio(source, price_service, refresh=refresh, reporting_currency=reporting_currency, historical=historical)
+    if notice := st.session_state.pop('currency_notice', None):
+        st.info(notice)
+    if render_currency_dialog(data_dir, snapshot, currency_settings, price_service, historical):
+        mark_view_ready()
+        return
+    estimates = int(valued.cost_estimated.sum())
+    if estimates:
+        st.warning(f'{estimates} positions use confirmed FX estimates. Their gains and returns are estimated.')
     if demo and live_demo_pending(data_dir):
         if background_prices:
             render_market_status(market_workspace, market_revision)
@@ -119,18 +156,18 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         st.info('Preparing the demo with public quotes. Initial quantities will include deliberate gaps from category and position targets.')
         if not market_coordinator.pending(market_workspace):
             st.warning('Some quotes are unavailable. Use Refresh prices to retry. Synthetic prices are never substituted for live data.')
-            st.dataframe(valued.loc[valued.current_value_eur.isna(), ['name', 'valuation_note']], hide_index=True)
+            st.dataframe(valued.loc[valued.current_value_reporting.isna(), ['name', 'valuation_note']], hide_index=True)
             st.caption('For an offline example, restart with --offline-demo. My portfolio remains available in the workspace menu.')
             mark_view_ready()
         return
     if price_service.cache_warning:
         st.warning(price_service.cache_warning)
-    missing_cost = (valued.shares.gt(0) & valued.unrealized_gain_eur.isna()).sum()
-    missing_price = valued.current_value_eur.isna().sum()
+    missing_cost = (valued.shares.gt(0) & valued.unrealized_gain_reporting.isna()).sum()
+    missing_price = valued.current_value_reporting.isna().sum()
     stale = (valued.price_status.isin(['cached fallback', 'stale']) | valued.fx_status.isin(['cached fallback', 'stale'])).sum()
     if missing_cost or missing_price or stale:
         with st.expander(f'Data status · {missing_price} missing prices · {missing_cost} performance gaps · {stale} stale quotes'):
-            problems = valued.loc[valued.shares.gt(0) & (valued.unrealized_gain_eur.isna() | (valued.price_status.isin(['cached fallback', 'stale']) | valued.fx_status.isin(['cached fallback', 'stale'])))]
+            problems = valued.loc[valued.shares.gt(0) & (valued.unrealized_gain_reporting.isna() | (valued.price_status.isin(['cached fallback', 'stale']) | valued.fx_status.isin(['cached fallback', 'stale'])))]
             st.dataframe(problems[['name', 'performance_note', 'valuation_note']], hide_index=True, width='stretch')
             st.caption('Edit a position to complete its buy-in or pricing details.')
             if st.button('Complete buy-ins'):

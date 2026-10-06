@@ -11,14 +11,14 @@ def test_complete_asset_view_merges_sources_and_keeps_unclassified():
         dict(asset_id='b', asset_name='Invented B', ticker='', value=50., direct_or_indirect='indirect', source_position_id='p2'),
     ])
     result = asset_exposure_table(exposures, classifications={'a': {'labels': (('Theme',),)}})
-    assert result['Total (EUR)'].sum() == 100
+    assert result['Total'].sum() == 100
     assert result['Allocation %'].sum() == 100
-    assert result.loc[result.asset_id.eq('a'), ['Direct (EUR)', 'ETF-derived (EUR)']].iloc[0].tolist() == [20, 30]
+    assert result.loc[result.asset_id.eq('a'), ['Direct', 'ETF-derived']].iloc[0].tolist() == [20, 30]
     assert 'Unclassified' in result.loc[result.asset_id.eq('b'), 'Labels'].iloc[0]
     selected = pd.DataFrame([dict(position_id='p1', name='Direct position', account='First'),
                              dict(position_id='p2', name='Invented ETF', account='Second')])
     sources = exposure_sources(exposures, selected, 'a')
-    assert sources['Value (EUR)'].tolist() == [20, 30]
+    assert sources['Value'].tolist() == [20, 30]
     assert sources.Exposure.tolist() == ['Direct', 'ETF']
     assert sources['% of asset exposure'].tolist() == [40, 60]
 
@@ -36,34 +36,34 @@ def test_source_percentages_show_each_etf_and_account_without_portfolio_dilution
                                       ('fund-b', 'indirect', 20.), ('fund-b-2', 'indirect', 10.)]
     ] + [dict(asset_id='unrelated', value=900., source_position_id='fund-a', direct_or_indirect='indirect')])
     sources = exposure_sources(exposures, selected, 'company')
-    assert sources['Value (EUR)'].tolist() == [40, 30, 20, 10]
+    assert sources['Value'].tolist() == [40, 30, 20, 10]
     assert sources['% of asset exposure'].tolist() == [40, 30, 20, 10]
     assert sources['Account'].tolist() == ['First', 'First', 'First', 'Second']
     exposures.loc[3, 'value'] = float('nan')
     partial = exposure_sources(exposures, selected, 'company')
     assert partial['% of asset exposure'].isna().all()
-    assert partial['Value (EUR)'].iloc[:3].tolist() == [40, 30, 20]
+    assert partial['Value'].iloc[:3].tolist() == [40, 30, 20]
     exposures['value'] = 0.
     assert exposure_sources(exposures, selected, 'company')['% of asset exposure'].isna().all()
 
 
 def test_unpriced_positions_and_partial_totals_remain_unknown():
     selected = pd.DataFrame([dict(position_id='p2', id='a', name='Invented A', ticker='SYN-A',
-                                 analysis_asset_id=float('nan'), analysis_asset_name=float('nan'), current_value_eur=float('nan'))])
+                                 analysis_asset_id=float('nan'), analysis_asset_name=float('nan'), current_value_reporting=float('nan'))])
     exposures = pd.DataFrame([dict(asset_id='a', asset_name='Invented A', ticker='SYN-A', value=20., direct_or_indirect='direct', source_position_id='p1')])
     complete = complete_exposures(exposures, selected)
     assert len(complete) == 2
     result = asset_exposure_table(complete, complete=False)
-    assert pd.isna(result.iloc[0]['Total (EUR)'])
-    assert pd.isna(result.iloc[0]['Direct (EUR)'])
+    assert pd.isna(result.iloc[0]['Total'])
+    assert pd.isna(result.iloc[0]['Direct'])
     assert pd.isna(result.iloc[0]['Allocation %'])
-    assert result.iloc[0]['ETF-derived (EUR)'] == 0
+    assert result.iloc[0]['ETF-derived'] == 0
 
 
 def test_source_position_value_and_asset_weight_keep_both_denominators_distinct():
     selected = pd.DataFrame([
-        dict(position_id='direct', name='Invented Company', current_value_eur=600.),
-        dict(position_id='fund', name='Invented Broad ETF', current_value_eur=24000.),
+        dict(position_id='direct', name='Invented Company', current_value_reporting=600.),
+        dict(position_id='fund', name='Invented Broad ETF', current_value_reporting=24000.),
     ])
     exposures = pd.DataFrame([
         dict(asset_id='company', source_position_id='direct', direct_or_indirect='direct', value=600.),
@@ -72,20 +72,20 @@ def test_source_position_value_and_asset_weight_keep_both_denominators_distinct(
         dict(asset_id='other', source_position_id='fund', direct_or_indirect='indirect', value=21000.),
     ])
     sources = exposure_sources(exposures, selected, 'company').set_index('Exposure')
-    assert sources.loc['ETF', 'Position value (EUR)'] == 24000
+    assert sources.loc['ETF', 'Position value'] == 24000
     assert sources.loc['ETF', 'Asset weight (%)'] == 12.5
-    assert sources.loc['ETF', 'Value (EUR)'] == 3000
+    assert sources.loc['ETF', 'Value'] == 3000
     assert sources.loc['ETF', '% of asset exposure'] == pytest.approx(100 * 3000 / 3600)
     assert sources.loc['Direct', 'Asset weight (%)'] == 100
-    selected.loc[1, 'current_value_eur'] = 0.
+    selected.loc[1, 'current_value_reporting'] = 0.
     exposures.loc[exposures.source_position_id.eq('fund'), 'value'] = 0.
     zero = exposure_sources(exposures, selected, 'company').set_index('Exposure')
     assert pd.isna(zero.loc['ETF', 'Asset weight (%)'])
     assert zero.loc['ETF', '% of asset exposure'] == 0
-    selected.loc[1, 'current_value_eur'] = float('nan')
+    selected.loc[1, 'current_value_reporting'] = float('nan')
     exposures.loc[1, 'value'] = float('nan')
     missing = exposure_sources(exposures, selected, 'company').set_index('Exposure')
-    assert pd.isna(missing.loc['ETF', 'Position value (EUR)'])
+    assert pd.isna(missing.loc['ETF', 'Position value'])
     assert pd.isna(missing.loc['ETF', 'Asset weight (%)'])
     assert missing['% of asset exposure'].isna().all()
 
@@ -96,17 +96,17 @@ def test_grouped_totals_keep_residuals_zero_and_unknown_sources_distinct():
             ('other', 'indirect', 15.), ('empty', 'direct', 0.)]
     frame = pd.DataFrame([dict(asset_id=a, asset_name=a, ticker='', direct_or_indirect=k, value=v) for a, k, v in rows])
     result = asset_exposure_table(frame, complete=False).set_index('asset_id')
-    assert result.loc['a', ['Direct (EUR)', 'ETF-derived (EUR)', 'Total (EUR)']].tolist() == [20, 70, 90]
-    assert result.loc['b', 'Direct (EUR)'] == 10
-    assert result.loc['b', ['ETF-derived (EUR)', 'Total (EUR)']].isna().all()
-    assert result.loc['other', ['Direct (EUR)', 'ETF-derived (EUR)', 'Total (EUR)']].tolist() == [0, 15, 15]
-    assert result.loc['empty', ['Direct (EUR)', 'ETF-derived (EUR)', 'Total (EUR)']].tolist() == [0, 0, 0]
+    assert result.loc['a', ['Direct', 'ETF-derived', 'Total']].tolist() == [20, 70, 90]
+    assert result.loc['b', 'Direct'] == 10
+    assert result.loc['b', ['ETF-derived', 'Total']].isna().all()
+    assert result.loc['other', ['Direct', 'ETF-derived', 'Total']].tolist() == [0, 15, 15]
+    assert result.loc['empty', ['Direct', 'ETF-derived', 'Total']].tolist() == [0, 0, 0]
     assert result['Allocation %'].isna().all()
 
 
 def test_compact_previews_cap_sources_without_changing_exposure_percentages():
     from portfolio_app.exposure_assets_ui import source_previews
-    selected = pd.DataFrame([dict(position_id=f'p{i}', name=f'Invented Fund {i}', account='', current_value_eur=1000.) for i in range(6)])
+    selected = pd.DataFrame([dict(position_id=f'p{i}', name=f'Invented Fund {i}', account='', current_value_reporting=1000.) for i in range(6)])
     exposures = pd.DataFrame([dict(asset_id='a', asset_name='Invented Company', ticker='', source_position_id=f'p{i}',
                                     direct_or_indirect='indirect', value=float((i + 1) * 10)) for i in range(6)])
     remainder = exposures.copy()
@@ -123,7 +123,7 @@ def test_compact_previews_cap_sources_without_changing_exposure_percentages():
     assert table.loc[table.asset_id.eq('a'), 'Allocation %'].item() == 3.5
     assert source_previews(exposures, selected, table.loc[table.asset_id.eq('a')])['a'] == preview
     selected = pd.concat([selected, pd.DataFrame([dict(position_id='unpriced', name='Invented Unpriced',
-                                                      account='', current_value_eur=float('nan'))])], ignore_index=True)
+                                                      account='', current_value_reporting=float('nan'))])], ignore_index=True)
     # A missing unrelated valuation does not erase known asset-relative shares.
     assert source_previews(exposures, selected, asset_exposure_table(exposures, complete=False))['a'] == preview
     exposures.loc[0, 'value'] = float('nan')

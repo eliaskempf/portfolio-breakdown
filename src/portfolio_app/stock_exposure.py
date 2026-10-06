@@ -65,7 +65,7 @@ def link_fund_companies(funds, holdings: pd.DataFrame, identities: dict[str, str
 
 def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identities=None) -> StockExposure:
     identities = identities or {}
-    whole = float(valued.current_value_eur.sum()) if valued.current_value_eur.notna().all() else None
+    whole = float(valued.current_value_reporting.sum()) if valued.current_value_reporting.notna().all() else None
     selected = valued.loc[~valued.get('bucket_id', pd.Series('', index=valued.index)).isin(excluded_buckets)]
     known, unknown = [], []
     stock_total = 0.
@@ -74,7 +74,7 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
         key = f'security:{isin}' if isin else f'instrument:{asset_id}'
         return identities.get(key, key)
     for position in selected.to_dict('records'):
-        value = position['current_value_eur']
+        value = position['current_value_reporting']
         if pd.notna(value) and value == 0:
             continue
         fund = matching_fund(position, funds)
@@ -85,18 +85,18 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
         common = {'Source position': position['position_id'], 'Source instrument': position['name'],
                   'Bucket': position.get('bucket_id', ''), 'Account': position.get('account', '')}
         if pd.isna(value):
-            unknown.append({**common, 'Exposure': position['name'], 'EUR value': float('nan'), 'Status': 'Missing valuation'})
+            unknown.append({**common, 'Exposure': position['name'], 'Value': float('nan'), 'Status': 'Missing valuation'})
             complete = False
             continue
         if fund is None:
             if kind == 'equity':
                 stock_total += value
                 known.append({**common, 'Company ID': position.get('analysis_asset_id') or identity(position['id'], position.get('isin', '')),
-                              'Company': position.get('analysis_asset_name') or position['name'], 'EUR value': value, 'Origin': 'Direct'})
+                              'Company': position.get('analysis_asset_name') or position['name'], 'Value': value, 'Origin': 'Direct'})
             else:
                 if declared == 'equity':
                     stock_total += value
-                unknown.append({**common, 'Exposure': position['name'], 'EUR value': value,
+                unknown.append({**common, 'Exposure': position['name'], 'Value': value,
                                 'Status': 'Unresolved equity' if declared == 'equity' else 'Unknown composition / unsupported instrument'})
                 if declared != 'equity':
                     complete = False
@@ -120,7 +120,7 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
                 continue
             if constituent_kind == 'etf' and constituent.get('exposure_kind') == 'equity':
                 stock_total += amount
-                unknown.append({**common, 'Exposure': constituent['name'], 'EUR value': amount,
+                unknown.append({**common, 'Exposure': constituent['name'], 'Value': amount,
                                 'Status': 'Unresolved equity fund'})
                 continue
             if constituent_kind == 'equity':
@@ -128,19 +128,19 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
             else:
                 complete = False
             if residual or constituent_kind != 'equity':
-                unknown.append({**common, 'Exposure': constituent['name'], 'EUR value': amount,
+                unknown.append({**common, 'Exposure': constituent['name'], 'Value': amount,
                                 'Status': 'Unresolved equity' if constituent_kind == 'equity' else 'Unknown composition'})
             else:
                 known.append({**common, 'Company ID': constituent.get('analysis_asset_id') or identity(constituent['constituent_id'], constituent['isin']),
-                              'Company': constituent.get('analysis_asset_name') or constituent['name'], 'EUR value': amount, 'Origin': 'ETF-derived'})
-    sources = pd.DataFrame(known, columns=['Source position', 'Source instrument', 'Bucket', 'Account', 'Company ID', 'Company', 'EUR value', 'Origin'])
+                              'Company': constituent.get('analysis_asset_name') or constituent['name'], 'Value': amount, 'Origin': 'ETF-derived'})
+    sources = pd.DataFrame(known, columns=['Source position', 'Source instrument', 'Bucket', 'Account', 'Company ID', 'Company', 'Value', 'Origin'])
     records = []
     for key, rows in sources.groupby('Company ID', sort=False):
-        value = float(rows['EUR value'].sum())
-        records.append({'Company ID': key, 'Company': rows.Company.iloc[0], 'Direct (EUR)': rows.loc[rows.Origin == 'Direct', 'EUR value'].sum(),
-                        'ETF-derived (EUR)': rows.loc[rows.Origin == 'ETF-derived', 'EUR value'].sum(), 'Total (EUR)': value,
+        value = float(rows['Value'].sum())
+        records.append({'Company ID': key, 'Company': rows.Company.iloc[0], 'Direct': rows.loc[rows.Origin == 'Direct', 'Value'].sum(),
+                        'ETF-derived': rows.loc[rows.Origin == 'ETF-derived', 'Value'].sum(), 'Total': value,
                         'Selected stock-universe %': 100 * value / stock_total if complete and stock_total else float('nan'),
                         'Whole-portfolio %': 100 * value / whole if whole else float('nan')})
-    companies = pd.DataFrame(records, columns=['Company ID', 'Company', 'Direct (EUR)', 'ETF-derived (EUR)', 'Total (EUR)', 'Selected stock-universe %', 'Whole-portfolio %'])
-    return StockExposure(companies.sort_values('Total (EUR)', ascending=False), sources,
+    companies = pd.DataFrame(records, columns=['Company ID', 'Company', 'Direct', 'ETF-derived', 'Total', 'Selected stock-universe %', 'Whole-portfolio %'])
+    return StockExposure(companies.sort_values('Total', ascending=False), sources,
                          pd.DataFrame(unknown), stock_total if complete else None, whole)

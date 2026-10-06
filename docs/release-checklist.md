@@ -43,8 +43,17 @@ data. A checked checklist is specific to one build, not a blanket approval.
       Skip setup and Finish later work. The first position can be assigned to a
       category; within-category targets stay separate. Existing allocations are
       retained and concurrent edits are rejected.
+- [ ] EUR/USD/GBP selection survives guided setup, Skip setup, Finish later and
+      restart. New buy-ins default to the reporting currency; existing originals stay intact.
+- [ ] Settings currency review supports cancellation, exclusions and explicit
+      per-position FX-estimate confirmation. Settings closes before the review dialog.
+      Estimates remain labelled and fixed across refreshes; reverting currency restores
+      original-currency costs. Missing purchase FX affects gains, not current-value totals.
+- [ ] Mixed-currency purchase batches, per-row dates/rates and supplied converted
+      totals survive save/reopen. Balance replacements invalidate incompatible costs.
+      Monetary planning inputs reset on currency change; navigation and targets remain.
 - [ ] Physical gold spot valuation gives equal values for equivalent troy-ounce,
-      gram and kilogram weights; USD quotes convert to EUR. Quote timestamps,
+      gram and kilogram weights; USD quotes convert to the selected reporting currency. Quote timestamps,
       missing prices/FX and cached fallback stay visible. Manual pricing remains
       available and existing manual holdings stay unchanged until explicitly switched.
       Unit changes clear draft amounts; editing preserves the stored unit.

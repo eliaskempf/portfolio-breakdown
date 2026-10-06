@@ -130,8 +130,8 @@ def test_optional_fields_and_zero_quantity_save_without_network(tmp_path):
     assert 'import_source' not in metadata_dimensions(stored)
     assert 'wkn' not in metadata_dimensions(stored)
     valued = value_holdings(stored, PriceService(UnavailableProvider()))
-    assert valued.current_value_eur.iloc[0] == 0
-    assert pd.isna(valued.current_value_eur.iloc[1])
+    assert valued.current_value_reporting.iloc[0] == 0
+    assert pd.isna(valued.current_value_reporting.iloc[1])
 
 
 def snapshot_draft(currency='EUR', price_date='2026-01-02', unit='units'):
@@ -151,7 +151,7 @@ def test_snapshot_valuation_and_cost_currency_are_independent(tmp_path):
     assert stored.acquisition_price.iloc[0] == 8
     assert stored.acquisition_currency.iloc[0] == 'USD'
     valued = value_holdings(stored, PriceService(UnavailableProvider()))
-    assert valued.current_value_eur.iloc[0] == 25
+    assert valued.current_value_reporting.iloc[0] == 25
     assert valued.price_status.iloc[0] == 'manual'
     assert valued.price_observed_at.iloc[0].startswith('2026-01-02')
 
@@ -160,7 +160,7 @@ def test_foreign_snapshot_without_fx_remains_unknown(tmp_path):
     path = tmp_path / 'holdings.csv'
     save_import(path, snapshot_draft(currency='USD'), expected_revision=None)
     valued = value_holdings(read_snapshot(path).holdings, PriceService(UnavailableProvider()))
-    assert pd.isna(valued.current_value_eur.iloc[0])
+    assert pd.isna(valued.current_value_reporting.iloc[0])
     assert 'FX' in valued.valuation_note.iloc[0]
 
 

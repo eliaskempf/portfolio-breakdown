@@ -34,7 +34,7 @@ def test_filter_before_expansion_conserves_direct_indirect_and_residual(multi_fu
 
 def test_missing_and_empty_selection_preserve_scope_totals():
     valued = pd.DataFrame({'id': ['a', 'b', 'c'], 'portfolio': ['Core', 'Core', 'Other'],
-                           'current_value_eur': [100., float('nan'), 200.]})
+                           'current_value_reporting': [100., float('nan'), 200.]})
     selected = select_sources(valued, {}, scope='Core')
     assert selected.missing == selected.all_missing == 1
     assert selected.total == 300 and selected.selected_total == 100

@@ -38,7 +38,7 @@ def _best_capped_buys(deficits, budget, minimum, upper, limit, deadline):
     Integer secants support x² at adjacent cent amounts. Every MILP supplies a
     global lower bound; only return after closing the objective gap. Reprojecting
     each proposed support gives an accurate feasible incumbent and useful cuts.
-    Objective units are EUR²; there is no dependency on a quadratic solver.
+    Objective units are reporting-currency units squared; there is no dependency on a quadratic solver.
     """
     n = len(deficits)
     rows, lb, ub = [], [], []

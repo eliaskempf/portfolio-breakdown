@@ -1,4 +1,6 @@
 """Read-only position details and instrument market-price history."""
+
+from portfolio_app.currency_display import reporting_currency
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -13,15 +15,16 @@ from portfolio_app.presentation import performance_metric
 def render_position_detail(row, data_dir, *, demo=False, allocation=None):
     st.subheader(instrument_name(row))
     st.caption(' · '.join(str(value) for value in [row['name'], row.get('ticker'), row.get('isin')] if value))
-    def money(value, currency='EUR', signed=False):
+    def money(value, currency=None, signed=False):
+        currency = currency or reporting_currency()
         if value is None or pd.isna(value):
             return '—'
         return f'{value:+,.2f} {currency}' if signed else f'{value:,.2f} {currency}'
     first, second, third = st.columns(3)
-    first.metric('Current value', money(row.get('current_value_eur')))
+    first.metric('Current value', money(row.get('current_value_reporting')))
     with second:
-        performance_metric('Unrealized gain', money(row.get('unrealized_gain_eur'), signed=True),
-                           row.get('unrealized_gain_eur'), key='position_gain')
+        performance_metric('Unrealized gain', money(row.get('unrealized_gain_reporting'), signed=True),
+                           row.get('unrealized_gain_reporting'), key='position_gain')
     with third:
         performance_metric('Return on cost', '—' if pd.isna(row.get('return_pct', float('nan'))) else f'{row.return_pct:+.2f}%',
                            row.get('return_pct'), key='position_return')
@@ -30,10 +33,23 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None):
                'Category': names.get(row.get('bucket_id'), row.get('portfolio') or 'Unassigned'),
                'Average buy-in': money(row.get('acquisition_price'), row.get('acquisition_currency') or 'currency unspecified'),
                'Total buy-in': money(row.shares * row.acquisition_price, row.get('acquisition_currency') or 'currency unspecified'),
+               'Reporting buy-in': money(row.get('cost_basis_reporting')),
+               'Reporting average buy-in': money(row.get('cost_basis_reporting') / row.shares if row.shares else None),
                'Market price': money(row.get('current_price'), row.get('quote_currency') or ''),
                'Quote date': row.get('price_observed_at') or '—'}
     with st.expander('Position details'):
         st.dataframe(pd.DataFrame(details.items(), columns=['Position', 'Details']), hide_index=True, width='stretch')
+    from portfolio_app.cost_basis import active_components
+    with st.expander('Original costs and conversions'):
+        parts = active_components(row)
+        records = []
+        for part in parts:
+            conversion = part.get('conversions', {}).get(reporting_currency(), {})
+            records.append({'Quantity': part['shares'], 'Original cost': part['amount'] or 'Unknown',
+                'Currency': part['currency'] or 'Unknown', 'Purchase date': part['date'] or 'Unknown',
+                'Conversion': conversion.get('method', 'Historical lookup' if part['date'] else 'Not supplied'),
+                'Saved rate': conversion.get('rate', ''), 'Rate date': conversion.get('observed_on', '')})
+        st.dataframe(pd.DataFrame(records), hide_index=True)
     if row.get('performance_note'):
         st.info(row.performance_note + '. Use Edit position to complete your buy-in.')
     if row.get('valuation_note'):
@@ -52,13 +68,23 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None):
     service = HistoryService(DemoHistoryProvider(), data_dir / '.cache' / 'history') if demo else history_for(data_dir)
     manual = pd.notna(row.get('manual_price', float('nan')))
     result = service.get(row.ticker, period, manual=manual)
-    pending = not demo and service.pending(row.ticker, period)
+    history_units = st.segmented_control('History currency', ['Portfolio currency', 'Native currency'], default='Portfolio currency', key=f'position_edit_history_currency_{row.position_id}')
+    requested = [row.ticker]
+    if result.prices and history_units != 'Native currency' and result.currency != reporting_currency():
+        from portfolio_app.history import convert_price_history
+        legs = {}
+        for units in {result.currency, reporting_currency()} - {'EUR'}:
+            symbol = f'{units}EUR=X'
+            requested.append(symbol)
+            legs[units] = service.get(symbol, period)
+        result = convert_price_history(result, reporting_currency(), legs)
+    pending = not demo and any(service.pending(symbol, period) for symbol in requested)
 
     @st.fragment(run_every=.5 if pending else None)
     def progress():
         if not st.session_state.get('position_edit_dialog'):
             return
-        if pending and not service.pending(row.ticker, period):
+        if pending and not any(service.pending(symbol, period) for symbol in requested):
             st.rerun()
         if pending:
             st.caption('Updating market-price history in the background…')

@@ -18,26 +18,26 @@ def portfolio(values, targets, **kwargs):
     frame = pd.DataFrame({"id": [f"synthetic-{i}" for i in range(n)],
                           "name": [f"Synthetic {i}" for i in range(n)],
                           "position_id": [f"row-{i}" for i in range(n)],
-                          "shares": np.array(values) / 10, "current_value_eur": values,
+                          "shares": np.array(values) / 10, "current_value_reporting": values,
                           "target_allocation": targets})
     return prepare_rebalance(frame, **kwargs)
 
 
 def assert_conserved(plan, total, *, buys_only=False):
-    assert plan.table["Trade (EUR)"].sum() == pytest.approx(plan.new_money, abs=1e-5)
-    assert plan.table["After (EUR)"].sum() == pytest.approx(total + plan.new_money)
+    assert plan.table["Trade"].sum() == pytest.approx(plan.new_money, abs=1e-5)
+    assert plan.table["After"].sum() == pytest.approx(total + plan.new_money)
     assert plan.table["After %"].sum() == pytest.approx(100)
     assert plan.trade_count == plan.buy_count + plan.sell_count
     if buys_only:
         assert plan.sell_count == 0
-        assert plan.table["Trade (EUR)"].min() >= 0
+        assert plan.table["Trade"].min() >= 0
 
 
 def test_minimum_trades_then_turnover_uses_range_boundary():
     problem = portfolio([60., 40.], [.5, .5])
     plan = minimum_trades(problem)
     assert plan.trade_count == 2
-    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([-9.5, 9.5])
+    assert plan.table["Trade"].tolist() == pytest.approx([-9.5, 9.5])
     assert plan.within_bands
     assert_conserved(plan, 100)
 
@@ -96,7 +96,7 @@ def test_cash_tradeoff_and_max_trades():
     assert one.deviation_after == pytest.approx(50)
     assert not one.within_bands
     assert two.trade_count == 2
-    assert two.table["Trade (EUR)"].tolist() == pytest.approx([0, 50, 50], abs=1e-5)
+    assert two.table["Trade"].tolist() == pytest.approx([0, 50, 50], abs=1e-5)
     assert two.within_bands
     for plan in (one, two):
         assert_conserved(plan, 100, buys_only=True)
@@ -123,7 +123,7 @@ def test_no_new_position_restriction_and_ignored_target_redistribution():
         with pytest.raises(RebalanceError, match="feasible|finite buy-only"):
             solve(p, no_new_positions=True)
     plan = allocate_new_money(p, 20, max_trades=2, no_new_positions=True)
-    assert plan.table["Trade (EUR)"].iloc[2] == 0
+    assert plan.table["Trade"].iloc[2] == 0
     assert not plan.within_bands
     assert_conserved(plan, 100, buys_only=True)
     kept = prepare_rebalance(ignore_empty_positions(p.positions), tolerance=0)
@@ -136,13 +136,13 @@ def test_positive_holding_with_zero_target_can_require_selling():
     with pytest.raises(RebalanceError, match="finite buy-only"):
         minimum_new_money(p)
     plan = minimum_trades(p)
-    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([-20, 20])
+    assert plan.table["Trade"].tolist() == pytest.approx([-20, 20])
 
 
 def test_empty_portfolio_can_allocate_a_budget_but_has_no_unique_minimum_cash():
     p = portfolio([0., 0.], [.4, .6], tolerance=0)
     plan = allocate_new_money(p, 100, max_trades=2)
-    assert plan.table["After (EUR)"].tolist() == pytest.approx([40, 60])
+    assert plan.table["After"].tolist() == pytest.approx([40, 60])
     assert_conserved(plan, 0, buys_only=True)
     for solve in (minimum_trades, minimum_new_money):
         with pytest.raises(RebalanceError):
@@ -159,7 +159,7 @@ def test_no_new_positions_is_per_account_row_and_never_merges_trades():
     assert unrestricted.trade_count == 3
     assert unrestricted.table.position_id.nunique() == 3
     restricted = allocate_new_money(p, 100, max_trades=3, no_new_positions=True)
-    assert restricted.table["Trade (EUR)"].iloc[2] == 0
+    assert restricted.table["Trade"].iloc[2] == 0
 
 
 def test_ignore_empty_shares_targets_equally_per_asset_then_account_without_mutation():
@@ -217,18 +217,18 @@ def test_tiny_portfolio_preserves_real_trades_instead_of_rounding_to_zero():
     p = portfolio([6e-8, 4e-8], [.5, .5], tolerance=0)
     plan = minimum_trades(p)
     assert plan.trade_count == 2
-    np.testing.assert_allclose(plan.table["Trade (EUR)"], [-1e-8, 1e-8], atol=1e-15)
-    np.testing.assert_allclose(plan.table["After (EUR)"], [5e-8, 5e-8], atol=1e-15)
+    np.testing.assert_allclose(plan.table["Trade"], [-1e-8, 1e-8], atol=1e-15)
+    np.testing.assert_allclose(plan.table["After"], [5e-8, 5e-8], atol=1e-15)
 
 
 def test_eligible_subset_invests_all_cash_without_changing_other_positions():
     p = portfolio([80., 10., 10.], [.4, .3, .3], tolerance=0)
     plan = allocate_new_money(p, 100, max_trades=3, eligible_position_ids={"row-1", "row-2"})
-    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([0, 50, 50], abs=1e-5)
+    assert plan.table["Trade"].tolist() == pytest.approx([0, 50, 50], abs=1e-5)
     assert plan.table["After %"].tolist() == pytest.approx([40, 30, 30])
     assert_conserved(plan, 100, buys_only=True)
     single = allocate_new_money(p, 100, max_trades=3, eligible_position_ids={"row-1"})
-    assert single.table["Trade (EUR)"].tolist() == pytest.approx([0, 100, 0])
+    assert single.table["Trade"].tolist() == pytest.approx([0, 100, 0])
     assert single.deviation_after == pytest.approx(50)
     assert not single.within_bands
     # The full portfolio remains the denominator; targets are not normalized to the subset.
@@ -241,7 +241,7 @@ def test_tradeoff_frontier_respects_eligible_subset_and_max_trades():
     plans = cash_tradeoffs(p, 100, max_trades=3, eligible_position_ids={"row-1", "row-2"})
     assert [plan.trade_count for plan in plans] == [1, 2]
     for plan in plans:
-        assert plan.table["Trade (EUR)"].iloc[0] == 0
+        assert plan.table["Trade"].iloc[0] == 0
         assert_conserved(plan, 100, buys_only=True)
     one = allocate_new_money(p, 100, max_trades=1, eligible_position_ids={"row-1", "row-2"})
     assert one.trade_count == 1
@@ -253,9 +253,9 @@ def test_eligible_positions_intersect_no_new_and_identify_account_rows():
     p.positions["account"] = ["Synthetic A", "Synthetic A", "Synthetic B"]
     allowed = {"row-1", "row-2"}
     plan = allocate_new_money(p, 100, max_trades=3, eligible_position_ids=allowed, no_new_positions=True)
-    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([0, 100, 0])
+    assert plan.table["Trade"].tolist() == pytest.approx([0, 100, 0])
     plan = allocate_new_money(p, 100, max_trades=3, eligible_position_ids={"row-2"})
-    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([0, 0, 100])
+    assert plan.table["Trade"].tolist() == pytest.approx([0, 0, 100])
     with pytest.raises(RebalanceError, match="No feasible buy"):
         allocate_new_money(p, 100, max_trades=3, eligible_position_ids={"row-2"}, no_new_positions=True)
 
@@ -280,7 +280,7 @@ def test_spread_balances_remaining_gaps_using_existing_holdings():
     p = portfolio([80., 10., 10., 0.], [.4, .3, .2, .1], tolerance=0)
     plan = spread_new_money(p, 100, eligible_position_ids={"row-0", "row-1", "row-2"})
     assert plan.trade_count == 3
-    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([6.67, 56.67, 36.66, 0])
+    assert plan.table["Trade"].tolist() == pytest.approx([6.67, 56.67, 36.66, 0])
     assert_conserved(plan, 100, buys_only=True)
     assert not plan.within_bands  # Unselected empty position still has its target.
 
@@ -289,7 +289,7 @@ def test_spread_target_weights_apply_to_contribution_not_existing_holdings():
     from portfolio_app.rebalancing import spread_new_money
     p = portfolio([80., 10., 10.], [.4, .3, .3])
     plan = spread_new_money(p, 100, eligible_position_ids={"row-0", "row-2"}, method="target")
-    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([57.14, 0, 42.86])
+    assert plan.table["Trade"].tolist() == pytest.approx([57.14, 0, 42.86])
     assert_conserved(plan, 100, buys_only=True)
 
 
@@ -298,9 +298,9 @@ def test_spread_no_new_positions_and_zero_targets():
     p = portfolio([80., 20., 0.], [.6, .4, 0])
     ids = {"row-0", "row-1", "row-2"}
     plan = spread_new_money(p, 100, eligible_position_ids=ids, no_new_positions=True)
-    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([40, 60, 0])
+    assert plan.table["Trade"].tolist() == pytest.approx([40, 60, 0])
     plan = spread_new_money(p, 100, eligible_position_ids=ids, method="target")
-    assert plan.table["Trade (EUR)"].tolist() == pytest.approx([60, 40, 0])
+    assert plan.table["Trade"].tolist() == pytest.approx([60, 40, 0])
     with pytest.raises(RebalanceError, match="all zero"):
         spread_new_money(p, 100, eligible_position_ids={"row-2"}, method="target")
     assert spread_new_money(p, 100, eligible_position_ids={"row-2"}).trade_count == 1
@@ -321,7 +321,7 @@ def test_spread_small_contribution_into_large_portfolio_preserves_real_cents():
     p = portfolio([10_000_000., 10_000_000.], [.5, .5])
     plan = spread_new_money(p, .02, eligible_position_ids={"row-0", "row-1"})
     assert plan.trade_count == 2
-    assert plan.table["Trade (EUR)"].tolist() == [.01, .01]
+    assert plan.table["Trade"].tolist() == [.01, .01]
     assert_conserved(plan, 20_000_000, buys_only=True)
 
 
@@ -337,7 +337,7 @@ def test_target_gap_split_matches_independent_cent_enumeration(values, targets, 
     p = portfolio(values, targets, tolerance=0)
     plan = spread_new_money(p, cash, eligible_position_ids=selected)
     final_total = p.total + cash
-    actual = np.sum((plan.table["After (EUR)"].to_numpy() / final_total - p.targets) ** 2)
+    actual = np.sum((plan.table["After"].to_numpy() / final_total - p.targets) ** 2)
     best = float("inf")
     cents = round(cash * 100)
     for first in range(cents + 1):
@@ -357,7 +357,7 @@ def test_balancing_splits_cash_where_absolute_metric_prefers_one_trade():
     original = allocate_new_money(p, 20, max_trades=3, eligible_position_ids=selected)
     balanced = spread_new_money(p, 20, eligible_position_ids=selected)
     assert original.trade_count == 1
-    assert balanced.table["Trade (EUR)"].tolist() == [0, 10, 10]
+    assert balanced.table["Trade"].tolist() == [0, 10, 10]
     assert balanced.deviation_after == pytest.approx(original.deviation_after)
     # No artificial minimum buy for rows already sufficiently funded.
     tiny = spread_new_money(p, .01, eligible_position_ids=selected)
@@ -373,8 +373,8 @@ def test_balancing_tolerance_only_changes_reported_status_and_no_new_is_enforced
                               eligible_position_ids=selected, no_new_positions=True)
     loose = spread_new_money(portfolio(values, targets, tolerance=100), 100,
                              eligible_position_ids=selected, no_new_positions=True)
-    assert strict.table["Trade (EUR)"].tolist() == [20, 80, 0]
-    assert loose.table["Trade (EUR)"].tolist() == strict.table["Trade (EUR)"].tolist()
+    assert strict.table["Trade"].tolist() == [20, 80, 0]
+    assert loose.table["Trade"].tolist() == strict.table["Trade"].tolist()
     assert not strict.within_bands
     assert loose.within_bands
     with pytest.raises(RebalanceError, match="No feasible buy"):
@@ -408,7 +408,7 @@ def test_minimum_buy_and_trade_caps_match_exhaustive_integer_optimum(buy_all, li
                     continue
                 best = min(best, np.mean(((p.values + buys / 100) / final * 100 - p.targets * 100) ** 2))
         assert plan.target_rms ** 2 == pytest.approx(best, abs=1e-9)
-        buys = plan.table["Trade (EUR)"].to_numpy()
+        buys = plan.table["Trade"].to_numpy()
         assert ((buys == 0) | (buys >= minimum / 100)).all()
         assert buys[3] == 0
         assert_conserved(plan, p.total, buys_only=True)
@@ -420,10 +420,10 @@ def test_buy_every_selected_even_overweight_and_exact_minimum_budget():
     p = portfolio([80., 10., 10.], [.4, .3, .3])
     ids = {"row-0", "row-1", "row-2"}
     plan = balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, minimum_purchase=25, buy_all=True)[0]
-    assert plan.table["Trade (EUR)"].tolist() == [25, 37.5, 37.5]
+    assert plan.table["Trade"].tolist() == [25, 37.5, 37.5]
     exact = balanced_cash_tradeoffs(p, 75, eligible_position_ids=ids, minimum_purchase=25, buy_all=True)[0]
-    assert exact.table["Trade (EUR)"].tolist() == [25, 25, 25]
-    with pytest.raises(RebalanceError, match="at least €75.00.*Add €5.00"):
+    assert exact.table["Trade"].tolist() == [25, 25, 25]
+    with pytest.raises(RebalanceError, match="at least 75.00.*Add 5.00"):
         balanced_cash_tradeoffs(p, 70, eligible_position_ids=ids, minimum_purchase=25, buy_all=True)
     with pytest.raises(RebalanceError, match="requires 3 trades"):
         balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, minimum_purchase=25, buy_all=True, max_trades=2)
@@ -436,7 +436,7 @@ def test_trade_comparison_uses_squared_gaps_even_when_band_error_is_equal():
     assert [plan.trade_count for plan in plans] == [1, 2]
     assert all(plan.within_bands for plan in plans)
     assert plans[0].target_rms > plans[1].target_rms
-    assert plans[1].table["Trade (EUR)"].tolist() == [0, 10, 10]
+    assert plans[1].table["Trade"].tolist() == [0, 10, 10]
 
 
 def test_minimum_buy_input_restrictions_and_no_new_conflict():
@@ -451,7 +451,7 @@ def test_minimum_buy_input_restrictions_and_no_new_conflict():
     for limit in (0, -1, 4, True, 1.5):
         with pytest.raises(RebalanceError, match="Maximum trades"):
             balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, max_trades=limit)
-    with pytest.raises(RebalanceError, match="at least €25.00"):
+    with pytest.raises(RebalanceError, match="at least 25.00"):
         balanced_cash_tradeoffs(p, 20, eligible_position_ids=ids, minimum_purchase=25)
     plan = balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, minimum_purchase=25, no_new_positions=True)[-1]
-    assert plan.table["Trade (EUR)"].tolist() == [25, 75, 0]
+    assert plan.table["Trade"].tolist() == [25, 75, 0]

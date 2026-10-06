@@ -10,15 +10,15 @@ on your computer. Windows uses a standalone app window; Linux uses your browser.
 
 - Add holdings manually or import a compatible FinanzManager CSV/Excel report.
 - Explore categories, optional allocation targets, and within-category targets.
-- Value stocks, ETFs, crypto and physical gold in EUR using public quotes or manual prices.
+- Value stocks, ETFs, crypto and physical gold in EUR, USD or GBP using public quotes or manual prices.
 - Break down supported ETFs and combine direct and indirect exposure.
 - Review gains against recorded costs, historical risk, and rebalancing suggestions.
 - Try an editable demo with invented holdings and live market data.
 
 It does not connect to brokerage accounts, place trades, calculate taxes, or
 reconstruct a complete transaction/return history. ETF coverage is limited to
-supported sources; missing or partial data stays visible. EUR is the portfolio
-currency. The futures sandbox is not included in v1.
+supported sources; missing or partial data stays visible. Reporting currency
+defaults to EUR. The futures sandbox is not included in v1.
 
 ## Install a release
 

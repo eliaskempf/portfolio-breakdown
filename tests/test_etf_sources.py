@@ -186,10 +186,10 @@ def test_provider_classifications_preserve_local_paths_and_zero_unknown_stock_va
     assert result['held']['geography'] == (('Invented country',),)
     assert 'geography' not in original['held']
     valued = pd.DataFrame([{'id': 'fund', 'position_id': 'p', 'name': 'Invented', 'isin': fund.isin,
-                           'current_value_eur': 100., 'instrument_type': 'etf'}])
+                           'current_value_reporting': 100., 'instrument_type': 'etf'}])
     exposure = stock_exposure(valued, [fund])
     assert exposure.stock_value == 99.
-    assert exposure.companies['Total (EUR)'].sum() == 99.
+    assert exposure.companies['Total'].sum() == 99.
 
 
 def signed_dws_cash(positive=2, negative=-1):

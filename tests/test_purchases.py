@@ -87,7 +87,7 @@ def test_unknown_prices_are_never_treated_as_zero_cost():
     assert summarize_purchases(validate_purchases(rows()), "EUR", zero_opening).average == Decimal("112.6")
 
 
-@pytest.mark.parametrize("currency", ["USD", ""])
+@pytest.mark.parametrize("currency", [""])
 def test_known_opening_requires_matching_explicit_currency(currency):
     with pytest.raises(DataError, match="currency"):
         summarize_purchases(validate_purchases(rows()), "EUR", {"shares": "5", "acquisition_price": "80", "acquisition_currency": currency})

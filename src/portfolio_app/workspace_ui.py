@@ -40,7 +40,7 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                 st.button('?', disabled=True)
                 settings = None
             else:
-                settings = st.popover('Settings', icon=':material/tune:', key='settings_menu', on_change='rerun')
+                settings = st.popover('Settings', icon=':material/tune:', key='workspace_settings', on_change='rerun')
                 with st.popover('?', help='Help and demo guide', key='help_menu', on_change='rerun'):
                     from portfolio_app.documentation import guide_url
                     from portfolio_app.tour import request_tour

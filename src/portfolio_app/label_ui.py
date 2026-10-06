@@ -1,5 +1,7 @@
 """A direct comparison of selected labels, alongside the advanced tree views."""
 
+from portfolio_app.currency_display import currency_symbol
+
 from hashlib import sha256
 import json
 
@@ -78,7 +80,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                                   key=f"label_compare_chart_{policy}")
     comparison = compare_labels(exposures, classifications, labels, overlap=policy)
     if comparison.unmatched_value:
-        st.caption(f'Outside selected labels: €{comparison.unmatched_value:,.2f} · These assets remain in the Assets view.')
+        st.caption((f'Outside selected labels: €{comparison.unmatched_value:,.2f} · These assets remain in the Assets view.').replace('€', currency_symbol()))
     performance_comparisons = [compare_labels(measure, classifications, labels, overlap=policy) for measure in performance.measures()] if performance else None
     target_comparisons = None
     if targets is not None:
@@ -89,9 +91,9 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         st.info("No positive valued assets match these labels in the current portfolio selection.")
     else:
         coverage = comparison.matched_value / comparison.portfolio_value
-        st.caption(f"Coverage: {coverage:.1%} of selected portfolio · €{comparison.unmatched_value:,.2f} falls outside these labels.")
+        st.caption((f"Coverage: {coverage:.1%} of selected portfolio · €{comparison.unmatched_value:,.2f} falls outside these labels.").replace('€', currency_symbol()))
         if has_overlap:
-            st.caption(f"€{comparison.overlapping_value:,.2f} matches multiple selected labels. " +
+            st.caption((f"€{comparison.overlapping_value:,.2f} matches multiple selected labels. ").replace('€', currency_symbol()) +
                        ("Its value is split equally between those labels." if policy == "split" else
                         "Each matching label includes its full value. Label percentages can exceed 100% in total; bars show this overlap."))
         roots = sorted({path[:length] for path in comparison.allocations["path"] for length in range(1, len(path) + 1)})
@@ -116,7 +118,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             # branch clicks can zoom all the way from labels to individual assets.
             figure = hierarchy_chart(tree, chart_type)
             figure.update_traces(maxdepth=3,
-                                 hovertemplate="%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of " +
+                                 hovertemplate=("%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of ").replace('€', currency_symbol()) +
                                  ("detail total" if root else "selected labels") + "<extra></extra>")
         else:
             figure = bar_chart(nodes) if chart_type == "Bar" else pie_chart(nodes)
@@ -146,16 +148,16 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                 assets["Investment"] = assets["Investment"].fillna(assets.pop("Investment_target"))
                 assets = add_target_columns(assets, assets["asset_id"].tolist(), target_totals(*target_details, key="asset_id"),
                                             portfolio_value=portfolio_value, valuation_complete=valuation_complete)
-                assets = assets.sort_values(["EUR value", "Investment"], ascending=[False, True],
+                assets = assets.sort_values(["Value", "Investment"], ascending=[False, True],
                                              na_position="last", kind="stable", ignore_index=True)
             if performance_comparisons is not None:
                 performance_details = [item.allocations.loc[item.allocations["path"].map(lambda path: path[:len(root)] == root)]
                                        for item in performance_comparisons]
                 assets = add_performance_column(assets, assets.asset_id.tolist(), performance_details, key="asset_id", percent=performance_percent)
             assets["Labels"] = assets.pop("asset_id").map(lambda asset: asset_badges(classifications, asset, taxonomy))
-            table_area.dataframe(assets, column_order=['Investment', 'EUR value', 'Allocation %', 'Labels'], hide_index=True, height="content", width="stretch", column_config={
+            table_area.dataframe(assets, column_order=['Investment', 'Value', 'Allocation %', 'Labels'], hide_index=True, height="content", width="stretch", column_config={
                 "Labels": badge_column("Labels", colors),
-                "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
+                "Value": st.column_config.NumberColumn(format=("€ %.2f").replace('€', currency_symbol())),
                 "Allocation %": st.column_config.NumberColumn("Within this detail (%)", format="%.2f %%"),
             } | target_column_config() | performance_column_config(percent=performance_percent))
             return
@@ -163,15 +165,15 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
     table = comparison.table.copy()
     if target_comparisons is not None:
         table = add_target_columns(table, table["Label"].tolist(),
-                                   target_totals(*(item.table for item in target_comparisons), key="Label", value="EUR value"),
+                                   target_totals(*(item.table for item in target_comparisons), key="Label", value="Value"),
                                    portfolio_value=portfolio_value, valuation_complete=valuation_complete)
     if performance_comparisons is not None:
         table = add_performance_column(table, table.Label.tolist(), [item.table for item in performance_comparisons],
-                                       key="Label", value="EUR value", percent=performance_percent)
+                                       key="Label", value="Value", percent=performance_percent)
     table["Label"] = table["Label"].map(lambda label: [label])
-    table_area.dataframe(table, column_order=['Label', 'EUR value', 'Portfolio %', 'Selected labels %'], hide_index=True, height="content", width="stretch", column_config={
+    table_area.dataframe(table, column_order=['Label', 'Value', 'Portfolio %', 'Selected labels %'], hide_index=True, height="content", width="stretch", column_config={
         "Label": badge_column("Label", colors),
-        "EUR value": st.column_config.NumberColumn(format="€ %.2f"),
+        "Value": st.column_config.NumberColumn(format=("€ %.2f").replace('€', currency_symbol())),
         "Selected labels %": st.column_config.NumberColumn("% of labels", format="%.2f %%",
                                                            help="Share of the unique value matching any selected label."),
         "Portfolio %": st.column_config.NumberColumn("% of scope", format="%.2f %%"),

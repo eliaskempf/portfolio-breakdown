@@ -1,4 +1,6 @@
 """Explicit portfolio and category planning scopes."""
+
+from portfolio_app.currency_display import currency_symbol
 from hashlib import sha256
 
 import pandas as pd
@@ -22,7 +24,7 @@ def render_scoped_rebalancing(valued, config):
     if valued is None or valued.empty:
         st.info('Load positions before planning.')
         return
-    total = float(valued.current_value_eur.sum()) if valued.current_value_eur.notna().all() else None
+    total = float(valued.current_value_reporting.sum()) if valued.current_value_reporting.notna().all() else None
     if workflow == 'Within a category':
         names = category_labels(config)
         leaves = sorted(config.leaves(), key=names.get)
@@ -48,7 +50,7 @@ def render_scoped_rebalancing(valued, config):
         return
     st.caption('Allocate across category targets, then balance positions within each category.')
     amount_col, options_col = st.columns([3, 1], vertical_alignment='bottom')
-    amount = amount_col.number_input('Contribution (EUR)', key='planning_amount', min_value=.01, value=500., step=50.)
+    amount = amount_col.number_input('Contribution', key='planning_amount', min_value=.01, value=500., step=50.)
     original = valued
     with options_col.popover('Options', width='stretch'):
         st.markdown('**Positions**')
@@ -62,7 +64,7 @@ def render_scoped_rebalancing(valued, config):
         st.markdown('**Purchase rules**')
         buy_all = st.selectbox('Selection intent', key='planning_intent',
                                options=['Allow skipping positions', 'Buy every selected position']) == 'Buy every selected position'
-        minimum = st.number_input('Minimum purchase (EUR)', key='planning_minimum', min_value=.01, value=25.)
+        minimum = st.number_input('Minimum purchase', key='planning_minimum', min_value=.01, value=25.)
         max_trades = int(st.number_input('Maximum trades', key=f'planning_max_trades_{len(valued)}',
                          min_value=1, max_value=max(1, len(valued)), value=max(1, len(valued))))
         fewer = st.toggle('Compare fewer trades', key='planning_fewer')
@@ -85,7 +87,7 @@ def render_scoped_rebalancing(valued, config):
     if valued.empty:
         st.info('All positions have zero shares. Disable target redistribution to allocate new money to them.')
         return
-    fields = [c for c in ('position_id', 'id', 'name', 'ticker', 'account', 'portfolio', 'shares', 'current_value_eur', 'target_allocation', 'bucket_id', 'within_bucket_target') if c in valued]
+    fields = [c for c in ('position_id', 'id', 'name', 'ticker', 'account', 'portfolio', 'shares', 'current_value_reporting', 'target_allocation', 'bucket_id', 'within_bucket_target') if c in valued]
     fingerprint = sha256((valued[fields].to_json() + repr((config, amount, ids, buy_all, minimum, no_new, max_trades, macro_tolerance, position_tolerance, caps, cap_scope, fewer,
                                                          st.session_state.get('ignore_empty_positions')))).encode()).hexdigest()
     from portfolio_app.tour import demo_plan_requested
@@ -116,7 +118,7 @@ def render_scoped_rebalancing(valued, config):
     results = st.container(key='tour_plan_results')
     with st.expander('Plan details'):
         index = st.selectbox('Plan to inspect', key=f'planning_plan_{fingerprint}', options=range(len(plans)), index=len(plans)-1,
-            format_func=lambda i: f'{int(plans[i].trades["Trade (EUR)"].ne(0).sum())} trades · €{plans[i].unallocated_cash:.2f} unallocated') if len(plans) > 1 else 0
+            format_func=lambda i: (f'{int(plans[i].trades["Trade"].ne(0).sum())} trades · €{plans[i].unallocated_cash:.2f} unallocated').replace('€', currency_symbol())) if len(plans) > 1 else 0
         plan = plans[index]
         positions = original.copy()
         positions['target_allocation'] = positions.position_id.map(valued.set_index('position_id').target_allocation)
@@ -124,7 +126,7 @@ def render_scoped_rebalancing(valued, config):
         table = allocation_table(positions, plan.trades, new_money=amount, config=config)
         st.markdown('**Full allocation**')
         st.caption('Percentages of portfolio. Targets use the current planning options.')
-        show_table(table.sort_values('After (EUR)', ascending=False, kind='stable'))
+        show_table(table.sort_values('After', ascending=False, kind='stable'))
         st.markdown('**Category budgets**')
         st.caption('Reserved budgets are fixed before comparing trade counts. Purchase rules can leave part of a budget unallocated.')
         show_table(category_budgets(plan.budgets, plan.trades, original, config))
@@ -132,5 +134,5 @@ def render_scoped_rebalancing(valued, config):
         render_summary(table, amount, plan.unallocated_cash)
         render_trades(table)
         after = original.copy()
-        after['current_value_eur'] += after.position_id.map(plan.trades.set_index('position_id')['Trade (EUR)']).fillna(0.)
+        after['current_value_reporting'] += after.position_id.map(plan.trades.set_index('position_id')['Trade']).fillna(0.)
         render_impact(original, after, config, cash=plan.unallocated_cash, key='planning_impact_parent')

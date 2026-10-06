@@ -52,7 +52,7 @@ def test_legacy_unlabeled_buy_in_explained_without_invented_performance(tmp_path
     assert overview_metric(app).delta == 'Unavailable'
     table = next(item.value for item in app.dataframe if "shares" in item.value)
     assert table.Performance.isna().all()
-    assert table.performance_note.tolist() == ["Missing buy-in currency"]
+    assert table.performance_note.tolist() == ["Missing buy-in currency; excluded from gains"]
 
 
 def test_overview_performance_defaults_to_return_and_keeps_both_units(tmp_path, sample_data_dir):
@@ -71,12 +71,12 @@ def test_overview_performance_defaults_to_return_and_keeps_both_units(tmp_path, 
                      if item.proto.component_name == 'portfolio_data_list' and json.loads(item.proto.json)['title'] == 'Positions')
     assert 'account' not in {column['key'] for column in positions['columns']}
     assert all(row['returnPct'] is None for row in positions['rows'])
-    assert sum(row['gainEur'] is not None for row in positions['rows']) == 1
-    by_label(app.get('button_group'), 'Chart measure').set_value('Gain (EUR)').run()
+    assert sum(row['gainReporting'] is not None for row in positions['rows']) == 1
+    by_label(app.get('button_group'), 'Chart measure').set_value('Gain').run()
     assert not app.exception
     assert len(app.tabs[0].get('plotly_chart')) == 1
     by_label(app.get('button_group'), 'Performance display').set_value('%').run()
-    assert by_label(app.get('button_group'), 'Chart measure').value == 'Gain (EUR)'
+    assert by_label(app.get('button_group'), 'Chart measure').value == 'Gain'
 
 
 def test_label_performance_toggle_and_detail_use_cost_weighted_return(tmp_path, sample_data_dir):

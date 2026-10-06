@@ -1,4 +1,6 @@
 """Analytics within Overview's existing category navigation and visual style."""
+
+from portfolio_app.currency_display import currency_symbol, reporting_currency
 import pandas as pd
 import streamlit as st
 
@@ -38,7 +40,7 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
         with st.container(key='tour_risk_controls'):
             heading, action = st.columns([4, 1], vertical_alignment='center')
             heading.markdown('**Historical risk**')
-            heading.caption(f'{benchmark or "Choose a benchmark in Options"} · {years} years · Weekly EUR returns')
+            heading.caption(f'{benchmark or "Choose a benchmark in Options"} · {years} years · Weekly {reporting_currency()} returns')
             from portfolio_app.tour import active
             loaded = st.session_state.get(key + '_risk_loaded', False) or (demo and active())
             calculate = action.button('Refresh risk' if loaded else 'Calculate risk', icon=':material/refresh:' if loaded else ':material/analytics:',
@@ -64,14 +66,14 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
     if not summary.valuation_complete:
         st.warning(f'{summary.missing_valuations} positions have no current valuation. Percentages below use known valued assets.')
     data_quality_caption(snapshots)
-    pe, cost, income = (summary.metrics[name] for name in ('trailing_pe', 'fee_eur', 'distribution_yield'))
+    pe, cost, income = (summary.metrics[name] for name in ('trailing_pe', 'fee_reporting', 'distribution_yield'))
     columns = st.columns(3)
     with columns[0]:
         st.metric('Direct-stock P/E', display_value(Metric(pe.value, 'ratio'), 'trailing_pe'),
                   help='Value-weighted earnings yield, inverted. Profitable direct equities only; fund-reported ratios are kept separate.')
         st.caption(coverage(pe, 'direct-equity'))
     with columns[1]:
-        st.metric('Known annual fund costs', '—' if cost.value is None else f'€{cost.value:,.2f}',
+        st.metric('Known annual fund costs', '—' if cost.value is None else (f'€{cost.value:,.2f}').replace('€', currency_symbol()),
                   help='Current fund values × annual fees. Already reflected in fund prices; not deducted again from gains.')
         st.caption(coverage(cost, 'fund'))
     with columns[2]:
@@ -88,13 +90,13 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
         render_company_exposure(selected, snapshots, funds, data_dir)
     with st.expander('Valuation, income & fee details'):
         names = {'trailing_pe': 'Trailing P/E · direct stocks', 'forward_pe': 'Forward P/E · direct stocks',
-                 'fee': 'Weighted annual fee · covered funds', 'fee_eur': 'Known annual fund costs',
-                 'distribution_yield': 'Trailing cash yield', 'distribution_yield_eur': 'Annualized trailing distributions'}
+                 'fee': 'Weighted annual fee · covered funds', 'fee_reporting': 'Known annual fund costs',
+                 'distribution_yield': 'Trailing cash yield', 'distribution_yield_reporting': 'Annualized trailing distributions'}
         rows = []
         for name, metric in summary.metrics.items():
-            unit = 'EUR' if name.endswith('_eur') else 'ratio' if name.endswith('_pe') else 'fraction'
+            unit = reporting_currency() if name.endswith('_reporting') else 'ratio' if name.endswith('_pe') else 'fraction'
             rows.append({'Metric': names[name], 'Value': display_value(Metric(metric.value, unit), name),
-                         'Covered value (EUR)': metric.covered_value, 'Eligible value (EUR)': metric.eligible_value,
+                         'Covered value': metric.covered_value, 'Eligible value': metric.eligible_value,
                          'Missing / nonmeaningful positions': metric.excluded_count})
         st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch')
         st.caption('Missing metrics stay unavailable. Loss-making equities are excluded from P/E. Fees are already reflected in prices; '
@@ -132,7 +134,7 @@ def render_risk_dashboard(result, status, holdings):
         if result.status == 'unavailable':
             st.info(result.note)
         columns = st.columns(3)
-        columns[0].metric('Beta', '—' if result.beta is None else f'{result.beta:.2f}', help='Sensitivity to the selected benchmark on the common weekly EUR sample.')
+        columns[0].metric('Beta', '—' if result.beta is None else f'{result.beta:.2f}', help=f'Sensitivity to the selected benchmark on the common weekly {reporting_currency()} sample.')
         columns[1].metric('Annualized volatility', '—' if result.volatility is None else f'{result.volatility:.2%}')
         columns[2].metric('Benchmark correlation', '—' if result.correlation is None else f'{result.correlation:.2f}')
         if result.start:

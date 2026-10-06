@@ -15,7 +15,7 @@ from portfolio_app.rebalancing import prepare_rebalance, minimum_trades, Rebalan
 
 def invented():
     rows = parse_holdings('id,name,shares,portfolio,account,target_allocation,bucket_id,within_bucket_target\na,Invented A,1,Sleeve,Demo,0.4,active,0.6\nb,Invented B,1,Sleeve,Demo,0.6,active,0.4\nc,Invented C,1,Reserve,Demo,,core,1\n')
-    rows['current_value_eur'] = [60., 40., 300.]
+    rows['current_value_reporting'] = [60., 40., 300.]
     return rows
 
 
@@ -28,7 +28,7 @@ def test_parent_targets_and_exclusive_macro_ownership(config):
     rows = analysis_targets(invented(), config)
     assert rows.target_allocation.tolist() == pytest.approx([.15, .10, .75])
     table = macro_table(rows, config)
-    assert table['EUR value'].sum() == 400
+    assert table['Value'].sum() == 400
     assert table['Current portfolio %'].sum() == 100
     nested = Allocation((Bucket('parent', 'Parent', target=.5), Bucket('active', 'Active', 'parent', .4), Bucket('core', 'Reserve', 'parent', .6)))
     assert nested.global_target('active') == pytest.approx(.2)
@@ -106,12 +106,12 @@ def test_empty_redistribution_stays_in_bucket(config):
 def test_macro_first_is_independent_of_number_of_positions(config):
     rows = invented()
     plan = portfolio_contribution(rows, config, 100., eligible_ids=rows.position_id.tolist())
-    budgets = plan.budgets.set_index('Bucket ID')['Budget (EUR)']
+    budgets = plan.budgets.set_index('Bucket ID')['Budget']
     assert budgets['active'] == 25
     assert budgets['core'] == 75
-    assert plan.trades['Trade (EUR)'].sum() + plan.unallocated_cash == 100
-    assert plan.after.current_value_eur.sum() + plan.unallocated_cash == 500
-    assert plan.after.loc[plan.after.bucket_id == 'active', 'current_value_eur'].sum() == 125
+    assert plan.trades['Trade'].sum() + plan.unallocated_cash == 100
+    assert plan.after.current_value_reporting.sum() + plan.unallocated_cash == 500
+    assert plan.after.loc[plan.after.bucket_id == 'active', 'current_value_reporting'].sum() == 125
 
 
 def test_sleeve_works_with_unrelated_missing_targets(config):
@@ -120,15 +120,15 @@ def test_sleeve_works_with_unrelated_missing_targets(config):
     problem = prepare_rebalance(sleeve_positions(rows, config, 'active'))
     assert problem.total == 100
     assert problem.targets.tolist() == [.6, .4]
-    rows.loc[2, 'current_value_eur'] = float('nan')
+    rows.loc[2, 'current_value_reporting'] = float('nan')
     assert prepare_rebalance(sleeve_positions(rows, config, 'active')).total == 100
 
 
 def test_global_caps_cash_and_trade_limit(config):
     rows = invented()
     plan = portfolio_contribution(rows, config, 100., eligible_ids=rows.position_id.tolist(), max_trades=1)
-    assert (plan.trades['Trade (EUR)'] != 0).sum() <= 1
-    assert plan.trades['Trade (EUR)'].sum() + plan.unallocated_cash == 100
+    assert (plan.trades['Trade'] != 0).sum() <= 1
+    assert plan.trades['Trade'].sum() + plan.unallocated_cash == 100
     plan = portfolio_contribution(rows, config, 100., eligible_ids=rows.position_id.tolist(),
                                   max_allocations=dict.fromkeys(rows.position_id, 0.))
     assert plan.unallocated_cash == 100
@@ -138,7 +138,7 @@ def test_global_caps_cash_and_trade_limit(config):
 def test_sell_protection(config):
     import numpy as np
     rows = sleeve_positions(invented(), config, 'active')
-    rows['current_value_eur'] = [90., 10.]
+    rows['current_value_reporting'] = [90., 10.]
     problem = prepare_rebalance(rows, tolerance=0.)
     with pytest.raises(RebalanceError):
         minimum_trades(problem, sell_allowed=np.array([False, True]))
@@ -159,13 +159,13 @@ def test_invalid_tree_assignment_and_unknown_targets(config):
 
 def test_nested_routing_and_buy_all_minimums():
     rows = invented()
-    rows['current_value_eur'] = [0., 0., 0.]
+    rows['current_value_reporting'] = [0., 0., 0.]
     config = Allocation((Bucket('root', 'Invented parent', target=1),
                          Bucket('active', 'Invented active', 'root', .4), Bucket('core', 'Invented reserve', 'root', .6)))
     plan = portfolio_contribution(rows, config, 100., eligible_ids=rows.position_id.tolist(),
                                   buy_all=True, minimum_purchase=15., max_trades=3)
-    assert plan.budgets.set_index('Bucket ID').loc['active', 'Budget (EUR)'] == 40.
-    assert (plan.trades['Trade (EUR)'] >= 15.).all()
+    assert plan.budgets.set_index('Bucket ID').loc['active', 'Budget'] == 40.
+    assert (plan.trades['Trade'] >= 15.).all()
     assert plan.unallocated_cash == 0
     with pytest.raises(RebalanceError):
         portfolio_contribution(rows, config, 30., eligible_ids=rows.position_id.tolist(), buy_all=True, minimum_purchase=15.)
@@ -176,10 +176,10 @@ def test_cap_denominators_change_actual_capacity(config):
     ids = rows.position_id.tolist()
     global_plan = portfolio_contribution(rows, config, 100., eligible_ids=ids, max_allocations={ids[0]: .15})
     local_plan = portfolio_contribution(rows, config, 100., eligible_ids=ids, max_allocations={ids[0]: .15}, cap_scope='bucket')
-    assert global_plan.after.current_value_eur.iloc[0] == pytest.approx(75.)
-    assert local_plan.after.current_value_eur.iloc[0] == 60.
-    assert global_plan.after.current_value_eur.sum() + global_plan.unallocated_cash == 500.
-    assert local_plan.after.current_value_eur.sum() + local_plan.unallocated_cash == 500.
+    assert global_plan.after.current_value_reporting.iloc[0] == pytest.approx(75.)
+    assert local_plan.after.current_value_reporting.iloc[0] == 60.
+    assert global_plan.after.current_value_reporting.sum() + global_plan.unallocated_cash == 500.
+    assert local_plan.after.current_value_reporting.sum() + local_plan.unallocated_cash == 500.
 
 
 def test_manual_price_fractional_crypto_fx_and_missing_quote():
@@ -196,11 +196,11 @@ def test_manual_price_fractional_crypto_fx_and_missing_quote():
             return Quote(.8, 'EUR', now)
     rows = parse_holdings('id,name,shares,ticker,instrument_type,manual_price,manual_price_currency,manual_price_date,quantity_unit\na,Invented token,0.0000001234,INVENTED-EUR,crypto,,,,\nb,Invented metal,2,,physical,30,USD,2026-09-01,grams\nc,Missing token,1,MISSING-EUR,crypto,,,,\n')
     valued = value_holdings(rows, PriceService(Provider(), now=lambda: now))
-    assert valued.current_value_eur.iloc[0] == pytest.approx(.0000001234 * 500)
+    assert valued.current_value_reporting.iloc[0] == pytest.approx(.0000001234 * 500)
     assert 'continuously' in valued.valuation_note.iloc[0]
-    assert valued.current_value_eur.iloc[1] == 48.
+    assert valued.current_value_reporting.iloc[1] == 48.
     assert valued.price_status.iloc[1] == 'manual'
-    assert pd.isna(valued.current_value_eur.iloc[2])
+    assert pd.isna(valued.current_value_reporting.iloc[2])
 
 
 def test_balance_update_blocks_purchases_already_in_snapshot(tmp_path):

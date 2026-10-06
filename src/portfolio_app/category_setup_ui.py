@@ -39,7 +39,7 @@ def _complete():
 
 
 def _signature():
-    return tuple((row['name'], row['target']) for row in _rows())
+    return (st.session_state.get('onboarding_currency_value', 'EUR'), tuple((row['name'], row['target']) for row in _rows()))
 
 
 def _add(index):
@@ -101,8 +101,17 @@ def render_category_setup(directory, snapshot, first_position):
     from uuid import uuid4
     st.session_state.setdefault('onboarding_focus_session', uuid4().hex)
 
+    from portfolio_app.portfolio_settings import load_settings, save_settings, REPORTING_CURRENCIES
+    settings = load_settings(directory)
+    st.session_state.setdefault('onboarding_currency_value', settings.reporting_currency)
+    def remember_currency():
+        st.session_state['onboarding_currency_value'] = st.session_state['onboarding_currency']
+    def save_currency():
+        save_settings(directory, st.session_state.get('onboarding_currency_value', settings.reporting_currency), settings.revision)
+
     def save():
         try:
+            save_currency()
             save_initial_categories(directory, *_values(), snapshot.revision)
         except (DataError, OSError) as exc:
             st.error(str(exc))
@@ -124,6 +133,7 @@ def render_category_setup(directory, snapshot, first_position):
                 '</style><table class="category-review" aria-label="Category targets">'
                 '<thead><tr><th scope="col">Category</th><th scope="col">Target</th></tr></thead>'
                 f'<tbody>{rows}</tbody></table>')
+        st.caption(f"Portfolio currency: {st.session_state.get('onboarding_currency_value', settings.reporting_currency)}")
         st.caption('Continuing saves these categories. Your first position is saved separately.')
         if st.button('Continue to first position', type='primary', width='stretch'):
             save()
@@ -136,7 +146,7 @@ def render_category_setup(directory, snapshot, first_position):
     def setup():
         st.caption('1 of 2 · Categories and optional targets')
         st.write('Group your holdings into categories. Targets are optional.')
-        st.caption('Portfolio currency: EUR. Holdings in other currencies are converted to euros.')
+        st.selectbox('Portfolio currency', REPORTING_CURRENCIES, index=REPORTING_CURRENCIES.index(st.session_state['onboarding_currency_value']), key='onboarding_currency', on_change=remember_currency)
         for number, row in enumerate(_rows(), 1):
             with st.container(border=True):
                 name, target, remove = st.columns([3, 2, 1], vertical_alignment='bottom')
@@ -181,6 +191,11 @@ def render_category_setup(directory, snapshot, first_position):
         if proceed.button('Save categories & continue', type='primary', width='stretch', disabled=not _rows()):
             save()
         if skip.button('Skip setup', width='stretch'):
+            try:
+                save_currency()
+            except (DataError, OSError) as exc:
+                st.error(str(exc))
+                return
             st.session_state['onboarding_step'] = 'done'
             st.rerun()
 

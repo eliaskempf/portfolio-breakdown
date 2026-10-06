@@ -9,7 +9,7 @@ def complete_exposures(exposures, selected):
     """Keep unavailable source valuations visible without fabricating weights."""
     result = exposures.copy()
     missing = []
-    for row in selected.loc[selected.current_value_eur.isna()].to_dict('records'):
+    for row in selected.loc[selected.current_value_reporting.isna()].to_dict('records'):
         identity, name = row.get('analysis_asset_id'), row.get('analysis_asset_name')
         missing.append(dict(asset_id=identity if isinstance(identity, str) and identity else row['id'],
                             asset_name=name if isinstance(name, str) and name else instrument_name(row),
@@ -26,7 +26,7 @@ def asset_exposure_table(exposures, *, classifications=None, taxonomy='labels', 
     # existing source with any unavailable value remains unknown.
     result = exposures.drop_duplicates('asset_id').set_index('asset_id')[['asset_name', 'ticker']].rename(
         columns={'asset_name': 'Asset', 'ticker': 'Ticker'})
-    for column, kind in [('Direct (EUR)', 'direct'), ('ETF-derived (EUR)', 'indirect'), ('Total (EUR)', None)]:
+    for column, kind in [('Direct', 'direct'), ('ETF-derived', 'indirect'), ('Total', None)]:
         rows = exposures if kind is None else exposures.loc[exposures.direct_or_indirect.eq(kind)]
         grouped = rows.groupby('asset_id', sort=False).value
         totals = grouped.sum().mask(grouped.count() < grouped.size())
@@ -36,29 +36,29 @@ def asset_exposure_table(exposures, *, classifications=None, taxonomy='labels', 
         counts = exposures.groupby('asset_id').source_position_id.nunique()
         result['Sources'] = counts.reindex(result.index).map(lambda count: f'{count} position' + ('s' if count != 1 else ''))
     result = result.reset_index()
-    denominator = result['Total (EUR)'].sum()
-    result['Allocation %'] = 100 * result['Total (EUR)'] / denominator if complete and denominator > 0 else float('nan')
-    return result.sort_values(['Total (EUR)', 'Asset'], ascending=[False, True], na_position='last', ignore_index=True)
+    denominator = result['Total'].sum()
+    result['Allocation %'] = 100 * result['Total'] / denominator if complete and denominator > 0 else float('nan')
+    return result.sort_values(['Total', 'Asset'], ascending=[False, True], na_position='last', ignore_index=True)
 
 
 def source_contributions(exposures, selected):
     """Aggregate all asset/source pairs once, with asset-relative denominators."""
     grouped = exposures.groupby(['asset_id', 'source_position_id', 'direct_or_indirect'], sort=False).value
-    values = grouped.sum().mask(grouped.count() < grouped.size()).rename('Value (EUR)').reset_index()
-    totals = values.groupby('asset_id', sort=False)['Value (EUR)']
+    values = grouped.sum().mask(grouped.count() < grouped.size()).rename('Value').reset_index()
+    totals = values.groupby('asset_id', sort=False)['Value']
     total = totals.transform('sum').mask(totals.transform('count') < totals.transform('size'))
-    values['% of asset exposure'] = 100 * values['Value (EUR)'] / total.where(total > 0)
+    values['% of asset exposure'] = 100 * values['Value'] / total.where(total > 0)
     positions = selected.set_index('position_id')
     source = values.source_position_id
     values['Source'] = source.map({position: instrument_name(row) for position, row in positions.iterrows()})
     values['Account'] = source.map(positions['account']) if 'account' in positions else ''
     values['Exposure'] = values.direct_or_indirect.map({'direct': 'Direct', 'indirect': 'ETF'})
-    values['Position value (EUR)'] = source.map(positions['current_value_eur']) if 'current_value_eur' in positions else float('nan')
-    values['Asset weight (%)'] = 100 * values['Value (EUR)'] / values['Position value (EUR)'].where(values['Position value (EUR)'] > 0)
+    values['Position value'] = source.map(positions['current_value_reporting']) if 'current_value_reporting' in positions else float('nan')
+    values['Asset weight (%)'] = 100 * values['Value'] / values['Position value'].where(values['Position value'] > 0)
     return values
 
 
 def exposure_sources(exposures, selected, asset_id):
     values = source_contributions(exposures.loc[exposures.asset_id.eq(asset_id)], selected)
-    return values[['Source', 'Account', 'Exposure', 'Position value (EUR)',
-                   'Asset weight (%)', 'Value (EUR)', '% of asset exposure']]
+    return values[['Source', 'Account', 'Exposure', 'Position value',
+                   'Asset weight (%)', 'Value', '% of asset exposure']]

@@ -28,7 +28,7 @@ def target_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *,
     frames = []
     for measure in (targets.fillna(0), targets.isna().astype(float)):
         source = positions.copy()
-        source["current_value_eur"] = measure
+        source["current_value_reporting"] = measure
         frame = normalize_exposures(source)
         if lookthrough:
             frame = expand_etfs(frame, funds, positions if holdings is None else holdings)
@@ -58,7 +58,7 @@ def add_target_columns(table: pd.DataFrame, keys: list, totals: TargetTotals, *,
     result = table.copy()
     known = pd.Series([totals.known.get(key, 0.) for key in keys], index=result.index)
     missing = pd.Series([totals.missing.get(key, 0.) > 0 for key in keys], index=result.index)
-    result["Current portfolio %"] = (100 * result["EUR value"] / portfolio_value
+    result["Current portfolio %"] = (100 * result["Value"] / portfolio_value
                                       if valuation_complete and portfolio_value > 0 else float("nan"))
     result["Target portfolio %"] = (100 * known).mask(missing)
     result["Gap (pp)"] = result["Current portfolio %"] - result["Target portfolio %"]

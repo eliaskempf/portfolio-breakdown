@@ -18,16 +18,16 @@ def test_demo_targets_gaps_performance_and_plans(tmp_path):
     holdings = load_holdings(tmp_path / 'holdings.csv')
     config = load_allocation(tmp_path / 'allocation.yaml', holdings)
     valued = value_holdings(analysis_targets(holdings, config), PriceService(StaticProvider(tmp_path / 'demo_prices.json')))
-    assert valued.current_value_eur.sum() == pytest.approx(93184.35)
+    assert valued.current_value_reporting.sum() == pytest.approx(93184.35)
     assert valued.target_allocation.tolist() == pytest.approx([.42, .18, .25, .10, .03, .02])
     summary = macro_table(valued, config).set_index('Bucket')
     assert summary['Current portfolio %'].to_dict() == pytest.approx({'Equities': 65.374, 'Money market': 21.937, 'Gold': 8.540, 'Crypto': 4.149}, abs=.001)
     assert summary['Gap (pp)'].to_dict() == pytest.approx({'Equities': 5.374, 'Money market': -3.063, 'Gold': -1.460, 'Crypto': -.851}, abs=.001)
-    gains = position_performance(valued).set_index('id').unrealized_gain_eur
+    gains = position_performance(valued).set_index('id').unrealized_gain_reporting
     assert set(gains[gains > 0].index) == {'world', 'money-market', 'gold', 'bitcoin'}
     assert set(gains[gains < 0].index) == {'emerging', 'ethereum'}
-    assert valued.current_value_eur.notna().all()
-    values = valued.set_index('id').current_value_eur
+    assert valued.current_value_reporting.notna().all()
+    values = valued.set_index('id').current_value_reporting
     assert values.to_dict() == pytest.approx({asset: entry[0] for asset, entry in LIVE_EXAMPLES.items()})
     assert values['world'] / (values['world'] + values['emerging']) == pytest.approx(.73809, abs=.00001)
     assert values['bitcoin'] / (values['bitcoin'] + values['ethereum']) == pytest.approx(.58576, abs=.00001)
@@ -37,7 +37,7 @@ def test_demo_targets_gaps_performance_and_plans(tmp_path):
     assert plan.deviation_after == pytest.approx(0, abs=1e-6)
     assert plan.buy_count > 0 and plan.sell_count > 0 and plan.new_money == 0
     contribution = portfolio_contribution(valued, config, 5000., eligible_ids=valued.position_id.tolist())
-    assert contribution.after.current_value_eur.sum() + contribution.unallocated_cash == pytest.approx(98184.35)
+    assert contribution.after.current_value_reporting.sum() + contribution.unallocated_cash == pytest.approx(98184.35)
 
 
 def test_demo_breakdown_conserves_each_source_and_labels_synthetic_weights(tmp_path):
@@ -51,7 +51,7 @@ def test_demo_breakdown_conserves_each_source_and_labels_synthetic_weights(tmp_p
     expanded = prepare_exposures(valued, funds, holdings, lookthrough=True)
     assert len(expanded) > len(intact)
     assert expanded.groupby('source_position_id').value.sum().to_dict() == pytest.approx(
-        valued.set_index('position_id').current_value_eur.to_dict())
+        valued.set_index('position_id').current_value_reporting.to_dict())
     assert expanded.loc[expanded.source_type.eq('etf_other'), 'value'].sum() == pytest.approx(44963.27 * .015 + 15954.84 * .01)
     assert set(expanded.loc[expanded.direct_or_indirect.eq('direct'), 'asset_id']) == {'gold', 'bitcoin', 'ethereum'}
 
@@ -68,7 +68,7 @@ def test_live_demo_sizes_once_from_quotes_and_preserves_targets_and_edits(tmp_pa
     valued = value_holdings(holdings, prices)
     original = (live / 'holdings.csv').read_bytes()
     missing = valued.copy()
-    missing.loc[0, 'fx_to_eur'] = float('nan')
+    missing.loc[0, 'fx_to_reporting'] = float('nan')
     assert not initialize_live_demo(live, missing)
     assert (live / 'holdings.csv').read_bytes() == original
     assert live_demo_pending(live)
@@ -78,10 +78,10 @@ def test_live_demo_sizes_once_from_quotes_and_preserves_targets_and_edits(tmp_pa
     config = load_allocation(live / 'allocation.yaml', holdings)
     assert analysis_targets(holdings, config).target_allocation.tolist() == pytest.approx([.42, .18, .25, .10, .03, .02])
     valued = value_holdings(holdings, prices)
-    assert valued.set_index('id').current_value_eur.to_dict() == pytest.approx(
+    assert valued.set_index('id').current_value_reporting.to_dict() == pytest.approx(
         {k: v[0] for k, v in LIVE_EXAMPLES.items()}, abs=.04)
-    assert 93000 < valued.current_value_eur.sum() < 93500
-    gains = position_performance(valued).unrealized_gain_eur
+    assert 93000 < valued.current_value_reporting.sum() < 93500
+    gains = position_performance(valued).unrealized_gain_reporting
     assert (gains > 0).sum() == 4 and (gains < 0).sum() == 2
     snapshot = read_snapshot(live / 'holdings.csv')
     save_position(live / 'holdings.csv', {'shares': '123'}, expected_revision=snapshot.revision,
@@ -114,12 +114,12 @@ def test_demo_geography_and_sector_coverage(tmp_path):
     assert len({paths_for(classifications, asset, 'sector') for asset in named.asset_id}) >= 7
     allocated = geography_allocations(expanded, geography)
     for level in ['Regions', 'Countries']:
-        table = geography_table(allocated, level=level, denominator=valued.current_value_eur.sum(), complete=True).set_index('Category')
+        table = geography_table(allocated, level=level, denominator=valued.current_value_reporting.sum(), complete=True).set_index('Category')
         assert table['% of selected portfolio'].sum() == pytest.approx(100)
         assert table.loc[UNKNOWN, '% of selected portfolio'] < 1
-        assert table.loc['Money market', 'EUR value'] == pytest.approx(20441.67)
-        assert table.loc['Gold', 'EUR value'] == pytest.approx(7958.32)
-        assert table.loc['Crypto', 'EUR value'] == pytest.approx(3866.25)
+        assert table.loc['Money market', 'Value'] == pytest.approx(20441.67)
+        assert table.loc['Gold', 'Value'] == pytest.approx(7958.32)
+        assert table.loc['Crypto', 'Value'] == pytest.approx(3866.25)
     assert {'United States', 'Europe', 'Asia', 'Africa', 'Oceania', 'Latin America & Caribbean'} <= {
         path[0] for paths in geography.paths.values() for path in paths}
     # Fund domicile and the remaining unidentified fund slice are never countries.

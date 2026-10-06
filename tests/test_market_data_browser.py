@@ -103,6 +103,10 @@ render_app(directory)
             dialog.get_by_role('button', name='Close', exact=True).last.click()
             playwright.expect(dialog).not_to_be_visible()
             assert (tmp_path / 'history_calls').read_text().splitlines() == ['1y']
+            # Closing the dialog schedules a full rerun. Let it finish before
+            # clicking navigation, which the rerun can otherwise replace.
+            # The synthetic providers remain blocked throughout this wait.
+            page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
             start = time.monotonic()
             page.get_by_role('tab', name='Rebalance', exact=True).click()
             page.get_by_role('tab', name='Targets', exact=True).click()

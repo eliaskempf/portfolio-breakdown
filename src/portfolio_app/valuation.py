@@ -1,4 +1,4 @@
-"""EUR valuation; unavailable prices are unknown, never zero or cost basis."""
+"""Reporting-currency valuation; unavailable prices are unknown, never zero or cost basis."""
 
 import math
 from datetime import datetime, timezone
@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from portfolio_app.prices import PriceService
+from portfolio_app.fx import current_rate
 from portfolio_app.physical_assets import pricing_key, price_unit_factor
 
 
@@ -14,9 +15,11 @@ def portfolio_weights(values: pd.Series) -> pd.Series:
     return values / total if total > 0 else pd.Series(float("nan"), index=values.index)
 
 
-def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: bool = False) -> pd.DataFrame:
+def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: bool = False, reporting_currency: str = 'EUR') -> pd.DataFrame:
     result = holdings.copy()
-    numeric_columns = ("current_price", "fx_to_eur", "current_value_eur", "price_age_hours", "fx_age_hours")
+    result['reporting_currency'] = reporting_currency
+    result.attrs['reporting_currency'] = reporting_currency
+    numeric_columns = ("current_price", "fx_to_reporting", "current_value_reporting", "price_age_hours", "fx_age_hours")
     text_columns = ("quote_currency", "price_status", "fx_status", "price_observed_at", "fx_observed_at", "valuation_note")
     for column in numeric_columns:
         result[column] = float("nan")
@@ -28,17 +31,17 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
     keys = {pricing_key(row) for _, row in active.iterrows()} - {""}
     price_results = {key: prices.price(key, refresh=refresh) for key in keys}
     currencies = {item.quote.currency for item in price_results.values() if item.quote}
-    fx_results = {currency: prices.fx(currency, refresh=refresh) for currency in currencies}
+    fx_results = {currency: current_rate(prices, currency, reporting_currency, refresh=refresh) for currency in currencies}
     for index, position in holdings.iterrows():
         if position["shares"] == 0:
-            result.at[index, "current_value_eur"] = 0.
+            result.at[index, "current_value_reporting"] = 0.
             result.at[index, "price_status"] = "not_held"
             result.at[index, "valuation_note"] = "Zero shares; target-only position."
             continue
         manual = position.get('manual_price', float('nan'))
         if pd.notna(manual) and manual != '':
             currency = position['manual_price_currency']
-            fx = prices.fx(currency, refresh=refresh)
+            fx = current_rate(prices, currency, reporting_currency, refresh=refresh)
             result.at[index, 'current_price'] = float(manual)
             result.at[index, 'quote_currency'] = currency
             result.at[index, 'price_status'] = 'manual'
@@ -48,16 +51,16 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
             result.at[index, 'valuation_note'] = 'Manual unit price; update independently of confirmed quantity.'
             if position.get('import_source') == 'snapshot':
                 result.at[index, 'valuation_note'] = f"Imported snapshot unit price ({position['manual_price_date']}); switch explicitly to live pricing."
-                if currency != 'EUR':
+                if currency != reporting_currency:
                     result.at[index, 'valuation_note'] += ' Uses available FX, not historical snapshot FX.'
             result.at[index, 'fx_status'] = fx.status
-            if fx.quote is not None and fx.quote.currency == 'EUR':
-                result.at[index, 'fx_to_eur'] = fx.quote.price
+            if fx.quote is not None and fx.quote.currency == reporting_currency:
+                result.at[index, 'fx_to_reporting'] = fx.quote.price
                 result.at[index, 'fx_observed_at'] = fx.quote.observed_at.isoformat()
                 result.at[index, 'fx_age_hours'] = max(0, (prices.now() - fx.quote.observed_at).total_seconds() / 3600)
                 value = position['shares'] * float(manual) * fx.quote.price
                 if math.isfinite(value):
-                    result.at[index, 'current_value_eur'] = value
+                    result.at[index, 'current_value_reporting'] = value
             else:
                 result.at[index, 'valuation_note'] += ' Missing FX conversion.'
             continue
@@ -90,21 +93,21 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
         if position.get('instrument_type') == 'crypto' and result.at[index, 'price_age_hours'] >= 24:
             notes.append('Crypto quote is at least 24 hours old; markets trade continuously.')
         if fx.quote is None:
-            notes.append(f"Missing {quote.currency}/EUR exchange rate: {fx.error}")
-        elif fx.quote.currency != "EUR":
-            notes.append("FX quote must be expressed in EUR")
+            notes.append(f"Missing {quote.currency}/{reporting_currency} exchange rate: {fx.error}")
+        elif fx.quote.currency != reporting_currency:
+            notes.append(f"FX quote must be expressed in {reporting_currency}")
         else:
             rate = fx.quote.price
-            result.at[index, "fx_to_eur"] = rate
+            result.at[index, "fx_to_reporting"] = rate
             result.at[index, "fx_observed_at"] = fx.quote.observed_at.isoformat()
             result.at[index, "fx_age_hours"] = max(0, (prices.now() - fx.quote.observed_at).total_seconds() / 3600)
             value = position["shares"] * unit_price * rate
             if math.isfinite(value):
-                result.at[index, "current_value_eur"] = value
+                result.at[index, "current_value_reporting"] = value
             else:
                 notes.append("Position value exceeds supported numeric range")
             if fx.error:
                 notes.append(f"FX refresh failed: {fx.error}")
         result.at[index, "valuation_note"] = "; ".join(notes)
-    result["portfolio_weight"] = portfolio_weights(result["current_value_eur"])
+    result["portfolio_weight"] = portfolio_weights(result["current_value_reporting"])
     return result

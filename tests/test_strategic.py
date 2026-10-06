@@ -19,10 +19,10 @@ def config():
 @pytest.fixture
 def positions():
     return pd.DataFrame([
-        dict(position_id="p1", id="same-asset", name="Invented fund", bucket_id="funds", shares=1., current_value_eur=60., within_bucket_target=1.),
-        dict(position_id="p2", id="same-asset", name="Invented fund", bucket_id="active", shares=2., current_value_eur=30., within_bucket_target=.8),
-        dict(position_id="p3", id="other", name="Invented stock", bucket_id="active", shares=1., current_value_eur=10., within_bucket_target=.2),
-        dict(position_id="p4", id="unknown", name="Unassigned holding", bucket_id="", shares=0., current_value_eur=0., within_bucket_target=float("nan")),
+        dict(position_id="p1", id="same-asset", name="Invented fund", bucket_id="funds", shares=1., current_value_reporting=60., within_bucket_target=1.),
+        dict(position_id="p2", id="same-asset", name="Invented fund", bucket_id="active", shares=2., current_value_reporting=30., within_bucket_target=.8),
+        dict(position_id="p3", id="other", name="Invented stock", bucket_id="active", shares=1., current_value_reporting=10., within_bucket_target=.2),
+        dict(position_id="p4", id="unknown", name="Unassigned holding", bucket_id="", shares=0., current_value_reporting=0., within_bucket_target=float("nan")),
     ])
 
 
@@ -58,17 +58,17 @@ def test_drilling_changes_denominator_and_targets_to_selected_parent(positions, 
 
 
 def test_missing_prices_are_not_zero_and_unknown_targets_stay_blank(positions, config):
-    positions.loc[0, "current_value_eur"] = float("nan")
+    positions.loc[0, "current_value_reporting"] = float("nan")
     positions.loc[2, "within_bucket_target"] = float("nan")
     tree = strategic_tree(positions, config)
     assert tree.iloc[0].value == 40  # Known chart area only.
     assert tree.iloc[0].missing_prices == 1
     assert pd.isna(tree.iloc[0].current_value)
     summary = strategic_summary(positions, config).set_index("Category")
-    assert pd.isna(summary.loc["Long term", "Value (EUR)"])
+    assert pd.isna(summary.loc["Long term", "Value"])
     assert summary["Current (%)"].isna().all()
     assert summary["Gap (pp)"].isna().all()
-    assert summary.loc["Planned", "Value (EUR)"] == 0
+    assert summary.loc["Planned", "Value"] == 0
     detail = strategic_summary(positions, config, "active")
     assert detail["Current (%)"].sum() == 100  # Other categories don't invalidate this scope.
     assert pd.isna(detail.loc[1, "Target (%)"])
@@ -88,7 +88,7 @@ def test_all_empty_bucket_and_duplicate_names(positions):
 
 
 def test_unassigned_and_account_rows_remain_independent(positions, config):
-    positions.loc[3, ["shares", "current_value_eur"]] = [1., 20.]
+    positions.loc[3, ["shares", "current_value_reporting"]] = [1., 20.]
     tree = strategic_tree(positions, config, "unassigned")
     assert tree.iloc[0].value == 20
     assert len(tree.loc[tree.kind.eq("holding")]) == 1
@@ -105,7 +105,7 @@ def test_icon_palette_follows_actual_allocation_not_category_ids(positions, conf
     assert colors['Active'] == '#4aa9b3'
     shuffled = tree.sample(frac=1, random_state=4)
     assert dict(zip(shuffled.node_id, strategic_colors(shuffled, config))) == dict(zip(tree.node_id, strategic_colors(tree, config)))
-    positions.loc[0, 'current_value_eur'] = 5
+    positions.loc[0, 'current_value_reporting'] = 5
     changed = strategic_tree(positions, config)
     colors = dict(zip(changed.label, strategic_colors(changed, config)))
     assert colors['Active'] == '#5470c6'

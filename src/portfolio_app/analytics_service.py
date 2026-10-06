@@ -44,17 +44,24 @@ def load_metrics(holdings, data_dir, *, demo=False, fetch=True, refresh=False):
 def load_risk(valued, data_dir, demo, benchmark, years, refresh=False):
     service = RiskHistoryService(DemoRiskHistoryProvider() if demo else YahooRiskHistoryProvider(),
                                  None if demo else data_dir / '.cache' / 'risk-history')
+    target = valued.reporting_currency.iloc[0] if len(valued) and 'reporting_currency' in valued else 'EUR'
     memo, histories, failures, status = {}, {}, {}, []
-    bench = service.eur(benchmark, years, refresh=refresh, memo=memo)
+    bench = service.in_currency(benchmark, target, years, refresh=refresh, memo=memo)
     status.append(dict(Instrument=benchmark, Status=bench.status, Retrieved=bench.fetched_at, Note=bench.note))
     for identity, rows in valued.loc[valued.shares.gt(0)].groupby('id'):
         row = rows.iloc[0]
-        if row.get('instrument_type') == 'cash' and row.quote_currency == 'EUR':
+        if row.get('instrument_type') == 'cash':
+            if row.quote_currency != target:
+                history = service.cash(row.quote_currency, target, years, refresh=refresh, memo=memo)
+                if not history.prices.empty:
+                    histories[identity] = history.prices
+                else:
+                    failures[identity] = 'Historical cash FX unavailable'
             continue
         if not row.ticker or pd.notna(row.get('manual_price', float('nan'))):
             failures[identity] = 'no supported history for a manual or unlisted asset'
             continue
-        history = service.eur(row.ticker, years, refresh=refresh, memo=memo)
+        history = service.in_currency(row.ticker, target, years, refresh=refresh, memo=memo)
         status.append(dict(Instrument=row.ticker, Status=history.status, Retrieved=history.fetched_at, Note=history.note))
         if not history.prices.empty:
             histories[identity] = history.prices
