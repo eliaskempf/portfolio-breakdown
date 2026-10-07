@@ -72,8 +72,18 @@ app.main()
     finally:
         for child in children:
             if child.poll() is None:
-                child.terminate()
-                child.wait(timeout=15)
+                # Let the launcher stop its Streamlit child too. Terminating
+                # just the supervisor leaves a server behind on Windows.
+                try:
+                    stop()
+                finally:
+                    if child.poll() is None:
+                        if sys.platform == 'win32':
+                            subprocess.run(['taskkill', '/PID', str(child.pid), '/T', '/F'],
+                                           check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        else:
+                            child.terminate()
+                        child.wait(timeout=15)
         log.close()
 
 

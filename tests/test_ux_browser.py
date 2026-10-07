@@ -239,6 +239,11 @@ def test_overview_list_matches_positions_and_opens_sorted_filtered_rows(ux_page)
     click_slice(page, 'ETF core')
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('ETF core')
     table = page.get_by_role('table', name='Positions', exact=True)
+    # The category control updates before Streamlit replaces the portfolio list.
+    # Wait for the category-specific list before sorting or typing into it.
+    playwright.expect(table.get_by_role('columnheader', name='% of ETF core', exact=True)).to_have_count(1)
+    playwright.expect(table.locator('tbody tr')).to_have_count(2)
+    playwright.expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
     playwright.expect(table.get_by_role('columnheader', name='Return (%)')).to_have_count(1)
     playwright.expect(table.get_by_role('columnheader', name='Gain')).to_have_count(1)
     playwright.expect(table.get_by_role('checkbox')).to_have_count(0)
