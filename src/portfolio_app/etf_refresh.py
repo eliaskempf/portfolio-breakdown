@@ -18,6 +18,11 @@ from portfolio_app.etf_sources import SOURCES, download, install_snapshot, recor
 from portfolio_app.etf_discovery import Discovery
 from portfolio_app.vaneck import refresh_snapshot as refresh_vaneck
 
+# Bump when provider fixes warrant an immediate retry of older failed attempts.
+ADAPTER_REVISION = 2
+FAILED_RETRY_INTERVAL = timedelta(minutes=5)
+FAILED_STATUSES = {'failed', 'unavailable'}
+
 
 def supported(fund):
     return fund.provider != 'manual' and fund.manifest_path is not None and (fund.isin in SOURCES or fund.isin == 'IE00BMC38736'
@@ -39,8 +44,13 @@ def discovery_candidates(holdings, funds):
 
 
 def attempt_due(record, now):
+    failed = record.get('status') in FAILED_STATUSES
+    if failed and record.get('adapter_revision') != ADAPTER_REVISION:
+        return True
     try:
-        return now - datetime.fromisoformat(record['attempted_at']) >= timedelta(days=1)
+        elapsed = now - datetime.fromisoformat(record['attempted_at'])
+        interval = FAILED_RETRY_INTERVAL if failed else timedelta(days=1)
+        return elapsed < timedelta(0) or elapsed >= interval
     except (KeyError, ValueError, TypeError):
         return True
 
@@ -78,6 +88,8 @@ def save_preferences(data_dir, *, enabled, minimum_age_days):
 
 
 def due(fund, record, now, minimum_age_days=1):
+    if record.get('status') in FAILED_STATUSES:
+        return attempt_due(record, now)
     if (now.date() - fund.as_of).days < minimum_age_days:
         return False
     return attempt_due(record, now)
@@ -144,7 +156,8 @@ class RefreshCoordinator:
                     prior = records.get(fund.isin, {})
                     if not force and not due(fund, prior, self.now(), minimum_age_days):
                         continue
-                    record = {**prior, 'attempted_at': self.now().isoformat(), 'status': 'refreshing', 'error': ''}
+                    record = {**prior, 'attempted_at': self.now().isoformat(), 'status': 'refreshing', 'error': '',
+                              'adapter_revision': ADAPTER_REVISION}
                     records[fund.isin] = record
                     write_json(cache / 'status.json', records)
                     try:
@@ -159,7 +172,7 @@ class RefreshCoordinator:
                     if matching_fund(row, current) or (not force and not attempt_due(records.get(key, {}), self.now())):
                         continue
                     record = {**records.get(key, {}), 'attempted_at': self.now().isoformat(),
-                              'status': 'discovering', 'error': ''}
+                              'status': 'discovering', 'error': '', 'adapter_revision': ADAPTER_REVISION}
                     records[key] = record
                     write_json(cache / 'status.json', records)
                     try:

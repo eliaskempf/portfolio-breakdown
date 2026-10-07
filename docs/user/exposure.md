@@ -32,7 +32,10 @@ holdings date before drawing conclusions from a large residual.
 
 A source's holdings date differs from a download/check time. Automatic checks
 normally consider snapshots at least one day old, with one attempt per fund per
-24 hours. The threshold can be set from 1–30 days or automatic checks disabled.
+24 hours after a successful check. Failed discovery/refresh attempts can retry
+after five minutes when the app is next used; provider fixes trigger an immediate
+retry of failures saved by older adapters. Repeated reruns do not repeatedly hit
+the provider. The threshold can be set from 1–30 days or automatic checks disabled.
 **Refresh ETF holdings now** bypasses the throttle. Failed updates retain prior
 snapshots; a fresh check may return the same old holdings date. Snapshots older
 than seven days retain a recency notice. Price refresh and ETF refresh are separate.
@@ -70,6 +73,11 @@ short security positions are rejected. Trading-country metadata is not substitut
 for company country, and missing issuer, currency or rating data remains unknown.
 Malformed, truncated, mismatched or unsupported exports retain the previous
 snapshot. A provider name alone does not guarantee support for every strategy.
+
+For Global Aggregate Bond EUR Hedged, iShares publishes many more than ten
+holdings. The app's top-ten fallback applies when the exported market values do
+not reconcile with the published whole-fund weights; it is an app limitation,
+not a claim that the issuer only supplies ten bonds. The rest remains **Other**.
 
 For a physical fund from another source, supply a normalized UTF-8 CSV, exact
 fund ISIN, holdings date and asset class. Required columns are

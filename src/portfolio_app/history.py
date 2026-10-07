@@ -11,6 +11,7 @@ from typing import Protocol
 import pandas as pd
 
 from portfolio_app.currencies import quote_unit
+from portfolio_app.listing_quality import quote_issue
 
 PERIODS = {"1M": "1mo", "6M": "6mo", "1Y": "1y", "5Y": "5y", "Max": "max"}
 
@@ -47,6 +48,8 @@ def normalize_history(frame, currency: str) -> HistoryResult:
 
 class YahooHistoryProvider:
     def history(self, ticker, period):
+        if issue := quote_issue(ticker):
+            raise ValueError(issue)
         import yfinance as yf
         instrument = yf.Ticker(ticker)
         frame = instrument.history(period=period, interval="1d", auto_adjust=False,
@@ -80,6 +83,8 @@ class HistoryService:
 
     def cached(self, ticker: str, period: str = "1Y", *, manual=False) -> tuple[HistoryResult, bool]:
         """Read saved history immediately, including a short failed-attempt cooldown."""
+        if issue := quote_issue(ticker):
+            return HistoryResult(note=issue), False
         if not ticker or manual:
             return HistoryResult(note="Market-price history is unavailable for this instrument."), False
         if period not in PERIODS:
@@ -112,7 +117,7 @@ class HistoryService:
 
     def get(self, ticker: str, period: str = "1Y", *, manual=False, refresh=False) -> HistoryResult:
         cached, due = self.cached(ticker, period, manual=manual)
-        if not ticker or manual or (not due and not refresh):
+        if not ticker or manual or quote_issue(ticker) or (not due and not refresh):
             return cached
         path = self._path(ticker, period)
         try:

@@ -2114,3 +2114,77 @@ with the direct Setup EXE under `windows/`, complete candidate artifacts/checksu
 `TESTING.txt` and `local-validation.json`. The earlier candidate and existing
 installation are retained. No persistent preview is left running. This handoff
 is recorded after packaging and does not change the immutable candidate bytes.
+
+### Fund quote and failed-breakdown recovery corrections (2026-10-07)
+
+Prepared in `/tmp/portfolio-v010-fund-data`, branch `fix/v010-fund-data`, from
+clean release-v1 `028be2db29857862b8158e83a77a61e6eca803a8`. The futures checkout,
+private working portfolios and installed application were not changed.
+
+A read-only public-data probe reproduced the overnight-fund quote issue:
+searching ISIN `LU1190417599` returned `0E2B.IL`. Both that feed and the London
+exchange page repeated an obsolete quote while the exchange's own NAV and the
+Paris/Milan listings disagreed. This is a quote-quality issue, not a EUR conversion
+or quantity-scaling error. Public evidence:
+
+- <https://www.londonstockexchange.com/stock/0E2B/amundi>
+- <https://live.euronext.com/en/product/etfs/LU1190417599-XPAR>
+- <https://live.euronext.com/en/product/etfs/LU1190417599-ETFP>
+
+Search now includes verified EUR listings `CSH2.PA` and `SMART.MI` and excludes
+the unreliable EQS listing. A shared quote-quality rule rejects that listing in
+spot valuation and price history, including fresh/stale saved caches and forced
+refreshes. Missing valuation explains how to review a replacement under
+**Positions → Connect live prices**. No price is hardcoded, divided by an inferred
+split factor or silently fetched from another venue. Saved holdings/quantities,
+costs, manual prices and cache files are preserved. Existing installations can
+already select the Paris listing explicitly; they need a new build for the guard.
+
+Failed ETF discovery/refresh records now carry an adapter revision. Failures
+written before these provider fixes retry immediately, including the previously
+reported DAX and Global Aggregate Bond cases; continuing failures use a five-minute
+backoff instead of the successful-check daily throttle. Repeated reruns and workers
+remain throttled/locked. Snapshot-age preferences still govern successful data;
+disabling automatic updates and offline-demo isolation remain respected. These
+retries run on the next app render/use, not in a background service when closed.
+Failed downloads continue preserving prior snapshots. Settings and guides explain
+the revised timing.
+
+The bond investigation did **not** establish that only ten holdings are available.
+The issuer's JSON response dated 2026-10-06 contains 20,000 rows: 19,977 bonds,
+20 cash rows and three money-market rows. Its displayed whole-fund weights total
+100.527%; the bonds alone total 97.86437%. The public XML workbook (about 25.5 MB,
+above the normal downloader bound) also exposes 20,000 rows; its heavily rounded
+percentages and market values do not reconcile under the full-snapshot rules.
+The public product page is
+<https://www.ishares.com/uk/individual/en/products/291770/ishares-core-global-aggregate-bond-ucits-etf-eur-hedged-acc-fund>.
+Public payloads were inspected only in a temporary probe directory, never committed
+or used as test fixtures. Do not infer missing hedge/cash economics from these
+inconsistent totals. The existing top-ten fallback is retained for this release,
+with published whole-fund weights and explicit Other; the guide now states that
+this is an application limitation, not an issuer data-availability limit. Broader
+validated bond coverage remains a separate follow-up, without a signed-model rewrite.
+
+Validation: **1,218 non-browser tests passed**, plus all **nine affected browser
+scenarios** across refresh, ETF search/details and asynchronous market data.
+The first browser invocation lacked its browser-cache environment; after selecting
+the existing cache, eight passed and the new two-listing test exposed a debounced
+chooser timing assumption. The test now waits for the requested result before
+opening its chooser; all six ETF browser scenarios passed on the corrected run.
+No application assertion was weakened and no live provider is required by tests.
+Twelve added non-browser cases cover blocked old price/history caches, manual-price
+preservation, replacement quotes, search outages, adapter migration, recovery,
+backoff and disabled updates. Two browser cases cover recent failed-state recovery
+and verified overnight listing selection.
+
+The actual fresh synthetic preview at `http://127.0.0.1:34883` used this checkout
+and its own temporary invented workspace. Chromium visited all four tabs, confirmed
+that the obsolete cached valuation was withheld, and checked the actionable listing
+message in position details without app exceptions. That preview was stopped.
+Ruff, whitespace checks and release preflight passed; preflight checks the wheel,
+source archive, dependency notices and strict documentation build. Privacy review
+and the enabled commit hook are required for the integration commit.
+
+The delivered `decc64c` Windows installer predates these corrections. No installer
+was rebuilt, paid CI dispatched, main merge performed, tag created or release
+published in this follow-up. Repeat native acceptance on the next candidate.

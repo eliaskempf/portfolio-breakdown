@@ -116,3 +116,53 @@ def test_refresh_import_does_not_require_unix_fcntl():
         "import sys; sys.modules['fcntl'] = None; import portfolio_app.etf_refresh"],
         capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize('old_status', ['failed', 'unavailable'])
+def test_old_adapter_failure_retries_immediately_then_uses_short_backoff(refresh_workspace, old_status):
+    from portfolio_app.etf_refresh import ADAPTER_REVISION, write_json
+    path, holdings, funds = refresh_workspace
+    now = [datetime(2026, 1, 10, tzinfo=timezone.utc)]
+    status_path = path / '.cache/etf-refresh/status.json'
+    write_json(status_path, {funds[0].isin: dict(status=old_status, attempted_at=now[0].isoformat(),
+                                               error='Invented old parser failure')})
+    save_preferences(path, enabled=True, minimum_age_days=30)
+    calls = []
+    def refresh(fund):
+        calls.append(fund.isin)
+        raise ValueError('Invented continuing outage')
+    service = RefreshCoordinator(refresh=refresh, now=lambda: now[0])
+    assert service.schedule(path, holdings, funds)
+    join(service, path)
+    assert len(calls) == 1
+    assert read_json(status_path)[funds[0].isin]['adapter_revision'] == ADAPTER_REVISION
+    assert not service.schedule(path, holdings, funds)
+    now[0] += timedelta(minutes=4)
+    assert not service.schedule(path, holdings, funds)
+    now[0] += timedelta(minutes=1)
+    assert service.schedule(path, holdings, funds)
+    join(service, path)
+    assert len(calls) == 2
+    save_preferences(path, enabled=False, minimum_age_days=1)
+    now[0] += timedelta(minutes=5)
+    assert not service.schedule(path, holdings, funds)
+
+
+def test_recent_unavailable_discovery_recovers_without_manual_refresh(tmp_path):
+    from portfolio_app.etf_refresh import write_json
+    from portfolio_app.etf_discovery import Discovery
+    from portfolio_app.etf_sources import install_snapshot
+    from test_etf_discovery import Provider, FUND
+    now = datetime(2026, 1, 3, tzinfo=timezone.utc)
+    holdings = pd.DataFrame([dict(isin=FUND, shares=1., name='Invented fund')])
+    status_path = tmp_path / '.cache/etf-refresh/status.json'
+    write_json(status_path, {FUND: dict(status='unavailable', attempted_at=now.isoformat(),
+                                      error='Invented obsolete failure')})
+    provider = Provider()
+    service = RefreshCoordinator(discover=Discovery(provider).resolve,
+        install=lambda directory, isin, **kw: install_snapshot(directory, isin, fetch=provider, **kw), now=lambda: now)
+    assert service.schedule(tmp_path, holdings, [])
+    join(service, tmp_path)
+    funds = load_funds(tmp_path / 'etfs')
+    assert len(funds) == 1 and read_json(status_path)[FUND]['status'] == 'checked'
+    assert not service.schedule(tmp_path, holdings, funds)

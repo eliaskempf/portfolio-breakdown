@@ -5,13 +5,16 @@ import socket
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from urllib.request import urlopen
 
+import pytest
 import yaml
 from test_ux_browser import playwright
 
 
-def test_background_refresh_keeps_ui_usable_and_reloads_finished_snapshot(tmp_path):
+@pytest.mark.parametrize('previous_failure', [False, True])
+def test_background_refresh_keeps_ui_usable_and_reloads_finished_snapshot(tmp_path, previous_failure):
     funds = tmp_path / 'etfs'
     funds.mkdir()
     (tmp_path / 'holdings.csv').write_text('id,name,ticker,isin,shares,instrument_type\na,Invented Alpha,SYN-A,ZZ1111111111,1,equity\nf,Invented ETF,SYN-F,ZZ9999999999,1,etf\n')
@@ -21,6 +24,12 @@ def test_background_refresh_keeps_ui_usable_and_reloads_finished_snapshot(tmp_pa
     (funds / 'holdings.csv').write_text('constituent_id,name,ticker,isin,weight\na,Invented Alpha,SYN-A,ZZ1111111111,0.5\n')
     (funds / 'fund.yaml').write_text(yaml.safe_dump(dict(fund_id='invented', name='Invented ETF',
         isin='ZZ9999999999', tickers=['SYN-F'], as_of='2000-01-01', source='https://example.invalid', holdings_file='holdings.csv')))
+    if previous_failure:
+        cache = tmp_path / '.cache/etf-refresh'
+        cache.mkdir(parents=True)
+        (cache / 'status.json').write_text(json.dumps({'ZZ9999999999': {
+            'status': 'failed', 'attempted_at': datetime.now(timezone.utc).isoformat(),
+            'error': 'Invented failure from an older provider adapter'}}))
     script = tmp_path / 'app.py'
     script.write_text('''
 from pathlib import Path

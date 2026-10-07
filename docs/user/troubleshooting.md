@@ -9,6 +9,7 @@
 | Source changes do not appear | Restart the owning server after Python module changes; browser refresh alone can leave imported modules stale. |
 | Position value is blank | Inspect ticker, manual price, quote currency, FX and [price status](performance.md#valuation). Buy-in is not a market price. |
 | Refresh shows old data | Cached fallback preserves the last successful data. Check provider dates separately from retrieval time. |
+| Amundi overnight fund reports an unreliable listing | For ISIN LU1190417599, use **Positions → Connect live prices** to review CSH2.PA (Paris) or SMART.MI (Milan). The 0E2B.IL feed is excluded from live prices and history, including old cache entries. Existing quantities and manually supplied prices are retained. |
 | Demo cannot initialize | Normal demo needs public prices/FX. Retry, or restart with `--demo --offline-demo` for an invented offline example. |
 | Large Other / whole ETF | Inspect [coverage, source date and support](exposure.md#other). A partial or absent breakdown is not a zero holding. |
 | Import is unavailable | It requires an empty portfolio. Use Update balances for existing holdings. |

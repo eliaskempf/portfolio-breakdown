@@ -10,6 +10,7 @@ from threading import RLock
 from typing import Callable, Protocol
 
 from portfolio_app.currencies import quote_unit
+from portfolio_app.listing_quality import quote_issue
 
 UTC = timezone.utc
 
@@ -90,6 +91,8 @@ class YahooProvider:
         return Quote(float(closes.iloc[-1]) * factor, units, observed.astimezone(UTC))
 
     def price(self, ticker: str) -> Quote:
+        if issue := quote_issue(ticker):
+            raise ValueError(issue)
         return self._latest(ticker)
 
     def fx(self, currency: str) -> Quote:
@@ -167,6 +170,8 @@ class PriceService:
 
     def cached(self, key: str) -> tuple[PriceResult, bool]:
         """Read without network access; the boolean indicates a refresh is due."""
+        if key.startswith('price:') and (issue := quote_issue(key.removeprefix('price:'))):
+            return PriceResult(None, 'missing', issue), False
         with self._lock:
             entry = self._entries.get(key, {})
         cached = None
@@ -211,6 +216,8 @@ class PriceService:
         return result
 
     def price(self, ticker: str, *, refresh: bool = False) -> PriceResult:
+        if issue := quote_issue(ticker):
+            return PriceResult(None, 'missing', issue)
         return self._get(f"price:{ticker}", lambda: self.provider.price(ticker), refresh)
 
     def fx(self, currency: str, *, refresh: bool = False) -> PriceResult:

@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 import yfinance as yf
 
 from portfolio_app.display_names import display_name
+from portfolio_app.listing_quality import quote_issue
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,11 @@ class Instrument:
 # Public listing metadata, not portfolio holdings. VanEck trading information:
 # https://www.vaneck.com/uk/en/library/fact-sheets/smh-fact-sheet.pdf
 CATALOG = (
+    # Official EUR listings; the London EQS quote feed is unreliable.
+    # https://live.euronext.com/en/product/etfs/LU1190417599-XPAR
+    # https://live.euronext.com/en/product/etfs/LU1190417599-ETFP
+    Instrument("CSH2.PA", "Amundi Smart Overnight Return UCITS ETF Acc", "Euronext Paris", "ETF", "LU1190417599", "EUR"),
+    Instrument("SMART.MI", "Amundi Smart Overnight Return UCITS ETF Acc", "Milan", "ETF", "LU1190417599", "EUR"),
     # Exchange-verified Yahoo listing aliases; issuer display tickers differ.
     # https://live.deutsche-boerse.com/etf/ishares-core-dax-ucits-etf-de-eur-acc
     Instrument("EXS1.DE", "iShares Core DAX UCITS ETF (DE) EUR (Acc)", "Xetra", "ETF", "DE0005933931", "EUR"),
@@ -124,6 +130,8 @@ def normalize_results(quotes: list[dict]) -> list[Instrument]:
         if not isinstance(quote, dict):
             continue
         ticker = str(quote.get("symbol") or "").strip().upper()
+        if quote_issue(ticker):
+            continue
         kind = str(quote.get("quoteType") or "").upper()
         # Verified listing metadata takes precedence over provider categories
         # (Yahoo labels EUWAX Gold II as MUTUALFUND). Match exact symbols only.

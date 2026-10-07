@@ -168,18 +168,25 @@ def test_partial_bond_summary_shows_coverage_other_and_holdings(fund_page):
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
 
-def test_dax_isin_search_fills_verified_xetra_identity(fund_page):
+@pytest.mark.parametrize('isin,ticker,exchange', [
+    ('DE0005933931', 'EXS1.DE', 'Xetra'),
+    ('LU1190417599', 'CSH2.PA', 'Euronext Paris'),
+])
+def test_isin_search_fills_verified_listing_identity(fund_page, isin, ticker, exchange):
     page = fund_page
     page.get_by_role('tab', name='Positions', exact=True).click()
     page.get_by_role('button', name=re.compile(r'Add position$')).click()
     dialog = page.get_by_role('dialog')
-    dialog.get_by_role('searchbox', name='Find an investment', exact=True).fill('DE0005933931')
+    dialog.get_by_role('searchbox', name='Find an investment', exact=True).fill(isin)
+    # Search is debounced; wait for this result before inspecting its chooser.
+    selection = dialog.get_by_role('button', name=f'Select {ticker} on {exchange}', exact=True, include_hidden=True)
+    playwright.expect(selection).to_be_attached()
     chooser = dialog.locator('summary').filter(has_text='Choose listing')
     if chooser.count():
         chooser.first.click()
-    dialog.get_by_role('button', name='Select EXS1.DE on Xetra', exact=True).click()
-    playwright.expect(dialog.get_by_role('textbox', name='Ticker', exact=True)).to_have_value('EXS1.DE')
+    selection.click()
+    playwright.expect(dialog.get_by_role('textbox', name='Ticker', exact=True)).to_have_value(ticker)
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     dialog.get_by_text('More details', exact=True).click()
-    playwright.expect(dialog.get_by_role('textbox', name='ISIN (optional)', exact=True)).to_have_value('DE0005933931')
+    playwright.expect(dialog.get_by_role('textbox', name='ISIN (optional)', exact=True)).to_have_value(isin)
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
