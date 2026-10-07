@@ -2031,3 +2031,86 @@ content/privacy inspection and Windows/Ubuntu acceptance, including backup/resto
 No installer rebuild, paid CI, main merge, Pages deployment, tag or release was
 performed. The uv workflow, dependencies, version and installer configuration
 remain unchanged. Private working data was neither read nor modified.
+
+### Local Windows candidate rebuild for Win11 testing (2026-10-07)
+
+Built the Windows candidate from clean commit
+`decc64c51bc4ae35b65886ff26ea7ff3800d071c`, using the existing
+`uv run python tools/release.py` process in an independent native Windows clone.
+The isolated integration worktree is `/tmp/portfolio-v010-win-rebuild`, branch
+`build/v010-windows-refresh`. Application code is unchanged from audited release
+commit `872ff9c`; the new commit fixes two Windows test issues:
+
+- The overview list test now waits for the category-specific table and completed
+  rerun before sorting/filtering. Previously it could type into the outgoing
+  portfolio list after the category control had already updated.
+- Backup browser fixtures stop the launcher through its control endpoint, allowing
+  it to stop Streamlit too. Terminating only the supervisor left orphaned Windows
+  test servers and prevented the overall test process from exiting.
+
+The initial full native run recorded 1,259 passes, one list-timing failure and
+nine platform-specific skips (four POSIX/symlink cases and five Bash/Pages cases).
+After these test-only corrections, all eight affected browser tests passed, then
+**all 63 required browser tests passed without skips**. Together with the 1,197
+non-browser passes, this covers all 1,260 Windows-applicable tests; this is a
+combined result, not a second full-suite run. Ruff, tracked/staged privacy checks,
+enabled commit hook, release preflight, source-package checks and source browser/
+navigation/lifecycle smoke passed. The uv workflow and dependency lock are intact.
+
+The Setup executable is **125,977,856 bytes**. Exact candidate hashes:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| Windows Setup EXE | `64c1e0b11e6446d65022440666a109562de054bb667c29290c242d87e3b67260` |
+| Windows portable ZIP | `d3148804a47feab8ab37780e7be80d2d9c30d8eff6327bd912be03973a0312d1` |
+| Matching documentation ZIP | `be68acca32924df6d04c47576d79efae1ecdea01d5103a0f6be05d05ac480096` |
+
+Independent inspection extracted Setup without installing it: **3,315 app files**
+match the portable archive exactly, all **146 first-party files** match the
+recorded source commit, and bundled documentation matches the documentation ZIP.
+All seven manifest artifact hashes passed. Inspection covered the expanded bundle,
+155 nested ZIP files, 22 bootstrap records, 9,860 PYZ module records across both
+executables, 151 wheel files, 305 source files and seven installer-only files.
+No build-host personal path was found. Pattern matches were confined to upstream
+interpreter/dependency content: public examples, parser markers, code identifiers
+and upstream build paths. The 95 flagged standalone dependency/interpreter files
+match their installed upstream bytes; flagged PYZ patterns match those dependencies'
+source constants. No first-party investment/credential payload was identified.
+The approved PNG has no metadata/EXIF; ICO metadata only records sizes. This is
+content inspection with known limitations, not a proof about arbitrary opaque
+binary contents. Private working data was not read or modified.
+
+Frozen browser startup/navigation/lifecycle and closing the native welcome screen
+without transient error dialogs passed outside the checkout. A separate synthetic
+native WebView2 check passed actual backup Save and upload dialogs, cancellation,
+archive fidelity, reviewed restore to a new folder, preserved original files,
+all tabs, repeated launch and restored-workspace persistence after restart.
+The child executable had Python/uv removed from PATH; the controller host still
+has them installed and runs Windows 10. This does not claim Win11 or clean-machine
+acceptance.
+
+The standard native smoke command stopped at the foreground-window prerequisite
+for real-key F11: Windows would not grant the automated app keyboard focus.
+The same prerequisite blocked its interactive variant before later checks.
+**The complete standard packaged-native smoke command did not pass.** Real F11
+and foreground focus remain Win11 acceptance gates; source/browser passes and
+other native checks must not be substituted for that result.
+
+This is a local test candidate, not an official release. No paid Actions minutes,
+main merge, tag or publication were used. Windows 11 install/update/uninstall,
+shortcut behavior, real-key F11/focus and clean-machine checks remain outstanding.
+The nine platform-specific tests and supported Ubuntu acceptance belong to their
+appropriate platform runs; no Linux/macOS installer was rebuilt in this task.
+
+A supplemental native run used the app's Fullscreen/Windowed controls instead of
+sending global keystrokes. It passed exact monitor/client edges, native synthetic
+CSV upload/save, download bytes, system-browser external links, matching bundled
+help, repeated-launch identity and shutdown. This supplemental harness was kept
+outside the repository; the production smoke command was not weakened. It does
+not verify real-key F11 or foreground activation.
+
+The delivery folder is `Portfolio-Breakdown-0.1.0-test-decc64c` in Windows Downloads,
+with the direct Setup EXE under `windows/`, complete candidate artifacts/checksums,
+`TESTING.txt` and `local-validation.json`. The earlier candidate and existing
+installation are retained. No persistent preview is left running. This handoff
+is recorded after packaging and does not change the immutable candidate bytes.
