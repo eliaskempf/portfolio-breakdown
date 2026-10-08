@@ -41,6 +41,7 @@ from portfolio_app.company_merge_ui import render_company_merges
 from portfolio_app.input_cache import cached_input
 from portfolio_app.geography import resolve_geography
 from portfolio_app.geography_ui import render_geography
+from portfolio_app.sector_classification import sector_classifications
 
 
 def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False, source_valued=None, performance_percent=False, allocation=None, etf_revision=0, on_toggle_gain=None):
@@ -100,6 +101,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     geography = cached_input('geography', (signature, lookthrough),
                              lambda: resolve_geography(holdings, funds, classifications))
     classifications = fund_classifications(classifications, funds, holdings)
+    classifications = sector_classifications(classifications, holdings, funds)
     names = taxonomy_names(classifications)
     with filters:
         with st.container():

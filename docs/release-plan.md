@@ -2188,3 +2188,28 @@ and the enabled commit hook are required for the integration commit.
 The delivered `decc64c` Windows installer predates these corrections. No installer
 was rebuilt, paid CI dispatched, main merge performed, tag created or release
 published in this follow-up. Repeat native acceptance on the next candidate.
+
+### Demo/tour sector applicability (2026-10-08)
+
+Prepared in `/tmp/portfolio-v010-demo-exposure`, branch
+`fix/v010-demo-exposure`, from clean release-v1 `7eaea9c`.
+XEON already expands to one overnight-rate economic exposure. Its substitute
+basket must not be interpreted as portfolio sector exposure; no provider or
+valuation change is needed for that behavior. The tour now explains it directly.
+
+Sector analysis now separates **No business sector**, with Money market, Gold,
+Crypto and Cash subcategories, from genuinely **Unclassified** assets. Fallbacks
+use explicit instrument/asset-class evidence and verified economic snapshots;
+saved sector assignments and provider metadata remain authoritative. Unknown
+funds, ordinary bonds and ETF residuals are not reclassified by guesswork.
+Custom themes, stored classifications, valuations and allocation denominators
+are unchanged. The deterministic tour/offline demo retains roughly 0.9% unknown
+sector coverage; live issuer metadata can have different remaining gaps.
+
+Five new synthetic calculation cases cover conservation, whole/expanded funds,
+manual/provider precedence, unknowns, physical gold, conflicts and basket
+exclusion. All **1,223 non-browser tests passed**. The demo browser check and all five tour browser checks passed,
+including themes and narrow layouts. The new chart-value assertion uses Plotly's
+decoded values, since its serialized numeric arrays are binary encoded.
+Ruff, whitespace and strict documentation build checks passed. No native
+installer was rebuilt, CI dispatched, or official release published.

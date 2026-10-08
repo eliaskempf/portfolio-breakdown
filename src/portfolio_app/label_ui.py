@@ -55,6 +55,8 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                                   help="Select any labels. Each includes assets assigned to it or to a category beneath it.")
         st.session_state['label_compare_saved'] = {**remembered, taxonomy: selected}
     labels = [by_key[key] for key in selected]
+    if taxonomy == 'sector' and any(label.path[0] == 'No business sector' for label in labels):
+        st.caption('No business sector groups money market, gold, crypto and cash separately. Unclassified means sector data is missing.')
     colors = taxonomy_colors(classifications, taxonomy)
     if not labels:
         st.info("Choose one or more labels to compare their combined asset allocations.")

@@ -67,7 +67,9 @@ the offline figures exactly. See [categories](allocation.md#overview),
    with matching direct holdings. Your owned quantities do not change.
 2. Open an asset to inspect its contributing positions. **Other** retains the
    uncovered fund weight; it is not another position you own directly.
-3. Choose **Themes & sectors**. The demo opens on Sector because it has no
+3. Choose **Themes & sectors**. Money market, gold and crypto appear under
+   **No business sector**; Unclassified retains genuinely missing sector data.
+   The demo opens on Sector because it has no
    curated theme labels. Then choose **Geography** to explore regions and
    countries. Unknown geography stays explicit; overnight-rate exposure appears
    separately as **Money market**.

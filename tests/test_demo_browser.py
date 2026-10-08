@@ -17,6 +17,8 @@ def test_public_demo_breakdown_sectors_geography_and_rebalance(intro_page):
     page.get_by_role('tab', name='Exposure', exact=True).click()
     table = page.get_by_role('table', name='Exposure assets', exact=True)
     playwright.expect(table).to_contain_text('Nvidia')
+    playwright.expect(table).to_contain_text('EUR overnight rate')
+    playwright.expect(table).to_contain_text('No business sector')
     playwright.expect(page.get_by_role('combobox', name='Asset classifications', exact=True)).to_have_value('Sector')
     idle(page)
     table.get_by_text('Nvidia', exact=True).click()
@@ -34,6 +36,9 @@ def test_public_demo_breakdown_sectors_geography_and_rebalance(intro_page):
     chart = page.locator('.st-key-exposure_results .js-plotly-plot').last
     playwright.expect(chart).to_contain_text('Technology')
     playwright.expect(chart).to_contain_text('Financials')
+    playwright.expect(chart).to_contain_text('No business sector')
+    sector_values = chart.evaluate('el => Object.fromEntries(el._fullData[0].labels.map((label, i) => [label, el._fullData[0].values[i]]))')
+    assert sector_values['Unclassified'] / 93184.35 < .01
     page.get_by_role('radio', name='Geography', exact=True).click()
     playwright.expect(chart).to_contain_text('Europe')
     playwright.expect(chart).to_contain_text('Money market')
