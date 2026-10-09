@@ -28,6 +28,14 @@ On Linux, `./portfolio-app` opens the browser; closing its tab leaves the server
 running until **Portfolio settings → App & workspace → Stop application** or `--stop`.
 Portable installs can add a shortcut with `--install-shortcut`.
 
+The experimental Apple Silicon macOS 14+ DMG is intended to accompany v0.1.0
+after its automated packaged checks pass. Open the DMG and copy **Portfolio
+Breakdown Experimental.app** into Applications. It includes Python and opens a
+standalone window. There is no Developer ID signature or notarization; Gatekeeper
+rejects quarantined copies, and interactive installation approval on a personal
+Mac remains unverified. This limitation must accompany the release download.
+Do not substitute an older DMG for a fresh same-source candidate.
+
 The app's **? → User guide** opens the exact bundled public documentation, even
 without internet or Pages publication. Source guides are under `docs/user/`;
 the static published archive belongs on `gh-pages`. See [user installation guide](user/install.md)

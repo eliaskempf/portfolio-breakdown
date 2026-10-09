@@ -129,7 +129,7 @@ def candidate(directory, platform='linux-x64'):
              f'portfolio-breakdown-{version}-docs.zip']
     if platform == 'windows-x64':
         names.append(f'portfolio-breakdown-{version}-windows-x64-setup.exe')
-    docs_info = json.dumps(dict(source_sha='a' * 40, app_version=version,
+    docs_info = json.dumps(dict(source_sha='a' * 40, route='candidates/' + 'a' * 40 + '/', app_version=version,
         dirty=False, channel='candidate', files={'index.html': sha256(b'Invented guide').hexdigest()})).encode()
     files = {}
     for name in names:

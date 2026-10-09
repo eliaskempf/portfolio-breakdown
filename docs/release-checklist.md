@@ -8,6 +8,7 @@ data. A checked checklist is specific to one build, not a blanket approval.
 - Version:
 - Windows archive SHA256:
 - Linux archive SHA256:
+- Experimental macOS workflow run and DMG SHA256 (or reason deferred):
 - Tester/date and OS versions:
 
 ## Automated gates
@@ -50,11 +51,16 @@ installer build. The existing timeouts cap configured execution at 45 Windows,
 and reruns. Do not raise timeouts or add automatic test retries to obtain a green
 candidate. Investigate failures locally before another paid attempt.
 
-The supported publisher requires both platform artifacts from the same run
-attempt. After a failed supported candidate, dispatch a fresh complete candidate
-run; do not combine selectively rebuilt artifacts or reuse old manifests.
-Experimental desktop artifacts remain separately reviewed and are not attached
-automatically by the supported publisher.
+The supported publisher requires both platform artifacts from the same successful
+run and exact source SHA; successful earlier attempts of that run can be reused.
+For the planned experimental Mac download, supply the desktop run ID through
+`macos_candidate_run` and check `experimental_macos` in **Publish tested candidate**.
+The three Mac jobs must pass; unrelated experimental Linux failures do not block
+that DMG. Its source, lock, version, frozen docs and checksums must match the
+supported candidate. The publisher attaches the tested DMG without rebuilding.
+Omit both Mac inputs if it fails; record the deferral in the release notes.
+The Linux `.deb` still needs its separate publication path reconciled before the
+README's native Linux installation instructions can be fulfilled.
 
 ## Manual gates (clean machines, no Python or uv)
 
@@ -187,8 +193,12 @@ block the supported release or inherit acceptance from an older installer.
 - [ ] Build from the final integrated source and record its commit, lock hash,
       installer SHA256 and native reports. Earlier experimental artifacts are
       not final v1 builds.
-- [ ] Keep `.deb`/DMG artifacts explicitly experimental and outside automatic
-      supported-candidate promotion. Publication still requires approval.
+- [ ] Include the planned experimental macOS DMG via the explicit publication
+      inputs after its automated gates pass. Disclose Apple Silicon/macOS 14+,
+      no Developer ID signing/notarization and unverified personal-Mac install
+      approval. This known manual gap does not block experimental inclusion.
+      Official publication still requires approval; no automatic triggers added.
+- [ ] Keep Linux `.deb` review separate until its publication path is reconciled.
 - [ ] Ubuntu 22.04/24.04: verify installed X11/Wayland rendering, file dialogs,
       exact download bytes, focus/restore, repeated launch and complete shutdown.
       Upgrade/removal preserves the synthetic workspace.

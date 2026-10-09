@@ -11,6 +11,14 @@ on:
         required: true
         default: false
         type: boolean
+      macos_candidate_run:
+        description: Desktop workflow run at the same commit; leave empty to defer macOS
+        type: string
+        default: ''
+      experimental_macos:
+        description: Include experimental Apple Silicon DMG with signing and manual-installation limitations disclosed
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -32,4 +40,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RUN: ${{ inputs.candidate_run }}
-        run: python3 tools/promote.py --run-id "$CANDIDATE_RUN" --acceptance tested-on-windows-and-linux
+          MACOS_RUN: ${{ inputs.macos_candidate_run }}
+          EXPERIMENTAL_MACOS: ${{ inputs.experimental_macos }}
+        run: |
+          args=(--run-id "$CANDIDATE_RUN" --acceptance tested-on-windows-and-linux)
+          if [ -n "$MACOS_RUN" ]; then args+=(--macos-run-id "$MACOS_RUN"); fi
+          if [ "$EXPERIMENTAL_MACOS" = true ]; then args+=(--experimental-macos); fi
+          python3 tools/promote.py "${args[@]}"

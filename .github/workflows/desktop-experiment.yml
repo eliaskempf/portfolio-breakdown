@@ -141,6 +141,7 @@ jobs:
       - if: steps.frozen.outcome == 'failure' || steps.source.outcome == 'failure'
         run: exit 1
   build:
+    name: build-${{ matrix.target }}
     if: ${{ !inputs.diagnostics_only }}
     strategy:
       fail-fast: false
@@ -222,9 +223,18 @@ jobs:
         if: runner.os == 'macOS' && !cancelled()
         run: uv run python tools/desktop_gatekeeper.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app" --output "$RUNNER_TEMP/gatekeeper"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: runner.os == 'macOS'
+        with:
+          name: candidate-macos-arm64
+          overwrite: true
+          path: dist/desktop-experiment/candidate/*
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: desktop-evidence-${{ matrix.target }}
+          overwrite: true
           path: |
             dist/*-results.xml
             ${{ runner.temp }}/source-native
@@ -238,6 +248,7 @@ jobs:
         if: always()
         with:
           name: desktop-experiment-${{ matrix.target }}
+          overwrite: true
           path: |
             dist/desktop-experiment/*.deb
             dist/desktop-experiment/*.dmg
@@ -292,6 +303,7 @@ jobs:
           path: ${{ runner.temp }}/compat-native
           retention-days: 14
   macos-compatibility:
+    name: macos-compatibility-${{ matrix.os }}
     if: ${{ always() && !cancelled() && !inputs.diagnostics_only }}
     needs: build
     strategy:
@@ -332,6 +344,7 @@ jobs:
         if: always()
         with:
           name: desktop-evidence-${{ matrix.os }}
+          overwrite: true
           path: |
             ${{ runner.temp }}/compat-native
             ${{ runner.temp }}/gatekeeper/*.json

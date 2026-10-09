@@ -2289,3 +2289,43 @@ dark mode at 3× pixel density (4176 × 2040). The crop starts immediately above
 Current value card and includes the full allocation chart/table, excluding app
 navigation. Visually reviewed; PNG contains no text or EXIF metadata. Only generated
 synthetic holdings/prices were used, with separate temporary workspace/state/cache.
+
+### Experimental macOS release inclusion (2026-10-09)
+
+The user approved including the Apple Silicon macOS DMG alongside the first
+release's other downloads, with experimental status and signing/install limits
+disclosed. This supersedes earlier blanket macOS deferral because no personal
+Mac is available. It does not authorize an official release, tag or paid build.
+Old DMGs still cannot represent the latest source.
+
+The existing desktop build now stages a schema-2 `candidate-macos-arm64` with
+the exact DMG, corresponding source, license/dependency notices, frozen docs and
+checksums. Its upload runs only after the Mac build/installed tests and Gatekeeper
+check succeed. Existing compatibility jobs test that DMG on macOS 15 and 26;
+their explicit job names form the publication contract.
+
+The manual publisher accepts `macos_candidate_run` plus `experimental_macos`.
+It requires the same final default-branch SHA, lock, version and documentation as
+Windows/Linux, verifies the Mac run and three successful jobs, and copies the
+accepted bytes without rebuilding. A compatibility pass predating a rebuilt DMG
+cannot accept its replacement. Retrying failed compatibility against unchanged
+earlier build bytes is allowed. Experimental Linux failures in the same desktop
+run do not reject an otherwise valid Mac candidate. Omitting both Mac inputs
+defers the DMG without blocking Windows/Linux. All validation happens before
+release/tag mutation; final notes disclose Apple Silicon/macOS 14+, no Developer
+ID signing/notarization and unverified interactive personal-Mac installation.
+
+README release installation instructions now cover the planned Mac DMG alongside
+Windows Setup and Ubuntu `.deb`, without directing users to Actions artifacts.
+The user's rewritten feature/disclaimer sections are preserved. The Linux `.deb`
+publication path still needs reconciliation; this change only adds Mac promotion.
+
+Validation: 183 focused release, POSIX, documentation, bundled-help and privacy
+tests passed with synthetic archives and a fake GitHub API. Coverage includes
+actual Mac staging, identical uploaded bytes, rejected altered/mismatched inputs,
+failed/skipped/stale job evidence, experimental disclosures and Mac deferral.
+Ruff, whitespace and release preflight passed (source/wheel content, notices and
+strict docs). The documentation browser smoke passed dark/light persistence,
+navigation, search and mobile layouts. No native Mac run or installer build was performed here. Final
+same-source hosted Mac checks remain required before attaching the experimental
+DMG. Workflows remain manual-only; no Actions jobs were dispatched.

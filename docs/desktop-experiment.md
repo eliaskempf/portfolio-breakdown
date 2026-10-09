@@ -1,8 +1,9 @@
 # Linux and macOS desktop experiment
 
-This isolated experiment extends the committed v1 launcher with dedicated native
-windows. It does not change production publishing or approve either platform for
-v1. Base: `f2db5ab`; branch: `experiment/linux-macos-desktop`.
+This work adds Linux and macOS native windows. macOS is now targeted for v0.1.0
+as an experimental download alongside Windows/Linux, subject to same-source
+build and automated packaged checks. Official publication still requires explicit
+approval. Historical prototype base: `f2db5ab`; branch: `experiment/linux-macos-desktop`.
 
 ## Targets and build
 
@@ -27,7 +28,8 @@ and includes corresponding source, dependency notices, checksums and build
 metadata. Linux installs under `/opt/portfolio-breakdown-experimental`; its
 shortcut runs `portfolio-breakdown-experimental`. macOS users would copy the app
 to Applications. This prototype has ad-hoc integrity signing only: no Developer
-ID signature or notarization. It is not ready for normal public Mac distribution.
+ID signature or notarization. Distribution must disclose the experimental status
+and unverified interactive installation approval.
 
 The Linux candidate uses the Qt/Chromium version recorded in the dependency lock
 and artifact inventory. An earlier local Qt 6.7 run on an older development host
@@ -128,11 +130,21 @@ workspace files. Results distinguish native successes from outstanding checks.
 
 ## Current decision
 
-**Optional experimental support, integrated for v1; supported-platform acceptance
-remains separate.** Inclusion in the release branch does not approve an installer
-for publication. Evaluate platforms independently; neither blocks the supported
-Windows window or Linux browser release. Existing installer artifacts predate the
-combined release source and must not be presented as final v1 installers.
+**Experimental macOS inclusion approved for the v0.1.0 plan.** Build the DMG from
+the same final commit and lockfile as the Windows/Linux candidate. Run the existing
+Mac build/installed checks and macOS 15/26 compatibility jobs. A failed Mac check
+defers that artifact without blocking Windows/Linux. Earlier DMGs are not final
+release installers. Official publication remains separately approved.
+
+The desktop workflow uploads `candidate-macos-arm64` only after the Mac build and
+installed checks succeed. **Publish tested candidate** accepts its workflow run
+ID via `macos_candidate_run`, with `experimental_macos` checked. The publisher
+verifies all three Mac jobs, source/lock/version/frozen-doc identity and every
+checksum before creating any tag or release. It attaches the existing DMG,
+Mac-specific source/notices/manifest and checksums without rebuilding. An unrelated
+Linux job failure in the desktop workflow does not invalidate successful Mac jobs.
+Omit both Mac inputs to defer it. Existing Linux `.deb` publication remains a
+separate reconciliation item; this Mac integration does not change its publisher.
 
 Developer ID signing and notarization are not planned for v1. The Mac app retains
 ad-hoc integrity signing and its documented Gatekeeper limitations; paid signing

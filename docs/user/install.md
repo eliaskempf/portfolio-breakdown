@@ -26,17 +26,22 @@ the existing window for that workspace. The portable alternative is to extract
 the Windows application ZIP and run `Portfolio Breakdown.exe`; keep `_internal`
 and all other files beside it. `--browser` selects the browser fallback.
 
-**Linux:** extract the application `.tar.gz` archive and run `./portfolio-app`.
-Keep its whole folder together. Linux continues to use your browser.
+**Linux (Ubuntu 22.04/24.04 x64):** install the `.deb` with your package manager
+and launch the standalone window from the applications menu. Check the release
+notes for that installer’s acceptance status and desktop limitations.
 
-Optional **experimental** native-window installers are developed separately:
-an Ubuntu 22.04/24.04 x64 `.deb` and an Apple Silicon macOS 14+ DMG. They are not
-covered by the supported-release acceptance above. Use only an explicitly
-identified experimental candidate; earlier artifacts may omit newer app fixes.
-The Mac app has ad-hoc integrity signing only, with no Developer ID signature or
-notarization planned for v1. Gatekeeper rejects quarantined copies; interactive
-approval and normal browser-download behavior remain unverified. These installers
-can be deferred independently of the Windows and Linux browser release.
+For browser mode, extract the application `.tar.gz` archive and run
+`./portfolio-app`. Keep its whole folder together.
+
+**macOS (experimental):** on Apple Silicon with macOS 14 or later, open the DMG
+and drag **Portfolio Breakdown Experimental** into **Applications**, then launch
+it there. Python is bundled; installing Python or uv is unnecessary. Intel Macs are
+not supported. This installer has ad-hoc integrity signing only, without a
+Developer ID signature or notarization. Gatekeeper rejects quarantined copies;
+interactive approval and real browser-download installation remain unverified.
+Automated packaged-app checks do not establish that first-install experience.
+Consult the release notes before downloading; experimental Mac builds may be
+omitted from a release if their automated checks fail.
 
 Initial acceptance targets are Windows 11 and Ubuntu 22.04/24.04 x64. An unsigned
 candidate may trigger Windows reputation warnings; a successful build alone is

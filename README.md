@@ -5,47 +5,65 @@
 
 ---
 
-A local portfolio-analysis app for understanding what you own, what is inside your
-ETFs, and how your allocation compares with your targets. Your portfolio is stored
-on your computer. Windows uses a standalone app window; Linux uses your browser.
+A local portfolio-tracking and analysis app for understanding what you own,
+which companies your ETFs actually expose you to, and whether your money is
+allocated as planned. All portfolio data is stored locally on your computer.
 
 ![Overview with total value, allocation sunburst and category targets, using an invented demo portfolio](docs/assets/demo-overview.png)
 
-*Illustrative offline demo: all holdings, prices, buy-ins and targets are synthetic.*
+<small>*Demo portfolio with synthetic holdings.*</small>
 
-## What it can do
+## What this app can do
 
-- Add holdings manually or review an experimental CSV/Excel holdings import.
-- Explore categories, optional allocation targets, and within-category targets.
-- Value stocks, ETFs, crypto and physical gold in EUR, USD or GBP using public quotes or manual prices.
-- Break down supported ETFs and combine direct and indirect exposure.
-- Review gains against recorded costs, historical risk, and rebalancing suggestions.
-- Try an editable demo with live market data, or take the guided offline tour.
-- Create portable portfolio backups and restore them into a new workspace.
+This app is designed to help you understand your current holdings, analyze
+the underlying exposure of your ETFs, and inform rebalancing decisions. Its
+key features are:
+- Track stocks, ETFs, crypto, and physical gold in EUR, USD, or GBP using public market quotes or manually entered prices.
+- Group assets into categories and optionally define target allocations (e.g., 60% equities / 40% bonds).
+- Set targets for individual assets within categories (e.g., 70% MSCI World / 30% MSCI EM within equities).
+- Break down supported ETFs into their underlying holdings, combining direct and indirect exposure (e.g., NVIDIA shares held directly and through an MSCI World ETF).
+- Analyze portfolio exposure by theme, sector, and geography.
+- Examine portfolio beta, annualized volatility, and correlations between assets.
 
-It does not connect to brokerage accounts, place trades, calculate taxes, or
-reconstruct a complete transaction/return history. ETF coverage depends on
-supported sources; missing or partial data stays visible. FinanzManager report
-recognition is provisional. The futures sandbox is not included.
+The app focuses on analyzing current holdings rather than tracking historical
+performance. It does not reconstruct or maintain a complete transaction or
+return history, connect to brokerage accounts, automatically import holdings,
+execute trades, or calculate taxes. Automatic ETF breakdowns are limited to
+supported providers, and underlying holdings data may be missing or incomplete.
 
 ## How to use
 
 ### Install a release
 
-Download from [Releases](https://github.com/eliaskempf/portfolio-breakdown/releases).
-On Windows, run **windows-x64-setup.exe**, then open **Portfolio Breakdown** from
-the Start Menu. Python and uv are not required. Setup offers WebView2 installation
-when needed; a browser fallback and portable ZIP are also available. On Linux,
-extract **linux-x64.tar.gz** and run `portfolio-app`.
+Open the [latest release](https://github.com/eliaskempf/portfolio-breakdown/releases/latest)
+and download the package for your operating system under **Assets**. Python and
+uv are not required for release packages.
 
-Until the first release is published, test packages are available from successful
-[Build candidate runs](https://github.com/eliaskempf/portfolio-breakdown/actions/workflows/candidate.yml).
-Extract the downloaded Actions artifact to find its installer or application archive.
-These are test candidates, not official releases.
+- **Windows:** download the file ending in `windows-x64-setup.exe` and run it
+  directly—no extraction needed. Follow Setup, then open **Portfolio Breakdown**
+  from the Start Menu or desktop shortcut. Setup offers Microsoft's WebView2
+  runtime if needed for the standalone window. The installed **Portfolio
+  Breakdown (browser)** shortcut opens the browser alternative.
+- **Linux (Ubuntu 22.04/24.04, x64):** download the `.deb` installer, install it
+  with your package manager, then launch the app from your applications menu.
+  It opens in its own standalone window.
+- **macOS (experimental, Apple Silicon, macOS 14+):** download the `.dmg`, open
+  it, and drag **Portfolio Breakdown Experimental** into **Applications**.
+  It opens in its own window. The app is not Developer ID signed or notarized,
+  so Gatekeeper may block opening it. Installation approval on a personal Mac
+  remains unverified; see the release notes for known limitations.
+
+A portable Windows ZIP is also available: extract it and run
+`Portfolio Breakdown.exe`, keeping all accompanying files beside it.
+For Linux browser mode, download the file ending in `linux-x64.tar.gz`, extract
+it, and run `./portfolio-app`; keep its whole application folder together.
+See the [installation guide](docs/user/install.md) for details,
+updates and removal.
 
 ### Run from source
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
+For development or running a source checkout instead of an installed release,
+install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
 
 ```sh
 git clone https://github.com/eliaskempf/portfolio-breakdown.git
@@ -69,12 +87,10 @@ The [documentation website](https://eliaskempf.github.io/portfolio-breakdown/) i
 prepared for GitHub Pages publication; until it is enabled, use the bundled guide
 or the source links above.
 
-## Before making investment decisions
+## Disclaimer
 
-Portfolio Breakdown is an analysis tool, not investment advice. Quotes, fund
-holdings, classifications and calculations may be delayed, incomplete or wrong.
-Verify important information independently and do not make investment decisions
-solely from the app's charts or suggestions. You remain responsible for your
-investment decisions and their risks.
+Portfolio Breakdown is a portfolio analysis tool, not investment advice. Market data,
+ETF holdings, classifications, and calculations may be delayed, incomplete, or inaccurate.
+Always verify important information independently before making investment decisions.
 
 [GPL-3.0-only](LICENSE).

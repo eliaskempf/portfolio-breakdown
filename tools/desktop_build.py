@@ -1,6 +1,7 @@
 """Build isolated experimental installers. Never publish or promote a release."""
 import argparse
 import json
+import os
 import platform
 from pathlib import Path
 import shutil
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import tomllib
 
+from portfolio_app.settings import BRANDING_ASSETS
 from release import ROOT, digest, frozen_check, notices, package_check
 
 DEB_NAME = 'portfolio-breakdown-experimental'
@@ -44,6 +46,32 @@ def linux_package(bundle, stage, output, version):
     artifact = output / f'{DEB_NAME}_{version}_amd64.deb'
     subprocess.run(['dpkg-deb', '-Zgzip', '-z6', '--root-owner-group', '--build', str(stage), str(artifact)], check=True)
     return artifact
+
+
+def macos_candidate(output, bundle, artifact, source, version):
+    """Stage exact built bytes for optional, separately gated release promotion."""
+    destination = output / 'candidate'
+    destination.mkdir()
+    docs = bundle / 'documentation'
+    info = json.loads((docs / 'build-info.json').read_text(encoding='utf-8'))
+    for path in [artifact, *source.glob('*.whl'), *source.glob('*.tar.gz'),
+                 bundle / 'THIRD_PARTY_NOTICES.txt', bundle / 'dependencies.json']:
+        shutil.copyfile(path, destination / path.name)
+    shutil.make_archive(str(destination / f'portfolio-breakdown-{version}-docs'), 'zip', docs)
+    files = {p.name: digest(p) for p in sorted(destination.iterdir())}
+    manifest = dict(schema=2, version=version, platform='macos-arm64',
+                    experimental=True, developer_id_signed=False, notarized=False,
+                    manual_installation_verified=False,
+                    documentation=dict(source_sha=info['source_sha'], route=info['route'],
+                        build_info_sha256=digest(docs / 'build-info.json')),
+                    source_clean=info['dirty'] is False, commit=info['source_sha'],
+                    icon_ready=all((ROOT / 'src/portfolio_app/assets' / name).is_file() for name in BRANDING_ASSETS),
+                    run_id=os.environ.get('GITHUB_RUN_ID', 'local'),
+                    run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT', '1'),
+                    lock_sha256=digest(ROOT / 'uv.lock'), python=platform.python_version(), files=files)
+    (destination / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    (destination / 'SHA256SUMS').write_text(''.join(f'{value}  {name}\n' for name, value in files.items()) +
+        f'{digest(destination / "manifest.json")}  manifest.json\n', encoding='utf-8')
 
 
 def build(output):
@@ -99,6 +127,8 @@ def build(output):
                   files={str(p.relative_to(output)): digest(p) for p in [artifact, *source.glob('*.whl'), *source.glob('*.tar.gz')]})
     (output / 'experimental-build.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     (output / 'SHA256SUMS').write_text(''.join(f'{v}  {k}\n' for k, v in report['files'].items()), encoding='utf-8')
+    if sys.platform == 'darwin':
+        macos_candidate(output, bundle, artifact, source, version)
     print(f'Experimental artifact: {artifact}')
 
 
