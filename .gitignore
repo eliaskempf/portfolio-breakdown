@@ -74,3 +74,9 @@ handoff.md
 !/docs/assets/demo-overview.png
 
 !/.github/workflows/desktop-experiment.yml
+
+# Working handoffs are preserved outside the public source tree.
+/docs/*-session-*.md
+/docs/*handoff*.md
+/docs/release-execution-plan.md
+/docs/documentation-migration.md

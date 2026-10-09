@@ -53,6 +53,9 @@ packages = ["src/portfolio_app"]
 [tool.hatch.build.targets.sdist]
 include = ["/src", "/tests", "/README.md", "/AGENTS.md", "/LICENSE", "/docs", "/tools", "/packaging", "/.github", "/pyproject.toml", "/uv.lock", "/mkdocs.yml", "/.python-version", "/.gitignore", "/.githooks"]
 
+# Local coordination notes must never enter source distributions.
+exclude = ["/docs/*-session-*.md", "/docs/*handoff*.md", "/docs/release-execution-plan.md", "/docs/documentation-migration.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

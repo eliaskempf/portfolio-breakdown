@@ -7,8 +7,8 @@ under GitHub Actions. Download `candidate-windows-x64` or `candidate-linux-x64`
 while signed into GitHub. These are test artifacts, not official releases.
 While Actions is unavailable, a verified local candidate can supply the same
 installer and archives directly. Its manifest and SHA256SUMS identify the source
-and exact files; retain its test/acceptance record. Local build instructions are
-in `docs/release-plan.md`.
+and exact files; retain its test/acceptance record. Local build and acceptance instructions are
+in [the release procedure](release-plan.md).
 Inside that download, extract the platform application archive. Keep the entire
 `portfolio-app` directory together; the executable needs its `_internal` folder.
 Use a permanent application location outside your portfolio folder.
@@ -24,7 +24,10 @@ keep its whole directory together and launch `Portfolio Breakdown.exe`.
 
 The installed **Portfolio Breakdown (browser)** shortcut or `--browser` selects
 browser mode. Keep `portfolio-app.exe` for CLI operations and diagnostics.
-On Linux, `./portfolio-app` opens the browser; closing its tab leaves the server
+On Ubuntu 22.04/24.04, the desktop workflow provides `candidate-linux-native-x64`.
+Install its `.deb` and launch **Portfolio Breakdown Experimental** from the
+applications menu. The package name is `portfolio-breakdown-experimental`.
+The browser archive remains available: `./portfolio-app` opens the browser; closing its tab leaves the server
 running until **Portfolio settings → App & workspace → Stop application** or `--stop`.
 Portable installs can add a shortcut with `--install-shortcut`.
 

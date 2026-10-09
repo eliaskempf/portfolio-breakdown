@@ -35,35 +35,23 @@ supported providers, and underlying holdings data may be missing or incomplete.
 
 ### Install a release
 
-Open the [latest release](https://github.com/eliaskempf/portfolio-breakdown/releases/latest)
-and download the package for your operating system under **Assets**. Python and
-uv are not required for release packages.
+For the easiest setup, download the latest version for your operating system from the
+[GitHub releases page](https://github.com/eliaskempf/portfolio-breakdown/releases/latest).
+Prebuilt packages do not require Python or uv.
+- **Windows:** Download the `windows-x64-setup.exe` installer and follow the setup instructions. Launch **Portfolio Breakdown** from the Start Menu or desktop shortcut.
+- **Linux (Ubuntu 22.04/24.04, x64):** Download and install the `.deb` package, then launch the app from your applications menu.
+- **macOS (experimental, Apple Silicon, macOS 14+):** Download the `.dmg`, open it, and drag **Portfolio Breakdown Experimental** into **Applications**. The app is not signed or notarized, so macOS may block it from opening.
 
-- **Windows:** download the file ending in `windows-x64-setup.exe` and run it
-  directly—no extraction needed. Follow Setup, then open **Portfolio Breakdown**
-  from the Start Menu or desktop shortcut. Setup offers Microsoft's WebView2
-  runtime if needed for the standalone window. The installed **Portfolio
-  Breakdown (browser)** shortcut opens the browser alternative.
-- **Linux (Ubuntu 22.04/24.04, x64):** download the `.deb` installer, install it
-  with your package manager, then launch the app from your applications menu.
-  It opens in its own standalone window.
-- **macOS (experimental, Apple Silicon, macOS 14+):** download the `.dmg`, open
-  it, and drag **Portfolio Breakdown Experimental** into **Applications**.
-  It opens in its own window. The app is not Developer ID signed or notarized,
-  so Gatekeeper may block opening it. Installation approval on a personal Mac
-  remains unverified; see the release notes for known limitations.
+Portable versions are also available for Windows (`.zip`) and Linux (`.tar.gz`), which
+can be extracted and run without installation.
 
-A portable Windows ZIP is also available: extract it and run
-`Portfolio Breakdown.exe`, keeping all accompanying files beside it.
-For Linux browser mode, download the file ending in `linux-x64.tar.gz`, extract
-it, and run `./portfolio-app`; keep its whole application folder together.
-See the [installation guide](docs/user/install.md) for details,
-updates and removal.
+For platform-specific instructions, known limitations, and uninstallation, see the
+[installation guide](docs/user/install.md).
 
 ### Run from source
 
-For development or running a source checkout instead of an installed release,
-install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
+If you prefer to run the app from source or want to contribute to development,
+install [uv](https://docs.astral.sh/uv/getting-started/installation/) and run:
 
 ```sh
 git clone https://github.com/eliaskempf/portfolio-breakdown.git
@@ -72,20 +60,20 @@ uv sync --locked
 uv run portfolio-app
 ```
 
-`uv` manages Python and the project environment. On Windows, use
-`uv run portfolio-desktop` for the standalone window. `uv run portfolio-app --demo`
-opens the live demo; add `--offline-demo` for synthetic offline data.
+`uv` automatically manages Python and the project environment.
 
-### Get started and find help
+On Windows, use `uv run portfolio-desktop` to launch the standalone window. You
+can also try the app with demo data using `uv run portfolio-app --demo`, or add
+`--offline-demo` to use synthetic data without an internet connection.
 
-Start with the [getting-started walkthrough](docs/user/getting-started.md), or take
-the optional tour inside the app. The [full user guide](docs/user/index.md) covers
-setup, imports, calculations, backups and troubleshooting.
+### Documentation
 
-Installed builds include matching offline documentation under **? → User guide**.
-The [documentation website](https://eliaskempf.github.io/portfolio-breakdown/) is
-prepared for GitHub Pages publication; until it is enabled, use the bundled guide
-or the source links above.
+For an introduction to the app, follow the [getting-started guide](docs/user/getting-started.md)
+or take the optional in-app tour.
+
+The [user guide](docs/user/index.md) covers imports, calculations, backups, troubleshooting,
+and other features. Installed versions also include offline documentation, accessible through
+**? → User guide**.
 
 ## Disclaimer
 

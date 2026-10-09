@@ -129,6 +129,8 @@ def candidate(directory, platform='linux-x64'):
              f'portfolio-breakdown-{version}-docs.zip']
     if platform == 'windows-x64':
         names.append(f'portfolio-breakdown-{version}-windows-x64-setup.exe')
+    if platform == 'linux-native-x64':
+        names[0] = f'portfolio-breakdown-experimental_{version}_amd64.deb'
     docs_info = json.dumps(dict(source_sha='a' * 40, route='candidates/' + 'a' * 40 + '/', app_version=version,
         dirty=False, channel='candidate', files={'index.html': sha256(b'Invented guide').hexdigest()})).encode()
     files = {}
@@ -215,6 +217,17 @@ class FakeGitHub:
             folder = candidate(root / platform, platform)
             shutil.make_archive(str(root / str(number)), 'zip', folder)
             self.artifacts.append(dict(id=number, name='candidate-' + platform, expired=False))
+        self.native_folder = candidate(root / 'linux-native-x64', 'linux-native-x64')
+        rewrite_candidate_manifest(self.native_folder, run_id='789')
+        self.repack_native()
+        self.native_run = dict(self.run, path='.github/workflows/desktop-experiment.yml')
+        self.native_jobs = [dict(name=name, status='completed', conclusion='success',
+                                run_attempt=1, head_sha='a' * 40) for name in
+                            ['build-linux-x64', 'linux-compatibility-x11', 'linux-compatibility-wayland']]
+        self.native_artifacts = [dict(id=3, name='candidate-linux-native-x64', expired=False)]
+
+    def repack_native(self):
+        shutil.make_archive(str(self.root / '3'), 'zip', self.native_folder)
 
     def call(self, path, *, method='GET', body=None):
         if method != 'GET':
@@ -226,6 +239,12 @@ class FakeGitHub:
             return self.run
         if path.startswith('/actions/runs/123/artifacts'):
             return {'artifacts': self.artifacts}
+        if path == '/actions/runs/789':
+            return self.native_run
+        if path.startswith('/actions/runs/789/jobs'):
+            return dict(total_count=len(self.native_jobs), jobs=self.native_jobs)
+        if path.startswith('/actions/runs/789/artifacts'):
+            return dict(artifacts=self.native_artifacts)
         from urllib.error import HTTPError
         raise HTTPError(path, 404, 'not found', {}, None)
 
@@ -238,12 +257,13 @@ class FakeGitHub:
 
 def test_promotion_uploads_identical_tested_bytes(tmp_path):
     api = FakeGitHub(tmp_path)
-    promote.promote(api, 'invented/project', '123')
+    promote.promote(api, 'invented/project', '123', linux_native_run_id='789')
     for platform in ['linux-x64', 'windows-x64']:
         suffix = '.zip' if platform == 'windows-x64' else '.tar.gz'
         name = f'portfolio-breakdown-0.1.0-{platform}{suffix}'
         assert api.uploaded[name] == (tmp_path / platform / name).read_bytes()
-    assert api.mutations[-1] == ('/releases/42', {'draft': False})
+    assert api.mutations[-1][0] == '/releases/42'
+    assert api.mutations[-1][1]['draft'] is False
 
 
 def rewrite_candidate_manifest(folder, **changes):
@@ -261,7 +281,7 @@ def test_failed_job_rerun_reuses_successful_platform_bytes(tmp_path, windows_att
     folder = tmp_path / 'windows-x64'
     rewrite_candidate_manifest(folder, run_attempt=windows_attempt)
     shutil.make_archive(str(tmp_path / '1'), 'zip', folder)
-    promote.promote(api, 'invented/project', '123')
+    promote.promote(api, 'invented/project', '123', linux_native_run_id='789')
     for platform in ['linux-x64', 'windows-x64']:
         suffix = '.zip' if platform == 'windows-x64' else '.tar.gz'
         name = f'portfolio-breakdown-0.1.0-{platform}{suffix}'
@@ -278,7 +298,7 @@ def test_rerun_never_accepts_invalid_attempt_or_another_run_source(tmp_path, cha
     rewrite_candidate_manifest(folder, **changes)
     shutil.make_archive(str(tmp_path / '0'), 'zip', folder)
     with pytest.raises(ValueError, match='identity'):
-        promote.promote(api, 'invented/project', '123')
+        promote.promote(api, 'invented/project', '123', linux_native_run_id='789')
     assert api.mutations == []
 
 
@@ -310,5 +330,5 @@ def test_invalid_candidate_never_creates_a_tag_or_release(tmp_path, failure):
         (folder / 'manifest.json').write_text(json.dumps(manifest))
         shutil.make_archive(str(tmp_path / '1'), 'zip', folder)
     with pytest.raises(ValueError):
-        promote.promote(api, 'invented/project', '123')
+        promote.promote(api, 'invented/project', '123', linux_native_run_id='789')
     assert api.mutations == []

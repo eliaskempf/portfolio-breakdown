@@ -18,5 +18,5 @@ jobs:
       - run: uv sync --locked --group release
       - name: Audit locked runtime packages
         run: |
-          uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file "$RUNNER_TEMP/portfolio-audit.txt"
-          uv run pip-audit --require-hashes --no-deps -r "$RUNNER_TEMP/portfolio-audit.txt"
+          uv export --locked --no-dev --extra window --no-emit-project --format requirements-txt --output-file "$RUNNER_TEMP/portfolio-audit.txt"
+          uv run pip-audit --disable-pip --require-hashes --no-deps -r "$RUNNER_TEMP/portfolio-audit.txt"

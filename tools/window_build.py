@@ -36,7 +36,7 @@ def main():
                     str(ROOT / 'packaging/window.spec')], cwd=ROOT, check=True)
     bundle = output / 'frozen/portfolio-window'
     shutil.copy(ROOT / 'LICENSE', bundle / 'LICENSE')
-    shutil.copy(ROOT / 'docs/window-session-result.md', bundle / 'EXPERIMENTAL.md')
+    shutil.copy(ROOT / 'docs/windows-desktop.md', bundle / 'EXPERIMENTAL.md')
     notices(bundle)
     # Python wheel metadata does not cover WebView2's managed/native interop DLLs.
     import webview

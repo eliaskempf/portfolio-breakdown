@@ -6,6 +6,10 @@ on:
         description: Successful candidate run ID from the default branch
         required: true
         type: string
+      linux_native_candidate_run:
+        description: Desktop workflow run with tested Ubuntu .deb at the same commit
+        required: true
+        type: string
       acceptance:
         description: I completed the release checklist on Windows and Linux for this exact candidate
         required: true
@@ -40,10 +44,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RUN: ${{ inputs.candidate_run }}
+          LINUX_NATIVE_RUN: ${{ inputs.linux_native_candidate_run }}
           MACOS_RUN: ${{ inputs.macos_candidate_run }}
           EXPERIMENTAL_MACOS: ${{ inputs.experimental_macos }}
         run: |
-          args=(--run-id "$CANDIDATE_RUN" --acceptance tested-on-windows-and-linux)
+          args=(--run-id "$CANDIDATE_RUN" --linux-native-run-id "$LINUX_NATIVE_RUN" --acceptance tested-on-windows-and-linux)
           if [ -n "$MACOS_RUN" ]; then args+=(--macos-run-id "$MACOS_RUN"); fi
           if [ "$EXPERIMENTAL_MACOS" = true ]; then args+=(--experimental-macos); fi
           python3 tools/promote.py "${args[@]}"

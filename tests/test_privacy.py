@@ -27,6 +27,9 @@ def git_repo(tmp_path, monkeypatch):
     "exports/report.pdf", "reports/allocation.png", "account.xlsx", ".env",
     ".env.local", ".streamlit/secrets.toml", ".codex/config.toml", "handoff.md",
     "notes/credentials.json", "private/notes.py", "src/private/account.py",
+    "docs/release-execution-plan.md", "docs/window-session-result.md",
+    "docs/window-session-handoff.md", "docs/documentation-session-result.md",
+    "docs/documentation-session-handoff.md", "docs/documentation-migration.md",
 ])
 def test_private_paths_are_blocked(filename):
     assert path_problem(filename) is not None

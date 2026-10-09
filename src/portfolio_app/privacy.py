@@ -15,10 +15,9 @@ RELEASE_FILES = {"packaging/posix-window.spec", "tools/desktop_build.py", "tools
                  ".github/dependabot.yml", "packaging/portfolio.spec", "packaging/entrypoint.py",
                  "tools/release.py", "tools/promote.py", "tools/package_smoke.py",
                  "packaging/window.spec", "packaging/window_entrypoint.py",
-                 "tools/window_build.py", "tools/window_smoke.py", "tools/windows_bundle.py", "packaging/windows.iss", "docs/window-session-result.md",
+                 "tools/window_build.py", "tools/window_smoke.py", "tools/windows_bundle.py", "packaging/windows.iss",
                  "src/portfolio_app/documentation-build.json",
-                 "docs/documentation-session-handoff.md", "docs/window-session-handoff.md",
-                 "docs/startup-development.md", "src/portfolio_app/intro_frontend/index.html"}
+                 "docs/startup-development.md", "docs/windows-desktop.md", "src/portfolio_app/intro_frontend/index.html"}
 ICON_FILES = {"src/portfolio_app/assets/portfolio-breakdown.png", "src/portfolio_app/assets/portfolio-breakdown.svg",
               "src/portfolio_app/assets/favicon.svg", "src/portfolio_app/assets/favicon.ico",
               "docs/assets/readme-brand-light.png", "docs/assets/readme-brand-dark.png"}
@@ -26,8 +25,7 @@ ICON_FILES = {"src/portfolio_app/assets/portfolio-breakdown.png", "src/portfolio
 # and images remain blocked. Never populate it from a personal workspace.
 DEMO_IMAGE_FILES = {'docs/assets/demo-overview.png'}
 DOCS_FILES = {"mkdocs.yml", ".github/workflows/docs.yml", ".github/workflows/docs-pages.yml",
-              "tools/docs_site.py", "tools/docs_preview.py", "tools/docs_candidate.py", "docs/documentation-maintenance.md",
-              "docs/documentation-migration.md", "docs/documentation-session-result.md"}
+              "tools/docs_site.py", "tools/docs_preview.py", "tools/docs_candidate.py", "docs/documentation-maintenance.md"}
 PRIVATE_PARTS = {"data", "private", "imports", "exports", "reports", "screenshots", ".cache", ".backups", ".codex", ".agents", ".vscode", ".idea", ".streamlit", ".venv"}
 SECRET_PATTERNS = (
     ("private key", re.compile(rb"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")),

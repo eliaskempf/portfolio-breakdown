@@ -36,9 +36,11 @@ def verify_candidate(directory, *, commit, run_id, run_attempt, platform, requir
         raise ValueError('Only candidates from a clean checkout can be published.')
     files = manifest.get('files', {})
     version = manifest['version']
-    if platform not in {'windows-x64', 'linux-x64', 'macos-arm64'}:
+    if platform not in {'windows-x64', 'linux-x64', 'linux-native-x64', 'macos-arm64'}:
         raise ValueError('Unknown candidate platform.')
     bundle = f'portfolio-breakdown-{version}-{platform}' + ('.zip' if platform == 'windows-x64' else '.tar.gz')
+    if platform == 'linux-native-x64':
+        bundle = f'portfolio-breakdown-experimental_{version}_amd64.deb'
     if platform == 'macos-arm64':
         bundle = f'portfolio-breakdown-experimental-{version}-macos-arm64.dmg'
         if (manifest.get('experimental') is not True or manifest.get('developer_id_signed') is not False
@@ -144,28 +146,32 @@ def safe_extract(archive, destination):
         zipped.extractall(destination)
 
 
-def macos_run(api, repository, run_id, commit, branch):
-    """Require Mac-specific success, independently of experimental Linux results."""
+def desktop_run(api, repository, run_id, commit, branch, platform):
+    """Require each installer's build and compatibility evidence independently."""
     run = api.call(f'/actions/runs/{run_id}')
     if (run['status'] != 'completed' or run['event'] != 'workflow_dispatch'
             or run['path'] != '.github/workflows/desktop-experiment.yml'
             or run['head_branch'] != branch or run['head_sha'] != commit
             or run['head_repository']['full_name'] != repository):
-        raise ValueError('macOS must come from the same release commit in a completed desktop workflow.')
+        raise ValueError(f'{platform} must come from the same release commit in a completed desktop workflow.')
     response = api.call(f'/actions/runs/{run_id}/jobs?filter=latest&per_page=100')
     jobs = response['jobs']
-    required = {'build-macos-arm64', 'macos-compatibility-macos-15', 'macos-compatibility-macos-26'}
+    required = ({'build-linux-x64', 'linux-compatibility-x11', 'linux-compatibility-wayland'}
+                if platform == 'linux-native-x64' else
+                {'build-macos-arm64', 'macos-compatibility-macos-15', 'macos-compatibility-macos-26'})
     if response['total_count'] != len(jobs):
-        raise ValueError('Incomplete macOS workflow job evidence.')
+        raise ValueError(f'Incomplete {platform} workflow job evidence.')
     for name in required:
         matches = [job for job in jobs if job['name'] == name]
         if (len(matches) != 1 or matches[0]['status'] != 'completed'
                 or matches[0]['conclusion'] != 'success' or matches[0].get('head_sha') != commit):
-            raise ValueError(f'Required macOS job did not pass: {name}')
+            raise ValueError(f'Required {platform} job did not pass: {name}')
     return run, [job for job in jobs if job['name'] in required]
 
 
-def promote(api, repository, run_id, *, macos_run_id=None):
+def promote(api, repository, run_id, *, linux_native_run_id, macos_run_id=None):
+    if not str(linux_native_run_id).isdecimal():
+        raise ValueError('A numeric native Linux candidate run ID is required.')
     repo = api.call('')
     run = api.call(f'/actions/runs/{run_id}')
     if (run['conclusion'] != 'success' or run['status'] != 'completed' or run['event'] != 'workflow_dispatch'
@@ -199,37 +205,39 @@ def promote(api, repository, run_id, *, macos_run_id=None):
             path = folder / 'manifest.json'
             path.rename(folder / f'{platform}-manifest.json')
             uploads.append(folder / f'{platform}-manifest.json')
+        desktop_candidates = [('linux-native-x64', linux_native_run_id, 'build-linux-x64', '.deb')]
         if macos_run_id:
-            mac_run, mac_jobs = macos_run(api, repository, macos_run_id, commit, repo['default_branch'])
-            mac_artifacts = api.call(f'/actions/runs/{macos_run_id}/artifacts?per_page=100')['artifacts']
-            matches = [a for a in mac_artifacts if a['name'] == 'candidate-macos-arm64' and not a['expired']]
+            desktop_candidates.append(('macos-arm64', macos_run_id, 'build-macos-arm64', '.dmg'))
+        for platform, desktop_run_id, build_job, suffix in desktop_candidates:
+            selected_run, jobs = desktop_run(api, repository, desktop_run_id, commit, repo['default_branch'], platform)
+            artifacts = api.call(f'/actions/runs/{desktop_run_id}/artifacts?per_page=100')['artifacts']
+            matches = [a for a in artifacts if a['name'] == 'candidate-' + platform and not a['expired']]
             if len(matches) != 1:
-                raise ValueError('Missing, expired or ambiguous macOS candidate artifact.')
-            archive = root / 'macos-arm64.zip'
+                raise ValueError(f'Missing, expired or ambiguous {platform} candidate artifact.')
+            archive = root / f'{platform}.zip'
             api.download(matches[0]['id'], archive)
-            folder = root / 'macos-arm64'
+            folder = root / platform
             safe_extract(archive, folder)
-            manifest = verify_candidate(folder, commit=commit, run_id=macos_run_id,
-                run_attempt=mac_run['run_attempt'], platform='macos-arm64', allow_earlier_attempt=True)
-            # A compatibility pass from before a rebuilt DMG cannot accept its
-            # replacement. Retrying compatibility against an unchanged DMG is OK.
+            manifest = verify_candidate(folder, commit=commit, run_id=desktop_run_id,
+                run_attempt=selected_run['run_attempt'], platform=platform, allow_earlier_attempt=True)
+            # Compatibility must cover the retained installer, not an older build.
             attempt = int(manifest['run_attempt'])
-            for job in mac_jobs:
+            for job in jobs:
                 checked_attempt = job.get('run_attempt')
-                if (type(checked_attempt) is not int or not attempt <= checked_attempt <= mac_run['run_attempt']
-                        or job['name'] == 'build-macos-arm64' and checked_attempt != attempt):
-                    raise ValueError('macOS job evidence predates or does not identify the uploaded build.')
+                if (type(checked_attempt) is not int or not attempt <= checked_attempt <= selected_run['run_attempt']
+                        or job['name'] == build_job and checked_attempt != attempt):
+                    raise ValueError(f'{platform} job evidence predates or does not identify the uploaded build.')
             manifests.append(manifest)
             for name in manifest['files']:
                 path = folder / name
-                if name.endswith('.dmg'):
+                if name.endswith(suffix):
                     uploads.append(path)
                 elif name in {'THIRD_PARTY_NOTICES.txt', 'dependencies.json'} or name.startswith('portfolio_breakdown-'):
-                    path.rename(folder / f'macos-arm64-{name}')
-                    uploads.append(folder / f'macos-arm64-{name}')
+                    path.rename(folder / f'{platform}-{name}')
+                    uploads.append(folder / f'{platform}-{name}')
             path = folder / 'manifest.json'
-            path.rename(folder / 'macos-arm64-manifest.json')
-            uploads.append(folder / 'macos-arm64-manifest.json')
+            path.rename(folder / f'{platform}-manifest.json')
+            uploads.append(folder / f'{platform}-manifest.json')
         if len({m['version'] for m in manifests}) != 1 or len({m['lock_sha256'] for m in manifests}) != 1:
             raise ValueError('Platforms were built from different versions or dependency locks.')
         if len({m['documentation']['build_info_sha256'] for m in manifests}) != 1:
@@ -254,6 +262,10 @@ def promote(api, repository, run_id, *, macos_run_id=None):
             'Automated packaged-app checks passed on macOS 14, 15 and 26. '
             'No Developer ID signing or notarization; Gatekeeper may block normal launch. '
             'Interactive installation/download approval on a personal Mac remains unverified.' if macos_run_id else '')
+        linux_note = (f'\n\nUbuntu 22.04/24.04 x64 native installer: '
+            f'https://github.com/{repository}/actions/runs/{linux_native_run_id}\n'
+            'The .deb retains the portfolio-breakdown-experimental package and application-menu name. '
+            'The Linux browser archive remains available.')
         try:
             release = api.call('/releases/tags/' + tag)
         except HTTPError as exc:
@@ -261,7 +273,7 @@ def promote(api, repository, run_id, *, macos_run_id=None):
                 raise
             release = api.call('/releases', method='POST', body=dict(tag_name=tag, target_commitish=commit,
                 name=tag, draft=True, body=f'Tested candidate: https://github.com/{repository}/actions/runs/{run_id}\n\n'
-                    'GPL-3.0-only. Corresponding source, build instructions and dependency notices are attached.' + mac_note))
+                    'GPL-3.0-only. Corresponding source, build instructions and dependency notices are attached.' + linux_note + mac_note))
         if not release['draft']:
             raise ValueError('An official release already exists; it will not be overwritten.')
         if release.get('assets'):
@@ -269,8 +281,12 @@ def promote(api, repository, run_id, *, macos_run_id=None):
         for path in uploads:
             api.upload(release['id'], path)
         publication = {'draft': False}
-        if macos_run_id and mac_note not in release.get('body', ''):
-            publication['body'] = release.get('body', '') + mac_note
+        body = release.get('body', '')
+        for note in [linux_note, mac_note]:
+            if note and note not in body:
+                body += note
+        if body != release.get('body', ''):
+            publication['body'] = body
         api.call(f'/releases/{release["id"]}', method='PATCH', body=publication)
         print(f'Published {tag} from candidate run {run_id}; no artifacts were rebuilt.')
 
@@ -278,17 +294,19 @@ def promote(api, repository, run_id, *, macos_run_id=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-id', required=True)
+    parser.add_argument('--linux-native-run-id', required=True)
     parser.add_argument('--acceptance', required=True, choices=['tested-on-windows-and-linux'])
     parser.add_argument('--macos-run-id', default='')
     parser.add_argument('--experimental-macos', action='store_true', help='Accept the disclosed experimental Mac limitations')
     args = parser.parse_args()
-    if not args.run_id.isdecimal():
-        parser.error('Run ID must be numeric.')
+    if not args.run_id.isdecimal() or not args.linux_native_run_id.isdecimal():
+        parser.error('Run IDs must be numeric.')
     if (bool(args.macos_run_id) != args.experimental_macos
             or args.macos_run_id and not args.macos_run_id.isdecimal()):
         parser.error('Experimental macOS needs a numeric run ID and --experimental-macos together.')
     repository = os.environ['GITHUB_REPOSITORY']
-    promote(GitHub(repository, os.environ['GH_TOKEN']), repository, args.run_id, macos_run_id=args.macos_run_id)
+    promote(GitHub(repository, os.environ['GH_TOKEN']), repository, args.run_id,
+            linux_native_run_id=args.linux_native_run_id, macos_run_id=args.macos_run_id)
 
 
 if __name__ == '__main__':

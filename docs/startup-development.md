@@ -65,8 +65,8 @@ Close the browser tab when finished; closing it does not stop the managed server
 `portfolio-app.exe` is the console companion for CLI output and the hidden server.
 Both share the same `_internal` directory; keep the complete bundle together.
 The console-free entry initializes private diagnostic logging before application
-imports and retains native startup-error reporting. The existing browser launch
-is still the default UI; a dedicated webview is a separate optional prototype.
+imports and retains native startup-error reporting. The default Windows shortcut opens the native WebView2 window; `--browser`
+selects the browser fallback.
 
 Source previews validate the animation and UI rapidly. They cannot establish
 that the Windows bootloader/shortcut produces no console flash. Verify that on

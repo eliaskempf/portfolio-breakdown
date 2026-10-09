@@ -3,7 +3,7 @@
 This work adds Linux and macOS native windows. macOS is now targeted for v0.1.0
 as an experimental download alongside Windows/Linux, subject to same-source
 build and automated packaged checks. Official publication still requires explicit
-approval. Historical prototype base: `f2db5ab`; branch: `experiment/linux-macos-desktop`.
+approval.
 
 ## Targets and build
 
@@ -51,7 +51,7 @@ must survive this operation; the native probe checks both.
 The separate **Experimental desktop candidates** workflow builds and tests Linux
 and macOS independently. It uploads artifacts without publishing or promoting
 releases. The second Linux job installs the Ubuntu 22.04-built package on 24.04.
-Existing PR CI supplies the full browser suite and Windows regressions; the
+Build candidate supplies the full browser suite and Windows regressions; the
 experiment runs each target's unit suite plus native and installed-package
 checks. Synthetic Qt and WebKit snapshots support visual review.
 
@@ -104,8 +104,8 @@ source, retaining crash backtraces and window-manager state. These runs do not
 build new installers. For example:
 
 ```sh
-gh workflow run desktop-experiment.yml --ref experiment/linux-macos-desktop \
-  -f diagnostics_only=true -f linux_candidate_run=37336981212
+gh workflow run desktop-experiment.yml --ref main \
+  -f diagnostics_only=true -f linux_candidate_run=SELECTED_RUN_ID
 ```
 
 The X11 hide/restore probe waits until the window manager removes the hidden
@@ -128,94 +128,21 @@ also cover gate EOF and stubborn server/descendant cleanup without affecting an
 unrelated process. Installer jobs check replacement/removal preserves synthetic
 workspace files. Results distinguish native successes from outstanding checks.
 
-## Current decision
+## Release promotion
 
-**Experimental macOS inclusion approved for the v0.1.0 plan.** Build the DMG from
-the same final commit and lockfile as the Windows/Linux candidate. Run the existing
-Mac build/installed checks and macOS 15/26 compatibility jobs. A failed Mac check
-defers that artifact without blocking Windows/Linux. Earlier DMGs are not final
-release installers. Official publication remains separately approved.
+Native Ubuntu .deb publication is required alongside the Linux browser archive.
+The build stages a schema-2 `candidate-linux-native-x64`; successful installed
+checks allow its upload, and Ubuntu 24.04 X11/Wayland jobs test those staged bytes.
+`linux_native_candidate_run` selects its desktop workflow run in the publisher.
 
-The desktop workflow uploads `candidate-macos-arm64` only after the Mac build and
-installed checks succeed. **Publish tested candidate** accepts its workflow run
-ID via `macos_candidate_run`, with `experimental_macos` checked. The publisher
-verifies all three Mac jobs, source/lock/version/frozen-doc identity and every
-checksum before creating any tag or release. It attaches the existing DMG,
-Mac-specific source/notices/manifest and checksums without rebuilding. An unrelated
-Linux job failure in the desktop workflow does not invalidate successful Mac jobs.
-Omit both Mac inputs to defer it. Existing Linux `.deb` publication remains a
-separate reconciliation item; this Mac integration does not change its publisher.
+Mac builds stage `candidate-macos-arm64` after installed checks and Gatekeeper
+verification. `macos_candidate_run` plus `experimental_macos` selects the DMG.
+The publisher checks each platform's build and compatibility jobs, source SHA,
+lock, version, docs and checksums before tag/release mutation. It reuses existing
+bytes and retains platform-specific source, notices and manifests. An unrelated
+job failure does not invalidate successful checks for another platform, but every
+selected platform must pass its own gates; native Linux cannot be omitted.
 
-Developer ID signing and notarization are not planned for v1. The Mac app retains
-ad-hoc integrity signing and its documented Gatekeeper limitations; paid signing
-is not a prerequisite for integrating this optional experiment. Interactive
-approval and real download quarantine behavior remain unverified.
-
-Before shipping, review the exact artifact hash and native reports, Linux runtime
-baseline, file-upload/save dialogs and downloaded bytes, actual desktop focus
-behavior, and macOS Gatekeeper/signing/notarization. Native probe reports carry
-explicit gaps; GUI tests that cannot run are failures, not silent skips. GUI
-sessions in hosted CI may impose limits that differ from end-user desktops.
-
-Latest completed installer matrix: [run 37336981212 at 8897023](https://github.com/eliaskempf/portfolio-breakdown/actions/runs/37336981212).
-
-| Target | Observed result |
-| --- | --- |
-| macOS 14, 15 and 26, Apple Silicon | Same DMG passed native rendering, all four tabs, exact upload/download bytes through system file panels, minimize/restore/focus, preserved unsaved input, welcome/early close, process cleanup and packaged browser workflows. Quarantined copies were rejected as expected. |
-| Ubuntu 22.04 x64 / X11 | Installed native, browser/lifecycle and reinstall/uninstall checks passed. |
-| Ubuntu 24.04 x64 / X11 | Rendering, file dialogs and other workflows passed; hidden-window focus intermittently reported visible but inactive in Qt. |
-| Ubuntu 24.04 x64 / Wayland | Actual Wayland desktop interactions, minimize/restore/focus and preserved document/input passed. A subsequent welcome-mode process exited with SIGSEGV. |
-
-That hosted installer matrix failed on the two Linux jobs; all Mac jobs
-passed. Subsequent [focused verification at 6b16b96](https://github.com/eliaskempf/portfolio-breakdown/actions/runs/37339481998)
-passed Mac native controls, five independent packaged Mac browser workflows,
-and the Wayland source workflow. The browser-test change waits for panel motion
-to finish and verifies that the nested setup section opened before locating its
-selector; captured failures showed the section still collapsed.
-
-Further local investigation reproduced an orphaned Qt popup-helper page and
-corrected its ownership and deferred deletion. The new native lifetime assertion
-fails against the previous adapter and passes with the correction. This removes
-the profile/page shutdown warning, but does not yet prove the hosted Wayland
-SIGSEGV is resolved. The local host uses Ubuntu 20.04 and Qt 6.7; it cannot replace
-fresh installer checks with the locked runtime on supported targets.
-
-Fresh hosted diagnostics could not start because hosted CI capacity was
-unavailable. Rootless containers using checksum-verified official Ubuntu Base
-images provide a local alternative. On Ubuntu 24.04 with the locked Qt runtime,
-three source cycles each of desktop, welcome and early-close passed on Weston
-Wayland. X11 repeated testing confirmed that the server owns keyboard focus even
-when Qt's activity flag remains false. The updated probe therefore verifies
-server-side focus and actual key delivery to an invented input after both
-restores; all nine source runs then passed. These containers use virtual displays
-and the host's WSL Linux kernel; they do not emulate macOS or physical hardware.
-A fresh Linux installer was then built from clean commit `c76868c` inside Ubuntu
-22.04 (Python 3.12.14, glibc 2.35). Its SHA-256 is
-`a7227854789d0a431e073fc452cd30827ed8c1d3c73d376b79042b9fe5c722d7`.
-The same `.deb` passed the full installed native, browser and lifecycle checks
-on Ubuntu 22.04/X11 and Ubuntu 24.04/X11 and Wayland. Nine additional installed
-Wayland runs under GDB passed without a crash or profile/page warning, and
-reinstall/removal preserved the synthetic workspace. The full local test run had
-1,006 passes and one chart-view browser timeout; that test passed in isolation,
-and all six tests in its file passed on rerun. The earlier installer also
-passed nine debugger runs, so the original hosted SIGSEGV has not been
-conclusively attributed to the corrected lifetime defect.
-
-These local tests use Bubblewrap user namespaces, official Ubuntu Base images,
-non-root GUI processes, owned Xvfb/Openbox or Weston desktops, and network-isolated
-runtime checks. Only a source-only checkout and synthetic outputs are mounted;
-no personal portfolio, host display, credentials or Docker socket is exposed.
-Docker or a dev container can supply the same Linux userspace and virtual display.
-Neither supplies macOS Cocoa/WKWebView or Gatekeeper on a Linux host. Native test
-commands are unchanged inside the container; a bare Xvfb display still does not
-replace the required window manager/compositor.
-
-Documentation-only pushes no longer rebuild the experimental installers. Use
-focused source or existing-artifact diagnostics while investigating failures,
-and reserve the full hosted matrix for candidate acceptance.
-
-Keep macOS Developer ID signing /
-notarization, interactive Open Anyway approval, real browser quarantine
-propagation, physical displays and other desktop environments explicitly outside
-the verified evidence. This is stronger evidence for technical feasibility, not
-approval to ship either platform as supported in v1.
+Follow [the release procedure](release-plan.md) and [acceptance checklist](release-checklist.md).
+Mac signing and interactive-installation limitations remain explicit. Automated
+checks do not establish personal-machine approval or download quarantine behavior.

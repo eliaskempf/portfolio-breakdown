@@ -75,18 +75,11 @@ Revisit this mapping when features move; do not treat it as exhaustive coverage.
 | analytics.py, risk.py, fundamentals.py | analytics/#risk; #metrics; #sources | test_analytics.py, test_risk.py |
 | scoped_rebalancing.py, rebalancing.py | rebalance/#modes; #constraints; #results | test_rebalancing.py, test_capped_contributions.py |
 
-During the pre-release billing pause, all repository workflows are manual-only,
-including documentation validation. Local review is still required before merges.
-The manual Documentation workflow checks strict MkDocs, generated internal asset/link/
-anchor checks, synthetic documented CLI recovery workflows, existing demo/import/
-privacy tests and the focused documentation browser smoke. It does not duplicate
-the application's browser suite. External provider availability cannot break
-ordinary doc tests. Build outputs remain ignored artifacts, not Git source.
-
-The GitHub workflow is also temporarily disabled at repository level to prevent
-the older copy on `main` from running. After the manual-only workflow changes reach
-`main`, it can be enabled for deliberate dispatches. Restoring automatic PR/push
-checks is a separate, explicit decision after the billing pause.
+Repository workflows are manual-only. The Documentation workflow checks strict
+MkDocs, internal links/assets/anchors, synthetic CLI recovery workflows and the
+focused guide browser smoke. Build outputs remain ignored artifacts. Enable and
+dispatch workflows only after review of their default-branch definitions. Restoring
+automatic PR/push checks is a separate decision. Local checks remain required.
 
 ## Stable app-help contract
 

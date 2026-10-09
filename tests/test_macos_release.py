@@ -44,12 +44,14 @@ class MacGitHub(FakeGitHub):
         self.dmg_name = 'portfolio-breakdown-experimental-0.1.0-macos-arm64.dmg'
         artifact = output / self.dmg_name
         artifact.write_bytes(b'Invented tested DMG bytes')
-        build.macos_candidate(output, bundle, artifact, source, '0.1.0')
+        build.desktop_candidate(output, bundle, artifact, source, '0.1.0', 'macos-arm64')
         self.mac_folder = output / 'candidate'
         lock = sha256((checkout / 'uv.lock').read_bytes()).hexdigest()
         for number, platform in enumerate(['linux-x64', 'windows-x64']):
             rewrite_candidate_manifest(root / platform, lock_sha256=lock)
             shutil.make_archive(str(root / str(number)), 'zip', root / platform)
+        rewrite_candidate_manifest(self.native_folder, lock_sha256=lock)
+        self.repack_native()
         self.repack()
         self.mac_run = dict(self.run, path='.github/workflows/desktop-experiment.yml', conclusion='failure')
         self.jobs = [dict(name=name, status='completed', conclusion='success', run_attempt=1, head_sha='a' * 40) for name in
@@ -78,7 +80,7 @@ class MacGitHub(FakeGitHub):
 def test_macos_publishes_exact_bytes_and_limitations_despite_unrelated_linux_failure(tmp_path, monkeypatch, existing_draft):
     api = MacGitHub(tmp_path, monkeypatch)
     api.existing_draft = existing_draft
-    promote.promote(api, 'invented/project', '123', macos_run_id='456')
+    promote.promote(api, 'invented/project', '123', linux_native_run_id='789', macos_run_id='456')
     assert api.uploaded[api.dmg_name] == b'Invented tested DMG bytes'
     assert 'macos-arm64-THIRD_PARTY_NOTICES.txt' in api.uploaded
     assert 'macos-arm64-portfolio_breakdown-0.1.0.tar.gz' in api.uploaded
@@ -127,23 +129,24 @@ def test_invalid_mac_input_never_mutates_release(tmp_path, monkeypatch, failure)
         rewrite_candidate_manifest(api.mac_folder, **changes)
     api.repack()
     with pytest.raises(ValueError):
-        promote.promote(api, 'invented/project', '123', macos_run_id='456')
+        promote.promote(api, 'invented/project', '123', linux_native_run_id='789', macos_run_id='456')
     assert api.mutations == [] and api.uploaded == {}
 
 
 def test_mac_can_be_deferred_without_blocking_supported_release(tmp_path, monkeypatch):
     api = MacGitHub(tmp_path, monkeypatch)
     api.jobs[0]['conclusion'] = 'failure'
-    promote.promote(api, 'invented/project', '123')
+    promote.promote(api, 'invented/project', '123', linux_native_run_id='789')
     assert not any('macos' in name for name in api.uploaded)
-    assert api.mutations[-1][1] == {'draft': False}
+    assert api.mutations[-1][1]['draft'] is False
+    assert 'Experimental macOS' not in api.mutations[-1][1].get('body', '')
 
 
 def test_compatibility_retry_can_accept_same_earlier_mac_build(tmp_path, monkeypatch):
     api = MacGitHub(tmp_path, monkeypatch)
     api.mac_run['run_attempt'] = 2
     api.jobs[1]['run_attempt'] = 2
-    promote.promote(api, 'invented/project', '123', macos_run_id='456')
+    promote.promote(api, 'invented/project', '123', linux_native_run_id='789', macos_run_id='456')
     assert api.dmg_name in api.uploaded
 
 
@@ -156,7 +159,7 @@ def test_mac_checks_must_identify_the_current_artifact_not_a_replaced_build(tmp_
         rewrite_candidate_manifest(api.mac_folder, run_attempt='2')
         api.repack()
     with pytest.raises(ValueError, match='job evidence'):
-        promote.promote(api, 'invented/project', '123', macos_run_id='456')
+        promote.promote(api, 'invented/project', '123', linux_native_run_id='789', macos_run_id='456')
     assert api.mutations == [] and api.uploaded == {}
 
 

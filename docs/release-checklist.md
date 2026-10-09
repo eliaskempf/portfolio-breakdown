@@ -3,22 +3,22 @@
 Copy this checklist into the candidate's manual acceptance notes. Use synthetic
 data. A checked checklist is specific to one build, not a blanket approval.
 
+Follow [the release procedure](release-plan.md) for preparation, approval, build
+and publication order. Acceptance always applies to exact candidate bytes.
+
 - Candidate run URL/ID:
 - Source commit:
 - Version:
 - Windows archive SHA256:
-- Linux archive SHA256:
+- Linux browser archive SHA256:
+- Native Linux desktop run URL/ID and .deb SHA256:
 - Experimental macOS workflow run and DMG SHA256 (or reason deferred):
 - Tester/date and OS versions:
 
 ## Automated gates
 
-During the pre-release billing pause, repository workflows are manual-only.
-CI, Documentation, Dependency audit and Experimental desktop candidates are also
-disabled on GitHub until their manual-only definitions reach `main`. Keep local
-checks and documentation review; do not enable them against the older automatic
-definitions. Dependabot's own update service remains enabled and does not consume
-included Actions minutes on standard GitHub-hosted runners.
+Repository workflows are manual-only. Enable disabled workflows only after their
+manual-only definitions reach the default branch and dispatch is approved.
 
 - [ ] Finish source/docs review locally, merge the approved source into `main`,
       then manually run **Build candidate** once on that commit. No tag-triggered
@@ -29,7 +29,7 @@ included Actions minutes on standard GitHub-hosted runners.
 - [ ] Publish with **Publish tested candidate** only after acceptance. This copies
       existing artifacts and does not rebuild installers. Do not also run ordinary
       CI/docs workflows just to duplicate gates already covered by the candidate.
-- [ ] Restore automatic CI/docs/audit triggers explicitly after the billing pause;
+- [ ] Restore automatic CI/docs/audit triggers explicitly as a separate reviewed change;
       enabling a workflow alone keeps the new manual-only definition manual.
 
 - [ ] Install the locked tooling with `uv sync --locked --all-groups`, then run
@@ -51,16 +51,14 @@ installer build. The existing timeouts cap configured execution at 45 Windows,
 and reruns. Do not raise timeouts or add automatic test retries to obtain a green
 candidate. Investigate failures locally before another paid attempt.
 
-The supported publisher requires both platform artifacts from the same successful
-run and exact source SHA; successful earlier attempts of that run can be reused.
-For the planned experimental Mac download, supply the desktop run ID through
-`macos_candidate_run` and check `experimental_macos` in **Publish tested candidate**.
-The three Mac jobs must pass; unrelated experimental Linux failures do not block
-that DMG. Its source, lock, version, frozen docs and checksums must match the
-supported candidate. The publisher attaches the tested DMG without rebuilding.
-Omit both Mac inputs if it fails; record the deferral in the release notes.
-The Linux `.deb` still needs its separate publication path reconciled before the
-README's native Linux installation instructions can be fulfilled.
+The publisher requires Windows/Linux browser artifacts from one successful
+Build candidate run and the native Linux artifact via `linux_native_candidate_run`.
+The Linux build and both X11/Wayland compatibility jobs must pass for those bytes.
+For the planned Mac download, supply `macos_candidate_run` and `experimental_macos`;
+its three Mac jobs must also pass. All platforms must match source, lock, version
+and frozen docs. Retried compatibility checks may accept unchanged earlier builds;
+checks from before a replacement build do not accept the replacement. Failed Mac
+gates require repair or an explicit deferral decision, never silent omission.
 
 ## Manual gates (clean machines, no Python or uv)
 
@@ -184,11 +182,11 @@ the untested operating systems still need acceptance.
       Docs build, internal links, search, mobile layout and task walkthrough pass.
 - [ ] Pages publication and official release publication remain separately approved.
 
-## Optional experimental Linux/macOS installers
+## Native Linux and experimental macOS installers
 
-These checks are independent of supported Windows-window and Linux-browser
-acceptance. Defer an experimental artifact if it cannot be verified; it must not
-block the supported release or inherit acceptance from an older installer.
+Native Linux acceptance is required alongside Windows and Linux browser checks.
+The planned Mac installer requires automated acceptance and explicit disclosure
+of its remaining manual-installation limitations.
 
 - [ ] Build from the final integrated source and record its commit, lock hash,
       installer SHA256 and native reports. Earlier experimental artifacts are
@@ -198,7 +196,7 @@ block the supported release or inherit acceptance from an older installer.
       no Developer ID signing/notarization and unverified personal-Mac install
       approval. This known manual gap does not block experimental inclusion.
       Official publication still requires approval; no automatic triggers added.
-- [ ] Keep Linux `.deb` review separate until its publication path is reconciled.
+- [ ] Record native Linux manifest, installer checksum and successful build/X11/Wayland jobs.
 - [ ] Ubuntu 22.04/24.04: verify installed X11/Wayland rendering, file dialogs,
       exact download bytes, focus/restore, repeated launch and complete shutdown.
       Upgrade/removal preserves the synthetic workspace.
@@ -206,5 +204,5 @@ block the supported release or inherit acceptance from an older installer.
       document ad-hoc signing, Gatekeeper rejection and any unverified interactive
       approval/download-quarantine behavior. No paid signing/notarization is
       planned for v1; do not describe the app as notarized or routinely trusted.
-- [ ] Rerun hosted checks when the billing block is resolved. Local unit/browser
+- [ ] Complete approved hosted checks for the frozen source SHA. Local unit/browser
       results do not replace native acceptance of the new packaged artifacts.

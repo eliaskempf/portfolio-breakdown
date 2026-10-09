@@ -48,8 +48,10 @@ def linux_package(bundle, stage, output, version):
     return artifact
 
 
-def macos_candidate(output, bundle, artifact, source, version):
-    """Stage exact built bytes for optional, separately gated release promotion."""
+def desktop_candidate(output, bundle, artifact, source, version, target):
+    """Stage exact installer bytes for separately gated release promotion."""
+    if target not in {'linux-native-x64', 'macos-arm64'}:
+        raise ValueError('Unsupported desktop candidate platform.')
     destination = output / 'candidate'
     destination.mkdir()
     docs = bundle / 'documentation'
@@ -59,9 +61,7 @@ def macos_candidate(output, bundle, artifact, source, version):
         shutil.copyfile(path, destination / path.name)
     shutil.make_archive(str(destination / f'portfolio-breakdown-{version}-docs'), 'zip', docs)
     files = {p.name: digest(p) for p in sorted(destination.iterdir())}
-    manifest = dict(schema=2, version=version, platform='macos-arm64',
-                    experimental=True, developer_id_signed=False, notarized=False,
-                    manual_installation_verified=False,
+    manifest = dict(schema=2, version=version, platform=target,
                     documentation=dict(source_sha=info['source_sha'], route=info['route'],
                         build_info_sha256=digest(docs / 'build-info.json')),
                     source_clean=info['dirty'] is False, commit=info['source_sha'],
@@ -69,6 +69,9 @@ def macos_candidate(output, bundle, artifact, source, version):
                     run_id=os.environ.get('GITHUB_RUN_ID', 'local'),
                     run_attempt=os.environ.get('GITHUB_RUN_ATTEMPT', '1'),
                     lock_sha256=digest(ROOT / 'uv.lock'), python=platform.python_version(), files=files)
+    if target == 'macos-arm64':
+        manifest.update(experimental=True, developer_id_signed=False, notarized=False,
+                        manual_installation_verified=False)
     (destination / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     (destination / 'SHA256SUMS').write_text(''.join(f'{value}  {name}\n' for name, value in files.items()) +
         f'{digest(destination / "manifest.json")}  manifest.json\n', encoding='utf-8')
@@ -127,8 +130,8 @@ def build(output):
                   files={str(p.relative_to(output)): digest(p) for p in [artifact, *source.glob('*.whl'), *source.glob('*.tar.gz')]})
     (output / 'experimental-build.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     (output / 'SHA256SUMS').write_text(''.join(f'{v}  {k}\n' for k, v in report['files'].items()), encoding='utf-8')
-    if sys.platform == 'darwin':
-        macos_candidate(output, bundle, artifact, source, version)
+    desktop_candidate(output, bundle, artifact, source, version,
+                      'macos-arm64' if sys.platform == 'darwin' else 'linux-native-x64')
     print(f'Experimental artifact: {artifact}')
 
 

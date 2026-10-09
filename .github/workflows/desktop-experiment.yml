@@ -191,7 +191,7 @@ jobs:
             uv run --extra window portfolio-window --native-self-test "$RUNNER_TEMP/source-native" render
           fi
       - run: uv run playwright install --with-deps chromium
-      # The PR's existing browser job runs the full browser suite. This job
+      # Build candidate runs the full browser suite. This job
       # exercises the native renderer and the installed-package browser suite.
       - name: Application and lifecycle unit tests
         run: uv run pytest -v --durations=20 --ignore-glob='*browser*' --ignore=tests/test_posix_desktop.py --junitxml=dist/unit-results.xml
@@ -201,11 +201,11 @@ jobs:
       - name: Install Linux artifact and test native binary
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get install -y ./dist/desktop-experiment/*.deb
+          sudo apt-get install -y ./dist/desktop-experiment/candidate/*.deb
           xvfb-run -a uv run python tools/desktop_session.py x11 /opt/portfolio-breakdown-experimental/portfolio-window --output "$RUNNER_TEMP/installed-native"
           uv run python -c 'import os; from pathlib import Path; from portfolio_app.demo import create_demo_data; create_demo_data(Path(os.environ["RUNNER_TEMP"]) / "upgrade-workspace")'
           sha256sum "$RUNNER_TEMP/upgrade-workspace/holdings.csv" > "$RUNNER_TEMP/preserved.sha256"
-          sudo apt-get install --reinstall -y ./dist/desktop-experiment/*.deb
+          sudo apt-get install --reinstall -y ./dist/desktop-experiment/candidate/*.deb
           sudo apt-get remove -y portfolio-breakdown-experimental
           sha256sum -c "$RUNNER_TEMP/preserved.sha256"
           test ! -e /opt/portfolio-breakdown-experimental/portfolio-window
@@ -226,6 +226,14 @@ jobs:
         if: runner.os == 'macOS'
         with:
           name: candidate-macos-arm64
+          overwrite: true
+          path: dist/desktop-experiment/candidate/*
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: runner.os == 'Linux'
+        with:
+          name: candidate-linux-native-x64
           overwrite: true
           path: dist/desktop-experiment/candidate/*
           if-no-files-found: error
@@ -260,6 +268,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   linux-compatibility:
+    name: linux-compatibility-${{ matrix.backend }}
     if: ${{ always() && !cancelled() && !inputs.diagnostics_only }}
     needs: build
     runs-on: ubuntu-24.04
@@ -281,13 +290,13 @@ jobs:
           python-version: '3.12'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: desktop-experiment-linux-x64
+          name: candidate-linux-native-x64
           path: dist/downloaded
       - run: uv sync --locked --extra window --all-groups
       - run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb openbox weston x11-utils ./*.deb
           sha256sum -c SHA256SUMS
+          sudo apt-get install -y xvfb openbox weston x11-utils ./*.deb
         working-directory: dist/downloaded
       - run: uv run playwright install --with-deps chromium
       - run: |

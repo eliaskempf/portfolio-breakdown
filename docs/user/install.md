@@ -27,7 +27,8 @@ the Windows application ZIP and run `Portfolio Breakdown.exe`; keep `_internal`
 and all other files beside it. `--browser` selects the browser fallback.
 
 **Linux (Ubuntu 22.04/24.04 x64):** install the `.deb` with your package manager
-and launch the standalone window from the applications menu. Check the release
+and launch **Portfolio Breakdown Experimental** from the applications menu.
+The package retains the name `portfolio-breakdown-experimental`. Check the release
 notes for that installer’s acceptance status and desktop limitations.
 
 For browser mode, extract the application `.tar.gz` archive and run

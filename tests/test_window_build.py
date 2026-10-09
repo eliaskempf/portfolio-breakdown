@@ -44,7 +44,7 @@ def test_interop_inventory_requires_exact_sdk_bytes(tmp_path, monkeypatch, match
 def test_public_document_and_packaging_paths_are_exactly_allowlisted():
     from portfolio_app.privacy import path_problem
     for path in ['packaging/window.spec', 'packaging/window_entrypoint.py',
-                 'tools/window_build.py', 'docs/window-session-result.md']:
+                 'tools/window_build.py', 'docs/windows-desktop.md']:
         assert path_problem(path) is None
     assert path_problem('docs/window-private-report.md')
     assert path_problem('packaging/private.log')
