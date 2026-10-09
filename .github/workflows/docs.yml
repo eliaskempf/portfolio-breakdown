@@ -1,9 +1,7 @@
 name: Documentation
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, edited]
-  push:
-    branches: [main]
+  # Temporary budget pause; local documentation review still applies to changes.
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

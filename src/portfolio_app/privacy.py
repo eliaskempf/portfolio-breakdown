@@ -21,6 +21,9 @@ RELEASE_FILES = {"packaging/posix-window.spec", "tools/desktop_build.py", "tools
                  "docs/startup-development.md", "src/portfolio_app/intro_frontend/index.html"}
 ICON_FILES = {"src/portfolio_app/assets/portfolio-breakdown.png", "src/portfolio_app/assets/portfolio-breakdown.svg",
               "src/portfolio_app/assets/favicon.svg", "src/portfolio_app/assets/favicon.ico"}
+# This exact public demo capture is reviewed separately; arbitrary screenshots
+# and images remain blocked. Never populate it from a personal workspace.
+DEMO_IMAGE_FILES = {'docs/assets/demo-overview.png'}
 DOCS_FILES = {"mkdocs.yml", ".github/workflows/docs.yml", ".github/workflows/docs-pages.yml",
               "tools/docs_site.py", "tools/docs_preview.py", "tools/docs_candidate.py", "docs/documentation-maintenance.md",
               "docs/documentation-migration.md", "docs/documentation-session-result.md"}
@@ -40,7 +43,7 @@ def path_problem(filename: str) -> str | None:
     path = PurePosixPath(filename)
     if any(part in PRIVATE_PARTS for part in path.parts) or path.name.startswith(".env"):
         return "private data or local configuration"
-    if filename in ROOT_FILES | RELEASE_FILES | ICON_FILES | DOCS_FILES or filename == ".githooks/pre-commit":
+    if filename in ROOT_FILES | RELEASE_FILES | ICON_FILES | DEMO_IMAGE_FILES | DOCS_FILES or filename == ".githooks/pre-commit":
         return None
     if path.parts[:2] == ("docs", "user") and path.suffix == ".md":
         return None
@@ -92,7 +95,7 @@ def check_index(*, tracked: bool = False) -> list[tuple[str, str]]:
                 reason = "symlinks, submodules, and unresolved index entries are not allowed"
             else:
                 content = _git("show", f":{filename}")
-                if filename in ICON_FILES:
+                if filename in ICON_FILES | DEMO_IMAGE_FILES:
                     reason = icon_problem(filename, content)
                 else:
                     reason = content_problem(content)

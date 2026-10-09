@@ -14,9 +14,6 @@ on:
         description: Optional workflow run ID whose Linux installer should receive native crash diagnostics
         type: string
         default: ''
-  push:
-    branches: [experiment/linux-macos-desktop]
-    paths-ignore: ["docs/**", "**/*.md"]
 permissions:
   contents: read
   actions: read

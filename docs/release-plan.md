@@ -2213,3 +2213,50 @@ including themes and narrow layouts. The new chart-value assertion uses Plotly's
 decoded values, since its serialized numeric arrays are binary encoded.
 Ruff, whitespace and strict documentation build checks passed. No native
 installer was rebuilt, CI dispatched, or official release published.
+
+### Manual Actions budget pause and README review (2026-10-09)
+
+Work continued on the explicitly selected `release-v1` checkout, from clean
+`252363f`. CI, Documentation, Dependency audit and Experimental desktop candidates
+were disabled through the GitHub workflow API, protecting the older definitions
+on `main` immediately. All seven repository workflow files now declare only
+`workflow_dispatch`; no push, PR, schedule, tag or chained-run triggers remain.
+Manual Build candidate and Publish tested candidate remain available. Dependabot's
+own standard-runner service remains enabled; it does not consume included Actions
+minutes, and its PRs cannot start the disabled CI workflows. No paid jobs were
+dispatched. Re-enable individual workflows only after the manual definitions reach
+the default branch; restoring automatic triggers is an explicit later decision.
+
+Build once from the final approved default-branch commit, accept that candidate,
+then promote its existing artifacts and create the release tag without rebuilding.
+For same-source transient failures, Re-run failed jobs can retain successful
+platforms. Promotion and frozen-doc extraction now accept an earlier positive
+attempt number only within the same successful run and exact source SHA. Future,
+invalid and foreign identities still fail; all hashes and release gates remain.
+Retry uploads replace only the corresponding named platform artifact.
+
+README changes: non-floating logo above the title, one synthetic Overview capture,
+combined release/source usage section, walkthrough/full-guide links, backup capability
+and a concise investment-responsibility disclaimer. `docs/assets/demo-overview.png`
+was captured from the app's generated offline demo on an isolated loopback server,
+using an empty temporary workspace, invented positions/prices/costs/targets and
+public instrument metadata. The PNG is 2160 × 1496 with no image metadata; it was
+visually reviewed. The privacy and source-package checks allow only this exact
+additional image path; arbitrary screenshots and private data remain blocked.
+No user's portfolio or personal screenshot was read. The capture server was stopped.
+
+Validation: **133 focused release/privacy/documentation tests passed**, including
+mixed-attempt promotion, unchanged published bytes and rejected invalid identities.
+Ruff, whitespace and release preflight passed, including wheel/source inventory,
+notices and strict docs. The docs browser smoke passed navigation/search, 30 topics
+and 390px layout with no external requests. README preview checks passed both image
+loads, separated logo/title and desktop/mobile widths; this is a local approximation
+of GitHub rendering, not a claim of a published GitHub preview.
+
+A public-output-only local server remains at port 8768: `/portfolio-breakdown/dev/`
+for the guide and `/readme/` for the README review. It serves only ignored
+`dist/preview`, never the checkout or private data. The guide can be styled and
+rechecked locally without Actions or installers. Public pre-release Pages requires
+separate approval/configuration and a manual `dev` deployment after its tooling is
+on the default branch. Frozen release docs must reuse the accepted candidate's
+bytes, archived on `gh-pages`. No Pages site, release or tag was published here.

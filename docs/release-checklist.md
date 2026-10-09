@@ -12,6 +12,25 @@ data. A checked checklist is specific to one build, not a blanket approval.
 
 ## Automated gates
 
+During the pre-release billing pause, repository workflows are manual-only.
+CI, Documentation, Dependency audit and Experimental desktop candidates are also
+disabled on GitHub until their manual-only definitions reach `main`. Keep local
+checks and documentation review; do not enable them against the older automatic
+definitions. Dependabot's own update service remains enabled and does not consume
+included Actions minutes on standard GitHub-hosted runners.
+
+- [ ] Finish source/docs review locally, merge the approved source into `main`,
+      then manually run **Build candidate** once on that commit. No tag-triggered
+      build is needed: publication creates `v0.1.0` at the tested commit.
+- [ ] For a transient failure at the same source SHA, choose **Re-run failed jobs**;
+      successful platform artifacts can be reused across attempts of that run.
+      If source must change, run a new candidate and repeat affected acceptance.
+- [ ] Publish with **Publish tested candidate** only after acceptance. This copies
+      existing artifacts and does not rebuild installers. Do not also run ordinary
+      CI/docs workflows just to duplicate gates already covered by the candidate.
+- [ ] Restore automatic CI/docs/audit triggers explicitly after the billing pause;
+      enabling a workflow alone keeps the new manual-only definition manual.
+
 - [ ] Install the locked tooling with `uv sync --locked --all-groups`, then run
       `uv run python tools/release.py preflight` and the synthetic source
       smoke (`uv run python tools/package_smoke.py`) before spending hosted build

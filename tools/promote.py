@@ -12,11 +12,18 @@ from urllib.request import Request, urlopen
 import zipfile
 
 
-def verify_candidate(directory, *, commit, run_id, run_attempt, platform, require_publishable=True):
+def verify_candidate(directory, *, commit, run_id, run_attempt, platform, require_publishable=True,
+                     allow_earlier_attempt=False):
     manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
-    expected = dict(commit=commit, run_id=str(run_id), run_attempt=str(run_attempt), platform=platform)
+    expected = dict(commit=commit, run_id=str(run_id), platform=platform)
     if any(manifest.get(k) != v for k, v in expected.items()):
         raise ValueError('Candidate identity does not match the successful workflow run.')
+    attempt = manifest.get('run_attempt', '')
+    # Re-run failed jobs retains successful platforms from an earlier attempt of
+    # this same run/SHA. Their artifacts are uploaded only after package tests.
+    if (not isinstance(attempt, str) or not re.fullmatch('[1-9][0-9]*', attempt)
+            or not (1 <= int(attempt) <= int(run_attempt) if allow_earlier_attempt else attempt == str(run_attempt))):
+        raise ValueError('Candidate attempt identity does not match the successful workflow run.')
     if manifest.get('schema') not in {1, 2} or (require_publishable and manifest['schema'] != 2):
         raise ValueError('A current installer/documentation candidate is required for publication.')
     if not re.fullmatch(r'\d+\.\d+\.\d+(?:[abrc]+\d+)?', manifest.get('version', '')):
@@ -152,7 +159,7 @@ def promote(api, repository, run_id):
             folder = root / platform
             safe_extract(archive, folder)
             manifest = verify_candidate(folder, commit=commit, run_id=run_id,
-                                        run_attempt=run['run_attempt'], platform=platform)
+                                        run_attempt=run['run_attempt'], platform=platform, allow_earlier_attempt=True)
             manifests.append(manifest)
             for name in manifest['files']:
                 path = folder / name

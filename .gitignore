@@ -66,4 +66,7 @@ handoff.md
 !/src/portfolio_app/assets/favicon.svg
 !/src/portfolio_app/assets/favicon.ico
 
+# Reviewed README capture generated exclusively from the synthetic offline demo.
+!/docs/assets/demo-overview.png
+
 !/.github/workflows/desktop-experiment.yml

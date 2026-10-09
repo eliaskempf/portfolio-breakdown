@@ -52,6 +52,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: candidate-${{ matrix.platform }}
+          overwrite: true # A retried platform replaces only its own earlier artifact.
           path: dist/candidate/*
           if-no-files-found: error
           retention-days: 30
@@ -59,6 +60,7 @@ jobs:
         if: failure()
         with:
           name: candidate-source-smoke-${{ matrix.platform }}
+          overwrite: true
           path: ${{ runner.temp }}/source-smoke
           if-no-files-found: ignore
           retention-days: 14
@@ -66,6 +68,7 @@ jobs:
         if: always()
         with:
           name: candidate-test-results-${{ matrix.platform }}
+          overwrite: true
           path: dist/test-results.xml
           retention-days: 30
   linux-compatibility:

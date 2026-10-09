@@ -72,11 +72,18 @@ Revisit this mapping when features move; do not treat it as exhaustive coverage.
 | analytics.py, risk.py, fundamentals.py | analytics/#risk; #metrics; #sources | test_analytics.py, test_risk.py |
 | scoped_rebalancing.py, rebalancing.py | rebalance/#modes; #constraints; #results | test_rebalancing.py, test_capped_contributions.py |
 
-CI runs on PRs and pushes to main: strict MkDocs, generated internal asset/link/
+During the pre-release billing pause, all repository workflows are manual-only,
+including documentation validation. Local review is still required before merges.
+The manual Documentation workflow checks strict MkDocs, generated internal asset/link/
 anchor checks, synthetic documented CLI recovery workflows, existing demo/import/
 privacy tests and the focused documentation browser smoke. It does not duplicate
 the application's browser suite. External provider availability cannot break
 ordinary doc tests. Build outputs remain ignored artifacts, not Git source.
+
+The GitHub workflow is also temporarily disabled at repository level to prevent
+the older copy on `main` from running. After the manual-only workflow changes reach
+`main`, it can be enabled for deliberate dispatches. Restoring automatic PR/push
+checks is a separate, explicit decision after the billing pause.
 
 ## Stable app-help contract
 
@@ -170,6 +177,16 @@ hosted workflow accepted. A local candidate with `run_id: local` is not accepted
 by the hosted candidate-publication gate. Build/test/upload in `docs.yml` grants
 only read permissions and never deploys. No publication is authorized by running
 local documentation checks.
+
+For a pre-release visual review, use the local preview above first: it costs no
+Actions minutes and requires no installer rebuild. Layout, typography and colors
+can be changed through `mkdocs.yml`, theme overrides or local CSS while preserving
+the documented topic IDs. If a public preview is wanted, merge the tooling into
+the default branch, approve/configure Pages, and manually publish channel `dev`
+at the reviewed source SHA. This neither tags nor publishes an application release.
+After visuals are approved, build the binary candidate once. Publish its frozen
+guide from that successful candidate run, then add the release alias by copying
+the same guide bytes. Do not rebuild the docs independently for the final release.
 
 Implementation references: [MkDocs configuration](https://www.mkdocs.org/user-guide/configuration/)
 for strict link diagnostics and [GitHub custom Pages workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)

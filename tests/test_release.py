@@ -246,6 +246,50 @@ def test_promotion_uploads_identical_tested_bytes(tmp_path):
     assert api.mutations[-1] == ('/releases/42', {'draft': False})
 
 
+def rewrite_candidate_manifest(folder, **changes):
+    manifest = json.loads((folder / 'manifest.json').read_text())
+    manifest.update(changes)
+    (folder / 'manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+    sums = dict(manifest['files'], **{'manifest.json': sha256((folder / 'manifest.json').read_bytes()).hexdigest()})
+    (folder / 'SHA256SUMS').write_text(''.join(f'{value}  {name}\n' for name, value in sums.items()), encoding='utf-8')
+
+
+@pytest.mark.parametrize('windows_attempt', ['1', '2'])
+def test_failed_job_rerun_reuses_successful_platform_bytes(tmp_path, windows_attempt):
+    api = FakeGitHub(tmp_path)
+    api.run['run_attempt'] = 2
+    folder = tmp_path / 'windows-x64'
+    rewrite_candidate_manifest(folder, run_attempt=windows_attempt)
+    shutil.make_archive(str(tmp_path / '1'), 'zip', folder)
+    promote.promote(api, 'invented/project', '123')
+    for platform in ['linux-x64', 'windows-x64']:
+        suffix = '.zip' if platform == 'windows-x64' else '.tar.gz'
+        name = f'portfolio-breakdown-0.1.0-{platform}{suffix}'
+        assert api.uploaded[name] == (tmp_path / platform / name).read_bytes()
+    assert json.loads(api.uploaded['linux-x64-manifest.json'])['run_attempt'] == '1'
+
+
+@pytest.mark.parametrize('changes', [dict(run_attempt='0'), dict(run_attempt='3'),
+    dict(run_attempt='invalid'), dict(run_id='456'), dict(commit='c'*40)])
+def test_rerun_never_accepts_invalid_attempt_or_another_run_source(tmp_path, changes):
+    api = FakeGitHub(tmp_path)
+    api.run['run_attempt'] = 2
+    folder = tmp_path / 'linux-x64'
+    rewrite_candidate_manifest(folder, **changes)
+    shutil.make_archive(str(tmp_path / '0'), 'zip', folder)
+    with pytest.raises(ValueError, match='identity'):
+        promote.promote(api, 'invented/project', '123')
+    assert api.mutations == []
+
+
+def test_budget_pause_has_no_automatic_workflow_triggers():
+    import yaml
+    for path in (ROOT / '.github/workflows').glob('*.yml'):
+        # BaseLoader preserves GitHub's literal "on" key instead of YAML 1.1 booleans.
+        workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+        assert set(workflow['on']) == {'workflow_dispatch'}, path.name
+
+
 @pytest.mark.parametrize('failure', ['expired', 'failed', 'fork', 'branch', 'workflow', 'different-platform-version'])
 def test_invalid_candidate_never_creates_a_tag_or_release(tmp_path, failure):
     api = FakeGitHub(tmp_path)

@@ -1,8 +1,7 @@
 name: CI
 on:
-  pull_request:
-  push:
-    branches: [main, master]
+  # Temporary pre-release budget pause: no push/PR/tag triggers, including main.
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

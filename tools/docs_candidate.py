@@ -17,12 +17,13 @@ def main():
     args = parser.parse_args()
     run = json.loads(subprocess.check_output(['gh', 'api',
         f'repos/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{args.run_id}']))
-    if (run['conclusion'] != 'success' or run['head_sha'] != args.source_sha
-            or run['path'] != '.github/workflows/candidate.yml'):
+    if (run['conclusion'] != 'success' or run['status'] != 'completed' or run['head_sha'] != args.source_sha
+            or run['path'] != '.github/workflows/candidate.yml' or run['event'] != 'workflow_dispatch'
+            or run['head_repository']['full_name'] != os.environ['GITHUB_REPOSITORY']):
         raise ValueError('Expected a successful Build candidate run at the reviewed source.')
     directory = Path('dist/docs-candidate')
     manifest = verify_candidate(directory, commit=args.source_sha, run_id=args.run_id,
-                                run_attempt=run['run_attempt'], platform='linux-x64')
+                                run_attempt=run['run_attempt'], platform='linux-x64', allow_earlier_attempt=True)
     destination = Path('dist/docs-site')
     if destination.exists():
         raise ValueError('Documentation extraction destination must be new.')

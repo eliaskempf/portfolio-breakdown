@@ -41,9 +41,9 @@ def digest(path):
 
 
 def package_check(directory):
-    from portfolio_app.privacy import ICON_FILES, content_problem, icon_problem, path_problem
+    from portfolio_app.privacy import ICON_FILES, DEMO_IMAGE_FILES, content_problem, icon_problem, path_problem
     def check_content(name, content):
-        reason = icon_problem(name, content) if name in ICON_FILES else content_problem(content)
+        reason = icon_problem(name, content) if name in ICON_FILES | DEMO_IMAGE_FILES else content_problem(content)
         if reason:
             raise ValueError(f'Unapproved package content: {name}: {reason}')
     wheels = list(directory.glob('*.whl'))
