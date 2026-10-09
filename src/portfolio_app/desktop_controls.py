@@ -194,6 +194,19 @@ class CocoaPanelSequence:
         return None
 
 
+def cocoa_path_input(path, key, appkit, *, hosted):
+    """Paste one complete synthetic path on disposable hosts, without key floods."""
+    key('', 0, appkit.NSEventModifierFlagCommand)
+    if hosted:
+        pasteboard = appkit.NSPasteboard.generalPasteboard()
+        pasteboard.clearContents()
+        assert pasteboard.setString_forType_(str(path), appkit.NSPasteboardTypeString)
+        key('', 9, appkit.NSEventModifierFlagCommand)  # Cmd+V
+    else:
+        for char in str(path):
+            key(char, 0)
+
+
 def cocoa_interactions(window, root, record):
     """Send local native input to WebKit and its real modal file panels."""
     import AppKit as A
@@ -215,13 +228,14 @@ def cocoa_interactions(window, root, record):
             download_events.append(str(error))
     BrowserView.DownloadDelegate = SyntheticDownloadDelegate
 
+    hosted_input = (os.environ.get('PORTFOLIO_TEST_HOSTED_INPUT') == '1'
+                    and os.environ.get('GITHUB_ACTIONS') == 'true'
+                    and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted')
+
     def key(chars, code, modifiers=0):
         # Modern file panels live in another process. System input is allowed
         # only in explicitly opted-in, disposable GitHub-hosted test sessions,
         # and only while our synthetic app owns the foreground window.
-        hosted_input = (os.environ.get('PORTFOLIO_TEST_HOSTED_INPUT') == '1'
-                        and os.environ.get('GITHUB_ACTIONS') == 'true'
-                        and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted')
         if hosted_input:
             front = A.NSWorkspace.sharedWorkspace().frontmostApplication()
             assert front and front.processIdentifier() == os.getpid(), 'Synthetic app lost foreground ownership'
@@ -277,9 +291,7 @@ def cocoa_interactions(window, root, record):
                 if action == 'open-location':
                     key('', 5, A.NSEventModifierFlagCommand | A.NSEventModifierFlagShift)
                 elif action == 'type-path':
-                    key('', 0, A.NSEventModifierFlagCommand)  # Replace any remembered location.
-                    for char in str(path.parent if saving else path):
-                        key(char, 0)
+                    cocoa_path_input(path.parent if saving else path, key, A, hosted=hosted_input)
                 elif action in {'confirm-location', 'confirm-panel'}:
                     key('', 36)
                 elif sequence.phase == 4 and panel is None:

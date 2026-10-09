@@ -96,7 +96,9 @@ independent synthetic browser workflows, and a Wayland source test without
 rebuilding installers. Selector
 failures retain synthetic screenshots and page state. Mac file-panel keyboard
 input uses the system event stream only in an explicitly opted-in GitHub-hosted
-job while this test app owns the foreground. Local probes remain process-targeted;
+job while this test app owns the foreground. In that disposable environment,
+the complete synthetic path is pasted once instead of flooding the remote panel
+with character events. Local probes remain process-targeted and never use the clipboard;
 normal startup never enables this input path. No accessibility or Gatekeeper
 policy is changed by these tests.
 The Cocoa probe waits for the location sheet to own focus before typing and for
@@ -120,7 +122,7 @@ Launch Services acceptance uses the real installed `.app` in the installer job.
 gh workflow run candidate.yml --ref REVIEWED_BRANCH -f diagnostics_only=true -f diagnostics_platforms=all
 ```
 
-Choose `windows` or `macos` instead of `all` when the other platform has already
+Choose `windows`, `macos` or just `macos14` instead of `all` when the other platform has already
 been checked locally. These inputs do not affect normal candidate builds.
 
 Set `mac_candidate_run` to an existing experimental workflow run ID for one

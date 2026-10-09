@@ -269,3 +269,23 @@ def test_launch_services_needs_no_input_automation_flags(tmp_path, monkeypatch, 
     assert options == dict(check=True, timeout=150)
     with pytest.raises(ValueError, match='must be new'):
         tool.launch_services(tmp_path / 'Invented.app', output)
+
+
+@pytest.mark.parametrize('hosted', [False, True])
+def test_cocoa_path_input_only_uses_disposable_host_clipboard(hosted):
+    from types import SimpleNamespace
+    from portfolio_app.desktop_controls import cocoa_path_input
+    calls = []
+    clipboard = SimpleNamespace(
+        clearContents=lambda: calls.append('clear'),
+        setString_forType_=lambda text, kind: calls.append((text, kind)) or True)
+    def pasteboard():
+        assert hosted, 'Local probes must not touch the user clipboard'
+        return clipboard
+    appkit = SimpleNamespace(NSEventModifierFlagCommand=8, NSPasteboardTypeString='text',
+                             NSPasteboard=SimpleNamespace(generalPasteboard=pasteboard))
+    cocoa_path_input('/synthetic ü', lambda *args: calls.append(args), appkit, hosted=hosted)
+    if hosted:
+        assert calls == [('', 0, 8), 'clear', ('/synthetic ü', 'text'), ('', 9, 8)]
+    else:
+        assert calls == [('', 0, 8), *((char, 0) for char in '/synthetic ü')]
