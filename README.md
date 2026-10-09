@@ -1,6 +1,6 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme-brand-dark.png" />
-  <img src="docs/assets/readme-brand-light.png" alt="Breakdown" width="390" />
+  <img src="docs/assets/readme-brand-light.png" alt="Breakdown" width="352" />
 </picture>
 
 ---
