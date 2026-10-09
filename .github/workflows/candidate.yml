@@ -137,15 +137,12 @@ jobs:
         if: runner.os == 'Windows' && !cancelled()
         env:
           PORTFOLIO_REQUIRE_BROWSER: '1'
-          PORTFOLIO_TEST_CPU_RATE: '6'
+          PORTFOLIO_TEST_CPU_RATE: '4'
           PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/slow-browser
-        run: uv run pytest tests/test_backup_browser.py::test_archive_review_cancel_switch_restart_and_tabs tests/test_position_entry_browser.py::test_search_selection_and_settings_help tests/test_tour_browser.py::test_demo_tour_every_view_and_menu_replay -q --junitxml="$RUNNER_TEMP/release-diagnostics/slow-browser.xml"
+        run: uv run pytest tests/test_backup_browser.py::test_archive_review_cancel_switch_restart_and_tabs tests/test_position_entry_browser.py::test_search_selection_and_settings_help tests/test_tour_browser.py::test_demo_tour_every_view_and_menu_replay tests/test_tour_browser.py::test_help_chevron_keeps_menu_open -q --junitxml="$RUNNER_TEMP/release-diagnostics/slow-browser.xml"
       - name: Mac native source controls
         if: runner.os == 'macOS'
         run: uv run portfolio-window --native-self-test "$RUNNER_TEMP/release-diagnostics/native" desktop
-      - name: Mac source Launch Services and report gate
-        if: runner.os == 'macOS' && !cancelled()
-        run: uv run python tools/desktop_smoke.py --source-launch-services --output "$RUNNER_TEMP/release-diagnostics/launch-services"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

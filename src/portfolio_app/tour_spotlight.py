@@ -43,7 +43,8 @@ export default function({parentElement, data, setTriggerValue}) {
     shade.setAttribute('fill-opacity', dark ? '.65' : '.45');
     const w = innerWidth, h = innerHeight, margin = 12;
     const elements = targets();
-    if (elements.length !== data.anchors.length || document.querySelector('[data-test-script-state="running"]')) {
+    if (elements.length !== data.anchors.length || document.querySelector('[data-test-script-state="running"], [data-stale="true"]')) {
+      svg.dataset.ready = 'false';
       timer = setTimeout(schedule, 80);
       return;
     }
@@ -110,7 +111,7 @@ export default function({parentElement, data, setTriggerValue}) {
       hitArea += ` M${r.left},${r.top} H${r.right} V${r.bottom} H${r.left} Z`;
     }
     blocker.setAttribute('d', hitArea);
-    svg.dataset.ready = 'true';
+    svg.dataset.ready = String(holes.length > 0);
     svg.dataset.step = String(data.step);
   };
   const wheel = event => {
@@ -141,7 +142,12 @@ export default function({parentElement, data, setTriggerValue}) {
     }
   };
   // Observe app rendering only: observing the SVG itself would cause a redraw loop.
-  const observer = new MutationObserver(schedule);
+  const observer = new MutationObserver(() => {
+    // A completed rerun can still replace/reflow the target after the first
+    // measurement. Re-anchor for app changes, but allow deliberate scrolling.
+    scrolled = false;
+    schedule();
+  });
   const app = document.querySelector('[data-testid="stApp"]');
   if (app) observer.observe(app, {childList:true, subtree:true});
   const themeObserver = new MutationObserver(schedule);

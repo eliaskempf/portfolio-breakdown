@@ -2,15 +2,11 @@
 import json
 
 from test_ux_browser import playwright, ux_page  # noqa: F401
-
-
-def settle(page):
-    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
-    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+from browser_support import select_tab, settle
 
 
 def add_manually(page):
-    page.get_by_role('tab', name='Positions', exact=True).click()
+    select_tab(page, 'Positions')
     page.get_by_role('button', name='add Add position', exact=True).click()
     dialog = page.get_by_role('dialog')
     dialog.get_by_role('button', name='Enter manually', exact=True).click()
@@ -114,7 +110,7 @@ def test_search_selection_and_settings_help(ux_page):
     page.get_by_role('button', name='Main menu', exact=True).click()
     playwright.expect(page.get_by_text('Clear cache', exact=True)).to_have_count(0)
     page.keyboard.press('Escape')
-    page.get_by_role('tab', name='Positions', exact=True).click()
+    select_tab(page, 'Positions')
     page.get_by_role('button', name='add Add position', exact=True).click()
     dialog = page.get_by_role('dialog')
     for suggestion in ('VanEck', 'Semiconductors', 'NVIDIA'):

@@ -2,6 +2,7 @@
 import pytest
 from portfolio_app.tour_steps import STEPS
 from test_intro_browser import intro_server, intro_page  # noqa: F401
+from browser_support import select_tab, settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -11,6 +12,8 @@ def step(page, index):
     playwright.expect(card).to_contain_text(f'{index + 1} of {len(STEPS)}')
     overlay = page.locator('.portfolio-tour-overlay')
     playwright.expect(overlay).to_have_attribute('data-step', str(index))
+    playwright.expect(overlay).to_have_attribute('data-ready', 'true')
+    settle(page)
     playwright.expect(overlay).to_have_attribute('data-ready', 'true')
     playwright.expect(page.get_by_role('tab', name=STEPS[index].tab, exact=True)).to_have_attribute('aria-selected', 'true')
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
@@ -38,6 +41,7 @@ def step(page, index):
 
 
 def click_chart_slice(page, label):
+    settle(page)
     page.wait_for_function("!!document.querySelector('.js-plotly-plot')?._ev?._events?.plotly_sunburstclick")
     target = page.locator(f'.st-key-overview_allocation text[data-unformatted="{label}"]')
     playwright.expect(target).to_be_visible()
@@ -76,10 +80,14 @@ def test_demo_tour_every_view_and_menu_replay(intro_page):
             playwright.expect(page.locator('.js-plotly-plot').first).to_be_visible()
             page.screenshot(path=str(directory / 'synthetic-allocation-tour.png'))
             click_chart_slice(page, 'Equities')
+            settle(page)
+            playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_count(1)
             playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('Equities')
             step(page, 2)
             # The center of the drilled chart returns to the full portfolio.
             click_chart_slice(page, 'Equities')
+            settle(page)
+            playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_count(1)
             playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('Portfolio')
             step(page, 2)
         if index == 4:
@@ -93,9 +101,10 @@ def test_demo_tour_every_view_and_menu_replay(intro_page):
     card.get_by_role('button', name='Finish', exact=True).click()
     playwright.expect(card).to_have_count(0)
     playwright.expect(page.locator('.portfolio-tour-overlay')).to_have_count(0)
-    page.get_by_role('tab', name='Exposure', exact=True).click()
+    select_tab(page, 'Exposure')
     page.get_by_role('textbox', name='Search exposure', exact=True).fill('Nvidia')
     page.get_by_role('textbox', name='Search exposure', exact=True).press('Enter')
+    settle(page)
     page.get_by_role('button', name='?', exact=True).click()
     page.get_by_role('button', name='Take the tour', exact=True).click()
     step(page, 0)
@@ -167,3 +176,20 @@ def test_tour_theme_resize_scroll_and_keyboard_exit(intro_page, theme):
     page.keyboard.press('Escape')
     playwright.expect(page.locator('.portfolio-tour-overlay')).to_have_count(0)
     playwright.expect(page.get_by_role('tab', name='Overview', exact=True)).to_have_attribute('aria-selected', 'true')
+
+
+def test_help_chevron_keeps_menu_open(intro_page):
+    page, url, _ = intro_page
+    page.emulate_media(reduced_motion='reduce')
+    page.goto(url)
+    page.get_by_role('button', name='Explore demo', exact=True).click()
+    page.get_by_role('button', name='Not now', exact=True).click()
+    settle(page)
+    # Click the actual icon position: changing expand_more to expand_less must
+    # not detach the event target and dismiss the menu as an outside click.
+    icon = page.get_by_role('button', name='?', exact=True).get_by_test_id('stIconMaterial')
+    bounds = icon.bounding_box()
+    page.mouse.click(bounds['x'] + bounds['width']/2, bounds['y'] + bounds['height']/2)
+    playwright.expect(page.get_by_role('button', name='Take the tour', exact=True)).to_be_visible()
+    page.keyboard.press('Escape')
+    playwright.expect(page.get_by_role('button', name='Take the tour', exact=True)).to_be_hidden()

@@ -58,6 +58,9 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 [data-testid="stTabs"] [role="tab"] {padding:10px 0;font-size:.9rem;font-weight:500;}
 [data-testid="stForm"] {border-radius:6px;padding:20px;}
 [data-testid="stButton"] button,[data-testid="stFormSubmitButton"] button {border-radius:5px;font-weight:500;}
+/* The popover replaces its chevron when opening. Keep the click target on the
+   stable button so the detached icon cannot be mistaken for an outside click. */
+[data-testid="stPopoverButton"] * {pointer-events:none;}
 [data-testid="stExpander"] {border-radius:6px!important;}
 [data-testid="stDataFrame"] {border-radius:5px;overflow:hidden;}
 [data-testid="stPlotlyChart"] {border-radius:6px;}

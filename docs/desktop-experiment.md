@@ -105,11 +105,12 @@ forward only the explicit hosted-input flags and require the child JSON report;
 `open -W` succeeding alone is not acceptance.
 
 For release regressions, **Build candidate** also supports `diagnostics_only`.
-It runs the affected Windows browser suites, three slower-render browser cases,
-and native source/Launch Services checks on macOS 14 and 15 without building any
+It runs the affected Windows browser suites, four slower-render browser cases,
+and native source checks on macOS 14 and 15 without building any
 installers. Synthetic browser failures retain screenshots, DOM and Playwright
 traces. Every check must pass; slower-render cases are additional tests, not
-retries that replace failures. Source diagnostics do not accept packaged bytes.
+retries that replace failures. Source diagnostics do not accept packaged bytes;
+Launch Services acceptance uses the real installed `.app` in the installer job.
 
 ```sh
 gh workflow run candidate.yml --ref REVIEWED_BRANCH -f diagnostics_only=true -f diagnostics_platforms=all

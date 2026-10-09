@@ -46,25 +46,6 @@ def launch_services(app, output):
         raise RuntimeError(f'Launch Services native checks failed; inspect {output}')
 
 
-def source_launch_services(output):
-    """Exercise Launch Services without spending time freezing an installer."""
-    import plistlib
-    import shlex
-    with TemporaryDirectory(prefix='portfolio-synthetic-app-') as temporary:
-        app = Path(temporary) / 'Synthetic Native Probe.app'
-        contents = app / 'Contents'
-        binaries = contents / 'MacOS'
-        binaries.mkdir(parents=True)
-        with (contents / 'Info.plist').open('wb') as handle:
-            plistlib.dump(dict(CFBundleExecutable='probe', CFBundleIdentifier='org.portfolio.synthetic-probe',
-                              CFBundleName='Synthetic Native Probe', CFBundlePackageType='APPL'), handle)
-        launcher = binaries / 'probe'
-        launcher.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.executable)
-                            + ' -m portfolio_app.window "$@"\n', encoding='utf-8')
-        launcher.chmod(0o755)
-        launch_services(app, output)
-
-
 def run(executable, output, desktop=False):
     output.mkdir(parents=True, exist_ok=False)
     results = []
@@ -146,20 +127,13 @@ def run(executable, output, desktop=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('executable', type=Path, nargs='?')
+    parser.add_argument('executable', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--desktop', action='store_true', help='Require real window-state/focus checks')
     parser.add_argument('--browser-only', action='store_true')
     parser.add_argument('--launch-services', action='store_true', help='Launch a Mac .app and require its native report')
-    parser.add_argument('--source-launch-services', action='store_true', help='Test source through a temporary synthetic Mac .app')
     args = parser.parse_args()
-    if args.source_launch_services:
-        if args.executable or args.launch_services or args.browser_only or args.desktop:
-            parser.error('--source-launch-services requires no executable or other mode')
-        source_launch_services(args.output.resolve())
-    elif args.executable is None:
-        parser.error('an executable is required')
-    elif args.launch_services:
+    if args.launch_services:
         if args.browser_only or args.desktop:
             parser.error('--launch-services cannot be combined with other modes')
         launch_services(args.executable.resolve(), args.output.resolve())

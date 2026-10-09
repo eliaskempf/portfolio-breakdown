@@ -12,6 +12,7 @@ from portfolio_app.launcher import request_instance
 from portfolio_app.portfolio_settings import save_settings
 from portfolio_app.workspace import inventory
 from portfolio_app.workspace_selection import selection
+from browser_support import select_tab, settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -128,6 +129,8 @@ def test_archive_review_cancel_switch_restart_and_tabs(backup_app, tmp_path):
         dialog.locator('input[type=file]').set_input_files(archive)
         dialog.get_by_role('button', name='Review backup').click()
         playwright.expect(dialog).to_contain_text('Currency: GBP')
+        settle(page)
+        playwright.expect(dialog.get_by_role('textbox', name='New workspace folder')).not_to_have_value('')
         target = Path(dialog.get_by_role('textbox', name='New workspace folder').input_value())
         dialog.get_by_role('button', name='Cancel restore').click()
         assert not target.exists() and selection(original).directory == original
@@ -156,10 +159,7 @@ def test_archive_review_cancel_switch_restart_and_tabs(backup_app, tmp_path):
         playwright.expect(stale.get_by_test_id('stException')).to_have_count(0)
         stale.close()
         for name in ['Positions', 'Exposure', 'Rebalance', 'Overview']:
-            page.get_by_role('tab', name=name, exact=True).click()
-            playwright.expect(page.get_by_role('tab', name=name, exact=True)).to_have_attribute('aria-selected', 'true')
-            playwright.expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
-            playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+            select_tab(page, name)
         stop()
         page.goto(start())
         page.get_by_role('tab', name='Overview', exact=True).wait_for()
