@@ -33,16 +33,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
         with:
           version: '0.12.10'
           python-version: '3.13'
       - run: uv sync --locked --extra window --all-groups
       - run: uv run playwright install --with-deps chromium
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         if: ${{ runner.os == 'macOS' && inputs.mac_candidate_run != '' }}
         with:
           name: desktop-experiment-macos-arm64
@@ -71,7 +71,7 @@ jobs:
       - name: Wayland source controls
         if: runner.os == 'Linux'
         run: xvfb-run -a uv run python tools/desktop_session.py wayland .venv/bin/portfolio-window --output "$RUNNER_TEMP/diagnostics/wayland"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: ${{ always() && runner.os == 'macOS' }}
         with:
           name: desktop-diagnostics-native-macos
@@ -89,7 +89,7 @@ jobs:
             fi
           done
           exit "$failed"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
           name: desktop-diagnostics-${{ matrix.os }}
@@ -104,15 +104,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
         with:
           version: '0.12.10'
           python-version: '3.12'
       - run: uv sync --locked --extra window --all-groups
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: desktop-experiment-linux-x64
           path: dist/diagnostic-linux
@@ -132,7 +132,7 @@ jobs:
         id: source
         continue-on-error: true
         run: xvfb-run -a uv run python tools/desktop_session.py ${{ matrix.backend }} .venv/bin/portfolio-window --native-repeats 3 --output "$RUNNER_TEMP/linux-diagnostics/source"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
           name: desktop-linux-diagnostics-${{ matrix.backend }}
@@ -162,10 +162,10 @@ jobs:
       QT_QPA_PLATFORM: xcb
       LIBGL_DEBUG: verbose
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           version: '0.12.10'
           python-version: ${{ matrix.python }}
@@ -222,7 +222,7 @@ jobs:
       - name: Verify unsigned Gatekeeper behavior
         if: runner.os == 'macOS' && !cancelled()
         run: uv run python tools/desktop_gatekeeper.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app" --output "$RUNNER_TEMP/gatekeeper"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: runner.os == 'macOS'
         with:
           name: candidate-macos-arm64
@@ -230,7 +230,7 @@ jobs:
           path: dist/desktop-experiment/candidate/*
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: runner.os == 'Linux'
         with:
           name: candidate-linux-native-x64
@@ -238,7 +238,7 @@ jobs:
           path: dist/desktop-experiment/candidate/*
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: desktop-evidence-${{ matrix.target }}
@@ -252,7 +252,7 @@ jobs:
             ${{ runner.temp }}/gatekeeper/*.json
             ${{ runner.temp }}/gatekeeper/*.log
           retention-days: 14
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: desktop-experiment-${{ matrix.target }}
@@ -281,14 +281,14 @@ jobs:
       QT_QPA_PLATFORM: xcb
       LIBGL_DEBUG: verbose
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
           version: '0.12.10'
           python-version: '3.12'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: candidate-linux-native-x64
           path: dist/downloaded
@@ -305,7 +305,7 @@ jobs:
           else
             xvfb-run -a uv run python tools/desktop_session.py wayland /opt/portfolio-breakdown-experimental/portfolio-window --output "$RUNNER_TEMP/compat-native"
           fi
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: desktop-evidence-linux-24-${{ matrix.backend }}
@@ -322,14 +322,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
         with:
           version: '0.12.10'
           python-version: '3.13'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: desktop-experiment-macos-arm64
           path: dist/downloaded
@@ -349,7 +349,7 @@ jobs:
       - name: Unsigned Gatekeeper behavior
         if: ${{ !cancelled() }}
         run: uv run python tools/desktop_gatekeeper.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app" --output "$RUNNER_TEMP/gatekeeper"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
           name: desktop-evidence-${{ matrix.os }}
