@@ -2283,3 +2283,9 @@ pages at 390px without overflow, external requests or browser errors. The actual
 public-output preview on port 8768 was visually inspected in both themes and on
 mobile. Ruff and whitespace checks passed. No app calculation/runtime code was
 changed; no installer rebuilt, Actions dispatched, Pages published or tag created.
+
+README image follow-up: recaptured the current source's isolated offline demo in
+dark mode at 3× pixel density (4176 × 2040). The crop starts immediately above the
+Current value card and includes the full allocation chart/table, excluding app
+navigation. Visually reviewed; PNG contains no text or EXIF metadata. Only generated
+synthetic holdings/prices were used, with separate temporary workspace/state/cache.
