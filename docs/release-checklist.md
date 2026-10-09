@@ -1,6 +1,6 @@
 # Candidate acceptance record
 
-Copy this checklist into the candidate's manual acceptance notes. Use synthetic
+Copy this checklist into the candidate's external acceptance notes. Use synthetic
 data. A checked checklist is specific to one build, not a blanket approval.
 
 Follow [the release procedure](release-plan.md) for preparation, approval, build
@@ -60,7 +60,12 @@ and frozen docs. Retried compatibility checks may accept unchanged earlier build
 checks from before a replacement build do not accept the replacement. Failed Mac
 gates require repair or an explicit deferral decision, never silent omission.
 
-## Manual gates (clean machines, no Python or uv)
+## Manual Windows gates (clean machine, no Python or uv)
+
+This section and the Windows Setup section apply to manual Windows acceptance.
+Linux and macOS require automated installer acceptance only. No manual Linux or
+Mac verification is required or planned; report uncovered behavior as a limitation,
+not a pending manual task.
 
 - [ ] Extract, launch, create shortcut, relaunch after reboot. On Windows use
       Portfolio Breakdown.exe and verify no terminal flashes; the console
@@ -107,7 +112,7 @@ gates require repair or an explicit deferral decision, never silent omission.
 - [ ] Demo, all main tabs/modes, dialogs, charts and lists work.
 - [ ] Optional tour invitation, Not now and Help replay work. All 15 steps,
       chart interaction, chapter navigation and light/dark spotlights work in
-      the Windows native window and supported Linux browser. Finish, Skip tour
+      the Windows native window and browser fallback. Finish, Skip tour
       and Escape restore the original workspace/view without changing holdings
       or targets; dismissal survives restart. Verify separately from the intro.
 
@@ -156,8 +161,8 @@ gates require repair or an explicit deferral decision, never silent omission.
 - [ ] Checksums verified; exact candidate approved for publication.
 
 No manual acceptance has been performed or release approved merely by adding
-this checklist. Artwork is integrated; its appearance on each target desktop and
-the untested operating systems still need acceptance.
+this checklist. Windows manual acceptance and each platform's required automated
+checks remain separate from publication approval.
 
 ## Integrated window / Setup candidate
 
@@ -184,9 +189,9 @@ the untested operating systems still need acceptance.
 
 ## Native Linux and experimental macOS installers
 
-Native Linux acceptance is required alongside Windows and Linux browser checks.
-The planned Mac installer requires automated acceptance and explicit disclosure
-of its remaining manual-installation limitations.
+Native Linux and macOS acceptance is automated. Required hosted checks must pass
+for the exact installer bytes. Unverified personal-machine installation behavior
+is a disclosed limitation, not a requirement for later manual testing.
 
 - [ ] Build from the final integrated source and record its commit, lock hash,
       installer SHA256 and native reports. Earlier experimental artifacts are
@@ -197,10 +202,10 @@ of its remaining manual-installation limitations.
       approval. This known manual gap does not block experimental inclusion.
       Official publication still requires approval; no automatic triggers added.
 - [ ] Record native Linux manifest, installer checksum and successful build/X11/Wayland jobs.
-- [ ] Ubuntu 22.04/24.04: verify installed X11/Wayland rendering, file dialogs,
+- [ ] Hosted Ubuntu 22.04/24.04 checks verify installed X11/Wayland rendering, file dialogs,
       exact download bytes, focus/restore, repeated launch and complete shutdown.
       Upgrade/removal preserves the synthetic workspace.
-- [ ] Apple Silicon macOS: verify the exact final DMG's native workflows and
+- [ ] Hosted Apple Silicon macOS checks verify the exact final DMG's native workflows and
       document ad-hoc signing, Gatekeeper rejection and any unverified interactive
       approval/download-quarantine behavior. No paid signing/notarization is
       planned for v1; do not describe the app as notarized or routinely trusted.

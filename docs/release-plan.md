@@ -99,9 +99,12 @@ before their 30-day artifact retention expires.
 Use [the candidate checklist](release-checklist.md). Record run URLs, source SHA,
 version, lock and every installer hash. Inspect final archives/binaries, bundled
 docs, corresponding source, notices and builder paths. Source-only checks do not
-establish binary privacy. Test the exact Windows Setup on Windows 11 and native
-.deb on Ubuntu 22.04/24.04 with synthetic portfolios, including upgrade/removal.
-Record whether Python/uv are absent or merely excluded from PATH.
+establish binary privacy. Manual installer acceptance applies to Windows Setup
+on Windows 11. Linux and macOS use automated acceptance only; no manual Linux
+or Mac verification is required or planned. Hosted checks must exercise the
+exact installers, including Linux upgrade/removal and workspace preservation.
+Record whether Python/uv are absent or merely excluded from PATH in the
+applicable test environment.
 
 The desktop run provides `candidate-linux-native-x64` and `candidate-macos-arm64`.
 Linux requires successful `build-linux-x64`, `linux-compatibility-x11` and
@@ -131,7 +134,8 @@ release approval. Then **Publish tested candidate** takes:
 
 - `candidate_run`: successful Build candidate run;
 - `linux_native_candidate_run`: accepted desktop run at the same SHA;
-- `acceptance=true`: Windows and Linux acceptance of those exact bytes;
+- `acceptance=true`: Windows manual acceptance and Linux automated acceptance
+  of those exact bytes;
 - `macos_candidate_run`: accepted desktop run (normally the same desktop run);
 - `experimental_macos=true`: acknowledgment of its disclosed limitations.
 

@@ -207,7 +207,7 @@ def cocoa_path_input(path, key, appkit, *, hosted):
             key(char, 0)
 
 
-def cocoa_interactions(window, root, record):
+def cocoa_interactions(window, root, record, output=None):
     """Send local native input to WebKit and its real modal file panels."""
     import AppKit as A
     import Foundation as F
@@ -216,6 +216,14 @@ def cocoa_interactions(window, root, record):
     browser = BrowserView.instances[window.uid]
     app = A.NSApplication.sharedApplication()
     timers, events, errors, trace = [], [], [], []
+    from portfolio_app.cocoa_diagnostics import PanelEvidence, enabled
+    evidence = PanelEvidence(output / 'panels') if output is not None and enabled() else None
+    def observe(label, panel, screenshot=False):
+        if evidence is not None:
+            try:
+                evidence.record(label, A, panel, screenshot=screenshot)
+            except Exception as exc:
+                trace.append(['evidence-error', str(exc)])
     upload = root / 'invented-upload.txt'
     upload.write_text('Invented native upload', encoding='utf-8')
     download = root / 'invented-download.txt'
@@ -273,6 +281,7 @@ def cocoa_interactions(window, root, record):
                               selected_path])
                 if time.monotonic() > deadline:
                     timer.invalidate()
+                    observe(f'{saving=}: timeout phase {sequence.phase}', current, screenshot=True)
                     errors.append(f'File panel timed out at phase {sequence.phase}')
                     if panel:
                         panel.cancel_(None)
@@ -287,6 +296,8 @@ def cocoa_interactions(window, root, record):
                 panel_ready = current == active_panel[0]
                 location_ready = bool(current and current != active_panel[0] and current != browser.window)
                 selected = bool(selected_path and Path(selected_path).resolve() == (path.parent if saving else path).resolve())
+                if sequence.phase == 3 and panel_ready and selected:
+                    observe(f'{saving=}: before confirmation', current)
                 action = sequence.advance(panel_ready=panel_ready, location_ready=location_ready, selected=selected)
                 if action == 'open-location':
                     key('', 5, A.NSEventModifierFlagCommand | A.NSEventModifierFlagShift)

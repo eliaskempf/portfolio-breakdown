@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       acceptance:
-        description: I completed the release checklist on Windows and Linux for this exact candidate
+        description: Windows manual and Linux automated acceptance passed for these exact candidate bytes
         required: true
         default: false
         type: boolean

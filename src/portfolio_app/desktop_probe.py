@@ -92,7 +92,7 @@ def main(output: Path, mode='render'):
                     record('native WebKit snapshot captured')
                     from portfolio_app.desktop_controls import cocoa_interactions
                     try:
-                        cocoa_interactions(window, root, record)
+                        cocoa_interactions(window, root, record, output)
                         report['gaps'].remove('native upload/save dialogs')
                     except Exception as exc:
                         errors.append(f'{type(exc).__name__}: {exc}')

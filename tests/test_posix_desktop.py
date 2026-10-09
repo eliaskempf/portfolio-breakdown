@@ -289,3 +289,17 @@ def test_cocoa_path_input_only_uses_disposable_host_clipboard(hosted):
         assert calls == [('', 0, 8), 'clear', ('/synthetic ü', 'text'), ('', 9, 8)]
     else:
         assert calls == [('', 0, 8), *((char, 0) for char in '/synthetic ü')]
+
+
+@pytest.mark.parametrize('missing', ['PORTFOLIO_TEST_PANEL_EVIDENCE', 'PORTFOLIO_TEST_HOSTED_INPUT',
+                                   'GITHUB_ACTIONS', 'RUNNER_ENVIRONMENT'])
+def test_cocoa_evidence_requires_all_hosted_opt_ins(monkeypatch, tmp_path, missing):
+    from portfolio_app.cocoa_diagnostics import PanelEvidence, enabled
+    for key, value in [('PORTFOLIO_TEST_PANEL_EVIDENCE', '1'), ('PORTFOLIO_TEST_HOSTED_INPUT', '1'),
+                       ('GITHUB_ACTIONS', 'true'), ('RUNNER_ENVIRONMENT', 'github-hosted')]:
+        monkeypatch.setenv(key, value)
+    assert enabled()
+    monkeypatch.delenv(missing)
+    assert not enabled()
+    with pytest.raises(RuntimeError, match='disposable hosted probe'):
+        PanelEvidence(tmp_path)

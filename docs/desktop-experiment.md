@@ -112,8 +112,10 @@ Both checks are mandatory; neither substitutes for the other.
 
 For release regressions, **Build candidate** also supports `diagnostics_only`.
 It runs the affected Windows browser suites, four slower-render browser cases,
-and native source checks on macOS 14 and 15 without building any
-installers. Synthetic browser failures retain screenshots, DOM and Playwright
+and three independent native source probes per selected Mac host without
+building installers. Mac diagnostics record permission, focus and default-button
+state, with a bounded accessibility tree and synthetic panel snapshot on failure.
+Every probe must pass; a later success never replaces an earlier failure. Synthetic browser failures retain screenshots, DOM and Playwright
 traces. Every check must pass; slower-render cases are additional tests, not
 retries that replace failures. Source diagnostics do not accept packaged bytes;
 Launch Services acceptance uses the real installed `.app` in the installer job.
@@ -174,5 +176,7 @@ job failure does not invalidate successful checks for another platform, but ever
 selected platform must pass its own gates; native Linux cannot be omitted.
 
 Follow [the release procedure](release-plan.md) and [acceptance checklist](release-checklist.md).
-Mac signing and interactive-installation limitations remain explicit. Automated
-checks do not establish personal-machine approval or download quarantine behavior.
+Linux and Mac installer acceptance is automated only; no manual verification is
+required or planned. Mac signing and interactive-installation limitations remain
+explicit. Automated checks do not establish personal-machine approval or download
+quarantine behavior; these are disclosed limits, not pending manual tasks.
