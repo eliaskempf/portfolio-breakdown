@@ -1,8 +1,10 @@
 # Documentation maintenance and app-help contract
 
 Only `docs/user/` is published. Internal release records and this document remain
-outside the site root. MkDocs uses its bundled responsive theme and search;
-syntax-highlighting CDN requests are disabled. No analytics or runtime docs
+outside the site root. MkDocs uses Material with bundled search and system fonts;
+Google Fonts, analytics and CDN requests are disabled. Dark mode is the default,
+with a persistent light/dark toggle independent of the app's appearance. The theme
+is locked in the docs dependency group. No runtime docs
 library is added to the app. Builds require installed locked dependencies but no
 external service. Links to external sites are not fetched by validation.
 
@@ -21,7 +23,8 @@ uv run python tools/docs_preview.py
 
 The browser script serves only a temporary copy of generated public output on a
 free loopback port, under `/portfolio-breakdown/dev/`. It checks desktop navigation,
-search, every app topic, mobile navigation/search and horizontal overflow. It
+search, every app topic, dark default/light toggle persistence, mobile
+navigation/search and horizontal overflow. It
 blocks external requests and fails on browser exceptions or HTTP errors. Use
 `PORTFOLIO_TEST_CHROMIUM` to select an existing compatible Chromium executable.
 It prints the exact URL and stops its own server afterwards. Never serve the

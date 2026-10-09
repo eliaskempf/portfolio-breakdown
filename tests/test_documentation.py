@@ -127,7 +127,8 @@ def test_public_site_contract():
     info = docs.check_site(ROOT / 'dist/docs-test')
     assert info['topics'] == docs.TOPICS
     pages = [name for name in info['files'] if name.endswith('.html')]
-    assert len(pages) == 14
+    assert len(pages) == 15
+    assert 'development/index.html' in pages
     assert 'reference/index.html' in pages
     assert not any('handoff' in name or 'release-plan' in name or name.startswith('data/') for name in info['files'])
     assert all('source <code>' in (ROOT / 'dist/docs-test' / page).read_text() for page in pages if page != '404.html')

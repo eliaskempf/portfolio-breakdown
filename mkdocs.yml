@@ -6,11 +6,26 @@ site_dir: dist/docs-site
 use_directory_urls: true
 strict: true
 theme:
-  name: mkdocs
-  color_mode: light
-  user_color_mode_toggle: false
-  navigation_depth: 2
-  highlightjs: false
+  name: material
+  font: false
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to light mode
+    - scheme: default
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.footer
+    - search.highlight
 plugins:
   - search
 markdown_extensions:
@@ -45,4 +60,6 @@ nav:
   - Help:
       - Storage and recovery: storage.md
       - Troubleshooting: troubleshooting.md
-  - Reference: reference.md
+  - Reference:
+      - Data formats: reference.md
+      - Source development: development.md

@@ -42,12 +42,73 @@ Initial acceptance targets are Windows 11 and Ubuntu 22.04/24.04 x64. An unsigne
 candidate may trigger Windows reputation warnings; a successful build alone is
 not native acceptance. Verify that the file came from the intended candidate.
 
-For commands below, substitute the packaged `portfolio-app.exe` (Windows) or
-`portfolio-app` (Linux) for `uv run portfolio-app`. The console companion supports
-CLI operations and browser diagnostics. Portable installs can create a shortcut
-with `--install-shortcut`; recreate it after moving the application folder.
+## Launch and stop {#launch-stop}
+
+Launch the installed app from its Start Menu entry or shortcut. To stop it,
+close the standalone window, or choose **Portfolio settings → App & workspace →
+Stop application** in browser mode. Closing a browser tab alone leaves the
+server running; relaunch the same shortcut to reopen it.
+
+### Advanced launch options {#commands}
+
+For recovery or a custom workspace, open a terminal in the **application install
+folder**, not the portfolio data folder. On Windows, use PowerShell and the
+bundled console companion `portfolio-app.exe` (normally under
+`%LOCALAPPDATA%\Programs\Portfolio Breakdown`). These commands use the installed
+app and do not require Python or uv:
+
+```powershell
+.\portfolio-app.exe --data-dir "C:\path\to\workspace" --server.port=8502
+.\portfolio-app.exe --data-dir "C:\path\to\workspace" --stop
+```
+
+On Linux, open a terminal in the extracted application folder:
+
+```sh
+./portfolio-app --data-dir /path/to/workspace --server.port=8502
+./portfolio-app --data-dir /path/to/workspace --stop
+```
+
+Other advanced examples in this guide use the Windows console companion.
+On Linux use `./portfolio-app` with the same options and Linux paths.
+For a normal Windows window launch with custom options, use
+`& ".\Portfolio Breakdown.exe" --data-dir "C:\path\to\workspace"`.
+Portable installs can create a shortcut with `--install-shortcut`; recreate it
+after moving the application folder.
+
+Choose your own directory; the example paths are placeholders. The app binds to
+`127.0.0.1`. By default it chooses another free port when 8501 is busy; an
+explicit occupied port fails. Repeated window launches focus the existing window; browser launches reopen the
+managed instance. Independent workspaces can use separate ports.
+
+Use `--stop` with the same data directory if the interface is unavailable.
+Packaged browser launches normally run in the background.
+`--foreground` keeps a packaged launch attached for diagnostics; `--no-browser`
+suppresses automatic browser opening. Stop an existing instance before changing
+its command-line demo/live launch mode.
+
+## Update or remove {#update}
+
+1. Stop the old app and [back up the workspace](storage.md#backup).
+2. Run the new Windows Setup to update the installed app, extract a portable
+   package into a new application directory.
+3. Launch from the same shortcut or with the same custom data directory. Check holdings, targets,
+   prices and the reported version before retiring the old application.
+4. Recreate shortcuts if its path changed. For rollback after a data-format
+   change, restore the old backup into a new directory and use the matching app.
+
+Do not overwrite an older backup. For an installed Windows app, use **Settings →
+Apps → Portfolio Breakdown → Uninstall**. For portable apps, stop the app and
+remove its application directory and shortcut. Neither method removes your
+separate portfolio workspace. Shared WebView2 is retained.
+
+The app is GPL-3.0-only, without warranty under its license. Bundles include
+third-party notices; corresponding source and build material accompany releases.
 
 ## From source {#source}
+
+This is an alternative for contributors or people choosing to run a checkout.
+Skip this section if you installed the packaged app.
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), obtain the
 repository at the intended source commit, and run these commands from its root.
@@ -81,43 +142,12 @@ Use a locked checkout or frozen candidate to reproduce a tested environment.
 A `uv tool install` installation resolves its dependencies separately and does
 not consume the checkout's lockfile.
 
-## Launch and stop {#launch-stop}
+Source launches run attached to the terminal; Ctrl+C stops them. For an offline
+synthetic demo, run `uv run portfolio-app --demo --offline-demo`. To choose a
+separate workspace, append `--data-dir /path/to/synthetic-workspace`.
 
-```sh
-uv run portfolio-app --data-dir /path/to/workspace
-uv run portfolio-app --data-dir /path/to/workspace --server.port=8502
-uv run portfolio-app --data-dir /path/to/workspace --stop
-```
-
-Choose your own directory; the example paths are placeholders. The app binds to
-`127.0.0.1`. By default it chooses another free port when 8501 is busy; an
-explicit occupied port fails. Repeated window launches focus the existing window; browser launches reopen the
-managed instance. Independent workspaces can use separate ports.
-
-Closing a browser tab leaves the server running. Use the app's stop action or
-`--stop` with the same data directory. Source launches run attached to the
-terminal; Ctrl+C stops them. Packaged browser launches normally run in the background.
-`--foreground` keeps a packaged launch attached for diagnostics; `--no-browser`
-suppresses automatic browser opening. Stop an existing instance before changing
-its command-line demo/live launch mode.
-
-## Update or remove {#update}
-
-1. Stop the old app and [back up the workspace](storage.md#backup).
-2. Run the new Windows Setup to update the installed app, extract a portable
-   package into a new application directory, or update your source
-   checkout to the chosen version and run `uv sync --locked`.
-3. Launch against the same explicit data directory. Check holdings, targets,
-   prices and the reported version before retiring the old application.
-4. Recreate shortcuts if its path changed. For rollback after a data-format
-   change, restore the old backup into a new directory and use the matching app.
-
-Do not overwrite an older backup. For an installed Windows app, use **Settings →
-Apps → Portfolio Breakdown → Uninstall**. For portable apps, stop the app and
-remove its application directory and shortcut. Neither method removes your
-separate portfolio workspace. Shared WebView2 is retained. A uv tool
-installation can be removed with `uv tool uninstall portfolio-breakdown`.
-Migrate and verify old checkout-local data before deleting a checkout.
-
-The app is GPL-3.0-only, without warranty under its license. Bundles include
-third-party notices; corresponding source and build material accompany releases.
+To update a source installation, back up and stop the app, update to the chosen
+commit and run `uv sync --locked`. A uv tool installation can be removed with
+`uv tool uninstall portfolio-breakdown`. Migrate and verify checkout-local data
+before deleting a checkout. See [Source development](development.md) for tests
+and preview instructions.

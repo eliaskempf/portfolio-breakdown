@@ -2260,3 +2260,26 @@ rechecked locally without Actions or installers. Public pre-release Pages requir
 separate approval/configuration and a manual `dev` deployment after its tooling is
 on the default branch. Frozen release docs must reuse the accepted candidate's
 bytes, archived on `gh-pages`. No Pages site, release or tag was published here.
+
+### Material guide and installed-app instructions (2026-10-09)
+
+The guide now uses Material for MkDocs 9.7.7, locked in the docs dependency group.
+Dark mode is the first-visit default even with a light OS preference; readers can
+choose light mode and the site remembers their choice. System fonts and bundled
+search assets keep runtime requests local. This applies to both generated Pages
+output and future bundled help; previously frozen candidates remain unchanged.
+
+Getting started now follows shortcuts and app controls. Storage instructions lead
+with Open data folder, Create backup and Restore backup; advanced recovery uses
+the installed Windows console companion with explicit Linux equivalents.
+`uv run` appears only under From source and the separate Source development page.
+Data formats stay in Reference. The 30 app-help routes and anchors are unchanged.
+
+Validation: 133 focused documentation, bundled-help, privacy and release tests
+passed. Release preflight passed notices, wheel/source inventory and strict docs
+(15 HTML pages). The adapted browser smoke passed dark-default/light-preference
+persistence, desktop/mobile navigation and search, all 30 help topics, and all
+pages at 390px without overflow, external requests or browser errors. The actual
+public-output preview on port 8768 was visually inspected in both themes and on
+mobile. Ruff and whitespace checks passed. No app calculation/runtime code was
+changed; no installer rebuilt, Actions dispatched, Pages published or tag created.

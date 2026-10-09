@@ -9,14 +9,10 @@ The persistent default is independent of the launch directory:
 | Linux | `$XDG_DATA_HOME/portfolio-breakdown/portfolio`, normally `~/.local/share/portfolio-breakdown/portfolio` |
 | Windows | `%LOCALAPPDATA%\portfolio-breakdown\portfolio` |
 
-`--data-dir` chooses a launch path. A confirmed restore can remember a different
-active folder for that path (see below). These commands identify or open the chosen directory:
-
-```sh
-uv run portfolio-app --show-data-dir
-uv run portfolio-app --data-dir /path/to/workspace --show-data-dir
-uv run portfolio-app --data-dir /path/to/workspace --open-data-dir
-```
+Open **Portfolio settings → App & workspace** to see the active folder and use
+**Open data folder** to open it in your file manager. A confirmed restore can
+remember a different active folder for the same shortcut (see below).
+For a custom launch directory, see [advanced launch options](install.md#commands).
 
 The workspace contains `holdings.csv` (including saved purchase/cost records),
 optional `portfolio.yaml` currency settings, `classifications.yaml`, strategic
@@ -67,11 +63,13 @@ archive. Different original launch paths retain independent selections. Previous
 workspace leases remain reserved until this app stops, preventing another app
 from opening a folder still referenced by an old tab or background task.
 
-To open the original launch folder directly, stop that app, then use:
+For recovery only: to open the original launch folder directly, stop that app,
+then use the installed console companion. See [where to run commands and Linux
+equivalents](install.md#commands). Replace the example paths with your folders:
 
-```sh
-uv run portfolio-app --data-dir /path/to/original --stop
-uv run portfolio-app --data-dir /path/to/original --ignore-workspace-selection
+```powershell
+.\portfolio-app.exe --data-dir "C:\path\to\original" --stop
+.\portfolio-app.exe --data-dir "C:\path\to\original" --ignore-workspace-selection
 ```
 
 This recovery mode ignores the remembered selection without deleting it. It
@@ -89,17 +87,18 @@ ETF file references are refused. Unsupported archive versions require a compatib
 app; they are never silently converted. CSV/Excel **Import holdings** remains a
 separate workflow under Positions.
 
-### Existing folder-copy commands
+### Advanced folder-copy commands
 
-These commands still copy complete folders with the app and external editors
+Prefer **Create backup** and **Restore backup** for everyday use. The installed
+[console companion](install.md#commands) can also copy complete folders with the app and external editors
 stopped. Their arguments are directories, not `.portfolio-backup.zip` archives.
 Use new destinations:
 
-```sh
-uv run portfolio-app --data-dir /path/to/workspace --stop
-uv run portfolio-app --data-dir /path/to/workspace --backup-to /path/to/new-backup
-uv run portfolio-app --data-dir /path/to/new-restored-workspace --restore-from /path/to/new-backup
-uv run portfolio-app --data-dir /path/to/new-restored-workspace
+```powershell
+.\portfolio-app.exe --data-dir "C:\path\to\workspace" --stop
+.\portfolio-app.exe --data-dir "C:\path\to\workspace" --backup-to "C:\path\to\new-backup"
+.\portfolio-app.exe --data-dir "C:\path\to\new-restored-workspace" --restore-from "C:\path\to\new-backup"
+.\portfolio-app.exe --data-dir "C:\path\to\new-restored-workspace"
 ```
 
 The backup source follows the remembered selection. Add
@@ -110,10 +109,11 @@ and changed or invalid data. Open and verify a copied workspace before adopting 
 ## Move an older workspace {#migration}
 
 No repository-local data is migrated automatically. Stop the app, then copy an
-old workspace into a new destination:
+old workspace into a new destination using the
+[installed console companion](install.md#commands):
 
-```sh
-uv run portfolio-app --data-dir /path/to/new-workspace --migrate-from /path/to/old-workspace
+```powershell
+.\portfolio-app.exe --data-dir "C:\path\to\new-workspace" --migrate-from "C:\path\to\old-workspace"
 ```
 
 The source is retained. Check the copy before removing anything. See
@@ -133,6 +133,5 @@ avoids market requests; normal demo mode uses the network.
 
 Do not commit personal holdings, accounts, costs, targets, classifications,
 imports, screenshots, reports, caches, backups or credentials. The entire `data/`
-directory and personal `handoff.md` are private. For source contributors, keep the
-pre-commit hook enabled, run `uv run portfolio-check-private --staged`, and inspect
-the staged diff. An automated scan cannot recognize all personal details.
+directory and personal `handoff.md` are private. Contributor checks are described in [Source development](development.md).
+An automated scan cannot recognize all personal details.

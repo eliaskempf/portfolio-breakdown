@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from threading import Thread
 from urllib.parse import urljoin, urlsplit
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(
                     executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
-                page = browser.new_page(viewport={'width': 1280, 'height': 900})
+                page = browser.new_page(viewport={'width': 1280, 'height': 900}, color_scheme='light')
                 errors, external, failed = [], [], []
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 page.on('response', lambda response: failed.append(response.url) if response.status >= 400 else None)
@@ -42,12 +42,17 @@ def main():
 
                 page.route('**/*', route_request)
                 page.goto(url)
-                page.get_by_role('button', name='Analysis', exact=True).click()
+                expect(page.locator('body')).to_have_attribute('data-md-color-scheme', 'slate')
+                page.locator('label[title="Switch to light mode"]').click()
+                expect(page.locator('body')).to_have_attribute('data-md-color-scheme', 'default')
+                page.reload()
+                expect(page.locator('body')).to_have_attribute('data-md-color-scheme', 'default')
+                page.locator('label[title="Switch to dark mode"]').click()
+                expect(page.locator('body')).to_have_attribute('data-md-color-scheme', 'slate')
                 page.get_by_role('link', name='Exposure and ETFs', exact=True).first.click()
                 page.locator('h1#look-through').wait_for()
-                page.locator('a[data-bs-target="#mkdocs_search_modal"]').click()
-                page.locator('#mkdocs-search-query').press_sequentially('buy-in', delay=80)
-                result = page.locator('#mkdocs-search-results a').first
+                page.get_by_role('textbox', name='Search', exact=True).fill('buy-in')
+                result = page.locator('.md-search-result__link').first
                 result.wait_for()
                 result_url = urljoin(page.url, result.get_attribute('href'))
                 result.click()
@@ -60,23 +65,23 @@ def main():
                     assert page.locator(f'[id="{anchor}"]').count() == 1, route
                 page.set_viewport_size({'width': 390, 'height': 844})
                 page.goto(url)
-                page.get_by_role('button', name='Toggle navigation').click()
-                page.get_by_role('button', name='Help', exact=True).click()
+                page.locator('.md-header label[for="__drawer"]').click()
+                page.locator('label.md-nav__link').filter(has_text='Help').click()
                 page.get_by_role('link', name='Troubleshooting', exact=True).first.click()
                 page.locator('h1#troubleshooting').wait_for()
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'Narrow layout overflow'
-                page.get_by_role('button', name='Toggle navigation').click()
-                page.locator('a[data-bs-target="#mkdocs_search_modal"]').click()
-                page.locator('#mkdocs-search-query').press_sequentially('restore', delay=80)
-                page.locator('#mkdocs-search-results a').first.wait_for()
-                for route in sorted({urlsplit(route).path for route in info['topics'].values()}):
-                    page.goto(url + route)
-                    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), route
+                page.locator('.md-header__button[for="__search"]').click()
+                page.get_by_role('textbox', name='Search', exact=True).fill('restore')
+                page.locator('.md-search-result__link').first.wait_for()
+                for path in sorted(name for name in info['files'] if name.endswith('.html')):
+                    page.goto(url + path)
+                    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), path
                 assert not errors, errors
                 assert not failed, failed
                 assert not external, external
                 browser.close()
-                print(f'Browser passed: {url}; navigation, search, 30 topics, 390px layout, no external requests')
+                print(f'Browser passed: {url}; dark default/light toggle persistence, navigation, '
+                      'search, 30 topics, 390px layout, no external requests')
         finally:
             server.shutdown()
             server.server_close()

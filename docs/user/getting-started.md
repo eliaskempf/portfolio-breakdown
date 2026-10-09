@@ -7,24 +7,20 @@ the app, start with [Install and run](install.md#install).
 
 ## Explore a temporary demo {#demo}
 
-Open the app and choose **Explore demo** in the welcome dialog. From source,
-this command opens a repeatable example with invented prices and no market-data
-requests:
-
-```sh
-uv run portfolio-app --demo --offline-demo
-```
+Launch the installed app from your shortcut and choose **Explore demo** in the
+welcome dialog. No terminal, Python or uv is needed. For a guided example that
+also works without market-data access, choose **Take the tour** instead.
 
 The header should say **Demo portfolio**. Its holdings, quantities, buy-ins,
-targets and offline ETF weights are deliberately invented. You can edit them;
+and targets are deliberately invented. You can edit them;
 they last for this server session and reset when the app restarts. They are
 separate from **My portfolio** and are not a starting copy of your own holdings.
 
-Without `--offline-demo`, **Explore demo** and `--demo` use public quotes, history,
+**Explore demo** uses public quotes, history,
 analytics and issuer ETF downloads. Initial quantities are sized once from
 available quotes and FX; subsequent refreshes preserve quantities and edits.
-If initialization cannot obtain prices, use **Refresh prices** or restart with
-the offline command above. Missing fund downloads leave that fund whole.
+If initialization cannot obtain prices, use **Refresh prices** or choose
+**? → Take the tour** for the offline example. Missing fund downloads leave that fund whole.
 
 ### Take the tour {#tour}
 
@@ -32,7 +28,8 @@ Choose **Take the tour** at the optional welcome prompt, or **? → Take the tou
 anytime. **Not now** dismisses the prompt. The app remembers dismissal for this
 computer's user account.
 
-The tour opens its own fresh synthetic demo, even if you started from an empty
+The tour uses invented prices, history and ETF weights without market requests.
+It opens its own fresh synthetic demo, even if you started from an empty
 or personal portfolio. Use **Back**, **Next**, or the chapter shortcuts. Try the
 highlighted chart when invited. Risk and a €500 contribution example are
 calculated for you. **Finish**, **Skip tour**, or **Escape** returns to your
@@ -122,15 +119,9 @@ select **My portfolio**. Demo holdings are not copied. An empty workspace offers
 **Start my portfolio**; an existing workspace loads its saved holdings.
 
 Open **Portfolio settings → App & workspace** to confirm the actual folder
-before saving. A packaged app uses its default persistent workspace. For a
-separate source workspace, launch with a new path:
-
-```sh
-uv run portfolio-app --data-dir /path/to/my-portfolio
-```
-
-Replace the placeholder with your chosen folder. Use the same launch path on
-subsequent starts; [Storage](storage.md#location) explains default folders and
+before saving. The installed app manages its persistent workspace for you.
+Use the same shortcut on subsequent starts;
+[Storage](storage.md#location) explains default folders and
 remembered restored-workspace selections.
 
 ### Choose currency and optional categories
