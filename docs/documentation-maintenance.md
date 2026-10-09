@@ -1,7 +1,13 @@
 # Documentation maintenance and app-help contract
 
-Only `docs/user/` is published. Internal release records and this document remain
-outside the site root. MkDocs uses Material with bundled search and system fonts;
+Only `docs/user/` is published. Reusable release/developer guides and this document
+remain outside the site root. Working plans, handoffs, session summaries and
+run-specific evidence stay outside the repository, as required by `AGENTS.md`.
+This keeps the repository focused on durable documentation even when those notes
+contain no private information. Incorporate lasting instructions into the relevant
+guide; keep ongoing status and session narratives in external working notes.
+
+MkDocs uses Material with bundled search and system fonts;
 Google Fonts, analytics and CDN requests are disabled. Dark mode is the default,
 with a persistent light/dark toggle independent of the app's appearance. The theme
 is locked in the docs dependency group. No runtime docs
@@ -44,6 +50,26 @@ for the exact source SHA, app version, route, topic map and file checksums.
 
 ## Review process
 
+### Synthetic guide images
+
+The three reviewed crops under `docs/user/assets/` illustrate ETF residuals,
+target denominators and a contribution plan. Their exact filenames are allowed by
+the Git privacy guard and documentation input check; arbitrary images remain
+blocked. Keep alt text and captions sufficient to explain the task without pixels.
+
+To refresh them after reviewing the affected behavior, install the locked browser
+group and Chromium, then run `uv run python tools/docs_screenshots.py`. The script
+starts and stops its own isolated app using newly generated offline demo data and
+temporary state. It accepts no personal workspace. `PORTFOLIO_TEST_CHROMIUM` can
+select an existing Chromium executable. Review the three PNGs in the ignored
+`dist/docs-screenshots/` output, including legibility, synthetic provenance and
+metadata, before copying only those reviewed images to `docs/user/assets/`.
+Keep capture logs and session evidence outside tracked documentation. Rebuild the
+guide, inspect dark/light and mobile layouts, and run package/privacy checks after
+replacing a crop. Images are bundled with each frozen documentation version.
+
+### Documentation declarations
+
 Every pull request declares two lines in its body:
 
 ```text
@@ -52,8 +78,10 @@ Docs review: Reviewed import/review and live-listings against the changed flow; 
 ```
 
 Use `Docs impact: none` with a concrete reason when a change has no user-visible
-effect. The documentation workflow requires a declaration on all PRs, including
-changes only to application source. Human review must assess the declaration:
+effect. Require a declaration on all PRs, including changes only to application
+source. Enforcement is manual while workflows are manual-only: the workflow's
+conditional PR declaration check is dormant because no pull-request trigger is
+enabled. Human review must assess the declaration:
 check affected controls, defaults, scope/denominators, persistence, data sources,
 unknown/stale states and limitations against the implementation and tests.
 A green build, matching timestamp, presence of a topic or a written declaration

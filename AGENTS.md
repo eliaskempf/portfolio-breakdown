@@ -21,6 +21,26 @@ reviewing the content of otherwise permitted source/documentation files.
 Never rewrite Git history or remove local private data as a privacy cleanup
 without checking what is affected. Untracking must preserve local data.
 
+## Repository documentation and working notes
+
+Keep ongoing implementation plans, handoffs, session summaries, progress notes,
+execution diaries and one-off validation reports outside the repository. This is
+a repository-cleanliness rule even when the material contains no private data.
+It applies to future work as well as existing notes, regardless of filename.
+
+Use a local notes directory outside every Git checkout/worktree (for example,
+`../portfolio-breakdown-notes/`) for material that must survive a session. Do not
+create new working notes under `docs/` or append session history to an existing
+tracked guide. Existing ignored handoffs may remain local; do not stage them or
+relax ignore rules, source-package exclusions or path checks to include them.
+
+Commit durable project documentation: product behavior, architecture, user and
+developer guides, reusable procedures and blank checklists. Fold lasting lessons
+from working notes into the relevant guide without copying the session narrative,
+temporary status, run-specific evidence or completed checklist. Keep that evidence
+with the external working notes. Review documentation changes for this distinction
+before committing; filename checks alone cannot enforce it.
+
 ## Project context
 
 This repository implements a local portfolio-analysis application.

@@ -10,7 +10,7 @@ import sys
 import pytest
 
 from portfolio_app.demo import create_demo_data
-from portfolio_app.privacy import path_problem
+from portfolio_app.privacy import DEMO_IMAGE_FILES, path_problem
 from portfolio_app.workspace import inventory
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -121,6 +121,26 @@ def test_docs_privacy_exceptions_are_narrow():
         assert path_problem(name)
 
 
+@pytest.mark.parametrize('name,content,allowed', [
+    ('assets/demo-targets.png', b'\x89PNG\r\n\x1a\n', True),
+    ('assets/demo-targets.png', b'not an image', False),
+    ('assets/personal-targets.png', b'\x89PNG\r\n\x1a\n', False),
+    ('assets/private.csv', b'invented data', False),
+])
+def test_docs_input_allows_only_reviewed_image_paths(tmp_path, monkeypatch, name, content, allowed):
+    from types import SimpleNamespace
+    monkeypatch.setattr(docs, 'git', lambda *args: '0')
+    path = tmp_path / name
+    path.parent.mkdir(parents=True)
+    path.write_bytes(content)
+    config = SimpleNamespace(extra={}, docs_dir=str(tmp_path))
+    if allowed:
+        docs.on_config(config)
+    else:
+        with pytest.raises(ValueError, match='Unapproved public documentation input'):
+            docs.on_config(config)
+
+
 def test_public_site_contract():
     pytest.importorskip('mkdocs', reason='Install the docs group to build the public guide')
     docs.build(ROOT / 'dist/docs-test', 'dev', 'https://example.invalid/nested/project/')
@@ -130,6 +150,10 @@ def test_public_site_contract():
     assert len(pages) == 15
     assert 'development/index.html' in pages
     assert 'reference/index.html' in pages
+    for name in DEMO_IMAGE_FILES:
+        if name.startswith('docs/user/'):
+            relative = name.removeprefix('docs/user/')
+            assert (ROOT / 'dist/docs-test' / relative).read_bytes() == (ROOT / name).read_bytes()
     assert not any('handoff' in name or 'release-plan' in name or name.startswith('data/') for name in info['files'])
     assert all('source <code>' in (ROOT / 'dist/docs-test' / page).read_text() for page in pages if page != '404.html')
 

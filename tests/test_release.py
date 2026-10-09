@@ -19,6 +19,36 @@ release_build = importlib.util.module_from_spec(build_spec)
 build_spec.loader.exec_module(release_build)
 
 
+@pytest.mark.parametrize('source,documentation', [
+    ('install.md', True), ('desktop-experiment.md', True), ('windows-desktop.md', False),
+])
+def test_relocated_bundle_guides_link_to_shipped_help_or_exact_source(tmp_path, source, documentation):
+    import re
+    from urllib.parse import urlsplit
+    # Model the installed layout, without copying any source Markdown beside it.
+    for page in (ROOT / 'docs/user').glob('*.md'):
+        target = tmp_path / 'documentation' / ('index.html' if page.stem == 'index' else page.stem + '/index.html')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('<p>Synthetic packaged guide</p>')
+    target = tmp_path / 'INSTALL.md'
+    release_build.bundle_guide(ROOT / 'docs' / source, target, documentation=documentation)
+    links = re.findall(r'\[[^\]\n]+\]\(([^\s)]+)\)', target.read_text())
+    assert links
+    for link in links:
+        parsed = urlsplit(link)
+        if parsed.scheme:
+            if '/blob/' in link:
+                revision = parsed.path.split('/blob/')[1].split('/')[0]
+                assert len(revision) == 40 and all(c in '0123456789abcdef' for c in revision)
+        else:
+            assert documentation and parsed.path.startswith('documentation/')
+            assert (tmp_path / parsed.path).is_file()
+    if source == 'install.md':
+        assert '(documentation/storage/index.html#backup)' in target.read_text()
+        assert '(documentation/install/index.html#commands)' in target.read_text()
+    assert 'source; internet required' in target.read_text()
+
+
 @pytest.mark.parametrize('layout', ['stdlib', 'base-license', 'windows-base-license-txt'])
 def test_notices_include_build_interpreter_license(tmp_path, monkeypatch, layout):
     from types import SimpleNamespace

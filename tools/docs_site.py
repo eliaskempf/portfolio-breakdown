@@ -71,12 +71,17 @@ def provenance(channel: str = 'dev') -> dict:
 
 # MkDocs hooks also apply to `uv run mkdocs build --strict`.
 def on_config(config):
+    from portfolio_app.privacy import DEMO_IMAGE_FILES, icon_problem
     config.extra.setdefault('build', provenance())
     os.environ['SOURCE_DATE_EPOCH'] = git('show', '-s', '--format=%ct', 'HEAD')
     source = Path(config.docs_dir)
     for path in source.rglob('*'):
-        if path.is_symlink() or (path.is_file() and path.suffix != '.md'):
+        if path.is_symlink():
             raise ValueError(f'Unapproved public documentation input: {path.relative_to(source)}')
+        if path.is_file() and path.suffix != '.md':
+            name = 'docs/user/' + path.relative_to(source).as_posix()
+            if name not in DEMO_IMAGE_FILES or icon_problem(name, path.read_bytes()):
+                raise ValueError(f'Unapproved public documentation input: {path.relative_to(source)}')
     return config
 
 

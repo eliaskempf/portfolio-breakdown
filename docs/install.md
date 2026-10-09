@@ -82,10 +82,17 @@ Defaults are independent of the current working directory:
 - Linux: `$XDG_DATA_HOME/portfolio-breakdown/portfolio`, normally
   `~/.local/share/portfolio-breakdown/portfolio`.
 - Windows: `%LOCALAPPDATA%\portfolio-breakdown\portfolio`.
+- macOS: `~/Library/Application Support/portfolio-breakdown/portfolio`.
 
 `--data-dir` overrides the default. `--show-data-dir` prints the selected path.
 `--open-data-dir` opens it. No existing repository data is moved automatically.
 An old checkout can still be opened explicitly with `--data-dir data/portfolio`.
+
+The commands below use the source/browser entrypoint `portfolio-app`. For the
+installed Ubuntu `.deb`, substitute `portfolio-breakdown-experimental`; for Mac,
+use `"/Applications/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-cli"`.
+Windows uses the console companion `portfolio-app.exe`. See the
+[platform command examples](user/install.md#commands) for custom launch paths.
 
 To migrate, stop the old app and all external editors, then run:
 
@@ -119,13 +126,18 @@ and check the restored workspace before adopting it. Automatic per-document
 Backup directories contain private financial data; keep them outside Git.
 
 For upgrades, stop the old application and back up the workspace. Installed
-Windows apps can run the new Setup over the existing install. For portable apps, extract the new
+Windows apps can run the new Setup over the existing install. Update Ubuntu with
+`sudo apt install ./portfolio-breakdown-experimental_<version>_amd64.deb` and Mac
+by replacing the stopped app in Applications with the new DMG's copy.
+For portable apps, extract the new
 bundle to a new application directory, and launch it against the same workspace.
 Recreate shortcuts if the executable path changed. Retain the older bundle and
 backup until the new version is verified. Versioned data migrations must be
 reviewed before downgrading; restoring a backup is the safe rollback path.
 
-Use Windows Apps settings to uninstall a Setup installation. To uninstall a
+Use Windows Apps settings to uninstall a Setup installation. On Ubuntu, use
+`sudo apt remove portfolio-breakdown-experimental`. On Mac, move the stopped
+**Portfolio Breakdown Experimental.app** from Applications to Trash. To uninstall a
 portable bundle, stop it and remove its application directory and shortcut.
 For uv tool installations, use `uv tool uninstall portfolio-breakdown`. Portfolio
 folders are separate and remain in place. Source checkouts can likewise be removed

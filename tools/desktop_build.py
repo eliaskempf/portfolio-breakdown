@@ -10,7 +10,7 @@ import sys
 import tomllib
 
 from portfolio_app.settings import BRANDING_ASSETS
-from release import ROOT, digest, frozen_check, notices, package_check
+from release import ROOT, bundle_guide, digest, frozen_check, notices, package_check
 
 DEB_NAME = 'portfolio-breakdown-experimental'
 APP_NAME = 'Portfolio Breakdown Experimental.app'
@@ -95,7 +95,7 @@ def build(output):
     bundle = output / 'frozen/portfolio-window'
     notices(bundle)
     shutil.copy(ROOT / 'LICENSE', bundle / 'LICENSE')
-    shutil.copy(ROOT / 'docs/desktop-experiment.md', bundle / 'EXPERIMENTAL.md')
+    bundle_guide(ROOT / 'docs/desktop-experiment.md', bundle / 'EXPERIMENTAL.md')
     from docs_site import build as build_docs
     build_docs(bundle / 'documentation', 'candidate', 'https://eliaskempf.github.io/portfolio-breakdown/')
     frozen_check(bundle)

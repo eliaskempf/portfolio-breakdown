@@ -66,6 +66,13 @@ Unallocated money remains in the final denominator. Reserved category budgets ca
 remain partly uninvested because of purchase constraints. The preview does not
 create a saved cash holding.
 
+[![Synthetic contribution plan showing a EUR 500 input, three suggested buys, EUR 500 invested and zero unallocated cash.](assets/demo-contribution.png)](assets/demo-contribution.png)
+
+*Synthetic offline example with the default contribution options: the 500 EUR
+budget produces three suggested purchases. Compare Invested contribution with
+Unallocated cash, then inspect Portfolio impact and Plan details. Calculation
+places no orders and saves no quantity changes. Open the image for detail.*
+
 Deviation outside allowed ranges can be zero even when positions are not exactly
 on target. RMS gap measures distance from exact targets. Review both with the
 unallocated amount and scope. Infeasible constraints or an unproven optimizer

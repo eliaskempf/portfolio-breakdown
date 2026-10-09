@@ -18,6 +18,13 @@ position targeting 25% within it imply a 10% portfolio target. Required sibling
 targets must be complete and sum to 100%; the app does not silently normalize
 saved targets. Blank means unknown, while zero is an explicit target.
 
+[![Targets editor showing Equities at 60% of Portfolio and its two fund positions at 70% and 30% of Equities, with separate save buttons.](assets/demo-targets.png)](assets/demo-targets.png)
+
+*Synthetic offline example: 60% for Equities × 70% for its World ETF gives a 42%
+portfolio target. The two grids use different denominators. Save categories and
+Save position targets commit their respective edits separately. These percentages
+illustrate the controls, not a recommended allocation. Open the image for detail.*
+
 Moving a position preserves its within-category target. Check the destination's
 total after moving it. Zero-quantity positions can carry nonzero targets for
 future investments. Empty categories retain their targets without artificial

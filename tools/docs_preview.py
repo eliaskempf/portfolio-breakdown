@@ -41,6 +41,12 @@ def main():
                         route.continue_()
 
                 page.route('**/*', route_request)
+
+                def check_images():
+                    for picture in page.locator('article img').all():
+                        assert picture.get_attribute('alt'), 'Guide image is missing alt text'
+                        assert picture.evaluate('image => image.complete && image.naturalWidth > 0'), 'Guide image failed to load'
+
                 page.goto(url)
                 expect(page.locator('body')).to_have_attribute('data-md-color-scheme', 'slate')
                 page.locator('label[title="Switch to light mode"]').click()
@@ -63,6 +69,7 @@ def main():
                     assert response is None or response.ok, route  # Fragment-only navigation has no HTTP response.
                     anchor = urlsplit(route).fragment
                     assert page.locator(f'[id="{anchor}"]').count() == 1, route
+                    check_images()
                 page.set_viewport_size({'width': 390, 'height': 844})
                 page.goto(url)
                 page.locator('.md-header label[for="__drawer"]').click()
@@ -76,6 +83,7 @@ def main():
                 for path in sorted(name for name in info['files'] if name.endswith('.html')):
                     page.goto(url + path)
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), path
+                    check_images()
                 assert not errors, errors
                 assert not failed, failed
                 assert not external, external

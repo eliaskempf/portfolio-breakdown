@@ -45,8 +45,9 @@ listing search, minimum-trade and minimum-cash rebalancing, trade-count tradeoff
 empty-position redistribution, Git privacy guards, and Streamlit controls. The server health
 endpoint is `/_stcore/health`.
 
-Manually overridden hierarchy-node targets, realized P&L, and historical analysis
-remain deferred.
+Independent target overrides on analytical-taxonomy nodes, realized P&L and
+transaction-based personal return history remain unsupported. Strategic category
+targets, instrument price history and historical risk analysis are supported.
 
 
 ## Shared list presentation
@@ -76,8 +77,10 @@ Missing source valuations leave contribution percentages unavailable.
 Use a separate Git worktree and branch for each coding session, with one session
 responsible for integrating shared UI changes. Run each demo on a different port
 and use generated synthetic data. Personal data and the private handoff remain
-outside Git. Use the tracked release handoff and applicable specifications for
-product context; tests and demos must not read private working data.
+outside Git. In a source checkout, use `docs/release-plan.md` for the reusable
+release procedure, `docs/release-checklist.md` for acceptance criteria, and these
+behavior/reference guides for product context. Tests and demos must not read
+private working data.
 Run `uv run pytest` after integration. Browser checks are optional locally:
 `uv run --with playwright pytest tests/test_ux_browser.py tests/test_dashboard_browser.py`.
 Set `PORTFOLIO_TEST_CHROMIUM` to an available Chromium binary if needed.
@@ -168,7 +171,8 @@ Analytics caches are private and separate from the ordinary price/chart caches.
 Their normal lifetime is 24 hours; failed requests have a 15-minute cooldown.
 Failures can retain visibly stale data. Explicit refresh retries immediately.
 Fee overrides are private `fund-fees.json` data. Do not commit overrides, caches,
-generated screenshots, diagnostics, or real portfolio examples.
+test screenshots, diagnostics, or real portfolio examples. Only explicitly
+reviewed synthetic guide images may enter the public documentation.
 
 ### Potential extensions and decisions to make first
 
@@ -212,7 +216,9 @@ Use `uv run pytest`. Focused analytics tests are `tests/test_analytics.py`,
 `tests/test_risk.py`, and `tests/test_analytics_ui.py`. Browser coverage is in
 `tests/test_analytics_browser.py`, with shared synthetic fixtures from
 `tests/test_ux_browser.py`. Tests must never read the working portfolio or require
-live market-data access. Browser screenshots must remain in temporary directories.
+live market-data access. Browser-test screenshots remain in temporary directories;
+the separate guide-image capture/review procedure is in
+`docs/documentation-maintenance.md` in the source checkout.
 
 Run checks against the exact intended source commit. Previous test counts and
 another checkout's running preview do not establish that the current app works.

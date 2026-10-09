@@ -5,6 +5,9 @@ as an experimental download alongside Windows/Linux, subject to same-source
 build and automated packaged checks. Official publication still requires explicit
 approval.
 
+For installation, recovery and removal, see the [user installation guide](user/install.md).
+The app's **? → User guide** opens its matching bundled documentation offline.
+
 ## Targets and build
 
 - Ubuntu 22.04/24.04 x64: Qt WebEngine, bundled Python, `.deb`, application menu shortcut.

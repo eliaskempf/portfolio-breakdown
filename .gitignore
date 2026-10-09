@@ -72,6 +72,9 @@ handoff.md
 
 # Reviewed README capture generated exclusively from the synthetic offline demo.
 !/docs/assets/demo-overview.png
+!/docs/user/assets/demo-etf-breakdown.png
+!/docs/user/assets/demo-targets.png
+!/docs/user/assets/demo-contribution.png
 
 !/.github/workflows/desktop-experiment.yml
 

@@ -21,11 +21,14 @@ RELEASE_FILES = {"packaging/posix-window.spec", "tools/desktop_build.py", "tools
 ICON_FILES = {"src/portfolio_app/assets/portfolio-breakdown.png", "src/portfolio_app/assets/portfolio-breakdown.svg",
               "src/portfolio_app/assets/favicon.svg", "src/portfolio_app/assets/favicon.ico",
               "docs/assets/readme-brand-light.png", "docs/assets/readme-brand-dark.png"}
-# This exact public demo capture is reviewed separately; arbitrary screenshots
-# and images remain blocked. Never populate it from a personal workspace.
-DEMO_IMAGE_FILES = {'docs/assets/demo-overview.png'}
+# These exact public demo captures are reviewed separately; arbitrary screenshots
+# and images remain blocked. Never populate them from a personal workspace.
+DEMO_IMAGE_FILES = {'docs/assets/demo-overview.png',
+                    'docs/user/assets/demo-etf-breakdown.png',
+                    'docs/user/assets/demo-targets.png',
+                    'docs/user/assets/demo-contribution.png'}
 DOCS_FILES = {"mkdocs.yml", ".github/workflows/docs.yml", ".github/workflows/docs-pages.yml",
-              "tools/docs_site.py", "tools/docs_preview.py", "tools/docs_candidate.py", "docs/documentation-maintenance.md"}
+              "tools/docs_site.py", "tools/docs_preview.py", "tools/docs_candidate.py", "tools/docs_screenshots.py", "docs/documentation-maintenance.md"}
 PRIVATE_PARTS = {"data", "private", "imports", "exports", "reports", "screenshots", ".cache", ".backups", ".codex", ".agents", ".vscode", ".idea", ".streamlit", ".venv"}
 SECRET_PATTERNS = (
     ("private key", re.compile(rb"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")),

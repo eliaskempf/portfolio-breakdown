@@ -8,6 +8,7 @@ The persistent default is independent of the launch directory:
 | --- | --- |
 | Linux | `$XDG_DATA_HOME/portfolio-breakdown/portfolio`, normally `~/.local/share/portfolio-breakdown/portfolio` |
 | Windows | `%LOCALAPPDATA%\portfolio-breakdown\portfolio` |
+| macOS | `~/Library/Application Support/portfolio-breakdown/portfolio` |
 
 Open **Portfolio settings → App & workspace** to see the active folder and use
 **Open data folder** to open it in your file manager. A confirmed restore can

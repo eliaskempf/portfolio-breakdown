@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 
-from release import ROOT, archive_bundle, frozen_check, notices, package_check
+from release import ROOT, archive_bundle, bundle_guide, frozen_check, notices, package_check
 
 
 from windows_bundle import interop_notices
@@ -36,7 +36,7 @@ def main():
                     str(ROOT / 'packaging/window.spec')], cwd=ROOT, check=True)
     bundle = output / 'frozen/portfolio-window'
     shutil.copy(ROOT / 'LICENSE', bundle / 'LICENSE')
-    shutil.copy(ROOT / 'docs/windows-desktop.md', bundle / 'EXPERIMENTAL.md')
+    bundle_guide(ROOT / 'docs/windows-desktop.md', bundle / 'EXPERIMENTAL.md', documentation=False)
     notices(bundle)
     # Python wheel metadata does not cover WebView2's managed/native interop DLLs.
     import webview

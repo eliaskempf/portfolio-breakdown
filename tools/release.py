@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -13,8 +14,36 @@ import tarfile
 from tempfile import TemporaryDirectory
 import tomllib
 import zipfile
+from urllib.parse import quote, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def bundle_guide(source: Path, destination: Path, *, documentation: bool = True) -> None:
+    """Relocate a guide's links to bundled HTML or the exact source revision."""
+    revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+
+    def relocate(match):
+        label, target = match.groups()
+        parsed = urlsplit(target)
+        if parsed.scheme or parsed.netloc or not parsed.path:
+            return match.group(0)
+        path = (source.parent / unquote(parsed.path)).resolve()
+        relative = path.relative_to(ROOT)
+        if not path.is_file():
+            raise ValueError(f'Missing source guide link: {relative}')
+        fragment = '#' + parsed.fragment if parsed.fragment else ''
+        if documentation and relative.parts[:2] == ('docs', 'user') and path.suffix == '.md':
+            page = relative.relative_to('docs/user').with_suffix('')
+            html = 'index.html' if page.as_posix() == 'index' else page.as_posix() + '/index.html'
+            target = 'documentation/' + html + fragment
+        else:
+            target = f'https://github.com/eliaskempf/portfolio-breakdown/blob/{revision}/{quote(relative.as_posix())}' + fragment
+            label += ' (source; internet required)'
+        return f'[{label}]({target})'
+
+    content = re.sub(r'\[([^\]\n]+)\]\(([^\s)]+)\)', relocate, source.read_text(encoding='utf-8'))
+    destination.write_text(content, encoding='utf-8')
 
 
 def preflight():
@@ -169,7 +198,7 @@ def build(output):
                     '--distpath', str(ROOT / 'dist/frozen'), str(ROOT / 'packaging/portfolio.spec')], cwd=ROOT, check=True)
     bundle = ROOT / 'dist/frozen/portfolio-app'
     shutil.copy(ROOT / 'LICENSE', bundle / 'LICENSE')
-    shutil.copy(ROOT / 'docs/install.md', bundle / 'INSTALL.md')
+    bundle_guide(ROOT / 'docs/install.md', bundle / 'INSTALL.md')
     notices(bundle)
     windows_metadata = {}
     if os.name == 'nt':

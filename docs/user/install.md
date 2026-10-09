@@ -68,15 +68,35 @@ app and do not require Python or uv:
 .\portfolio-app.exe --data-dir "C:\path\to\workspace" --stop
 ```
 
-On Linux, open a terminal in the extracted application folder:
+For the Linux browser archive, open a terminal in the extracted application folder:
 
 ```sh
 ./portfolio-app --data-dir /path/to/workspace --server.port=8502
 ./portfolio-app --data-dir /path/to/workspace --stop
 ```
 
-Other advanced examples in this guide use the Windows console companion.
-On Linux use `./portfolio-app` with the same options and Linux paths.
+For the installed Ubuntu `.deb`, use its launcher from any terminal:
+
+```sh
+portfolio-breakdown-experimental --data-dir /path/to/workspace
+portfolio-breakdown-experimental --data-dir /path/to/workspace --stop
+```
+
+On Mac, use the console companion inside the app copied to Applications:
+
+```sh
+"/Applications/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-cli" --data-dir /path/to/workspace
+"/Applications/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-cli" --data-dir /path/to/workspace --stop
+```
+
+Adjust the quoted app path if installed elsewhere. Both native launchers accept
+`--browser` for browser presentation. Mac command paths follow the bundle layout;
+personal-Mac installation and quarantine approval remain unverified.
+
+Other advanced examples in this guide use the Windows console companion. Substitute
+the launcher for your installation above, using the same options and OS-appropriate
+paths. Recovery commands such as `--stop`, `--backup-to` and `--restore-from` do not
+open a native window.
 For a normal Windows window launch with custom options, use
 `& ".\Portfolio Breakdown.exe" --data-dir "C:\path\to\workspace"`.
 Portable installs can create a shortcut with `--install-shortcut`; recreate it
@@ -96,17 +116,21 @@ its command-line demo/live launch mode.
 ## Update or remove {#update}
 
 1. Stop the old app and [back up the workspace](storage.md#backup).
-2. Run the new Windows Setup to update the installed app, extract a portable
-   package into a new application directory.
+2. Run the new Windows Setup, install the new Ubuntu `.deb` with
+   `sudo apt install ./portfolio-breakdown-experimental_<version>_amd64.deb`,
+   or replace the Mac app in Applications with the copy from the new DMG.
+   For portable archives, extract into a new application directory.
 3. Launch from the same shortcut or with the same custom data directory. Check holdings, targets,
    prices and the reported version before retiring the old application.
 4. Recreate shortcuts if its path changed. For rollback after a data-format
    change, restore the old backup into a new directory and use the matching app.
 
 Do not overwrite an older backup. For an installed Windows app, use **Settings →
-Apps → Portfolio Breakdown → Uninstall**. For portable apps, stop the app and
-remove its application directory and shortcut. Neither method removes your
-separate portfolio workspace. Shared WebView2 is retained.
+Apps → Portfolio Breakdown → Uninstall**. For Ubuntu use
+`sudo apt remove portfolio-breakdown-experimental`. On Mac, move the stopped
+**Portfolio Breakdown Experimental.app** from Applications to Trash. For portable
+apps, remove the stopped app's directory and shortcut. These operations leave the
+separate portfolio workspace in place. Shared WebView2 is retained.
 
 The app is GPL-3.0-only, without warranty under its license. Bundles include
 third-party notices; corresponding source and build material accompany releases.

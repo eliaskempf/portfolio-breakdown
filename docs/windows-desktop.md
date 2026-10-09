@@ -44,16 +44,31 @@ renderer on the main thread. Authenticated repeated-launch control requests focu
 the existing window. A browser tab cannot take ownership of a window-owned server.
 Server cleanup uses owned processes rather than an arbitrary saved PID or port.
 Console-free entrypoints initialize private diagnostics before application imports;
-those logs are not package inputs. Retain the console companion for CLI recovery.
+those logs are not package inputs. The production candidate includes the console
+companion `portfolio-app.exe` for CLI recovery; the prototype does not.
 
 ```powershell
 uv run pytest tests/test_window.py tests/test_window_lifecycle.py tests/test_window_build.py
+```
+
+Launch the prototype manually with the temporary workspace defined above:
+
+```powershell
+& "dist/window-prototype/frozen/portfolio-window/portfolio-window.exe" --data-dir $workspace --offline-demo
+```
+
+The prototype does not bundle the user guide, so it cannot pass the full
+`window_smoke.py` help checks. Run that smoke only against the production
+candidate's separate GUI executable:
+
+```powershell
 uv run python tools/window_smoke.py --interactive "path/to/Portfolio Breakdown.exe"
 ```
 
 Use synthetic data. Check actual chart rendering, file dialogs, downloaded bytes,
 F11, minimize/restore, repeat launch, startup failures and complete shutdown. Test
-the exact Setup/portable files on Windows 11; a Linux browser pass or healthy
+the exact Setup/portable files on Windows 11; prototype checks do not establish
+the production bundle's help or release acceptance. A Linux browser pass or healthy
 endpoint does not establish Windows native acceptance. Follow the
 [release checklist](release-checklist.md) for final installation, upgrade and
 removal checks, including preservation of the synthetic workspace.

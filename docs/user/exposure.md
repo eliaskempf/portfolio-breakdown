@@ -37,6 +37,16 @@ app does not scale named constituents to 100%. Other can represent a partial
 snapshot and is not automatically an error. Check the source interpretation and
 holdings date before drawing conclusions from a large residual.
 
+To inspect these weights, select an asset in **Exposure → Assets**, open its
+details, then expand **ETF breakdown** and select **Holdings**.
+
+[![Offline demo fund breakdown showing the holdings date, synthetic source, 98.50% coverage and a 1.50% Other row.](assets/demo-etf-breakdown.png)](assets/demo-etf-breakdown.png)
+
+*Synthetic offline example: named constituents cover 98.50% of this invented
+snapshot; Other retains 1.50%. Fund allocation is a percentage of the whole fund.
+Selected ETF exposure is the corresponding amount from the selected fund position.
+These are invented weights, not actual issuer holdings. Open the image for detail.*
+
 A source's holdings date differs from a download/check time. Automatic checks
 normally consider snapshots at least one day old, with one attempt per fund per
 24 hours after a successful check. Failed discovery/refresh attempts can retry
