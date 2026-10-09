@@ -1,6 +1,7 @@
 <h1>
-  <img align="right" src="src/portfolio_app/assets/portfolio-breakdown.svg" alt="Portfolio Breakdown logo" width="40" height="40" />
+  <img align="right" src="src/portfolio_app/assets/portfolio-breakdown.svg" alt="Portfolio Breakdown logo" width="88" height="88" />
   Portfolio Breakdown
+  <br clear="both" />
 </h1>
 
 A local portfolio-analysis app for understanding what you own, what is inside your
