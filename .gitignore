@@ -66,6 +66,10 @@ handoff.md
 !/src/portfolio_app/assets/favicon.svg
 !/src/portfolio_app/assets/favicon.ico
 
+# Reviewed app icon and name, rendered for light/dark README backgrounds.
+!/docs/assets/readme-brand-light.png
+!/docs/assets/readme-brand-dark.png
+
 # Reviewed README capture generated exclusively from the synthetic offline demo.
 !/docs/assets/demo-overview.png
 
