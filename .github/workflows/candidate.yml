@@ -146,9 +146,9 @@ jobs:
           PORTFOLIO_TEST_PANEL_EVIDENCE: '1'
         run: |
           failed=0
-          for inspect_before in 0 1; do
+          for mode in render desktop; do
             for attempt in 1 2 3; do
-              PORTFOLIO_TEST_PANEL_TRACE_BEFORE="$inspect_before" uv run portfolio-window --native-self-test "$RUNNER_TEMP/release-diagnostics/native-$inspect_before-$attempt" desktop || failed=1
+              uv run portfolio-window --native-self-test "$RUNNER_TEMP/release-diagnostics/native-$mode-$attempt" "$mode" || failed=1
             done
           done
           exit "$failed"

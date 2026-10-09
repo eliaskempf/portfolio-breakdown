@@ -115,10 +115,12 @@ It runs the affected Windows browser suites, four slower-render browser cases,
 and six independent native source probes per selected Mac host without
 building installers. Mac diagnostics record permission, focus and default-button
 state, with a bounded accessibility tree and synthetic panel snapshot on failure.
-Three probes inspect only after a failure; three also inspect before confirmation
-to expose observation-induced timing changes. Every probe must pass; a later
-success never replaces an earlier failure. Synthetic browser failures retain screenshots, DOM and Playwright
-traces. Every check must pass; slower-render cases are additional tests, not
+Three probes use the build job's render mode and three include desktop focus
+checks. Evidence collection initializes only after failure, so it cannot delay
+normal confirmation. Set `PORTFOLIO_TEST_PANEL_TRACE_BEFORE=1` explicitly when
+investigating pre-confirmation state; inspection can change timing. Every probe
+must pass; a later success never replaces an earlier failure. Synthetic browser
+failures retain screenshots, DOM and Playwright traces. Every check must pass; slower-render cases are additional tests, not
 retries that replace failures. Source diagnostics do not accept packaged bytes;
 Launch Services acceptance uses the real installed `.app` in the installer job.
 

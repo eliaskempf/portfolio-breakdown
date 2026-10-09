@@ -217,10 +217,13 @@ def cocoa_interactions(window, root, record, output=None):
     app = A.NSApplication.sharedApplication()
     timers, events, errors, trace = [], [], [], []
     from portfolio_app.cocoa_diagnostics import PanelEvidence, enabled
-    evidence = PanelEvidence(output / 'panels') if output is not None and enabled() else None
+    evidence = None
     def observe(label, panel, screenshot=False):
-        if evidence is not None:
+        nonlocal evidence
+        if output is not None and enabled():
             try:
+                if evidence is None:
+                    evidence = PanelEvidence(output / 'panels')
                 evidence.record(label, A, panel, screenshot=screenshot)
             except Exception as exc:
                 trace.append(['evidence-error', str(exc)])
