@@ -2,6 +2,11 @@ name: Experimental desktop candidates
 on:
   workflow_dispatch:
     inputs:
+      build_platforms:
+        description: Installer platforms to build and test
+        type: choice
+        options: [all, macos, linux]
+        default: all
       diagnostics_only:
         description: Run focused source diagnostics without building installers
         type: boolean
@@ -148,13 +153,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-22.04
-            target: linux-x64
-            python: '3.12'
-          - os: macos-14
-            target: macos-arm64
-            python: '3.13'
+        include: ${{ fromJSON(inputs.build_platforms == 'macos' && '[{"os":"macos-14","target":"macos-arm64","python":"3.13"}]' || inputs.build_platforms == 'linux' && '[{"os":"ubuntu-22.04","target":"linux-x64","python":"3.12"}]' || '[{"os":"ubuntu-22.04","target":"linux-x64","python":"3.12"},{"os":"macos-14","target":"macos-arm64","python":"3.13"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -271,7 +270,7 @@ jobs:
           retention-days: 14
   linux-compatibility:
     name: linux-compatibility-${{ matrix.backend }}
-    if: ${{ always() && !cancelled() && !inputs.diagnostics_only }}
+    if: ${{ always() && !cancelled() && !inputs.diagnostics_only && inputs.build_platforms != 'macos' }}
     needs: build
     runs-on: ubuntu-24.04
     strategy:
@@ -315,7 +314,7 @@ jobs:
           retention-days: 14
   macos-compatibility:
     name: macos-compatibility-${{ matrix.os }}
-    if: ${{ always() && !cancelled() && !inputs.diagnostics_only }}
+    if: ${{ always() && !cancelled() && !inputs.diagnostics_only && inputs.build_platforms != 'linux' }}
     needs: build
     strategy:
       fail-fast: false
