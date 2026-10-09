@@ -25,23 +25,16 @@ def launch_services(app, output):
     """Check the child report: `open -W` does not return the app's exit status."""
     if output.exists():
         raise ValueError('Native evidence directory must be new')
-    args = ['open', '-W', '-n']
-    # Launch Services does not inherit the calling shell's environment. Forward
-    # only the opt-in flags for synthetic input, never arbitrary CI credentials.
-    if (os.environ.get('PORTFOLIO_TEST_HOSTED_INPUT') == '1'
-            and os.environ.get('GITHUB_ACTIONS') == 'true'
-            and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'):
-        for key in ('PORTFOLIO_TEST_HOSTED_INPUT', 'GITHUB_ACTIONS', 'RUNNER_ENVIRONMENT'):
-            args.extend(['--env', f'{key}={os.environ[key]}'])
-    args.extend([str(app), '--args', '--native-self-test', str(output), 'render'])
+    # Finder-style launch must not depend on accessibility permission to inject
+    # system input. The separate direct-executable desktop check still requires
+    # real native upload/save dialogs, exact bytes, focus and lifecycle behavior.
+    args = ['open', '-W', '-n', str(app), '--args', '--native-self-test', str(output), 'welcome']
     subprocess.run(args, check=True, timeout=150)
     report = json.loads((output / 'native-result.json').read_text(encoding='utf-8'))
-    required = {'native window shown', 'native WebKit snapshot captured',
-                'native Cocoa open panel supplies exact uploaded bytes to WebKit',
-                'native Cocoa save panel writes exact downloaded bytes',
+    required = {'native window shown', 'default intro completes and empty-workspace welcome renders',
                 'window close stops managed server and preserves workspace'}
     if (report.get('status') != 'passed' or report.get('errors') != []
-            or report.get('mode') != 'render' or report.get('platform') != 'darwin'
+            or report.get('mode') != 'welcome' or report.get('platform') != 'darwin'
             or not required.issubset(report.get('checks', []))):
         raise RuntimeError(f'Launch Services native checks failed; inspect {output}')
 

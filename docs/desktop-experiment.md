@@ -101,8 +101,12 @@ normal startup never enables this input path. No accessibility or Gatekeeper
 policy is changed by these tests.
 The Cocoa probe waits for the location sheet to own focus before typing and for
 the expected selection before confirming the panel. Launch Services checks
-forward only the explicit hosted-input flags and require the child JSON report;
-`open -W` succeeding alone is not acceptance.
+require the child JSON report for the default intro,
+welcome screen and server cleanup; `open -W` succeeding alone is not acceptance.
+This Finder-style launch does not inject system input or require accessibility
+permission. The separate installed-executable desktop check must pass real
+native upload/save byte checks and window focus checks in the runner context.
+Both checks are mandatory; neither substitutes for the other.
 
 For release regressions, **Build candidate** also supports `diagnostics_only`.
 It runs the affected Windows browser suites, four slower-render browser cases,
@@ -119,8 +123,9 @@ gh workflow run candidate.yml --ref REVIEWED_BRANCH -f diagnostics_only=true -f 
 Choose `windows` or `macos` instead of `all` when the other platform has already
 been checked locally. These inputs do not affect normal candidate builds.
 
-Set `mac_candidate_run` to an existing experimental workflow run ID to repeat
-the browser workflows against its verified Mac installer instead of source.
+Set `mac_candidate_run` to an existing experimental workflow run ID for one
+macOS 14 job that verifies and installs its DMG, then runs Launch Services and
+full installed native/browser acceptance without rebuilding or repeating tests.
 Set `linux_candidate_run` instead to run Linux-only diagnostics: three native
 cycles per backend against both the selected installer (under GDB) and current
 source, retaining crash backtraces and window-manager state. These runs do not

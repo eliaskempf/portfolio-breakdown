@@ -7,7 +7,7 @@ on:
         type: boolean
         default: false
       mac_candidate_run:
-        description: Optional workflow run ID whose Mac installer should receive repeated browser tests
+        description: Reuse a Mac installer for one Launch Services and native acceptance check
         type: string
         default: ''
       linux_candidate_run:
@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-24.04]
+        os: ${{ fromJSON(inputs.mac_candidate_run != '' && '["macos-14"]' || '["macos-14","ubuntu-24.04"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -58,7 +58,7 @@ jobs:
           hdiutil attach ./*.dmg -nobrowse -mountpoint "$RUNNER_TEMP/diagnostic-mount"
           ditto "$RUNNER_TEMP/diagnostic-mount/Portfolio Breakdown Experimental.app" "$RUNNER_TEMP/diagnostic-installed/Portfolio Breakdown Experimental.app"
           hdiutil detach "$RUNNER_TEMP/diagnostic-mount"
-          echo "MAC_BROWSER_EXECUTABLE=$RUNNER_TEMP/diagnostic-installed/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-cli" >> "$GITHUB_ENV"
+          codesign --verify --deep --strict "$RUNNER_TEMP/diagnostic-installed/Portfolio Breakdown Experimental.app"
       - name: Linux diagnostic desktop
         if: runner.os == 'Linux'
         run: |
@@ -77,16 +77,17 @@ jobs:
           name: desktop-diagnostics-native-macos
           path: ${{ runner.temp }}/diagnostics/native
           retention-days: 14
+      - name: Existing Mac installer launch and native acceptance
+        if: ${{ runner.os == 'macOS' && inputs.mac_candidate_run != '' && !cancelled() }}
+        run: |
+          uv run python tools/desktop_smoke.py "$RUNNER_TEMP/diagnostic-installed/Portfolio Breakdown Experimental.app" --launch-services --output "$RUNNER_TEMP/diagnostics/launch-services"
+          uv run python tools/desktop_smoke.py "$RUNNER_TEMP/diagnostic-installed/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-window" --desktop --output "$RUNNER_TEMP/diagnostics/installed-native"
       - name: Repeated synthetic browser workflow
-        if: ${{ runner.os == 'macOS' && !cancelled() }}
+        if: ${{ runner.os == 'macOS' && inputs.mac_candidate_run == '' && !cancelled() }}
         run: |
           failed=0
           for attempt in 1 2 3 4 5; do
-            if [ -n "${MAC_BROWSER_EXECUTABLE:-}" ]; then
-              uv run python tools/desktop_smoke.py "$MAC_BROWSER_EXECUTABLE" --browser-only --output "$RUNNER_TEMP/diagnostics/browser-$attempt" > "$RUNNER_TEMP/diagnostics/browser-$attempt.log" 2>&1 || failed=1
-            else
-              uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/diagnostics/browser-$attempt" > "$RUNNER_TEMP/diagnostics/browser-$attempt.log" 2>&1 || failed=1
-            fi
+            uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/diagnostics/browser-$attempt" > "$RUNNER_TEMP/diagnostics/browser-$attempt.log" 2>&1 || failed=1
           done
           exit "$failed"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

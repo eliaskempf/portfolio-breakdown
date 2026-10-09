@@ -223,10 +223,8 @@ def desktop_smoke_module(monkeypatch):
 
 
 def native_report():
-    return dict(status='passed', errors=[], mode='render', platform='darwin', checks=[
-        'native window shown', 'native WebKit snapshot captured',
-        'native Cocoa open panel supplies exact uploaded bytes to WebKit',
-        'native Cocoa save panel writes exact downloaded bytes',
+    return dict(status='passed', errors=[], mode='welcome', platform='darwin', checks=[
+        'native window shown', 'default intro completes and empty-workspace welcome renders',
         'window close stops managed server and preserves workspace'])
 
 
@@ -250,7 +248,7 @@ def test_launch_services_zero_exit_does_not_hide_bad_report(tmp_path, monkeypatc
 
 
 @pytest.mark.parametrize('hosted', [False, True])
-def test_launch_services_forwards_only_opted_in_flags(tmp_path, monkeypatch, desktop_smoke_module, hosted):
+def test_launch_services_needs_no_input_automation_flags(tmp_path, monkeypatch, desktop_smoke_module, hosted):
     tool = desktop_smoke_module
     monkeypatch.setenv('GITHUB_ACTIONS', 'true')
     monkeypatch.setenv('RUNNER_ENVIRONMENT', 'github-hosted' if hosted else 'self-hosted')
@@ -265,7 +263,8 @@ def test_launch_services_forwards_only_opted_in_flags(tmp_path, monkeypatch, des
     monkeypatch.setattr(tool.subprocess, 'run', opened)
     tool.launch_services(tmp_path / 'Invented.app', output)
     args, options = calls[0]
-    assert args.count('--env') == (3 if hosted else 0)
+    assert '--env' not in args
+    assert args[-1] == 'welcome'
     assert not any('SECRET' in value or 'must-not-forward' in value for value in args)
     assert options == dict(check=True, timeout=150)
     with pytest.raises(ValueError, match='must be new'):
