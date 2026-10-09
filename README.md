@@ -1,8 +1,7 @@
-<p align="center">
-  <img src="src/portfolio_app/assets/portfolio-breakdown.svg" alt="Portfolio Breakdown logo" width="88" />
-</p>
-
-<h1 align="center">Portfolio Breakdown</h1>
+<h1>
+  <img align="right" src="src/portfolio_app/assets/portfolio-breakdown.svg" alt="Portfolio Breakdown logo" width="40" height="40" />
+  Portfolio Breakdown
+</h1>
 
 A local portfolio-analysis app for understanding what you own, what is inside your
 ETFs, and how your allocation compares with your targets. Your portfolio is stored
