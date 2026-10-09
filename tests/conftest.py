@@ -83,3 +83,51 @@ def service(now, sample_data_dir):
 @pytest.fixture
 def valued(holdings, service):
     return value_holdings(holdings, service)
+
+
+@pytest.fixture(autouse=True)
+def browser_diagnostics(request, monkeypatch):
+    """Opt-in slowdown and failure evidence for synthetic browser tests only."""
+    import os
+    if not request.node.nodeid.split('::')[0].endswith('browser.py'):
+        return
+    evidence = os.environ.get('PORTFOLIO_BROWSER_EVIDENCE')
+    rate = float(os.environ.get('PORTFOLIO_TEST_CPU_RATE', '1'))
+    if not evidence and rate == 1:
+        return
+    from playwright.sync_api import Browser
+    original = Browser.new_page
+    request.node.synthetic_pages = []
+    def new_page(browser, *args, **kwargs):
+        page = original(browser, *args, **kwargs)
+        request.node.synthetic_pages.append(page)
+        if rate != 1:
+            page.context.new_cdp_session(page).send('Emulation.setCPUThrottlingRate', {'rate': rate})
+        if evidence:
+            page.context.tracing.start(screenshots=True, snapshots=True, sources=False)
+        return page
+    monkeypatch.setattr(Browser, 'new_page', new_page)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    import os
+    evidence = os.environ.get('PORTFOLIO_BROWSER_EVIDENCE')
+    if not evidence or report.when != 'call' or not report.failed:
+        return
+    from hashlib import sha256
+    from pathlib import Path
+    root = Path(evidence) / sha256(item.nodeid.encode()).hexdigest()[:16]
+    root.mkdir(parents=True, exist_ok=True)
+    (root / 'test.txt').write_text(item.nodeid + '\n' + str(report.longrepr), encoding='utf-8')
+    for index, page in enumerate(getattr(item, 'synthetic_pages', [])):
+        if page.is_closed():
+            continue
+        try:
+            page.screenshot(path=str(root / f'page-{index}.png'))
+            (root / f'page-{index}.html').write_text(page.content(), encoding='utf-8')
+            page.context.tracing.stop(path=str(root / f'trace-{index}.zip'))
+        except Exception as exc:
+            (root / f'capture-{index}.txt').write_text(str(exc), encoding='utf-8')

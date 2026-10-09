@@ -194,3 +194,79 @@ def test_darwin_permission_error_only_ignored_for_dead_group(monkeypatch, state,
     else:
         with pytest.raises(PermissionError):
             signal_owned_group(73, signal.SIGTERM)
+
+
+def test_cocoa_panel_waits_for_location_sheet_and_selected_path():
+    from portfolio_app.desktop_controls import CocoaPanelSequence
+    sequence = CocoaPanelSequence()
+    def step(panel=False, location=False, selected=False):
+        return sequence.advance(panel_ready=panel, location_ready=location, selected=selected)
+    assert step() is None
+    assert step(panel=True) == 'open-location'
+    # Slow remote panels must not receive text before their location sheet opens.
+    for _ in range(5):
+        assert step(panel=True) is None
+    assert step(location=True) == 'type-path'
+    assert step(location=True) == 'confirm-location'
+    for _ in range(5):
+        assert step(location=True) is None
+        assert step(panel=True) is None
+    assert step(panel=True, selected=True) == 'confirm-panel'
+    assert step(panel=True, selected=True) is None  # Never repeat an input.
+
+
+@pytest.fixture
+def desktop_smoke_module(monkeypatch):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / 'tools'))
+    import desktop_smoke
+    return desktop_smoke
+
+
+def native_report():
+    return dict(status='passed', errors=[], mode='render', platform='darwin', checks=[
+        'native window shown', 'native WebKit snapshot captured',
+        'native Cocoa open panel supplies exact uploaded bytes to WebKit',
+        'native Cocoa save panel writes exact downloaded bytes',
+        'window close stops managed server and preserves workspace'])
+
+
+@pytest.mark.parametrize('failure', ['missing', 'failed', 'errors', 'checks', 'platform', 'mode'])
+def test_launch_services_zero_exit_does_not_hide_bad_report(tmp_path, monkeypatch, desktop_smoke_module, failure):
+    tool = desktop_smoke_module
+    report = native_report()
+    if failure != 'missing':
+        key, value = {'failed': ('status', 'failed'), 'errors': ('errors', ['Synthetic panel failure']),
+                      'checks': ('checks', []), 'platform': ('platform', 'linux'),
+                      'mode': ('mode', 'early-close')}[failure]
+        report[key] = value
+    output = tmp_path / 'native'
+    def opened(*args, **kwargs):
+        if failure != 'missing':
+            output.mkdir()
+            (output / 'native-result.json').write_text(json.dumps(report))
+    monkeypatch.setattr(tool.subprocess, 'run', opened)
+    with pytest.raises((RuntimeError, FileNotFoundError)):
+        tool.launch_services(tmp_path / 'Invented.app', output)
+
+
+@pytest.mark.parametrize('hosted', [False, True])
+def test_launch_services_forwards_only_opted_in_flags(tmp_path, monkeypatch, desktop_smoke_module, hosted):
+    tool = desktop_smoke_module
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    monkeypatch.setenv('RUNNER_ENVIRONMENT', 'github-hosted' if hosted else 'self-hosted')
+    monkeypatch.setenv('PORTFOLIO_TEST_HOSTED_INPUT', '1')
+    monkeypatch.setenv('INVENTED_SECRET', 'must-not-forward')
+    output = tmp_path / 'native'
+    calls = []
+    def opened(args, **kwargs):
+        calls.append((args, kwargs))
+        output.mkdir()
+        (output / 'native-result.json').write_text(json.dumps(native_report()))
+    monkeypatch.setattr(tool.subprocess, 'run', opened)
+    tool.launch_services(tmp_path / 'Invented.app', output)
+    args, options = calls[0]
+    assert args.count('--env') == (3 if hosted else 0)
+    assert not any('SECRET' in value or 'must-not-forward' in value for value in args)
+    assert options == dict(check=True, timeout=150)
+    with pytest.raises(ValueError, match='must be new'):
+        tool.launch_services(tmp_path / 'Invented.app', output)

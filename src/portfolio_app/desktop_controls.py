@@ -1,5 +1,6 @@
 """Opt-in synthetic native-panel and window-state checks, never normal startup."""
 import os
+from pathlib import Path
 import sys
 import threading
 import time
@@ -171,6 +172,28 @@ def window_states(window, workspace, record, output):
         window.evaluate_js("document.querySelector('#native-focus-preserved')?.remove(); document.querySelector('#native-focus-delivery')?.remove()")
 
 
+class CocoaPanelSequence:
+    """Advance native input only after the remote panel reaches its next state."""
+
+    def __init__(self):
+        self.phase = 0
+
+    def advance(self, *, panel_ready, location_ready, selected):
+        if self.phase == 0 and panel_ready:
+            self.phase = 1
+            return 'open-location'
+        if self.phase == 1 and location_ready:
+            self.phase = 2
+            return 'type-path'
+        if self.phase == 2 and location_ready:
+            self.phase = 3
+            return 'confirm-location'
+        if self.phase == 3 and panel_ready and selected:
+            self.phase = 4
+            return 'confirm-panel'
+        return None
+
+
 def cocoa_interactions(window, root, record):
     """Send local native input to WebKit and its real modal file panels."""
     import AppKit as A
@@ -222,40 +245,44 @@ def cocoa_interactions(window, root, record):
             app.sendEvent_(event)
 
     def arm(path, saving):
-        phase, deadline = [0], [time.monotonic() + 20]
+        sequence, deadline = CocoaPanelSequence(), time.monotonic() + 20
         active_panel = [None]
         def tick(timer):
             try:
                 panel = app.modalWindow()
                 current = app.keyWindow()
-                trace.append([phase[0], str(current.className()) if current else None,
-                              str(current.firstResponder().className()) if current and current.firstResponder() else None])
-                if time.monotonic() > deadline[0]:
+                selected_url = active_panel[0].directoryURL() if saving and active_panel[0] else (
+                    active_panel[0].URL() if active_panel[0] else None)
+                selected_path = str(selected_url.path()) if selected_url else None
+                trace.append([sequence.phase, str(current.className()) if current else None,
+                              str(current.firstResponder().className()) if current and current.firstResponder() else None,
+                              selected_path])
+                if time.monotonic() > deadline:
                     timer.invalidate()
-                    errors.append(f'File panel timed out at phase {phase[0]}')
+                    errors.append(f'File panel timed out at phase {sequence.phase}')
                     if panel:
                         panel.cancel_(None)
                     return
-                if phase[0] == 0:
+                if active_panel[0] is None:
                     if not isinstance(panel, A.NSSavePanel):
                         return
                     active_panel[0] = panel
                     events.append('save' if saving else 'open')
                     if saving:
                         panel.setNameFieldStringValue_(path.name)
+                panel_ready = current == active_panel[0]
+                location_ready = bool(current and current != active_panel[0] and current != browser.window)
+                selected = bool(selected_path and Path(selected_path).resolve() == (path.parent if saving else path).resolve())
+                action = sequence.advance(panel_ready=panel_ready, location_ready=location_ready, selected=selected)
+                if action == 'open-location':
                     key('', 5, A.NSEventModifierFlagCommand | A.NSEventModifierFlagShift)
-                    phase[0] = 1
-                elif phase[0] == 1:
+                elif action == 'type-path':
+                    key('', 0, A.NSEventModifierFlagCommand)  # Replace any remembered location.
                     for char in str(path.parent if saving else path):
                         key(char, 0)
-                    phase[0] = 2
-                elif phase[0] == 2:
+                elif action in {'confirm-location', 'confirm-panel'}:
                     key('', 36)
-                    phase[0] = 3
-                elif phase[0] == 3:
-                    key('', 36)
-                    phase[0] = 5
-                elif phase[0] == 5 and panel is None:
+                elif sequence.phase == 4 and panel is None:
                     selected = active_panel[0].URL()
                     trace.append(['selected', str(selected.path()) if selected else None])
                     timer.invalidate()

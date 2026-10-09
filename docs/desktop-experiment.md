@@ -99,6 +99,25 @@ input uses the system event stream only in an explicitly opted-in GitHub-hosted
 job while this test app owns the foreground. Local probes remain process-targeted;
 normal startup never enables this input path. No accessibility or Gatekeeper
 policy is changed by these tests.
+The Cocoa probe waits for the location sheet to own focus before typing and for
+the expected selection before confirming the panel. Launch Services checks
+forward only the explicit hosted-input flags and require the child JSON report;
+`open -W` succeeding alone is not acceptance.
+
+For release regressions, **Build candidate** also supports `diagnostics_only`.
+It runs the affected Windows browser suites, three slower-render browser cases,
+and native source/Launch Services checks on macOS 14 and 15 without building any
+installers. Synthetic browser failures retain screenshots, DOM and Playwright
+traces. Every check must pass; slower-render cases are additional tests, not
+retries that replace failures. Source diagnostics do not accept packaged bytes.
+
+```sh
+gh workflow run candidate.yml --ref REVIEWED_BRANCH -f diagnostics_only=true -f diagnostics_platforms=all
+```
+
+Choose `windows` or `macos` instead of `all` when the other platform has already
+been checked locally. These inputs do not affect normal candidate builds.
+
 Set `mac_candidate_run` to an existing experimental workflow run ID to repeat
 the browser workflows against its verified Mac installer instead of source.
 Set `linux_candidate_run` instead to run Linux-only diagnostics: three native

@@ -1,12 +1,23 @@
 name: Build candidate
 on:
   workflow_dispatch:
+    inputs:
+      diagnostics_only:
+        description: Focused Windows browser and Mac native source checks; no installers
+        type: boolean
+        default: false
+      diagnostics_platforms:
+        description: Platforms for diagnostics-only runs
+        type: choice
+        options: [all, windows, macos]
+        default: all
 permissions:
   contents: read
 env:
   PYTHONUNBUFFERED: '1'
 jobs:
   build:
+    if: ${{ !inputs.diagnostics_only }}
     strategy:
       fail-fast: false
       matrix:
@@ -72,6 +83,7 @@ jobs:
           path: dist/test-results.xml
           retention-days: 30
   linux-compatibility:
+    if: ${{ !inputs.diagnostics_only }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -90,3 +102,54 @@ jobs:
       - run: uv sync --locked --group browser
       - run: uv run playwright install --with-deps chromium
       - run: uv run python tools/release.py test
+  diagnostics:
+    if: ${{ inputs.diagnostics_only }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.diagnostics_platforms == 'macos' && '["macos-14","macos-15"]' || inputs.diagnostics_platforms == 'windows' && '["windows-2022"]' || '["windows-2022","macos-14","macos-15"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    defaults:
+      run:
+        shell: bash
+    env:
+      PORTFOLIO_TEST_HOSTED_INPUT: '1'
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: ${{ runner.os == 'macOS' && '3.13' || '3.12' }}
+      - run: uv sync --locked --extra window --all-groups
+      - name: Windows synthetic navigation regressions
+        if: runner.os == 'Windows'
+        env:
+          PORTFOLIO_REQUIRE_BROWSER: '1'
+          PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/browser
+        run: |
+          uv run playwright install chromium
+          uv run pytest tests/test_backup_browser.py tests/test_position_entry_browser.py tests/test_tour_browser.py -q --junitxml="$RUNNER_TEMP/release-diagnostics/browser.xml"
+      - name: Windows slow-render regressions
+        if: runner.os == 'Windows' && !cancelled()
+        env:
+          PORTFOLIO_REQUIRE_BROWSER: '1'
+          PORTFOLIO_TEST_CPU_RATE: '6'
+          PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/slow-browser
+        run: uv run pytest tests/test_backup_browser.py::test_archive_review_cancel_switch_restart_and_tabs tests/test_position_entry_browser.py::test_search_selection_and_settings_help tests/test_tour_browser.py::test_demo_tour_every_view_and_menu_replay -q --junitxml="$RUNNER_TEMP/release-diagnostics/slow-browser.xml"
+      - name: Mac native source controls
+        if: runner.os == 'macOS'
+        run: uv run portfolio-window --native-self-test "$RUNNER_TEMP/release-diagnostics/native" desktop
+      - name: Mac source Launch Services and report gate
+        if: runner.os == 'macOS' && !cancelled()
+        run: uv run python tools/desktop_smoke.py --source-launch-services --output "$RUNNER_TEMP/release-diagnostics/launch-services"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: release-diagnostics-${{ matrix.os }}
+          path: ${{ runner.temp }}/release-diagnostics
+          if-no-files-found: warn
+          retention-days: 7

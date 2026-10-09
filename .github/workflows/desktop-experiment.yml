@@ -217,10 +217,10 @@ jobs:
           ditto "$RUNNER_TEMP/desktop-mount/Portfolio Breakdown Experimental.app" "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app"
           hdiutil detach "$RUNNER_TEMP/desktop-mount"
           codesign --verify --deep --strict "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app"
-          open -W -n "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app" --args --native-self-test "$RUNNER_TEMP/launch-services-native" render
+          uv run python tools/desktop_smoke.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app" --launch-services --output "$RUNNER_TEMP/launch-services-native"
           uv run python tools/desktop_smoke.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-window" --desktop --output "$RUNNER_TEMP/installed-native"
       - name: Verify unsigned Gatekeeper behavior
-        if: runner.os == 'macOS' && !cancelled()
+        if: runner.os == 'macOS' && success()
         run: uv run python tools/desktop_gatekeeper.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app" --output "$RUNNER_TEMP/gatekeeper"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: runner.os == 'macOS'
@@ -347,7 +347,7 @@ jobs:
       - name: Installed native and application checks
         run: uv run python tools/desktop_smoke.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-window" --desktop --output "$RUNNER_TEMP/compat-native"
       - name: Unsigned Gatekeeper behavior
-        if: ${{ !cancelled() }}
+        if: ${{ success() }}
         run: uv run python tools/desktop_gatekeeper.py "$RUNNER_TEMP/desktop-installed/Portfolio Breakdown Experimental.app" --output "$RUNNER_TEMP/gatekeeper"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
