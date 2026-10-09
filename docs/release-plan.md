@@ -35,6 +35,29 @@ attachments, Actions logs/artifacts and existing release assets. Removing a file
 from the current tree does not remove historical copies. Report coverage gaps;
 never rewrite history or delete remote evidence without explicit approval.
 
+## Reproduce a local package
+
+Use a clean Git checkout on Windows x64 or Ubuntu 22.04 x64 with Python 3.12.
+Windows additionally needs Inno Setup 6.5.4 and WebView2. The compiler must have
+its adjacent license file; `PORTFOLIO_ISCC` can select the installed `ISCC.exe`.
+The build downloads and verifies the matching WebView2 SDK/bootstrapper notices.
+
+```sh
+uv sync --locked --all-groups
+uv run playwright install chromium
+uv run python tools/release.py preflight
+uv run python tools/release.py build --directory dist/local-candidate
+uv run python tools/release.py test --directory dist/local-candidate
+```
+
+The output directory must be empty. These commands build Windows Setup/portable
+or the Linux browser archive and test the extracted package; they do not publish.
+Local manifests use `run_id=local` and cannot satisfy hosted publication evidence.
+For native Ubuntu .deb and Mac DMG builds, use the target-OS recipe and native
+display prerequisites in [desktop development](desktop-experiment.md). Mac builds
+require Python 3.13. Keep local packages private until their contents and builder
+metadata have been reviewed; do not substitute them for accepted hosted bytes.
+
 ## Merge and freeze
 
 After local readiness review and merge approval, integrate the release branch
