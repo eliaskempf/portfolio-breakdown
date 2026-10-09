@@ -296,7 +296,8 @@ def cocoa_interactions(window, root, record, output=None):
                 panel_ready = current == active_panel[0]
                 location_ready = bool(current and current != active_panel[0] and current != browser.window)
                 selected = bool(selected_path and Path(selected_path).resolve() == (path.parent if saving else path).resolve())
-                if sequence.phase == 3 and panel_ready and selected:
+                if (os.environ.get('PORTFOLIO_TEST_PANEL_TRACE_BEFORE') == '1'
+                        and sequence.phase == 3 and panel_ready and selected):
                     observe(f'{saving=}: before confirmation', current)
                 action = sequence.advance(panel_ready=panel_ready, location_ready=location_ready, selected=selected)
                 if action == 'open-location':

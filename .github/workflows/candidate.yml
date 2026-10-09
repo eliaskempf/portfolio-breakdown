@@ -146,8 +146,10 @@ jobs:
           PORTFOLIO_TEST_PANEL_EVIDENCE: '1'
         run: |
           failed=0
-          for attempt in 1 2 3; do
-            uv run portfolio-window --native-self-test "$RUNNER_TEMP/release-diagnostics/native-$attempt" desktop || failed=1
+          for inspect_before in 0 1; do
+            for attempt in 1 2 3; do
+              PORTFOLIO_TEST_PANEL_TRACE_BEFORE="$inspect_before" uv run portfolio-window --native-self-test "$RUNNER_TEMP/release-diagnostics/native-$inspect_before-$attempt" desktop || failed=1
+            done
           done
           exit "$failed"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

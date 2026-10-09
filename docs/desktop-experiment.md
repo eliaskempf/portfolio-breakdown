@@ -112,10 +112,12 @@ Both checks are mandatory; neither substitutes for the other.
 
 For release regressions, **Build candidate** also supports `diagnostics_only`.
 It runs the affected Windows browser suites, four slower-render browser cases,
-and three independent native source probes per selected Mac host without
+and six independent native source probes per selected Mac host without
 building installers. Mac diagnostics record permission, focus and default-button
 state, with a bounded accessibility tree and synthetic panel snapshot on failure.
-Every probe must pass; a later success never replaces an earlier failure. Synthetic browser failures retain screenshots, DOM and Playwright
+Three probes inspect only after a failure; three also inspect before confirmation
+to expose observation-induced timing changes. Every probe must pass; a later
+success never replaces an earlier failure. Synthetic browser failures retain screenshots, DOM and Playwright
 traces. Every check must pass; slower-render cases are additional tests, not
 retries that replace failures. Source diagnostics do not accept packaged bytes;
 Launch Services acceptance uses the real installed `.app` in the installer job.
