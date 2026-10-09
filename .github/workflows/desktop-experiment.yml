@@ -22,6 +22,7 @@ concurrency:
   cancel-in-progress: true
 env:
   PORTFOLIO_TEST_HOSTED_INPUT: '1'
+  PORTFOLIO_TEST_PANEL_EVIDENCE: '1'
   PYTHONUNBUFFERED: '1'
 jobs:
   diagnostics:
