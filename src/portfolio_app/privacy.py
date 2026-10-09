@@ -20,7 +20,8 @@ RELEASE_FILES = {"packaging/posix-window.spec", "tools/desktop_build.py", "tools
                  "docs/documentation-session-handoff.md", "docs/window-session-handoff.md",
                  "docs/startup-development.md", "src/portfolio_app/intro_frontend/index.html"}
 ICON_FILES = {"src/portfolio_app/assets/portfolio-breakdown.png", "src/portfolio_app/assets/portfolio-breakdown.svg",
-              "src/portfolio_app/assets/favicon.svg", "src/portfolio_app/assets/favicon.ico"}
+              "src/portfolio_app/assets/favicon.svg", "src/portfolio_app/assets/favicon.ico",
+              "docs/assets/readme-header.svg"}
 # This exact public demo capture is reviewed separately; arbitrary screenshots
 # and images remain blocked. Never populate it from a personal workspace.
 DEMO_IMAGE_FILES = {'docs/assets/demo-overview.png'}
