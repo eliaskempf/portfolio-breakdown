@@ -1,0 +1,1632 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Local portfolio analysis — user guide">
+      
+      
+      
+        <link rel="canonical" href="https://eliaskempf.github.io/portfolio-breakdown/candidates/27e74a8dfeeaf03bed718b79c067dddcc02b8462/development/">
+      
+      
+        <link rel="prev" href="../reference/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Source development - Portfolio Breakdown</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#source-development" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Portfolio Breakdown" class="md-header__button md-logo" aria-label="Portfolio Breakdown" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Portfolio Breakdown
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Source development
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Portfolio Breakdown" class="md-nav__button md-logo" aria-label="Portfolio Breakdown" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Portfolio Breakdown
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start here
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Setup
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install and run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first portfolio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Holdings
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Holdings
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../positions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Positions and buy-ins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../import/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Import holdings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analysis
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Analysis
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../exposure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exposure and ETFs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prices and performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../analytics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analytics and risk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planning
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Planning
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../allocation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Categories and targets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rebalance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rebalance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Help
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Help
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage and recovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data formats
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Source development
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Source development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-and-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture and verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shared-list-presentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared list presentation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parallel-development" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallel development
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#analytics-development-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analytics development notes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Analytics development notes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#current-product-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current product state
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#calculation-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calculation contracts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code map
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#potential-extensions-and-decisions-to-make-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Potential extensions and decisions to make first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validation-and-resuming-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation and resuming work
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#before-committing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before committing
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-and-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture and verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shared-list-presentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared list presentation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parallel-development" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallel development
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#analytics-development-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analytics development notes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Analytics development notes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#current-product-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current product state
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#calculation-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Calculation contracts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code map
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#potential-extensions-and-decisions-to-make-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Potential extensions and decisions to make first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validation-and-resuming-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation and resuming work
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#before-committing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before committing
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<blockquote>
+<p><strong>Frozen candidate documentation</strong> · app 0.1.0 · source <code>27e74a8dfeeaf03bed718b79c067dddcc02b8462</code></p>
+</blockquote>
+<h1 id="source-development">Source development</h1>
+<p>This page is for contributors working in a source checkout. Installed-app users
+can use their shortcut and the in-app controls; Python and uv are not needed.
+Start with <a href="../install/#source">source installation</a> before running these commands.</p>
+<h2 id="architecture-and-verification">Architecture and verification</h2>
+<p>Business logic is independent of Streamlit:</p>
+<pre><code class="language-text">holdings → reporting-currency valuation → normalized exposures → optional ETF expansion → classifications
+         → hierarchical aggregation → charts and tables
+</code></pre>
+<p>Position filters run after valuation and before exposure normalization. The
+exposure table retains asset IDs and source-position metadata through ETF
+expansion. Provider parsing and refresh code are separate from the generic ETF
+transformation and aggregation engine. All chart types share the same aggregation engine.
+<code>exposure_analysis.py</code> owns source selection and normalized ETF expansion without
+Streamlit; the UI supplies selections and renders the resulting tables.
+<code>currencies.py</code> shares quote-subunit normalization across spot and historical prices.</p>
+<pre><code class="language-bash">uv run pytest
+uv run portfolio-app --demo --server.headless=true
+</code></pre>
+<p>Table editors stay attached to their cells while scrolling. While editing,
+Tab saves and opens the next editable field; Shift+Tab moves back. Escape cancels
+the current edit. Enter edits a selected cell or toggles a selected checkbox.</p>
+<p>Optional browser regressions exercise these interactions in an isolated,
+synthetic Streamlit app. Install Chromium with
+<code>uv run --with playwright playwright install chromium</code>, then run
+<code>uv run --with playwright pytest tests/test_grid_browser.py</code>.</p>
+<p>Tests use generated synthetic fixtures, injected prices, FX, search responses,
+and clocks, with no live network required.
+They cover valuation, persistent cache fallback, parent/child conservation,
+multi-path classifications, filtering, denominators, targets, ETF residuals,
+company exposure merging, snapshot refresh failure recovery, position saves,
+backups, stale-edit rejection, bulk purchase averaging and historical cost entry,
+listing search, minimum-trade and minimum-cash rebalancing, trade-count tradeoffs,
+empty-position redistribution, Git privacy guards, and Streamlit controls. The server health
+endpoint is <code>/_stcore/health</code>.</p>
+<p>Independent target overrides on analytical-taxonomy nodes, realized P&amp;L and
+transaction-based personal return history remain unsupported. Strategic category
+targets, instrument price history and historical risk analysis are supported.</p>
+<h2 id="shared-list-presentation">Shared list presentation</h2>
+<p><code>src/portfolio_app/list_ui.py</code> defines the shared read-only list component,
+column formatting, taxonomy badges, sorting, row actions and scrolling policy.
+Overview allocations/performance, position lists, Exposure assets and source
+contributions, ETF constituent lists, and Suggested trades use it. Keep
+presentation changes here instead of copying table CSS or row-selection controls
+into individual pages.
+Use <code>ListColumn</code> for column labels, numeric precision and signed values.</p>
+<p>Lists grow with the page by default. Exposure enables the shared
+<code>BOUNDED_LIST_HEIGHT</code> only when ETF breakdown is enabled; ETF constituent details
+also use that limit. Narrow screens retain horizontal scrolling. Editable
+spreadsheet forms and analytical diagnostic tables retain their native grid
+controls. Search within a displayed list does not recalculate allocation weights.</p>
+<p>Exposure's main list shows how many source positions contribute to each asset.
+Opening an asset shows each direct or ETF position's reporting-currency
+contribution and its
+percentage of that asset's exposure, with separate account positions preserved.
+Missing source valuations leave contribution percentages unavailable.</p>
+<h2 id="parallel-development">Parallel development</h2>
+<p>Use a separate Git worktree and branch for each coding session, with one session
+responsible for integrating shared UI changes. Run each demo on a different port
+and use generated synthetic data. Personal data and the private handoff remain
+outside Git. In a source checkout, use <code>docs/release-plan.md</code> for the reusable
+release procedure, <code>docs/release-checklist.md</code> for acceptance criteria, and these
+behavior/reference guides for product context. Tests and demos must not read
+private working data.
+Run <code>uv run pytest</code> after integration. Browser checks are optional locally:
+<code>uv run --with playwright pytest tests/test_ux_browser.py tests/test_dashboard_browser.py</code>.
+Set <code>PORTFOLIO_TEST_CHROMIUM</code> to an available Chromium binary if needed.</p>
+<h2 id="analytics-development-notes">Analytics development notes</h2>
+<p>These implementation notes are also published with the guide. See the task
+guides for application usage and formulas, and <a href="https://github.com/eliaskempf/portfolio-breakdown/blob/main/AGENTS.md">contributor instructions</a> for privacy and
+development requirements. These notes contain no working portfolio data.</p>
+<h3 id="current-product-state">Current product state</h3>
+<ul>
+<li>Navigation follows the UI refactor: Overview, Exposure, Positions, Rebalance.</li>
+<li>Overview → Analytics shares the existing category selection, including its
+  descendants. Accounts can be narrowed in Options. Exposure filters and position
+  search do not change this scope.</li>
+<li>Historical risk comes first. Calculate risk loads the estimates; subsequent
+  refreshes are explicit. Benchmark and history window are in Options.</li>
+<li>Risk shows beta, annualized volatility, benchmark correlation, per-holding
+  beta and volatility contributions, and data coverage. The expandable correlation
+  matrix uses display names without appended identifiers, a purple–teal diverging
+  scale fixed at −1 to +1, a nearby color bar, and a larger responsive plot.</li>
+<li>Valuation and income follow risk. Direct-stock P/E excludes ETFs and
+  nonpositive ratios. Fund fees and cash distribution yields do include eligible
+  ETFs. Concentration and underlying company exposure are separate views of risk.</li>
+<li>Positions has Holdings, Valuation, Income &amp; fees, and Risk views. Optional
+  columns and settings live in Options. Selecting a row opens its existing
+  details dialog; Key metrics contains fundamentals, definitions, provenance,
+  and a private fund-fee editor. Holdings does not request analytics data.</li>
+<li>Preserve the refactor's shared table interactions, short names, search, sort,
+  keyboard access, row details, and separate pencil editing when extending views.</li>
+</ul>
+<h3 id="calculation-contracts">Calculation contracts</h3>
+<ul>
+<li>Snapshot weights use current reporting-currency market values and combine repeated instrument
+  IDs across accounts. Buy-in performance belongs to Overview → Performance.</li>
+<li>P/E is the inverse of value-weighted earnings yield among covered profitable
+  direct equities. It is not an arithmetic average, and fund-reported P/E is not
+  blended into it. Coverage is essential to interpreting this subset statistic.</li>
+<li>Fees are current fund values × annual fee rates. They are already reflected
+  in prices and must not be deducted from gains a second time. Public fee metadata
+  is matched by exact share class, not an ETF look-through proxy.</li>
+<li>Cash yield is a trailing distribution estimate, not a forecast or actual
+  dividends received. Verified accumulating share classes have zero cash yield.</li>
+<li>Risk uses adjusted market-price histories, converted with historical FX to
+  the reporting currency. The latest available price within each completed Friday-ending week is
+  used. Empty weeks are not filled, and returns do not bridge missing endpoints.</li>
+<li>Default benchmark is IUSQ.DE, a global equity ETF proxy; windows are 1, 3, or
+  5 years, default 3. All included holdings and the benchmark share the same
+  sample of at least 52 weekly returns. Provider-supplied betas are not used.</li>
+<li>Portfolio weekly return is the sum of holding weekly returns × today's
+  weights. Beta is covariance with the benchmark / benchmark variance.
+  Annualized covariance is weekly covariance × 52. Contributions to volatility
+  sum to portfolio volatility; negative contributions are possible.</li>
+<li>This is a hypothetical constant-weight allocation, not the user's historical
+  return series. It requires no transaction history and does not use buy-in prices.</li>
+<li>Cash in the reporting currency has zero FX returns. Manual/unlisted positions without supported history
+  are excluded. Covered weights are renormalized, and partial coverage is shown.
+  Missing valuations prevent claiming whole-portfolio coverage.</li>
+<li>ETFs use their own adjusted price histories for risk, not constituent expansion.
+  Category beta is computed in exactly the same way within the selected category;
+  its benchmark remains the selected benchmark, even for a non-equity category.</li>
+<li>Borrowing, liabilities, derivative notionals, and net-equity leverage are not
+  modeled. Asset-normalized beta must not be presented as levered equity beta.</li>
+</ul>
+<h3 id="code-map">Code map</h3>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fundamentals.py</code></td>
+<td>Metric definitions, provider normalization, dated public fees, private overrides</td>
+</tr>
+<tr>
+<td><code>analytics_cache.py</code></td>
+<td>Atomic optional-analytics cache, expiry, failed-request cooldown</td>
+</tr>
+<tr>
+<td><code>analytics.py</code></td>
+<td>Pure snapshot aggregation and concentration</td>
+</tr>
+<tr>
+<td><code>risk_data.py</code></td>
+<td>Adjusted price histories and historical reporting-currency conversion</td>
+</tr>
+<tr>
+<td><code>risk.py</code></td>
+<td>Pure common-sample weekly risk calculations</td>
+</tr>
+<tr>
+<td><code>analytics_service.py</code></td>
+<td>Provider/cache orchestration for fundamentals and risk, independent of Streamlit</td>
+</tr>
+<tr>
+<td><code>analytics_ui.py</code></td>
+<td>Shared formatting, sources, benchmark settings</td>
+</tr>
+<tr>
+<td><code>portfolio_analytics_ui.py</code></td>
+<td>Overview analytics presentation</td>
+</tr>
+<tr>
+<td><code>position_metrics_ui.py</code></td>
+<td>Position metric presets, details, fee maintenance</td>
+</tr>
+<tr>
+<td><code>charts.py</code> → <code>correlation_chart</code></td>
+<td>Correlation matrix rendering</td>
+</tr>
+<tr>
+<td><code>position_list.py</code>, <code>position_detail.py</code>, <code>strategic_ui.py</code></td>
+<td>Integration with the existing UX</td>
+</tr>
+</tbody>
+</table>
+<p>Keep analytics outside the holdings → valuation → optional ETF expansion →
+normalized exposures → classifications → aggregation pipeline. Reuse the valued
+positions already prepared by the app instead of fetching valuations again.
+Company concentration reuses the existing company mapping and ETF exposure logic.</p>
+<p>Analytics caches are private and separate from the ordinary price/chart caches.
+Their normal lifetime is 24 hours; failed requests have a 15-minute cooldown.
+Failures can retain visibly stale data. Explicit refresh retries immediately.
+Fee overrides are private <code>fund-fees.json</code> data. Do not commit overrides, caches,
+test screenshots, diagnostics, or real portfolio examples. Only explicitly
+reviewed synthetic guide images may enter the public documentation.</p>
+<h3 id="potential-extensions-and-decisions-to-make-first">Potential extensions and decisions to make first</h3>
+<p>These are ideas, not promises or already implemented features.</p>
+<ol>
+<li><strong>Compare categories side by side.</strong> Show beta, volatility, value share, and
+   coverage for sibling categories. Decide whether all categories must share a
+   single common sample; independently estimated betas are less comparable.
+   Distinguish category beta from its contribution to whole-portfolio beta.</li>
+<li><strong>Current versus proposed allocation.</strong> Preview hypothetical target weights
+   with beta, volatility, concentration, and coverage. Reuse a single historical
+   sample and covariance matrix for both scenarios. Decide how this connects to
+   Rebalance and how infeasible targets or missing histories are displayed.</li>
+<li><strong>Beta stability.</strong> Add rolling beta or comparisons across windows, confidence
+   intervals, and benchmark explanatory power. A point estimate alone should not
+   imply a stable forecast. Do not confuse beta with total volatility.</li>
+<li><strong>Leverage-aware planning.</strong> Requires an explicit liabilities/net-equity model,
+   financing costs, exposure definitions, and rebalancing assumptions. A leveraged
+   ETF's advertised daily multiple is not a guaranteed multiyear return multiple
+   or its beta against an arbitrary benchmark. This needs domain design before code.</li>
+<li><strong>Downside scenarios.</strong> Separate simple beta-based shocks from historical
+   constant-weight scenarios. Neither reconstructs personal performance or sets
+   a worst-case loss bound. Define treatment of missing assets and costs first.</li>
+<li><strong>Fund valuation coverage.</strong> Keep fund-reported P/E separate for now. Combining
+   direct stocks and look-through fund earnings requires compatible earnings,
+   dates, loss treatment, and coverage; do not silently average unlike ratios.</li>
+<li><strong>Metric loading UX.</strong> Risk currently needs Calculate risk; fundamentals load
+   when Analytics is selected. Decide whether to load risk automatically, retain
+   results across scope changes, or add progress/background loading. Preserve
+   clear freshness and partial-data reporting and avoid repeated network requests.</li>
+<li><strong>Benchmark presets and persistence.</strong> Currently a ticker field and a shared
+   benchmark per analytics view. Category-specific defaults, saved preferences,
+   or named presets would require explicit scope and persistence choices.</li>
+<li><strong>Large heatmaps.</strong> Consider top-N selection, ordering/clustering, and duplicate
+   display-name disambiguation without reintroducing noisy ticker suffixes.
+   Numeric axis coordinates already preserve distinct cells for duplicate names.</li>
+</ol>
+<h3 id="validation-and-resuming-work">Validation and resuming work</h3>
+<p>Use <code>uv run pytest</code>. Focused analytics tests are <code>tests/test_analytics.py</code>,
+<code>tests/test_risk.py</code>, and <code>tests/test_analytics_ui.py</code>. Browser coverage is in
+<code>tests/test_analytics_browser.py</code>, with shared synthetic fixtures from
+<code>tests/test_ux_browser.py</code>. Tests must never read the working portfolio or require
+live market-data access. Browser-test screenshots remain in temporary directories;
+the separate guide-image capture/review procedure is in
+<code>docs/documentation-maintenance.md</code> in the source checkout.</p>
+<p>Run checks against the exact intended source commit. Previous test counts and
+another checkout's running preview do not establish that the current app works.
+Use a separate linked worktree per task and preserve other sessions' changes.</p>
+<p>For a separate preview:</p>
+<pre><code class="language-bash">uv run portfolio-app --data-dir /path/to/synthetic-workspace --server.port 8502 --server.runOnSave true
+</code></pre>
+<p>Use a generated synthetic workspace explicitly when launching from a
+worktree. Restart that preview if imported modules remain stale; do not restart another session's app. Check the
+port before assuming which version a browser tab displays.</p>
+<h2 id="before-committing">Before committing</h2>
+<p>Keep the pre-commit hook enabled, run <code>uv run portfolio-check-private --staged</code>,
+and inspect the staged diff. Never commit private holdings or portfolio exports.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../reference/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Data formats">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Data formats
+              </div>
+            </div>
+          </a>
+        
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.footer", "search.highlight"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
