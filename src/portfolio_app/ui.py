@@ -105,9 +105,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             # Recovery controls must also be available when loading inputs fails.
             workspace_info(data_dir, persistent_data_dir, demo=demo)
     offline_demo = demo and not (data_dir / '.live-demo').exists()
+    demo_pending = demo and live_demo_pending(data_dir)
     from portfolio_app.import_ui import render_import_next_steps
     render_import_next_steps()
-    if demo:
+    if demo and not demo_pending:
         st.caption("Offline demo · Invented prices, buy-ins and ETF weights · Resets on restart" if offline_demo else
                    "Demo · Invented quantities, targets and buy-ins · Public market data · Resets on restart")
     etf_revision = refresh_revision(data_dir)
@@ -121,8 +122,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         mark_view_ready()
         return
     coordinator.schedule(data_dir, holdings, funds, demo=offline_demo)
-    with st.container(key='refresh_status'):
-        render_refresh_status(data_dir, funds, etf_revision, demo=offline_demo)
+    if not demo_pending:
+        with st.container(key='refresh_status'):
+            render_refresh_status(data_dir, funds, etf_revision, demo=offline_demo)
     context_key = sha256(str(data_dir.resolve()).encode()).hexdigest()[:12]
     unit_key = f'performance_unit_{context_key}_{reporting_currency}'
     def remember_unit():
@@ -176,17 +178,22 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     estimates = int(valued.cost_estimated.sum())
     if estimates:
         st.warning(f'{estimates} positions use confirmed FX estimates. Their gains and returns are estimated.')
-    if demo and live_demo_pending(data_dir):
+    if demo_pending:
         if background_prices:
-            render_market_status(market_workspace, market_revision)
+            render_market_status(market_workspace, market_revision, show_caption=False)
         if initialize_live_demo(data_dir, valued):
             st.rerun()
-        st.info('Preparing the demo with public quotes. Initial quantities will include deliberate gaps from category and position targets.')
-        if not market_coordinator.pending(market_workspace):
-            st.warning('Some quotes are unavailable. Use Refresh prices to retry. Synthetic prices are never substituted for live data.')
-            st.dataframe(valued.loc[valued.current_value_reporting.isna(), ['name', 'valuation_note']], hide_index=True)
-            st.caption('For an offline example, restart with --offline-demo. My portfolio remains available in the workspace menu.')
-            mark_view_ready()
+        with st.container(key='demo_loading'):
+            if market_coordinator.pending(market_workspace):
+                # Keep the status running across renders; a context manager would
+                # mark it complete as soon as this non-blocking render returns.
+                status = st.status('Preparing your demo…', state='running', expanded=True)
+                status.write('Fetching current market prices. Your demo will open automatically.')
+            else:
+                st.warning('Some prices could not be loaded. Choose Refresh prices to try again.')
+                st.dataframe(valued.loc[valued.current_value_reporting.isna(), ['name', 'valuation_note']], hide_index=True)
+                st.caption('You can also explore an offline example with ? → Take the tour, or return to My portfolio using the workspace menu.')
+                mark_view_ready()
         return
     if price_service.cache_warning:
         st.warning(price_service.cache_warning)
@@ -272,13 +279,13 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
 
 
 
-def render_market_status(market_workspace, market_revision):
+def render_market_status(market_workspace, market_revision, *, show_caption=True):
     pending = market_coordinator.pending(market_workspace)
     @st.fragment(run_every=.5 if pending else None)
     def market_status():
         if market_coordinator.revision(market_workspace) != market_revision:
             st.rerun()
-        if market_coordinator.pending(market_workspace):
+        if show_caption and market_coordinator.pending(market_workspace):
             st.caption('Updating prices in the background · Saved quotes remain visible with their original dates')
     market_status()
 

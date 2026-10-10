@@ -28,6 +28,7 @@ CSS = """
 .welcome-symbol {font-size:2.5rem;line-height:1.1;color:#5470c6;margin-bottom:12px;}
 .st-key-welcome_demo .welcome-symbol {width:40px;height:40px;border-radius:50%;background:conic-gradient(#5470c6 0deg 220deg,#4aa9b3 220deg 310deg,#9a6dd7 310deg);font-size:0;}
 .st-key-welcome_personal .welcome-symbol {color:#4aa9b3;}
+.st-key-demo_loading {max-width:38rem;margin:clamp(2rem,8vh,6rem) auto;}
 h1 {font-size:1.8rem!important;letter-spacing:-.5px;font-weight:600!important;padding-bottom:.4rem!important;}
 h2 {font-size:1.15rem!important;font-weight:600!important;}
 h3 {font-size:1rem!important;font-weight:600!important;}

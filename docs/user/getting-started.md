@@ -19,6 +19,8 @@ separate from **My portfolio** and are not a starting copy of your own holdings.
 **Explore demo** uses public quotes, history,
 analytics and issuer ETF downloads. Initial quantities are sized once from
 available quotes and FX; subsequent refreshes preserve quantities and edits.
+The first load shows **Preparing your demo…** while prices arrive, then opens
+the overview automatically.
 If initialization cannot obtain prices, use **Refresh prices** or choose
 **? → Take the tour** for the offline example. Missing fund downloads leave that fund whole.
 

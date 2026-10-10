@@ -113,6 +113,50 @@ def test_live_demo_uses_normal_market_mode_and_preserves_workspace_isolation(tmp
     assert not app.exception and not app.tabs
 
 
+def test_live_demo_loading_failure_retry_and_ready_preserve_workspace(tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    from portfolio_app.prices import PriceService, StaticProvider, UnavailableProvider
+    from portfolio_app.demo import live_demo_pending
+    import streamlit as st
+
+    personal = tmp_path / 'invented-personal'
+    live = create_demo_data(tmp_path / 'live', live=True)
+    fixture = create_demo_data(tmp_path / 'offline')
+    seed = (live / 'holdings.csv').read_bytes()
+    phase = {'pending': True, 'ready': False}
+    monkeypatch.setattr('portfolio_app.etf_refresh.coordinator.schedule', lambda *a, **kw: None)
+    monkeypatch.setattr('portfolio_app.ui.market_coordinator.pending', lambda *a: phase['pending'])
+    monkeypatch.setattr('portfolio_app.ui.prices_for', lambda *a: PriceService(
+        StaticProvider(fixture / 'demo_prices.json') if phase['ready'] else UnavailableProvider()))
+    monkeypatch.setattr('portfolio_app.ui.render_strategic_overview', lambda *a, **kw: st.write('Invented overview ready'))
+    app = AppTest.from_string(
+        'from pathlib import Path\nfrom portfolio_app.ui import render_app\n'
+        f'render_app(Path({str(personal)!r}), demo_dir=Path({str(live)!r}))\n', default_timeout=15).run()
+    by_label(app.button, 'Explore demo').click().run()
+    assert not app.exception and not app.tabs
+    assert app.status[0].label == 'Preparing your demo…'
+    assert app.status[0].state == 'running'
+    assert not any('Saved quotes' in caption.value for caption in app.caption)
+    assert (live / 'holdings.csv').read_bytes() == seed
+
+    phase['pending'] = False
+    app.run()
+    assert not app.exception and not app.status
+    assert any('Refresh prices' in warning.value for warning in app.warning)
+    assert not by_label(app.button, 'Refresh prices').disabled
+    assert live_demo_pending(live)
+
+    phase.update(pending=True, ready=False)
+    by_label(app.button, 'Refresh prices').click().run()
+    assert app.status[0].state == 'running'
+    phase.update(pending=False, ready=True)
+    app.run()
+    assert not app.exception and not app.status
+    assert app.tabs and app.tabs[0].label == 'Overview'
+    assert not live_demo_pending(live)
+    assert not (personal / 'holdings.csv').exists()
+
+
 def test_recovery_controls_remain_available_with_invalid_holdings(tmp_path):
     from streamlit.testing.v1 import AppTest
     (tmp_path / 'holdings.csv').write_text('id,name,shares\ninvented,Invented broken input,invalid\n', encoding='utf-8')
