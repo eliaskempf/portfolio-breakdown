@@ -38,9 +38,9 @@ supported providers, and underlying holdings data may be missing or incomplete.
 For the easiest setup, download the latest version for your operating system from the
 [GitHub releases page](https://github.com/eliaskempf/portfolio-breakdown/releases/latest).
 Prebuilt packages do not require Python or uv.
-- **Windows:** Download the `windows-x64-setup.exe` installer and follow the setup instructions. Launch **Portfolio Breakdown** from the Start Menu or desktop shortcut.
+- **Windows:** Download the installer file ending in `windows-x64-setup.exe` and follow the setup instructions. Launch **Portfolio Breakdown** from the Start Menu or desktop shortcut.
 - **Linux (Ubuntu 22.04/24.04, x64):** Download and install the `.deb` package, then launch the app from your applications menu.
-- **macOS (experimental, Apple Silicon, macOS 14+):** Download the `.dmg`, open it, and drag **Portfolio Breakdown Experimental** into **Applications**. The app is not signed or notarized, so macOS may block it from opening.
+- **macOS (experimental, Apple Silicon, macOS 14+):** Download the `.dmg`, open it, and drag **Portfolio Breakdown Experimental** into **Applications**. The app is not Developer ID signed or notarized, so macOS may block it from opening.
 
 Portable versions are also available for Windows (`.zip`) and Linux (`.tar.gz`), which
 can be extracted and run without installation.
