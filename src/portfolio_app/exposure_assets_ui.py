@@ -77,7 +77,7 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
         largest = table.dropna(subset=['Total']).head(12).iloc[::-1]
         figure = style_figure(go.Figure(go.Bar(x=largest['Total'], y=largest.Asset, orientation='h')))
         figure.update_layout(height=max(260, 30 * len(largest)), xaxis_title='Exposure', margin=dict(t=12, b=20, l=12, r=12))
-        st.plotly_chart(figure, width='stretch', config={'displayModeBar': False})
+        st.plotly_chart(figure, width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})
     asset = st.session_state.get('exposure_asset_detail')
     if asset not in set(table.asset_id):
         st.session_state.pop('exposure_asset_detail', None)

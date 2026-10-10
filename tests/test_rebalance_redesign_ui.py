@@ -28,7 +28,7 @@ def workspace(tmp_path):
 
 
 def editor_key(app, prefix):
-    return next(key for key in app.session_state.filtered_state if key.startswith(prefix) and re.search(r'_rows_\d+$', key))
+    return next(key for key in app.session_state.to_dict() if key.startswith(prefix) and re.search(r'_rows_\d+$', key))
 
 
 def edit(app, prefix, changes):
@@ -109,7 +109,7 @@ def test_category_add_discard_delete_and_block_in_use(workspace):
     by_label(app.multiselect, 'Categories to delete').set_value(['empty']).run()
     by_label(app.button, 'Remove from draft').click().run()
     assert not app.exception and not app.error
-    app.button(key=next(k for k in app.session_state.filtered_state if k.startswith('targets_categories_') and k.endswith('_discard'))).click().run()
+    app.button(key=next(k for k in app.session_state.to_dict() if k.startswith('targets_categories_') and k.endswith('_discard'))).click().run()
     categories = next(item.value for item in app.dataframe if 'ID' in item.value)
     assert 'empty' in categories.ID.tolist()
     by_label(app.multiselect, 'Categories to delete').set_value(['empty']).run()
@@ -128,7 +128,7 @@ def test_target_reassignment_remains_visible_in_draft_and_discard_restores(works
     rows = next(item.value for item in app.dataframe if 'within_bucket_target' in item.value)
     assert rows.name.tolist() == ['Invented Asset', 'Invented Asset']
     assert rows.within_bucket_target.tolist() == [100., 0.]
-    key = next(k for k in app.session_state.filtered_state if k.startswith('targets_positions_') and k.endswith('_discard'))
+    key = next(k for k in app.session_state.to_dict() if k.startswith('targets_positions_') and k.endswith('_discard'))
     app.button(key=key).click().run()
     assert not app.exception
     rows = next(item.value for item in app.dataframe if 'within_bucket_target' in item.value)

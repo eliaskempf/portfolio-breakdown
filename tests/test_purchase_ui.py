@@ -127,7 +127,7 @@ def test_bulk_search_can_fill_new_instrument(monkeypatch, tmp_path):
 def test_table_editor_can_save_fractional_purchases(tmp_path):
     app = bulk(launch_editor(tmp_path / "holdings.csv"))
     by_label(app.text_input, "Instrument name").set_value("Synthetic table input").run()
-    key = next(key for key in app.session_state.filtered_state if key.endswith("_rows"))
+    key = next(key for key in app.session_state.to_dict() if key.endswith("_rows"))
     delta = {
         "edited_rows": {0: {"shares": "0.25", "price": "12", "fees": "0.5"}},
         "added_rows": [{"shares": "0.75", "price": "8", "fees": "0.5"}], "deleted_rows": [],

@@ -102,6 +102,9 @@ def test_bond_summary_defaults_charts_and_security_details(fund_page):
     dialog.get_by_role('combobox', name='Summarize by').wait_for()
     playwright.expect(dialog.locator('.js-plotly-plot')).to_have_count(1)
     playwright.expect(dialog.locator('.js-plotly-plot')).to_be_visible()
+    # Plotly upgrades must not expose cloud sharing for local portfolio charts.
+    assert dialog.locator('.js-plotly-plot').evaluate('el => el._context.showSendToCloud') is False
+    assert dialog.locator('.modebar-btn[data-attr="showSendToCloud"]').count() == 0
     choose_summary('Maturity')
     # The caption below is also present for Issuer. Wait for the new chart,
     # otherwise the previous selection's rerun can close the next dropdown.

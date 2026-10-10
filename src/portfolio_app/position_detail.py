@@ -93,7 +93,7 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None):
         figure = style_figure(go.Figure(go.Scatter(x=result.dates, y=result.prices, mode='lines',
             line=dict(color='#5470c6', width=2), hovertemplate='%{x}<br>%{y:,.2f} '+result.currency+'<extra></extra>')))
         figure.update_layout(height=300, yaxis_title=result.currency, margin=dict(l=12, r=12, t=12, b=30))
-        st.plotly_chart(figure, width='stretch', config={'displayModeBar': False})
+        st.plotly_chart(figure, width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})
         st.caption(f'Instrument closing prices in {result.currency} · Excludes dividend reinvestment · Not your personal return history')
         st.caption(f'History last retrieved: {result.fetched_at}')
     if result.note:

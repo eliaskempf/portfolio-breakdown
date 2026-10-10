@@ -63,8 +63,8 @@ def test_import_choice_and_workspace_switch_clear_first_use_state(tmp_path):
     by_label(app.selectbox, 'Portfolio workspace').set_value('Demo portfolio').run()
     by_label(app.selectbox, 'Portfolio workspace').set_value('My portfolio').run()
     assert not app.exception and not app.tabs
-    assert 'onboarding_started' not in app.session_state.filtered_state
-    assert not any(key.startswith('import_') for key in app.session_state.filtered_state)
+    assert 'onboarding_started' not in app.session_state.to_dict()
+    assert not any(key.startswith('import_') for key in app.session_state.to_dict())
 
 
 def test_live_demo_uses_normal_market_mode_and_preserves_workspace_isolation(tmp_path, monkeypatch):

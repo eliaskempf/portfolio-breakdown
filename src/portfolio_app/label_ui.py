@@ -130,7 +130,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             figure.update_layout(height=400, uniformtext=None, margin=dict(t=12, b=12, l=12, r=12))
             chart_key = f'exposure_label_chart_{detail_key}_{sha256(repr(root).encode()).hexdigest()[:10]}'
             with chart_area:
-                st.plotly_chart(figure, width='stretch', key=chart_key, config={'displayModeBar': False})
+                st.plotly_chart(figure, width='stretch', key=chart_key, config={'displayModeBar': False, 'showSendToCloud': False})
                 if chart_type in {'Sunburst', 'Treemap'}:
                     categories = {row.node_id: tuple(json.loads(row.node_id)[1]) for row in tree.itertuples() if row.kind == 'category'}
                     categories[tree.iloc[0].node_id] = root[:-1] if root else ()

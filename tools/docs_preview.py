@@ -57,7 +57,11 @@ def main():
                 expect(page.locator('body')).to_have_attribute('data-md-color-scheme', 'slate')
                 page.get_by_role('link', name='Exposure and ETFs', exact=True).first.click()
                 page.locator('h1#look-through').wait_for()
-                page.get_by_role('textbox', name='Search', exact=True).fill('buy-in')
+                expect(page.locator('.md-search-result__meta')).to_have_text('Type to start searching')
+                search = page.get_by_role('textbox', name='Search', exact=True)
+                # Material observes keyup; fill() alone can leave the query unprocessed.
+                search.fill('buy-in')
+                search.press('End')
                 result = page.locator('.md-search-result__link').first
                 result.wait_for()
                 result_url = urljoin(page.url, result.get_attribute('href'))
@@ -78,7 +82,11 @@ def main():
                 page.locator('h1#troubleshooting').wait_for()
                 assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), 'Narrow layout overflow'
                 page.locator('.md-header__button[for="__search"]').click()
-                page.get_by_role('textbox', name='Search', exact=True).fill('restore')
+                # Navigation renders the input before the search worker is ready.
+                expect(page.locator('.md-search-result__meta')).to_have_text('Type to start searching')
+                expect(page.locator('#__search')).to_be_checked()
+                search.fill('restore')
+                search.press('End')
                 page.locator('.md-search-result__link').first.wait_for()
                 for path in sorted(name for name in info['files'] if name.endswith('.html')):
                     page.goto(url + path)
