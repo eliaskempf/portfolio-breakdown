@@ -12,7 +12,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "pandas>=2.2,<4",
-  "plotly>=6,<7",
+  "plotly>=6,<8",
   "python-calamine>=0.3,<1",
   "PyYAML>=6,<7",
   "scipy>=1.14,<2",

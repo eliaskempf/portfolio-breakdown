@@ -152,7 +152,7 @@ def render_risk_dashboard(result, status, holdings):
         st.caption('Contributions sum to portfolio volatility. Negative contributions indicate diversification; cash correlations are undefined.')
         with st.expander('Holding correlations'):
             figure = correlation_chart(result.correlations, names)
-            st.plotly_chart(figure, width='stretch', config={'displayModeBar': False})
+            st.plotly_chart(figure, width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})
     if status.Status.eq('stale').any():
         st.warning('Risk estimates include cached fallback market or FX histories.')
     with st.expander('Risk coverage & sources'):

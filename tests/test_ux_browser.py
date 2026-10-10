@@ -221,6 +221,9 @@ def test_position_details_edit_cancel_and_preserved_filter(ux_page):
     playwright.expect(dialog).to_have_count(0)
     playwright.expect(page.get_by_role('searchbox', name='Filter positions')).to_have_value('Regional')
     playwright.expect(table.locator('tbody tr')).to_have_count(1)
+    # Save closes the dialog before the list receives its new revision.
+    playwright.expect(table.locator('tbody tr td').nth(2)).to_have_text('3')
+    playwright.expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
     table.get_by_role('button', name='Edit Invented Regional · Second', exact=True).click()
     quantity = page.get_by_role('dialog').get_by_role('textbox', name='Quantity held (total)', exact=True)
     playwright.expect(quantity).to_have_value('3')

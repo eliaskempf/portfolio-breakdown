@@ -51,6 +51,9 @@ def holding_amounts(prefix, row, *, editing, from_purchases=False, rows=()):
     st.session_state.setdefault(prefix + 'cost_source', 'average')
 
     def synchronize(source=None):
+        # A browser callback can arrive after save/cancel cleared the dialog.
+        if prefix + 'cost_source' not in st.session_state:
+            return
         if source:
             st.session_state[prefix + 'cost_source'] = source
         active = st.session_state[prefix + 'cost_source']
@@ -65,6 +68,8 @@ def holding_amounts(prefix, row, *, editing, from_purchases=False, rows=()):
             st.session_state[prefix + other] = ''
 
     def clear_cost():
+        if prefix + 'cost_source' not in st.session_state:
+            return
         st.session_state[prefix + 'buy_in'] = ''
         st.session_state[prefix + 'total_buy_in'] = ''
         st.session_state[prefix + 'cost_source'] = 'average'

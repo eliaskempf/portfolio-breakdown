@@ -98,7 +98,7 @@ def test_dark_mode_reaches_chart_and_search_and_survives_reload(page):
     assert sum(int(c) for c in search_color.removeprefix("rgb(").removesuffix(")").split(",")) > 500
     chart = page.locator(".js-plotly-plot").first
     playwright.expect(chart).to_be_visible()
-    assert chart.evaluate("el => el._fullLayout.paper_bgcolor") == "rgba(0, 0, 0, 0)"
+    assert chart.evaluate("el => el._fullLayout.paper_bgcolor").replace(' ', '') == "rgba(0,0,0,0)"
     page.reload()
     page.get_by_role('table', name='Allocation', exact=True).wait_for()
     assert page.get_by_test_id("stApp").evaluate("el => getComputedStyle(el).backgroundColor") == background
