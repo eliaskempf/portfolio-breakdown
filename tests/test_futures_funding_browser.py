@@ -10,6 +10,7 @@ from urllib.request import urlopen
 import pytest
 
 from test_futures_funding_ui import synthetic_funding_workspace
+from browser_support import settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -71,10 +72,12 @@ def test_funding_stress_outcomes_and_shocks_render(funding_page):
     playwright.expect(page.locator('.js-plotly-plot')).to_have_count(1)
     page.get_by_text('Investment outcomes', exact=True).first.click()
     playwright.expect(page.get_by_text('Futures median at end', exact=True)).to_be_visible()
+    settle(page)
     assert page.locator('.js-plotly-plot').count() >= 2
     page.get_by_text('Historical quarters', exact=True).click()
     playwright.expect(page.get_by_text('Load historical comparison data in Settings & data below to draw the past comparison.', exact=True)).to_be_visible()
     page.get_by_text('Funding policies', exact=True).first.click()
     playwright.expect(page.locator('.js-plotly-plot')).to_have_count(3)
     page.set_viewport_size({'width': 750, 'height': 1000})
+    settle(page)
     assert page.locator('[data-testid="stException"]').count() == 0
