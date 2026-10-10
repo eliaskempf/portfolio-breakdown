@@ -8,7 +8,7 @@ def preserve_view_inputs():
                 'planning_', 'bulk_bucket_positions_', 'balance_buy_in_mode_',
                 'depth_', 'position_edit_fields_', 'position_edit_history_', 'exposure_control_')
     names = {'strategic_category', 'strategic_view', 'strategic_performance_measure', 'strategic_allocation_measure',
-             'exposure_measure', 'exposure_market_scope', 'exposure_market_view', 'exposure_market_taxonomy', 'exposure_market_depth',
+             'exposure_measure', 'exposure_market_basis', 'exposure_market_scope', 'exposure_market_view', 'exposure_market_taxonomy', 'exposure_market_depth',
              'exposure_scope', 'exposure_search', 'exposure_view', 'exposure_group',
              'exposure_show_chart', 'display_tickers', 'positions_workflow',
              'ignore_empty_positions', 'exposure_sources_open', 'exposure_stock_open', 'exposure_merges_open',

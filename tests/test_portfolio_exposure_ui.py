@@ -186,3 +186,14 @@ def test_active_future_cannot_disable_and_planner_requires_declared_collateral(t
     by_label(app.button, 'Calculate exposure plan').click().run()
     assert not app.error and not app.exception
     assert any('Remaining target gaps' in x.value for x in app.warning)
+
+
+def test_market_basis_survives_navigation(tmp_path):
+    _, sandbox = synthetic_workspace(tmp_path)
+    app = launch(sandbox, open_futures=False)
+    activate(app, 'Exposure')
+    by_label(app.get('button_group'), 'Exposure basis').set_value('Equity only').run()
+    activate(app, 'Positions')
+    activate(app, 'Exposure')
+    assert not app.exception
+    assert by_label(app.get('button_group'), 'Exposure basis').value == 'Equity only'
