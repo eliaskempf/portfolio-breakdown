@@ -166,3 +166,24 @@ def test_recent_unavailable_discovery_recovers_without_manual_refresh(tmp_path):
     funds = load_funds(tmp_path / 'etfs')
     assert len(funds) == 1 and read_json(status_path)[FUND]['status'] == 'checked'
     assert not service.schedule(tmp_path, holdings, funds)
+
+
+@pytest.mark.parametrize('failure', ['serialize', 'write', 'replace'])
+def test_status_write_failure_preserves_destination_and_removes_temporary(tmp_path, monkeypatch, failure):
+    from pathlib import Path
+    from portfolio_app import etf_refresh
+    path = tmp_path / 'status.json'
+    path.write_text('{"invented": "original"}')
+    if failure == 'write':
+        def fail_dump(value, stream):
+            stream.write('{')
+            raise OSError('Invented write failure')
+        monkeypatch.setattr(etf_refresh.json, 'dump', fail_dump)
+    elif failure == 'replace':
+        def fail_replace(*args):
+            raise OSError('Invented replace failure')
+        monkeypatch.setattr(Path, 'replace', fail_replace)
+    with pytest.raises((TypeError, OSError)):
+        etf_refresh.write_json(path, {'invented': object() if failure == 'serialize' else 'new'})
+    assert path.read_text() == '{"invented": "original"}'
+    assert not list(tmp_path.glob('*.tmp'))

@@ -66,13 +66,15 @@ def read_json(path):
 @document_write
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile(mode='w', dir=path.parent, suffix='.tmp', delete=False) as stream:
-        temporary = Path(stream.name)
-        json.dump(value, stream)
+    temporary = None
     try:
+        with NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, suffix='.tmp', delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(value, stream)
         temporary.replace(path)
     finally:
-        temporary.unlink(missing_ok=True)
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def preferences(data_dir):
