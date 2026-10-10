@@ -332,12 +332,40 @@ def test_rerun_never_accepts_invalid_attempt_or_another_run_source(tmp_path, cha
     assert api.mutations == []
 
 
-def test_budget_pause_has_no_automatic_workflow_triggers():
+def test_release_and_deployment_workflows_remain_manual():
     import yaml
-    for path in (ROOT / '.github/workflows').glob('*.yml'):
+    for name in ('candidate.yml', 'desktop-experiment.yml', 'publish.yml', 'docs-pages.yml'):
+        path = ROOT / '.github/workflows' / name
         # BaseLoader preserves GitHub's literal "on" key instead of YAML 1.1 booleans.
         workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
         assert set(workflow['on']) == {'workflow_dispatch'}, path.name
+
+
+@pytest.mark.parametrize('name', ['ci.yml', 'docs.yml', 'maintenance.yml'])
+def test_routine_workflow_triggers_and_permissions(name):
+    import yaml
+    workflow = yaml.load((ROOT / '.github/workflows' / name).read_text(), Loader=yaml.BaseLoader)
+    events = workflow['on']
+    expected = {'push', 'pull_request', 'workflow_dispatch'}
+    if name == 'maintenance.yml':
+        expected.add('schedule')
+        assert events['schedule'] == [{'cron': '17 6 * * 1'}]
+    assert set(events) == expected
+    for event in ('push', 'pull_request'):
+        assert events[event]['branches'] == ['main']
+        assert 'tags' not in events[event]
+        if name == 'maintenance.yml':
+            assert set(events[event]['paths']) == {'pyproject.toml', 'uv.lock', '.github/workflows/maintenance.yml'}
+        else:
+            assert 'paths' not in events[event]  # Every PR receives CI and a docs impact review.
+    assert workflow['permissions'] == {'contents': 'read'}
+    assert workflow['concurrency']['cancel-in-progress'] == 'true'
+    assert 'github.event.pull_request.number || github.ref' in workflow['concurrency']['group']
+    for job in workflow['jobs'].values():
+        assert 'permissions' not in job
+        for step in job['steps']:
+            if step.get('uses', '').startswith('actions/checkout@'):
+                assert step['with']['persist-credentials'] == 'false'
 
 
 @pytest.mark.parametrize('failure', ['expired', 'failed', 'fork', 'branch', 'workflow', 'different-platform-version'])

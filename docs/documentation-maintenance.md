@@ -80,9 +80,8 @@ Docs review: Reviewed import/review and live-listings against the changed flow; 
 
 Use `Docs impact: none` with a concrete reason when a change has no user-visible
 effect. Require a declaration on all PRs, including changes only to application
-source. Enforcement is manual while workflows are manual-only: the workflow's
-conditional PR declaration check is dormant because no pull-request trigger is
-enabled. Human review must assess the declaration:
+source. The Documentation workflow checks these declarations on pull requests
+targeting `main`, including dependency updates. Human review must assess the declaration:
 check affected controls, defaults, scope/denominators, persistence, data sources,
 unknown/stale states and limitations against the implementation and tests.
 A green build, matching timestamp, presence of a topic or a written declaration
@@ -104,12 +103,21 @@ Revisit this mapping when features move; do not treat it as exhaustive coverage.
 | analytics.py, risk.py, fundamentals.py | analytics/#risk; #metrics; #sources | test_analytics.py, test_risk.py |
 | scoped_rebalancing.py, rebalancing.py | rebalance/#modes; #constraints; #results | test_rebalancing.py, test_capped_contributions.py |
 
-Repository workflows are manual-only. The Documentation workflow checks strict
+CI and Documentation run on pushes to `main`, pull requests targeting `main`,
+and manual dispatch. Branch pushes do not run a second copy of PR checks;
+new commits cancel superseded runs for the same PR or branch. Dependency audit
+runs for changes to `pyproject.toml`, `uv.lock`, or its workflow definition on
+those same push/PR events, every Monday at 06:17 UTC, and on manual dispatch.
+Routine checks use read-only repository permissions, do not persist checkout
+credentials, and execute fork changes through `pull_request`, without secrets.
+
+The Documentation workflow checks strict
 MkDocs, internal links/assets/anchors, synthetic CLI recovery workflows and the
 focused guide browser smoke. Build outputs remain ignored artifacts. The app
-favicon is copied from its reviewed package asset during generation. Enable and
-dispatch workflows only after review of their default-branch definitions. Restoring
-automatic PR/push checks is a separate decision. Local checks remain required.
+favicon is copied from its reviewed package asset during generation. Candidate
+and experimental desktop installer builds, release publication, and Pages
+deployment remain manual-only. Review their default-branch definitions before
+dispatch. Local checks remain required.
 
 ## Stable app-help contract
 
