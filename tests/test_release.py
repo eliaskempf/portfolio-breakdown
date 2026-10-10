@@ -362,3 +362,47 @@ def test_invalid_candidate_never_creates_a_tag_or_release(tmp_path, failure):
     with pytest.raises(ValueError):
         promote.promote(api, 'invented/project', '123', linux_native_run_id='789')
     assert api.mutations == []
+
+
+@pytest.mark.parametrize('failure', [None, 'start', 'end', 'source', 'failed', 'attempt', 'duplicate', 'incomplete'])
+def test_retained_native_job_uses_original_build_evidence(tmp_path, monkeypatch, failure):
+    api = FakeGitHub(tmp_path)
+    api.native_run['run_attempt'] = 2
+    build = api.native_jobs[0]
+    build.update(started_at='2026-01-01T10:00:00Z', completed_at='2026-01-01T10:10:00Z')
+    original_build = dict(build)
+    for job in api.native_jobs:
+        job['run_attempt'] = 2
+    original = dict(total_count=1, jobs=[original_build])
+    if failure == 'start':
+        original_build['started_at'] = '2026-01-01T09:00:00Z'
+    elif failure == 'end':
+        original_build['completed_at'] = '2026-01-01T09:10:00Z'
+    elif failure == 'source':
+        original_build['head_sha'] = 'b' * 40
+    elif failure == 'failed':
+        original_build['conclusion'] = 'failure'
+    elif failure == 'attempt':
+        original_build['run_attempt'] = 2
+    elif failure == 'duplicate':
+        original['jobs'].append(dict(original_build))
+        original['total_count'] = 2
+    elif failure == 'incomplete':
+        original['total_count'] = 100
+    base = api.call
+    queried = []
+    def call(path, **kwargs):
+        if path == '/actions/runs/789/attempts/1/jobs?per_page=100':
+            queried.append(path)
+            return original
+        return base(path, **kwargs)
+    monkeypatch.setattr(api, 'call', call)
+    if failure:
+        with pytest.raises(ValueError, match='job evidence'):
+            promote.promote(api, 'invented/project', '123', linux_native_run_id='789')
+        assert api.mutations == [] and api.uploaded == {}
+    else:
+        promote.promote(api, 'invented/project', '123', linux_native_run_id='789')
+        manifest = json.loads(api.uploaded['linux-native-x64-manifest.json'])
+        assert manifest['run_attempt'] == '1'
+    assert len(queried) == 1

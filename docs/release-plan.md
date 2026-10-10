@@ -90,9 +90,12 @@ and unrelated jobs are additional.
 For transient failures at unchanged source, investigate and rerun only failed
 jobs. Retained successful platform artifacts may identify earlier attempts of
 the same run. Native build evidence must identify the exact artifact attempt;
-compatibility evidence must be from that attempt or later. A source change needs
-new matching candidates for all published platforms. Download accepted candidates
-before their 30-day artifact retention expires.
+compatibility evidence must be from that attempt or later.
+When GitHub labels a retained build with the new rerun attempt, the publisher
+requires a successful build record from the artifact's original attempt with
+identical start/end timestamps and source identity; replacement builds do not
+qualify. A source change needs new matching candidates for all published platforms.
+Download accepted candidates before their 30-day artifact retention expires.
 
 ## Accept exact artifacts
 

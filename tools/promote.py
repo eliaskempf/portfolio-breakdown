@@ -169,6 +169,23 @@ def desktop_run(api, repository, run_id, commit, branch, platform):
     return run, [job for job in jobs if job['name'] in required]
 
 
+def retained_build(api, run_id, job, artifact_attempt):
+    """GitHub copies retained jobs into a rerun with the new attempt number."""
+    times = ('started_at', 'completed_at')
+    if not all(isinstance(job.get(key), str) and job[key] for key in times):
+        return False
+    original = api.call(f'/actions/runs/{run_id}/attempts/{artifact_attempt}/jobs?per_page=100')
+    if original.get('total_count') != len(original.get('jobs', [])):
+        return False
+    matches = [old for old in original['jobs'] if old.get('name') == job['name']]
+    if len(matches) != 1:
+        return False
+    old = matches[0]
+    return (old.get('run_attempt') == artifact_attempt and old.get('status') == 'completed'
+            and old.get('conclusion') == 'success' and old.get('head_sha') == job.get('head_sha')
+            and all(old.get(key) == job[key] for key in times))
+
+
 def promote(api, repository, run_id, *, linux_native_run_id, macos_run_id=None):
     if not str(linux_native_run_id).isdecimal():
         raise ValueError('A numeric native Linux candidate run ID is required.')
@@ -225,7 +242,8 @@ def promote(api, repository, run_id, *, linux_native_run_id, macos_run_id=None):
             for job in jobs:
                 checked_attempt = job.get('run_attempt')
                 if (type(checked_attempt) is not int or not attempt <= checked_attempt <= selected_run['run_attempt']
-                        or job['name'] == build_job and checked_attempt != attempt):
+                        or job['name'] == build_job and checked_attempt != attempt
+                        and not retained_build(api, desktop_run_id, job, attempt)):
                     raise ValueError(f'{platform} job evidence predates or does not identify the uploaded build.')
             manifests.append(manifest)
             for name in manifest['files']:
