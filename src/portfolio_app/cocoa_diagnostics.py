@@ -1,4 +1,5 @@
-"""Bounded native-panel evidence, only in opted-in disposable hosted probes."""
+"""Bounded native-panel automation and evidence for disposable hosted probes."""
+from collections import deque
 import ctypes as C
 import json
 import os
@@ -7,26 +8,27 @@ import subprocess
 import time
 
 
-def enabled():
-    return (os.environ.get('PORTFOLIO_TEST_PANEL_EVIDENCE') == '1'
-            and os.environ.get('PORTFOLIO_TEST_HOSTED_INPUT') == '1'
+def hosted_input_enabled():
+    return (os.environ.get('PORTFOLIO_TEST_HOSTED_INPUT') == '1'
             and os.environ.get('GITHUB_ACTIONS') == 'true'
             and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted')
 
 
-class PanelEvidence:
-    def __init__(self, output):
-        if not enabled():
-            raise RuntimeError('Panel evidence requires an opted-in disposable hosted probe')
-        self.output = Path(output)
-        self.output.mkdir(parents=True, exist_ok=True)
-        self.records = []
+def enabled():
+    return hosted_input_enabled() and os.environ.get('PORTFOLIO_TEST_PANEL_EVIDENCE') == '1'
+
+
+class HostedPanelInput:
+    def __init__(self):
+        if not hosted_input_enabled():
+            raise RuntimeError('Panel input requires an opted-in disposable hosted probe')
         self.cf = C.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
         self.ax = C.CDLL('/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices')
         signatures = {
             'CFStringCreateWithCString': ([C.c_void_p, C.c_char_p, C.c_uint32], C.c_void_p),
             'CFStringGetCString': ([C.c_void_p, C.c_void_p, C.c_long, C.c_uint32], C.c_bool),
             'CFRelease': ([C.c_void_p], None),
+            'CFRetain': ([C.c_void_p], C.c_void_p),
             'CFGetTypeID': ([C.c_void_p], C.c_ulong),
             'CFArrayGetCount': ([C.c_void_p], C.c_long),
             'CFArrayGetValueAtIndex': ([C.c_void_p, C.c_long], C.c_void_p),
@@ -50,6 +52,8 @@ class PanelEvidence:
         self.ax.AXUIElementCreateApplication.restype = C.c_void_p
         self.ax.AXUIElementCopyAttributeValue.argtypes = [C.c_void_p, C.c_void_p, C.POINTER(C.c_void_p)]
         self.ax.AXUIElementCopyAttributeValue.restype = C.c_int
+        self.ax.AXUIElementPerformAction.argtypes = [C.c_void_p, C.c_void_p]
+        self.ax.AXUIElementPerformAction.restype = C.c_int
 
     def text(self, value):
         buffer = C.create_string_buffer(4096)
@@ -80,6 +84,82 @@ class PanelEvidence:
             self.cf.CFRelease(key)
             if value:
                 self.cf.CFRelease(value)
+
+    def button(self, window, title):
+        # Breadth-first search reaches panel buttons before large file/sidebar
+        # trees. Every queued reference is owned and released, including on error.
+        pending = deque([(self.cf.CFRetain(window), 0)])
+        visited = 0
+        try:
+            while pending and visited < 256:
+                element, depth = pending.popleft()
+                visited += 1
+                try:
+                    if (self.attribute(element, 'AXRole') == 'AXButton'
+                            and self.attribute(element, 'AXTitle') == title
+                            and self.attribute(element, 'AXEnabled') is True):
+                        return self.cf.CFRetain(element)
+                    if depth < 8:
+                        def children(value):
+                            if self.cf.CFGetTypeID(value) != self.cf.CFArrayGetTypeID():
+                                return []
+                            return [self.cf.CFRetain(self.cf.CFArrayGetValueAtIndex(value, i))
+                                    for i in range(min(self.cf.CFArrayGetCount(value), 40))]
+                        found = self.attribute(element, 'AXChildren', children)
+                        if isinstance(found, list):
+                            pending.extend((child, depth + 1) for child in found)
+                finally:
+                    self.cf.CFRelease(element)
+        finally:
+            for element, _ in pending:
+                self.cf.CFRelease(element)
+        raise RuntimeError(f'Enabled native {title} button not found')
+
+    def press(self, app, title):
+        if not hosted_input_enabled() or title not in {'Open', 'Save'}:
+            raise RuntimeError('Only hosted synthetic Open/Save confirmation is permitted')
+        def foreground():
+            front = app.NSWorkspace.sharedWorkspace().frontmostApplication()
+            if not front or front.processIdentifier() != os.getpid():
+                raise RuntimeError('Synthetic app lost foreground ownership')
+        foreground()
+        if not self.ax.AXIsProcessTrusted():
+            raise RuntimeError('Native panel automation requires accessibility permission')
+        process = self.ax.AXUIElementCreateApplication(os.getpid())
+        def confirm(window):
+            if self.attribute(window, 'AXTitle') != title:
+                raise RuntimeError('Focused accessibility window is not the expected file panel')
+            button = self.button(window, title)
+            action = self.cf.CFStringCreateWithCString(None, b'AXPress', 0x08000100)
+            try:
+                foreground()
+                code = self.ax.AXUIElementPerformAction(button, action)
+                # AX may time out waiting for modal callbacks although the click
+                # was delivered. Never click twice: the probe must still observe
+                # panel closure and verify the actual uploaded/downloaded bytes.
+                if code not in {0, -25204}:  # kAXErrorCannotComplete
+                    raise RuntimeError(f'Native button press failed: AX error {code}')
+                return code
+            finally:
+                self.cf.CFRelease(action)
+                self.cf.CFRelease(button)
+        try:
+            result = self.attribute(process, 'AXFocusedWindow', confirm)
+            if isinstance(result, dict):
+                raise RuntimeError(f'Focused file panel unavailable: {result}')
+            return result
+        finally:
+            self.cf.CFRelease(process)
+
+
+class PanelEvidence(HostedPanelInput):
+    def __init__(self, output):
+        if not enabled():
+            raise RuntimeError('Panel evidence requires an opted-in disposable hosted probe')
+        super().__init__()
+        self.output = Path(output)
+        self.output.mkdir(parents=True, exist_ok=True)
+        self.records = []
 
     def node(self, element):
         return {name: self.attribute(element, name) for name in

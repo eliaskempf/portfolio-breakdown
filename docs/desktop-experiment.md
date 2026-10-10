@@ -102,7 +102,13 @@ with character events. Local probes remain process-targeted and never use the cl
 normal startup never enables this input path. No accessibility or Gatekeeper
 policy is changed by these tests.
 The Cocoa probe waits for the location sheet to own focus before typing and for
-the expected selection before confirming the panel. Launch Services checks
+the expected selection before confirming the panel. Hosted probes activate the
+enabled Open/Save button through the accessibility press action, rather than
+assuming Return reaches the remote panel's default button. This requires the
+synthetic app to remain foreground and the expected file panel to be focused;
+the test still requires exact uploaded/downloaded bytes. A modal accessibility
+callback timeout never causes a second click or counts as successful acceptance.
+Launch Services checks
 require the child JSON report for the default intro,
 welcome screen and server cleanup; `open -W` succeeding alone is not acceptance.
 This Finder-style launch does not inject system input or require accessibility

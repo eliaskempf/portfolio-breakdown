@@ -216,7 +216,7 @@ def cocoa_interactions(window, root, record, output=None):
     browser = BrowserView.instances[window.uid]
     app = A.NSApplication.sharedApplication()
     timers, events, errors, trace = [], [], [], []
-    from portfolio_app.cocoa_diagnostics import PanelEvidence, enabled
+    from portfolio_app.cocoa_diagnostics import HostedPanelInput, PanelEvidence, enabled
     evidence = None
     def observe(label, panel, screenshot=False):
         nonlocal evidence
@@ -307,6 +307,11 @@ def cocoa_interactions(window, root, record, output=None):
                     key('', 5, A.NSEventModifierFlagCommand | A.NSEventModifierFlagShift)
                 elif action == 'type-path':
                     cocoa_path_input(path.parent if saving else path, key, A, hosted=hosted_input)
+                elif action == 'confirm-panel' and hosted_input:
+                    # The remote panel can publish its selected URL before it
+                    # routes Return to the default button. Activate the actual
+                    # enabled UI button, then retain the exact-byte checks.
+                    trace.append(['AXPress', HostedPanelInput().press(A, 'Save' if saving else 'Open')])
                 elif action in {'confirm-location', 'confirm-panel'}:
                     key('', 36)
                 elif sequence.phase == 4 and panel is None:
