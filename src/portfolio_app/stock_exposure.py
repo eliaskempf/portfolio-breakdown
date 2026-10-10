@@ -7,6 +7,7 @@ import yaml
 
 from portfolio_app.etf import fund_breakdown, matching_fund
 from portfolio_app.holdings import DataError
+from portfolio_app.constituents import NON_EQUITY_KINDS, fund_kind, interpret_constituent, text
 
 
 @dataclass
@@ -106,19 +107,16 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
             amount = value * constituent['weight']
             if amount == 0:
                 continue
+            # Company mappings can establish equity membership for named rows;
+            # residual equity coverage still comes only from the source universe.
+            linked = bool(text(constituent.get('analysis_asset_id')))
             residual = constituent['constituent_id'].startswith('etf-other:')
-            constituent_kind = constituent.get('instrument_type')
-            if not isinstance(constituent_kind, str) or not constituent_kind:
-                analysis_asset = constituent.get('analysis_asset_id')
-                linked_equity = isinstance(analysis_asset, str) and bool(analysis_asset)
-                constituent_kind = ('equity' if equity_universe or linked_equity else
-                                    'non_equity' if fund.asset_class in {'fixed_income', 'money_market'} else 'unknown')
-            if residual:
-                constituent_kind = ('equity' if equity_universe else
-                                    'non_equity' if fund.asset_class in {'fixed_income', 'money_market'} else 'unknown')
-            if constituent_kind in {'cash', 'bond', 'money_market', 'overnight_rate', 'crypto', 'physical', 'non_equity'}:
+            interpreted = interpret_constituent(constituent,
+                fallback_kind=fund_kind(fund, equity_declared=equity_universe or (linked and not residual)))
+            constituent_kind = interpreted.kind
+            if constituent_kind in NON_EQUITY_KINDS:
                 continue
-            if constituent_kind == 'etf' and constituent.get('exposure_kind') == 'equity':
+            if interpreted.nested_equity:
                 stock_total += amount
                 unknown.append({**common, 'Exposure': constituent['name'], 'Value': amount,
                                 'Status': 'Unresolved equity fund'})

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from portfolio_app.etf import FundSnapshot, expand_etfs
-from portfolio_app.exposures import normalize_exposures
+from portfolio_app.exposures import project_contributions
 from portfolio_app.grouping import InstrumentGroup, group_exposures
 
 
@@ -27,9 +27,7 @@ def target_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *,
     targets = positions.get("target_allocation", pd.Series(float("nan"), index=positions.index))
     frames = []
     for measure in (targets.fillna(0), targets.isna().astype(float)):
-        source = positions.copy()
-        source["current_value_reporting"] = measure
-        frame = normalize_exposures(source)
+        frame = project_contributions(positions, measure)
         if lookthrough:
             frame = expand_etfs(frame, funds, positions if holdings is None else holdings)
         if group is not None:

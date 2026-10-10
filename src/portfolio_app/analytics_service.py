@@ -75,9 +75,9 @@ def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
         exposures = {}
         if future is not None:
             from portfolio_app.futures_market import PROXY_TICKER
-            identity = 'future:overlay'
-            valued = pd.concat([valued, pd.DataFrame([dict(id=identity, name=f'{future.instrument} future', shares=1.,
-                current_value_reporting=future.capital_value, quote_currency='EUR', instrument_type='future', reporting_currency='EUR')])], ignore_index=True)
+            from portfolio_app.future_projections import FUTURE_SOURCE_ID, risk_position
+            identity = FUTURE_SOURCE_ID
+            valued = pd.concat([valued, pd.DataFrame([risk_position(future)])], ignore_index=True)
             exposures[identity] = future.notional
             if future.contracts and future.instrument == 'FMWN':
                 proxy = service.eur(PROXY_TICKER, years, refresh=refresh, memo=memo)

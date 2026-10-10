@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from portfolio_app.etf import FundSnapshot, expand_etfs, matching_fund
-from portfolio_app.exposures import normalize_exposures
+from portfolio_app.exposures import project_contributions
 from portfolio_app.grouping import InstrumentGroup, group_exposures
 
 
@@ -36,9 +36,7 @@ def performance_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *,
     frames = []
     for measure in (positions.cost_basis_reporting.where(known, 0), positions.current_value_reporting.where(known, 0),
                     (held & ~known).astype(float), (known & positions.get('cost_estimated', pd.Series(False, index=positions.index))).astype(float)):
-        source = positions.copy()
-        source["current_value_reporting"] = measure
-        frame = normalize_exposures(source)
+        frame = project_contributions(positions, measure)
         if lookthrough:
             # Grouped instruments keep their whole value and cost, even when
             # other funds are expanded. The final group has the same identity.

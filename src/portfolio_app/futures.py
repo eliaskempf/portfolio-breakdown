@@ -180,14 +180,8 @@ def funded_strategy_positions(valued, position, allocation):
     if position is None or position.reference_capital_eur is None:
         return valued
     require_eur_reporting(valued)
-    row = dict(position_id='future:overlay', id=position.instrument, name=f'{position.instrument} future',
-        instrument_type='future_strategy', shares=1., current_value_reporting=position.capital_value,
-        bucket_id=position.bucket_id if position.bucket_id in allocation.leaves() else '',
-        cost_basis=position.reference_capital_eur, cost_basis_reporting=position.reference_capital_eur,
-        unrealized_gain_reporting=position.lifetime_gain, cost_estimated=False,
-        unrealized_gain=position.lifetime_gain, return_pct=position.reference_return_pct,
-        acquisition_currency='EUR', reporting_currency='EUR', within_bucket_target=float('nan'),
-        performance_note='Lifetime gain / fixed reference capital; not time-weighted return.')
+    from portfolio_app.future_projections import capital_position
+    row = capital_position(position, position.bucket_id if position.bucket_id in allocation.leaves() else '')
     result = pd.concat([valued, pd.DataFrame([row])], ignore_index=True)
     result.attrs = dict(valued.attrs, reporting_currency='EUR')
     return result

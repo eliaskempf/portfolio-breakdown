@@ -11,6 +11,7 @@ import pandas as pd
 from portfolio_app.allocation import Allocation
 from portfolio_app.etf import constituent_resolver, fund_breakdown, matching_fund
 from portfolio_app.futures import CONTRACTS, require_eur_reporting
+from portfolio_app.constituents import NON_EQUITY_KINDS, fund_kind, interpret_constituent
 
 
 @dataclass(frozen=True)
@@ -145,16 +146,12 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
                 amount = value * constituent['weight']
                 if not amount:
                     continue
-                residual = constituent['constituent_id'].startswith('etf-other:')
-                ck = constituent.get('instrument_type')
-                if not isinstance(ck, str) or not ck or residual:
-                    ck = ('equity' if fund.equity_fund or declared == 'equity' else
-                          'non_equity' if getattr(fund, 'asset_class', '') in {'fixed_income', 'money_market'} else 'unknown')
-                # A reviewed nested equity fund has known equity exposure even
-                # when its company breakdown is unavailable. Do not infer this
-                # from the parent fund: mixed/unknown nested funds stay unknown.
-                nested_equity = ck == 'etf' and constituent.get('exposure_kind') == 'equity'
-                exposure = amount if ck == 'equity' or nested_equity else 0. if ck in {'cash', 'bond', 'money_market', 'overnight_rate', 'non_equity', 'crypto', 'physical'} else float('nan')
+                interpreted = interpret_constituent(constituent,
+                    fallback_kind=fund_kind(fund, equity_declared=declared == 'equity'))
+                residual, ck = interpreted.residual, interpreted.kind
+                # Nested equity has known exposure, not resolved company coverage.
+                nested_equity = interpreted.nested_equity
+                exposure = amount if ck == 'equity' or nested_equity else 0. if ck in NON_EQUITY_KINDS else float('nan')
                 if not finite(exposure):
                     complete = False
                 asset_id, name = resolve(constituent)
@@ -187,15 +184,10 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
     strategy_value = future.capital_value if funded else 0.
     settlement = future.pnl if future and not funded else 0.
     if future:
-        if funded:
-            capital.append(dict(source_position_id='future:overlay', name=f'{future.instrument} future',
-                                bucket_id=bucket(future.bucket_id), value=strategy_value, kind='funded futures strategy'))
-        else:
-            capital.append(dict(source_position_id='future:settlement', name='Mock futures settlement adjustment',
-                                bucket_id=bucket(future.bucket_id), value=settlement, kind='simulation adjustment'))
+        from portfolio_app.future_projections import capital_contribution, exposure_source
+        capital.append(capital_contribution(future, bucket(future.bucket_id)))
         if future.contracts or funded:
-            common = dict(source_position_id='future:overlay', source_instrument=future.instrument,
-                          bucket_id=bucket(future.bucket_id), account='')
+            common = exposure_source(future, bucket(future.bucket_id))
             from portfolio_app.futures_proxy import linked_fund
             proxy = linked_fund(future, valued, funds)
             if proxy and future.contracts and future.proxy_position_id not in factors:
@@ -204,9 +196,8 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
                     weight = constituent['weight']
                     if not weight:
                         continue
-                    kind = constituent.get('instrument_type')
-                    known = (not constituent['constituent_id'].startswith('etf-other:')
-                             and (not isinstance(kind, str) or not kind or kind == 'equity'))
+                    interpreted = interpret_constituent(constituent, fallback_kind=fund_kind(proxy))
+                    known = interpreted.proxy_company_known
                     asset_id, name = resolve(constituent) if known else (
                         'future-other:' + future.instrument, future.instrument + ' · Unresolved proxy remainder')
                     add(common, asset_id, name, strategy_value * weight, future.notional * weight, 'future',
