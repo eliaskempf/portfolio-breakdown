@@ -287,3 +287,26 @@ financial/domain requirement.
 
 Do not stop merely to report intermediate progress if the next required
 implementation step is clear.
+
+## Session isolation
+
+Use a separate linked Git worktree by default for each new task or independent
+session, unless the user explicitly instructs you to work in an existing tree or
+checkout. A branch alone does not isolate sessions sharing a directory.
+
+Before editing, verify the worktree path, branch, base commit and working-tree
+status. Start new work from an explicitly chosen base branch (normally `main`),
+not whichever branch happens to be checked out in the primary directory. Reuse
+an existing worktree only when it is explicitly selected for this task.
+
+Preserve other sessions' working changes. Do not switch, reset, clean or stash a
+shared checkout to prepare your own work. When continuing uncommitted work in a
+new worktree, deliberately identify the source state to carry over, verify the
+copy, and keep the original intact. A copied working state may contain unrelated
+changes; isolation does not establish ownership of those changes.
+
+Use each worktree's own Python environment and a distinct preview port. Identify
+the owning checkout before restarting a preview. Do not let independent sessions
+write to the same private portfolio directory; use independent sandbox copies
+when they need to mutate portfolio data. Report the worktree, branch and preview
+used when handing work back to the user.

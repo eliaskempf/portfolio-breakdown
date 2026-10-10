@@ -197,7 +197,7 @@ def smoke(command, evidence=None):
         # No imports from the checkout are available to the packaged child.
         env.pop('VIRTUAL_ENV', None)
         assert subprocess.check_output(command + ['--version'], env=env, cwd=root, text=True).strip()
-        assert '--fork-futures' not in subprocess.check_output(command + ['--help'], env=env, cwd=root, text=True)
+        assert '--fork-futures' in subprocess.check_output(command + ['--help'], env=env, cwd=root, text=True)
         log = root / 'synthetic-server.log'
         with log.open('w', encoding='utf-8') as handle:
             child = subprocess.Popen(command + ['--foreground', '--no-browser', '--data-dir', str(workspace)],

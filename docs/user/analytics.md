@@ -27,7 +27,7 @@ Cash in the reporting currency has zero FX returns; foreign cash uses historical
 history are excluded. Covered weights are renormalized; missing valuations prevent
 claiming whole-portfolio coverage. Funds use their own histories, not expanded
 constituents. Category risk still uses the selected benchmark, even for non-equity
-categories. Borrowing, liabilities and net-equity leverage are not modeled.
+categories. The released app does not model borrowing or net-equity leverage. The development branch supports the explicitly bounded [EUR leverage model](futures.md).
 
 ## Valuation, income and costs {#metrics}
 

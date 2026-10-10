@@ -7,7 +7,8 @@ def preserve_view_inputs():
     prefixes = ('filter_', 'label_compare_', 'allocation_group_', 'rebalance_',
                 'planning_', 'bulk_bucket_positions_', 'balance_buy_in_mode_',
                 'depth_', 'position_edit_fields_', 'position_edit_history_', 'exposure_control_')
-    names = {'strategic_category', 'strategic_view', 'strategic_performance_measure',
+    names = {'strategic_category', 'strategic_view', 'strategic_performance_measure', 'strategic_allocation_measure',
+             'exposure_measure', 'exposure_market_scope', 'exposure_market_view', 'exposure_market_taxonomy', 'exposure_market_depth',
              'exposure_scope', 'exposure_search', 'exposure_view', 'exposure_group',
              'exposure_show_chart', 'display_tickers', 'positions_workflow',
              'ignore_empty_positions', 'exposure_sources_open', 'exposure_stock_open', 'exposure_merges_open',
@@ -82,5 +83,5 @@ def persistent_editor(data, *, key, **kwargs):
 def reset_workspace():
     """Discard workspace-specific forms and filters before switching portfolios."""
     for key in list(st.session_state):
-        if key.startswith(("currency_", "onboarding_", "import_", "etf_setup_", "position_edit_", "filter_", "label_compare_", "allocation_group_", "rebalance_", "strategic_", "exposure_", "position_draft", "positions_", "planning_", "bulk_bucket_", "targets_")) or key in {"position_saved_notice", "ignore_empty_positions", "hide_empty_positions", "view_editor_drafts", "view_editor_bases", "main_tabs", "rebalance_tabs", "portfolio_contribution_result", "parsed_inputs", "currency_context"}:
+        if key.startswith(("futures_", "future_", "leverage_", "funding_", "currency_", "onboarding_", "import_", "etf_setup_", "position_edit_", "filter_", "label_compare_", "allocation_group_", "rebalance_", "strategic_", "exposure_", "position_draft", "positions_", "planning_", "bulk_bucket_", "targets_")) or key in {"position_saved_notice", "ignore_empty_positions", "hide_empty_positions", "view_editor_drafts", "view_editor_bases", "main_tabs", "rebalance_tabs", "portfolio_contribution_result", "parsed_inputs", "currency_context"}:
             del st.session_state[key]

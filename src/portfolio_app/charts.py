@@ -60,8 +60,9 @@ def correlation_chart(correlations: pd.DataFrame, names: dict[str, str]) -> go.F
     return figure
 
 
-def hierarchy_chart(nodes: pd.DataFrame, chart_type: str) -> go.Figure:
-    nodes = sort_allocation_nodes(nodes)
+def hierarchy_chart(nodes: pd.DataFrame, chart_type: str, *, preserve_order: bool = False) -> go.Figure:
+    if not preserve_order:
+        nodes = sort_allocation_nodes(nodes)
     trace_class = go.Treemap if chart_type == "Treemap" else go.Sunburst
     figure = style_figure(go.Figure(trace_class(
         ids=nodes["node_id"], parents=nodes["parent_id"], labels=nodes["label"],
@@ -79,6 +80,19 @@ def hierarchy_chart(nodes: pd.DataFrame, chart_type: str) -> go.Figure:
         figure.update_layout(height=640, sunburstcolorway=SUNBURST_PALETTE,
                              uniformtext=dict(minsize=11, mode="hide"))
     return figure
+
+
+def hatch_foregrounds(colors):
+    """Keep hatch strokes legible without changing the shared background."""
+    result = []
+    for color in colors:
+        if color.startswith('#') and len(color) == 7:
+            red, green, blue = (int(color[i:i+2], 16) / 255 for i in (1, 3, 5))
+            brightness = .2126 * red + .7152 * green + .0722 * blue
+            result.append('#f8fafc' if brightness < .55 else '#172033')
+        else:
+            result.append('#172033')
+    return result
 
 
 def strategic_colors(nodes, config):

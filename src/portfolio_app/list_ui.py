@@ -26,6 +26,7 @@ class ListColumn:
     help: str = ''
     badges: dict[str, str] | None = None
     display: str = ''
+    secondary: str = ''
     width: int | None = None
     color_signed: bool = True
 
@@ -50,9 +51,13 @@ table.sized{table-layout:fixed}table.sized tr[data-position-id]>td{overflow:hidd
 th{position:sticky;top:0;background:var(--st-secondary-background-color);font-weight:600;z-index:1}.header-help{display:none;position:absolute;top:100%;left:0;white-space:normal;text-align:left;width:260px;padding:9px 12px;border-radius:5px;background:var(--st-secondary-background-color);color:var(--st-text-color);box-shadow:0 2px 8px #0003;font-size:12px;font-weight:400;z-index:5}th:hover,th:focus-within{z-index:3}th:hover .header-help,th:focus-within .header-help{display:block}th button{width:100%;padding:0;border:0;background:transparent;text-align:inherit;font-weight:inherit;cursor:pointer}
 section[data-interactive="true"] tbody tr{cursor:pointer}tbody tr:hover,tbody tr:focus{background:var(--st-secondary-background-color)}tbody tr:last-child td{border-bottom:0}
 tr:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:-2px}input:focus-visible,button:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:2px}
-td.number,th.number{text-align:right;font-variant-numeric:tabular-nums}td:first-child{font-weight:500}
+td.number,th.number{text-align:right;font-variant-numeric:tabular-nums}td:first-child{font-weight:500}.secondary{display:block;font-size:12px;font-weight:400;opacity:.7;margin-top:4px;white-space:normal}
 td.positive{color:var(--st-green-text-color,__GAIN_COLOR__)}td.negative{color:var(--st-red-text-color,__LOSS_COLOR__)}
 td button{border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:4px;background:transparent;padding:4px 10px;cursor:pointer}
+button[data-detail-toggle]{border:0;background:transparent;padding:2px 7px;margin-left:4px;line-height:1}
+.contract-detail-row>td{white-space:normal;font-weight:400;background:var(--st-secondary-background-color)}
+.contract-details{display:flex;flex-wrap:nowrap;gap:24px;margin:0;font-size:12px;white-space:nowrap}
+.contract-details>div{display:flex;gap:6px}.contract-details dt{opacity:.7}.contract-details dd{margin:0;font-variant-numeric:tabular-nums}
 .preview-row{cursor:default!important}.preview-row>td{padding:0;background:color-mix(in srgb,var(--st-secondary-background-color) 55%,var(--st-background-color))}
 .preview-panel{position:relative;display:grid;contain:inline-size;white-space:normal;font-size:13px;font-weight:400;padding-bottom:6px}
 .preview-items{grid-column:1/-1;display:grid;grid-template-columns:subgrid;list-style:none;margin:0;padding:0}.preview-items li{grid-column:1/-1;display:grid;grid-template-columns:subgrid;min-height:30px}
@@ -90,6 +95,20 @@ export default function({parentElement:root,data,setTriggerValue}) {
   const numeric=new Set(columns.filter(column=>column.numeric).map(column=>column.key));
   const element=(tag,text)=>{const node=document.createElement(tag);node.textContent=text;return node;};
   const open=(row,action='details')=>{if(!data.interactive)return;state.focus=row.id;state.focusAction='details';persist();setTriggerValue('open',{id:row.id,action,revision:data.revision,context:data.context});};
+  if (!data.rows.some(row=>row.id===state.detailId && row.details?.length)) state.detailId=null;
+  const detailId=row=>'contract-details-'+encodeURIComponent(data.context+'-'+row.id);
+  const toggleDetails=row=>{
+    state.detailId=state.detailId===row.id?null:row.id;
+    state.focus=row.id;state.focusAction='disclosure';persist();render();
+    body.querySelector('tr[data-position-id="'+CSS.escape(row.id)+'"] [data-detail-toggle]')?.focus({preventScroll:true});
+  };
+  const detailRow=row=>{
+    const tr=element('tr','');tr.className='contract-detail-row';tr.id=detailId(row);
+    const td=element('td','');td.colSpan=columns.length+(data.editable?1:0);
+    const details=element('dl','');details.className='contract-details';details.setAttribute('aria-label','Contract details for '+row.name);
+    for(const detail of row.details){const item=element('div','');item.append(element('dt',detail.label),element('dd',detail.value));details.appendChild(item);}
+    td.appendChild(details);tr.appendChild(td);tr.onclick=()=>open(row);return tr;
+  };
   const cell=(row,column)=>{
         const field=column.key;
         let value=row[field];
@@ -109,6 +128,9 @@ export default function({parentElement:root,data,setTriggerValue}) {
           for(const label of row[field]){const badge=element('span',label);badge.className='badge';badge.style.setProperty('--badge-color',column.badges[label]||'#7b8493');badges.appendChild(badge);}
           td.appendChild(badges);
         } else if(row[field]!=null && column.prefix)td.textContent=column.prefix+td.textContent;
+    if(column.secondary && row[column.secondary]){
+      const subtitle=element('span',String(row[column.secondary]));subtitle.className='secondary';td.appendChild(subtitle);
+    }
     return td;
   };
   if (!data.rows.some(row=>row.id===state.expandedId)) state.expandedId=null;
@@ -179,6 +201,13 @@ export default function({parentElement:root,data,setTriggerValue}) {
       if(a[key]==null)return b[key]==null?0:1;if(b[key]==null)return -1;
       return direction*(numeric.has(key)?a[key]-b[key]:String(a[key]||'').localeCompare(String(b[key]||'')));
     });
+    // A derivative follows its companion even when the list is sorted.
+    for(const row of [...rows]){
+      if(row.companionId && rows.some(other=>other.id===row.companionId)){
+        rows.splice(rows.indexOf(row),1);
+        rows.splice(rows.findIndex(other=>other.id===row.companionId)+1,0,row);
+      }
+    }
     head.replaceChildren();body.replaceChildren();
     for(const {key:field,label,width,help} of columns){
       const th=element('th',''),button=element('button',label+(key===field?(direction===1?' ↑':' ↓'):''));
@@ -202,6 +231,13 @@ export default function({parentElement:root,data,setTriggerValue}) {
       };
       for(const column of columns){
         const td=cell(row,column);
+        if(column.key===data.detailsColumn && row.details?.length){
+          const expanded=state.detailId===row.id;
+          const toggle=element('button',expanded?'▾':'▸');toggle.type='button';toggle.dataset.detailToggle='true';
+          toggle.setAttribute('aria-label',(expanded?'Hide':'Show')+' contract details for '+row.name);
+          toggle.setAttribute('aria-expanded',String(expanded));toggle.setAttribute('aria-controls',detailId(row));
+          toggle.onclick=event=>{event.stopPropagation();toggleDetails(row);};td.append(toggle);
+        }
         if(column.key===data.previewValueColumn)td.classList.add('tree-total-parent');
         if(column.key===data.previewColumn){
           const toggle=element('button','');
@@ -218,6 +254,7 @@ export default function({parentElement:root,data,setTriggerValue}) {
       button.title='Edit';button.onclick=()=>open(row,'edit');td.appendChild(button);tr.appendChild(td);}
       if(data.previewColumn)updateToggle(tr,row);
       body.appendChild(tr);
+      if(row.id===state.detailId && row.details?.length)body.appendChild(detailRow(row));
       if(row.id===state.expandedId && data.previews?.[row.id])body.appendChild(previewRow(row));
     }
     root.querySelector('.empty').hidden=rows.length!==0;
@@ -232,7 +269,7 @@ export default function({parentElement:root,data,setTriggerValue}) {
   observer.observe(table);root.previewResizeObserver=observer;
   if(state.focus&&!document.querySelector('[role="dialog"]')){
     const focused=body.querySelector('tr[data-position-id="'+CSS.escape(state.focus)+'"]');
-    (state.focusAction==='preview'?focused?.querySelector('[data-preview-toggle]'):focused)?.focus({preventScroll:true});
+    (state.focusAction==='preview'?focused?.querySelector('[data-preview-toggle]'):state.focusAction==='disclosure'?focused?.querySelector('[data-detail-toggle]'):focused)?.focus({preventScroll:true});
   }
   return ()=>observer.disconnect();
 }
@@ -249,7 +286,7 @@ def frame_rows(table, *, id_column=None):
 
 def render_list(rows, columns, *, key, context, title, on_open=None, editable=False,
                 revision=None, max_height=None, search_label=None, search_fields=(), default_sort=None,
-                preview_column=None, preview_value_column=None, preview_share_column=None, previews=None):
+                preview_column=None, preview_value_column=None, preview_share_column=None, previews=None, details_column=None):
     revision = revision or sha256(repr(rows).encode()).hexdigest()
     def handle_open():
         event = st.session_state.get(key, {}).get('open')
@@ -273,5 +310,5 @@ def render_list(rows, columns, *, key, context, title, on_open=None, editable=Fa
     component(key=key, data={'rows': rows, 'columns': specs,
         'revision': revision, 'context': context, 'title': title, 'interactive': bool(on_open),
         'editable': editable, 'maxHeight': max_height, 'searchLabel': search_label,
-        'searchFields': search_fields, 'defaultSort': default_sort,
+        'searchFields': search_fields, 'defaultSort': default_sort, 'detailsColumn': details_column,
         'previewColumn': preview_column, 'previewValueColumn': preview_value_column, 'previewShareColumn': preview_share_column, 'previews': previews}, on_open_change=handle_open)

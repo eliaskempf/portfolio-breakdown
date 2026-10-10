@@ -143,8 +143,9 @@ development requirements. These notes contain no working portfolio data.
 - ETFs use their own adjusted price histories for risk, not constituent expansion.
   Category beta is computed in exactly the same way within the selected category;
   its benchmark remains the selected benchmark, even for a non-equity category.
-- Borrowing, liabilities, derivative notionals, and net-equity leverage are not
-  modeled. Asset-normalized beta must not be presented as levered equity beta.
+- The released app uses asset-normalized beta. The development branch adds
+  [explicit EUR leverage](futures.md), with a separate net-equity denominator;
+  asset-normalized beta must not be presented as levered equity beta.
 
 ### Code map
 

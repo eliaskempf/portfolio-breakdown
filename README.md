@@ -75,6 +75,12 @@ The [user guide](docs/user/index.md) covers imports, calculations, backups, trou
 and other features. Installed versions also include offline documentation, accessible through
 **? → User guide**.
 
+## Development branch
+
+This branch includes experimental EUR futures and leverage analysis. See the
+[futures and leverage guide](docs/user/futures.md) for scope, accounting and setup.
+Published installers retain their documented release behavior.
+
 ## Disclaimer
 
 Portfolio Breakdown is a portfolio analysis tool, not investment advice. Market data,

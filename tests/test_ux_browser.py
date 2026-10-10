@@ -97,7 +97,7 @@ def assert_gain_color(locator, *, positive):
 
 def test_category_scope_performance_and_tab_roundtrip(ux_page):
     page, directory = ux_page
-    value_card = page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))
+    value_card = page.locator('.st-key-overview_value').get_by_test_id('stMetric')
     playwright.expect(value_card).to_contain_text('€330.00')
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+€60.00')
     assert_gain_color(value_card.get_by_test_id('stMetricDelta'), positive=True)
@@ -362,7 +362,7 @@ def test_tiny_labels_reappear_when_scoped_and_losses_are_red(ux_page):
     page.get_by_role('option', name='Satellites', exact=True).click()
     page.wait_for_function("document.querySelector('.js-plotly-plot')?.data?.[0]?.labels?.[0] === 'Satellites'")
     assert chart.evaluate("el => el.data[0].text[el.data[0].labels.indexOf('Invented Satellite')]")
-    card = page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))
+    card = page.locator('.st-key-overview_value').get_by_test_id('stMetric')
     playwright.expect(card.get_by_test_id('stMetricDelta')).to_contain_text('-€49.00')
     assert_gain_color(card.get_by_test_id('stMetricDelta'), positive=False)
     open_settings(page)

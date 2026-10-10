@@ -20,7 +20,7 @@ def validate_workspace(directory: Path, *, allow_empty: bool = False) -> None:
     from portfolio_app.portfolio_settings import load_settings
     load_settings(directory)
     snapshot = read_snapshot(directory / 'holdings.csv')
-    load_allocation(directory / 'allocation.yaml', snapshot.holdings)
+    allocation = load_allocation(directory / 'allocation.yaml', snapshot.holdings)
     if (directory / 'classifications.yaml').exists():
         load_classifications(directory / 'classifications.yaml')
     # External ETF files would leave the copy dependent on the original location.
@@ -43,6 +43,18 @@ def validate_workspace(directory: Path, *, allow_empty: bool = False) -> None:
     load_company_names(directory / 'company-names.yaml')
     load_company_identities(directory / 'company-identities.yaml')
     load_fee_overrides(directory / 'fund-fees.json')
+    from portfolio_app.futures_workspace import load_sandbox, load_comparison, load_historical
+    from portfolio_app.leverage_settings import load_leverage_settings
+    from portfolio_app.exposure_targets import load_exposure_targets
+    sandbox = load_sandbox(directory)
+    load_leverage_settings(directory, future=sandbox[0] if sandbox else None)
+    load_exposure_targets(directory, allocation)
+    if sandbox:
+        load_comparison(directory)
+        load_historical(directory)
+    from portfolio_app.futures_funding_data import load_funding_settings
+    load_funding_settings(directory)
+
 
 
 def inventory(directory: Path) -> dict[str, str]:

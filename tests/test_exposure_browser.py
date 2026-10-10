@@ -28,7 +28,10 @@ def test_assets_first_filters_breakdown_and_source_dialog(exposure_page):
     playwright.expect(results.locator('.js-plotly-plot')).to_have_count(0)
     playwright.expect(page.get_by_text('ETF refresh & snapshots', exact=True)).not_to_be_visible()
     table = results.get_by_role('table', name='Exposure assets', exact=True)
-    assert table.bounding_box()['y'] < 650
+    # The capital/market selector adds controls above this view. Check that the
+    # results themselves remain compact instead of fixing a page-wide pixel Y.
+    classification = page.get_by_role('combobox', name='Asset classifications', exact=True).bounding_box()
+    assert 0 <= table.bounding_box()['y'] - classification['y'] - classification['height'] < 48
     summary = page.locator('.st-key-exposure_summary')
     playwright.expect(summary).not_to_contain_text('source positions')
     playwright.expect(summary).not_to_contain_text('use a proxy')

@@ -59,8 +59,8 @@ class RiskHistoryService:
         self.provider, self.cache = provider, AnalyticsCache(directory, now=now)
 
     def get(self, ticker, years=3, *, refresh=False):
-        if years not in (1, 3, 5) or not ticker:
-            raise ValueError('A listing ticker and 1, 3 or 5 years are required')
+        if years not in (1, 3, 5, 10) or not ticker:
+            raise ValueError('A listing ticker and 1, 3, 5 or 10 years are required')
         def fetch():
             result = self.provider.fetch(ticker, years)
             prices = daily_prices(result.prices)

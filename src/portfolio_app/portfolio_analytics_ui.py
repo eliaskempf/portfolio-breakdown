@@ -20,19 +20,26 @@ def coverage(metric, universe):
             if metric.eligible_value > 0 else f'No valued {universe} in this scope')
 
 
-def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Portfolio'):
+def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Portfolio', future=None, portfolio_result=None, scoped=False):
     key = context_key(data_dir, demo) + '_overview'
     title, options = st.columns([5, 1], vertical_alignment='center')
     title.markdown('**Portfolio analytics**')
     with options, st.popover('Options', help='Choose accounts and market-data options for these analytics.', icon=':material/tune:', width='stretch'):
         accounts = sorted(valued.account.unique())
+        future_account = '__future_overlay__'
+        while future_account in accounts:
+            future_account += '_'
+        if future is not None:
+            accounts.append(future_account)
         # Category changes must not retain selections from a different universe.
         scope_key = key + '_' + str(tuple(accounts))
-        selected_accounts = st.multiselect('Accounts', accounts, help='Limit analytics to holdings in the selected accounts.', default=accounts, key=scope_key + '_accounts')
+        selected_accounts = st.multiselect('Accounts', accounts, default=accounts, key=scope_key + '_accounts',
+            format_func=lambda value: 'Futures position · no account assigned' if value == future_account else value)
         benchmark, years = risk_settings(key)
         refresh = st.button('Refresh fundamentals', help='Request fresh public company fundamentals for this analysis.', icon=':material/refresh:', disabled=demo, key=key + '_refresh')
     selected = valued.loc[valued.account.isin(selected_accounts) & valued.shares.gt(0)].copy()
-    if selected.empty:
+    risk_future = future if future_account in selected_accounts else None
+    if selected.empty and risk_future is None:
         st.info('No held positions in this category and account selection.')
         return
     st.caption(f'{scope} · {len(selected)} held positions' + (' · Account filter active' if set(selected_accounts) != set(accounts) else ''))
@@ -50,10 +57,13 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
             loaded = True
         if loaded and benchmark:
             with st.spinner('Calculating historical risk…'):
-                risk, status = load_risk(selected, data_dir, demo, benchmark, years, calculate and not demo)
-            render_risk_dashboard(risk, status, selected)
+                risk, status = load_risk(selected, data_dir, demo, benchmark, years, calculate and not demo,
+                    future=risk_future, portfolio_result=portfolio_result)
+            render_risk_dashboard(risk, status, selected, future=risk_future, scoped=scoped or set(selected_accounts) != set(accounts))
         else:
             st.caption('Estimate beta, volatility and diversification for today’s allocation. Uses market-price history; not personal historical returns.')
+    if selected.empty:
+        return
     st.divider()
     st.markdown('**Valuation & income**')
     try:
@@ -124,32 +134,37 @@ def render_company_exposure(valued, snapshots, funds, data_dir):
         st.error(str(exc))
 
 
-def render_risk_dashboard(result, status, holdings):
+def render_risk_dashboard(result, status, holdings, *, future=None, scoped=False):
     with st.container(key='tour_risk_metrics'):
         ratio = result.covered_value / result.known_value if result.known_value > 0 else None
-        denominator = 'portfolio value' if result.valuation_complete else 'known valued assets; whole-portfolio coverage unavailable'
+        denominator = 'modeled weight amounts (absolute)' if result.integrated else 'portfolio value' if result.valuation_complete else 'known valued assets; whole-portfolio coverage unavailable'
         st.caption(f'History covers {ratio:.1%} of {denominator}' if ratio is not None else 'No valued assets with history.')
         if result.status == 'partial':
-            st.warning('Covered-subportfolio estimate: weights are renormalized within holdings with usable history.')
+            st.warning(result.note if result.integrated else 'Covered-subportfolio estimate: weights are renormalized within holdings with usable history.')
         if result.status == 'unavailable':
             st.info(result.note)
         columns = st.columns(3)
-        columns[0].metric('Beta', '—' if result.beta is None else f'{result.beta:.2f}', help=f'Sensitivity to the selected benchmark on the common weekly {reporting_currency()} sample.')
-        columns[1].metric('Annualized volatility', '—' if result.volatility is None else f'{result.volatility:.2%}', help='Historical variability estimated from common weekly reporting-currency returns and annualized; today’s portfolio weights are held constant.')
-        columns[2].metric('Benchmark correlation', '—' if result.correlation is None else f'{result.correlation:.2f}', help='Correlation with the selected benchmark over the common weekly reporting-currency return sample, from -1 to 1.')
+        columns[0].metric('Beta contribution' if result.integrated and scoped else 'Beta', '—' if result.beta is None else f'{result.beta:.2f}',
+            help=f'Sensitivity to the selected benchmark on one common weekly {reporting_currency()} sample. Integrated weights use whole-portfolio net equity, including when filtering; cash has zero beta.')
+        columns[1].metric('Annualized volatility', '—' if result.volatility is None else f'{result.volatility:.2%}')
+        columns[2].metric('Benchmark correlation', '—' if result.correlation is None else f'{result.correlation:.2f}')
         if result.start:
             st.caption(f'{result.observations} common weekly returns · {result.start} to {result.end} · Today’s weights held constant, not personal historical performance.')
+        if result.integrated:
+            st.caption('Risk weights use whole-portfolio net equity; debt reduces that denominator. Futures use signed notional and an MSCI World EUR ETF proxy. Fund price histories already include their embedded leverage.')
     if not result.holdings.empty:
         names = {row.id: instrument_name(row) for row in holdings.itertuples()}
+        if future is not None:
+            names['future:overlay'] = f'{future.instrument} future · index proxy'
         frame = result.holdings.copy()
         frame.insert(0, 'Investment', [names.get(key, key) for key in frame.index])
-        labels = {'Weight': 'Allocation (%)', 'Beta': 'Beta', 'Annual volatility': 'Volatility (%)',
+        labels = {'Weight': 'Weight / net equity (%)' if result.integrated else 'Allocation (%)', 'Beta': 'Beta', 'Annual volatility': 'Volatility (%)',
                   'Volatility contribution': 'Volatility contribution (pp)', 'Risk share': 'Share of risk (%)'}
         for field, label in labels.items():
             if field != 'Beta':
                 frame[label] = 100 * frame.pop(field)
         st.dataframe(frame, hide_index=True, width='stretch', column_config={label: st.column_config.NumberColumn(format='%.2f') for label in labels.values()})
-        st.caption('Contributions sum to portfolio volatility. Negative contributions indicate diversification; cash correlations are undefined.')
+        st.caption('Negative contributions indicate diversification; cash correlations are undefined.' if result.integrated and result.status != 'complete' else 'Contributions sum to the displayed volatility. Negative contributions indicate diversification; cash correlations are undefined.')
         with st.expander('Holding correlations'):
             figure = correlation_chart(result.correlations, names)
             st.plotly_chart(figure, width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})

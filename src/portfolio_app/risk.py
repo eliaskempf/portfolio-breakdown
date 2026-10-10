@@ -61,17 +61,31 @@ class RiskAnalytics:
     holdings: pd.DataFrame = field(default_factory=pd.DataFrame)
     correlations: pd.DataFrame = field(default_factory=pd.DataFrame)
     excluded: dict[str, str] = field(default_factory=dict)
+    integrated: bool = False
+    denominator: float | None = None
 
 
 def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series,
-                   *, today=None, years=3, failures=None) -> RiskAnalytics:
+                   *, today=None, years=3, failures=None, exposures=None, net_equity=None) -> RiskAnalytics:
+    """Explicit exposures use fixed net equity; partial coverage never renormalizes.
+
+    Fund price histories already include embedded leverage. Their weights remain
+    funded values; only derivatives use separately supplied signed notionals.
+    """
     if years not in (1, 3, 5):
         raise ValueError('Risk window must be 1, 3 or 5 years')
     target = valued.reporting_currency.iloc[0] if len(valued) and 'reporting_currency' in valued else 'EUR'
     held = valued.loc[valued.shares.gt(0)]
     valid = held.current_value_reporting.map(finite).notna() & held.current_value_reporting.ge(0)
+    integrated = exposures is not None
+    if integrated:
+        valid = held.current_value_reporting.map(finite).notna()
     result = RiskAnalytics(known_value=float(held.loc[valid, 'current_value_reporting'].sum()),
-                           valuation_complete=bool(valid.all()))
+                           valuation_complete=bool(valid.all()), integrated=integrated,
+                           denominator=net_equity if integrated else None)
+    if integrated and (finite(net_equity) is None or net_equity <= 0):
+        result.note = 'Positive, complete portfolio net equity is required for integrated risk.'
+        return result
     end = pd.Timestamp(today or date.today()).normalize()
     start = end - pd.DateOffset(years=years)
     bench = weekly_returns(benchmark, today=end).loc[lambda s: s.index >= start].rename('__benchmark__')
@@ -82,11 +96,14 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
         if rows.current_value_reporting.map(finite).isna().any():
             result.excluded[identity] = f'{label}: missing current valuation'
             continue
-        value = float(rows.current_value_reporting.sum())
-        if value <= 0:
+        value = exposures.get(identity, float(rows.current_value_reporting.sum())) if integrated else float(rows.current_value_reporting.sum())
+        if finite(value) is None:
+            result.excluded[identity] = f'{label}: missing risk exposure'
+            continue
+        if value <= 0 and not integrated:
             continue
         cash = rows.get('instrument_type', pd.Series('', index=rows.index)).eq('cash').all() and rows.quote_currency.eq(target).all()
-        if cash:
+        if cash or (integrated and value == 0):
             series = pd.Series(0., index=bench.index)
         elif identity in histories:
             series = weekly_returns(histories[identity], today=end).reindex(bench.index)
@@ -97,7 +114,11 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
             result.excluded[identity] = f'{label}: fewer than 52 matched weekly returns'
             continue
         returns[identity], values[identity] = series, value
-    result.covered_value = sum(values.values())
+    result.covered_value = sum(abs(value) for value in values.values()) if integrated else sum(values.values())
+    if integrated:
+        result.known_value = sum(abs(exposures.get(identity, float(rows.current_value_reporting.sum())))
+                                 for identity, rows in held.loc[valid].groupby('id')
+                                 if finite(exposures.get(identity, float(rows.current_value_reporting.sum()))) is not None)
     if not returns:
         result.note = 'No holdings have sufficient comparable history.'
         return result
@@ -109,7 +130,7 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
         return result
     result.start, result.end = sample.index[0].date().isoformat(), sample.index[-1].date().isoformat()
     asset_returns, bench = sample[list(returns)], sample['__benchmark__']
-    weights = pd.Series(values) / result.covered_value
+    weights = pd.Series(values) / (net_equity if integrated else result.covered_value)
     covariance = asset_returns.cov() * 52
     marginal = covariance @ weights
     variance = max(0., float(weights @ marginal))
@@ -127,9 +148,14 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
         'Volatility contribution': weights * marginal / sigma if sigma > 1e-10 else np.nan,
         'Risk share': weights * marginal / variance if variance > 1e-20 else np.nan,
     })
+    if integrated:
+        result.holdings['Beta contribution'] = result.holdings.Weight * result.holdings.Beta
     result.correlations = asset_returns.corr()
     result.status = 'complete' if result.valuation_complete and not result.excluded else 'partial'
     result.note = 'Today’s weights held constant across weekly historical returns; not personal historical performance.'
     if not has_benchmark_variance:
         result.note += ' Benchmark variance is zero; beta and benchmark correlation are undefined.'
+    if integrated and result.status != 'complete':
+        result.beta = result.volatility = result.correlation = None
+        result.note = 'Incomplete risk history: total risk is unavailable. Known contributions use portfolio net equity without renormalization.'
     return result

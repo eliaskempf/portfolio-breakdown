@@ -295,6 +295,12 @@ def test_synthetic_basket_is_separate_signed_and_not_company_or_country_exposure
     assert expanded.exposure_kind.tolist() == ['non_equity']
     assert all('geography' not in labels for labels in fund_classifications({}, [loaded], owned).values())
     assert saved.basket.weight.sum() == pytest.approx(1)
+    from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
+    owned['reporting_currency'] = 'EUR'
+    result = calculate_portfolio_exposure(owned, [loaded])
+    assert result.exposure_complete
+    assert result.net_exposure == result.market_amount() == 0
+
 
 
 def test_discovery_deduplicates_accounts_and_obeys_other_writer(tmp_path):

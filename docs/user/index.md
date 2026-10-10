@@ -29,5 +29,5 @@ copies refer to fixed source commits. Use the help linked by your installed
 version; a newer development guide may describe different controls.
 
 This guide covers the v1 feature set, including holdings import and extended ETF
-support. It does not describe the separate futures sandbox. A package version
+support. The [futures and leverage guide](futures.md) describes experimental source-branch functionality, separate from published installers. A package version
 alone may be shared by several candidates: the source commit distinguishes them.

@@ -41,9 +41,9 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 :is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetric"] > div > div:has(> [data-testid="stMetricDelta"]) {grid-column:2;grid-row:2;margin-top:0;flex-wrap:wrap;}
 .st-key-overview_allocation {container-type:inline-size;}
 .st-key-overview_allocation_summary {transform:translateY(-24px);}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"] {cursor:pointer;}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:hover {filter:brightness(.85);}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"], .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"] {cursor:pointer;}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:hover, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:hover {filter:brightness(.85);}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:focus-visible, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
 .st-key-exposure_theme_results {container-type:inline-size;}
 .st-key-exposure_toolbar [data-testid="stColumn"] {min-width:0;}
 @container(max-width:860px) {
@@ -103,15 +103,15 @@ def performance_metric(label: str, value: str, amount, *, key: str) -> None:
         st.metric(label, value)
 
 
-def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None):
+def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False):
     """One value card with an adjacent, optionally clickable unrealized gain."""
     gain = performance.return_pct if percent else performance.gain_reporting
     gain_text = 'Unavailable' if gain is None else f'{gain:+,.2f}%' if percent else (f'{"-" if gain < 0 else "+"}€{abs(gain):,.2f}').replace('€', currency_symbol())
     with st.container(key=key):
-        st.metric('Priced value' if missing else 'Current value', (f'€{value:,.2f}').replace('€', currency_symbol()),
+        st.metric(label or ('Priced value' if missing else 'Current value'), '—' if value is None else f'{currency_symbol()}{value:,.2f}',
                   delta=gain_text, delta_color='normal' if gain else 'off', delta_arrow='off',
-                  delta_description='Return on cost' if percent else 'Unrealized gain / loss',
-                  help=f'{missing} missing prices. Performance coverage: {performance.covered_count} of {performance.held_count} held positions with converted costs and available prices. Excludes dividends and realized gains.')
+                  delta_description=('Gain / cost and reference capital' if percent else 'Holdings and strategy gain') if strategy_gain else ('Funded holdings return' if percent else 'Funded holdings gain') if funded_gain else ('Return on cost' if percent else 'Unrealized gain / loss'),
+                  help=('Futures gain includes prior contracts less fees, divided by fixed reference capital. Extra funding is excluded from gain. Other holdings use unrealized gain / recorded cost. ' if strategy_gain else '') + f'{missing} missing prices. Performance coverage: {performance.covered_count} of {performance.held_count} held positions with converted costs and available prices. Excludes dividends and realized gains.')
     if performance.estimated_count:
         st.caption(f'Estimated gains · {performance.estimated_count} positions use confirmed FX approximations')
     if on_toggle_gain:

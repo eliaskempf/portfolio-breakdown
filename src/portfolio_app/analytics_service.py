@@ -41,10 +41,13 @@ def load_metrics(holdings, data_dir, *, demo=False, fetch=True, refresh=False):
     return result
 
 
-def load_risk(valued, data_dir, demo, benchmark, years, refresh=False):
+def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future=None, portfolio_result=None):
     service = RiskHistoryService(DemoRiskHistoryProvider() if demo else YahooRiskHistoryProvider(),
                                  None if demo else data_dir / '.cache' / 'risk-history')
     target = valued.reporting_currency.iloc[0] if len(valued) and 'reporting_currency' in valued else 'EUR'
+    if portfolio_result is not None and target != 'EUR':
+        from portfolio_app.holdings import DataError
+        raise DataError('Integrated leverage risk currently requires EUR reporting.')
     memo, histories, failures, status = {}, {}, {}, []
     bench = service.in_currency(benchmark, target, years, refresh=refresh, memo=memo)
     status.append(dict(Instrument=benchmark, Status=bench.status, Retrieved=bench.fetched_at, Note=bench.note))
@@ -67,5 +70,25 @@ def load_risk(valued, data_dir, demo, benchmark, years, refresh=False):
             histories[identity] = history.prices
         else:
             failures[identity] = history.note or 'history unavailable'
-    result = risk_analytics(valued, histories, bench.prices, years=years, failures=failures)
+    exposures = None
+    if portfolio_result is not None:
+        exposures = {}
+        if future is not None:
+            from portfolio_app.futures_market import PROXY_TICKER
+            identity = 'future:overlay'
+            valued = pd.concat([valued, pd.DataFrame([dict(id=identity, name=f'{future.instrument} future', shares=1.,
+                current_value_reporting=future.capital_value, quote_currency='EUR', instrument_type='future', reporting_currency='EUR')])], ignore_index=True)
+            exposures[identity] = future.notional
+            if future.contracts and future.instrument == 'FMWN':
+                proxy = service.eur(PROXY_TICKER, years, refresh=refresh, memo=memo)
+                if not proxy.prices.empty:
+                    histories[identity] = proxy.prices
+                else:
+                    failures[identity] = 'MSCI World EUR proxy history unavailable'
+                status.append(dict(Instrument=f'{future.instrument} via {PROXY_TICKER}', Status=proxy.status,
+                    Retrieved=proxy.fetched_at, Note='Approximate index beta using adjusted EUR ETF proxy; signed notional weight.'))
+            elif future.contracts:
+                failures[identity] = 'No supported index-risk proxy for this contract'
+    result = risk_analytics(valued, histories, bench.prices, years=years, failures=failures,
+        exposures=exposures, net_equity=portfolio_result.net_equity if portfolio_result is not None else None)
     return result, pd.DataFrame(status).drop_duplicates('Instrument')

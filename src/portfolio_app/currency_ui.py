@@ -80,6 +80,15 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
     def review():
         from portfolio_app.portfolio import prepare_portfolio
         from portfolio_app.balances import patch_holdings
+        from portfolio_app.portfolio_settings import validate_currency_change
+        try:
+            validate_currency_change(directory, target)
+        except DataError as exc:
+            st.error(str(exc))
+            if st.button('Cancel currency change'):
+                dismiss()
+                st.rerun()
+            return
         candidate = prepare_portfolio(snapshot.holdings, prices, reporting_currency=target, historical=historical)
         held = candidate.loc[candidate.shares.gt(0)]
         missing = held.loc[held.cost_basis_reporting.isna()]
@@ -125,6 +134,7 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
                 with workspace_lock(directory):
                     if revision(directory / 'holdings.csv') != snapshot.revision or load_settings(directory).revision != settings.revision:
                         raise DataError('Portfolio changed during review. Reopen the currency review.')
+                    validate_currency_change(directory, target)
                     if selection:
                         patch_holdings(directory / 'holdings.csv', saved['changes'], expected_revision=snapshot.revision)
                     save_settings(directory, target, settings.revision)
