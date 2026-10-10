@@ -4,14 +4,13 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from portfolio_app.money import euros
+from portfolio_app.charts import chart_config
 
 from portfolio_app.futures_funding import FundingPolicy, FundingStudy, trailing_volatility
 from portfolio_app.futures_funding_data import load_funding_history, load_funding_settings, save_funding_settings
 from portfolio_app.futures_funding_study import paired_window, run_funding_study, run_identity, short_horizon_moves
 from portfolio_app.holdings import DataError
-
-CHART_CONFIG = dict(displayModeBar=True, displaylogo=False,
-                    modeBarButtons=[['zoom2d', 'pan2d', 'resetScale2d']], doubleClick='reset')
 
 
 @st.cache_data(show_spinner=False, max_entries=3)
@@ -171,13 +170,13 @@ def render_summary(result, study):
     for column, label in [('liquidation_frequency', 'Any liquidation'), ('roll_failure_frequency', 'Cannot fund a roll'), ('shortfall_frequency', 'Reserve shortfall')]:
         risk.add_bar(x=frame.Policy, y=frame[column], name=label)
     risk.update_layout(barmode='group', yaxis_title='Paired historical windows (%)', yaxis_range=[0, 100], height=330)
-    st.plotly_chart(risk, width='stretch', config=CHART_CONFIG)
+    st.plotly_chart(risk, width='stretch', config=chart_config(zoom=True))
     returns = go.Figure()
     for column, label in [('mean_delta', 'Mean difference'), ('median_delta', 'Median difference'), ('worst_delta', 'Worst difference'), ('lower_tail_mean', 'Worst 1% mean')]:
         returns.add_scatter(x=frame.Policy, y=frame[column], mode='lines+markers', name=label)
     returns.add_hline(y=0, line_color='#94a3b8')
     returns.update_layout(yaxis_title='Final wealth difference versus fixed baseline (€)', height=350)
-    st.plotly_chart(returns, width='stretch', config=CHART_CONFIG)
+    st.plotly_chart(returns, width='stretch', config=chart_config(zoom=True))
     st.caption('Differences include the entire broker + bank + transit reserve. Tail values are historical observations, not future loss bounds. '
                'Each row uses its eligible paired windows; compare feasibility counts before ranking policies.')
     names = dict(paired_windows='Paired windows', infeasible_windows='Infeasible windows', opening_cash='Mean actual opening cash (€)',
@@ -189,7 +188,7 @@ def render_summary(result, study):
         ('delta_bank_interest', 'Bank interest', 1), ('delta_broker_interest', 'Broker interest', 1), ('delta_costs', 'Extra execution costs', -1)]:
         attribution.add_bar(x=frame.Policy, y=sign*frame[column], name=label)
     attribution.update_layout(barmode='relative', yaxis_title='Mean contribution to relative wealth (€)', height=330)
-    st.plotly_chart(attribution, width='stretch', config=CHART_CONFIG)
+    st.plotly_chart(attribution, width='stretch', config=chart_config(zoom=True))
     st.caption('Carry / basis is the exact residual between contract settlement P&L and unfinanced index movement; it is not an additional deduction.')
 
 
@@ -223,10 +222,10 @@ def render_stress(result, position, settings, study, history, context):
         st.warning(str(exc)); return
     row, ledger = rows[0], logs[candidate]
     if not row['paired_eligible']:
-        st.warning(f"Infeasible opening reserve. Candidate requires €{row['opening_cash']:,.2f}; baseline requires €{row['baseline_opening_cash']:,.2f}."); return
+        st.warning(f"Infeasible opening reserve. Candidate requires {euros(row['opening_cash'])}; baseline requires {euros(row['baseline_opening_cash'])}."); return
     a, b, c = st.columns(3)
-    a.metric('Actual opening broker cash', f"€{row['opening_cash']:,.2f}")
-    b.metric('Final difference versus baseline', f"€{row['delta_wealth']:,.2f}")
+    a.metric('Actual opening broker cash', euros(row['opening_cash']))
+    b.metric('Final difference versus baseline', euros(row['delta_wealth']))
     c.metric('Missed exposure intervals', row['missed_intervals'])
     st.caption(f"Historical source {row['start']:%Y-%m-%d} → {row['end']:%Y-%m-%d}; "
                f"translated simulation {row['simulation_start']:%Y-%m-%d} → {row['simulation_end']:%Y-%m-%d}.")
@@ -237,12 +236,12 @@ def render_stress(result, position, settings, study, history, context):
         events = ledger.loc[ledger[column]]
         fig.add_scatter(x=events.date, y=events.broker, mode='markers', name=label, marker=dict(symbol=symbol, size=10))
     fig.update_layout(yaxis_title='Cash / requirement (€)', xaxis_title='Simulation date', height=370)
-    st.plotly_chart(fig, width='stretch', config=CHART_CONFIG)
+    st.plotly_chart(fig, width='stretch', config=chart_config(zoom=True))
     relative = go.Figure()
     relative.add_scatter(x=ledger.date, y=ledger.wealth-baseline.wealth, name='Wealth difference', mode='lines')
     relative.add_hline(y=0)
     relative.update_layout(yaxis_title='Wealth versus baseline (€)', xaxis_title='Simulation date', height=280)
-    st.plotly_chart(relative, width='stretch', config=CHART_CONFIG)
+    st.plotly_chart(relative, width='stretch', config=chart_config(zoom=True))
     st.caption(f"Across all raw proxy windows of {moves['observations']} observations, worst running adverse move: {moves['worst_running']:.2%}; "
         f"1st percentile: {moves['p01_running']:.2%}. {'Rises' if position.contracts < 0 else 'Falls'} are adverse. "
         'This separate raw-move summary excludes margin, financing and transfers; it is not a cash requirement.')

@@ -4,6 +4,8 @@ from dataclasses import replace
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from portfolio_app.money import euros
+from portfolio_app.charts import chart_config
 
 from portfolio_app.futures_comparison import comparison_dates
 from portfolio_app.futures_rolling import simulate_holding
@@ -43,9 +45,9 @@ def render_comparison(position, settings, provenance, base_value):
             f'Starting futures price {position.mark_price:,.2f} points.')
     if position.quote_date and start.isoformat() != position.quote_date:
         st.warning(f'The price reference is from {position.quote_date}, not the selected start date. This is a scenario using that older/newer price.')
-    st.caption(f'Opening margin: €{position.margin*stress:,.2f} · Maintenance floor: €{position.maintenance_margin*stress:,.2f} '
+    st.caption(f'Opening margin: {euros(position.margin*stress)} · Maintenance floor: {euros(position.maintenance_margin*stress)} '
                f'· {abs(position.contracts)} contracts · {"Short" if position.contracts < 0 else "Long"} · '
-               f'Exposure €{abs(position.notional):,.2f}')
+               f'Exposure {euros(abs(position.notional))}')
     if base_value is not None and maximum > base_value:
         st.info('Some comparison amounts exceed the current base portfolio value. These are hypothetical funding levels.')
     try:
@@ -77,14 +79,13 @@ def render_comparison(position, settings, provenance, base_value):
     chart.add_scatter(x=dates, y=path.index_median, mode='lines', name='Index buy-and-hold median', line=dict(color='#d99127'))
     chart.update_layout(height=440, xaxis_title='Date', yaxis_title='Value including starting cash (€)',
                         legend=dict(orientation='h', y=1.12), margin=dict(l=10, r=10, t=35, b=10))
-    st.plotly_chart(chart, width='stretch', config={'displayModeBar': True, 'displaylogo': False,
-                         'modeBarButtons': [['zoom2d', 'pan2d', 'resetScale2d']], 'doubleClick': 'reset'})
+    st.plotly_chart(chart, width='stretch', config=chart_config(zoom=True))
     if path['median'].isna().all():
         st.warning('Starting cash does not cover initial margin plus costs. Cash and the fully funded index alternatives remain available.')
     else:
         a, b, c = st.columns(3)
-        a.metric('Futures median at end', f"€{path['median'].iloc[-1]:,.2f}")
-        b.metric('Cash benchmark at end', f'€{path.cash.iloc[-1]:,.2f}')
+        a.metric('Futures median at end', euros(path['median'].iloc[-1]))
+        b.metric('Cash benchmark at end', euros(path.cash.iloc[-1]))
         c.metric('Simulated margin-floor breach', f'{path.breach.iloc[-1]:.1f}%')
     st.caption('Futures values include cash, settlement P&L and model exits. The band is a simulated distribution, not a forecast guarantee. '
                'Earlier mock P&L and other portfolio holdings are excluded. Use Reset axes in the chart toolbar to undo zooming, or double-click the plot. Settings are below.')
@@ -116,9 +117,8 @@ def render_comparison(position, settings, provenance, base_value):
         risk.add_vline(x=opening, line_dash='dash', line_color='#94a3b8')
     risk.update_layout(height=340, xaxis_title='Starting cash (€)', yaxis_title='Simulated paths (%)',
                        yaxis_range=[0, 100], legend=dict(orientation='h', y=1.12), margin=dict(l=10, r=10, t=35, b=10))
-    st.plotly_chart(risk, width='stretch', config={'displayModeBar': True, 'displaylogo': False,
-                         'modeBarButtons': [['zoom2d', 'pan2d', 'resetScale2d']], 'doubleClick': 'reset'})
-    st.caption(f'Opening requirement including costs: €{opening:,.2f}. Cash below this cannot open the position and has no breach estimate. '
+    st.plotly_chart(risk, width='stretch', config=chart_config(zoom=True))
+    st.caption(f'Opening requirement including costs: {euros(opening)}. Cash below this cannot open the position and has no breach estimate. '
                'The dotted line marks your selected starting cash. '
                'Extra simulated points concentrate near the opening requirement, with fewer points in the higher-cash tail. '
                'Edit the plotted cash range under Shared futures assumptions below.')
@@ -132,8 +132,7 @@ def render_comparison(position, settings, provenance, base_value):
             cumulative.add_scatter(x=dates, y=path[column], mode='lines', name=label)
         cumulative.update_layout(height=330, xaxis_title='Date', yaxis_title='Simulated paths (%)',
                                  yaxis=dict(autorange=True, rangemode='tozero'), legend=dict(orientation='h', y=1.15))
-        st.plotly_chart(cumulative, width='stretch', config={'displayModeBar': True, 'displaylogo': False,
-                         'modeBarButtons': [['zoom2d', 'pan2d', 'resetScale2d']], 'doubleClick': 'reset'})
+        st.plotly_chart(cumulative, width='stretch', config=chart_config(zoom=True))
         st.caption('For the selected starting cash: probability of a first exit by each date. '
                    'Failure to meet initial margin at a roll stops the strategy even without a maintenance breach. '
                    'These are separate, mutually exclusive first-exit causes; their sum is any forced exit. '
@@ -159,8 +158,7 @@ def render_comparison(position, settings, provenance, base_value):
         wealth.add_scatter(x=x, y=result['Index median end value (EUR)'], mode='lines', name='Index buy-and-hold median', line=dict(color='#d99127'))
         wealth.update_layout(height=340, xaxis_title='Same starting cash (€)', yaxis_title='End value (€)',
                              legend=dict(orientation='h', y=1.15), margin=dict(l=10, r=10, t=35, b=10))
-        st.plotly_chart(wealth, width='stretch', config={'displayModeBar': True, 'displaylogo': False,
-                         'modeBarButtons': [['zoom2d', 'pan2d', 'resetScale2d']], 'doubleClick': 'reset'})
+        st.plotly_chart(wealth, width='stretch', config=chart_config(zoom=True))
         st.dataframe(result[['Collateral (EUR)', 'Cash benchmark gain (EUR)', 'Futures median gain (EUR)',
                              'Futures p05 end value (EUR)', 'Futures p95 end value (EUR)', 'Futures beat cash (%)']],
                      hide_index=True, width='stretch')

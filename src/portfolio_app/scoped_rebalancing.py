@@ -30,7 +30,7 @@ def sleeve_positions(valued: pd.DataFrame, config: Allocation, bucket: str) -> p
 
 
 def _route(values, targets, budget, lower, upper, margin):
-    """Minimize outside-band EUR distance, then target distance, with cent rounding."""
+    """Minimize outside-band reporting-currency distance, then target distance, with cent rounding."""
     n = len(values)
     final = sum(values) + budget
     # Variables: contribution, band error, absolute target error.
@@ -74,7 +74,7 @@ def portfolio_contribution(valued: pd.DataFrame, config: Allocation, amount: flo
     cents = _positive_cents(amount, 'contribution')
     minimum = _positive_cents(minimum_purchase, 'minimum purchase')
     if valued.current_value_reporting.isna().any():
-        raise RebalanceError('Portfolio routing needs complete EUR valuations. A sleeve-local calculation may still be available.')
+        raise RebalanceError('Portfolio routing needs complete reporting-currency valuations. A sleeve-local calculation may still be available.')
     if (valued.bucket_id == '').any():
         raise RebalanceError('Assign positions to strategic buckets before routing a portfolio contribution.')
     if not set(eligible_ids) <= set(valued.position_id):

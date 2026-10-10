@@ -60,7 +60,7 @@ def prepare_rebalance(valued: pd.DataFrame, *, tolerance: float = .5,
     targets = valued.target_allocation.to_numpy(dtype=float)
     shares = valued.shares.to_numpy(dtype=float)
     if not np.isfinite(values).all() or (values < 0).any():
-        raise RebalanceError("Every held position needs a finite, nonnegative EUR valuation.")
+        raise RebalanceError("Every held position needs a finite, nonnegative reporting-currency valuation.")
     if not np.isfinite(shares).all() or (shares < 0).any():
         raise RebalanceError("Share quantities must be finite and nonnegative.")
     if not np.isfinite(targets).all() or ((targets < 0) | (targets > 1)).any():
@@ -203,7 +203,7 @@ class _AllocationModel:
 def minimum_trades(problem: RebalanceInput, *, no_new_positions: bool = False,
                    new_money: float = 0., buys_only: bool = False,
                    sell_allowed: np.ndarray | None = None) -> RebalancePlan:
-    """First minimize the number of changed positions, then total EUR turnover."""
+    """First minimize the number of changed positions, then total reporting-currency turnover."""
     total = problem.total + new_money
     if not math.isfinite(new_money) or new_money < 0 or total <= 0:
         raise RebalanceError("This mode needs positive portfolio value and nonnegative new money.")
@@ -359,7 +359,7 @@ def _positive_cents(amount: float, label: str) -> int:
         raise RebalanceError(f"Enter a positive {label}.")
     cents = round(amount * 100)
     if cents < 1 or not math.isclose(amount * 100, cents, abs_tol=1e-6, rel_tol=0):
-        raise RebalanceError(f"Enter the {label} in whole EUR cents.")
+        raise RebalanceError(f"Enter the {label} in increments of 0.01 in the portfolio currency.")
     return cents
 
 

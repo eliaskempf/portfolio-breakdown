@@ -1,6 +1,6 @@
 """Explicit portfolio and category planning scopes."""
 
-from portfolio_app.currency_display import currency_symbol
+from portfolio_app.currency_display import money
 from hashlib import sha256
 
 import pandas as pd
@@ -118,7 +118,7 @@ def render_scoped_rebalancing(valued, config):
     results = st.container(key='tour_plan_results')
     with st.expander('Plan details'):
         index = st.selectbox('Plan to inspect', help='Choose a calculated candidate plan to review.', key=f'planning_plan_{fingerprint}', options=range(len(plans)), index=len(plans)-1,
-            format_func=lambda i: (f'{int(plans[i].trades["Trade"].ne(0).sum())} trades · €{plans[i].unallocated_cash:.2f} unallocated').replace('€', currency_symbol())) if len(plans) > 1 else 0
+            format_func=lambda i: f'{int(plans[i].trades["Trade"].ne(0).sum())} trades · {money(plans[i].unallocated_cash)} unallocated') if len(plans) > 1 else 0
         plan = plans[index]
         positions = original.copy()
         positions['target_allocation'] = positions.position_id.map(valued.set_index('position_id').target_allocation)

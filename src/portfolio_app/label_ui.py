@@ -1,12 +1,13 @@
 """A direct comparison of selected labels, alongside the advanced tree views."""
 
-from portfolio_app.currency_display import currency_symbol
+from portfolio_app.currency_display import money, money_format, currency_symbol
 
 from hashlib import sha256
 import json
 
 import pandas as pd
 import streamlit as st
+from portfolio_app.charts import chart_config
 
 from portfolio_app.charts import bar_chart, hierarchy_chart, pie_chart, sort_allocation_nodes
 from portfolio_app.chart_navigation import sync_chart_category
@@ -82,7 +83,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                                   key=f"label_compare_chart_{policy}")
     comparison = compare_labels(exposures, classifications, labels, overlap=policy)
     if comparison.unmatched_value:
-        st.caption((f'Outside selected labels: €{comparison.unmatched_value:,.2f} · These assets remain in the Assets view.').replace('€', currency_symbol()))
+        st.caption(f'Outside selected labels: {money(comparison.unmatched_value)} · These assets remain in the Assets view.')
     performance_comparisons = [compare_labels(measure, classifications, labels, overlap=policy) for measure in performance.measures()] if performance else None
     target_comparisons = None
     if targets is not None:
@@ -93,9 +94,9 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         st.info("No positive valued assets match these labels in the current portfolio selection.")
     else:
         coverage = comparison.matched_value / comparison.portfolio_value
-        st.caption((f"Coverage: {coverage:.1%} of selected portfolio · €{comparison.unmatched_value:,.2f} falls outside these labels.").replace('€', currency_symbol()))
+        st.caption(f"Coverage: {coverage:.1%} of selected portfolio · {money(comparison.unmatched_value)} falls outside these labels.")
         if has_overlap:
-            st.caption((f"€{comparison.overlapping_value:,.2f} matches multiple selected labels. ").replace('€', currency_symbol()) +
+            st.caption(f"{money(comparison.overlapping_value)} matches multiple selected labels. " +
                        ("Its value is split equally between those labels." if policy == "split" else
                         "Each matching label includes its full value. Label percentages can exceed 100% in total; bars show this overlap."))
         roots = sorted({path[:length] for path in comparison.allocations["path"] for length in range(1, len(path) + 1)})
@@ -120,7 +121,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             # branch clicks can zoom all the way from labels to individual assets.
             figure = hierarchy_chart(tree, chart_type)
             figure.update_traces(maxdepth=3,
-                                 hovertemplate=("%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of ").replace('€', currency_symbol()) +
+                                 hovertemplate='%{label}<br>' + currency_symbol() + '%{value:,.2f}<br>%{customdata[0]:.2%} of ' +
                                  ("detail total" if root else "selected labels") + "<extra></extra>")
         else:
             figure = bar_chart(nodes) if chart_type == "Bar" else pie_chart(nodes)
@@ -130,7 +131,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             figure.update_layout(height=400, uniformtext=None, margin=dict(t=12, b=12, l=12, r=12))
             chart_key = f'exposure_label_chart_{detail_key}_{sha256(repr(root).encode()).hexdigest()[:10]}'
             with chart_area:
-                st.plotly_chart(figure, width='stretch', key=chart_key, config={'displayModeBar': False, 'showSendToCloud': False})
+                st.plotly_chart(figure, width='stretch', key=chart_key, config=chart_config())
                 if chart_type in {'Sunburst', 'Treemap'}:
                     categories = {row.node_id: tuple(json.loads(row.node_id)[1]) for row in tree.itertuples() if row.kind == 'category'}
                     categories[tree.iloc[0].node_id] = root[:-1] if root else ()
@@ -159,7 +160,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             assets["Labels"] = assets.pop("asset_id").map(lambda asset: asset_badges(classifications, asset, taxonomy))
             table_area.dataframe(assets, column_order=['Investment', 'Value', 'Allocation %', 'Labels'], hide_index=True, height="content", width="stretch", column_config={
                 "Labels": badge_column("Labels", colors),
-                "Value": st.column_config.NumberColumn(format=("€ %.2f").replace('€', currency_symbol())),
+                "Value": st.column_config.NumberColumn(format=money_format()),
                 "Allocation %": st.column_config.NumberColumn("Within this detail (%)", help='Share normalized within this selected detail, not the entire portfolio.', format="%.2f %%"),
             } | target_column_config() | performance_column_config(percent=performance_percent))
             return
@@ -175,7 +176,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
     table["Label"] = table["Label"].map(lambda label: [label])
     table_area.dataframe(table, column_order=['Label', 'Value', 'Portfolio %', 'Selected labels %'], hide_index=True, height="content", width="stretch", column_config={
         "Label": badge_column("Label", colors),
-        "Value": st.column_config.NumberColumn(format=("€ %.2f").replace('€', currency_symbol())),
+        "Value": st.column_config.NumberColumn(format=money_format()),
         "Selected labels %": st.column_config.NumberColumn("% of labels", format="%.2f %%",
                                                            help="Share of the unique value matching any selected label."),
         "Portfolio %": st.column_config.NumberColumn("% of scope", help='Share of the value in the current portfolio scope.', format="%.2f %%"),

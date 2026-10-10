@@ -1,6 +1,7 @@
 """Shared contract labels for the position disclosure and detail dialog."""
 from datetime import date
 from portfolio_app.futures import CONTRACTS
+from portfolio_app.money import euros
 
 
 def future_name(position):
@@ -20,9 +21,6 @@ def future_summary(position):
 
 
 def future_details(position):
-    def euros(value):
-        return f'€{value:,.2f}'
-
     funded = position.reference_capital_eur is not None
     return [
         {'label': 'Underlying / exchange', 'value': f'{CONTRACTS[position.instrument][0]} · Eurex'},

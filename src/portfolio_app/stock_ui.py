@@ -1,6 +1,6 @@
 """Optional company view, separate from strategic allocation and tradable holdings."""
 
-from portfolio_app.currency_display import currency_symbol
+from portfolio_app.currency_display import money
 import streamlit as st
 from portfolio_app.holdings import DataError
 from portfolio_app.stock_exposure import load_company_identities, stock_exposure
@@ -22,7 +22,7 @@ def render_stock_exposure(valued, funds, data_dir):
     if result.stock_value is None:
         st.info('The selected stock-universe total is unknown because some values or composition are unresolved. Its percentages are blank; unknown exposure is not zero.')
     else:
-        st.caption((f'Selected stock universe: €{result.stock_value:,.2f}, including unresolved equity residuals. Portfolio percentages use the selected source scope before these additional exclusions.').replace('€', currency_symbol()))
+        st.caption(f'Selected stock universe: {money(result.stock_value)}, including unresolved equity residuals. Portfolio percentages use the selected source scope before these additional exclusions.')
     if not result.unresolved.empty:
         st.subheader('Unresolved exposure and fund residuals')
         st.dataframe(result.unresolved, hide_index=True, width='stretch')

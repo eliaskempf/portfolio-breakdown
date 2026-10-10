@@ -1,11 +1,12 @@
 """One searchable exposure table, with on-demand source and fund details."""
 
-from portfolio_app.currency_display import currency_symbol
+from portfolio_app.currency_display import money
 from portfolio_app.ui_help import column_help
 from hashlib import sha256
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from portfolio_app.charts import chart_config
 
 from portfolio_app.charts import style_figure
 from portfolio_app.etf import matching_fund
@@ -35,7 +36,7 @@ def source_previews(exposures, selected, table):
         if row['Account']:
             label += f' · {row["Account"]}'
         items.append(dict(label=label,
-                          amount='Unavailable' if pd.isna(amount) else (f'€{amount:,.2f}').replace('€', currency_symbol()),
+                          amount='Unavailable' if pd.isna(amount) else money(amount),
                           share='—' if pd.isna(share) else f'{share:.2f}%'))
     return previews
 
@@ -77,7 +78,7 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
         largest = table.dropna(subset=['Total']).head(12).iloc[::-1]
         figure = style_figure(go.Figure(go.Bar(x=largest['Total'], y=largest.Asset, orientation='h')))
         figure.update_layout(height=max(260, 30 * len(largest)), xaxis_title='Exposure', margin=dict(t=12, b=20, l=12, r=12))
-        st.plotly_chart(figure, width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})
+        st.plotly_chart(figure, width='stretch', config=chart_config())
     asset = st.session_state.get('exposure_asset_detail')
     if asset not in set(table.asset_id):
         st.session_state.pop('exposure_asset_detail', None)
@@ -88,7 +89,7 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
     def details():
         row = table.loc[table.asset_id.eq(asset)].iloc[0]
         st.subheader(row.Asset)
-        st.caption('Unknown values remain unavailable; they are not treated as zero.') if pd.isna(row['Total']) else st.metric('Total exposure', (f'€{row["Total"]:,.2f}').replace('€', currency_symbol()), help='Combined direct and indirect exposure to this asset in the portfolio currency.')
+        st.caption('Unknown values remain unavailable; they are not treated as zero.') if pd.isna(row['Total']) else st.metric('Total exposure', money(row["Total"]), help='Combined direct and indirect exposure to this asset in the portfolio currency.')
         for name in taxonomy_names(classifications):
             st.write(f'{titles.get(name, name.replace("_", " ").title())}: {describe(classifications, asset, name)}')
         if geography is not None:

@@ -1,12 +1,13 @@
 """Streamlit controls and presentation; calculations live in pure modules."""
 
-from portfolio_app.currency_display import currency_symbol
+from portfolio_app.currency_display import money_format
 
 import json
 from collections import Counter
 from hashlib import sha256
 
 import streamlit as st
+from portfolio_app.charts import chart_config
 
 from portfolio_app.aggregation import aggregate, aggregate_dimension
 from portfolio_app.charts import bar_chart, hierarchy_chart, hierarchy_table, pie_chart, sort_allocation_nodes
@@ -323,7 +324,7 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                     figure.update_layout(height=400, uniformtext=None, margin=dict(t=12, b=12, l=12, r=12))
                     chart_key = 'exposure_theme_chart_' + sha256(repr((view, root, depth, include_holdings)).encode()).hexdigest()[:16]
                     with chart_area:
-                        st.plotly_chart(figure, width='stretch', key=chart_key, config={'displayModeBar': False, 'showSendToCloud': False})
+                        st.plotly_chart(figure, width='stretch', key=chart_key, config=chart_config())
                         if chart_type in {'Sunburst', 'Treemap'} and view.startswith('taxonomy:'):
                             categories = {row.node_id: tuple(row.path) for row in nodes.itertuples() if row.kind == 'category'}
                             categories[nodes.iloc[0].node_id] = root[:-1] if root else ()
@@ -365,7 +366,7 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                 table_area.dataframe(allocation, column_order=['Category', 'Value', 'Allocation %', *(['Labels'] if 'Labels' in allocation else []), *(['Classification path'] if show_paths else [])], hide_index=True, width="stretch", height="content", column_config={
                     "Category": "Investment" if view == "holding" else "Category",
                     "Classification path": st.column_config.TextColumn(help="Full breadcrumb within the selected taxonomy."),
-                    "Value": st.column_config.NumberColumn(format=("€ %.2f").replace('€', currency_symbol())),
+                    "Value": st.column_config.NumberColumn(format=money_format()),
                     "Allocation %": st.column_config.NumberColumn(format="%.2f %%"),
                 } | label_config | target_column_config() | performance_column_config(percent=performance_percent))
 
@@ -409,7 +410,7 @@ def render_source_positions(selected, valued, names, classifications, show_ticke
         'Target bucket %': st.column_config.NumberColumn('Target (% of bucket)', help='Desired share of this position’s assigned category.', format='%.2f %%'),
         'holdings_confirmed_on': 'Holdings last confirmed', 'quantity_unit': 'Quantity unit',
         "quote_currency": "Currency", "fx_to_reporting": None,
-        "current_value_reporting": st.column_config.NumberColumn("Current value", help='Current quantity multiplied by its price and converted to the portfolio currency where available.', format=("€ %.2f").replace('€', currency_symbol())),
+        "current_value_reporting": st.column_config.NumberColumn("Current value", help='Current quantity multiplied by its price and converted to the portfolio currency where available.', format=money_format()),
         "portfolio_weight": st.column_config.NumberColumn("Selected weight (%)", help='Share of the currently selected exposure, normalized within that selection.', format="%.2f %%"),
         "target_allocation": st.column_config.NumberColumn("Target allocation (% of whole portfolio)", help='Desired position value as a share of the entire portfolio.', format="%.2f %%"),
         "current_price": st.column_config.NumberColumn("Price (quote currency)", help='Current price per unit in the listing’s trading currency.', format="%.4f"),

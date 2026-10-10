@@ -3,7 +3,7 @@ import streamlit as st
 
 from portfolio_app.futures_mtm import daily_mtm, load_settlements, mtm_stats, refresh_settlements, settlement_dates
 from portfolio_app.holdings import DataError
-from portfolio_app.portfolio_exposure_ui import euros
+from portfolio_app.money import euros
 
 
 def render_daily_mtm(position, directory):

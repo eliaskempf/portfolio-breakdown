@@ -3,6 +3,8 @@ from datetime import date
 
 import plotly.graph_objects as go
 import streamlit as st
+from portfolio_app.money import euros
+from portfolio_app.charts import chart_config
 
 from portfolio_app.futures_history import HistoricalSettings, historical_projection
 from portfolio_app.futures_history_data import ESTR_SOURCE, load_history, refresh_history, unpack_history
@@ -72,21 +74,20 @@ def render_historical(position, directory, context, comparison, settings_area):
         chart.add_vline(x=row.end.timestamp()*1000, line_dash='dot', line_color='#94a3b8')
     chart.update_layout(height=440, xaxis_title='Date · dotted lines mark rolls', yaxis_title='Value including starting cash (€)',
                         legend=dict(orientation='h', y=1.12), margin=dict(l=10, r=10, t=35, b=10))
-    st.plotly_chart(chart, width='stretch', config={'displayModeBar': True, 'displaylogo': False,
-                         'modeBarButtons': [['zoom2d', 'pan2d', 'resetScale2d']], 'doubleClick': 'reset'})
+    st.plotly_chart(chart, width='stretch', config=chart_config(zoom=True))
     st.caption('Index buy-and-hold invests the same starting cash in the EUR MSCI World ETF proxy at the start of the selected period. '
                'It follows adjusted prices with reinvested distributions and stays invested throughout, without leverage or margin exits. '
                'It is always long and excludes additional trading costs and taxes; fund costs and tracking differences are embedded in the proxy.')
     a, b, c = st.columns(3)
-    a.metric('Reconstructed futures end value', f'€{curve.futures.iloc[-1]:,.2f}' if result['eligible'] else 'Unavailable')
-    b.metric('Historical cash end value', f'€{curve.cash.iloc[-1]:,.2f}')
-    c.metric('Difference versus cash', f'€{curve.futures.iloc[-1]-curve.cash.iloc[-1]:,.2f}' if result['eligible'] else '—')
+    a.metric('Reconstructed futures end value', euros(curve.futures.iloc[-1]) if result['eligible'] else 'Unavailable')
+    b.metric('Historical cash end value', euros(curve.cash.iloc[-1]))
+    c.metric('Difference versus cash', euros(curve.futures.iloc[-1]-curve.cash.iloc[-1]) if result['eligible'] else '—')
     if result['exit_date'] is not None or not result['eligible']:
         st.warning(f"{result['status']}" + (f" on {result['exit_date']:%d %b %Y}; no re-entry or top-ups." if result['exit_date'] is not None else '.'))
     else:
         st.caption(result['status'])
-    st.caption(f'Past margin checks use the selected current requirements: initial €{position.margin*comparison.margin_stress:,.2f}, '
-               f'maintenance €{position.maintenance_margin*comparison.margin_stress:,.2f}. This is one historical path, not a breach probability.')
+    st.caption(f'Past margin checks use the selected current requirements: initial {euros(position.margin*comparison.margin_stress)}, '
+               f'maintenance {euros(position.maintenance_margin*comparison.margin_stress)}. This is one historical path, not a breach probability.')
     with st.expander('Quarterly contract details'):
         st.dataframe(legs.rename(columns=dict(start='Model entry date', end='Model close / roll date', expiry='Model maturity',
                                               entry_points='Reconstructed entry (points)', exit_points='Reconstructed exit (points)')),

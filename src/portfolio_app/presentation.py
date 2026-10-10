@@ -1,6 +1,6 @@
 """Shared visual styling for the local app; no portfolio calculations."""
 
-from portfolio_app.currency_display import currency_symbol
+from portfolio_app.currency_display import money
 
 from html import escape
 
@@ -93,7 +93,7 @@ def empty_overview() -> None:
 
 
 def allocation_total(label: str, value: float) -> None:
-    st.html((f'<div class="allocation-total"><span>{escape(label)}</span><span>€{value:,.2f} · 100%</span></div>').replace('€', currency_symbol()))
+    st.html(f'<div class="allocation-total"><span>{escape(label)}</span><span>{money(value)} · 100%</span></div>')
 
 
 def performance_metric(label: str, value: str, amount, *, key: str) -> None:
@@ -106,9 +106,9 @@ def performance_metric(label: str, value: str, amount, *, key: str) -> None:
 def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False):
     """One value card with an adjacent, optionally clickable unrealized gain."""
     gain = performance.return_pct if percent else performance.gain_reporting
-    gain_text = 'Unavailable' if gain is None else f'{gain:+,.2f}%' if percent else (f'{"-" if gain < 0 else "+"}€{abs(gain):,.2f}').replace('€', currency_symbol())
+    gain_text = 'Unavailable' if gain is None else f'{gain:+,.2f}%' if percent else money(gain, signed=True)
     with st.container(key=key):
-        st.metric(label or ('Priced value' if missing else 'Current value'), '—' if value is None else f'{currency_symbol()}{value:,.2f}',
+        st.metric(label or ('Priced value' if missing else 'Current value'), money(value),
                   delta=gain_text, delta_color='normal' if gain else 'off', delta_arrow='off',
                   delta_description=('Gain / cost and reference capital' if percent else 'Holdings and strategy gain') if strategy_gain else ('Funded holdings return' if percent else 'Funded holdings gain') if funded_gain else ('Return on cost' if percent else 'Unrealized gain / loss'),
                   help=('Futures gain includes prior contracts less fees, divided by fixed reference capital. Extra funding is excluded from gain. Other holdings use unrealized gain / recorded cost. ' if strategy_gain else '') + f'{missing} missing prices. Performance coverage: {performance.covered_count} of {performance.held_count} held positions with converted costs and available prices. Excludes dividends and realized gains.')

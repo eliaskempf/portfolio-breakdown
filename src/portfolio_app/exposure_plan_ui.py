@@ -1,5 +1,6 @@
 """Hypothetical exposure trades with explicitly permitted instruments."""
 import streamlit as st
+from portfolio_app.money import euros
 
 from portfolio_app.exposure_planning import plan_exposure
 from portfolio_app.exposure_targets import load_exposure_targets
@@ -53,7 +54,7 @@ def render_exposure_plan(directory, result, allocation, valued, *, future=None):
             st.dataframe(plan.trades.drop(columns='Position ID'), hide_index=True, width='stretch')
         st.success('Targets reached within EUR 0.01.') if plan.complete else st.warning('Remaining target gaps: the permitted trades and constraints do not reach every target.')
         st.dataframe(plan.gaps.drop(columns='Bucket ID'), hide_index=True, width='stretch')
-        st.caption(f'Planned equity €{plan.equity:,.2f} · Fees €{plan.fees:,.2f} · Unallocated contribution / sale proceeds €{plan.unallocated_cash:,.2f}')
+        st.caption(f'Planned equity {euros(plan.equity)} · Fees {euros(plan.fees)} · Unallocated contribution / sale proceeds {euros(plan.unallocated_cash)}')
         if 'future:overlay' in permitted:
-            st.caption(f'Initial margin €{plan.margin_required:,.2f} · Declared collateral after fees €{plan.collateral_remaining:,.2f}')
+            st.caption(f'Initial margin {euros(plan.margin_required)} · Declared collateral after fees {euros(plan.collateral_remaining)}')
         st.caption('Preview only, at current marks. Minimizes total absolute category gaps, then turnover. Residual cash remains in net equity with zero risk-bearing exposure. No orders or funding transactions are saved.')

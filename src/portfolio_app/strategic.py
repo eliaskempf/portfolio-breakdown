@@ -50,7 +50,7 @@ def bucket_positions(valued: pd.DataFrame, config: Allocation, bucket: str = "")
 
 
 def strategic_tree(valued: pd.DataFrame, config: Allocation, bucket: str = "") -> pd.DataFrame:
-    """Chart areas use known EUR only; missing totals remain explicit metadata.
+    """Chart areas use known reporting-currency values only; missing totals remain explicit metadata.
 
     IDs, rather than display names, define the hierarchy. Empty buckets get zero
     area, never a fabricated current allocation based on their target.

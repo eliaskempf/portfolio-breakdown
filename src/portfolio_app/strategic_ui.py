@@ -1,6 +1,6 @@
 """Overview with a single authoritative category scope."""
 
-from portfolio_app.currency_display import currency_symbol, reporting_currency
+from portfolio_app.currency_display import money, currency_symbol
 from portfolio_app.ui_help import column_help
 from hashlib import sha256
 import json
@@ -8,6 +8,7 @@ import json
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from portfolio_app.charts import chart_config
 
 from portfolio_app.settings import GAIN_COLOR, LOSS_COLOR
 from portfolio_app.charts import hatch_foregrounds, hierarchy_chart, sort_allocation_nodes, strategic_colors, style_figure
@@ -106,15 +107,15 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             st.caption('Return compares unrealized gain with recorded buy-in cost. Monetary gain shows the amount gained or lost. Both are shown in the tables and on hover.')
             available = table.dropna(subset=[measure]).sort_values(measure)
             if not available.empty:
-                hover = [[(f'€{row["Cost"]:,.2f}').replace('€', currency_symbol()), f'{row["Gain"]:+,.2f} {reporting_currency()}',
+                hover = [[money(row["Cost"]), money(row["Gain"], signed=True),
                           f'{row["Return (%)"]:+,.2f}%' if pd.notna(row['Return (%)']) else 'Unavailable',
                           row['Coverage'], row['Status']] for _, row in available.iterrows()]
                 figure = style_figure(go.Figure(go.Bar(x=available[measure], y=available.Category, orientation='h',
                     marker_color=[LOSS_COLOR if value < 0 else GAIN_COLOR for value in available[measure]],
-                    text=[f'{value:+,.2f}' + ('%' if chart_percent else (' €').replace('€', currency_symbol())) for value in available[measure]], textposition='auto',
+                    text=[f'{value:+,.2f}%' if chart_percent else money(value, signed=True) for value in available[measure]], textposition='auto',
                     customdata=hover, hovertemplate='%{y}<br>Return: %{customdata[2]}<br>Gain: %{customdata[1]}<br>Buy-in cost: %{customdata[0]}<br>Coverage: %{customdata[3]} · %{customdata[4]}<extra></extra>')))
                 figure.update_layout(height=max(260, 36 * len(available)), xaxis_title=measure, margin=dict(l=12, r=12, t=12, b=30))
-                st.plotly_chart(figure, width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})
+                st.plotly_chart(figure, width='stretch', config=chart_config())
             elif chart_percent and table['Gain'].notna().any():
                 st.info('Percentage return is unavailable for zero buy-in cost. Choose Gain to see the monetary amounts.')
             else:
@@ -157,7 +158,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     figure.update_layout(height=420, uniformtext=None, margin=dict(t=10, b=10, l=10, r=10))
                     signature = sha256(repr((config, list(plotted.position_id), bucket, market)).encode()).hexdigest()[:16]
                     chart_key = f'strategic_chart_{signature}'
-                    st.plotly_chart(figure, width='stretch', height=420, theme='streamlit', key=chart_key, config={'displayModeBar': False, 'showSendToCloud': False})
+                    st.plotly_chart(figure, width='stretch', height=420, theme='streamlit', key=chart_key, config=chart_config())
                     categories = {row.node_id: row.path[-1] if row.path else '' for row in tree.itertuples() if row.kind == 'category'}
                     parent = paths[bucket][-2] if len(paths[bucket]) > 1 else ''
                     categories[tree.loc[tree.parent_id.eq(''), 'node_id'].iloc[0]] = parent

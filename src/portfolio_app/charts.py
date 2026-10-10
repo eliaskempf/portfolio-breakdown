@@ -30,6 +30,17 @@ PALETTE = [PRIMARY_COLOR, "#4aa9b3", "#9a6dd7", "#e5a04b", "#d76e91", "#75a565",
 SUNBURST_PALETTE = PALETTE
 
 
+def chart_config(*, zoom=False, toolbar=False):
+    """Shared controls: compact allocations or explicit zoom/pan/reset studies.
+
+Return fresh containers so a view cannot alter another chart's controls.
+"""
+    config = dict(displayModeBar=toolbar, showSendToCloud=False, displaylogo=False)
+    if zoom:
+        config.update(displayModeBar=True, modeBarButtons=[['zoom2d', 'pan2d', 'resetScale2d']], doubleClick='reset')
+    return config
+
+
 def style_figure(figure: go.Figure) -> go.Figure:
     return figure.update_layout(colorway=PALETTE, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                                 font=dict(family="Inter, system-ui, sans-serif", size=12),
@@ -68,7 +79,7 @@ def hierarchy_chart(nodes: pd.DataFrame, chart_type: str, *, preserve_order: boo
         ids=nodes["node_id"], parents=nodes["parent_id"], labels=nodes["label"],
         values=nodes["value"], branchvalues="total", sort=False,
         customdata=nodes[["percentage"]].to_numpy(),
-        hovertemplate=("%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>").replace('€', currency_symbol()),
+        hovertemplate='%{label}<br>' + currency_symbol() + '%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>',
         marker=dict(line=dict(color="rgba(127,127,127,0.7)", width=2)),
     )).update_layout(margin=dict(t=24, l=24, r=24, b=24), height=480, treemapcolorway=PALETTE))
     if chart_type == "Sunburst":
@@ -127,7 +138,7 @@ def bar_chart(nodes: pd.DataFrame) -> go.Figure:
     return style_figure(go.Figure(go.Bar(
         x=leaves["value"], y=labels, orientation="h",
         customdata=leaves[["percentage"]].to_numpy(),
-        hovertemplate=("%{y}<br>€%{x:,.2f}<br>%{customdata[0]:.2%}<extra></extra>").replace('€', currency_symbol()),
+        hovertemplate='%{y}<br>' + currency_symbol() + '%{x:,.2f}<br>%{customdata[0]:.2%}<extra></extra>',
         text=[f"{value:.1%}" for value in leaves["percentage"]], textposition="auto",
     )).update_layout(xaxis_title=reporting_currency(), margin=dict(t=15, b=0), height=max(350, 32 * len(leaves))))
 
@@ -140,7 +151,7 @@ def pie_chart(nodes: pd.DataFrame) -> go.Figure:
         ids=leaves["node_id"], labels=labels, values=leaves["value"],
         customdata=leaves[["percentage"]].to_numpy(),
         textinfo="percent", hole=.52, marker=dict(colors=PALETTE, line=dict(color="rgba(127,127,127,0.25)", width=1)),
-        hovertemplate=("%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>").replace('€', currency_symbol()),
+        hovertemplate='%{label}<br>' + currency_symbol() + '%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>',
     )).update_layout(margin=dict(t=20, l=15, r=15, b=20), height=480, legend=dict(orientation="h", y=-.08)))
 
 

@@ -2,13 +2,14 @@
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from portfolio_app.charts import chart_config
 
 from portfolio_app.charts import style_figure
 from portfolio_app.futures import CONTRACTS
 from portfolio_app.futures_presentation import future_details, future_name
 from portfolio_app.futures_returns import load_return_history
 from portfolio_app.holdings import DataError
-from portfolio_app.portfolio_exposure_ui import euros
+from portfolio_app.money import euros
 
 
 def render_index_chart(future, directory):
@@ -42,7 +43,7 @@ def render_index_chart(future, directory):
         figure.add_annotation(x=future.entry_date, y=1, yref='paper', text='Entry', showarrow=False, yshift=12)
     figure.update_layout(height=280, margin=dict(l=8, r=8, t=24, b=12), showlegend=False,
                          yaxis_title='Rebased to 100', xaxis_title=None)
-    st.plotly_chart(figure, key='future_position_index_chart', width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})
+    st.plotly_chart(figure, key='future_position_index_chart', width='stretch', config=chart_config())
     st.caption(f'MSCI World ETF proxy · EUNL.DE · adjusted EUR prices through {end:%d %b %Y}')
 
 

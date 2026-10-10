@@ -2,6 +2,8 @@
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from portfolio_app.money import euros
+from portfolio_app.charts import chart_config
 
 from portfolio_app.charts import style_figure, hatch_foregrounds
 from portfolio_app.etf import fund_classifications
@@ -10,10 +12,6 @@ from portfolio_app.holdings import DataError
 from portfolio_app.leverage_settings import FundFactor, LeverageSettings, MarginLiability, load_leverage_settings, save_leverage_settings, requires_leverage
 from portfolio_app.strategic import category_labels
 from portfolio_app.taxonomy import taxonomy_names
-
-
-def euros(value):
-    return '—' if value is None else f'€{value:,.2f}'
 
 
 def render_equity_exposure_metric(result, *, market=False, bucket_ids=None):
@@ -73,7 +71,7 @@ def signed_chart(table, label, measure, key):
     figure.update_yaxes(tickmode='array', tickvals=list(range(len(selected))), ticktext=selected[label].tolist())
     figure.update_xaxes(title=measure, zeroline=True, zerolinewidth=2, zerolinecolor='#888888')
     figure.update_layout(height=max(260, min(900, len(selected)*32)), margin=dict(l=10, r=10, t=10, b=35))
-    st.plotly_chart(figure, key=key, width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})
+    st.plotly_chart(figure, key=key, width='stretch', config=chart_config())
 
 
 def render_market_analysis(result, config, classifications, valued, funds, *, future=None):
@@ -120,7 +118,7 @@ def render_market_analysis(result, config, classifications, valued, funds, *, fu
                                         fgopacity=1, size=8, solidity=.12))
             figure.update_traces(maxdepth=3, insidetextorientation='auto')
             figure.update_layout(height=480, margin=dict(l=10, r=10, t=10, b=10))
-            st.plotly_chart(figure, key='exposure_market_chart', width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})
+            st.plotly_chart(figure, key='exposure_market_chart', width='stretch', config=chart_config())
         else:
             st.info('No positive market exposure in this selection.')
     with table_column:

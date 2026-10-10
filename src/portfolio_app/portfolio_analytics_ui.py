@@ -1,8 +1,9 @@
 """Analytics within Overview's existing category navigation and visual style."""
 
-from portfolio_app.currency_display import currency_symbol, reporting_currency
+from portfolio_app.currency_display import money, reporting_currency
 import pandas as pd
 import streamlit as st
+from portfolio_app.charts import chart_config
 
 from portfolio_app.analytics import snapshot_analytics
 from portfolio_app.analytics_service import load_metrics, load_risk
@@ -82,7 +83,7 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
                   help='Value-weighted earnings yield, inverted. Profitable direct equities only; fund-reported ratios are kept separate.')
         st.caption(coverage(pe, 'direct-equity'))
     with columns[1]:
-        st.metric('Known annual fund costs', '—' if cost.value is None else (f'€{cost.value:,.2f}').replace('€', currency_symbol()),
+        st.metric('Known annual fund costs', '—' if cost.value is None else money(cost.value),
                   help='Current fund values × annual fees. Already reflected in fund prices; not deducted again from gains.')
         st.caption(coverage(cost, 'fund'))
     with columns[2]:
@@ -161,7 +162,7 @@ def render_risk_dashboard(result, status, holdings, *, future=None, scoped=False
         st.caption('Negative contributions indicate diversification; cash correlations are undefined.' if result.integrated and result.status != 'complete' else 'Contributions sum to the displayed volatility. Negative contributions indicate diversification; cash correlations are undefined.')
         with st.expander('Holding correlations'):
             figure = correlation_chart(result.correlations, names)
-            st.plotly_chart(figure, width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})
+            st.plotly_chart(figure, width='stretch', config=chart_config())
     if status.Status.eq('stale').any():
         st.warning('Risk estimates include cached fallback market or FX histories.')
     with st.expander('Risk coverage & sources'):

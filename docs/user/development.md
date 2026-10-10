@@ -78,7 +78,20 @@ Document writes retain their workspace locking, revision checks and backup
 policies. Commands validating multiple documents must hold the workspace lock
 from validation through publication. Cache and document writers deliberately
 retain different failure/recovery policies; sharing serialization mechanics must
-not erase those differences.
+not erase those differences. `atomic_file.staged_text` only creates and cleans up
+a same-directory text stage, optionally flushing and syncing its content. Callers
+choose serialization, locks, backups and revision checks, then explicitly replace
+the destination. Document writers sync before backing up and rechecking revisions;
+cache writers preserve their own validation and failure fallback. ETF snapshot
+publication still writes the manifest last; it is a separate multi-file protocol.
+
+`money.py` formats scalar amounts with explicit currency and no Streamlit state.
+`currency_display.py` supplies session reporting units for ordinary views and
+numeric formats for native grids. Fixed-EUR futures views use `money.euros`;
+formatting never converts amounts. Missing values remain missing. Shared list
+columns retain numeric sorting and their browser formatter. `charts.chart_config`
+provides compact allocation controls and explicit zoom/pan/reset controls for
+scenario studies; each chart receives independent configuration containers.
 
 ```bash
 uv run pytest

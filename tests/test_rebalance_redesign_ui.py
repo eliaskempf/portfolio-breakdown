@@ -170,7 +170,7 @@ def test_category_plan_respects_ancestor_protection_with_unrelated_missing_price
     prices.write_text(json.dumps(data))
     app = launch(workspace, tab='Rebalance', subtab='Plan')
     by_label(app.button, 'Calculate plan').click().run()
-    assert any('complete EUR valuations' in item.value for item in app.error)
+    assert any('complete reporting-currency valuations' in item.value for item in app.error)
     by_label(app.get('button_group'), 'Planning scope').set_value('Within a category').run()
     by_label(app.selectbox, 'Planning category').set_value('active').run()
     by_label(app.number_input, 'Allowed deviation (pp)').set_value(0.).run()

@@ -1,9 +1,10 @@
 """Region/country exploration over the same normalized portfolio exposures."""
 
-from portfolio_app.currency_display import currency_symbol
+from portfolio_app.currency_display import money, money_format, currency_symbol
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from portfolio_app.charts import chart_config
 
 from portfolio_app.charts import style_figure
 from portfolio_app.geography import (
@@ -60,20 +61,20 @@ def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete:
     plotted = table.loc[table['Value'].notna() & table['Value'].gt(0)].iloc[::-1]
     if not plotted.empty:
         figure = style_figure(go.Figure(go.Bar(x=plotted['Value'], y=plotted[category], orientation='h',
-                                              hovertemplate=('%{y}<br>€%{x:,.2f}<extra></extra>').replace('€', currency_symbol()))))
+                                              hovertemplate='%{y}<br>' + currency_symbol() + '%{x:,.2f}<extra></extra>')))
         figure.update_layout(height=min(900, max(280, len(plotted) * 28)), xaxis_title='Exposure',
                              margin=dict(t=12, b=20, l=12, r=12))
-        chart_area.plotly_chart(figure, width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})
+        chart_area.plotly_chart(figure, width='stretch', config=chart_config())
     else:
         chart_area.info('No positive priced exposure in this selection.')
     if not table['Missing valuations'].any():
         table = table.drop(columns='Missing valuations')
     table_area.dataframe(table, hide_index=True, width='stretch', column_config={
-        'Value': st.column_config.NumberColumn('Value' if complete else 'Known Value', help='Exposure in the portfolio currency with available valuations; unavailable prices remain excluded.', format=('€ %.2f').replace('€', currency_symbol())),
+        'Value': st.column_config.NumberColumn('Value' if complete else 'Known Value', help='Exposure in the portfolio currency with available valuations; unavailable prices remain excluded.', format=money_format()),
         '% of selected portfolio': st.column_config.NumberColumn(format='%.2f %%'),
     })
     if total > 0:
         st.caption((f'Country coverage: {country_value / total:.1%} of {"selected" if complete else "priced"} value · '
-                   f'Non-geographic: €{special:,.2f} · Region only: €{regional_only:,.2f} · Unknown geography: €{unknown:,.2f}').replace('€', currency_symbol()))
+                   f'Non-geographic: {money(special)} · Region only: {money(regional_only)} · Unknown geography: {money(unknown)}'))
     if not complete:
         st.caption('Amounts include known values only; full-portfolio percentages are unavailable while prices are missing.')

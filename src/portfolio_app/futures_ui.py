@@ -5,16 +5,14 @@ from dataclasses import replace
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from portfolio_app.money import euros
+from portfolio_app.charts import chart_config
 
 from portfolio_app.futures import CONTRACTS, futures_scenarios, summarize_future
 from portfolio_app.futures_market_ui import render_market_reference, render_price_provenance
 from portfolio_app.futures_workspace import save_sandbox, switch_to_fmwn
 from portfolio_app.holdings import DataError
 from portfolio_app.futures_reference import ECB_URL, IBKR_URL, load_references, refresh_references
-
-
-def euros(value):
-    return '—' if value is None else f'€{value:,.2f}'
 
 
 
@@ -233,8 +231,7 @@ def render_futures(valued, data_dir, position, revision, *, allocation=None, fun
         figure.add_vline(x=move, line_dash='dot', line_color='#94a3b8')
         figure.update_layout(height=340, margin=dict(l=10, r=10, t=15, b=10),
                              xaxis_title='Move from current market (%)', legend=dict(orientation='h', y=1.12))
-        st.plotly_chart(figure, width='stretch', config={'displayModeBar': True, 'displaylogo': False,
-                         'modeBarButtons': [['zoom2d', 'pan2d', 'resetScale2d']], 'doubleClick': 'reset'})
+        st.plotly_chart(figure, width='stretch', config=chart_config(zoom=True))
         st.caption('Scenarios keep the contract count fixed. Global-market mode applies each assumed beta to the market move; '
                    'futures-only mode moves the futures price directly. Shared starting cash, margin stress and scaling apply. '
                    'Recorded EUR debt stays fixed. The global-market shock uses an illustrative beta on the funded base, '
