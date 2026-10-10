@@ -9,6 +9,18 @@ from io import StringIO
 import pandas as pd
 
 
+# Names introduced by calculation stages cannot also be custom CSV metadata.
+DERIVED_COLUMNS = frozenset({
+    'position_id', 'asset_id', 'asset_name', 'value', 'source_position_id',
+    'source_type', 'source_instrument', 'direct_or_indirect', 'portfolio_weight',
+    'current_price', 'quote_currency', 'fx_to_reporting', 'current_value_reporting',
+    'price_age_hours', 'fx_age_hours', 'price_status', 'fx_status',
+    'price_observed_at', 'fx_observed_at', 'valuation_note', 'reporting_currency',
+    'cost_basis', 'cost_basis_reporting', 'unrealized_gain', 'unrealized_gain_reporting',
+    'return_pct', 'cost_estimated', 'performance_note', 'analysis_asset_id', 'analysis_asset_name',
+})
+
+
 class DataError(ValueError):
     """An editable input file is invalid."""
 
@@ -29,8 +41,9 @@ def parse_holdings(content: str) -> pd.DataFrame:
     required = {"id", "name", "shares"}
     if missing := required - set(frame.columns):
         raise DataError(f"Holdings CSV is missing columns: {', '.join(sorted(missing))}")
-    if "position_id" in frame.columns:
-        raise DataError("position_id is reserved for internal position identity.")
+    if reserved := DERIVED_COLUMNS.intersection(frame.columns):
+        raise DataError(f"Columns reserved for calculations: {', '.join(sorted(reserved))}. "
+                        "Rename these custom metadata columns before loading; the file has not been changed.")
     for column in frame.columns:
         frame[column] = frame[column].str.strip()
     for column in ("ticker", "isin", "portfolio", "account", "acquisition_price", "short_name"):
