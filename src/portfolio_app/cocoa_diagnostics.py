@@ -18,6 +18,10 @@ def enabled():
     return hosted_input_enabled() and os.environ.get('PORTFOLIO_TEST_PANEL_EVIDENCE') == '1'
 
 
+class PanelNotReady(RuntimeError):
+    """No input was sent; the panel may be inspected again within its deadline."""
+
+
 class HostedPanelInput:
     def __init__(self):
         if not hosted_input_enabled():
@@ -90,15 +94,19 @@ class HostedPanelInput:
         # trees. Every queued reference is owned and released, including on error.
         pending = deque([(self.cf.CFRetain(window), 0)])
         visited = 0
+        buttons = []
         try:
             while pending and visited < 256:
                 element, depth = pending.popleft()
                 visited += 1
                 try:
-                    if (self.attribute(element, 'AXRole') == 'AXButton'
-                            and self.attribute(element, 'AXTitle') == title
-                            and self.attribute(element, 'AXEnabled') is True):
-                        return self.cf.CFRetain(element)
+                    if self.attribute(element, 'AXRole') == 'AXButton':
+                        label = self.attribute(element, 'AXTitle')
+                        enabled = self.attribute(element, 'AXEnabled')
+                        buttons.append({'title': label, 'description': self.attribute(element, 'AXDescription'),
+                                        'enabled': enabled})
+                        if label == title and enabled is True:
+                            return self.cf.CFRetain(element)
                     if depth < 8:
                         def children(value):
                             if self.cf.CFGetTypeID(value) != self.cf.CFArrayGetTypeID():
@@ -113,7 +121,7 @@ class HostedPanelInput:
         finally:
             for element, _ in pending:
                 self.cf.CFRelease(element)
-        raise RuntimeError(f'Enabled native {title} button not found')
+        raise PanelNotReady(f'Enabled native {title} button not found; observed buttons: {buttons}')
 
     def press(self, app, title):
         if not hosted_input_enabled() or title not in {'Open', 'Save'}:

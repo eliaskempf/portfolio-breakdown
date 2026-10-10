@@ -106,7 +106,9 @@ the expected selection before confirming the panel. Hosted probes activate the
 enabled Open/Save button through the accessibility press action, rather than
 assuming Return reaches the remote panel's default button. This requires the
 synthetic app to remain foreground and the expected file panel to be focused;
-the test still requires exact uploaded/downloaded bytes. A modal accessibility
+the test still requires exact uploaded/downloaded bytes. If the button is not
+yet available, the probe polls within the existing panel deadline without sending
+input. It advances only after one button activation. A modal accessibility
 callback timeout never causes a second click or counts as successful acceptance.
 Launch Services checks
 require the child JSON report for the default intro,
@@ -119,7 +121,8 @@ Both checks are mandatory; neither substitutes for the other.
 For release regressions, **Build candidate** also supports `diagnostics_only`.
 It runs the affected Windows browser suites, four slower-render browser cases,
 and six independent native source probes per selected Mac host without
-building installers. Mac diagnostics record permission, focus and default-button
+building installers. The Mac group covers macOS 14, 15 and 26; `macos26` selects
+only the newest host for focused investigation. Mac diagnostics record permission, focus and default-button
 state, with a bounded accessibility tree and synthetic panel snapshot on failure.
 Three probes use the build job's render mode and three include desktop focus
 checks. Evidence collection initializes only after failure, so it cannot delay

@@ -9,7 +9,7 @@ on:
       diagnostics_platforms:
         description: Platforms for diagnostics-only runs
         type: choice
-        options: [all, windows, macos, macos14]
+        options: [all, windows, macos, macos14, macos26]
         default: all
 permissions:
   contents: read
@@ -107,7 +107,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.diagnostics_platforms == 'macos14' && '["macos-14"]' || inputs.diagnostics_platforms == 'macos' && '["macos-14","macos-15"]' || inputs.diagnostics_platforms == 'windows' && '["windows-2022"]' || '["windows-2022","macos-14","macos-15"]') }}
+        os: ${{ fromJSON(inputs.diagnostics_platforms == 'macos14' && '["macos-14"]' || inputs.diagnostics_platforms == 'macos26' && '["macos-26"]' || inputs.diagnostics_platforms == 'macos' && '["macos-14","macos-15","macos-26"]' || inputs.diagnostics_platforms == 'windows' && '["windows-2022"]' || '["windows-2022","macos-14","macos-15","macos-26"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     defaults:

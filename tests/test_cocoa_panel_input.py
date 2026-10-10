@@ -99,3 +99,28 @@ def test_press_never_repeats_an_action_even_if_callback_times_out(panel, code):
             client.press(app, 'Open')
     assert len(presses) == 1
     assert not any(refs.values())
+
+
+def test_not_ready_button_keeps_confirmation_pending_without_duplicate_input(panel):
+    from portfolio_app.cocoa_diagnostics import PanelNotReady
+    from portfolio_app.desktop_controls import CocoaPanelSequence
+    client, app, attributes, refs, presses = panel
+    sequence = CocoaPanelSequence()
+    sequence.advance(panel_ready=True, location_ready=False, selected=False)
+    sequence.advance(panel_ready=False, location_ready=True, selected=False)
+    sequence.advance(panel_ready=False, location_ready=True, selected=False)
+    def step():
+        return sequence.advance(panel_ready=True, location_ready=False, selected=True,
+                                confirm=lambda: client.press(app, 'Open'))
+    attributes['open']['AXEnabled'] = False
+    for _ in range(3):
+        with pytest.raises(PanelNotReady, match='observed buttons'):
+            step()
+        assert sequence.phase == 3
+        assert presses == [] and not any(refs.values())
+    attributes['open']['AXEnabled'] = True
+    assert step() == 'confirm-panel'
+    assert sequence.phase == 4
+    assert step() is None
+    assert presses == [('open', 'AXPress')]
+    assert not any(refs.values())

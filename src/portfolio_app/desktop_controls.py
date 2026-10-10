@@ -178,7 +178,7 @@ class CocoaPanelSequence:
     def __init__(self):
         self.phase = 0
 
-    def advance(self, *, panel_ready, location_ready, selected):
+    def advance(self, *, panel_ready, location_ready, selected, confirm=None):
         if self.phase == 0 and panel_ready:
             self.phase = 1
             return 'open-location'
@@ -189,6 +189,8 @@ class CocoaPanelSequence:
             self.phase = 3
             return 'confirm-location'
         if self.phase == 3 and panel_ready and selected:
+            if confirm is not None:
+                confirm()  # A not-ready result must leave this phase unchanged.
             self.phase = 4
             return 'confirm-panel'
         return None
@@ -216,7 +218,7 @@ def cocoa_interactions(window, root, record, output=None):
     browser = BrowserView.instances[window.uid]
     app = A.NSApplication.sharedApplication()
     timers, events, errors, trace = [], [], [], []
-    from portfolio_app.cocoa_diagnostics import HostedPanelInput, PanelEvidence, enabled
+    from portfolio_app.cocoa_diagnostics import HostedPanelInput, PanelEvidence, PanelNotReady, enabled
     evidence = None
     def observe(label, panel, screenshot=False):
         nonlocal evidence
@@ -302,16 +304,20 @@ def cocoa_interactions(window, root, record, output=None):
                 if (os.environ.get('PORTFOLIO_TEST_PANEL_TRACE_BEFORE') == '1'
                         and sequence.phase == 3 and panel_ready and selected):
                     observe(f'{saving=}: before confirmation', current)
-                action = sequence.advance(panel_ready=panel_ready, location_ready=location_ready, selected=selected)
+                def confirm():
+                    trace.append(['AXPress', HostedPanelInput().press(A, 'Save' if saving else 'Open')])
+                try:
+                    action = sequence.advance(panel_ready=panel_ready, location_ready=location_ready,
+                                              selected=selected, confirm=confirm if hosted_input else None)
+                except PanelNotReady as exc:
+                    trace.append(['waiting-for-button', str(exc)])
+                    return
                 if action == 'open-location':
                     key('', 5, A.NSEventModifierFlagCommand | A.NSEventModifierFlagShift)
                 elif action == 'type-path':
                     cocoa_path_input(path.parent if saving else path, key, A, hosted=hosted_input)
                 elif action == 'confirm-panel' and hosted_input:
-                    # The remote panel can publish its selected URL before it
-                    # routes Return to the default button. Activate the actual
-                    # enabled UI button, then retain the exact-byte checks.
-                    trace.append(['AXPress', HostedPanelInput().press(A, 'Save' if saving else 'Open')])
+                    pass  # The enabled button was pressed before advancing.
                 elif action in {'confirm-location', 'confirm-panel'}:
                     key('', 36)
                 elif sequence.phase == 4 and panel is None:
@@ -321,6 +327,7 @@ def cocoa_interactions(window, root, record, output=None):
             except Exception as exc:
                 errors.append(f'{type(exc).__name__}: {exc}')
                 timer.invalidate()
+                observe(f'{saving=}: {type(exc).__name__}', app.keyWindow(), screenshot=True)
                 if app.modalWindow():
                     app.modalWindow().cancel_(None)
         def start():
