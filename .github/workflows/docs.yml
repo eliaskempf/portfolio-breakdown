@@ -1,11 +1,14 @@
 name: Documentation
 on:
-  # Temporary budget pause; local documentation review still applies to changes.
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: docs-${{ github.ref }}
+  group: docs-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   validate:

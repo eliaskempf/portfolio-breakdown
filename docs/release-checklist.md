@@ -17,8 +17,9 @@ and publication order. Acceptance always applies to exact candidate bytes.
 
 ## Automated gates
 
-Repository workflows are manual-only. Enable disabled workflows only after their
-manual-only definitions reach the default branch and dispatch is approved.
+Routine CI and documentation checks run on main pushes and pull requests;
+dependency audits also run weekly. Installer builds, release publication and
+Pages deployment remain manual-only and require explicit dispatch approval.
 
 - [ ] Finish source/docs review locally, merge the approved source into `main`,
       then manually run **Build candidate** once on that commit. No tag-triggered
@@ -29,8 +30,8 @@ manual-only definitions reach the default branch and dispatch is approved.
 - [ ] Publish with **Publish tested candidate** only after acceptance. This copies
       existing artifacts and does not rebuild installers. Do not also run ordinary
       CI/docs workflows just to duplicate gates already covered by the candidate.
-- [ ] Restore automatic CI/docs/audit triggers explicitly as a separate reviewed change;
-      enabling a workflow alone keeps the new manual-only definition manual.
+- [ ] Keep routine CI/docs/audit checks enabled between releases; do not add
+      automatic installer builds, release publication or Pages deployment.
 
 - [ ] Install the locked tooling with `uv sync --locked --all-groups`, then run
       `uv run python tools/release.py preflight` and the synthetic source

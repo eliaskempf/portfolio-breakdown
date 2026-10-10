@@ -1,8 +1,19 @@
 name: Dependency audit
 on:
+  push:
+    branches: [main]
+    paths: [pyproject.toml, uv.lock, .github/workflows/maintenance.yml]
+  pull_request:
+    branches: [main]
+    paths: [pyproject.toml, uv.lock, .github/workflows/maintenance.yml]
+  schedule:
+    - cron: '17 6 * * 1'
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   audit:
     runs-on: ubuntu-22.04

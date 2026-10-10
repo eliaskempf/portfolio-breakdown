@@ -63,8 +63,9 @@ metadata have been reviewed; do not substitute them for accepted hosted bytes.
 After local readiness review and merge approval, integrate the release branch
 into the default branch, preferring a fast-forward where possible. Test any
 resulting merge commit. Record its full SHA and freeze it; do not tag yet.
-All repository workflows currently use manual dispatch only. Keep disabled
-workflows disabled until those definitions reach the default branch. Changing
+Routine CI/docs checks run on main pushes and pull requests; dependency audits
+also run weekly. Candidate/desktop builds, publication and Pages deployment
+remain manual-only. Changing
 visibility, enabling/dispatching workflows, Pages deployment and release
 publication each require the appropriate explicit approval. Billing setup alone
 is not build approval. Recheck branch protections after visibility changes.
