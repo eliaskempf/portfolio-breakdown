@@ -61,8 +61,10 @@ renderers consume the prepared results.
 `state_lifecycle.py` is the single catalog of feature-owned navigation,
 workspace, currency and tour policies. Add an ordinary widget input to its
 feature's declaration, with the correct mount boundary. Inputs may survive lazy
-unmounts; buttons, upload handles and editor patches must not be reassigned as
-ordinary input state. Imports and persistent editors keep their specialized
+unmounts and are restored once on remount so the browser receives the retained
+value. Remount bookkeeping is consumed only after view dispatch, preserving it
+across early-return dialogs. Buttons, upload handles and editor patches must not
+be reassigned as ordinary input state. Imports and persistent editors keep their specialized
 adapters. Calculation fingerprints stay with the calculators that understand
 their assumptions.
 

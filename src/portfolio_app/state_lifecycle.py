@@ -1,7 +1,7 @@
 """Feature-owned session lifetimes, independent of Streamlit.
 
 Policies describe ordinary inputs separately from owned drafts/results/triggers.
-Only unmounted ordinary inputs may be reassigned. Uploads and editor patches keep
+Unmounted and newly remounted ordinary inputs may be reassigned. Uploads and editor patches keep
 specialized adapters; source fingerprints remain owned by each calculator.
 """
 from copy import deepcopy
@@ -112,7 +112,7 @@ FEATURES = (
     FeatureState('fund setup', Keys(prefixes=('etf_setup_',))),
     FeatureState('editors', Keys(names=('view_editor_drafts', 'view_editor_bases')),
         tour_objects=Keys(names=('view_editor_drafts', 'view_editor_bases'))),
-    FeatureState('workspace', Keys(names=('main_tabs', 'parsed_inputs', 'hide_empty_positions')),
+    FeatureState('workspace', Keys(names=('main_tabs', 'parsed_inputs', 'hide_empty_positions', 'view_unmounted_inputs')),
         tour_objects=Keys(names=('main_tabs', 'hide_empty_positions'))),
     FeatureState('view preferences', Keys(prefixes=('depth_', 'geography_', 'etf_lookthrough_', 'etf_excluded_'),
         names=('display_tickers', 'active_portfolio', 'portfolio_workspace_context')), workspace=False,
@@ -126,12 +126,12 @@ def policy_for(key):
     return next((feature for feature in FEATURES if feature.owned.matches(key)), None)
 
 
-def retained_inputs(state):
+def retained_inputs(state, *, returning=()):
     """Keys safe to reassign before rendering to survive Streamlit unmounts."""
     for key in list(state):
         policy = policy_for(key)
         safe_input = scalar(state[key]) or isinstance(state[key], date)
-        if policy and not trigger(key) and policy.inputs.matches(key) and safe_input and not policy.mounted(key, state):
+        if policy and not trigger(key) and policy.inputs.matches(key) and safe_input and (key in returning or not policy.mounted(key, state)):
             yield key
 
 

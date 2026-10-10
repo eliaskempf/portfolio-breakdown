@@ -4,8 +4,19 @@ import streamlit as st
 
 def preserve_view_inputs():
     from portfolio_app.state_lifecycle import retained_inputs
-    for key in retained_inputs(st.session_state):
+    # A backend value alone can survive while a returning browser widget mounts
+    # with its default. Reassign once on remount so Streamlit sends that value.
+    returning = st.session_state.get('view_unmounted_inputs', ())
+    retained = list(retained_inputs(st.session_state, returning=returning))
+    for key in retained:
         st.session_state[key] = st.session_state[key]
+    st.session_state['view_unmounted_inputs'] = retained
+
+
+def finish_view_inputs():
+    """Consume remounts only after view dispatch; early-return dialogs keep them."""
+    from portfolio_app.state_lifecycle import retained_inputs
+    st.session_state['view_unmounted_inputs'] = list(retained_inputs(st.session_state))
 
 
 def persistent_editor(data, *, key, **kwargs):

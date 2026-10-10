@@ -29,6 +29,40 @@ def test_navigation_retains_inputs_but_not_triggers_uploads_or_editor_patches():
                 'strategic_crumb_example', 'analytics_context_overview_risk_calculate'} & retained
     saved['main_tabs'] = 'Exposure'
     assert 'exposure_market_basis' not in set(retained_inputs(saved))
+    assert 'exposure_market_basis' in set(retained_inputs(saved, returning=retained))
+    assert 'planning_calculate' not in set(retained_inputs(saved, returning=['planning_calculate']))
+
+
+def test_remount_tracking_clears_on_workspace_and_tour_transitions():
+    for event in ('workspace', 'tour'):
+        saved = {'view_unmounted_inputs': ['exposure_market_basis']}
+        assert capture_tour(saved) == {}
+        transition(saved, event)
+        assert saved == {}
+
+
+def test_remount_is_restored_until_view_dispatch_completes(monkeypatch):
+    from types import SimpleNamespace
+    from portfolio_app import view_state
+    class RecordedState(dict):
+        def __setitem__(self, key, value):
+            writes.append(key)
+            super().__setitem__(key, value)
+    writes = []
+    saved = RecordedState(main_tabs='Positions', exposure_market_basis='Equity only')
+    monkeypatch.setattr(view_state, 'st', SimpleNamespace(session_state=saved))
+    view_state.preserve_view_inputs()
+    view_state.finish_view_inputs()
+    saved['main_tabs'] = 'Exposure'
+    for _ in range(2):
+        writes.clear()
+        # Simulate a dialog returning before view dispatch on the first attempt.
+        view_state.preserve_view_inputs()
+        assert 'exposure_market_basis' in writes
+    view_state.finish_view_inputs()
+    writes.clear()
+    view_state.preserve_view_inputs()
+    assert 'exposure_market_basis' not in writes
 
 
 def test_workspace_clears_owned_drafts_results_and_keeps_scoped_preferences():

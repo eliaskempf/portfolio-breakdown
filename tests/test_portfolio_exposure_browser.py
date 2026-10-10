@@ -5,7 +5,29 @@ import json
 from portfolio_app.futures import FuturePosition
 from portfolio_app.futures_workspace import SANDBOX_FILE
 from test_ux_browser import ux_page as ux_page, playwright
-from browser_support import settle
+from browser_support import settle, select_tab
+
+
+def test_market_basis_survives_real_browser_remount(ux_page):
+    page, directory = ux_page
+    position = FuturePosition(entry_price=5., mark_price=5., bucket_id='core')
+    (directory / SANDBOX_FILE).write_text(json.dumps(dict(version=2, simulation=True,
+        instrument='FMWN', position=asdict(position))))
+    page.reload()
+    select_tab(page, 'Exposure')
+    basis = page.get_by_role('radio', name='Equity only', exact=True)
+    basis.click()
+    playwright.expect(basis).to_be_checked()
+    settle(page)
+    playwright.expect(basis).to_be_checked()
+    select_tab(page, 'Positions')
+    select_tab(page, 'Exposure')
+    playwright.expect(basis).to_be_checked()
+    # A subsequent edit must use the restored value rather than overwriting it
+    # with the browser's old default on its next request.
+    page.get_by_role('radio', name='ETF sources', exact=True).click()
+    settle(page)
+    playwright.expect(basis).to_be_checked()
 
 
 def test_normal_and_sandbox_exposure_controls(ux_page):  # noqa: F811

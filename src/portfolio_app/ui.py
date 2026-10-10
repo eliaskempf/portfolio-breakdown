@@ -23,7 +23,7 @@ from portfolio_app.strategic_ui import render_strategic_overview
 from portfolio_app.scoped_ui import render_scoped_rebalancing
 from portfolio_app.input_cache import load_inputs
 from portfolio_app.market_data import coordinator as market_coordinator, prices_for
-from portfolio_app.view_state import preserve_view_inputs
+from portfolio_app.view_state import preserve_view_inputs, finish_view_inputs
 from portfolio_app.application import (historical_for, load_leverage_context, prepare_application,
     prepare_exposure, select_price_service)
 
@@ -319,6 +319,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if background_prices:
         render_market_status(market_workspace, market_revision)
     render_tour(empty=holdings.empty)
+    finish_view_inputs()
     mark_view_ready()
 
 
