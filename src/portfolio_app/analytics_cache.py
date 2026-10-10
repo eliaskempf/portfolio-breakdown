@@ -5,7 +5,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 from portfolio_app.workspace_lock import document_write
-from tempfile import NamedTemporaryFile
+from portfolio_app.atomic_file import staged_text
 
 
 def utc_now():
@@ -15,15 +15,8 @@ def utc_now():
 @document_write
 def atomic_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, suffix='.tmp', delete=False) as handle:
-            temporary = Path(handle.name)
-            json.dump(value, handle, allow_nan=False)
+    with staged_text(path, lambda handle: json.dump(value, handle, allow_nan=False)) as temporary:
         temporary.replace(path)
-    finally:
-        if temporary:
-            temporary.unlink(missing_ok=True)
 
 
 @dataclass(frozen=True)

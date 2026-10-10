@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 from portfolio_app.workspace_lock import document_write
-from tempfile import NamedTemporaryFile
+from portfolio_app.atomic_file import staged_text
 from threading import Lock, Thread
 
 from portfolio_app.locking import write_lock
@@ -66,15 +66,8 @@ def read_json(path):
 @document_write
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, suffix='.tmp', delete=False) as stream:
-            temporary = Path(stream.name)
-            json.dump(value, stream)
+    with staged_text(path, lambda handle: json.dump(value, handle)) as temporary:
         temporary.replace(path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
 
 
 def preferences(data_dir):

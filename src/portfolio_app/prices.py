@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import math
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from portfolio_app.atomic_file import staged_text
 from threading import RLock
 from typing import Callable, Protocol
 
@@ -144,7 +144,6 @@ class PriceService:
     def _save(self, key: str) -> None:
         if self.cache_path is None:
             return
-        temporary = None
         try:
             from portfolio_app.locking import write_lock as _write_lock
             from portfolio_app.workspace_lock import workspace_lock, document_workspace
@@ -158,15 +157,10 @@ class PriceService:
                     except (OSError, ValueError):
                         saved = {}
                     saved[key] = self._entries[key]
-                    with NamedTemporaryFile(mode='w', dir=self.cache_path.parent, suffix='.tmp', delete=False) as stream:
-                        temporary = Path(stream.name)
-                        json.dump(saved, stream)
-                    temporary.replace(self.cache_path)
+                    with staged_text(self.cache_path, lambda handle: json.dump(saved, handle)) as temporary:
+                        temporary.replace(self.cache_path)
         except OSError as exc:
             self.cache_warning = f"Price cache could not be saved: {exc}"
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
 
     def cached(self, key: str) -> tuple[PriceResult, bool]:
         """Read without network access; the boolean indicates a refresh is due."""

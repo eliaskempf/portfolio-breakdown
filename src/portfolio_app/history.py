@@ -5,7 +5,7 @@ from hashlib import sha256
 import json
 import math
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from portfolio_app.atomic_file import staged_text
 from typing import Protocol
 
 import pandas as pd
@@ -127,20 +127,14 @@ class HistoryService:
                              note='Refresh failed; showing cached market prices.' if cached.prices else 'Market-price history could not be loaded. Try again later.')
         self._memory[ticker, period] = result
         if path:
-            temporary = None
             try:
                 from portfolio_app.workspace_lock import workspace_lock, document_workspace
                 with workspace_lock(document_workspace(path)):
                     path.parent.mkdir(parents=True, exist_ok=True)
-                    with NamedTemporaryFile(mode="w", dir=path.parent, suffix='.tmp', delete=False) as handle:
-                        temporary = Path(handle.name)
-                        json.dump(vars(result), handle)
-                    temporary.replace(path)
+                    with staged_text(path, lambda handle: json.dump(vars(result), handle)) as temporary:
+                        temporary.replace(path)
             except OSError:
                 result = replace(result, note="History loaded, but its cache could not be saved.")
-            finally:
-                if temporary:
-                    temporary.unlink(missing_ok=True)
         self._memory[ticker, period] = result
         return result
 
