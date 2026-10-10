@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: Full reviewed source SHA (must include documentation tooling)
+        description: Full reviewed app source SHA (dev must match the dispatched main commit)
         required: true
         type: string
       channel:
@@ -29,7 +29,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    # Intentionally dormant. Do not set this variable or enable Pages in this task.
+    # Publication remains an explicitly approved manual operation.
     if: vars.DOCS_PUBLISH_APPROVED == 'true' && inputs.acceptance && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-22.04
     timeout-minutes: 15
@@ -50,7 +50,6 @@ jobs:
           [[ "$DOCS_BASE_URL" =~ ^https://[^/]+/.*/$ ]]
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.source_sha }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
@@ -83,10 +82,13 @@ jobs:
             gh run download "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" --name candidate-linux-x64 --dir dist/docs-candidate
             uv run python tools/docs_candidate.py --run-id "$CANDIDATE_RUN" --source-sha "$SOURCE_SHA"
             uv run python tools/docs_site.py assemble dist/docs-site dist/pages
-          else
-            uv run python tools/docs_site.py build --channel "$CHANNEL" --base-url "$DOCS_BASE_URL"
-            uv run python tools/docs_site.py assemble dist/docs-site dist/pages
+          elif [ "$SOURCE_SHA" != "$(git rev-parse HEAD)" ]; then
+            echo "::error::Main documentation must use the dispatched default-branch commit."
+            exit 1
           fi
+          # Main follows the reviewed workflow commit; frozen candidates retain their source.
+          uv run python tools/docs_site.py build --channel dev --site-dir dist/docs-main --base-url "$DOCS_BASE_URL"
+          uv run python tools/docs_site.py assemble dist/docs-main dist/pages
       - name: Check every retained documentation version
         run: |
           uv run python - <<'PY'
@@ -114,9 +116,11 @@ jobs:
           path: dist/pages
           include-hidden-files: true
           retention-days: 90
+      - name: Prepare hosted navigation without changing the frozen archive
+        run: uv run python tools/docs_site.py host dist/pages dist/hosted-pages
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
-          path: dist/pages
+          path: dist/hosted-pages
   deploy:
     needs: build
     runs-on: ubuntu-22.04

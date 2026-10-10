@@ -45,7 +45,8 @@ uv run python -m http.server 8768 --bind 127.0.0.1 --directory dist/preview
 ```
 
 Visit `http://127.0.0.1:8768/portfolio-breakdown/dev/`. Stop this server with Ctrl+C.
-The version banner shows dirty local changes. Inspect `dist/docs-site/build-info.json`
+The bundled/local version banner shows dirty local changes. Hosted pages use a
+compact version switch instead. Inspect `dist/docs-site/build-info.json`
 for the exact source SHA, app version, route, topic map and file checksums.
 
 ## Review process
@@ -105,7 +106,8 @@ Revisit this mapping when features move; do not treat it as exhaustive coverage.
 
 Repository workflows are manual-only. The Documentation workflow checks strict
 MkDocs, internal links/assets/anchors, synthetic CLI recovery workflows and the
-focused guide browser smoke. Build outputs remain ignored artifacts. Enable and
+focused guide browser smoke. Build outputs remain ignored artifacts. The app
+favicon is copied from its reviewed package asset during generation. Enable and
 dispatch workflows only after review of their default-branch definitions. Restoring
 automatic PR/push checks is a separate decision. Local checks remain required.
 
@@ -183,9 +185,23 @@ unless `DOCS_PUBLISH_APPROVED` is explicitly `true`, acceptance is checked, and
 dispatch is from the default branch. It fetches the existing `gh-pages` branch,
 preserves older versions, assembles dev/candidate or promotes archived candidate
 bytes, validates every retained version, and commits the static archive back to
-`gh-pages`. It then removes Git metadata from the deployment directory and sends
-only static files to the Pages Actions deployment. The 90-day Actions archive is
-an additional copy, not the source of version retention.
+`gh-pages`. Each publication also refreshes Main from the reviewed default-branch
+workflow commit. Candidate selection continues to use the supplied app source SHA;
+Main publication requires that SHA to match the dispatched commit.
+
+The hosted copy is produced separately with `tools/docs_site.py host`. It replaces
+the provenance banner with Latest release/Main navigation, keeps the current page
+when available in the other version, and uses the app favicon. The root redirects
+to the highest stable release version, falling back to Main before the first
+release; prereleases never supersede a stable release. Main updates only when this
+manual publication workflow runs. No version-selection landing screen is shown.
+
+Frozen candidate/release directories in `gh-pages` and installer bundles remain
+unchanged. Hosted HTML differs only in presentation: `build-info.json` retains
+source identity, records the archived manifest hash in `hosting`, and inventories
+the hosted files. The hosted copy validates links across the complete archive.
+Only this separate static copy, without Git metadata, goes to Pages. The 90-day
+Actions archive is an additional copy, not the source of version retention.
 
 Before enabling publication, verify access to the existing `gh-pages` archive and
 back it up independently. The workflow initializes a new branch only when Git

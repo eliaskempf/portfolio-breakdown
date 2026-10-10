@@ -113,6 +113,69 @@ def test_dirty_candidates_rejected_and_dev_is_replaceable(tmp_path, monkeypatch)
     assert docs.file_hashes(archive / 'dev') == docs.file_hashes(site)
 
 
+def test_default_documentation_prefers_latest_stable_release_over_main_and_prerelease(tmp_path):
+    archive = tmp_path / 'archive'
+    docs.assemble(synthetic_site(tmp_path / 'main', channel='dev'), archive)
+    assert docs.archive_index(archive) == 'dev/'
+    for index, version in enumerate(['0.9.0', '0.10.0', '1.0.0rc1']):
+        revision = str(index) * 40
+        site = synthetic_site(tmp_path / version, revision=revision)
+        manifest = site / 'build-info.json'
+        info = json.loads(manifest.read_text())
+        info['app_version'] = version
+        manifest.write_text(json.dumps(info))
+        docs.assemble(site, archive)
+        docs.promote(archive, revision, version)
+    assert docs.archive_index(archive) == 'releases/0.10.0/'
+    assert 'content="0; url=releases/0.10.0/"' in (archive / 'index.html').read_text()
+    # Republishing Main must not take over the default from a stable release.
+    docs.assemble(synthetic_site(tmp_path / 'new-main', channel='dev'), archive)
+    assert docs.archive_index(archive) == 'releases/0.10.0/'
+
+
+def test_hosted_navigation_preserves_frozen_archive_and_checks_cross_version_links(tmp_path):
+    archive = tmp_path / 'archive'
+    for channel in ['candidate', 'dev']:
+        site = synthetic_site(tmp_path / channel, channel=channel)
+        for page in site.rglob('*.html'):
+            page.write_text('<article class="md-content__inner md-typeset">'
+                            '<blockquote><p><strong>Frozen candidate documentation</strong> · source abc</p></blockquote>'
+                            '<blockquote><p>Keep this user guidance.</p></blockquote>' + page.read_text() + '</article>')
+        update_inventory(site)
+        docs.assemble(site, archive)
+    docs.promote(archive, 'a' * 40, '0.1.0')
+    before = {p.relative_to(archive): p.read_bytes() for p in archive.rglob('*') if p.is_file()}
+    hosted = tmp_path / 'hosted'
+    docs.host(archive, hosted)
+    assert before == {p.relative_to(archive): p.read_bytes() for p in archive.rglob('*') if p.is_file()}
+    page = (hosted / 'releases/0.1.0/guide/index.html').read_text()
+    assert 'Frozen candidate documentation' not in page
+    assert 'Keep this user guidance.' in page
+    assert 'href="../../../dev/guide/index.html"' in page
+    assert 'aria-current="page">Latest release · 0.1.0' in page
+    info = docs.check_site(hosted / 'releases/0.1.0', link_root=hosted)
+    assert (hosted / 'releases/0.1.0/assets/favicon.ico').read_bytes() == docs.FAVICON.read_bytes()
+    assert info['site_url'] == 'https://example.invalid/project/releases/0.1.0/'
+    assert info['hosting']['archive_manifest_sha256'] == docs.sha256(before[Path('releases/0.1.0/build-info.json')]).hexdigest()
+    # Missing destinations fail validation even when cross-version links are allowed.
+    (hosted / 'dev/guide/index.html').unlink()
+    with pytest.raises(ValueError, match='missing local file'):
+        docs.check_site(hosted / 'releases/0.1.0', link_root=hosted)
+    with pytest.raises(ValueError, match='new directory'):
+        docs.host(archive, archive / 'nested')
+
+
+def test_hosted_copy_requires_main_and_verified_archive(tmp_path):
+    archive = tmp_path / 'archive'
+    docs.assemble(synthetic_site(tmp_path / 'candidate'), archive)
+    with pytest.raises(ValueError, match='requires Main'):
+        docs.host(archive, tmp_path / 'hosted')
+    docs.assemble(synthetic_site(tmp_path / 'dev', channel='dev'), archive)
+    (archive / 'dev/index.html').write_text('Corrupted')
+    with pytest.raises(ValueError, match='checksums'):
+        docs.host(archive, tmp_path / 'hosted')
+
+
 def test_docs_privacy_exceptions_are_narrow():
     for name in ['mkdocs.yml', 'docs/user/index.md', 'tools/docs_site.py', '.github/workflows/docs.yml']:
         assert path_problem(name) is None
@@ -133,7 +196,7 @@ def test_docs_input_allows_only_reviewed_image_paths(tmp_path, monkeypatch, name
     path = tmp_path / name
     path.parent.mkdir(parents=True)
     path.write_bytes(content)
-    config = SimpleNamespace(extra={}, docs_dir=str(tmp_path))
+    config = SimpleNamespace(extra={}, docs_dir=str(tmp_path), theme={})
     if allowed:
         docs.on_config(config)
     else:
@@ -150,6 +213,8 @@ def test_public_site_contract():
     assert len(pages) == 15
     assert 'development/index.html' in pages
     assert 'reference/index.html' in pages
+    assert (ROOT / 'dist/docs-test/assets/favicon.ico').read_bytes() == docs.FAVICON.read_bytes()
+    assert 'href="assets/favicon.ico"' in (ROOT / 'dist/docs-test/index.html').read_text()
     for name in DEMO_IMAGE_FILES:
         if name.startswith('docs/user/'):
             relative = name.removeprefix('docs/user/')

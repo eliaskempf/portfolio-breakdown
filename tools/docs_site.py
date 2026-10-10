@@ -17,7 +17,10 @@ import subprocess
 import tomllib
 from urllib.parse import unquote, urljoin, urlsplit
 
+from packaging.version import InvalidVersion, Version
+
 ROOT = Path(__file__).resolve().parents[1]
+FAVICON = ROOT / 'src/portfolio_app/assets/favicon.ico'
 TOPICS = {
     'home': 'index.html#home',
     'install': 'install/#install',
@@ -73,6 +76,7 @@ def provenance(channel: str = 'dev') -> dict:
 def on_config(config):
     from portfolio_app.privacy import DEMO_IMAGE_FILES, icon_problem
     config.extra.setdefault('build', provenance())
+    config.theme['favicon'] = 'assets/favicon.ico'
     os.environ['SOURCE_DATE_EPOCH'] = git('show', '-s', '--format=%ct', 'HEAD')
     source = Path(config.docs_dir)
     for path in source.rglob('*'):
@@ -105,6 +109,8 @@ def file_hashes(directory: Path) -> dict[str, str]:
 
 def on_post_build(config, **kwargs):
     directory = Path(config.site_dir)
+    (directory / 'assets').mkdir(exist_ok=True)
+    shutil.copyfile(FAVICON, directory / 'assets/favicon.ico')
     info = dict(config.extra['build'], site_url=config.site_url, topics=TOPICS,
                 files=file_hashes(directory))
     (directory / 'build-info.json').write_text(json.dumps(info, indent=2) + '\n', encoding='utf-8', newline='\n')
@@ -126,7 +132,7 @@ class Document(HTMLParser):
                 self.links.append(values[key])
 
 
-def check_site(directory: Path) -> dict:
+def check_site(directory: Path, *, link_root: Path | None = None) -> dict:
     directory = directory.resolve()
     info = json.loads((directory / 'build-info.json').read_text())
     if info['files'] != file_hashes(directory):
@@ -135,6 +141,10 @@ def check_site(directory: Path) -> dict:
     base_url = urlsplit(base)
     if not base.endswith('/') or not base_url.netloc:
         raise ValueError('site_url must be an absolute URL ending with /')
+    # Hosted navigation may cross versions, but must stay inside the public archive.
+    link_root = directory if link_root is None else link_root.resolve()
+    prefix = directory.relative_to(link_root).parts
+    link_base = urlsplit(urljoin(base, '../' * len(prefix)))
     documents = {path.relative_to(directory).as_posix(): Document(path.read_text(encoding='utf-8'))
                  for path in directory.rglob('*.html')}
     errors = []
@@ -143,15 +153,15 @@ def check_site(directory: Path) -> dict:
         target = urlsplit(urljoin(base + page, link))
         if target.scheme not in {'http', 'https'} or target.netloc != base_url.netloc:
             return  # External availability is intentionally not checked.
-        if not target.path.startswith(base_url.path):
+        if not target.path.startswith(link_base.path):
             errors.append(f'{page}: link escapes documentation version: {link}')
             return
-        relative = unquote(target.path[len(base_url.path):])
+        relative = unquote(target.path[len(link_base.path):])
         relative = relative + 'index.html' if not relative or relative.endswith('/') else relative
-        path = (directory / relative).resolve()
-        if not path.is_relative_to(directory) or not path.is_file():
+        path = (link_root / relative).resolve()
+        if not path.is_relative_to(link_root) or not path.is_file():
             errors.append(f'{page}: missing local file: {link}')
-        elif target.fragment and relative in documents and unquote(target.fragment) not in documents[relative].ids:
+        elif target.fragment and path.suffix == '.html' and unquote(target.fragment) not in Document(path.read_text(encoding='utf-8')).ids:
             errors.append(f'{page}: missing anchor: {link}')
 
     for page, document in documents.items():
@@ -194,6 +204,7 @@ def assemble(site: Path, archive: Path) -> None:
             if (destination / 'build-info.json').read_bytes() != (site / 'build-info.json').read_bytes():
                 raise ValueError('Refusing to replace immutable candidate docs')
             check_site(destination)
+            archive_index(archive)
             return
         shutil.rmtree(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -202,20 +213,94 @@ def assemble(site: Path, archive: Path) -> None:
     archive_index(archive)
 
 
-def archive_index(archive: Path) -> None:
-    links = []
-    for manifest in sorted(archive.rglob('build-info.json')):
-        info = json.loads(manifest.read_text())
-        route = manifest.parent.relative_to(archive).as_posix() + '/'
-        links.append(f'<li><a href="{escape(route)}">{escape(route)}</a> '
-                     f'— app {escape(info["app_version"])} · source {escape(info["source_sha"])}</li>')
+def archive_index(archive: Path) -> str:
+    releases = []
+    for manifest in (archive / 'releases').glob('*/build-info.json'):
+        try:
+            version = Version(manifest.parent.name)
+        except InvalidVersion:
+            continue
+        if not version.is_prerelease and not version.is_devrelease:
+            releases.append((version, manifest.parent.name))
+    if releases:
+        route = f'releases/{max(releases)[1]}/'
+    elif (archive / 'dev/build-info.json').is_file():
+        route = 'dev/'
+    else:
+        # First candidate publication can precede the first Main publication.
+        candidates = sorted((archive / 'candidates').glob('*/build-info.json'))
+        if not candidates:
+            raise ValueError('No documentation version to open')
+        route = candidates[-1].parent.relative_to(archive).as_posix() + '/'
+    target = escape(route, quote=True)
     (archive / 'index.html').write_text(
         '<!doctype html><html lang="en"><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        '<title>Portfolio Breakdown documentation versions</title>'
-        '<h1>Portfolio Breakdown documentation</h1>'
-        '<p>Choose the version matching your app. Development may describe newer behavior.</p>'
-        '<ul>' + ''.join(links) + '</ul></html>', encoding='utf-8', newline='\n')
+        f'<meta http-equiv="refresh" content="0; url={target}">'
+        '<title>Portfolio Breakdown documentation</title>'
+        f'<a href="{target}">Open documentation</a></html>', encoding='utf-8', newline='\n')
+    return route
+
+
+def host(archive: Path, destination: Path) -> None:
+    """Add hosted navigation to a separate copy; preserve frozen/bundled bytes."""
+    archive, destination = archive.resolve(), destination.resolve()
+    if destination.exists() or destination.is_relative_to(archive) or archive.is_relative_to(destination):
+        raise ValueError('Hosted output must be a new directory outside the archive')
+    manifests = sorted(archive.rglob('build-info.json'))
+    for manifest in manifests:
+        check_site(manifest.parent)
+    if not (archive / 'dev/build-info.json').is_file():
+        raise ValueError('Hosted navigation requires Main documentation')
+    shutil.copytree(archive, destination, ignore=shutil.ignore_patterns('.git'))
+    latest = archive_index(destination)
+    choices = [('dev/', 'Main')]
+    if latest.startswith('releases/'):
+        choices.insert(0, (latest, f'Latest release · {latest.split("/")[1]}'))
+    for manifest in manifests:
+        relative = manifest.parent.relative_to(archive)
+        site = destination / relative
+        info = json.loads(manifest.read_text())
+        base = info['site_url'].removesuffix(info['route'])
+        info['site_url'] = base + relative.as_posix() + '/'
+        (site / 'assets').mkdir(exist_ok=True)
+        shutil.copyfile(FAVICON, site / 'assets/favicon.ico')
+        for name in info['files']:
+            if not name.endswith('.html'):
+                continue
+            page = site / name
+            source = page.read_text(encoding='utf-8')
+            favicon = Path(os.path.relpath(site / 'assets/favicon.ico', page.parent)).as_posix()
+            source = re.sub(r'(<link\s+rel="icon"\s+href=")[^"]+("[^>]*>)',
+                            lambda match: match[1] + favicon + match[2], source)
+            links = []
+            for route, label in choices:
+                target = destination / route / name
+                if not target.is_file():
+                    target = destination / route / 'index.html'
+                href = Path(os.path.relpath(target, page.parent)).as_posix()
+                current = ' aria-current="page"' if relative.as_posix() + '/' == route else ''
+                links.append(f'<a href="{escape(href, quote=True)}"{current}>{escape(label)}</a>')
+            label = ''
+            if relative.as_posix() + '/' not in {route for route, _ in choices}:
+                kind = 'Release' if relative.parts[0] == 'releases' else 'Candidate'
+                label = f'<span>{kind} · {escape(info["app_version"])}</span>'
+            navigation = '<nav class="docs-versions" aria-label="Documentation version">' + label + ''.join(links) + '</nav>'
+            style = ('<style>.docs-versions{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.5rem;font-size:.7rem}'
+                     '.docs-versions a,.docs-versions span{padding:.3rem .65rem;border-radius:.3rem;border:1px solid var(--md-default-fg-color--lightest)}'
+                     '.docs-versions [aria-current]{background:var(--md-accent-fg-color--transparent);color:var(--md-typeset-a-color)}'
+                     '.docs-versions span{color:var(--md-default-fg-color--light)}</style>')
+            # This exact generated banner is presentation; provenance stays in metadata.
+            source = re.sub(r'<blockquote>\s*<p><strong>(?:Frozen candidate|Development) documentation</strong>.*?</blockquote>', '', source, count=1, flags=re.DOTALL)
+            source, count = re.subn(r'(<article\b[^>]*>)', lambda match: match[0] + style + navigation, source, count=1)
+            if count != 1:
+                raise ValueError(f'Missing documentation article: {relative / name}')
+            page.write_text(source, encoding='utf-8', newline='\n')
+        info['hosting'] = {'archive_manifest_sha256': sha256(manifest.read_bytes()).hexdigest()}
+        info['files'] = file_hashes(site)
+        (site / 'build-info.json').write_text(json.dumps(info, indent=2) + '\n', encoding='utf-8', newline='\n')
+    for manifest in destination.rglob('build-info.json'):
+        check_site(manifest.parent, link_root=destination)
 
 
 def promote(archive: Path, source_sha: str, version: str) -> None:
@@ -233,6 +318,7 @@ def promote(archive: Path, source_sha: str, version: str) -> None:
         if (destination / 'build-info.json').read_bytes() != (candidate / 'build-info.json').read_bytes():
             raise ValueError('Refusing to replace immutable release docs')
         check_site(destination)
+        archive_index(archive)
         return
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(candidate, destination)
@@ -255,6 +341,9 @@ def main():
     command.add_argument('archive', type=Path)
     command.add_argument('--source-sha', required=True)
     command.add_argument('--version', required=True)
+    command = sub.add_parser('host')
+    command.add_argument('archive', type=Path)
+    command.add_argument('destination', type=Path)
     args = parser.parse_args()
     try:
         if args.action == 'build':
@@ -263,8 +352,10 @@ def main():
             check_site(args.site)
         elif args.action == 'assemble':
             assemble(args.site, args.archive)
-        else:
+        elif args.action == 'promote':
             promote(args.archive, args.source_sha, args.version)
+        else:
+            host(args.archive, args.destination)
     except ValueError as exc:
         parser.exit(1, f'{exc}\n')
 
