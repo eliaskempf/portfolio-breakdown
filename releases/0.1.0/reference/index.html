@@ -1,0 +1,1506 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Local portfolio analysis — user guide">
+      
+      
+      
+        <link rel="canonical" href="https://eliaskempf.github.io/portfolio-breakdown/candidates/27e74a8dfeeaf03bed718b79c067dddcc02b8462/reference/">
+      
+      
+        <link rel="prev" href="../troubleshooting/">
+      
+      
+        <link rel="next" href="../development/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Data formats - Portfolio Breakdown</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#data-formats" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Portfolio Breakdown" class="md-header__button md-logo" aria-label="Portfolio Breakdown" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Portfolio Breakdown
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Data formats
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Portfolio Breakdown" class="md-nav__button md-logo" aria-label="Portfolio Breakdown" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Portfolio Breakdown
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start here
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Setup
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install and run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first portfolio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Holdings
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Holdings
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../positions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Positions and buy-ins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../import/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Import holdings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analysis
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Analysis
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../exposure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exposure and ETFs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prices and performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../analytics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analytics and risk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planning
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Planning
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../allocation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Categories and targets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rebalance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rebalance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Help
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Help
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage and recovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data formats
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data formats
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#edit-your-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Edit your data
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Edit your data">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#strategic-and-legacy-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategic and legacy targets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#planning-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Planning contracts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#classification-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Classification format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#currency-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Portfolio currency storage
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Source development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#edit-your-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Edit your data
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Edit your data">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#strategic-and-legacy-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Strategic and legacy targets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#planning-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Planning contracts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#classification-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Classification format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#currency-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Portfolio currency storage
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<blockquote>
+<p><strong>Frozen candidate documentation</strong> · app 0.1.0 · source <code>27e74a8dfeeaf03bed718b79c067dddcc02b8462</code></p>
+</blockquote>
+<h1 id="data-formats">Data formats</h1>
+<p>Use the task guides for normal app operation. This page describes private file
+formats and calculation contracts for advanced editing and development. Back up
+the workspace and stop the app before editing files externally. All numeric
+examples here are invented; instrument identities are public metadata.</p>
+<h2 id="edit-your-data">Edit your data</h2>
+<p><code>holdings.csv</code> has one row per position. Required columns are <code>id</code>, <code>name</code>, and
+<code>shares</code>; optional columns are <code>ticker</code>, <code>isin</code>, <code>acquisition_price</code>, <code>portfolio</code>,
+<code>account</code>, <code>acquisition_currency</code>, and <code>target_allocation</code>. The app-managed
+<code>purchase_history</code> column stores bulk-entry records and is excluded from filters
+and allocations. Other additional text columns become metadata filters and allocation
+dimensions. Shares must be finite and nonnegative; zero-share positions are
+allowed. Acquisition price is optional and is displayed as entered.</p>
+<pre><code class="language-csv">id,name,ticker,isin,shares,acquisition_price,portfolio,account
+example,Example Company,DEMO,,1,10.00,Demo portfolio,Demo account
+</code></pre>
+<p>The stable <code>id</code> identifies an instrument. You may repeat it across account or
+portfolio rows; its name, ticker, and ISIN must be consistent. Holdings remain
+separate positions in the table and merge by asset ID for holding allocation.
+Different exchange listings need distinct IDs. Blank tickers are allowed; without
+a manual price or supported gold-spot source, a nonzero holding stays unvalued.
+Ordinary listing prices are looked up using tickers, not ISINs.
+Tickers and ISINs are trimmed and normalized to uppercase on loading, including
+tickers displayed in holding selectors and allocation charts. Stable IDs remain
+unchanged so classification links are preserved.</p>
+<h3 id="strategic-and-legacy-targets">Strategic and legacy targets</h3>
+<p>Current category-based portfolios use version 2 <code>allocation.yaml</code> for the category
+tree, <code>bucket_id</code> for each position's leaf category, and <code>within_bucket_target</code>
+for its fraction of that category. Category targets are relative to their parent;
+global targets multiply the fractions along that path. Configure these through
+<a href="../allocation/#targets">Rebalance → Targets</a>.</p>
+<p>The following whole-portfolio <code>target_allocation</code> rules describe <strong>legacy
+portfolios without strategic allocation</strong>. They are not a substitute for
+within-category targets in current portfolios.</p>
+<p>To display legacy targets, add an optional <code>target_allocation</code> column. Enter a fraction
+such as <code>0.15</code> or a percentage such as <code>15%</code>; leave unavailable values blank.
+Targets apply to each position as a share of the whole portfolio. The holdings
+table shows the column only when at least one selected position has a target,
+keeps missing targets blank, and does not renormalize targets when filtering.
+Targets are not metadata filters or inferred from current weights. Split a
+holding's target across its account rows if you maintain multiple positions.</p>
+<p>Allocation tables derive label and hierarchy targets by summing the underlying
+position targets, using the same membership splits as current allocations.
+<strong>Target (% of portfolio)</strong> and <strong>Current (% of portfolio)</strong> share the
+whole-portfolio basis. <strong>Current − target (pp)</strong> is positive above target and
+negative below. Filtering narrows the contributing positions without rescaling
+their targets. Parent targets include their descendants; do not sum parent and
+child rows together.</p>
+<p>ETF look-through distributes an ETF target using the snapshot's constituent
+weights, including residual Other. Targets from direct positions and ETF constituents combine by
+asset identity. The optional SMH display group sums its fund and stock targets.
+If any contributing position lacks a target, the target and gap stay
+blank and a <strong>Known target subtotal (%)</strong> shows the available portion. An
+explicit zero target is complete. Missing portfolio prices leave the whole-
+portfolio current comparison and gap blank while preserving known targets.</p>
+<p>You can save a position with <strong>zero shares and a nonzero target</strong> to plan a new
+investment. Its current value is zero without requiring a quote, and its target
+contributes to its labels immediately. Add classification labels for new assets
+in the private YAML file; otherwise they appear under Unclassified.</p>
+<p>The header’s <strong>Portfolio settings → Hide empty positions</strong> changes only visibility in Positions and Exposure.
+The separate Rebalance option <strong>Exclude empty positions and redistribute targets</strong>
+removes zero-share rows from the planning calculation. Their combined target is divided equally among
+remaining unique asset IDs within each category (or the whole legacy portfolio),
+then equally among each asset’s held account rows.
+This is an equal percentage-point increment, not a proportional scaling. For
+example, removing an invented 20% planned target adds 10 pp to each of two
+remaining assets. Saved positions and targets remain unchanged and editable in
+<strong>Positions</strong>. Visibility never changes targets. Redistribution
+requires complete targets if any targets have been entered; it never treats an
+unknown target as zero. With no targets, the option simply hides empty positions.</p>
+<h3 id="planning-contracts">Planning contracts</h3>
+<p>The default strategic <strong>Rebalance → Plan → Portfolio contribution</strong> allocates
+a contribution across categories and then positions. It defaults to allowing
+skipped positions, with a minimum purchase of 25 in the reporting currency.
+Choose <strong>Within a category</strong> to access the following three modes. Legacy
+portfolios show these modes directly for the whole portfolio:</p>
+<ul>
+<li><strong>Fewest trades (buys and sells)</strong> reaches every target range with no new money,
+  minimizing changed position/account rows first and total turnover second.</li>
+<li><strong>Minimum new money (no sells)</strong> finds the smallest fully invested contribution
+  that reaches every range, then minimizes trades at that contribution.</li>
+<li><strong>Allocate new money</strong> fully invests a given amount using at most the chosen
+  number of trades. It minimizes the sum of distances outside target ranges,
+  then trade count, then distance from exact targets. A comparison table and
+  plan selector show whether additional trades offer enough improvement.</li>
+</ul>
+<p>In <strong>Allocate new money</strong>, enable <strong>Limit buys to selected positions</strong> and
+choose the instrument/account rows in <strong>Positions eligible for buying</strong>. Then
+choose <strong>Distribution</strong>:</p>
+<ul>
+<li><strong>Rebalance selected positions</strong> (default for a selected subset): account for
+  current holdings and final portfolio value, prioritizing larger shortfalls.
+  Minimize the sum of squared percentage-point gaps to exact targets under your
+  purchase constraints. Tolerance ranges affect the reported status, not this
+  split. Configure <strong>Selection intent</strong> and <strong>Minimum purchase (reporting currency)</strong>:</li>
+<li><strong>Buy every selected position</strong> (default): buy at least the minimum amount
+    for every selected row, including overweight and zero-target rows. The
+    initial minimum is 25 in the portfolio currency and can be changed. Insufficient budgets show the
+    required contribution and shortfall; positions are never silently skipped.</li>
+<li><strong>Allow skipping positions</strong>: choose the best allocation, with every
+    suggested buy meeting the minimum. <strong>Prefer fewer trades</strong> is off by default.
+    Enable it to set <strong>Maximum trades</strong> and compare allocation quality across
+    trade counts. <strong>Allowed extra target error (pp)</strong> defaults to 0.1 pp: choose
+    the fewest trades whose root mean squared (RMS) target gap is within that
+    amount of the best plan under the cap. Zero allows no additional error.
+    The suggested plan is selected initially; any comparison plan can be inspected.</li>
+<li><strong>Limit allocations for this rebalance</strong> (within Rebalance selected positions):
+  enter an optional <strong>Maximum allocation (%)</strong> for each selected
+  instrument/account row. Blank means no cap; zero prevents further buys.
+  The cap uses the selected denominator (portfolio or category), including the
+  contribution and any unallocated cash. Saved targets keep guiding the allocation
+  and are never
+  overwritten by temporary caps. A position already above its cap receives no
+  buys; this buy-only calculation does not force a sale. A cap that conflicts
+  with Buy every selected position or Minimum purchase produces an explanation.
+  Caps reset when the selection changes and are not saved to portfolio files.
+  The calculator invests as much as the caps, minimum buys and trade limit allow,
+  then minimizes squared target gaps. Remaining money appears as <strong>Unallocated
+  cash</strong>, included in the percentage denominator; displayed position percentages
+  may total less than 100%. Fewer-trade suggestions preserve the maximum amount
+  that can be invested; comparison rows also show each plan's unallocated cash.</li>
+<li><strong>Spread by target weights</strong>: divide the contribution in proportion to the
+  selected eligible targets. For example, invented targets of 20% and 10% receive two
+  thirds and one third of the new money. Zero targets receive nothing.</li>
+<li><strong>Optimize rebalancing</strong>: choose buys that improve the whole portfolio's
+  allocation, with a trade limit and trade-count comparison. This can put the
+  entire contribution into one position.</li>
+</ul>
+<p>RMS target gap is the square root of the mean squared percentage-point gap
+across the position rows in the selected planning scope. It measures the
+squared-deviation objective
+on a readable scale; it is separate from deviation outside tolerance ranges.
+Without caps, for a fixed number of buys with a uniform minimum, buying the
+largest target shortfalls is optimal. With caps, candidate choices also account
+for the remaining capacity of each position. The calculator compares feasible
+trade counts, including when all positions are in range.</p>
+<p>Only <strong>Spread by target weights</strong> ignores existing holdings when splitting the
+contribution. Minimum-purchase and selection-intent controls apply to
+<strong>Rebalance selected positions</strong>. Both distributions allocate whole cents of reporting currency
+so buys plus any unallocated cash sum to the budget. Target-weight splitting rejects an amount too small
+to fund every positive-weight recipient with at least one cent.
+<strong>Only buy existing positions</strong> excludes selected rows with zero shares. If this conflicts
+with <strong>Buy every selected position</strong>, deselect those rows, allow skipping, or
+turn off Only buy existing positions; the calculator explains the conflict.
+Unselected positions receive no trades. Final weights and deviation still use
+targets in the planning scope, so spreading can leave positions outside their ranges.
+Changing the selection or distribution hides stale plans. Changing position
+identities clears the selection for you to choose again. These controls apply
+only to Allocate new money and never change saved holdings or targets.</p>
+<p>Choose an absolute tolerance (default ±0.5 percentage points) or a percentage
+relative to each target. For a 10% target, ±0.5 pp and ±5% relative both allow
+9.5–10.5%. Relative tolerance leaves a zero target at zero; absolute tolerance
+can allow a small holding. Bounds are clipped to 0–100%.</p>
+<p>Within-category rebalancing requires position targets totaling 100% of that
+category; legacy planning requires whole-portfolio targets totaling 100%. Both
+require complete valuations in their scope and use final weights including the
+contribution. Portfolio contributions also require complete category targets.
+Overview filters,
+label selections and ETF display groups do not alter the tradable positions.
+<strong>Only buy existing positions</strong> forbids buying zero-share account rows while retaining
+their targets; <strong>Exclude empty positions and redistribute targets</strong> instead removes and redistributes
+them before calculation. Infeasible restrictions produce an explanation.</p>
+<p>Amounts assume fractional shares and exclude fees, taxes, spreads and lot-size
+constraints. New money is fully invested except when temporary allocation caps
+and purchase restrictions leave an unallocated remainder. This is a calculation
+result, not a saved cash account.
+Reporting-currency amounts are rounded only for display. Plans never place orders or write
+holdings. SciPy’s HiGHS linear/mixed-integer optimizer must report a proven
+optimum; a solver limit or failed constraint check produces no trade plan.
+Each solve has a ten-second limit; interactive calculations support up to 100
+position rows. With zero invested capital, choose a budget in <strong>Allocate new
+money</strong> instead of asking for a minimum contribution.</p>
+<h3 id="classification-format">Classification format</h3>
+<p><code>classifications.yaml</code> maps asset IDs to any number of named taxonomies:</p>
+<pre><code class="language-yaml">nvda:
+  classifications:
+    ai:
+      - [AI, Compute, GPUs]
+    sector:
+      - [Technology, Semiconductors]
+    geography:
+      - [North America, United States]
+</code></pre>
+<p>Taxonomy names and tree depths are unrestricted by application logic. Add asset
+class, tags, sleeves, or other custom classifications using the same format.
+Keep the file present; <code>{}</code> is valid when you have no classifications yet.
+Missing membership in a selected taxonomy appears as <code>Unclassified</code>.</p>
+<p>An asset with several distinct paths splits its value equally across them.
+Identical repeated paths are deduplicated. Explicit path weights are deferred.
+Full paths identify categories, so repeated labels under different parents
+stay separate. When an internal category also has its own allocation, an
+<code>Assigned here</code> leaf preserves that value in the visualization. At a truncated
+depth, short paths remain visible instead of disappearing.</p>
+<p>Use <strong>Positions</strong> in the app to create and edit positions, or edit the
+CSV outside the app and reload the page. Classification trees remain editable
+in YAML. File data is read on each Streamlit rerun.</p>
+<h2 id="currency-storage">Portfolio currency storage</h2>
+<p><code>portfolio.yaml</code> stores version 1 settings with <code>reporting_currency</code> (EUR, USD or
+GBP). An absent file means EUR; opening a legacy workspace does not rewrite it.
+The optional app-managed <code>cost_basis_details</code> holdings column stores versioned
+active cost components, original currencies and target-specific conversions.
+It is excluded from classification/filter dimensions and exposure payloads.
+Legacy purchase batches remain readable. Their dates are used only if the recorded
+history reconciles with the current summary. External balance edits supersede
+incompatible purchase evidence instead of inventing disposal accounting.</p>
+<p>Calculated reporting amounts use currency-neutral interfaces: <code>current_value_reporting</code>,
+<code>cost_basis_reporting</code>, <code>unrealized_gain_reporting</code> and <code>reporting_currency</code>.
+Original native cost and return fields remain separate. Monetary table keys are
+currency-neutral; the interface identifies their active reporting currency.
+Include the complete private workspace in backups, including settings and cost
+records. These files must never be committed to Git.</p>
+<p>For architecture, tests and preview commands, see <a href="../development/">Source development</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../troubleshooting/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Troubleshooting">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Troubleshooting
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../development/" class="md-footer__link md-footer__link--next" aria-label="Next: Source development">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Source development
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.footer", "search.highlight"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
