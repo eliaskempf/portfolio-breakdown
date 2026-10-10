@@ -14,30 +14,8 @@ from portfolio_app.portfolio_settings import REPORTING_CURRENCIES, load_settings
 from portfolio_app.storage import revision
 
 
-def historical_for(directory, *, demo=False):
-    from portfolio_app.fx import HistoricalFX
-    from portfolio_app.market_data import coordinator
-    if demo:
-        from portfolio_app.fx import DatedRate
-        class OfflineFX:
-            def get(self, source, target, day):
-                # Explicitly invented FX history, never used for live portfolios.
-                rates = {'EUR': 1., 'USD': .9, 'GBP': 1.2}
-                if source not in rates or target not in rates:
-                    return DatedRate(note='No synthetic history for this currency.')
-                return DatedRate(rates[source] / rates[target], day, 'Synthetic demo FX')
-        return OfflineFX()
-    workspace = str(directory.resolve())
-    service = HistoricalFX(directory=directory / '.cache' / 'purchase-fx')
-
-    class BackgroundFX:
-        def get(self, source, target, day):
-            result, due = service.cached(source, target, day)
-            if due:
-                coordinator.request(workspace, f'purchase-fx-v1:{source}:{target}:{day}',
-                                    lambda: service.get(source, target, day, refresh=True))
-            return result
-    return BackgroundFX()
+# Compatibility import for position/cost editors; service construction is UI-free.
+from portfolio_app.application import historical_for
 
 
 def render_currency_setting(directory, settings):

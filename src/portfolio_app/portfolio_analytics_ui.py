@@ -8,11 +8,10 @@ from portfolio_app.analytics import snapshot_analytics
 from portfolio_app.analytics_service import load_metrics, load_risk
 from portfolio_app.analytics_ui import context_key, data_quality_caption, display_value, render_sources, risk_settings
 from portfolio_app.charts import correlation_chart
-from portfolio_app.company_merges import build_plan, load_company_names, load_settings
+from portfolio_app.company_analysis import load_company_analysis
 from portfolio_app.display_names import instrument_name
 from portfolio_app.fundamentals import Metric
 from portfolio_app.holdings import DataError
-from portfolio_app.stock_exposure import load_company_identities, stock_exposure
 
 
 def coverage(metric, universe):
@@ -117,19 +116,14 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
 
 def render_company_exposure(valued, snapshots, funds, data_dir):
     try:
-        identities = load_company_identities(data_dir / 'company-identities.yaml')
-        typed = valued.copy()
-        typed['instrument_type'] = [snapshots[row.id].kind for row in typed.itertuples()]
-        plan = build_plan(typed, funds, identities, load_settings(data_dir / 'company-merges.yaml'), {}, load_company_names(data_dir / 'company-names.yaml'))
-        company_positions, company_funds, _ = plan.apply(typed, funds, {})
-        company = stock_exposure(company_positions, company_funds, identities=identities)
+        prepared = load_company_analysis(valued, snapshots, funds, data_dir)
+        company = prepared.exposure
         st.dataframe(company.companies.head(10), hide_index=True, width='stretch')
         if not company.unresolved.empty:
             st.caption('Unresolved look-through exposure is excluded from the named-company ranking.')
             st.dataframe(company.unresolved, hide_index=True, width='stretch')
-        for fund in company_funds:
-            if fund.proxy_source:
-                st.caption(f'{fund.name}: {fund.proxy_source}')
+        for note in prepared.proxy_notes:
+            st.caption(note)
     except DataError as exc:
         st.error(str(exc))
 

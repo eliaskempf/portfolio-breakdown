@@ -21,6 +21,63 @@ transformation and aggregation engine. All chart types share the same aggregatio
 Streamlit; the UI supplies selections and renders the resulting tables.
 `currencies.py` shares quote-subunit normalization across spot and historical prices.
 
+`application.py` selects price/FX services, checks leverage eligibility and prepares
+valuation diagnostics without Streamlit. `input_cache.py` returns named
+`PortfolioInputs` and copies cached inputs before handing them to calculations.
+`ui.py` owns workspace recovery, widget interactions, explicit refresh requests
+and lazy view dispatch. Optional fundamentals and risk remain in
+`analytics_service.py`; opening an unrelated view must not fetch them.
+
+### Calculation contracts
+
+- Saved positions retain their instrument ID and stable position ID. A
+  contribution has an analytical asset ID plus its source position/instrument
+  identity; company grouping must not overwrite the original security identity.
+- `exposures.project_contributions` accepts an explicitly aligned measure and
+  copies source dimensions. Current value, target fractions and performance
+  amounts can use the same transformation without pretending to be the same
+  financial measure. Reserved calculation columns are rejected as custom CSV
+  metadata. New calculated fields must extend that reservation.
+- `constituents.py` interprets normalized constituent facts. Each consumer owns
+  its coverage policy: an equity fund's residual can be equity exposure while
+  remaining unresolved company exposure. Futures proxy coverage also retains
+  its stricter treatment of unidentified and non-equity weights.
+- `FuturePosition` owns futures arithmetic. `future_projections.py` supplies named
+  capital, exposure and risk adapters. Funded strategy cash and lifetime P&L are
+  wealth; signed notional is exposure. They must never be summed as one measure.
+- Missing amounts are not zero. Callers retain completeness information when
+  projecting known contributions. `prepare_market_analysis` returns separate
+  known-value chart nodes and completeness-preserving table nodes. Composition
+  percentages use selected exposure; portfolio impact uses whole-portfolio equity.
+
+Preparation results own their output frames; frozen result containers do not make
+pandas frames deeply immutable. Treat inputs as borrowed, copy before mutation,
+and verify conservation, source provenance and input nonmutation when changing
+these boundaries. `company_analysis.py` prepares company grouping and coverage;
+renderers consume the prepared results.
+
+### Session lifetimes
+
+`state_lifecycle.py` is the single catalog of feature-owned navigation,
+workspace, currency and tour policies. Add an ordinary widget input to its
+feature's declaration, with the correct mount boundary. Inputs may survive lazy
+unmounts; buttons, upload handles and editor patches must not be reassigned as
+ordinary input state. Imports and persistent editors keep their specialized
+adapters. Calculation fingerprints stay with the calculators that understand
+their assumptions.
+
+Currency changes clear monetary drafts and prior monetary plans while retaining
+scope and percentage preferences. Workspace changes clear owned drafts/results;
+workspace-keyed analytics preferences remain isolated by their keys. Tour capture
+copies only declared restorable state. Exercise real navigation as well as pure
+transition tests, including date controls and nested lazy views.
+
+Document writes retain their workspace locking, revision checks and backup
+policies. Commands validating multiple documents must hold the workspace lock
+from validation through publication. Cache and document writers deliberately
+retain different failure/recovery policies; sharing serialization mechanics must
+not erase those differences.
+
 ```bash
 uv run pytest
 uv run portfolio-app --demo --server.headless=true
@@ -157,6 +214,7 @@ development requirements. These notes contain no working portfolio data.
 | `risk_data.py` | Adjusted price histories and historical reporting-currency conversion |
 | `risk.py` | Pure common-sample weekly risk calculations |
 | `analytics_service.py` | Provider/cache orchestration for fundamentals and risk, independent of Streamlit |
+| `company_analysis.py` | Pure company grouping and exposure preparation, plus workspace mapping loading |
 | `analytics_ui.py` | Shared formatting, sources, benchmark settings |
 | `portfolio_analytics_ui.py` | Overview analytics presentation |
 | `position_metrics_ui.py` | Position metric presets, details, fee maintenance |

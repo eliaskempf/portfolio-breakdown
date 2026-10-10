@@ -14,18 +14,18 @@ from portfolio_app.etf_refresh_ui import refresh_revision, render_refresh_status
 from portfolio_app.holdings import DataError
 from portfolio_app.position_ui import render_position_editor, render_position_dialog, request_position
 from portfolio_app.positions import read_snapshot
-from portfolio_app.portfolio import prepare_portfolio
 from portfolio_app.rebalancing import RebalanceError
 from portfolio_app.rebalance_ui import render_rebalancing
-from portfolio_app.prices import PriceService, StaticProvider, UnavailableProvider
+from portfolio_app.prices import PriceService, StaticProvider
 from portfolio_app.presentation import apply_style, empty_overview, mark_view_ready
-from portfolio_app.allocation import analysis_targets, migration_preview
+from portfolio_app.allocation import migration_preview
 from portfolio_app.strategic_ui import render_strategic_overview
 from portfolio_app.scoped_ui import render_scoped_rebalancing
 from portfolio_app.input_cache import load_inputs
 from portfolio_app.market_data import coordinator as market_coordinator, prices_for
 from portfolio_app.view_state import preserve_view_inputs
-from portfolio_app.futures_workspace import load_sandbox
+from portfolio_app.application import (historical_for, load_leverage_context, prepare_application,
+    prepare_exposure, select_price_service)
 
 
 def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None, intro: bool = False, ignore_selection: bool = False) -> None:
@@ -74,7 +74,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         # Always value the isolated tour with its own synthetic quotes.
         price_service = PriceService(StaticProvider(data_dir / 'demo_prices.json'))
     from portfolio_app.portfolio_settings import load_settings
-    from portfolio_app.currency_ui import render_currency_setting, render_currency_dialog, historical_for
+    from portfolio_app.currency_ui import render_currency_setting, render_currency_dialog
     from portfolio_app.currency_display import currency_symbol
     try:
         currency_settings = load_settings(data_dir)
@@ -112,19 +112,16 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if demo and not demo_pending:
         st.caption("Offline demo · Invented prices, buy-ins and ETF weights · Resets on restart" if offline_demo else
                    "Demo · Invented quantities, targets and buy-ins · Public market data · Resets on restart")
-    from portfolio_app.leverage_settings import load_leverage_settings, requires_leverage
-    from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
     from portfolio_app.portfolio_exposure_ui import render_market_analysis, render_exposure_targets, render_leverage_editor
     try:
-        sandbox = load_sandbox(data_dir)
-        leverage, _ = load_leverage_settings(data_dir, future=sandbox[0] if sandbox else None)
+        leverage_context = load_leverage_context(data_dir, reporting_currency)
     except DataError as exc:
         st.error(str(exc))
         mark_view_ready()
         return
-    leverage_supported = reporting_currency == 'EUR'
-    feature_active = leverage_supported and (leverage.enabled or sandbox is not None)
-    unsupported_records = not leverage_supported and (leverage.enabled or requires_leverage(leverage, sandbox[0] if sandbox else None))
+    sandbox, leverage = leverage_context.sandbox, leverage_context.settings
+    leverage_supported, feature_active = leverage_context.supported, leverage_context.active
+    unsupported_records = leverage_context.unsupported_records
     if unsupported_records:
         st.warning('Saved leverage records are in EUR. Switch reporting currency to EUR to see complete portfolio totals, exposure, risk and plans. Your saved records are unchanged.')
         from dataclasses import asdict
@@ -134,7 +131,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             st.json(asdict(leverage))
     etf_revision = refresh_revision(data_dir)
     try:
-        snapshot, allocation, classifications, funds = load_inputs(data_dir)
+        inputs = load_inputs(data_dir)
+        snapshot, allocation, classifications, funds = inputs
         holdings = snapshot.holdings
         validate_fund_listings(holdings, funds)
     except DataError as exc:
@@ -179,24 +177,17 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     background_prices = price_service is None and not offline_demo
     market_workspace = str(data_dir.resolve())
     market_revision = market_coordinator.revision(market_workspace)
-    if price_service is None:
-        if offline_demo:
-            try:
-                provider = StaticProvider(data_dir / 'demo_prices.json')
-            except (OSError, ValueError):
-                provider = UnavailableProvider()
-            price_service = PriceService(provider)
-        else:
-            price_service = prices_for(data_dir)
-    source = analysis_targets(holdings, allocation) if allocation else holdings
+    price_service = select_price_service(data_dir, offline_demo=offline_demo, supplied=price_service, live_prices=prices_for)
     with st.spinner('Valuing portfolio…'):
-        valued = prepare_portfolio(source, price_service, refresh=refresh, reporting_currency=reporting_currency, historical=historical)
+        prepared = prepare_application(inputs, price_service, refresh=refresh,
+            reporting_currency=reporting_currency, historical=historical)
+    valued, status = prepared.valued, prepared.status
     if notice := st.session_state.pop('currency_notice', None):
         st.info(notice)
     if render_currency_dialog(data_dir, snapshot, currency_settings, price_service, historical):
         mark_view_ready()
         return
-    estimates = int(valued.cost_estimated.sum())
+    estimates = status.estimated_costs
     if estimates:
         st.warning(f'{estimates} positions use confirmed FX estimates. Their gains and returns are estimated.')
     if demo_pending:
@@ -208,25 +199,20 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             if market_coordinator.pending(market_workspace):
                 # Keep the status running across renders; a context manager would
                 # mark it complete as soon as this non-blocking render returns.
-                status = st.status('Preparing your demo…', state='running', expanded=True)
-                status.write('Fetching current market prices. Your demo will open automatically.')
+                demo_status = st.status('Preparing your demo…', state='running', expanded=True)
+                demo_status.write('Fetching current market prices. Your demo will open automatically.')
             else:
                 st.warning('Some prices could not be loaded. Choose Refresh prices to try again.')
                 st.dataframe(valued.loc[valued.current_value_reporting.isna(), ['name', 'valuation_note']], hide_index=True)
                 st.caption('You can also explore an offline example with ? → Take the tour, or return to My portfolio using the workspace menu.')
                 mark_view_ready()
         return
-    exposure_result = calculate_portfolio_exposure(valued, funds, future=sandbox[0] if sandbox else None,
-        allocation=allocation, liabilities=leverage.liabilities, fund_factors=leverage.fund_factors) if feature_active else None
+    exposure_result = prepare_exposure(valued, funds, allocation, leverage_context)
     if price_service.cache_warning:
         st.warning(price_service.cache_warning)
-    missing_cost = (valued.shares.gt(0) & valued.unrealized_gain_reporting.isna()).sum()
-    missing_price = valued.current_value_reporting.isna().sum()
-    stale = (valued.price_status.isin(['cached fallback', 'stale']) | valued.fx_status.isin(['cached fallback', 'stale'])).sum()
-    if missing_cost or missing_price or stale:
-        with st.expander(f'Data status · {missing_price} missing prices · {missing_cost} performance gaps · {stale} stale quotes'):
-            problems = valued.loc[valued.shares.gt(0) & (valued.unrealized_gain_reporting.isna() | (valued.price_status.isin(['cached fallback', 'stale']) | valued.fx_status.isin(['cached fallback', 'stale'])))]
-            st.dataframe(problems[['name', 'performance_note', 'valuation_note']], hide_index=True, width='stretch')
+    if status.missing_costs or status.missing_prices or status.stale_quotes:
+        with st.expander(f'Data status · {status.missing_prices} missing prices · {status.missing_costs} performance gaps · {status.stale_quotes} stale quotes'):
+            st.dataframe(status.problems, hide_index=True, width='stretch')
             st.caption('Edit a position to complete its buy-in or pricing details.')
             if st.button('Complete buy-ins', help='Open Positions to complete missing purchase cost or pricing details.'):
                 st.session_state['main_tabs'] = 'Positions'
@@ -271,9 +257,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                     # Legacy targets are percentages of the whole portfolio; don't
                     # reinterpret them as within-category targets in this overview.
                     overview_values['within_bucket_target'] = float('nan')
-                overview_exposure = exposure_result if allocation or not feature_active else calculate_portfolio_exposure(
-                    overview_values, funds, future=sandbox[0] if sandbox else None, allocation=overview_config,
-                    liabilities=leverage.liabilities, fund_factors=leverage.fund_factors)
+                overview_exposure = exposure_result if allocation or not feature_active else prepare_exposure(
+                    overview_values, funds, overview_config, leverage_context)
                 from portfolio_app.portfolio_analytics_ui import render_portfolio_analytics
                 render_strategic_overview(overview_values, overview_config, data_dir=data_dir, exposure_result=overview_exposure, future=sandbox[0] if sandbox else None, open_position=open_valued_position,
                                           leverage_enabled=leverage.enabled and leverage_supported,

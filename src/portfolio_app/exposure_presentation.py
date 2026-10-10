@@ -1,5 +1,6 @@
 """Explicit exposure projections and isolated company moves, independent of UI."""
 import json
+from dataclasses import dataclass
 import pandas as pd
 
 from portfolio_app.futures import require_eur_reporting
@@ -53,3 +54,52 @@ def canonical_asset_names(rows):
     labels = result.groupby('asset_id', sort=False).asset_name.first()
     result['asset_name'] = result.asset_id.map(labels)
     return result
+
+
+@dataclass(frozen=True)
+class MarketAnalysis:
+    """Owned presentation projections with two deliberately different totals.
+
+    Chart nodes contain known contributions. Table nodes preserve unknowns.
+    Composition uses selected exposure; equity percentages use portfolio equity.
+    """
+    rows: pd.DataFrame
+    chart_nodes: pd.DataFrame
+    table_nodes: pd.DataFrame
+    equity_percentages: pd.Series
+    missing: bool
+    signed: bool
+
+
+def prepare_market_analysis(result, config, classifications, valued, *, scope='',
+                            field='market_exposure_eur', view='Assets & companies',
+                            taxonomy='sector', depth=2, root_label='Portfolio', future=None):
+    from portfolio_app.aggregation import build_tree, classify_exposures
+    rows = result.exposures
+    if scope:
+        rows = rows.loc[rows.bucket_id.eq('') if scope == 'unassigned' else rows.bucket_id.isin(config.leaves(scope))]
+    rows = rows.copy()
+    data = canonical_asset_names(rows)
+    data['value'] = data[field]
+    if view in {'Themes & sectors', 'Geography'}:
+        allocations = classify_exposures(data, classifications, taxonomy)
+        tree_options = dict(depth=int(depth), include_holdings=True, root_label=root_label)
+    else:
+        if view == 'ETF sources':
+            names = dict(zip(valued.position_id, valued.name))
+            # Capital rows include the canonical future label even when it is
+            # not an owned holding. Closed/legacy adjustments keep their labels.
+            names.update(dict(zip(result.capital.source_position_id, result.capital.name)))
+            if future is not None:
+                from portfolio_app.future_projections import FUTURE_SOURCE_ID, future_name
+                names[FUTURE_SOURCE_ID] = future_name(future)
+            data['asset_id'] = data.source_position_id
+            data['asset_name'] = data.source_position_id.map(lambda key: names.get(key, key))
+        data['path'] = [()] * len(data)
+        allocations = data
+        tree_options = dict(include_holdings=True, root_label=root_label)
+    table = build_tree(allocations, **tree_options)
+    chart = build_tree(allocations.assign(value=allocations.value.fillna(0.)), **tree_options)
+    equity = table.value * 100 / result.denominator if result.denominator else pd.Series(float('nan'), index=table.index)
+    equity.index = table.node_id
+    return MarketAnalysis(rows, chart, table, equity, bool(rows[field].isna().any()), bool(rows[field].lt(0).any()))

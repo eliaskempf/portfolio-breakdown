@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from portfolio_app.aggregation import classify_exposures
 from portfolio_app.charts import style_figure, hatch_foregrounds
 from portfolio_app.etf import fund_classifications
 from portfolio_app.exposure_targets import ExposureTargets, exposure_gaps, load_exposure_targets, save_exposure_targets
@@ -78,49 +77,33 @@ def signed_chart(table, label, measure, key):
 
 
 def render_market_analysis(result, config, classifications, valued, funds, *, future=None):
-    from portfolio_app.aggregation import build_tree
     from portfolio_app.charts import hierarchy_chart, hierarchy_table, sort_allocation_nodes, SUNBURST_PALETTE
-    from portfolio_app.exposure_presentation import companion_nodes, canonical_asset_names
+    from portfolio_app.exposure_presentation import companion_nodes, prepare_market_analysis
     from portfolio_app.futures_proxy import linked_fund
     import json
     labels = {'': 'Portfolio', **category_labels(config), 'unassigned': 'Unassigned'}
     scope = st.selectbox('Exposure category', list(labels), format_func=labels.get, key='exposure_market_scope')
     field = exposure_basis('exposure_market_basis')
-    rows = result.exposures
-    if scope:
-        rows = rows.loc[rows.bucket_id.eq('') if scope == 'unassigned' else rows.bucket_id.isin(config.leaves(scope))]
     view = st.segmented_control('Market exposure view', ['Assets & companies', 'Themes & sectors', 'Geography', 'ETF sources'],
                                 default='Assets & companies', key='exposure_market_view')
-    data = rows.copy()
-    data['value'] = data[field]
-    if data[field].isna().any():
-        st.warning('Some exposure amounts are unknown. Charts show known amounts; coverage remains incomplete.')
-    data = canonical_asset_names(data)
-    def trees(allocations, **kwargs):
-        complete = build_tree(allocations, **kwargs)
-        known = build_tree(allocations.assign(value=allocations.value.fillna(0.)), **kwargs)
-        return known, complete
+    taxonomy, level = 'sector', 2
     if view in {'Themes & sectors', 'Geography'}:
         classifications = fund_classifications(classifications, funds, valued)
         names = taxonomy_names(classifications)
         taxonomy = 'geography' if view == 'Geography' else st.selectbox('Exposure taxonomy', names or ['sector'], key='exposure_market_taxonomy')
-        classified = classify_exposures(data, classifications, taxonomy)
         level = st.number_input('Exposure hierarchy depth', min_value=1, max_value=10, value=2, step=1, key='exposure_market_depth')
-        nodes, table_nodes = trees(classified, depth=int(level), include_holdings=True, root_label=labels[scope])
-    else:
-        if view == 'ETF sources':
-            names = dict(zip(valued.position_id, valued.name))
-            data['asset_id'] = data.source_position_id
-            data['asset_name'] = data.source_position_id.map(lambda key: names.get(key, f'{future.instrument} future' if future else key))
-        data['path'] = [()] * len(data)
-        nodes, table_nodes = trees(data, include_holdings=True, root_label=labels[scope])
+    prepared = prepare_market_analysis(result, config, classifications, valued, scope=scope,
+        field=field, view=view, taxonomy=taxonomy, depth=level, root_label=labels[scope], future=future)
+    rows, nodes, table_nodes = prepared.rows, prepared.chart_nodes, prepared.table_nodes
+    if prepared.missing:
+        st.warning('Some exposure amounts are unknown. Charts show known amounts; coverage remains incomplete.')
     nodes = companion_nodes(sort_allocation_nodes(nodes), future) if view == 'ETF sources' else sort_allocation_nodes(nodes)
     proxy = linked_fund(future, valued, funds)
     if proxy and rows.loc[rows.source_type.eq('future'), 'method'].str.startswith('ETF holdings proxy:').any():
         st.caption(f'{future.instrument}: approximate index holdings via {proxy.name} · {proxy.as_of}. Unresolved weights remain visible.')
     chart, table_column = st.columns([1, 1.3], gap='large', vertical_alignment='center')
     with chart:
-        if rows[field].lt(0).any():
+        if prepared.signed:
             root_id = nodes.loc[nodes.parent_id.eq(''), 'node_id'].iloc[0] if not nodes.empty else ''
             signed = nodes.loc[nodes.parent_id.eq(root_id), ['label', 'value']].rename(columns={'label': 'Category', 'value': 'Exposure (EUR)'})
             signed_chart(signed, 'Category', 'Exposure (EUR)', 'exposure_market_chart')
@@ -142,7 +125,8 @@ def render_market_analysis(result, config, classifications, valued, funds, *, fu
             st.info('No positive market exposure in this selection.')
     with table_column:
         table = hierarchy_table(table_nodes).rename(columns={'Value': 'Exposure (EUR)', 'Allocation %': '% of exposure'})
-        table['% of portfolio equity'] = table['Exposure (EUR)'] * 100 / result.denominator if result.denominator else float('nan')
+        ordered = sort_allocation_nodes(table_nodes)
+        table['% of portfolio equity'] = prepared.equity_percentages.reindex(ordered.loc[ordered.parent_id.ne(''), 'node_id']).to_numpy()
         st.dataframe(table, hide_index=True, width='stretch', height=480, column_config={
             'Category': st.column_config.TextColumn(width='medium'),
             'Exposure (EUR)': st.column_config.NumberColumn('Exposure (€)', format='%.2f', width='small'),
