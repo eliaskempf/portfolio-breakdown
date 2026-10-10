@@ -63,7 +63,7 @@ def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete:
                                               hovertemplate=('%{y}<br>€%{x:,.2f}<extra></extra>').replace('€', currency_symbol()))))
         figure.update_layout(height=min(900, max(280, len(plotted) * 28)), xaxis_title='Exposure',
                              margin=dict(t=12, b=20, l=12, r=12))
-        chart_area.plotly_chart(figure, width='stretch', config={'displayModeBar': False})
+        chart_area.plotly_chart(figure, width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})
     else:
         chart_area.info('No positive priced exposure in this selection.')
     if not table['Missing valuations'].any():

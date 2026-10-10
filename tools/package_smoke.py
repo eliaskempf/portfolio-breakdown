@@ -229,10 +229,12 @@ def smoke(command, evidence=None):
                     expect(page.get_by_role('tab', name='Overview', exact=True)).to_have_attribute('aria-selected', 'true')
                     expect(page.get_by_role('tab', name='Futures', exact=True)).to_have_count(0)
                     for tab in ['Exposure', 'Positions', 'Rebalance', 'Overview']:
+                        # Demo/tour dismissal can render tabs before they accept input.
+                        expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
                         page.get_by_role('tab', name=tab, exact=True).click()
                         expect(page.get_by_role('tab', name=tab, exact=True)).to_have_attribute('aria-selected', 'true')
                         # Wait for Streamlit's rerun, including navigation-triggered imports.
-                        page.wait_for_timeout(800)
+                        expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
                         expect(page.get_by_test_id('stException')).to_have_count(0)
                     page.get_by_role('tab', name='Exposure', exact=True).click()
                     assets = page.get_by_role('table', name='Exposure assets', exact=True)

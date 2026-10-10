@@ -82,17 +82,17 @@ def test_cancel_leaves_no_holdings_and_clears_private_draft(tmp_path, monkeypatc
     confirm_units(app)
     by_label(app.button, 'Cancel import').click().run()
     assert not app.exception and not path.exists()
-    assert not any(key.startswith('import_') for key in app.session_state.filtered_state)
+    assert not any(key.startswith('import_') for key in app.session_state.to_dict())
     assert not any(key.startswith('import_') for key in app.session_state['view_editor_drafts'])
 
 
 def test_workspace_switch_clears_import_state(tmp_path, monkeypatch):
     app, path = launch(tmp_path, monkeypatch, workspaces=True)
     confirm_units(app)
-    assert any(key.startswith('import_') for key in app.session_state.filtered_state)
+    assert any(key.startswith('import_') for key in app.session_state.to_dict())
     by_label(app.selectbox, 'Portfolio workspace').set_value('Demo portfolio').run()
     assert not app.exception and not path.exists()
-    assert not any(key.startswith('import_') for key in app.session_state.filtered_state)
+    assert not any(key.startswith('import_') for key in app.session_state.to_dict())
 
 
 def test_optional_prices_and_costs_do_not_block_minimal_import(tmp_path, monkeypatch):
@@ -116,7 +116,7 @@ def test_source_row_correction_and_explicit_subtotal_exclusion(tmp_path, monkeyp
     app, path = launch(tmp_path, monkeypatch, b'Name;Quantity\nInvented asset;not-a-number\nTotal;2,5\n')
     confirm_units(app)
     assert by_label(app.button, 'Import reviewed positions').disabled
-    key = next(key for key in app.session_state.filtered_state if key.startswith('import_') and key.endswith('_rows'))
+    key = next(key for key in app.session_state.to_dict() if key.startswith('import_') and key.endswith('_rows'))
     app.session_state[key] = {'edited_rows': {0: {'Quantity': '2,5'}, 1: {'Include': False}},
                               'added_rows': [], 'deleted_rows': []}
     app.run()
@@ -134,7 +134,7 @@ def test_review_controls_and_rows_survive_navigation_without_uploader(tmp_path, 
     by_label(app.selectbox, 'Quantity (required)').set_value('Adjusted').run()
     by_label(app.text_input, 'Account / depot for this file').set_value('Synthetic account').run()
     confirm_units(app)
-    key = next(key for key in app.session_state.filtered_state if key.startswith('import_') and key.endswith('_rows'))
+    key = next(key for key in app.session_state.to_dict() if key.startswith('import_') and key.endswith('_rows'))
     app.session_state[key] = {'edited_rows': {0: {'Adjusted': '3'}}, 'added_rows': [], 'deleted_rows': []}
     app.run()
     # A remounted uploader does not restore its UploadedFile widgets. The draft
@@ -151,8 +151,8 @@ def test_review_controls_and_rows_survive_navigation_without_uploader(tmp_path, 
     stored = read_snapshot(path).holdings
     assert stored.shares.tolist() == [3.]
     assert stored.account.tolist() == ['Synthetic account']
-    assert 'import_files' not in app.session_state.filtered_state
-    assert 'import_controls' not in app.session_state.filtered_state
+    assert 'import_files' not in app.session_state.to_dict()
+    assert 'import_controls' not in app.session_state.to_dict()
 
 
 def test_replacement_upload_requires_fresh_review(tmp_path, monkeypatch):
@@ -173,6 +173,7 @@ def test_import_completion_overrides_stale_workflow_on_remount(tmp_path, monkeyp
     confirm_units(app)
     by_label(app.button, 'Import reviewed positions').click().run()
     assert app.session_state['main_tabs'] == 'Overview'
+    saved = path.read_bytes()
     # Simulate the old browser selection arriving when the Positions tab mounts.
     app.session_state['positions_workflow'] = 'Import portfolio'
     activate(app, 'Positions')
@@ -180,3 +181,4 @@ def test_import_completion_overrides_stale_workflow_on_remount(tmp_path, monkeyp
     assert app.session_state['positions_workflow'] == 'Positions'
     assert not any('Import currently requires' in item.value for item in app.info)
     assert read_snapshot(path).holdings.shares.tolist() == [2.5]
+    assert path.read_bytes() == saved

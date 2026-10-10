@@ -83,7 +83,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     text=[f'{value:+,.2f}' + ('%' if chart_percent else (' €').replace('€', currency_symbol())) for value in available[measure]], textposition='auto',
                     customdata=hover, hovertemplate='%{y}<br>Return: %{customdata[2]}<br>Gain: %{customdata[1]}<br>Buy-in cost: %{customdata[0]}<br>Coverage: %{customdata[3]} · %{customdata[4]}<extra></extra>')))
                 figure.update_layout(height=max(260, 36 * len(available)), xaxis_title=measure, margin=dict(l=12, r=12, t=12, b=30))
-                st.plotly_chart(figure, width='stretch', config={'displayModeBar': False})
+                st.plotly_chart(figure, width='stretch', config={'displayModeBar': False, 'showSendToCloud': False})
             elif chart_percent and table['Gain'].notna().any():
                 st.info('Percentage return is unavailable for zero buy-in cost. Choose Gain to see the monetary amounts.')
             else:
@@ -107,7 +107,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     figure.update_layout(height=420, uniformtext=None, margin=dict(t=10, b=10, l=10, r=10))
                     signature = sha256(repr((config, list(valued.position_id), bucket)).encode()).hexdigest()[:16]
                     chart_key = f'strategic_chart_{signature}'
-                    st.plotly_chart(figure, width='stretch', height=420, theme='streamlit', key=chart_key, config={'displayModeBar': False})
+                    st.plotly_chart(figure, width='stretch', height=420, theme='streamlit', key=chart_key, config={'displayModeBar': False, 'showSendToCloud': False})
                     categories = {row.node_id: row.path[-1] if row.path else '' for row in tree.itertuples() if row.kind == 'category'}
                     parent = paths[bucket][-2] if len(paths[bucket]) > 1 else ''
                     categories[tree.loc[tree.parent_id.eq(''), 'node_id'].iloc[0]] = parent

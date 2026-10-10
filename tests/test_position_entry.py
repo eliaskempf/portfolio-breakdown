@@ -55,6 +55,24 @@ def test_linked_costs_switch_authority_clear_and_validation(tmp_path):
     assert not app.exception
 
 
+@pytest.mark.parametrize('label', [
+    'Quantity held (total)', 'Average buy-in per unit (optional)',
+    'Total buy-in (optional)', 'Clear buy-in',
+])
+def test_closed_position_ignores_delayed_cost_callback(tmp_path, monkeypatch, label):
+    path = tmp_path / 'holdings.csv'
+    app = launch_editor(path, manual=True)
+    widget = by_label(app.button if label == 'Clear buy-in' else app.text_input, label)
+    metadata = app.session_state._state._state._new_widget_state.widget_metadata[widget.proto.id]
+    by_label(app.button, 'Cancel').click().run()
+    # A queued field event may arrive after the dialog cleared all its draft state.
+    closed_state = {}
+    monkeypatch.setattr('portfolio_app.position_entry_ui.st.session_state', closed_state)
+    metadata.callback(*(metadata.callback_args or ()), **(metadata.callback_kwargs or {}))
+    assert closed_state == {}
+    assert not path.exists()
+
+
 def test_unchanged_edit_retains_exact_csv_decimal_and_unlabelled_cost(tmp_path):
     path = tmp_path / 'holdings.csv'
     path.write_text('id,name,shares,acquisition_price\na,Invented precision,1.234567890123456789,2.34567890123456789\n')

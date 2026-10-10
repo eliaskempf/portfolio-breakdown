@@ -156,8 +156,8 @@ def test_switching_workspaces_discards_unsubmitted_form_and_filters(tmp_path):
     by_label(app.text_input, "Instrument name").set_value("Unsubmitted dummy edit")
     by_label(app.selectbox, "Portfolio workspace").set_value("My portfolio").run()
     assert not app.exception
-    assert not app.session_state.filtered_state.get("position_edit_dialog")
-    assert "position_draft" not in app.session_state.filtered_state
+    assert not app.session_state.to_dict().get("position_edit_dialog")
+    assert "position_draft" not in app.session_state.to_dict()
     by_label(app.selectbox, "Portfolio workspace").set_value("Demo portfolio").run()
     position_action(app, 'Add position')
     by_label(app.button, "Enter manually").click().run()

@@ -279,7 +279,7 @@ def test_buy_every_selection_explains_no_new_conflict(rebalance_data):
 
 
 def edit_caps(app, changes):
-    key = next(key for key in app.session_state.filtered_state if key.startswith('rebalance_caps_'))
+    key = next(key for key in app.session_state.to_dict() if key.startswith('rebalance_caps_'))
     app.session_state[key] = {'edited_rows': {i: {'Max allocation %': value} for i, value in changes.items()},
                               'added_rows': [], 'deleted_rows': []}
 

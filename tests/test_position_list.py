@@ -23,7 +23,7 @@ def test_open_exact_position_then_rename_and_return_to_list(tmp_path):
     }
     app.run()
     assert not app.exception
-    assert app.session_state.filtered_state.get('position_edit_action', 'Positions') == 'Edit position'
+    assert app.session_state.to_dict().get('position_edit_action', 'Positions') == 'Edit position'
     assert app.session_state['position_edit_selected'] == 'second'
     assert by_label(app.text_input, 'Account / broker').value == 'Second'
     assert not by_label(app.text_input, 'Instrument name').disabled
@@ -34,11 +34,11 @@ def test_open_exact_position_then_rename_and_return_to_list(tmp_path):
     stored = load_holdings(path)
     assert stored.name.tolist() == ['My custom token', 'My custom token']
     assert stored.shares.tolist() == [1., 2.]
-    assert app.session_state.filtered_state.get('position_edit_action', 'Positions') == 'Positions'
+    assert app.session_state.to_dict().get('position_edit_action', 'Positions') == 'Positions'
     position_action(app, 'Edit position')
     by_label(app.button, 'Cancel').click().run()
     assert not app.exception
-    assert app.session_state.filtered_state.get('position_edit_action', 'Positions') == 'Positions'
+    assert app.session_state.to_dict().get('position_edit_action', 'Positions') == 'Positions'
 
 
 def test_stale_list_event_cannot_open_another_row(tmp_path):
@@ -52,5 +52,5 @@ def test_stale_list_event_cannot_open_another_row(tmp_path):
     }
     app.run()
     assert not app.exception
-    assert app.session_state.filtered_state.get('position_edit_action', 'Positions') == 'Positions'
+    assert app.session_state.to_dict().get('position_edit_action', 'Positions') == 'Positions'
     assert any('list changed' in warning.value for warning in app.warning)
