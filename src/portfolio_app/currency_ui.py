@@ -52,17 +52,8 @@ def render_currency_setting(directory, settings):
 
 
 def reset_currency_views():
-    # Keep scope/navigation/targets. Clear amounts and calculations, not percentages.
-    for key in list(st.session_state):
-        if key.startswith(('position_edit_', 'currency_estimate_')) or key in {
-            'planning_amount', 'planning_minimum', 'rebalance_cash', 'rebalance_minimum_purchase', 'rebalance_result', 'portfolio_contribution_result',
-            'position_draft'}:
-            del st.session_state[key]
-    for bucket in ('view_editor_drafts', 'view_editor_bases'):
-        drafts = st.session_state.get(bucket, {})
-        for key in list(drafts):
-            if key.startswith('balance_'):
-                del drafts[key]
+    from portfolio_app.state_lifecycle import transition
+    transition(st.session_state, 'currency')
     st.session_state['currency_notice'] = 'Portfolio currency updated. Monetary planning inputs and previous plans have been cleared.'
 
 

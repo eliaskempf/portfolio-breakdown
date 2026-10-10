@@ -56,6 +56,19 @@ def test_sandbox_starts_on_overview_and_preserves_navigation(tmp_path):
     assert launch(sandbox, open_futures=False).session_state['main_tabs'] == 'Overview'
 
 
+def test_simulation_date_draft_survives_navigation(tmp_path):
+    from datetime import date
+    source = create_sample_data(tmp_path / 'synthetic-source')
+    sandbox = fork_futures_workspace(source, tmp_path / 'synthetic-sandbox')
+    app = launch(sandbox)
+    chosen = date(2024, 1, 2)
+    by_label(app.date_input, 'Simulation start date').set_value(chosen).run()
+    activate(app, 'Overview')
+    activate(app, 'Futures')
+    assert not app.exception
+    assert by_label(app.date_input, 'Simulation start date').value == chosen
+
+
 def test_edit_save_restart_and_shock_without_touching_source(tmp_path):
     source = create_sample_data(tmp_path / 'synthetic-source')
     # Drop the explicitly unpriced demo row to exercise complete equity metrics.

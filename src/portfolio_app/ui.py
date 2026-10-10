@@ -132,9 +132,6 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             if sandbox:
                 st.json(asdict(sandbox[0]))
             st.json(asdict(leverage))
-    for key in list(st.session_state):
-        if key.startswith('futures_input_'):
-            st.session_state[key] = st.session_state[key]
     etf_revision = refresh_revision(data_dir)
     try:
         snapshot, allocation, classifications, funds = load_inputs(data_dir)
