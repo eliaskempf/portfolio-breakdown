@@ -95,11 +95,13 @@ def load_leverage_settings(directory, *, future=None):
 
 
 def save_leverage_settings(directory, settings, expected_revision):
-    from portfolio_app.portfolio_settings import load_settings
-    if settings.enabled and load_settings(directory).reporting_currency != 'EUR':
-        raise DataError('Leverage currently requires EUR reporting.')
-    from portfolio_app.futures_workspace import load_sandbox
-    sandbox = load_sandbox(directory)
-    if not settings.enabled and requires_leverage(settings, sandbox[0] if sandbox else None):
-        raise DataError('Close/remove leverage records before disabling leverage; funded futures still require it.')
-    save_document(directory / FILE, json.dumps(asdict(settings), indent=2) + '\n', expected_revision)
+    from portfolio_app.workspace_lock import workspace_lock
+    with workspace_lock(directory):
+        from portfolio_app.portfolio_settings import load_settings
+        if settings.enabled and load_settings(directory).reporting_currency != 'EUR':
+            raise DataError('Leverage currently requires EUR reporting.')
+        from portfolio_app.futures_workspace import load_sandbox
+        sandbox = load_sandbox(directory)
+        if not settings.enabled and requires_leverage(settings, sandbox[0] if sandbox else None):
+            raise DataError('Close/remove leverage records before disabling leverage; funded futures still require it.')
+        save_document(directory / FILE, json.dumps(asdict(settings), indent=2) + '\n', expected_revision)

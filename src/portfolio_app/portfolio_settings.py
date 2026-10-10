@@ -42,7 +42,9 @@ def validate_currency_change(directory: Path, currency: str) -> None:
 
 
 def save_settings(directory: Path, currency: str, expected_revision: str | None) -> None:
-    if currency not in REPORTING_CURRENCIES:
-        raise DataError('Choose EUR, USD or GBP as the reporting currency.')
-    validate_currency_change(directory, currency)
-    save_document(directory / 'portfolio.yaml', yaml.safe_dump(dict(version=1, reporting_currency=currency)), expected_revision)
+    from portfolio_app.workspace_lock import workspace_lock
+    with workspace_lock(directory):
+        if currency not in REPORTING_CURRENCIES:
+            raise DataError('Choose EUR, USD or GBP as the reporting currency.')
+        validate_currency_change(directory, currency)
+        save_document(directory / 'portfolio.yaml', yaml.safe_dump(dict(version=1, reporting_currency=currency)), expected_revision)

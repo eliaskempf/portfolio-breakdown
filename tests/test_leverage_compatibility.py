@@ -121,3 +121,48 @@ def test_orphaned_exposure_policy_is_a_recoverable_validation_error(tmp_path):
         policy='composition', composition={'invented': 1.}, version=1)))
     with pytest.raises(DataError, match='allocation hierarchy'):
         validate_workspace(source)
+
+
+@pytest.mark.parametrize('first', ['currency', 'leverage'])
+def test_currency_and_leverage_commands_validate_inside_workspace_transaction(tmp_path, monkeypatch, first):
+    """Hold the first command after validation; the competing save must recheck."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from portfolio_app import portfolio_settings, leverage_settings
+    validated, release, competing = Event(), Event(), Event()
+    module = portfolio_settings if first == 'currency' else leverage_settings
+    original = module.save_document
+
+    def paused_write(*args, **kwargs):
+        validated.set()
+        assert release.wait(5)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(module, 'save_document', paused_write)
+    commands = {
+        'currency': lambda: save_settings(tmp_path, 'USD', None),
+        'leverage': lambda: save_leverage_settings(tmp_path, LeverageSettings(enabled=True), None),
+    }
+    def other():
+        competing.set()
+        return commands['leverage' if first == 'currency' else 'currency']()
+
+    with ThreadPoolExecutor(2) as pool:
+        winner = pool.submit(commands[first])
+        try:
+            assert validated.wait(5)
+            loser = pool.submit(other)
+            assert competing.wait(5)
+            # A writer cannot get past validation while the first command holds
+            # its transaction, even though they write different documents.
+            from concurrent.futures import TimeoutError
+            with pytest.raises(TimeoutError):
+                loser.result(timeout=.1)
+        finally:
+            release.set()
+        winner.result(timeout=5)
+        with pytest.raises(DataError, match='EUR'):
+            loser.result(timeout=5)
+    currency = load_settings(tmp_path).reporting_currency
+    leverage = leverage_settings.load_leverage_settings(tmp_path)[0]
+    assert (currency, leverage.enabled) == (('USD', False) if first == 'currency' else ('EUR', True))
