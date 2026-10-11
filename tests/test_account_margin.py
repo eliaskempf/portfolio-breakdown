@@ -143,6 +143,8 @@ def test_legacy_liability_adoption_preserves_cash_and_consumes_original_once():
         adopt_liability(adopted, legacy, 'broker', DAY, 'again')
     with pytest.raises(DataError, match='balance'):
         adopt_liability(journal, replace(legacy, balance_eur=None), 'broker', DAY, 'unknown')
+    with pytest.raises(DataError, match='retain its loan'):
+        append_events(adopted, (Event('void-adoption', DAY, 'void', replaces='adopt'),))
 
 
 def test_fx_paths_reciprocals_and_conflicts():

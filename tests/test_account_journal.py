@@ -205,6 +205,30 @@ def test_contract_event_rejects_ignored_cash_payload():
         append_event(invented(), trade('ambiguous', 1, 1000, amount=100))
 
 
+@pytest.mark.parametrize('kind,amount,expected', [('fee', '3.25', '-3.25'), ('tax', '7', '-7'), ('interest', '-2', '-2'), ('interest', '2', '2')])
+def test_delayed_expenses_and_interest_post_once_in_original_currency(kind, amount, expected):
+    obligation = event('obligation', kind, account_id='broker', position_id='future', currency='USD',
+                       amount=amount, value_date='2026-01-07')
+    journal = append_event(invented(), obligation)
+    assert append_event(journal, obligation) == journal
+    pending = replay(journal).pending['obligation']
+    assert pending.amount == D(expected) and pending.currency == 'USD'
+    assert cash(journal, denomination='USD') == 0
+    # Native contract attribution never mistakes USD expenses for EUR amounts.
+    assert replay(journal).positions['future'].fees == 0
+    receipt = event('receipt', 'receive', reference='obligation', date='2026-01-07')
+    journal = append_event(journal, receipt)
+    assert append_event(journal, receipt) == journal
+    assert cash(journal, denomination='USD') == D(expected) and not replay(journal).pending
+    with pytest.raises(DataError, match='different content'):
+        append_event(journal, replace(obligation, amount=D(amount)+1))
+
+
+def test_delayed_expense_requires_account_and_currency():
+    with pytest.raises(DataError, match='unknown account'):
+        append_event(invented(), event('bad', 'fee', amount=1, currency='EUR', value_date='2026-01-07'))
+
+
 def test_settlement_duplicate_and_tick_validation():
     journal = append_event(invented(), trade('open', 1, 1000))
     journal = append_event(journal, event('settle', 'settlement', position_id='future', price=1010))

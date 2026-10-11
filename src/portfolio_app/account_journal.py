@@ -340,6 +340,9 @@ def replay(journal: Journal, *, as_of: str | None = None) -> JournalState:
                                       kind or event.kind, position_id if position_id is not None else event.position_id))
 
     def pay_or_pending(event, account, denomination, amount):
+        if account not in accounts:
+            raise DataError('Cash posting refers to an unknown account.')
+        currency(denomination)
         amount = money(amount)
         if event.value_date and event.value_date > event.date:
             root = roots[event.id]
@@ -431,7 +434,7 @@ def replay(journal: Journal, *, as_of: str | None = None) -> JournalState:
             denomination = event.currency or (p.contract.currency if p else '')
             if event.kind != 'interest' and event.amount < 0:
                 raise DataError('Fee and manual tax amounts must be nonnegative.')
-            post(event, account, denomination, event.amount if event.kind == 'interest' else -event.amount)
+            pay_or_pending(event, account, denomination, event.amount if event.kind == 'interest' else -event.amount)
             if p:
                 # Attribution is native only. Cross-currency fees remain in cash
                 # movements and must be converted explicitly by reporting code.
@@ -518,6 +521,9 @@ def replay(journal: Journal, *, as_of: str | None = None) -> JournalState:
         for link in journal.cash_links:
             if (link.account_id, link.currency) not in opened_cash:
                 raise DataError('Adopted cash needs an explicit opening balance, including zero.')
+        for identity in journal.adopted_liability_ids:
+            if not any(reference == 'legacy:'+identity for _, _, reference in loans):
+                raise DataError('An adopted liability must retain its loan record; correct or undo the adoption explicitly.')
     return JournalState(cash, loans, positions, pending, reservations, tuple(movements))
 
 
