@@ -14,7 +14,10 @@ from portfolio_app.holdings import DataError
 SCRIPT = """
 export default function({data, setStateValue}) {
   const state = window.__portfolioCalendarLocale ||= {original: navigator.language};
-  const original = new Intl.Locale(state.original).toString();
+  // Some desktop/Chromium environments expose POSIX locale suffixes.
+  let original;
+  try { original = new Intl.Locale(state.original.replaceAll('_', '-').split('@')[0]).toString(); }
+  catch { original = 'en-US'; }
   const [base, privateUse] = original.split('-x-');
   const clean = base.replace(/-fw-[a-z0-9]{3,8}(?:-[a-z0-9]{3,8})*/gi, '').replace(/-u$/, '');
   const extension = '-fw-' + data.weekStart;

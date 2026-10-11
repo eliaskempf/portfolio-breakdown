@@ -1,5 +1,6 @@
 """Native calendar layout and keyboard behavior with synthetic dates only."""
 import os
+import json
 import socket
 import subprocess
 import sys
@@ -14,7 +15,7 @@ from browser_support import settle
 
 
 @pytest.fixture
-def calendar_page(tmp_path):
+def calendar_page(tmp_path, request):
     script=tmp_path/'calendar_app.py'
     script.write_text('''from pathlib import Path
 from datetime import date
@@ -37,7 +38,8 @@ st.text(chosen.isoformat())
             except OSError:time.sleep(.1)
         with playwright.sync_playwright() as runner:
             browser=runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),args=['--no-sandbox'])
-            page=browser.new_page(locale='en-US-u-fw-sun')
+            page=browser.new_page(locale='en-US')
+            page.add_init_script("Object.defineProperty(navigator,'language',{configurable:true,value:"+json.dumps(request.param)+"});")
             page.goto(f'http://127.0.0.1:{port}')
             page.get_by_test_id('stDateInput').wait_for();settle(page)
             yield page,tmp_path
@@ -46,6 +48,7 @@ st.text(chosen.isoformat())
         child.terminate();child.wait(timeout=10)
 
 
+@pytest.mark.parametrize('calendar_page',['en-US-u-fw-sun','en-US@posix'],indirect=True)
 def test_week_preference_changes_grid_and_preserves_date_selection(calendar_page):
     page,root=calendar_page
     expect=playwright.expect
