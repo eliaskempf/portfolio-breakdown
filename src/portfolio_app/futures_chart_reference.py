@@ -12,22 +12,21 @@ class ChartReference:
     currency: str
     convention: str
     index_points: bool = True
+    source: str = 'Yahoo Finance'
 
 
-# Public index symbols and issuer-verified listings (IE00B4L5Y983).
-# https://www.ishares.com/uk/professionals/en/products/251882/SWDA
-# Yahoo closes use the existing history service, including GBp normalization.
+# Direct index references. MSCI currency and NETR convention are verified
+# against response metadata, never inferred from an ETF listing.
 REFERENCES = MappingProxyType({item.ticker: item for item in (
     ChartReference('^GDAXI', 'DAX', 'EUR', 'Gross total return'),
     ChartReference('^STOXX50E', 'EURO STOXX 50', 'EUR', 'Price return'),
     ChartReference('^FTSE', 'FTSE 100', 'GBP', 'Price return'),
-    *(ChartReference(ticker, 'iShares Core MSCI World UCITS ETF (Acc)', currency,
-                     'Accumulating ETF tracking MSCI World Net', False)
-      for ticker, currency in [('EUNL.DE', 'EUR'), ('IWDA.L', 'USD'), ('SWDA.L', 'GBP')]),
+    *(ChartReference(f'MSCI:990100:NETR:{currency}', 'MSCI World', currency,
+                     'Net total return', source='MSCI') for currency in ('EUR', 'USD', 'GBP')),
 )})
 PRODUCT_REFERENCES = MappingProxyType(dict(
     FDAX='^GDAXI', FDXM='^GDAXI', FDXS='^GDAXI', FESX='^STOXX50E', FTUK='^FTSE',
-    FMWN='EUNL.DE', FMWO='IWDA.L', FMWB='SWDA.L'))
+    FMWN='MSCI:990100:NETR:EUR', FMWO='MSCI:990100:NETR:USD', FMWB='MSCI:990100:NETR:GBP'))
 
 
 def reference_for(contract):

@@ -4,7 +4,8 @@ from contextvars import copy_context
 from pathlib import Path
 from threading import RLock
 
-from portfolio_app.history import HistoryService, YahooHistoryProvider
+from portfolio_app.history import HistoryService
+from portfolio_app.msci_history import MarketHistoryProvider
 from portfolio_app.gold_prices import SpotGoldProvider
 from portfolio_app.prices import PriceService, YahooProvider
 
@@ -116,7 +117,7 @@ def services(data_dir):
             cache = Path(workspace) / '.cache'
             _services[workspace] = (
                 PriceService(SpotGoldProvider(YahooProvider(provider_cache())), cache / 'prices.json'),
-                HistoryService(YahooHistoryProvider(), cache / 'history'),
+                HistoryService(MarketHistoryProvider(), cache / 'history'),
             )
         return _services[workspace]
 

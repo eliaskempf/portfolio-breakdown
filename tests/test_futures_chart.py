@@ -17,7 +17,7 @@ def test_catalog_references_match_contract_currency(product):
     contract = make_contract(product, '2027-03-19')
     reference = reference_for(contract)
     assert reference.currency == contract.currency
-    assert reference.index_points == (product not in {'FMWN', 'FMWO', 'FMWB'})
+    assert reference.index_points
     assert reference_for(replace(contract, exchange='CUSTOM')) is None
     assert reference_for(replace(contract, return_convention='unknown')) is None
     assert reference_for(replace(contract, currency='USD' if contract.currency != 'USD' else 'GBP')) is None
@@ -28,7 +28,7 @@ def start_chart(tmp_path, monkeypatch, *, product='FMWN', currency='EUR', status
     def get(ticker, period, **kwargs):
         calls.append((ticker, period, kwargs))
         denomination = ('EUR' if ticker.endswith('EUR=X') else
-                        supplied_currency or {'IWDA.L':'USD','SWDA.L':'GBP','^FTSE':'GBP'}.get(ticker,'EUR'))
+                        supplied_currency or (ticker.rsplit(':',1)[-1] if ticker.startswith('MSCI:') else {'^FTSE':'GBP'}.get(ticker,'EUR')))
         values = (.9, .91) if ticker == 'USDEUR=X' else (1.2, 1.21) if ticker == 'GBPEUR=X' else (100., 110.)
         return HistoryResult(('2026-01-02','2026-01-03'), values, denomination, status,
                              '2026-01-04', 'Synthetic saved history' if status=='stale' else '')
@@ -53,17 +53,17 @@ def figure(app):
     return json.loads(app.get('plotly_chart')[0].proto.spec)
 
 
-def test_etf_proxy_uses_shared_period_and_historical_currency_controls(tmp_path, monkeypatch):
-    app,calls=start_chart(tmp_path,monkeypatch,product='FMWO',currency='GBP')
-    assert len(app.get('plotly_chart'))==1
-    assert figure(app)['layout']['yaxis']['title']['text']=='GBP'
-    assert {c[0] for c in calls}=={'IWDA.L','USDEUR=X','GBPEUR=X'}
-    assert any('ETF proxy' in item.value for item in app.markdown)
-    assert any('Income accumulates' in item.value for item in app.caption)
-    by_label(app.get('button_group'),'History currency').set_value('Native currency').run()
-    assert figure(app)['layout']['yaxis']['title']['text']=='USD'
+@pytest.mark.parametrize('product,currency', [('FMWN','EUR'),('FMWO','USD'),('FMWB','GBP')])
+def test_msci_uses_direct_net_index_in_contract_currency(tmp_path, monkeypatch, product, currency):
+    app,calls=start_chart(tmp_path,monkeypatch,product=product,currency='EUR')
+    symbol=f'MSCI:990100:NETR:{currency}'
+    assert figure(app)['layout']['yaxis']['title']['text']=='Index points'
+    assert {c[0] for c in calls}=={symbol}
+    assert any('Source: MSCI' in item.value and currency in item.value for item in app.caption)
+    assert any('Net total return' in item.value for item in app.caption)
+    assert not any('ETF' in item.value for item in app.caption)
     by_label(app.get('button_group'),'Period').set_value('5Y').run()
-    assert calls[-1][:2]==('IWDA.L','5Y')
+    assert calls[-1][:2]==(symbol,'5Y')
     assert not app.exception
 
 
@@ -101,8 +101,8 @@ def test_unknown_contract_requires_explicit_reference_and_preserves_journal(tmp_
     app,journal=start(tmp_path)
     assert not calls
     assert by_label(app.selectbox,'Chart reference').value is None
-    by_label(app.selectbox,'Chart reference').set_value('EUNL.DE').run()
-    assert calls==['EUNL.DE']
+    by_label(app.selectbox,'Chart reference').set_value('MSCI:990100:NETR:EUR').run()
+    assert calls==['MSCI:990100:NETR:EUR']
     assert len(app.get('plotly_chart')) >= 1
     assert any('match to this contract' in caption.value for caption in app.caption)
     assert load_journal(tmp_path)[0]==journal

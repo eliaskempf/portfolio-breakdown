@@ -188,18 +188,26 @@ The curated references are:
 | FDAX, FDXM, FDXS | DAX (`^GDAXI`) | Gross total return; index points, EUR index |
 | FESX | EURO STOXX 50 (`^STOXX50E`) | Price return; index points, EUR index |
 | FTUK | FTSE 100 (`^FTSE`) | Price return; index points, GBP index |
-| FMWN | iShares Core MSCI World UCITS ETF (Acc), `EUNL.DE` | ETF proxy; EUR listing |
-| FMWO | Same fund, `IWDA.L` | ETF proxy; USD listing |
-| FMWB | Same fund, `SWDA.L` | ETF proxy; GBP listing |
+| FMWN | MSCI World, directly from MSCI | Net total return; index points, EUR index |
+| FMWO | MSCI World, directly from MSCI | Net total return; index points, USD index |
+| FMWB | MSCI World, directly from MSCI | Net total return; index points, GBP index |
 
-Daily closing histories use Yahoo Finance. The MSCI World reference is an
-accumulating ETF tracking MSCI World Net, with fund costs and tracking differences;
-it is not the index itself. Its listings and benchmark are documented by
-[iShares](https://www.ishares.com/uk/professionals/en/products/251882/SWDA).
-ETF history supports portfolio/native-currency controls and dated FX conversion,
-like ordinary holdings. Native GBP prices are normalized from pence where needed.
-Index history retains native index points and displays its currency and return
-convention; it is not converted into portfolio-currency cash prices.
+MSCI World daily index levels come directly from the public chart service behind
+[MSCI’s index data tools](https://www.msci.com/end-of-day-history), requesting
+index 990100, net total return (`NETR`) and the contract’s EUR/USD/GBP currency.
+The response must confirm all three identifiers. This is the actual index series,
+not an ETF approximation. Other configured index histories use Yahoo Finance.
+
+MSCI **Max** requests daily history from 2000; earlier history is not included.
+The chart shows the first and last returned observation dates. This public chart
+endpoint is not a guaranteed data service. If it fails, verified cached history
+remains visibly stale or the chart reports unavailable; it never silently falls
+back to an ETF. The adapter does not populate settlement or risk data.
+
+All these index charts retain native index points and display their currency and
+return convention. Changing portfolio reporting currency does not convert their
+levels into cash prices. Ordinary holdings retain their existing portfolio/native
+currency controls and historical FX conversion.
 
 Automatic mapping requires a recognized Eurex product, matching currency and
 return convention. A custom or unmatched contract has no inferred reference.

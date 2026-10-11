@@ -26,18 +26,11 @@ def render_futures_chart(directory, contracts, *, key):
             return
         reference = REFERENCES[symbol]
         st.caption('User-selected comparison; its match to this contract’s underlying is unverified.')
-    st.caption(f'{reference.name} · {reference.ticker} · {reference.currency} · {reference.convention} · Source: Yahoo Finance')
-    if reference.index_points:
-        heading = 'Underlying index history — proxy'
-        caption = ('Index closing levels in native points · '+reference.convention+
-                   ' · Index currency: '+reference.currency+' · Not your personal return history')
-        st.caption('Index points remain in the index’s native convention when portfolio currency changes.')
-    else:
-        heading = 'Underlying market history — ETF proxy'
-        caption = ('ETF closing prices in {currency} · Income accumulates within the fund; '
-                   'fund costs and tracking differences remain · Not your personal return history')
-    if not verified:
-        heading = 'Market comparison — ' + ('index' if reference.index_points else 'ETF proxy')
+    st.caption(f'{reference.name} · {reference.ticker} · {reference.currency} · {reference.convention} · Source: {reference.source}')
+    heading = 'Underlying index history' if verified else 'Market comparison — index'
+    caption = ('Index closing levels in native points · '+reference.convention+
+               ' · Index currency: '+reference.currency+' · Not your personal return history')
+    st.caption('Index points remain in the index’s native convention when portfolio currency changes.')
     st.caption('Market context only. This is not a futures-price or settlement series; '
                'it does not include your contract quantity, futures basis, rolls, fees or recorded taxes.')
     render_market_history(reference.ticker, directory, key=key+reference.ticker+'_',
