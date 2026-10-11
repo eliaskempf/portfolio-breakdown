@@ -101,6 +101,9 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
             performance_note='Account transaction history is shown in Accounts; pre-snapshot returns may be unknown.',
             journal_managed=True)
         base.update(extra)
+        if kind == 'cash':
+            from portfolio_app.performance import cash_performance_note
+            base['performance_note'] = cash_performance_note(currency, reporting_currency)
         rows.append(base)
     for (account, currency), amount in state.cash.items():
         identity = linked.get((account, currency), f'account-cash:{account}:{currency}')

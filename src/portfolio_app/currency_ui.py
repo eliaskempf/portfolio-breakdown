@@ -60,10 +60,14 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
             return
         candidate = prepare_portfolio(snapshot.holdings, prices, reporting_currency=target, historical=historical)
         held = candidate.loc[candidate.shares.gt(0)]
-        missing = held.loc[held.cost_basis_reporting.isna()]
+        from portfolio_app.performance import cash_balance_only
+        eligible = held.loc[~cash_balance_only(held)]
+        missing = eligible.loc[eligible.cost_basis_reporting.isna()]
         st.write(f'{settings.reporting_currency} → {target}')
         st.caption('Original purchases remain in their recorded currencies. Current values use current FX; gains need converted purchase costs.')
-        st.write(f'{held.unrealized_gain_reporting.notna().sum()} of {len(held)} positions have comparable gains in {target}.')
+        st.write(f'{eligible.unrealized_gain_reporting.notna().sum()} of {len(eligible)} positions have comparable gains in {target}.')
+        if len(eligible) < len(held):
+            st.caption('Cash balances without a recorded conversion basis are excluded from purchase-based performance. Their values still use current FX; FX gains and interest are not inferred.')
         if not missing.empty:
             st.warning(f'{len(missing)} positions have incomplete costs in {target} and will be excluded from gains. Their available current values still count.')
             st.dataframe(missing[['name', 'performance_note']].rename(columns={'name': 'Position', 'performance_note': 'Missing information'}), hide_index=True)

@@ -228,8 +228,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if status.missing_costs or status.missing_prices or status.stale_quotes:
         with st.expander(f'Data status · {status.missing_prices} missing prices · {status.missing_costs} performance gaps · {status.stale_quotes} stale quotes'):
             st.dataframe(status.problems, hide_index=True, width='stretch')
-            st.caption('Edit a position to complete its buy-in or pricing details.')
-            if st.button('Complete buy-ins', help='Open Positions to complete missing purchase cost or pricing details.'):
+            st.caption('Edit a position to complete its buy-in or pricing details.' if status.missing_costs else 'Review missing or stale prices and exchange rates.')
+            if st.button('Complete buy-ins' if status.missing_costs else 'Review pricing', help='Open Positions to review the missing cost or pricing information shown above.'):
                 st.session_state['main_tabs'] = 'Positions'
                 st.session_state['positions_workflow_request'] = 'Update balances'
     elif not offline_demo and not valued.price_status.eq('manual').any():

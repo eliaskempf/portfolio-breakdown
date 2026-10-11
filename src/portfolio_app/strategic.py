@@ -138,8 +138,8 @@ def strategic_performance(valued, config, bucket=""):
         summary = summarize_performance(positions)
         rows.append({"Category": name, "Cost": summary.cost_reporting,
                      "Gain": summary.gain_reporting, "Return (%)": summary.return_pct,
-                     "Coverage": f"{summary.covered_count} of {summary.held_count}",
-                     "Status": ("Complete" if summary.covered_count == summary.held_count and summary.held_count else
+                     "Coverage": summary.coverage,
+                     "Status": ("N/A · Cash balance" if summary.cash_only else "Complete" if summary.covered_count == summary.eligible_count and summary.eligible_count else
                                "Partial" if summary.covered_count else "Unavailable") + (" · Estimated" if summary.estimated_count else "")})
     result = pd.DataFrame(rows, columns=["Category", "Cost", "Gain", "Return (%)", "Coverage", "Status"])
     for column in ("Cost", "Gain", "Return (%)"):

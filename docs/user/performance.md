@@ -35,6 +35,15 @@ does not redefine their costs. Gain is current reporting value minus converted
 purchase cost. Category return divides summed covered gain by summed covered cost;
 it does not average individual percentage returns.
 
+Cash balances without a recorded cost/conversion basis show **N/A — cash balance**
+for purchase-based performance. They remain in portfolio value and allocation,
+but do not produce missing-buy-in warnings or reduce coverage of eligible
+positions. Balance increases from deposits or futures settlements are not inferred
+as cash investment gains. Interest is separate. Foreign cash still changes
+reporting value with current FX; calculating its FX gain needs a recorded opening
+or conversion basis. Explicit cash costs, including incomplete conversions, retain
+the existing cost-based calculation and coverage checks.
+
 Each purchase, including fees, is converted separately. A supplied converted cost
 takes precedence over a supplied rate, which takes precedence over historical
 market FX. Historical lookup uses the purchase date or the most recent available

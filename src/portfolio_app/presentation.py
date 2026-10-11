@@ -106,12 +106,12 @@ def performance_metric(label: str, value: str, amount, *, key: str) -> None:
 def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False):
     """One value card with an adjacent, optionally clickable unrealized gain."""
     gain = performance.return_pct if percent else performance.gain_reporting
-    gain_text = 'Unavailable' if gain is None else f'{gain:+,.2f}%' if percent else money(gain, signed=True)
+    gain_text = ('N/A · Cash balance' if performance.cash_only else 'Unavailable') if gain is None else f'{gain:+,.2f}%' if percent else money(gain, signed=True)
     with st.container(key=key):
         st.metric(label or ('Priced value' if missing else 'Current value'), money(value),
                   delta=gain_text, delta_color='normal' if gain else 'off', delta_arrow='off',
                   delta_description=('Gain / cost and reference capital' if percent else 'Holdings and strategy gain') if strategy_gain else ('Funded holdings return' if percent else 'Funded holdings gain') if funded_gain else ('Return on cost' if percent else 'Unrealized gain / loss'),
-                  help=('Futures gain includes prior contracts less fees, divided by fixed reference capital. Extra funding is excluded from gain. Other holdings use unrealized gain / recorded cost. ' if strategy_gain else '') + f'{missing} missing prices. Performance coverage: {performance.covered_count} of {performance.held_count} held positions with converted costs and available prices. Excludes dividends and realized gains.')
+                  help=('Futures gain includes prior contracts less fees, divided by fixed reference capital. Extra funding is excluded from gain. Other holdings use unrealized gain / recorded cost. ' if strategy_gain else '') + f'{missing} missing prices. Performance coverage: {performance.coverage} eligible positions with converted costs and available prices. Cash balances without a conversion basis are outside this measure. Excludes dividends and realized gains.')
     if performance.estimated_count:
         st.caption(f'Estimated gains · {performance.estimated_count} positions use confirmed FX approximations')
     if on_toggle_gain:

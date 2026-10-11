@@ -83,7 +83,9 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             scoped_future = None
     count = len(selected) + int(scoped_future is not None and scoped_future.contracts != 0 and not has_strategy)
     exclusions = ' · Includes closed-contract gains for the funded strategy; excludes dividends' if has_strategy else ' · Excludes dividends and realized gains'
-    st.caption(f'{scope} · {count} positions · Performance coverage: {performance.covered_count} of {performance.held_count} held positions · converted buy-ins{exclusions}')
+    st.caption(f'{scope} · {count} positions · Performance coverage: {performance.coverage} {'eligible' if performance.cash_balance_count else 'held'} positions · converted buy-ins{exclusions}')
+    if performance.cash_balance_count:
+        st.caption('Cash balances without a recorded conversion basis are outside purchase-based performance. Interest and FX gains are not inferred from balances.')
     if missing:
         st.warning(f'{missing} position(s) missing prices. Chart areas use priced value; full allocation percentages are unavailable.')
     if exposure_result is not None and leverage_enabled:
@@ -118,6 +120,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 st.plotly_chart(figure, width='stretch', config=chart_config())
             elif chart_percent and table['Gain'].notna().any():
                 st.info('Percentage return is unavailable for zero buy-in cost. Choose Gain to see the monetary amounts.')
+            elif performance.cash_only:
+                st.info('N/A — cash balance. Purchase-based return does not apply without a recorded conversion basis; interest is separate.')
             else:
                 st.info('Add convertible buy-ins to see performance for this category.')
             render_list(frame_rows(table), [ListColumn(column, column, help=column_help(column, scope=scope),

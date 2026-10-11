@@ -119,8 +119,9 @@ def prepare_application(inputs, prices, *, refresh=False, reporting_currency='EU
     valued = prepare_portfolio(source, prices, refresh=refresh,
                                reporting_currency=reporting_currency, historical=historical)
     stale = valued.price_status.isin(['cached fallback', 'stale']) | valued.fx_status.isin(['cached fallback', 'stale'])
-    missing_cost = valued.shares.gt(0) & valued.unrealized_gain_reporting.isna()
-    problems = valued.loc[valued.shares.gt(0) & (valued.unrealized_gain_reporting.isna() | stale),
+    from portfolio_app.performance import cash_balance_only
+    missing_cost = valued.shares.gt(0) & ~cash_balance_only(valued) & valued.unrealized_gain_reporting.isna()
+    problems = valued.loc[valued.shares.gt(0) & (missing_cost | valued.current_value_reporting.isna() | stale),
                           ['name', 'performance_note', 'valuation_note']].copy()
     return PreparedPortfolio(valued, ValuationStatus(int(valued.cost_estimated.sum()),
         int(missing_cost.sum()), int(valued.current_value_reporting.isna().sum()), int(stale.sum()), problems))

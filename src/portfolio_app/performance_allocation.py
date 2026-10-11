@@ -7,6 +7,7 @@ import pandas as pd
 from portfolio_app.etf import FundSnapshot, expand_etfs, matching_fund
 from portfolio_app.exposures import project_contributions
 from portfolio_app.grouping import InstrumentGroup, group_exposures
+from portfolio_app.performance import cash_balance_only
 
 
 @dataclass
@@ -27,7 +28,7 @@ def performance_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *,
     Missing held positions travel separately so partial returns cannot appear
     complete. Zero-share plans neither contribute cost nor reduce coverage.
     """
-    held = positions.shares > 0
+    held = (positions.shares > 0) & ~cash_balance_only(positions)
     known = held & positions.unrealized_gain_reporting.notna()
     grouped = positions.id.isin(group.members) if group else pd.Series(False, index=positions.index)
     if lookthrough:
