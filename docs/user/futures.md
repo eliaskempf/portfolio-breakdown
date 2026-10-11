@@ -43,7 +43,7 @@ Overview and Positions show one persistent investment row across contract rolls:
 
 ```text
 investment capital value = allocated principal + recorded cumulative net P&L
-recorded net P&L = settled trading P&L + open P&L − fees − entered taxes
+recorded net P&L = realized trading P&L + unrealized trading P&L − fees − entered taxes + net attributed interest
 reference return = recorded net P&L / fixed initial allocated capital
 ```
 
@@ -105,17 +105,30 @@ collateral and corrections remain available under **Futures**.
 
 ## P&L and settlement history
 
-Expand **Position details** for **Realized P&L** (recorded daily/final settlements
-and closing trades) and **Unrealized P&L** (open-contract movement since the clearing basis).
-Both are trading amounts before costs. Daily settlement realizes P&L even when
-contracts remain open. A settlement awaiting payment is already realized; its
-later receipt must not realize it again. **Net P&L** in the summary also
-includes attributed fees, interest and manually entered taxes. Reporting amounts
-use current FX; pre-snapshot performance remains unknown.
+The headline **Net P&L** remains the investment's cumulative gain across open
+and closed contracts, after attributed fees, interest and manually entered taxes.
+The gain shown in Overview and Positions uses this same figure. **Return** divides
+it by fixed initial allocated capital; it is not a return on contract notional or
+current margin. With zero initial capital, gain is available but return is not.
+
+The compact breakdown beneath Net P&L and the expanded **Position details** use:
+
+- **Unrealized P&L**: entry-to-current-mark trading P&L for quantities still held,
+  including their daily settlements. Recording a settlement does not reset it.
+- **Realized P&L**: entry-to-exit trading P&L for closed quantities, matched FIFO.
+  Partial closes realize only the closed lots. Final settlement closes all lots.
+  A roll realizes the old contract and starts the new one at its execution price.
+
+Both figures exclude costs. Position details show their net fees, interest and
+entered-tax adjustment to reconcile to Net P&L. These are performance labels, not
+tax calculations. Daily cash settlement is a separate accounting dimension:
+settlement and later receipt of pending cash never add to total gain a second time.
+Reporting amounts use current FX; snapshots measure from the recorded snapshot
+basis, with earlier performance unknown.
 
 Choose **Settlements** to see every effective daily/final settlement across the
 investment's contract history: date, expiry, signed quantity at settlement, price,
-realized amount, currency and cash status. Expand **Posting details** for the
+**Settlement P&L**, currency and cash status. Expand **Posting details** for the
 value date, actual posting date, source and notes.
 Corrections update this effective view while the original journal facts remain
 preserved. Closing trades contribute to realized P&L but are not daily settlements.

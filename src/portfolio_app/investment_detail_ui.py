@@ -23,7 +23,7 @@ def _history(state, members, valued):
         balance = state.positions[identity]
         record = {'Contract': balance.contract.product, 'Maturity': balance.contract.expiry,
             'Contracts': balance.quantity, 'Status': 'Open' if balance.quantity else 'Closed',
-            'Realized P&L': str(balance.realized_pnl), 'Fees': str(balance.fees),
+            'Settled trading P&L': str(balance.realized_pnl), 'Fees': str(balance.fees),
             'Entered taxes': str(balance.taxes), 'Currency': balance.contract.currency}
         if indexed is not None and identity in indexed.index:
             row = indexed.loc[identity]
@@ -164,11 +164,14 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
         matches = display.loc[display.position_id.eq(identity)]
         if not matches.empty:
             row = matches.iloc[0]
+            realized, unrealized = pnl_breakdown(journal, members, valued)
             capital, gain, exposure = st.columns(3)
             capital.metric('Capital value' if investment else 'Unsettled value', format_money(row.current_value_reporting,currency))
             with gain:
                 performance_metric('Net P&L', format_money(row.unrealized_gain_reporting,currency,signed=True),
                     row.unrealized_gain_reporting,key=key+'gain')
+                st.caption(f'Unrealized {format_money(unrealized,currency,signed=True)} · '
+                           f'Realized {format_money(realized,currency,signed=True)}')
             exposure.metric('Market exposure', format_money(row.signed_notional_reporting,currency),
                 help='Signed contract notional, separate from allocated capital.')
     view = st.segmented_control('Futures position view', views, key=key+'view',
@@ -182,7 +185,7 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
         if history.empty:
             st.info('No settlements recorded yet. Use Record transaction to add one.')
         else:
-            columns = ['Date', 'Contract', 'Maturity', 'Contracts', 'Settlement price', 'Realized P&L', 'Currency', 'Cash status']
+            columns = ['Date', 'Contract', 'Maturity', 'Contracts', 'Settlement price', 'Settlement P&L', 'Currency', 'Cash status']
             st.dataframe(history[columns],hide_index=True,width='stretch')
             with st.expander('Posting details'):
                 st.dataframe(history,hide_index=True,width='stretch')
@@ -200,13 +203,13 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
     with st.expander('Position details'):
         st.caption(f'{category} · {balances[0].contract.currency} settlement')
         if row is not None:
-            realized, unrealized = pnl_breakdown(journal, members, valued)
             left, right = st.columns(2)
             left.metric('Realized P&L', format_money(realized,currency,signed=True))
             right.metric('Unrealized P&L', format_money(unrealized,currency,signed=True))
-            st.caption('Realized trading P&L includes daily settlements and closes, including pending cash. '
-                'Unrealized P&L measures open movement since the clearing basis. '
-                'Net P&L also includes attributed fees, interest and entered taxes, from the recorded start.')
+            st.caption('Realized: closed quantities, matched FIFO. Unrealized: open quantities since entry, '
+                'including daily settlements. Both exclude costs; pre-snapshot performance is unknown.')
+            st.write('Fees, interest & entered taxes: '+format_money(
+                row.unrealized_gain_reporting-realized-unrealized,currency,signed=True))
             amount = row.return_pct
             st.write('Return on initial capital: '+(f'{amount:+.2f}%' if pd.notna(amount) else '—'))
             if investment:

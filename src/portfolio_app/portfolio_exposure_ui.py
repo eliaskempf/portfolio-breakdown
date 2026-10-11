@@ -22,10 +22,18 @@ def render_equity_exposure_metric(result, *, market=False, bucket_ids=None):
     scope = 'Category' if bucket_ids is not None else 'Portfolio'
     label = (f'{scope} leverage · gross' if gross else f'{scope} leverage · net') if market else ('Gross equity exposure' if gross else 'Net equity exposure')
     text = '—' if value is None else f'{value:.2f}×'
+    calculation = ''
+    if value is not None and bucket_ids is None:
+        amount = result.market_amount(gross=gross) if market else result.gross_exposure if gross else result.net_exposure
+        calculation = (f'{format_money(amount,result.reporting_currency)} exposure / '
+                       f'{format_money(result.net_equity,result.reporting_currency)} net equity = {value:.4f}×. ')
     with st.container(key='equity_exposure_metric'):
         st.metric(label, text,
-                  help='Click to switch net/gross. Net offsets longs and shorts; gross adds absolute exposures before offsets. '
-                       'Exposure / selected strategic capital, including futures collateral and lifetime P&L. Portfolio debt is included only at portfolio scope; category leverage is unavailable with unassigned debt. Gold and crypto count; cash contributes zero.')
+                  help=calculation+'Click to switch net/gross. Net offsets longs and shorts; gross adds absolute exposures before offsets. '
+                       'Exposure / selected capital, including allocated futures cash and cumulative P&L. '
+                       'Futures contribute contract notional to exposure; their allocated cash is counted only in capital. '
+                       'Portfolio debt is included only at portfolio scope; category leverage is unavailable with unassigned debt. '
+                       'Gold and crypto count; cash contributes zero exposure.')
     def toggle():
         st.session_state['exposure_multiple_mode'] = 'net' if gross else 'gross'
     toggle_metric_value(label=f'Show {"net" if gross else "gross"} {basis} exposure',

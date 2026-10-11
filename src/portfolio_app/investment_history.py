@@ -10,8 +10,10 @@ from portfolio_app.derivative_types import ZERO
 def pnl_breakdown(journal, members, valued):
     """Gross realized/unrealized trading P&L at current reporting FX.
 
-    Realized includes accrued settlements awaiting cash. Unrealized excludes
-    those claims; a missing open-contract mark or FX remains unknown.
+    Realized belongs to FIFO-closed quantities; unrealized measures remaining
+    lots from entry, including their daily settlements. Settlement basis is
+    retained separately for cash accounting. Snapshots start at their recorded
+    basis, so earlier performance remains unknown.
     """
     state = replay(journal)
     indexed = valued.set_index('position_id')
@@ -20,11 +22,17 @@ def pnl_breakdown(journal, members, valued):
     for identity in members:
         balance = state.positions[identity]
         rate = rates.get(balance.contract.currency)
-        realized += (float(balance.realized_pnl) * rate if rate is not None
-                     else 0. if not balance.realized_pnl else float('nan'))
+        # The ledger's realized_pnl is settlement/close cash, including pending
+        # claims. Remove the settled movement attributable to still-open lots
+        # to recover closed-trade performance without replaying FIFO matching.
+        open_settled = sum((lot.quantity * balance.contract.multiplier *
+                            (lot.basis-lot.entry_price) for lot in balance.lots), ZERO)
+        closed_pnl = balance.realized_pnl-open_settled
+        realized += (float(closed_pnl) * rate if rate is not None
+                     else 0. if not closed_pnl else float('nan'))
         if balance.quantity:
             mark = indexed.loc[identity].get('mark_price') if identity in indexed.index else None
-            unrealized += (float(balance.unsettled_pnl(mark)) * rate
+            unrealized += (float(balance.unsettled_pnl(mark)+open_settled) * rate
                            if pd.notna(mark) and rate is not None else float('nan'))
     return realized, unrealized
 
@@ -67,7 +75,7 @@ def settlement_history(journal, members):
                 'Maturity': contract.expiry,
                 'Type': 'Final settlement' if event.kind == 'final_settlement' else 'Daily settlement',
                 'Contracts': quantities[identity], 'Settlement price': float(event.price),
-                'Realized P&L': float(amounts[root]), 'Currency': contract.currency,
+                'Settlement P&L': float(amounts[root]), 'Currency': contract.currency,
                 'Cash status': 'Pending' if root in state.pending else 'Posted',
                 'Value date': event.value_date or event.date,
                 'Posted on': posted.get(root, ''), 'Source': event.source, 'Note': event.note})

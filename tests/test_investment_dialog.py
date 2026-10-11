@@ -143,8 +143,8 @@ def test_edit_button_and_settlement_history_in_normal_popup(tmp_path):
     save_journal(tmp_path,journal,None)
     app=launch_actual(tmp_path)
     open_investment(app,tmp_path)
-    assert by_label(app.metric,'Realized P&L').value=='+€200.00'
-    assert by_label(app.metric,'Unrealized P&L').value=='+€0.00'
+    assert by_label(app.metric,'Realized P&L').value=='+€0.00'
+    assert by_label(app.metric,'Unrealized P&L').value=='+€200.00'
     assert by_label(app.metric,'Net P&L').value=='+€192.00'
     by_label(app.button,'Edit position').click().run()
     assert by_label(app.text_input,'Investment name')
@@ -152,7 +152,7 @@ def test_edit_button_and_settlement_history_in_normal_popup(tmp_path):
     by_label(app.button,'Back to position').click().run()
     by_label(app.get('button_group'),'Futures position view').set_value('Settlements').run()
     histories=[frame.value for frame in app.dataframe if 'Settlement price' in frame.value and 'Source' not in frame.value]
-    assert len(histories)==1 and histories[0].iloc[0]['Realized P&L']==200
+    assert len(histories)==1 and histories[0].iloc[0]['Settlement P&L']==200
     assert not app.exception
     assert load_journal(tmp_path)[0]==journal
 

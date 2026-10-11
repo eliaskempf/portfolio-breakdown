@@ -115,3 +115,29 @@ def test_grouped_investment_normal_overview_and_navigation(tmp_path):
     assert app.session_state['positions_workflow'] == 'Positions'
     assert app.session_state['position_edit_dialog']
     assert len(app.get('dialog')) == 1
+
+
+@pytest.mark.parametrize('quantity', [2, 10, -10])
+def test_actual_investment_leverage_uses_notional_and_preserves_settlement_equity(tmp_path, quantity):
+    from dataclasses import replace
+    from portfolio_app.account_journal import Event, append_events
+    from portfolio_app.derivative_types import PriceObservation
+    from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
+    from test_futures_investments import grouped, project
+
+    service, journal, contract = grouped(tmp_path)
+    journal = replace(journal, events=tuple(replace(e, quantity=quantity) if e.id == 'open' else e
+                                           for e in journal.events))
+    marks = {'p': PriceObservation(contract.id, '2026-01-03', 1010)}
+    expected_equity = 20000-8+quantity*10*10
+    expected_notional = quantity*10*1010
+    for current in [journal, append_events(journal, [
+        Event('settle', '2026-01-03', 'settlement', position_id='p', price=1010)])]:
+        raw, displayed, _ = project(tmp_path, service, current, marks=marks)
+        exposure = calculate_portfolio_exposure(raw, reporting_currency='EUR')
+        projected = investment_exposure(exposure, displayed)
+        assert projected.net_equity == expected_equity
+        assert projected.market_amount() == expected_notional
+        assert projected.selected_multiple() == pytest.approx(expected_notional/expected_equity)
+        assert projected.selected_multiple(gross=True) == pytest.approx(abs(expected_notional)/expected_equity)
+        assert projected.selected_multiple() == exposure.selected_multiple()
