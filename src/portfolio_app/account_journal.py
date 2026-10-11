@@ -135,7 +135,9 @@ class Event:
             raise DataError('Contract quantity must be a signed whole number within one million.')
         if type(self.sequence) is not int or self.sequence < 0:
             raise DataError('Event sequence must be a nonnegative integer.')
-        object.__setattr__(self, 'amount', money(self.amount))
+        # A security reservation is a quantity of shares/units, not cash.
+        convert = decimal if self.kind == 'reserve' and self.holding_id else money
+        object.__setattr__(self, 'amount', convert(self.amount))
         if self.other_amount is not None:
             object.__setattr__(self, 'other_amount', money(self.other_amount))
         if self.price is not None:
@@ -609,7 +611,13 @@ def load_journal(directory: Path):
 
 
 def save_journal(directory: Path, journal: Journal, expected_revision: str | None):
-    replay(journal)
-    content = json.dumps(journal_to_dict(journal), default=lambda value: str(value) if isinstance(value, Decimal) else value,
-                         indent=2, sort_keys=True)+'\n'
-    save_document(Path(directory)/FILE, content, expected_revision)
+    from portfolio_app.workspace_lock import workspace_lock
+    with workspace_lock(Path(directory)):
+        state = replay(journal)
+        if any(item.holding_id for item in state.reservations.values()):
+            from portfolio_app.account_margin import validate_reservations
+            from portfolio_app.positions import read_snapshot
+            validate_reservations(journal, read_snapshot(Path(directory)/'holdings.csv').holdings)
+        content = json.dumps(journal_to_dict(journal), default=lambda value: str(value) if isinstance(value, Decimal) else value,
+                             indent=2, sort_keys=True)+'\n'
+        save_document(Path(directory)/FILE, content, expected_revision)
