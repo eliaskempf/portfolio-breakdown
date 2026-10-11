@@ -125,3 +125,11 @@ def test_cache_revision_and_corrupt_identity(tmp_path):
     path.write_text(json.dumps(raw))
     with pytest.raises(DataError, match='Invalid saved'):
         cache.load(contract, '2001-01-02')
+
+
+@pytest.mark.parametrize('raw_price,expected', [('430.00000000000006','430'),('430.0123','430.0123')])
+def test_settlement_float_artifacts_do_not_restrict_valid_off_tick_prices(raw_price,expected):
+    raw = synthetic_statistics()
+    raw['dataRows'][-1]['dSettle'] = raw_price
+    quote = fetch_settlement(make_contract('FMWN','2001-06-15'),'2001-01-02',lambda _:json.dumps(raw))
+    assert quote.price == Decimal(expected)

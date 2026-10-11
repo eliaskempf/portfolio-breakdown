@@ -18,8 +18,8 @@ CSS = """
    far edge of the input. Use semantic test IDs instead of generated classes. */
 [data-testid="stWidgetLabel"] > div:has(> [data-testid="stTooltipIcon"]) {flex:0 0 auto;margin-inline-start:6px;}
 .st-key-app_header {border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent);padding-bottom:16px;margin-bottom:8px;}
-.app-brand {display:flex;align-items:center;gap:12px;font-size:1.65rem;font-weight:650;letter-spacing:-.5px;}
-.app-brand img {width:48px;height:48px;flex-shrink:0;}
+.app-brand {display:flex;align-items:center;gap:12px;font-size:1.85rem;font-weight:650;letter-spacing:-.5px;}
+.app-brand img {width:56px;height:56px;flex-shrink:0;}
 /* Keep the bell's text available to assistive technology without a visible label. */
 .st-key-header_notifications [data-testid="stPopoverButton"] [data-testid="stMarkdownContainer"] {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
 .st-key-header_notifications [data-testid="stPopoverButton"] [aria-hidden="true"] {display:none;}

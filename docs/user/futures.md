@@ -132,7 +132,36 @@ investment's contract history: date, expiry, signed quantity at settlement, pric
 value date, actual posting date, source and notes.
 Corrections update this effective view while the original journal facts remain
 preserved. Closing trades contribute to realized P&L but are not daily settlements.
-Downloaded market observations do not create entries in this recorded history.
+Downloaded market observations do not create entries in this recorded history
+until reviewed and saved.
+
+### Retrieve missed daily settlements
+
+Open the investment’s **Settlements → Retrieve settlements**. Select the exact
+contract and a range of up to 31 calendar days ending before today, then retrieve.
+The app uses free Eurex prices and displays each weekday as available, unavailable,
+already recorded or ineligible. Weekend dates are skipped; missing weekdays are
+not assumed to be exchange holidays. Availability varies by contract and date;
+this is not a complete long-term historical archive.
+
+Select available dates to record, inspect each day’s quantity and settlement P&L,
+then choose **Review settlements → Save settlements**. Fetching alone only caches
+market observations. Saving posts the selected daily settlements after that day’s
+recorded trades, with cash posted on the business date. For different cash value
+dates, use **Record transaction** instead. Final/expiry-day settlements stay manual.
+
+Backfill uses historical quantities, including partial closes and contract rolls,
+and skips existing daily/final settlements. An opening snapshot already includes
+its clearing date and earlier settlements; those dates cannot be posted again.
+Gaps before a later opening cash balance, or on/before a cash reconciliation,
+require manual reconciliation because the recorded cash may already include them.
+The original journal entries and sources remain preserved.
+
+To reconstruct a trade opened last week, record its actual opening date and fill,
+with account cash from that date before the trade’s fees and later settlements.
+Then retrieve and review the missing days. If using today’s cash and clearing
+basis instead, record an **Already-open position snapshot**; earlier performance
+cannot be recovered merely by downloading past market prices.
 
 ## Cash, settlement and exposure
 

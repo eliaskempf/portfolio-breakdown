@@ -168,6 +168,11 @@ def parse_settlement(raw, contract, business_date, *, source, observed_at=None):
         price = Decimal(str(rows[0]['dSettle']))
         if not price.is_finite() or price <= 0:
             raise ValueError('Invalid daily settlement')
+        # The public JSON sometimes contains binary-float tails (e.g. 410.00000000000006).
+        # Settlement levels need not obey trading ticks: only remove tiny artifacts.
+        nearest = (price / contract.tick).to_integral_value() * contract.tick
+        if abs(price-nearest) <= contract.tick * Decimal('0.00000001'):
+            price = nearest
         return PriceObservation(contract_id=contract.id, date=day.isoformat(), price=price,
                                 kind='daily_settlement', source=source,
                                 observed_at=observed_at or datetime.now(timezone.utc).isoformat())

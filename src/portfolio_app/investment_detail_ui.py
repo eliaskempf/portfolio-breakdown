@@ -150,6 +150,9 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
             on_click=st.session_state.__setitem__, args=(key+'action', None))
         if action == 'Roll contracts':
             render_roll(directory,journal,revision,members,key=key+'roll_')
+        elif action == 'Retrieve settlements':
+            from portfolio_app.settlement_backfill_ui import render_settlement_backfill
+            render_settlement_backfill(directory,journal,revision,members,key=key+'backfill_')
         elif action == 'Record transaction':
             from portfolio_app.accounts_ui import render_transaction
             render_transaction(directory,journal,revision,position_ids=members,key_prefix=key+'transaction_')
@@ -181,9 +184,12 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
         from portfolio_app.futures_chart_ui import render_futures_chart
         render_futures_chart(directory, [balance.contract for balance in balances], key=key+'chart_')
     elif view == 'Settlements':
+        st.button('Retrieve settlements', icon=':material/download:', key=key+'retrieve_settlements',
+            help='Retrieve missing daily prices for this exact contract and review their cash postings.',
+            on_click=st.session_state.__setitem__, args=(key+'action', 'Retrieve settlements'))
         history = settlement_history(journal, members)
         if history.empty:
-            st.info('No settlements recorded yet. Use Record transaction to add one.')
+            st.info('No settlements recorded yet.')
         else:
             columns = ['Date', 'Contract', 'Maturity', 'Contracts', 'Settlement price', 'Settlement P&L', 'Currency', 'Cash status']
             st.dataframe(history[columns],hide_index=True,width='stretch')

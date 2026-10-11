@@ -165,7 +165,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 title = 'Market exposure' if market else 'Allocation'
                 with st.container(horizontal=True, wrap=False, vertical_alignment='center', key='overview_allocation_heading'):
                     st.markdown(f'**{title}**', width='stretch', help=(
-                        'Market exposure includes signed futures notional and leveraged fund exposure. Cash collateral is not added again.'
+                        'Market exposure includes signed futures notional and leveraged fund exposure.'
                         if market else 'Capital allocated to each category, including futures investment equity. Uses capital allocation targets.'))
                     target_controls = st.container(width='content')
                 if not market and open_capital_targets is not None:

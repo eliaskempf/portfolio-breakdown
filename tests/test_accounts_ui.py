@@ -90,7 +90,7 @@ def test_normal_lifecycle_settlement_partial_close_roll_and_manual_tax(tmp_path)
     assert not restarted.exception
 
 
-def test_normal_list_opens_actual_position_in_account_workspace(tmp_path):
+def test_normal_list_opens_actual_position_in_shared_popup(tmp_path):
     from portfolio_app.positions import read_snapshot
     from portfolio_app.position_list import list_context, position_rows
     from portfolio_app.actual_portfolio import journal_positions
@@ -108,4 +108,4 @@ def test_normal_list_opens_actual_position_in_account_workspace(tmp_path):
     assert app.session_state['positions_workflow'] == 'Positions'
     assert app.session_state['position_edit_dialog']
     assert len(app.get('dialog')) == 1
-    assert by_label(app.get('button_group'), 'Futures position view').value == 'Contract history'
+    assert by_label(app.get('button_group'), 'Futures position view').value == 'Chart'
