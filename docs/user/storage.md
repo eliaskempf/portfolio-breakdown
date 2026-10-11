@@ -16,7 +16,8 @@ remember a different active folder for the same shortcut (see below).
 For a custom launch directory, see [advanced launch options](install.md#commands).
 
 The workspace contains `holdings.csv` (including saved purchase/cost records),
-optional `portfolio.yaml` currency settings, `classifications.yaml`, strategic
+optional `portfolio.yaml` currency settings, `display-preferences.json` calendar
+preferences, `classifications.yaml`, strategic
 `allocation.yaml`, ETF snapshots under `etfs/`, private overrides, `.cache` and
 per-document `.backups`. Keep the whole directory private. App-managed saves
 validate data, check file revisions and back up previous files before atomic

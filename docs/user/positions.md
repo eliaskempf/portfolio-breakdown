@@ -118,3 +118,9 @@ retrieves gold spot in USD per troy ounce, converts the quantity and values it i
 the selected portfolio currency. Prices represent fine-gold spot value, without coin/bar premiums or dealing
 costs. Gold spot history is not yet supported. Manual pricing remains available;
 existing manual holdings only switch when you explicitly choose live spot pricing.
+
+## Calendar layout
+
+Date pickers show Monday through Sunday by default. Choose **Portfolio settings →
+Week starts on** to switch between Monday and Sunday. This preference is saved
+with the portfolio and applies to its date pickers without changing recorded dates.

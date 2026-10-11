@@ -59,6 +59,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return
     preserve_view_inputs()
     data_dir, demo, refresh, settings_panel, notifications_slot = app_header(data_dir, demo_dir, demo=demo)
+    from portfolio_app.calendar_ui import configure_calendar
+    configure_calendar(data_dir, settings_panel)
     from portfolio_app.backup_ui import backup_controls, render_backup_dialog
     if not demo and not ignore_selection:
         bind_workspace(persistent_data_dir, chosen)

@@ -9,6 +9,7 @@ import streamlit as st
 
 from portfolio_app.holdings import DataError
 from portfolio_app.money import format_money
+from portfolio_app.future_entry_help import field_help
 
 
 def _imports():
@@ -27,9 +28,9 @@ def _event(journal, kind, day, **fields):
                         kind=kind, sequence=max((e.sequence for e in journal.events), default=0) + 1, **fields)
 
 
-def _money_input(label, key, value='0'):
+def _money_input(label, key, value='0', *, help=None):
     from portfolio_app.derivative_types import decimal
-    return decimal(st.text_input(label, value=value, key=key), label)
+    return decimal(st.text_input(label, value=value, key=key, help=help), label)
 
 
 def _save_review(directory, journal, revision, candidate, key, *, holdings_revision=None,
@@ -96,24 +97,23 @@ def _account_choice(directory, journal, snapshot, valued, *, key, day):
     """Return journal candidate and account ID; explicitly adopt or add cash."""
     ledger = _imports()
     names = {a.id: a.name for a in journal.accounts}
-    selected = st.selectbox('Account', ['', *names], format_func=lambda x: names.get(x, 'Create account'), key=key+'account')
+    selected = st.selectbox('Account', ['', *names], format_func=lambda x: names.get(x, 'Create account'), key=key+'account', help=field_help('Account'))
     candidate = journal
     if selected:
         return candidate, selected
-    name = st.text_input('Account name', key=key+'account_name')
-    currency = st.selectbox('Opening cash currency', ['EUR','USD','GBP'], key=key+'cash_currency')
+    name = st.text_input('Account name', key=key+'account_name', help=field_help('Account name'))
+    currency = st.selectbox('Opening cash currency', ['EUR','USD','GBP'], key=key+'cash_currency', help=field_help('Opening cash currency'))
     linked = {x.position_id for x in journal.cash_links}
     cash_rows = valued.loc[valued.get('instrument_type', pd.Series('', index=valued.index)).eq('cash') & ~valued.position_id.isin(linked)]
     cash_rows = cash_rows.loc[cash_rows.quote_currency.eq(currency)] if 'quote_currency' in cash_rows else cash_rows.iloc[:0]
     options = {'': 'Enter cash not already included in holdings', **{r.position_id: f'Adopt existing cash: {r["name"]}' for _,r in cash_rows.iterrows()}}
-    source = st.selectbox('Cash source', list(options), format_func=options.get, key=key+'cash_source')
+    source = st.selectbox('Cash source', list(options), format_func=options.get, key=key+'cash_source', help=field_help('Cash source'))
     if source:
         existing = cash_rows.loc[cash_rows.position_id.eq(source)].iloc[0]
         amount = Decimal(str(existing.shares)) * Decimal(str(existing.current_price))
         st.caption(f'The existing cash contribution will be replaced, preserving its balance of {amount} {currency}.')
     else:
-        amount = _money_input('Cash balance (cash only, not account net liquidation value)', key+'cash')
-        st.caption('Use zero if this account has no recorded cash. Do not enter cash already present elsewhere in the portfolio.')
+        amount = _money_input('Cash balance (cash only, not account net liquidation value)', key+'cash', help=field_help('Cash balance (cash only, not account net liquidation value)'))
     if not name.strip():
         raise DataError('Enter an account name to continue.')
     account_id = st.session_state.setdefault(key+'new_account_id', uuid4().hex)
@@ -131,38 +131,38 @@ def render_future_entry(directory, snapshot, *, valued=None, allocation=None):
     journal, revision = ledger.load_journal(directory)
     key = _key(directory) + 'entry_'
     valued = snapshot.holdings if valued is None else valued
-    st.caption('Record an actual position. A futures contract adds exposure; its notional is not deducted from cash.')
-    mode = st.radio('Record', ['New opening trade', 'Already-open position snapshot'], horizontal=True, key=key+'mode')
+    from portfolio_app.future_entry_help import install_label_help
+    install_label_help()
+    mode = st.radio('Record', ['New opening trade', 'Already-open position snapshot'], horizontal=True, key=key+'mode', help=field_help('Record'))
     product = st.selectbox('Futures product', [*CATALOG, 'Manual contract'],
-        format_func=lambda code: f'{code} · {CATALOG[code].name}' if code in CATALOG else code, key=key+'product')
-    day = st.date_input('Trade / snapshot date', value=date.today(), max_value=date.today(), key=key+'date')
+        format_func=lambda code: f'{code} · {CATALOG[code].name}' if code in CATALOG else code, key=key+'product', help=field_help('Futures product'))
+    day = st.date_input('Trade / snapshot date', value=date.today(), max_value=date.today(), key=key+'date', help=field_help('Trade / snapshot date'))
     from portfolio_app.contract_maturity_ui import maturity_input
     expiry = maturity_input(product, key=key+'expiry_')
     if expiry is None:
         return
     try:
         if product == 'Manual contract':
-            code = st.text_input('Product code', key=key+'code')
-            currency = st.selectbox('Settlement currency', ['EUR','USD','GBP'], key=key+'currency')
-            multiplier = _money_input('Currency per index point', key+'multiplier', '')
-            tick = _money_input('Price tick', key+'tick', '0.01')
+            code = st.text_input('Product code', key=key+'code', help=field_help('Product code'))
+            currency = st.selectbox('Settlement currency', ['EUR','USD','GBP'], key=key+'currency', help=field_help('Settlement currency'))
+            multiplier = _money_input('Currency per index point', key+'multiplier', '', help=field_help('Currency per index point'))
+            tick = _money_input('Price tick', key+'tick', '0.01', help=field_help('Price tick'))
             contract = ContractSpec(code, expiry.isoformat(), currency, multiplier, tick, source='Manual specification')
         else:
             contract = make_contract(product, expiry.isoformat())
             st.caption(f'{contract.currency} {contract.multiplier} per point · exact maturity {contract.expiry}')
-        quantity = st.number_input('Signed contracts (negative for short)', value=1, step=1, key=key+'quantity')
-        price = _money_input('Fill price' if mode == 'New opening trade' else 'Last settled price / clearing basis', key+'price', '')
-        fees = _money_input('Opening fees' if mode == 'New opening trade' else 'New fees to record (exclude costs already in opening cash)', key+'fees')
+        quantity = st.number_input('Signed contracts (negative for short)', value=1, step=1, key=key+'quantity', help=field_help('Signed contracts (negative for short)'))
+        price = _money_input('Fill price' if mode == 'New opening trade' else 'Last settled price / clearing basis', key+'price', '', help=field_help('Fill price' if mode == 'New opening trade' else 'Last settled price / clearing basis'))
+        fees = _money_input('Opening fees' if mode == 'New opening trade' else 'New fees to record (exclude costs already in opening cash)', key+'fees', help=field_help('Opening fees' if mode == 'New opening trade' else 'New fees to record (exclude costs already in opening cash)'))
         candidate, account = _account_choice(directory, journal, snapshot, valued, key=key, day=day)
-        investment_name = st.text_input('Investment name', value=f'{contract.product} futures', key=key+'investment_name')
-        capital = _money_input(f'Initial allocated capital ({contract.currency})', key+'investment_capital')
-        st.caption('Attribute part of the account cash to this investment. This is not a new cash deposit or the contract notional. Enter zero to allocate capital later.')
+        investment_name = st.text_input('Investment name', value=f'{contract.product} futures', key=key+'investment_name', help=field_help('Investment name'))
+        capital = _money_input(f'Initial allocated capital ({contract.currency})', key+'investment_capital', help=field_help('Initial allocated capital'))
         leaves = allocation.leaves() if allocation else set()
         labels = {b.id: b.name for b in allocation.buckets} if allocation else {}
-        bucket = st.selectbox('Category', ['', *sorted(leaves)], format_func=lambda x: labels.get(x, 'Unassigned'), key=key+'bucket')
+        bucket = st.selectbox('Category', ['', *sorted(leaves)], format_func=lambda x: labels.get(x, 'Unassigned'), key=key+'bucket', help=field_help('Category'))
         proxies = snapshot.holdings.loc[snapshot.holdings.get('instrument_type', pd.Series('', index=snapshot.holdings.index)).eq('etf')]
         names = {r.position_id: r['name'] for _,r in proxies.iterrows()}
-        proxy = st.selectbox('Index holdings proxy (optional)', ['', *names], format_func=lambda x: names.get(x, 'No proxy'), key=key+'proxy')
+        proxy = st.selectbox('Index holdings proxy (optional)', ['', *names], format_func=lambda x: names.get(x, 'No proxy'), key=key+'proxy', help=field_help('Index holdings proxy (optional)'))
         identity = st.session_state.setdefault(key+'position_id', uuid4().hex)
         candidate = ledger.add_contract(candidate, contract)
         candidate = ledger.add_position(candidate, ledger.PositionSpec(identity, account, contract.id, bucket, proxy))
