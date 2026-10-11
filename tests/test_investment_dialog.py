@@ -48,7 +48,7 @@ def test_popup_matches_normal_details_and_exposure_stays_in_details(tmp_path):
     app,_=start(tmp_path)
     assert by_label(app.metric,'Capital value').value=='€19,992.00'
     assert by_label(app.metric,'Market exposure').value=='€20,000.00'
-    assert by_label(app.get('button_group'),'Futures position view').value=='Contract history'
+    assert by_label(app.get('button_group'),'Futures position view').value=='Price history'
     by_label(app.button,'Close').click().run()
     assert not app.session_state['position_edit_dialog']
     open_investment(app,tmp_path,editing=True)
@@ -76,6 +76,7 @@ def test_partial_roll_review_and_save_keeps_investment_history(tmp_path,short):
     assert {p.investment_id for p in saved.positions}=={'investment:synthetic'}
     assert state.cash['a','EUR']==20000-8-12+sign*500
     open_investment(app,tmp_path)
+    by_label(app.get('button_group'),'Futures position view').set_value('Contract history').run()
     histories=[frame.value for frame in app.dataframe if 'Maturity' in frame.value and 'Status' in frame.value]
     assert len(histories)==1 and len(histories[0])==2
 

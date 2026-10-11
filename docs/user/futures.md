@@ -174,6 +174,46 @@ invent a price or replace an exact expiry with a nearby contract. Manual entry
 remains available. Sources and observation dates should be reviewed alongside
 values; an old clearing basis is not a fresh market quote.
 
+## Market history in position details
+
+**Price history** is the default view in the futures popup. It uses the same
+chart, period controls, background loading, cache and retry behavior as ordinary
+holdings. This shows market context, separate from your recorded settlements,
+contract valuation and personal P&L.
+
+The curated references are:
+
+| Contract | Chart reference | Convention / units |
+| --- | --- | --- |
+| FDAX, FDXM, FDXS | DAX (`^GDAXI`) | Gross total return; index points, EUR index |
+| FESX | EURO STOXX 50 (`^STOXX50E`) | Price return; index points, EUR index |
+| FTUK | FTSE 100 (`^FTSE`) | Price return; index points, GBP index |
+| FMWN | iShares Core MSCI World UCITS ETF (Acc), `EUNL.DE` | ETF proxy; EUR listing |
+| FMWO | Same fund, `IWDA.L` | ETF proxy; USD listing |
+| FMWB | Same fund, `SWDA.L` | ETF proxy; GBP listing |
+
+Daily closing histories use Yahoo Finance. The MSCI World reference is an
+accumulating ETF tracking MSCI World Net, with fund costs and tracking differences;
+it is not the index itself. Its listings and benchmark are documented by
+[iShares](https://www.ishares.com/uk/professionals/en/products/251882/SWDA).
+ETF history supports portfolio/native-currency controls and dated FX conversion,
+like ordinary holdings. Native GBP prices are normalized from pence where needed.
+Index history retains native index points and displays its currency and return
+convention; it is not converted into portfolio-currency cash prices.
+
+Automatic mapping requires a recognized Eurex product, matching currency and
+return convention. A custom or unmatched contract has no inferred reference.
+An explicit **Chart reference** selection provides a comparison for the current
+session, labelled as unverified for that contract. It does not change the saved
+contract, look-through proxy, risk inputs or account records. Rolls of the same
+product share a reference; investments spanning different markets have a market
+selector rather than a spliced chart.
+
+Charts do not represent futures prices, carry, contract quantities, leverage,
+roll costs or personal returns. Unavailable history stays unavailable; stale
+cached history is labelled and can be retried. Unexpected source currencies
+withhold the reference chart rather than relabelling prices.
+
 ## Margin accounts and collateral
 
 For an account without a futures position, open **Positions → Position tools →

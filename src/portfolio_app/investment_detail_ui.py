@@ -129,10 +129,10 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
         st.session_state[key+'view'] = 'Edit allocation' if investment else 'Record transaction'
     st.subheader(investment.name if investment else f'{balances[0].contract.product} futures')
     st.caption(f'{account} · {category} · {balances[0].contract.currency} settlement')
-    modes = ['Contract history', 'Settlements', 'Roll contracts', 'Record transaction'] + (['Edit allocation'] if investment else [])
+    modes = ['Price history', 'Contract history', 'Settlements', 'Roll contracts', 'Record transaction'] + (['Edit allocation'] if investment else [])
     if st.session_state.pop('position_edit_detail_requested', False) or key+'view' not in st.session_state:
-        st.session_state[key+'view'] = 'Edit allocation' if editing and investment else 'Contract history'
-    if valued is not None and st.session_state.get(key+'view') in (None, 'Contract history', 'Settlements'):
+        st.session_state[key+'view'] = 'Edit allocation' if editing and investment else 'Price history'
+    if valued is not None and st.session_state.get(key+'view') in (None, 'Price history', 'Contract history', 'Settlements'):
         display = investment_positions(valued,journal) if investment else valued
         matches = display.loc[display.position_id.eq(identity)]
         if not matches.empty:
@@ -167,8 +167,11 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
                     st.write(f'Net additional allocation: {format_money(investment.allocated_capital-investment.reference_capital,investment.currency,signed=True)}')
                     st.caption('Account cash attributed to this investment is counted once in portfolio value.')
     view = st.segmented_control('Futures position view', modes, key=key+'view',
-        default=st.session_state[key+'view'], label_visibility='collapsed') or 'Contract history'
-    if view == 'Settlements':
+        default=st.session_state[key+'view'], label_visibility='collapsed') or 'Price history'
+    if view == 'Price history':
+        from portfolio_app.futures_chart_ui import render_futures_chart
+        render_futures_chart(directory, [balance.contract for balance in balances], key=key+'chart_')
+    elif view == 'Settlements':
         st.markdown('**Settlement history**')
         history = settlement_history(journal, members)
         st.caption('Recorded daily and final settlements across all maturities, in settlement currency. '

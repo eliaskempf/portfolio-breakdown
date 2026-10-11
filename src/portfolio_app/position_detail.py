@@ -2,14 +2,11 @@
 
 from portfolio_app.currency_display import reporting_currency
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
-from portfolio_app.charts import chart_config
 
 from portfolio_app.display_names import instrument_name
-from portfolio_app.history import HistoryService, DemoHistoryProvider, PERIODS
+from portfolio_app.history import HistoryService, DemoHistoryProvider
 from portfolio_app.market_data import history_for
-from portfolio_app.charts import style_figure
 from portfolio_app.presentation import performance_metric
 
 
@@ -64,42 +61,7 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None):
     if row.get('price_source') == 'gold_spot':
         st.info('Gold spot valuation uses the latest available quote. Gold price history is not available here yet.')
         return
-    st.markdown('**Market-price history**')
-    period = st.segmented_control('Period', list(PERIODS), default='1Y', key=f'position_edit_history_{row.position_id}') or '1Y'
+    from portfolio_app.market_history_ui import render_market_history
     service = HistoryService(DemoHistoryProvider(), data_dir / '.cache' / 'history') if demo else history_for(data_dir)
-    manual = pd.notna(row.get('manual_price', float('nan')))
-    result = service.get(row.ticker, period, manual=manual)
-    history_units = st.segmented_control('History currency', ['Portfolio currency', 'Native currency'], default='Portfolio currency', key=f'position_edit_history_currency_{row.position_id}')
-    requested = [row.ticker]
-    if result.prices and history_units != 'Native currency' and result.currency != reporting_currency():
-        from portfolio_app.history import convert_price_history
-        legs = {}
-        for units in {result.currency, reporting_currency()} - {'EUR'}:
-            symbol = f'{units}EUR=X'
-            requested.append(symbol)
-            legs[units] = service.get(symbol, period)
-        result = convert_price_history(result, reporting_currency(), legs)
-    pending = not demo and any(service.pending(symbol, period) for symbol in requested)
-
-    @st.fragment(run_every=.5 if pending else None)
-    def progress():
-        if not st.session_state.get('position_edit_dialog'):
-            return
-        if pending and not any(service.pending(symbol, period) for symbol in requested):
-            st.rerun()
-        if pending:
-            st.caption('Updating market-price history in the background…')
-    progress()
-    if result.prices:
-        figure = style_figure(go.Figure(go.Scatter(x=result.dates, y=result.prices, mode='lines',
-            line=dict(color='#5470c6', width=2), hovertemplate='%{x}<br>%{y:,.2f} '+result.currency+'<extra></extra>')))
-        figure.update_layout(height=300, yaxis_title=result.currency, margin=dict(l=12, r=12, t=12, b=30))
-        st.plotly_chart(figure, width='stretch', config=chart_config())
-        st.caption(f'Instrument closing prices in {result.currency} · Excludes dividend reinvestment · Not your personal return history')
-        st.caption(f'History last retrieved: {result.fetched_at}')
-    if result.note:
-        (st.warning if result.status == 'stale' else st.info)(result.note)
-    if not demo and not pending and result.status in {'stale', 'unavailable'} and row.ticker and not manual:
-        if st.button('Retry history'):
-            service.get(row.ticker, period, refresh=True)
-            st.rerun()
+    render_market_history(row.ticker, data_dir, key=f'position_edit_history_{row.position_id}_',
+                          demo=demo, manual=pd.notna(row.get('manual_price', float('nan'))), service=service)
