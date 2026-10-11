@@ -1,4 +1,4 @@
-"""Opt-in EUR margin balances and explicitly documented daily fund factors."""
+"""Legacy EUR debt and currency-independent, documented fund exposure factors."""
 from dataclasses import asdict, dataclass, replace
 from datetime import date
 from hashlib import sha256
@@ -29,13 +29,22 @@ class FundFactor:
     factor: float | None
     method: str = ''
     as_of: str = ''
+    benchmark: str = ''
+    proxy_position_id: str = ''
+    reset_convention: str = 'daily'
 
     def __post_init__(self):
         if not isinstance(self.position_id, str) or not self.position_id.strip():
             raise DataError('Fund factors require a source position ID.')
+        if (not all(isinstance(value, str) for value in (self.method, self.as_of, self.benchmark, self.proxy_position_id))
+                or self.reset_convention not in ('daily', 'other', 'unknown')):
+            raise DataError('Fund factors require text provenance and an explicit reset convention.')
+        if self.proxy_position_id == self.position_id:
+            raise DataError('A leveraged fund cannot be its own unlevered reference proxy.')
         if self.factor is not None:
             if not finite(self.factor) or not isinstance(self.method, str) or not self.method.strip():
                 raise DataError('A daily equity factor requires a finite signed value and documented source/method.')
+        if self.factor is not None or self.as_of:
             try:
                 stamp = date.fromisoformat(self.as_of)
                 if stamp > date.today():
@@ -70,6 +79,12 @@ def requires_leverage(settings, future=None):
                 (future is not None and (future.contracts or future.reference_capital_eur is not None or future.pnl)))
 
 
+def requires_legacy_eur(settings, future=None):
+    """Dimensionless fund factors do not give a portfolio an EUR restriction."""
+    return bool(settings.liabilities or
+                (future is not None and (future.contracts or future.reference_capital_eur is not None or future.pnl)))
+
+
 def load_leverage_settings(directory, *, future=None):
     path = directory / FILE
     if not path.exists():
@@ -98,10 +113,10 @@ def save_leverage_settings(directory, settings, expected_revision):
     from portfolio_app.workspace_lock import workspace_lock
     with workspace_lock(directory):
         from portfolio_app.portfolio_settings import load_settings
-        if settings.enabled and load_settings(directory).reporting_currency != 'EUR':
-            raise DataError('Leverage currently requires EUR reporting.')
         from portfolio_app.futures_workspace import load_sandbox
         sandbox = load_sandbox(directory)
+        if requires_legacy_eur(settings, sandbox[0] if sandbox else None) and load_settings(directory).reporting_currency != 'EUR':
+            raise DataError('Legacy EUR debt and sandbox futures require EUR reporting.')
         if not settings.enabled and requires_leverage(settings, sandbox[0] if sandbox else None):
             raise DataError('Close/remove leverage records before disabling leverage; funded futures still require it.')
         save_document(directory / FILE, json.dumps(asdict(settings), indent=2) + '\n', expected_revision)
