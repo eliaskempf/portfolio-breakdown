@@ -62,7 +62,7 @@ universe to Total market requires an explicit save in the exposure target editor
 Data-coverage details appear when hovering over category names. Unassigned means
 no strategic category is assigned; an empty zero-value/zero-exposure row is hidden.
 Offsetting long and short exposures remain represented even if their net is zero.
-The **Notifications** tab holds stale ETF snapshots, manual-price notices,
+The **Notifications** bell beside **Portfolio settings** holds stale ETF snapshots, manual-price notices,
 valuation/performance gaps and refresh problems. Tooltips explain metrics and
 table columns without adding paragraphs to the overview.
 

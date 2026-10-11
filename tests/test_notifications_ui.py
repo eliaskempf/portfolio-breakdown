@@ -15,13 +15,22 @@ def test_data_notices_live_in_notifications_and_navigation_preserves_portfolio(t
     metric = by_label(app.metric, 'Portfolio value')
     assert not metric.proto.delta_description
     assert len(metric.proto.help) < 230
-    activate(app, 'Notifications')
+    assert 'Notifications' not in [tab.label for tab in app.tabs]
+    app.session_state['workspace_notifications'] = True
+    app.run()
     assert not app.exception
     assert any('manual/snapshot prices' in item.value for item in app.info)
-    activate(app, 'Overview')
+    assert app.session_state['main_tabs'] == 'Overview'
+    app.session_state['workspace_notifications'] = False
+    app.run()
     assert not any('manual/snapshot prices' in item.value for item in app.info)
     by_label(app.get('button_group'), 'Allocation measure').set_value('Capital allocation').run()
-    activate(app, 'Notifications')
+    activate(app, 'Positions')
+    app.session_state['workspace_notifications'] = True
+    app.run()
+    assert app.session_state['main_tabs'] == 'Positions'
+    assert any('manual/snapshot prices' in item.value for item in app.info)
+    app.session_state['workspace_notifications'] = False
     activate(app, 'Overview')
     assert by_label(app.get('button_group'), 'Allocation measure').value == 'Capital allocation'
     assert not app.exception

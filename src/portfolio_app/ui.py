@@ -58,7 +58,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if not render_startup_intro():
             return
     preserve_view_inputs()
-    data_dir, demo, refresh, settings_panel = app_header(data_dir, demo_dir, demo=demo)
+    data_dir, demo, refresh, settings_panel, notifications_panel = app_header(data_dir, demo_dir, demo=demo)
     from portfolio_app.backup_ui import backup_controls, render_backup_dialog
     if not demo and not ignore_selection:
         bind_workspace(persistent_data_dir, chosen)
@@ -227,15 +227,15 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         st.session_state['main_tabs'] = 'Positions' if holdings.empty and not feature_active else 'Overview'
     from portfolio_app.tour import prepare_tour, render_tour
     prepare_tour()
-    tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or actual_active else []) + ['Notifications']
+    tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or actual_active else [])
     if st.session_state['main_tabs'] not in tab_names:
         st.session_state['main_tabs'] = 'Overview'
     tabs = st.tabs(tab_names,
         default='Overview', key='main_tabs', on_change='rerun')
     overview, exposure, positions, rebalance = tabs[:4]
-    if tabs[-1].open:
+    if notifications_panel.open:
         from portfolio_app.notifications_ui import render_notifications
-        with tabs[-1]:
+        with notifications_panel:
             render_notifications(data_dir, funds, etf_revision, valued, status, demo=offline_demo,
                 cache_warning=price_service.cache_warning, exposure_issues=exposure_result.issues if exposure_result else (),
                 prices_pending=background_prices and market_coordinator.pending(market_workspace))
