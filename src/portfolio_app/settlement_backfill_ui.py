@@ -6,7 +6,8 @@ import streamlit as st
 
 from portfolio_app import account_journal as ledger
 from portfolio_app.accounts_ui import _save_review
-from portfolio_app.derivative_market import SettlementCache
+from portfolio_app.settlement_collection import fetch_archived
+from portfolio_app.settlement_archive import SettlementArchive
 from portfolio_app.holdings import DataError
 from portfolio_app.investment_history import settlement_history
 from portfolio_app.settlement_backfill import propose_settlements, retrieve_settlements
@@ -27,18 +28,15 @@ def render_settlement_backfill(directory, journal, revision, members, *, key):
     start = left.date_input('From', value=min(yesterday, max(first, yesterday-timedelta(days=6))),
         max_value=yesterday, key=key+'from')
     end = right.date_input('Through', value=yesterday, max_value=yesterday, key=key+'through')
-    context = (revision, start.isoformat(), end.isoformat())
+    context = (revision, start.isoformat(), end.isoformat(), SettlementArchive(directory).revision())
     if st.button('Retrieve settlements', icon=':material/download:', key=key+'fetch',
                  help='Free exact-contract daily prices, up to 31 calendar days. Missing dates stay visible. Fetching does not change account cash.'):
         try:
-            cache = SettlementCache(directory/'.cache'/'derivative-settlements')
             def fetch(contract, day):
-                result = cache.get(contract, day)
-                if result.observation is None:
-                    raise DataError(result.message or 'No exact-contract settlement available.')
-                return result.observation
+                return fetch_archived(directory,contract,day)
             with st.spinner('Retrieving exact-contract settlements…'):
                 days = retrieve_settlements(journal, identity, start.isoformat(), end.isoformat(), fetch=fetch)
+            context = (revision, start.isoformat(), end.isoformat(), SettlementArchive(directory).revision())
             st.session_state[key+'download'] = (context, days)
         except (DataError, OSError, ValueError) as exc:
             st.error(str(exc))

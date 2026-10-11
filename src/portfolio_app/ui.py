@@ -122,6 +122,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     sandbox, leverage = leverage_context.sandbox, leverage_context.settings
     journal = leverage_context.journal
     actual_active = bool(journal and journal.accounts)
+    from portfolio_app.settlement_archive_ui import watch_settlements
+    watch_settlements(data_dir,journal,demo=demo)
     actual_future = leverage_context.future
     leverage_supported, feature_active = leverage_context.supported, leverage_context.active
     unsupported_records = leverage_context.unsupported_records
@@ -236,13 +238,13 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     from portfolio_app.notifications_ui import notification_bell
     notifications_panel = notification_bell(notifications_slot, data_dir, funds, valued, status,
         demo=offline_demo, cache_warning=price_service.cache_warning,
-        exposure_issues=exposure_result.issues if exposure_result else (), disabled=tour_active())
+        exposure_issues=exposure_result.issues if exposure_result else (), disabled=tour_active(), journal=journal)
     if notifications_panel.open:
         from portfolio_app.notifications_ui import render_notifications
         with notifications_panel:
             render_notifications(data_dir, funds, etf_revision, valued, status, demo=offline_demo,
                 cache_warning=price_service.cache_warning, exposure_issues=exposure_result.issues if exposure_result else (),
-                prices_pending=background_prices and market_coordinator.pending(market_workspace))
+                prices_pending=background_prices and market_coordinator.pending(market_workspace), journal=journal)
     elif not demo_pending:
         # Keep background completion reruns active without displaying notices.
         render_refresh_status(data_dir, funds, etf_revision, demo=offline_demo, show_messages=False)

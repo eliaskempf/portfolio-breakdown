@@ -16,6 +16,8 @@ def test_normal_entry_allocates_existing_cash_to_named_investment(tmp_path):
     activate(app, 'Positions')
     by_label(app.button, 'Add position').click().run()
     by_label(app.get('button_group'), 'Position type').set_value('Future').run()
+    maturity = by_label(app.selectbox, 'Exact contract maturity')
+    maturity.select_index(0).run()
     by_label(app.text_input, 'Fill price').set_value('1000').run()
     by_label(app.text_input, 'Account name').set_value('Invented investment account').run()
     by_label(app.selectbox, 'Cash source').set_value('position-0').run()

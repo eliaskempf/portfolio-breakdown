@@ -53,6 +53,11 @@ def no_background_network(monkeypatch):
     # Background refresh is tested separately with injected offline providers.
     from portfolio_app.etf_refresh import coordinator
     monkeypatch.setattr(coordinator, 'schedule', lambda *args, **kwargs: False)
+    from portfolio_app.settlement_collection import collector
+    monkeypatch.setattr(collector, 'schedule', lambda *args, **kwargs: False)
+    from portfolio_app.derivative_market import make_contract
+    monkeypatch.setattr('portfolio_app.contract_maturity_ui.listed_contracts',
+        lambda product: tuple(make_contract(product, day) for day in ('2027-03-19','2027-06-18')))
 
 
 @pytest.fixture(scope="session")

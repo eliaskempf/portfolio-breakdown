@@ -30,12 +30,17 @@ workspace:
 | Document | Contents |
 | --- | --- |
 | `account-journal.json` | Accounts, exact contract definitions, position identities, dated transactions and corrections, cash/holding bindings, collateral reservations and entered margin requirements |
+| `settlement-archive.json` | Durable exact-contract daily settlement observations, retained source revisions and accepted prices |
+| `settlement-collection.json` | Last automatic collection attempts and dated source availability |
 | `account-observations.json` | Dated valuation marks and manual FX observations; these do not post cash |
 | `generalized-study-settings.json` | Named hypothetical scenarios, cash reserves, policies and input assumptions |
 | `leverage-settings.json` | Existing leverage settings, legacy liabilities and documented fund exposure factors |
 
-Public settlement/history downloads are cached separately from the journal.
-A cache refresh is not a transaction. Missing or failed downloads do not justify
+Daily settlements are archived separately from the journal and included in
+workspace backups. Clearing `.cache` does not remove this archive; closing or
+rolling a position retains its history. Archive writes retain observation versions
+in the document rather than creating a full per-download backup copy. Other
+public history downloads may remain in caches. A refresh is not a transaction. Missing or failed downloads do not justify
 reconstructing account balances from estimated prices. Keep the whole workspace,
 including caches and study inputs, private.
 

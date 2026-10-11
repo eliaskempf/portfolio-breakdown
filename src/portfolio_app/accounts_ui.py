@@ -135,7 +135,10 @@ def render_future_entry(directory, snapshot, *, valued=None, allocation=None):
     mode = st.radio('Record', ['New opening trade', 'Already-open position snapshot'], horizontal=True, key=key+'mode')
     day = st.date_input('Trade / snapshot date', value=date.today(), max_value=date.today(), key=key+'date')
     product = st.selectbox('Futures product', [*CATALOG, 'Manual contract'], key=key+'product')
-    expiry = st.date_input('Exact contract maturity', value=date(date.today().year + 1, 3, 19), key=key+'expiry')
+    from portfolio_app.contract_maturity_ui import maturity_input
+    expiry = maturity_input(product, key=key+'expiry_')
+    if expiry is None:
+        return
     try:
         if product == 'Manual contract':
             code = st.text_input('Product code', key=key+'code')
@@ -215,7 +218,7 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
             sync_contract_investment(journal, key)
         else:
             st.session_state[key+'view'] = 'Cash & financing'
-    view = st.segmented_control('Account workspace', ['Positions & transactions', 'Cash & financing', 'Collateral', 'Marks & FX', 'Studies'],
+    view = st.segmented_control('Account workspace', ['Positions & transactions', 'Cash & financing', 'Collateral', 'Marks & FX', 'Settlement history', 'Studies'],
         default='Positions & transactions', key=key+'view')
     if view == 'Studies':
         from portfolio_app.generalized_studies_ui import render_generalized_studies
@@ -226,6 +229,10 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
         positions = [dict(id=p.spec.id, name=f'{p.contract.product} {p.contract.expiry}', contract=p.contract,
             quantity=p.quantity, last_price=marks[p.spec.id].price if p.spec.id in marks else p.last_price) for p in state.positions.values()]
         render_generalized_studies(directory, positions=positions, reporting_currency=reporting_currency())
+        return
+    if view == 'Settlement history':
+        from portfolio_app.settlement_archive_ui import render_history_checks
+        render_history_checks(directory,journal,list(state.positions),key=key+'history_')
         return
     if view == 'Marks & FX':
         render_marks(directory, journal)
@@ -315,7 +322,13 @@ def render_transaction(directory, journal, revision, *, position_ids=None, key_p
                 if action != 'Roll position':
                     candidate = ledger.append_event(candidate, close_event)
                 if action == 'Roll position':
-                    expiry = st.date_input('New contract maturity', value=date(date.today().year+1,3,19), key=key+'next_expiry')
+                    from portfolio_app.contract_maturity_ui import maturity_input
+                    expiry = maturity_input(contract.product if contract.exchange == 'EUREX' else None,
+                        label='New contract maturity', key=key+'next_expiry_', after=contract.expiry)
+                    if expiry is None:
+                        return
+                    if expiry.isoformat() <= contract.expiry:
+                        raise DataError('Choose a new maturity later than the current contract.')
                     new_price = _money_input('New contract execution price', key+'next_price', '')
                     new_quantity = int(st.number_input('New signed contracts', value=balance.quantity, step=1, key=key+'next_quantity'))
                     next_contract = replace(contract, expiry=expiry.isoformat(), last_trade_date='', final_settlement_date='')

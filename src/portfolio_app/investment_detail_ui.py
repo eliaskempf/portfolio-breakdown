@@ -60,7 +60,9 @@ def render_roll(directory, journal, revision, members, *, key):
         closing_text = st.text_input('Closing execution price', key=key+'close_price')
     with right:
         st.markdown('**2. Open the new maturity**')
-        expiry = st.date_input('New contract maturity', value=None, key=key+'expiry')
+        from portfolio_app.contract_maturity_ui import maturity_input
+        expiry = maturity_input(contract.product if contract.exchange == 'EUREX' else None,
+            label='New contract maturity', key=key+'expiry_', after=contract.expiry)
         opening_text = st.text_input('Opening execution price', key=key+'open_price')
     fees_text = st.text_input(f'Total roll fees ({contract.currency})', value='0', key=key+'fees')
     with st.expander('How rolling is recorded'):
@@ -184,6 +186,8 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
         from portfolio_app.futures_chart_ui import render_futures_chart
         render_futures_chart(directory, [balance.contract for balance in balances], key=key+'chart_')
     elif view == 'Settlements':
+        from portfolio_app.settlement_archive_ui import render_history_checks
+        render_history_checks(directory,journal,members,key=key+'archive_')
         st.button('Retrieve settlements', icon=':material/download:', key=key+'retrieve_settlements',
             help='Retrieve missing daily prices for this exact contract and review their cash postings.',
             on_click=st.session_state.__setitem__, args=(key+'action', 'Retrieve settlements'))

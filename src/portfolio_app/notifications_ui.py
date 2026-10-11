@@ -27,9 +27,11 @@ def unread_notifications(current, seen, *, opened=False):
     return (False, set(current)) if opened else (bool(set(current)-retained), retained)
 
 
-def notification_bell(slot, directory, funds, valued, status, *, demo=False, cache_warning='', exposure_issues=(), disabled=False):
+def notification_bell(slot, directory, funds, valued, status, *, demo=False, cache_warning='', exposure_issues=(), disabled=False, journal=None):
     _, refresh_issues = refresh_notices(directory, funds, demo=demo)
-    current = notification_fingerprints(valued, status, refresh_issues=refresh_issues,
+    from portfolio_app.settlement_archive_ui import settlement_notices
+    _, settlement_issues = settlement_notices(directory,journal)
+    current = notification_fingerprints(valued, status, refresh_issues=(*refresh_issues,*settlement_issues),
         cache_warning=cache_warning, exposure_issues=exposure_issues)
     seen = st.session_state.setdefault('notification_seen', {})
     workspace = str(directory.resolve())
@@ -50,9 +52,17 @@ def _render_notice(message):
 
 
 def render_notifications(directory, funds, revision, valued, status, *, demo=False,
-                         cache_warning='', exposure_issues=(), prices_pending=False):
+                         cache_warning='', exposure_issues=(), prices_pending=False, journal=None):
     st.subheader('Notifications')
     render_refresh_status(directory, funds, revision, demo=demo, render_notice=_render_notice)
+    from portfolio_app.settlement_archive_ui import settlement_notices
+    messages,_ = settlement_notices(directory,journal)
+    for message in messages:
+        _render_notice(message)
+    if messages:
+        from portfolio_app.accounts_ui import _key
+        st.button('Review settlement history',key='notification_settlement_history',
+            on_click=lambda: st.session_state.update(main_tabs='Futures', **{_key(directory)+'view':'Settlement history'}))
     if prices_pending:
         _render_notice('Updating market prices…')
     manual = int(valued.price_status.eq('manual').sum())

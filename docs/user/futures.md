@@ -13,7 +13,11 @@ Open **Positions → Add position → Future**. Choose **New opening trade** or
 signed whole contracts and price. Positive quantities are long; negative
 quantities are short. Select a listed product or supply a manual contract's
 currency, point multiplier and tick. Verify the exact maturity rather than
-assuming that a product code identifies one contract.
+assuming that a product code identifies one contract. Listed products offer the
+actual maturities published by Eurex, with no preselected contract. Rolls offer
+only later listed maturities. **Historical / manual maturity…** permits an expired
+or otherwise unlisted exact contract; verify that date from your trade records.
+If the listing source is unavailable, only the explicit manual option is offered.
 
 Select an account or create one. If its cash already appears in Holdings, choose
 **Adopt existing cash**: the account balance replaces that holding's contribution
@@ -134,6 +138,30 @@ Corrections update this effective view while the original journal facts remain
 preserved. Closing trades contribute to realized P&L but are not daily settlements.
 Downloaded market observations do not create entries in this recorded history
 until reviewed and saved.
+
+### Automatic history archive and comparisons
+
+While the normal app is open, eligible contracts collect available daily settlement
+history in the background. Startup fills missing dates within the previous 31
+calendar days; a daily refresh rechecks the most recent week for source revisions.
+Recent unavailable dates retry hourly. Active contracts and recently closed or
+rolled legs are eligible. Weekends and final-settlement dates are excluded;
+source holidays or unavailable historical records remain visible gaps. No download
+creates a cash posting, transaction or tax entry.
+
+Saved observations survive cache clearing and closing or rolling the position.
+Existing exact-contract settlement caches migrate into the archive. Source
+revisions preserve the accepted price and both versions. The notification bell
+flags source changes, recorded-price differences and unavailable downloads.
+
+Open **Settlements → History checks** in position details, or **Futures → Settlement
+history** for all contract histories. **Check source history** compares any selected
+period of up to 31 days against newly retrieved observations. The table compares
+archived, retrieved and recorded prices. **Use retrieved price in archive** accepts
+a source revision into the archive only; correcting an account transaction remains
+a separate reviewed action. Observation versions retain source and retrieval time.
+Free historical coverage is incomplete, so unavailable dates still require verified
+manual records. Collection does not run while the app is closed.
 
 ### Retrieve missed daily settlements
 

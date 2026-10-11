@@ -37,6 +37,8 @@ def test_add_future_from_normal_position_dialog(tmp_path):
     activate(app,'Positions')
     by_label(app.button,'Add position').click().run()
     by_label(app.get('button_group'),'Position type').set_value('Future').run()
+    maturity = by_label(app.selectbox, 'Exact contract maturity')
+    maturity.select_index(0).run()
     assert not app.exception
     by_label(app.text_input,'Fill price').set_value('1000').run()
     by_label(app.text_input,'Account name').set_value('Invented futures account').run()
