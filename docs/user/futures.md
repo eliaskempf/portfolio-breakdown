@@ -57,7 +57,7 @@ of that gain has already settled into cash. If the account also contains €3,00
 unallocated cash, that appears separately. Attributed cash is counted only once.
 
 Select the investment in Overview or Positions to open **Position details**,
-using the same popup as ordinary holdings. It shows capital, net gain, notional
+using the same popup as ordinary holdings. It shows capital, net P&L, notional
 exposure and contract history, including closed expiries. The holdings list keeps
 its capital-value columns; futures exposure is available in the popup and the
 Overview **Market exposure** view. A roll retains the investment's name,
@@ -96,9 +96,26 @@ identity, capital allocation and cumulative performance are retained. This recor
 executed transactions; it does not send orders to a broker.
 
 Use **Record transaction** in the popup for settlements, increases/reductions,
-closes, fees and optional manually recorded tax payments. **Edit allocation**
-changes the investment name or attributed principal. Account-wide cash, financing,
+closes, fees and optional manually recorded tax payments. The **Edit position**
+button at the top of the popup opens **Edit allocation**, which changes the investment name or attributed principal. Account-wide cash, financing,
 collateral and corrections remain available under **Futures**.
+
+## P&L and settlement history
+
+The popup separates **Realized P&L** (recorded daily/final settlements and closing
+trades) from **Unrealized P&L** (open-contract movement since the clearing basis).
+Both are trading amounts before costs. Daily settlement realizes P&L even when
+contracts remain open. A settlement awaiting payment is already realized; its
+later receipt must not realize it again. **Net P&L since recorded start** also
+includes attributed fees, interest and manually entered taxes. Reporting amounts
+use current FX; pre-snapshot performance remains unknown.
+
+Choose **Settlements** to see every effective daily/final settlement across the
+investment's contract history: date, expiry, signed quantity at settlement, price,
+realized amount, currency, value date, cash status, actual posting date and source.
+Corrections update this effective view while the original journal facts remain
+preserved. Closing trades contribute to realized P&L but are not daily settlements.
+Downloaded market observations do not create entries in this recorded history.
 
 ## Cash, settlement and exposure
 

@@ -11,6 +11,7 @@ from portfolio_app.accounts_ui import _event, _key, _save_review
 from portfolio_app.currency_display import reporting_currency
 from portfolio_app.futures_investments import investment_positions
 from portfolio_app.holdings import DataError
+from portfolio_app.investment_history import pnl_breakdown, settlement_history
 from portfolio_app.money import format_money
 from portfolio_app.presentation import performance_metric
 
@@ -22,7 +23,7 @@ def _history(state, members, valued):
         balance = state.positions[identity]
         record = {'Contract': balance.contract.product, 'Maturity': balance.contract.expiry,
             'Contracts': balance.quantity, 'Status': 'Open' if balance.quantity else 'Closed',
-            'Settled P&L': str(balance.realized_pnl), 'Fees': str(balance.fees),
+            'Realized P&L': str(balance.realized_pnl), 'Fees': str(balance.fees),
             'Entered taxes': str(balance.taxes), 'Currency': balance.contract.currency}
         if indexed is not None and identity in indexed.index:
             row = indexed.loc[identity]
@@ -123,12 +124,15 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
     account = next(a.name for a in journal.accounts if a.id == balances[0].spec.account_id)
     names = {b.id:b.name for b in allocation.buckets} if allocation else {}
     category = names.get(balances[0].spec.bucket_id, 'Unassigned')
+    if st.button('Edit position', icon=':material/edit:', key=key+'edit_position',
+                 help='Edit the investment name and allocated principal. Record contract changes as transactions.'):
+        st.session_state[key+'view'] = 'Edit allocation' if investment else 'Record transaction'
     st.subheader(investment.name if investment else f'{balances[0].contract.product} futures')
     st.caption(f'{account} · {category} · {balances[0].contract.currency} settlement')
-    modes = ['Contract history', 'Roll contracts', 'Record transaction'] + (['Edit allocation'] if investment else [])
+    modes = ['Contract history', 'Settlements', 'Roll contracts', 'Record transaction'] + (['Edit allocation'] if investment else [])
     if st.session_state.pop('position_edit_detail_requested', False) or key+'view' not in st.session_state:
         st.session_state[key+'view'] = 'Edit allocation' if editing and investment else 'Contract history'
-    if valued is not None and st.session_state.get(key+'view') in (None, 'Contract history'):
+    if valued is not None and st.session_state.get(key+'view') in (None, 'Contract history', 'Settlements'):
         display = investment_positions(valued,journal) if investment else valued
         matches = display.loc[display.position_id.eq(identity)]
         if not matches.empty:
@@ -137,12 +141,20 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
             capital, gain, returns = st.columns(3)
             capital.metric('Capital value' if investment else 'Unsettled value', format_money(row.current_value_reporting,currency))
             with gain:
-                performance_metric('Net gain since recorded start', format_money(row.unrealized_gain_reporting,currency,signed=True),
+                performance_metric('Net P&L since recorded start', format_money(row.unrealized_gain_reporting,currency,signed=True),
                     row.unrealized_gain_reporting,key=key+'gain')
             with returns:
                 amount = row.return_pct
                 performance_metric('Return on initial capital', f'{amount:+.2f}%' if pd.notna(amount) else '—',
                     amount,key=key+'return')
+            realized, unrealized = pnl_breakdown(journal, members, valued)
+            left, right = st.columns(2)
+            left.metric('Realized P&L', format_money(realized,currency,signed=True),
+                help='Trading P&L crystallized by recorded settlements and closing trades, including amounts awaiting cash posting. Before fees, interest and entered taxes.')
+            right.metric('Unrealized P&L', format_money(unrealized,currency,signed=True),
+                help='Open-contract change from the latest clearing basis to the valuation mark. Previously settled gains are excluded.')
+            st.caption('Realized P&L includes daily settlements while contracts remain open. '
+                'Net P&L also includes fees, attributed interest and entered taxes. All figures start with the recorded history.')
             exposure, contracts = st.columns(2)
             exposure.metric('Market exposure', format_money(row.signed_notional_reporting,currency),
                 help='Signed current contract notional. This measures market exposure, not money paid for the contracts.')
@@ -156,7 +168,19 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
                     st.caption('Account cash attributed to this investment is counted once in portfolio value.')
     view = st.segmented_control('Futures position view', modes, key=key+'view',
         default=st.session_state[key+'view'], label_visibility='collapsed') or 'Contract history'
-    if view == 'Roll contracts':
+    if view == 'Settlements':
+        st.markdown('**Settlement history**')
+        history = settlement_history(journal, members)
+        st.caption('Recorded daily and final settlements across all maturities, in settlement currency. '
+            'Cash status reflects actual postings; reaching a value date alone does not post cash. '
+            'Corrections replace the effective entry; original records remain in the account journal.')
+        if history.empty:
+            st.info('No settlements have been recorded for this investment yet. Use Record transaction to add one.')
+        else:
+            st.dataframe(history,hide_index=True,width='stretch')
+        st.caption('Closing-trade P&L also contributes to realized P&L; it is not a daily settlement. '
+            'Downloaded marks are price observations and do not appear here until a settlement is recorded.')
+    elif view == 'Roll contracts':
         render_roll(directory,journal,revision,members,key=key+'roll_')
     elif view == 'Record transaction':
         from portfolio_app.accounts_ui import render_transaction
