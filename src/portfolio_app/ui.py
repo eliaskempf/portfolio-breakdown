@@ -307,7 +307,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                 def open_exposure_targets():
                     st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Exposure targets')
                 def open_capital_targets():
-                    st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Capital targets')
+                    st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Category targets')
                 render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_capital_targets=open_capital_targets, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
                                           leverage_enabled=(leverage.enabled or actual_active) and leverage_supported,
                                           percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
@@ -339,7 +339,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                         render_policy_settings(data_dir, leverage, allocation, future=actual_future)
                     else:
                         st.caption('Leverage settings currently require EUR reporting.')
-                    target_mode = st.segmented_control('Target measure', ['Capital targets', 'Exposure targets'], default='Exposure targets' if leverage.active_basis == 'exposure' else 'Capital targets', key='exposure_target_mode') if (leverage.enabled or actual_active) and leverage_supported else 'Capital targets'
+                    if st.session_state.get('exposure_target_mode') == 'Capital targets':
+                        st.session_state['exposure_target_mode'] = 'Category targets'
+                    target_mode = st.segmented_control('Target measure', ['Category targets', 'Exposure targets'], default='Exposure targets' if leverage.active_basis == 'exposure' else 'Category targets', key='exposure_target_mode') if (leverage.enabled or actual_active) and leverage_supported else 'Category targets'
                     if target_mode == 'Exposure targets':
                         render_exposure_targets(data_dir, allocation, exposure_result)
                     else:

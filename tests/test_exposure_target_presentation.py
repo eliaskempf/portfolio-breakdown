@@ -145,7 +145,7 @@ def test_normal_overview_market_targets_and_editor_navigation(tmp_path):
     assert 'value' in [column['key'] for column in list_data(app, 'Positions')['columns']]
     app.button(key='overview_capital_targets').click().run()
     assert not app.exception
-    assert by_label(app.get('button_group'), 'Target measure').value == 'Capital targets'
+    assert by_label(app.get('button_group'), 'Target measure').value == 'Category targets'
 
 
 def test_zero_unassigned_hidden_but_cash_and_offsetting_exposures_remain():
@@ -192,3 +192,55 @@ def test_overview_requires_measure_and_never_falls_back_to_capital_targets(tmp_p
     assert not app.exception
     assert by_label(app.get('button_group'), 'Allocation measure').value == 'Market exposure'
     assert list_frame(app, 'Market exposure').set_index('Category').loc['Core', 'Target (%)'] == 80.
+
+
+def test_existing_percentages_compare_with_exposure_without_leverage_policy(tmp_path):
+    from portfolio_app.allocation import save_allocation
+    from portfolio_app.positions import read_snapshot
+    from portfolio_app.storage import revision
+    from test_futures_ui import launch as launch_app
+    from test_portfolio_exposure import CONFIG as categories
+    from test_portfolio_exposure_ui import synthetic_workspace
+    from test_ui import by_label, list_frame
+
+    _, workspace = synthetic_workspace(tmp_path)
+    categories = replace(categories, buckets=tuple(replace(b, target=t)
+        for b, t in zip(categories.buckets, (.5, .3, .2))))
+    path = workspace/'allocation.yaml'
+    save_allocation(path, categories, read_snapshot(workspace/'holdings.csv').holdings, revision(path))
+    before = path.read_bytes()
+    app = launch_app(workspace, open_futures=False)
+    table = list_frame(app, 'Market exposure').set_index('Category')
+    assert table.loc['Core', 'Target (%)'] == 50.
+    assert table.loc['Core', '% of exposure'] == pytest.approx(110000/140000*100)
+    assert table.loc['Core', 'Gap (pp)'] == pytest.approx(110000/140000*100-50.)
+    assert 'Target exposure' not in table
+    assert 'no total exposure multiple' in app.button(key='overview_exposure_targets').help
+    by_label(app.selectbox, 'Category').set_value('core').run()
+    table = list_frame(app, 'Market exposure').set_index('Category')
+    assert table.loc['Invented fund', 'Target (%)'] == 100.
+    assert table.loc['Invented fund', '% of exposure'] == pytest.approx(60000/110000*100)
+    # Edit opens the actual source of these percentages, without inventing a policy.
+    app.button(key='overview_exposure_targets').click().run()
+    assert not app.exception
+    assert by_label(app.get('button_group'), 'Target measure').value == 'Category targets'
+    assert not (workspace/'exposure-targets.json').exists()
+    assert path.read_bytes() == before
+
+
+def test_invalid_saved_policy_does_not_silently_use_existing_percentages(tmp_path):
+    app = AppTest.from_string('''
+from pathlib import Path
+import pandas as pd
+import streamlit as st
+from portfolio_app.exposure_target_presentation import render_market_target_summary
+from test_exposure_target_presentation import CONFIG, invented_result
+fallback = pd.DataFrame({'Target (%)': [75.]})
+result = render_market_target_summary(invented_result(), CONFIG, Path(st.session_state.directory), '', composition_table=fallback)
+st.session_state.has_table = result is not None
+''')
+    (tmp_path/'exposure-targets.json').write_text('{"invalid":true}')
+    app.session_state.directory = str(tmp_path)
+    app.run()
+    assert not app.exception and app.warning
+    assert not app.session_state.has_table

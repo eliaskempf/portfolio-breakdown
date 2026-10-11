@@ -90,7 +90,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 st.session_state['strategic_allocation_measure'] = 'Market exposure'
             measure = st.segmented_control('Allocation measure', ['Market exposure', 'Capital allocation'],
                 default='Market exposure', required=True, key='strategic_allocation_measure', label_visibility='collapsed',
-                help='Exposure compares market exposure with exposure targets. Capital compares invested value with capital targets.')
+                help='Exposure compares market exposure shares with target percentages. Capital compares invested value with target percentages.')
     if mode == 'Analytics':
         analytics(selected.loc[selected.position_id.ne('future:overlay')], scope, scoped_future, bool(bucket))
         return
@@ -179,13 +179,15 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 target_help = {}
                 if market:
                     table = table.rename(columns={'Value': 'Exposure', 'Current (%)': '% of exposure'})
-                    table[['Target (%)', 'Gap (pp)']] = float('nan')
                     from portfolio_app.exposure_target_presentation import TARGET_COLUMN_HELP, render_market_target_summary
                     target_table = render_market_target_summary(exposure_result, config, data_dir, bucket,
-                                                                open_targets=open_exposure_targets, controls=target_controls)
+                                                                open_targets=open_exposure_targets, controls=target_controls,
+                                                                composition_table=table, open_composition=open_capital_targets)
                     if target_table is not None:
                         table = target_table
-                        target_help = TARGET_COLUMN_HELP
+                        target_help = {**TARGET_COLUMN_HELP, 'Target (%)': 'Saved target share within this scope. A percentage comparison does not require a total exposure multiple.'}
+                    else:
+                        table[['Target (%)', 'Gap (pp)']] = float('nan')
                 for col in table:
                     if col not in {'Category', 'Status'}:
                         table[col] = pd.to_numeric(table[col], errors='coerce')

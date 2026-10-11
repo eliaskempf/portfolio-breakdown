@@ -43,7 +43,13 @@ With leverage enabled, **Market exposure** is the first and default allocation
 view in Overview. It shows current exposure value, current share, target share and **Gap (pp)**, where
 positive means overweight (current minus target). **Capital allocation** remains
 available with its own capital targets; exposure targets are not cash targets.
-Use **Edit** beside either table heading to open the corresponding target editor.
+When no separate exposure policy is saved, Market exposure compares against your
+existing category and position target percentages. For example, 35% current
+exposure against a 40% target gives a −5 pp gap. This composition comparison
+requires no target leverage multiple and does not create target currency amounts
+or change saved percentages. A separately saved market-exposure policy takes
+precedence; an equity-only or invalid policy is not replaced by this fallback.
+Use **Edit** beside either table heading to edit the percentages used there.
 Hover over the heading for its measure definition. Exposure targets are a separate policy under
 **Rebalance → Targets → Exposure targets**: choose a desired total multiple of
 portfolio net equity and category composition. Capital targets stay unchanged.

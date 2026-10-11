@@ -51,7 +51,7 @@ def market_target_summary(result, targets, allocation, bucket=''):
         ['Exposure', 'Category'], ascending=[False, True], ignore_index=True)
 
 
-def render_market_target_summary(result, allocation, data_dir, bucket, *, open_targets=None, controls=None):
+def render_market_target_summary(result, allocation, data_dir, bucket, *, open_targets=None, controls=None, composition_table=None, open_composition=None):
     """Return a saved-policy table, or explain why only current exposure is shown."""
     from contextlib import nullcontext
     import streamlit as st
@@ -64,9 +64,17 @@ def render_market_target_summary(result, allocation, data_dir, bucket, *, open_t
     except DataError as exc:
         st.warning(str(exc))
         targets = None
+        composition_table = None
     table = None
+    callback = open_targets
     help_text = 'Set desired exposure and category targets. Capital targets are separate.'
-    if targets is None:
+    if targets is None and composition_table is not None:
+        # Existing percentages describe a mix, independently of total leverage.
+        # Do not invent an absolute exposure policy or change saved targets.
+        table = composition_table.copy()
+        callback = open_composition or open_targets
+        help_text = 'Edit existing category and position target percentages. These compare with exposure shares; no total exposure multiple is assumed.'
+    elif targets is None:
         pass
     elif targets.universe != 'market':
         help_text = 'Saved targets cover equity only. Edit the policy to compare Total market exposure.'
@@ -77,8 +85,8 @@ def render_market_target_summary(result, allocation, data_dir, bucket, *, open_t
         except DataError as exc:
             st.warning(str(exc))
         help_text = f'Total exposure target: {targets.multiple:g}× portfolio net equity. Targets apply to categories, not individual positions.'
-    if open_targets is not None:
+    if callback is not None:
         with controls if controls is not None else nullcontext():
             st.button('Edit', icon=':material/edit:', key='overview_exposure_targets',
-                      on_click=open_targets, type='tertiary', help='Edit exposure targets. ' + help_text)
+                      on_click=callback, type='tertiary', help=help_text)
     return table
