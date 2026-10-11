@@ -65,6 +65,9 @@ Offsetting long and short exposures remain represented even if their net is zero
 The **Notifications** bell beside **Portfolio settings** holds stale ETF snapshots, manual-price notices,
 valuation/performance gaps and refresh problems. Tooltips explain metrics and
 table columns without adding paragraphs to the overview.
+A dot marks unread notices. Opening the panel marks current notices as seen;
+new, changed or recurring notices light it again. Seen state is separate per
+portfolio for the current browser session; notices remain available after reading.
 
 ## Analytical labels are separate {#classifications}
 

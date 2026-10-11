@@ -58,7 +58,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if not render_startup_intro():
             return
     preserve_view_inputs()
-    data_dir, demo, refresh, settings_panel, notifications_panel = app_header(data_dir, demo_dir, demo=demo)
+    data_dir, demo, refresh, settings_panel, notifications_slot = app_header(data_dir, demo_dir, demo=demo)
     from portfolio_app.backup_ui import backup_controls, render_backup_dialog
     if not demo and not ignore_selection:
         bind_workspace(persistent_data_dir, chosen)
@@ -233,6 +233,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     tabs = st.tabs(tab_names,
         default='Overview', key='main_tabs', on_change='rerun')
     overview, exposure, positions, rebalance = tabs[:4]
+    from portfolio_app.notifications_ui import notification_bell
+    notifications_panel = notification_bell(notifications_slot, data_dir, funds, valued, status,
+        demo=offline_demo, cache_warning=price_service.cache_warning,
+        exposure_issues=exposure_result.issues if exposure_result else (), disabled=tour_active())
     if notifications_panel.open:
         from portfolio_app.notifications_ui import render_notifications
         with notifications_panel:

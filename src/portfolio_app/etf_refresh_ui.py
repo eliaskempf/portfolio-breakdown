@@ -14,6 +14,29 @@ def refresh_revision(data_dir):
         return 0
 
 
+def refresh_notices(data_dir, funds, *, demo=False):
+    """Messages and stable issue identities, shared with the unread indicator."""
+    if demo:
+        return [], ()
+    records = read_json(Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json')
+    old = [(f.isin, str(f.as_of)) for f in funds if snapshot_age_days(f) > 7]
+    failed = [(f.isin, records[f.isin].get('error', '')) for f in funds
+              if records.get(f.isin, {}).get('status') == 'failed']
+    unavailable = [(key, record.get('error', '')) for key, record in records.items()
+                   if record.get('status') == 'unavailable']
+    error = coordinator.error(data_dir)
+    parts = ([f'{len(old)} outdated ETF snapshot(s)'] if old else []) + (
+        [f'{len(failed)} refresh(es) failed; saved data retained'] if failed else [])
+    if unavailable:
+        parts.append(f'{len(unavailable)} ETF breakdown(s) unavailable · See Exposure → Data & settings → ETF refresh & snapshots to retry')
+    if error:
+        parts.append('ETF refresh unavailable')
+    identities = tuple((kind, *item) for kind, items in [('old', old), ('failed', failed), ('unavailable', unavailable)] for item in items)
+    if error:
+        identities += (('refresh-error', str(error)),)
+    return parts, identities
+
+
 def render_refresh_status(data_dir, funds, revision, *, demo=False, show_messages=True):
     if demo:
         return  # Offline fixtures have invented dates, not stale provider data.
@@ -28,18 +51,9 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False, show_message
             return
         if pending:
             st.caption('Discovering and updating ETF holdings · Using saved snapshots')
-        else:
-            records = read_json(Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json') if not demo else {}
-            failed = sum(records.get(f.isin, {}).get('status') == 'failed' for f in funds)
-            unavailable = sum(record.get('status') == 'unavailable' for record in records.values())
-            old = sum(snapshot_age_days(f) > 7 for f in funds)
-            parts = ([f'{old} outdated ETF snapshot(s)'] if old else []) + ([f'{failed} refresh(es) failed; saved data retained'] if failed else [])
-            if unavailable:
-                parts.append(f'{unavailable} ETF breakdown(s) unavailable · See Exposure → Data & settings → ETF refresh & snapshots to retry')
-            if coordinator.error(data_dir) and not demo:
-                parts.append('ETF refresh unavailable')
-            if parts:
-                st.caption(' · '.join(parts))
+        parts, _ = refresh_notices(data_dir, funds)
+        if parts:
+            st.caption(' · '.join(parts))
     status()
 
 

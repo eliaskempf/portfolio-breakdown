@@ -23,7 +23,9 @@ CSS = """
 /* Keep the bell's text available to assistive technology without a visible label. */
 .st-key-header_notifications [data-testid="stPopoverButton"] [data-testid="stMarkdownContainer"] {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
 .st-key-header_notifications [data-testid="stPopoverButton"] [aria-hidden="true"] {display:none;}
-.st-key-header_notifications [data-testid="stIconMaterial"] {font-size:20px;}
+.st-key-header_notifications [data-testid="stPopoverButton"] {position:relative;padding:0;}
+.st-key-header_notifications [data-testid="stIconMaterial"] {position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:20px;line-height:1;}
+.st-key-header_notifications [data-testid="stPopoverButton"]::after {content:none;position:absolute;right:7px;top:7px;width:8px;height:8px;border-radius:50%;background:#d04755;box-shadow:0 0 0 2px var(--st-background-color);pointer-events:none;}
 .st-key-app_header [data-testid="stHorizontalBlock"] {flex-wrap:wrap;gap:12px;}
 .stDialog > div:has(.st-key-welcome_personal) {width:min(880px,calc(100vw - 32px))!important;max-width:880px;margin:clamp(24px,12vh,120px) auto!important;}
 .st-key-welcome_demo,.st-key-welcome_personal {padding:24px!important;border-radius:16px!important;min-height:285px;}

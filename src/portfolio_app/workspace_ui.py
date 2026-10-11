@@ -35,10 +35,7 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                     st.session_state['portfolio_workspace_context'] = context
             offline = demo and not (data_dir / '.live-demo').exists()
             refresh = st.button('Refresh prices', help='Request updated quotes and exchange rates. Unavailable in the synthetic offline demo.', icon=':material/refresh:', type='tertiary', disabled=offline)
-            with st.container(key='header_notifications', width=44):
-                notifications = st.popover('Notifications', icon=':material/notifications:',
-                    help='Notifications', key='workspace_notifications', on_change='rerun',
-                    disabled=touring, width='stretch')
+            notifications = st.container(key='header_notifications', width=44)
             if touring:
                 st.button('Portfolio settings', icon=':material/tune:', disabled=True)
                 st.button('?', disabled=True)
