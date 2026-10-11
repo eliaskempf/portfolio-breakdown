@@ -38,8 +38,7 @@ def render_roll(directory, journal, revision, members, *, key):
     state = ledger.replay(journal)
     active = [identity for identity in members if state.positions[identity].quantity]
     st.markdown('**Roll contracts**')
-    st.caption('Record the close of an existing contract and the opening of a new maturity together. '
-        'Your investment, allocated capital and accumulated gains stay together. This records trades you have made.')
+    st.caption('Record an executed close and opening in a new maturity together.')
     if not active:
         st.info('There are no open contracts to roll.')
         return
@@ -64,8 +63,9 @@ def render_roll(directory, journal, revision, members, *, key):
         expiry = st.date_input('New contract maturity', value=None, key=key+'expiry')
         opening_text = st.text_input('Opening execution price', key=key+'open_price')
     fees_text = st.text_input(f'Total roll fees ({contract.currency})', value='0', key=key+'fees')
-    st.caption('The same number and direction of contracts opens in the new maturity. '
-        'The difference between the two execution prices is not an immediate gain or loss.')
+    with st.expander('How rolling is recorded'):
+        st.caption('The same quantity and direction opens in the new maturity. The expiry price gap is not an immediate gain or loss. '
+            'Your investment, allocated capital and accumulated P&L remain together.')
     value_day = day
     if st.checkbox('Cash is posted on a later date', key=key+'deferred'):
         value_day = st.date_input('Cash value date', value=day, min_value=day, key=key+'value_date')
@@ -124,75 +124,72 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
     account = next(a.name for a in journal.accounts if a.id == balances[0].spec.account_id)
     names = {b.id:b.name for b in allocation.buckets} if allocation else {}
     category = names.get(balances[0].spec.bucket_id, 'Unassigned')
-    if st.button('Edit position', icon=':material/edit:', key=key+'edit_position',
-                 help='Edit the investment name and allocated principal. Record contract changes as transactions.'):
-        st.session_state[key+'view'] = 'Edit allocation' if investment else 'Record transaction'
+    views = ['Chart', 'Settlements', 'Contract history']
+    if st.session_state.pop('position_edit_detail_requested', False):
+        st.session_state[key+'action'] = 'Edit allocation' if editing and investment else None
+        st.session_state[key+'selected_view'] = 'Chart'
+        st.session_state[key+'view'] = 'Chart'
+    if st.session_state.get(key+'view') not in views:
+        st.session_state[key+'view'] = st.session_state.get(key+'selected_view', 'Chart')
+    with st.container(horizontal=True):
+        st.button('Edit position', icon=':material/edit:', key=key+'edit_position',
+            help='Edit the investment name and allocated principal.',
+            on_click=st.session_state.__setitem__, args=(key+'action', 'Edit allocation' if investment else 'Record transaction'))
+        st.button('Record transaction', key=key+'record',
+            on_click=st.session_state.__setitem__, args=(key+'action', 'Record transaction'))
+        st.button('Roll contracts', key=key+'roll', disabled=not any(b.quantity for b in balances),
+            on_click=st.session_state.__setitem__, args=(key+'action', 'Roll contracts'))
     st.subheader(investment.name if investment else f'{balances[0].contract.product} futures')
-    st.caption(f'{account} · {category} · {balances[0].contract.currency} settlement')
-    modes = ['Price history', 'Contract history', 'Settlements', 'Roll contracts', 'Record transaction'] + (['Edit allocation'] if investment else [])
-    if st.session_state.pop('position_edit_detail_requested', False) or key+'view' not in st.session_state:
-        st.session_state[key+'view'] = 'Edit allocation' if editing and investment else 'Price history'
-    if valued is not None and st.session_state.get(key+'view') in (None, 'Price history', 'Contract history', 'Settlements'):
+    active = [b for b in balances if b.quantity]
+    contract_label = (f'{active[0].quantity:+d} {active[0].contract.product} · {active[0].contract.expiry}'
+                      if len(active) == 1 else f'{len(active)} open maturities' if active else 'Closed')
+    st.caption(f'{contract_label} · {account}')
+    action = st.session_state.get(key+'action')
+    if action:
+        st.button('Back to position', icon=':material/arrow_back:', key=key+'back',
+            on_click=st.session_state.__setitem__, args=(key+'action', None))
+        if action == 'Roll contracts':
+            render_roll(directory,journal,revision,members,key=key+'roll_')
+        elif action == 'Record transaction':
+            from portfolio_app.accounts_ui import render_transaction
+            render_transaction(directory,journal,revision,position_ids=members,key_prefix=key+'transaction_')
+        elif action == 'Edit allocation' and investment:
+            from portfolio_app.investment_ui import _edit_investment
+            _edit_investment(directory,journal,revision,investment,key,show_toggle=False)
+        return
+    row = None
+    currency = reporting_currency()
+    if valued is not None:
         display = investment_positions(valued,journal) if investment else valued
         matches = display.loc[display.position_id.eq(identity)]
         if not matches.empty:
             row = matches.iloc[0]
-            currency = reporting_currency()
-            capital, gain, returns = st.columns(3)
+            capital, gain, exposure = st.columns(3)
             capital.metric('Capital value' if investment else 'Unsettled value', format_money(row.current_value_reporting,currency))
             with gain:
-                performance_metric('Net P&L since recorded start', format_money(row.unrealized_gain_reporting,currency,signed=True),
+                performance_metric('Net P&L', format_money(row.unrealized_gain_reporting,currency,signed=True),
                     row.unrealized_gain_reporting,key=key+'gain')
-            with returns:
-                amount = row.return_pct
-                performance_metric('Return on initial capital', f'{amount:+.2f}%' if pd.notna(amount) else '—',
-                    amount,key=key+'return')
-            realized, unrealized = pnl_breakdown(journal, members, valued)
-            left, right = st.columns(2)
-            left.metric('Realized P&L', format_money(realized,currency,signed=True),
-                help='Trading P&L crystallized by recorded settlements and closing trades, including amounts awaiting cash posting. Before fees, interest and entered taxes.')
-            right.metric('Unrealized P&L', format_money(unrealized,currency,signed=True),
-                help='Open-contract change from the latest clearing basis to the valuation mark. Previously settled gains are excluded.')
-            st.caption('Realized P&L includes daily settlements while contracts remain open. '
-                'Net P&L also includes fees, attributed interest and entered taxes. All figures start with the recorded history.')
-            exposure, contracts = st.columns(2)
             exposure.metric('Market exposure', format_money(row.signed_notional_reporting,currency),
-                help='Signed current contract notional. This measures market exposure, not money paid for the contracts.')
-            contracts.metric('Open contracts', f'{sum(b.quantity for b in balances):+d}',
-                help='Signed contracts across the investment’s open maturities; positive is long and negative is short.')
-            if investment:
-                with st.expander('Capital and performance details'):
-                    st.caption(row.performance_note)
-                    st.write(f'Initial capital: {format_money(investment.reference_capital,investment.currency)}')
-                    st.write(f'Net additional allocation: {format_money(investment.allocated_capital-investment.reference_capital,investment.currency,signed=True)}')
-                    st.caption('Account cash attributed to this investment is counted once in portfolio value.')
-    view = st.segmented_control('Futures position view', modes, key=key+'view',
-        default=st.session_state[key+'view'], label_visibility='collapsed') or 'Price history'
-    if view == 'Price history':
+                help='Signed contract notional, separate from allocated capital.')
+    view = st.segmented_control('Futures position view', views, key=key+'view',
+        default=st.session_state[key+'view'], label_visibility='collapsed') or 'Chart'
+    st.session_state[key+'selected_view'] = view
+    if view == 'Chart':
         from portfolio_app.futures_chart_ui import render_futures_chart
         render_futures_chart(directory, [balance.contract for balance in balances], key=key+'chart_')
     elif view == 'Settlements':
-        st.markdown('**Settlement history**')
         history = settlement_history(journal, members)
-        st.caption('Recorded daily and final settlements across all maturities, in settlement currency. '
-            'Cash status reflects actual postings; reaching a value date alone does not post cash. '
-            'Corrections replace the effective entry; original records remain in the account journal.')
         if history.empty:
-            st.info('No settlements have been recorded for this investment yet. Use Record transaction to add one.')
+            st.info('No settlements recorded yet. Use Record transaction to add one.')
         else:
-            st.dataframe(history,hide_index=True,width='stretch')
-        st.caption('Closing-trade P&L also contributes to realized P&L; it is not a daily settlement. '
-            'Downloaded marks are price observations and do not appear here until a settlement is recorded.')
-    elif view == 'Roll contracts':
-        render_roll(directory,journal,revision,members,key=key+'roll_')
-    elif view == 'Record transaction':
-        from portfolio_app.accounts_ui import render_transaction
-        render_transaction(directory,journal,revision,position_ids=members,key_prefix=key+'transaction_')
-    elif view == 'Edit allocation':
-        from portfolio_app.investment_ui import _edit_investment
-        _edit_investment(directory,journal,revision,investment,key,show_toggle=False)
+            columns = ['Date', 'Contract', 'Maturity', 'Contracts', 'Settlement price', 'Realized P&L', 'Currency', 'Cash status']
+            st.dataframe(history[columns],hide_index=True,width='stretch')
+            with st.expander('Posting details'):
+                st.dataframe(history,hide_index=True,width='stretch')
+                st.caption('Effective recorded daily and final settlements. Cash posts only when recorded; '
+                    'a value date alone does not post a receipt. Corrections retain the original journal facts. '
+                    'Closing-trade P&L and downloaded price observations are separate from this settlement history.')
     else:
-        st.markdown('**Contract history**')
         history = _history(state,members,valued)
         columns = ['Contract', 'Maturity', 'Contracts', 'Status']
         if 'Valuation price' in history:
@@ -200,6 +197,22 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
         st.dataframe(history[columns],hide_index=True,width='stretch')
         with st.expander('Contract accounting and price sources'):
             st.dataframe(history.drop(columns=['Contracts', 'Status']),hide_index=True,width='stretch')
-        st.caption('Closed maturities remain part of this investment. Choose Roll contracts to move all or part of an open position to its next maturity.')
+    with st.expander('Position details'):
+        st.caption(f'{category} · {balances[0].contract.currency} settlement')
+        if row is not None:
+            realized, unrealized = pnl_breakdown(journal, members, valued)
+            left, right = st.columns(2)
+            left.metric('Realized P&L', format_money(realized,currency,signed=True))
+            right.metric('Unrealized P&L', format_money(unrealized,currency,signed=True))
+            st.caption('Realized trading P&L includes daily settlements and closes, including pending cash. '
+                'Unrealized P&L measures open movement since the clearing basis. '
+                'Net P&L also includes attributed fees, interest and entered taxes, from the recorded start.')
+            amount = row.return_pct
+            st.write('Return on initial capital: '+(f'{amount:+.2f}%' if pd.notna(amount) else '—'))
+            if investment:
+                st.write(f'Initial capital: {format_money(investment.reference_capital,investment.currency)}')
+                st.write(f'Net additional allocation: {format_money(investment.allocated_capital-investment.reference_capital,investment.currency,signed=True)}')
+                st.caption(row.performance_note)
+                st.caption('Attributed account cash is counted once in portfolio value.')
         if not investment:
-            st.caption('This contract has no capital allocation yet. Group its history as an investment in Accounts & futures to show allocated capital and cumulative performance.')
+            st.caption('Group this contract history as an investment in Accounts & futures to assign capital and cumulative performance.')

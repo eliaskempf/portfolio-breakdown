@@ -35,7 +35,7 @@ def start(tmp_path, *, short=False):
 
 
 def roll_inputs(app, *, closing='1050', opening='1060', quantity=2):
-    by_label(app.get('button_group'),'Futures position view').set_value('Roll contracts').run()
+    by_label(app.button,'Roll contracts').click().run()
     by_label(app.date_input,'Roll date').set_value(date(2026,1,5)).run()
     by_label(app.number_input,'Contracts to roll').set_value(quantity).run()
     by_label(app.text_input,'Closing execution price').set_value(closing).run()
@@ -48,11 +48,12 @@ def test_popup_matches_normal_details_and_exposure_stays_in_details(tmp_path):
     app,_=start(tmp_path)
     assert by_label(app.metric,'Capital value').value=='€19,992.00'
     assert by_label(app.metric,'Market exposure').value=='€20,000.00'
-    assert by_label(app.get('button_group'),'Futures position view').value=='Price history'
+    assert by_label(app.get('button_group'),'Futures position view').value=='Chart'
     by_label(app.button,'Close').click().run()
     assert not app.session_state['position_edit_dialog']
     open_investment(app,tmp_path,editing=True)
-    assert by_label(app.get('button_group'),'Futures position view').value=='Edit allocation'
+    assert by_label(app.text_input,'Investment name')
+    assert not any(control.label=='Futures position view' for control in app.get('button_group'))
 
 
 @pytest.mark.parametrize('short', [False,True])
@@ -95,7 +96,7 @@ def test_roll_changed_input_invalidates_review_and_bad_maturity_does_not_post(tm
 
 def test_dialog_record_transaction_is_scoped_and_refreshes_after_save(tmp_path):
     app,_=start(tmp_path)
-    by_label(app.get('button_group'),'Futures position view').set_value('Record transaction').run()
+    by_label(app.button,'Record transaction').click().run()
     by_label(app.text_input,'Settlement price').set_value('1010').run()
     by_label(app.button,'Review changes').click().run()
     by_label(app.button,'Save reviewed changes').click().run()
@@ -125,7 +126,7 @@ def test_pending_cash_in_dialog_is_limited_to_this_investment(tmp_path):
     save_journal(tmp_path,journal,None)
     app=launch_actual(tmp_path)
     open_investment(app,tmp_path)
-    by_label(app.get('button_group'),'Futures position view').set_value('Record transaction').run()
+    by_label(app.button,'Record transaction').click().run()
     action=by_label(app.selectbox,'Action')
     assert 'Roll position' not in action.options
     action.set_value('Receive pending cash').run()
@@ -144,12 +145,30 @@ def test_edit_button_and_settlement_history_in_normal_popup(tmp_path):
     open_investment(app,tmp_path)
     assert by_label(app.metric,'Realized P&L').value=='+€200.00'
     assert by_label(app.metric,'Unrealized P&L').value=='+€0.00'
-    assert by_label(app.metric,'Net P&L since recorded start').value=='+€192.00'
+    assert by_label(app.metric,'Net P&L').value=='+€192.00'
     by_label(app.button,'Edit position').click().run()
-    assert by_label(app.get('button_group'),'Futures position view').value=='Edit allocation'
     assert by_label(app.text_input,'Investment name')
+    assert not any(control.label=='Futures position view' for control in app.get('button_group'))
+    by_label(app.button,'Back to position').click().run()
     by_label(app.get('button_group'),'Futures position view').set_value('Settlements').run()
-    histories=[frame.value for frame in app.dataframe if 'Settlement price' in frame.value]
+    histories=[frame.value for frame in app.dataframe if 'Settlement price' in frame.value and 'Source' not in frame.value]
     assert len(histories)==1 and histories[0].iloc[0]['Realized P&L']==200
     assert not app.exception
     assert load_journal(tmp_path)[0]==journal
+
+
+def test_action_forms_return_to_selected_view_without_writing(tmp_path):
+    app,journal=start(tmp_path)
+    view=by_label(app.get('button_group'),'Futures position view')
+    assert view.options==['Chart','Settlements','Contract history']
+    view.set_value('Contract history').run()
+    by_label(app.button,'Roll contracts').click().run()
+    assert by_label(app.button,'Back to position')
+    assert not any(control.label=='Futures position view' for control in app.get('button_group'))
+    by_label(app.button,'Back to position').click().run()
+    assert by_label(app.get('button_group'),'Futures position view').value=='Contract history'
+    by_label(app.button,'Edit position').click().run()
+    by_label(app.button,'Back to position').click().run()
+    assert by_label(app.get('button_group'),'Futures position view').value=='Contract history'
+    assert load_journal(tmp_path)[0]==journal
+    assert not app.exception

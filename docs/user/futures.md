@@ -57,8 +57,11 @@ of that gain has already settled into cash. If the account also contains €3,00
 unallocated cash, that appears separately. Attributed cash is counted only once.
 
 Select the investment in Overview or Positions to open **Position details**,
-using the same popup as ordinary holdings. It shows capital, net P&L, notional
-exposure and contract history, including closed expiries. The holdings list keeps
+using the same popup as ordinary holdings. The summary shows capital value, net
+P&L and market exposure. **Chart**, **Settlements** and **Contract history** switch
+the content, while **Edit position**, **Record transaction** and **Roll contracts**
+open separate action forms. **Back to position** returns to the selected view.
+Closed expiries remain in contract history. The holdings list keeps
 its capital-value columns; futures exposure is available in the popup and the
 Overview **Market exposure** view. A roll retains the investment's name,
 initial capital and cumulative performance. Separate investments can use the same
@@ -83,7 +86,7 @@ investment gains do not reconstruct historical FX gains on allocated capital.
 
 ## Roll from position details
 
-Open a futures investment and choose **Roll contracts**. Select the current
+Open a futures investment and click **Roll contracts**. Select the current
 contract, roll date and number of contracts. Under **Close the current contract**,
 enter its executed closing price. Under **Open the new maturity**, enter the exact
 later maturity and its executed opening price. Enter the total roll fees once.
@@ -102,17 +105,18 @@ collateral and corrections remain available under **Futures**.
 
 ## P&L and settlement history
 
-The popup separates **Realized P&L** (recorded daily/final settlements and closing
-trades) from **Unrealized P&L** (open-contract movement since the clearing basis).
+Expand **Position details** for **Realized P&L** (recorded daily/final settlements
+and closing trades) and **Unrealized P&L** (open-contract movement since the clearing basis).
 Both are trading amounts before costs. Daily settlement realizes P&L even when
 contracts remain open. A settlement awaiting payment is already realized; its
-later receipt must not realize it again. **Net P&L since recorded start** also
+later receipt must not realize it again. **Net P&L** in the summary also
 includes attributed fees, interest and manually entered taxes. Reporting amounts
 use current FX; pre-snapshot performance remains unknown.
 
 Choose **Settlements** to see every effective daily/final settlement across the
 investment's contract history: date, expiry, signed quantity at settlement, price,
-realized amount, currency, value date, cash status, actual posting date and source.
+realized amount, currency and cash status. Expand **Posting details** for the
+value date, actual posting date, source and notes.
 Corrections update this effective view while the original journal facts remain
 preserved. Closing trades contribute to realized P&L but are not daily settlements.
 Downloaded market observations do not create entries in this recorded history.
@@ -176,7 +180,7 @@ values; an old clearing basis is not a fresh market quote.
 
 ## Market history in position details
 
-**Price history** is the default view in the futures popup. It uses the same
+**Chart** is the default view in the futures popup. It uses the same
 chart, period controls, background loading, cache and retry behavior as ordinary
 holdings. This shows market context, separate from your recorded settlements,
 contract valuation and personal P&L.
@@ -211,11 +215,15 @@ currency controls and historical FX conversion.
 
 Automatic mapping requires a recognized Eurex product, matching currency and
 return convention. A custom or unmatched contract has no inferred reference.
-An explicit **Chart reference** selection provides a comparison for the current
-session, labelled as unverified for that contract. It does not change the saved
-contract, look-through proxy, risk inputs or account records. Rolls of the same
+Under **Chart details**, an explicit **Chart reference** selection provides a
+comparison for the current session. The chart subtitle labels it **Comparison**.
+The expanded details explain that its match to the contract is unverified.
+This selection does not change the saved contract, look-through proxy, risk inputs
+or account records. Rolls of the same
 product share a reference; investments spanning different markets have a market
-selector rather than a spliced chart.
+selector in **Chart details** rather than a spliced chart. Source, retrieval time,
+coverage and interpretation notes also live there; stale or unavailable history
+remains visible beside the chart.
 
 Charts do not represent futures prices, carry, contract quantities, leverage,
 roll costs or personal returns. Unavailable history stays unavailable; stale

@@ -12,9 +12,10 @@ from portfolio_app.market_data import history_for
 
 def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
                           heading='Market-price history', index_points=False,
-                          expected_currency=None, service=None,
+                          expected_currency=None, service=None, compact=False,
                           caption='Instrument closing prices in {currency} · Excludes dividend reinvestment · Not your personal return history'):
-    st.markdown(f'**{heading}**')
+    if not compact:
+        st.markdown(f'**{heading}**')
     period = st.segmented_control('Period', list(PERIODS), default='1Y', key=key+'period') or '1Y'
     if service is None:
         service = HistoryService(DemoHistoryProvider(), data_dir / '.cache' / 'history') if demo else history_for(data_dir)
@@ -50,11 +51,13 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
             line=dict(color='#5470c6', width=2), hovertemplate='%{x}<br>%{y:,.2f} '+units+'<extra></extra>')))
         figure.update_layout(height=300, yaxis_title=units, margin=dict(l=12, r=12, t=12, b=30))
         st.plotly_chart(figure, width='stretch', config=chart_config())
-        st.caption(caption.format(currency=result.currency))
-        st.caption(f'History last retrieved: {result.fetched_at}')
-    if result.note:
+        if not compact:
+            st.caption(caption.format(currency=result.currency))
+            st.caption(f'History last retrieved: {result.fetched_at}')
+    if result.note and (not compact or result.status not in {'fresh', 'cached'}):
         (st.warning if result.status == 'stale' else st.info)(result.note)
     if not demo and not pending and result.status in {'stale', 'unavailable'} and ticker and not manual:
         if st.button('Retry history', key=key+'retry'):
             service.get(ticker, period, refresh=True)
             st.rerun()
+    return result

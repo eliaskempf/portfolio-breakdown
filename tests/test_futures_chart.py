@@ -105,6 +105,9 @@ def test_unknown_contract_requires_explicit_reference_and_preserves_journal(tmp_
     assert calls==['MSCI:990100:NETR:EUR']
     assert len(app.get('plotly_chart')) >= 1
     assert any('match to this contract' in caption.value for caption in app.caption)
+    by_label(app.get('button_group'),'Futures position view').set_value('Settlements').run()
+    by_label(app.get('button_group'),'Futures position view').set_value('Chart').run()
+    assert by_label(app.selectbox,'Chart reference').value=='MSCI:990100:NETR:EUR'
     assert load_journal(tmp_path)[0]==journal
     assert not app.exception
 
