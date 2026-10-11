@@ -37,7 +37,7 @@ def refresh_notices(data_dir, funds, *, demo=False):
     return parts, identities
 
 
-def render_refresh_status(data_dir, funds, revision, *, demo=False, show_messages=True):
+def render_refresh_status(data_dir, funds, revision, *, demo=False, show_messages=True, render_notice=None):
     if demo:
         return  # Offline fixtures have invented dates, not stale provider data.
     running = not demo and coordinator.running(data_dir)
@@ -49,11 +49,15 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False, show_message
             st.rerun()
         if not show_messages:
             return
+        notice = render_notice or st.caption
         if pending:
-            st.caption('Discovering and updating ETF holdings · Using saved snapshots')
+            notice('Discovering and updating ETF holdings · Using saved snapshots')
         parts, _ = refresh_notices(data_dir, funds)
-        if parts:
-            st.caption(' · '.join(parts))
+        if render_notice is not None:
+            for part in parts:
+                notice(part)
+        elif parts:
+            notice(' · '.join(parts))
     status()
 
 

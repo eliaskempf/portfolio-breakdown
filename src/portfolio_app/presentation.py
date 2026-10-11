@@ -54,7 +54,7 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 .st-key-exposure_toolbar [data-testid="stColumn"] {min-width:0;}
 @container(max-width:860px) {
   .st-key-overview_allocation_summary {transform:none;}
-  .st-key-overview_allocation [data-testid="stHorizontalBlock"] {flex-direction:column;align-items:stretch;}
+  .st-key-overview_allocation [data-testid="stHorizontalBlock"]:not(.st-key-overview_allocation_heading) {flex-direction:column;align-items:stretch;}
   .st-key-overview_allocation [data-testid="stColumn"] {width:100%!important;flex:1 1 100%;min-width:0;}
   .st-key-exposure_theme_results [data-testid="stHorizontalBlock"] {flex-direction:column;align-items:stretch;}
   .st-key-exposure_theme_results [data-testid="stColumn"] {width:100%!important;flex:1 1 100%;min-width:0;}

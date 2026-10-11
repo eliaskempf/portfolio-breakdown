@@ -20,19 +20,19 @@ def test_data_notices_live_in_notifications_and_navigation_preserves_portfolio(t
     app.session_state['workspace_notifications'] = True
     app.run()
     assert not app.exception
-    assert any('manual/snapshot prices' in item.value for item in app.info)
+    assert any('manual/snapshot prices' in item.value for item in app.markdown)
     seen = app.session_state['notification_seen'][str(tmp_path.resolve())].copy()
     assert seen
     assert app.session_state['main_tabs'] == 'Overview'
     app.session_state['workspace_notifications'] = False
     app.run()
-    assert not any('manual/snapshot prices' in item.value for item in app.info)
+    assert not any('manual/snapshot prices' in item.value for item in app.markdown)
     by_label(app.get('button_group'), 'Allocation measure').set_value('Capital allocation').run()
     activate(app, 'Positions')
     app.session_state['workspace_notifications'] = True
     app.run()
     assert app.session_state['main_tabs'] == 'Positions'
-    assert any('manual/snapshot prices' in item.value for item in app.info)
+    assert any('manual/snapshot prices' in item.value for item in app.markdown)
     app.session_state['workspace_notifications'] = False
     activate(app, 'Overview')
     assert by_label(app.get('button_group'), 'Allocation measure').value == 'Capital allocation'
@@ -45,6 +45,11 @@ def test_data_notices_live_in_notifications_and_navigation_preserves_portfolio(t
     app.session_state['workspace_notifications'] = True
     app.run()
     assert len(app.session_state['notification_seen'][str(tmp_path.resolve())]) > len(seen)
+    # Provider and price notices share the same neutral card presentation.
+    notices = [item for item in app.markdown if 'manual/snapshot prices' in item.value or 'ETF refresh unavailable' in item.value]
+    assert len(notices) == 2
+    assert not app.info
+    assert not app.warning
 
 
 def test_unread_lifecycle_resolution_and_new_notices():

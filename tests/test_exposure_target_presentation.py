@@ -91,7 +91,7 @@ def test_overview_target_controls_unset_legacy_and_market(tmp_path):
     assert not app.exception
     assert not app.caption
     assert 'Capital targets are separate' in app.button[0].help
-    assert app.button[0].label == 'Set exposure targets'
+    assert app.button[0].label == 'Edit'
     app.button[0].click().run()
     assert app.session_state.opened
     assert not list(tmp_path.iterdir())
@@ -99,7 +99,7 @@ def test_overview_target_controls_unset_legacy_and_market(tmp_path):
     app.run()
     assert 'equity only' in app.button[0].help
     assert not app.dataframe
-    assert app.button[0].label == 'Edit exposure targets'
+    assert app.button[0].label == 'Edit'
     from portfolio_app.exposure_targets import load_exposure_targets
     _, revision = load_exposure_targets(tmp_path, CONFIG)
     save_exposure_targets(tmp_path, TARGET, CONFIG, revision)
@@ -128,18 +128,24 @@ def test_normal_overview_market_targets_and_editor_navigation(tmp_path):
     assert table.loc['Core', 'Gap'] == 10000.
     from list_helpers import list_data
     columns = list_data(app, 'Market exposure')['columns']
-    assert [column['key'] for column in columns] == ['Category', '% of exposure', 'Target (%)', 'Gap (pp)']
+    assert [column['key'] for column in columns] == ['Category', 'Exposure', '% of exposure', 'Target (%)', 'Gap (pp)']
     assert columns[0]['tooltip'] == 'Row details'
-    assert 'value' not in [column['key'] for column in list_data(app, 'Positions')['columns']]
+    assert 'value' in [column['key'] for column in list_data(app, 'Positions')['columns']]
     by_label(app.selectbox, 'Category').set_value('core').run()
     table = list_frame(app, 'Market exposure')
     assert table.Category.tolist() == ['Core']
     assert table['Target (%)'].item() == 100.
     assert not any('category as a whole' in x.value for x in app.caption)
-    by_label(app.button, 'Edit exposure targets').click().run()
+    app.button(key='overview_exposure_targets').click().run()
     assert not app.exception
     assert by_label(app.get('button_group'), 'Target measure').value == 'Exposure targets'
     assert by_label(app.number_input, 'Desired total exposure (× net equity)').value == 1.5
+    activate(app, 'Overview')
+    by_label(app.get('button_group'), 'Allocation measure').set_value('Capital allocation').run()
+    assert 'value' in [column['key'] for column in list_data(app, 'Positions')['columns']]
+    app.button(key='overview_capital_targets').click().run()
+    assert not app.exception
+    assert by_label(app.get('button_group'), 'Target measure').value == 'Capital targets'
 
 
 def test_zero_unassigned_hidden_but_cash_and_offsetting_exposures_remain():

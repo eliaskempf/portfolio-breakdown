@@ -51,8 +51,9 @@ def market_target_summary(result, targets, allocation, bucket=''):
         ['Exposure', 'Category'], ascending=[False, True], ignore_index=True)
 
 
-def render_market_target_summary(result, allocation, data_dir, bucket, *, open_targets=None):
+def render_market_target_summary(result, allocation, data_dir, bucket, *, open_targets=None, controls=None):
     """Return a saved-policy table, or explain why only current exposure is shown."""
+    from contextlib import nullcontext
     import streamlit as st
     from portfolio_app.exposure_targets import load_exposure_targets
 
@@ -77,6 +78,7 @@ def render_market_target_summary(result, allocation, data_dir, bucket, *, open_t
             st.warning(str(exc))
         help_text = f'Total exposure target: {targets.multiple:g}× portfolio net equity. Targets apply to categories, not individual positions.'
     if open_targets is not None:
-        st.button('Edit exposure targets' if targets else 'Set exposure targets',
-                  key='overview_exposure_targets', on_click=open_targets, type='tertiary', help=help_text)
+        with controls if controls is not None else nullcontext():
+            st.button('Edit', icon=':material/edit:', key='overview_exposure_targets',
+                      on_click=open_targets, type='tertiary', help='Edit exposure targets. ' + help_text)
     return table

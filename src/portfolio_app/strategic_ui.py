@@ -21,7 +21,7 @@ from portfolio_app.performance import position_performance, summarize_performanc
 from portfolio_app.strategic import bucket_paths, category_labels, bucket_positions, strategic_summary, strategic_tree, strategic_performance
 
 
-def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None):
+def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None, open_capital_targets=None):
     if 'unrealized_gain_reporting' not in valued:
         valued = position_performance(valued)
     from portfolio_app.futures import funded_strategy_positions
@@ -163,7 +163,15 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     st.info('No positive exposure in this category.' if market else 'No priced holdings in this category.' if missing else 'No current holdings in this category.')
             with table_column, st.container(key='overview_allocation_summary'):
                 title = 'Market exposure' if market else 'Allocation'
-                st.markdown(f'**{title}**')
+                with st.container(horizontal=True, wrap=False, vertical_alignment='center', key='overview_allocation_heading'):
+                    st.markdown(f'**{title}**', width='stretch', help=(
+                        'Market exposure includes signed futures notional and leveraged fund exposure. Cash collateral is not added again.'
+                        if market else 'Capital allocated to each category, including futures investment equity. Uses capital allocation targets.'))
+                    target_controls = st.container(width='content')
+                if not market and open_capital_targets is not None:
+                    with target_controls:
+                        st.button('Edit', icon=':material/edit:', key='overview_capital_targets',
+                                  on_click=open_capital_targets, type='tertiary', help='Edit capital allocation targets.')
                 table = strategic_summary(plotted, config, bucket)
                 target_help = {}
                 if market:
@@ -171,7 +179,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     table[['Target (%)', 'Gap (pp)']] = float('nan')
                     from portfolio_app.exposure_target_presentation import TARGET_COLUMN_HELP, render_market_target_summary
                     target_table = render_market_target_summary(exposure_result, config, data_dir, bucket,
-                                                                open_targets=open_exposure_targets)
+                                                                open_targets=open_exposure_targets, controls=target_controls)
                     if target_table is not None:
                         table = target_table
                         target_help = TARGET_COLUMN_HELP
@@ -185,7 +193,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     'Missing price': 'Missing valuation; percentages are unavailable.',
                     'Empty': 'No current holdings.'})
                 columns = [column for column in table if column not in {'Status', 'Row details'} |
-                           ({'Exposure', 'Target exposure', 'Gap'} if market else set())]
+                           ({'Target exposure', 'Gap'} if market else set())]
                 render_list(frame_rows(table), [ListColumn(column, f'% of {scope}' if column == 'Current (%)' else column,
                             tooltip='Row details' if column == 'Category' else '',
                             help=target_help.get(column, column_help(column, scope=scope)), numeric=column not in {'Category', 'Status'}, signed=column in {'Gap (pp)', 'Gap'}, color_signed=False) for column in columns],

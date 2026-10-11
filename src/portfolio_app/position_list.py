@@ -104,7 +104,7 @@ def render_overview_positions(valued, config, *, context, scope, open_position=N
         if callback:
             callback(event['id'])
 
-    columns = [('name', 'Investment'), *([] if exposure_amounts is not None else [('value', 'Value')]), ('allocation', '% of exposure' if exposure_amounts is not None else f'% of {scope}'),
+    columns = [('name', 'Investment'), ('value', 'Exposure' if exposure_amounts is not None else 'Value'), ('allocation', '% of exposure' if exposure_amounts is not None else f'% of {scope}'),
                ('returnPct', 'Return (%)'), ('gainReporting', 'Gain')]
     _render_table(rows, columns, context=context, revision=revision, on_open=open_row,
                   interactive=bool(open_position), editable=bool(edit_position), details_column='name')
@@ -125,8 +125,8 @@ def _render_table(rows, columns, *, context, revision, on_open, interactive=True
                               help={'name': 'Investment name; select a row for position details.',
                                     'quantity': 'Total units or currently open contracts; a futures investment retains its closed-contract history.',
                                     'exposure': 'Signed futures notional in portfolio currency. Exposure is separate from capital value.',
-                                    'value': 'Current value in portfolio currency at the available unit price and exchange rate.',
-                                    'allocation': 'Current position value as a percentage of ' + (label.removeprefix('% of ') if label.startswith('% of ') else 'the displayed portfolio selection') + '.',
+                                    'value': 'Current signed market exposure in portfolio currency.' if label == 'Exposure' else 'Current value in portfolio currency at the available unit price and exchange rate.',
+                                    'allocation': ('Current market exposure' if label == '% of exposure' else 'Current position value') + ' as a percentage of ' + (label.removeprefix('% of ') if label.startswith('% of ') else 'the displayed portfolio selection') + '.',
                                     'portfolio': 'Optional portfolio or strategy grouping saved with this position.',
                                     'account': 'Account or storage location saved with this position.',
                                     'returnPct': 'Recorded gain divided by purchase cost or futures reference capital; see the position note.',

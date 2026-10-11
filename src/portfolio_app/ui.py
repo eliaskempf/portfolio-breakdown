@@ -302,7 +302,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                     st.session_state.setdefault('strategic_allocation_measure', 'Market exposure')
                 def open_exposure_targets():
                     st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Exposure targets')
-                render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
+                def open_capital_targets():
+                    st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Capital targets')
+                render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_capital_targets=open_capital_targets, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
                                           leverage_enabled=(leverage.enabled or actual_active) and leverage_supported,
                                           percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
                                           edit_position=lambda position_id: open_valued_position(position_id, editing=True),
