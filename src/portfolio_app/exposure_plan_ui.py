@@ -1,6 +1,6 @@
 """Hypothetical exposure trades with explicitly permitted instruments."""
 import streamlit as st
-from portfolio_app.money import euros
+from portfolio_app.money import format_money
 
 from portfolio_app.exposure_planning import plan_exposure
 from portfolio_app.exposure_targets import load_exposure_targets
@@ -23,17 +23,17 @@ def render_exposure_plan(directory, result, allocation, valued, *, future=None):
     if future:
         names['future:overlay'] = future.instrument + ' future'
     permitted = st.multiselect('Permitted instruments', list(names), format_func=names.get, key='planning_exposure_instruments')
-    contribution = st.number_input('External contribution (EUR)', min_value=0., value=0., key='planning_exposure_contribution')
+    contribution = st.number_input(f'External contribution ({result.reporting_currency})', min_value=0., value=0., key='planning_exposure_contribution')
     with st.expander('Funding, fees & execution constraints', expanded=True):
         sales = st.checkbox('Allow funded-asset sales', value=False, key='planning_exposure_sales')
-        fee = st.number_input('Funded trade fee per unit (EUR)', min_value=0., value=0., key='planning_exposure_fee')
+        fee = st.number_input(f'Funded trade fee per unit ({result.reporting_currency})', min_value=0., value=0., key='planning_exposure_fee')
         future_fee = collateral = funding = 0.
         margin, limit, shorts = None, 10000, False
         if 'future:overlay' in permitted:
-            collateral = st.number_input('Eligible existing future collateral (EUR)', min_value=0., value=None, key='planning_exposure_collateral')
-            funding = st.number_input('Contribution dedicated to future (EUR)', min_value=0., value=0., key='planning_exposure_funding')
-            margin = st.number_input('Declared initial margin per contract (EUR)', min_value=0., value=None, key='planning_exposure_margin')
-            future_fee = st.number_input('Future fee per traded contract (EUR)', min_value=0., value=0., key='planning_exposure_future_fee')
+            collateral = st.number_input(f'Eligible existing future collateral ({result.reporting_currency})', min_value=0., value=None, key='planning_exposure_collateral')
+            funding = st.number_input(f'Contribution dedicated to future ({result.reporting_currency})', min_value=0., value=0., key='planning_exposure_funding')
+            margin = st.number_input(f'Declared initial margin per contract ({result.reporting_currency})', min_value=0., value=None, key='planning_exposure_margin')
+            future_fee = st.number_input(f'Future fee per traded contract ({result.reporting_currency})', min_value=0., value=0., key='planning_exposure_future_fee')
             limit = st.number_input('Maximum absolute contracts', min_value=0, max_value=10000, value=max(1, abs(future.contracts)), key='planning_exposure_limit')
             shorts = st.checkbox('Permit short futures', value=False, key='planning_exposure_shorts')
         st.caption('Purchases use only the contribution and permitted sale proceeds. Future funding is part of that contribution; notional never consumes a cash purchase budget. '
@@ -52,9 +52,9 @@ def render_exposure_plan(directory, result, allocation, valued, *, future=None):
             st.info('No improving trades within the permitted instruments and constraints.')
         else:
             st.dataframe(plan.trades.drop(columns='Position ID'), hide_index=True, width='stretch')
-        st.success('Targets reached within EUR 0.01.') if plan.complete else st.warning('Remaining target gaps: the permitted trades and constraints do not reach every target.')
+        st.success(f'Targets reached within {result.reporting_currency} 0.01.') if plan.complete else st.warning('Remaining target gaps: the permitted trades and constraints do not reach every target.')
         st.dataframe(plan.gaps.drop(columns='Bucket ID'), hide_index=True, width='stretch')
-        st.caption(f'Planned equity {euros(plan.equity)} · Fees {euros(plan.fees)} · Unallocated contribution / sale proceeds {euros(plan.unallocated_cash)}')
+        st.caption(f'Planned equity {format_money(plan.equity,result.reporting_currency)} · Fees {format_money(plan.fees,result.reporting_currency)} · Unallocated contribution / sale proceeds {format_money(plan.unallocated_cash,result.reporting_currency)}')
         if 'future:overlay' in permitted:
-            st.caption(f'Initial margin {euros(plan.margin_required)} · Declared collateral after fees {euros(plan.collateral_remaining)}')
+            st.caption(f'Initial margin {format_money(plan.margin_required,result.reporting_currency)} · Declared collateral after fees {format_money(plan.collateral_remaining,result.reporting_currency)}')
         st.caption('Preview only, at current marks. Minimizes total absolute category gaps, then turnover. Residual cash remains in net equity with zero risk-bearing exposure. No orders or funding transactions are saved.')

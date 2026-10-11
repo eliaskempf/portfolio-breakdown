@@ -240,7 +240,7 @@ def render_futures(valued, data_dir, position, revision, *, allocation=None, fun
             st.dataframe(futures_scenarios(summary, preview, [-.3, -.2, -.1, -.05, 0., .05, .1, .2, .3], move_base=move_base, assumptions=assumptions, portfolio_result=marked),
                          hide_index=True, width='stretch')
         with st.expander('Exposure alongside the portfolio'):
-            table = marked.exposures[['asset_name', 'source_position_id', 'value', 'exposure_eur', 'status']].copy()
+            table = marked.exposures[['asset_name', 'source_position_id', 'value', 'exposure_reporting', 'status']].copy()
             table.columns = ['Investment', 'Source position', 'Funded value (EUR)', 'Equity exposure (EUR)', 'Coverage']
             table['Exposure / net equity (%)'] = table['Equity exposure (EUR)'] / marked.denominator * 100 if marked.denominator and marked.exposure_complete else float('nan')
             st.dataframe(table, hide_index=True, width='stretch')

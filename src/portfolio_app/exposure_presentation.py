@@ -7,7 +7,13 @@ from portfolio_app.futures import require_eur_reporting
 
 
 def exposure_positions(valued, result, future=None):
-    require_eur_reporting(valued)
+    if result.reporting_currency == 'EUR':
+        require_eur_reporting(valued)
+    elif (future is not None or 'reporting_currency' not in valued
+          or not valued.reporting_currency.eq(result.reporting_currency).all()
+          or valued.attrs.get('reporting_currency', result.reporting_currency) != result.reporting_currency):
+        from portfolio_app.holdings import DataError
+        raise DataError('Exposure presentation requires consistent reporting currency.')
     projected = valued.copy()
     if future and 'future:overlay' not in set(projected.position_id):
         source = result.exposures.loc[result.exposures.source_position_id.eq('future:overlay')]
@@ -15,10 +21,10 @@ def exposure_positions(valued, result, future=None):
             projected = pd.concat([projected, pd.DataFrame([dict(position_id='future:overlay',
                 id=future.instrument, name=f'{future.instrument} future', shares=1.,
                 current_value_reporting=0., reporting_currency='EUR', bucket_id=source.bucket_id.iloc[0], within_bucket_target=float('nan'))])], ignore_index=True)
-    amounts = result.exposures.groupby('source_position_id').market_exposure_eur.agg(
+    amounts = result.exposures.groupby('source_position_id').market_exposure_reporting.agg(
         lambda values: values.sum() if values.notna().all() else float('nan'))
     projected['current_value_reporting'] = projected.position_id.map(amounts)
-    projected.attrs = dict(valued.attrs, reporting_currency='EUR')
+    projected.attrs = dict(valued.attrs, reporting_currency=result.reporting_currency)
     return projected
 
 
@@ -42,9 +48,9 @@ def company_move(result, asset_id, change_pct, *, rows=None):
     """First-order isolated price shock, with signed notional-based sensitivity."""
     rows = result.exposures if rows is None else rows
     selected = rows.loc[rows.asset_id.eq(asset_id)]
-    if selected.empty or selected.exposure_eur.isna().any():
+    if selected.empty or selected.exposure_reporting.isna().any():
         return None, None
-    pnl = float(selected.exposure_eur.sum()) * change_pct / 100
+    pnl = float(selected.exposure_reporting.sum()) * change_pct / 100
     return pnl, pnl / result.denominator * 100 if result.denominator else None
 
 
@@ -72,9 +78,10 @@ class MarketAnalysis:
 
 
 def prepare_market_analysis(result, config, classifications, valued, *, scope='',
-                            field='market_exposure_eur', view='Assets & companies',
+                            field='market_exposure_reporting', view='Assets & companies',
                             taxonomy='sector', depth=2, root_label='Portfolio', future=None):
     from portfolio_app.aggregation import build_tree, classify_exposures
+    field = {'exposure_eur': 'exposure_reporting', 'market_exposure_eur': 'market_exposure_reporting'}.get(field, field)
     rows = result.exposures
     if scope:
         rows = rows.loc[rows.bucket_id.eq('') if scope == 'unassigned' else rows.bucket_id.isin(config.leaves(scope))]

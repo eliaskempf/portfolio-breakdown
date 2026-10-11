@@ -33,7 +33,8 @@ def position_rows(holdings, allocation=None, *, percent=False):
         rows.append(dict(id=row.position_id, name=instrument_name(row), fullName=row.name,
             ticker=getattr(row, 'ticker', ''), isin=getattr(row, 'isin', ''),
             account=getattr(row, 'account', ''), portfolio=getattr(row, 'portfolio', ''),
-            bucket=buckets.get(getattr(row, 'bucket_id', ''), 'Unassigned'), quantity=row.shares,
+            bucket=buckets.get(getattr(row, 'bucket_id', ''), 'Unassigned'),
+            quantity=getattr(row, 'contracts', row.shares) if getattr(row, 'instrument_type', '') == 'future' else row.shares,
             value=value, allocation=100 * value / total if complete and total > 0 and value is not None else None,
             gain=gain, gainReporting=gain_reporting, returnPct=return_pct, note=getattr(row, 'performance_note', '')))
     return rows

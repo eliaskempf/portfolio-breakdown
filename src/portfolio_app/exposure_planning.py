@@ -1,6 +1,6 @@
 """Explicit-instrument exposure planning; never passes notional to a cash solver.
 
-Minimize the sum of absolute EUR category gaps, then turnover. Funded trades
+Minimize absolute reporting-currency category gaps, then turnover. Funded trades
 use fractional units; futures use whole contracts. Fees are per traded unit.
 Only a declared external contribution and permitted sales fund purchases.
 Collateral is a declared eligible subset of the existing funded future, plus
@@ -41,7 +41,11 @@ def plan_exposure(result, targets, allocation, valued, *, permitted, future=None
     neither read nor changed. Unknown amounts and unassigned nonzero exposure
     block planning; unresolved companies with known category notional do not.
     """
-    require_eur_reporting(valued)
+    if future is not None or result.reporting_currency == 'EUR':
+        require_eur_reporting(valued)
+    elif ('reporting_currency' not in valued or not valued.reporting_currency.eq(result.reporting_currency).all()
+          or valued.attrs.get('reporting_currency', result.reporting_currency) != result.reporting_currency):
+        raise DataError('Planning inputs require consistent reporting currency.')
     for value in (contribution, fee_per_unit, future_fee, collateral_limit, future_funding):
         if not finite(value) or value < 0:
             raise DataError('Funding, collateral limits and per-unit fees must be finite and nonnegative.')
@@ -144,9 +148,9 @@ def plan_exposure(result, targets, allocation, valued, *, permitted, future=None
     composition = leaf_composition(targets, allocation) if targets.policy == 'composition' else {targets.overlay_bucket: 1.}
     for j, key in enumerate(keys):
         fraction = targets.multiple * composition.get(key, 0.)
-        intercept = 0. if targets.policy == 'composition' else base.loc[key, 'Desired exposure (EUR)'] - fraction*result.denominator
+        intercept = 0. if targets.policy == 'composition' else base.loc[key, f'Desired exposure ({result.reporting_currency})'] - fraction*result.denominator
         desired = fraction * equity_before_fees + intercept
-        actual = base.loc[key, 'Current exposure (EUR)']
+        actual = base.loc[key, f'Current exposure ({result.reporting_currency})']
         gap = changes[key] + fraction * fees
         positive, negative = gap.copy(), -gap
         positive[2*n+1+j] = negative[2*n+1+j] = -1
@@ -189,13 +193,13 @@ def plan_exposure(result, targets, allocation, valued, *, permitted, future=None
             updated.loc[updated.index[mask][0], targets.field] = change
         if abs(units) > 1e-8:
             records.append({'Position ID': item['id'], 'Instrument': item['name'], 'Action': 'Buy' if units > 0 else 'Sell',
-                            'Units / contracts': units, 'Exposure change (EUR)': change,
-                            'Funded trade (EUR)': item['price']*units, 'Fees (EUR)': item['fee']*abs(units)})
+                            'Units / contracts': units, f'Exposure change ({result.reporting_currency})': change,
+                            f'Funded trade ({result.reporting_currency})': item['price']*units, f'Fees ({result.reporting_currency})': item['fee']*abs(units)})
     equity = equity_before_fees-total_fees
     gaps = exposure_gaps(replace(result, exposures=updated, net_equity=equity), targets, allocation)
     final_contracts = future.contracts + next((r['Units / contracts'] for r in records if r['Position ID'] == 'future:overlay'), 0) if changing_future else 0
     margin_required = abs(final_contracts)*margin_per_contract if changing_future else 0.
     collateral = min(collateral_limit, future.capital_value)+future_funding-float(future_fees @ x) if changing_future else 0.
-    return ExposurePlan(pd.DataFrame(records, columns=['Position ID', 'Instrument', 'Action', 'Units / contracts', 'Exposure change (EUR)', 'Funded trade (EUR)', 'Fees (EUR)']),
+    return ExposurePlan(pd.DataFrame(records, columns=['Position ID', 'Instrument', 'Action', 'Units / contracts', f'Exposure change ({result.reporting_currency})', f'Funded trade ({result.reporting_currency})', f'Fees ({result.reporting_currency})']),
                         gaps, equity, total_fees, max(0., contribution-future_funding-float(cash @ x)),
-                        margin_required, collateral, bool(gaps['Gap (EUR)'].abs().le(.01).all()))
+                        margin_required, collateral, bool(gaps[f'Gap ({result.reporting_currency})'].abs().le(.01).all()))

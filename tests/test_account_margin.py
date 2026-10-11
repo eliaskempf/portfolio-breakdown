@@ -188,3 +188,20 @@ render_account_margin(directory, journal, revision, holdings, valued, 'EUR', fx_
     next(w for w in app.text_input if w.label == 'Maintenance margin requirement').set_value('80').run()
     next(w for w in app.button if w.label == 'Review collateral changes').click().run()
     assert not app.exception
+
+
+def test_adopted_legacy_debt_does_not_block_foreign_currency_settings(tmp_path):
+    from portfolio_app.leverage_settings import LeverageSettings, load_leverage_settings, save_leverage_settings
+    from portfolio_app.portfolio_settings import save_settings
+    journal, _, _ = fixture()
+    legacy = MarginLiability('old', 'Invented legacy debt', 300)
+    settings = LeverageSettings(liabilities=(legacy,))
+    save_leverage_settings(tmp_path, settings, None)
+    adopted = adopt_liability(journal, legacy, 'broker', DAY, 'adopt')
+    (tmp_path/'holdings.csv').write_text(CSV)
+    save_journal(tmp_path, adopted, None)
+    save_settings(tmp_path, 'USD', None)
+    settings, revision = load_leverage_settings(tmp_path)
+    save_leverage_settings(tmp_path, replace(settings, active_basis='exposure'), revision)
+    assert load_leverage_settings(tmp_path)[0].active_basis == 'exposure'
+    assert replay(load_journal(tmp_path)[0]).loans['broker','EUR','legacy:old'] == 300

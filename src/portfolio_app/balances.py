@@ -40,6 +40,8 @@ def replacement_changes(edited: pd.DataFrame, original: pd.DataFrame, *, total_b
 
 def patch_holdings(path: Path, changes: Mapping[str, Mapping], *, expected_revision: str | None,
                    replacement: bool = False) -> None:
+    from portfolio_app.actual_portfolio import assert_cash_editable
+    assert_cash_editable(path, changes)
     if revision(path) != expected_revision:
         raise DataError('Holdings changed. Reload before saving.')
     content = path.read_text(encoding='utf-8-sig') if path.exists() else EMPTY_CSV

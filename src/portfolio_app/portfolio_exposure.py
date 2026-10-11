@@ -1,6 +1,6 @@
 """Recorded wealth and signed market / equity exposure, independent of UI/providers.
 
-`value` remains funded value. `exposure_eur` is the deliberately separate
+`value` remains funded value. `exposure_reporting` is the deliberately separate
 measure used for exposure aggregation. Gross is calculated before any merging.
 """
 from dataclasses import dataclass
@@ -25,6 +25,7 @@ class PortfolioExposure:
     issues: tuple[str, ...]
     exposure_complete: bool
     futures_capital_value: float = 0.
+    reporting_currency: str = 'EUR'
 
     @property
     def denominator(self):
@@ -32,11 +33,11 @@ class PortfolioExposure:
 
     @property
     def net_exposure(self):
-        return float(self.exposures.exposure_eur.sum())
+        return float(self.exposures.exposure_reporting.sum())
 
     @property
     def gross_exposure(self):
-        return float(self.exposures.exposure_eur.abs().sum())
+        return float(self.exposures.exposure_reporting.abs().sum())
 
     def ratio(self, amount):
         return amount / self.denominator if self.denominator and self.exposure_complete else None
@@ -53,7 +54,7 @@ class PortfolioExposure:
         rows = self.exposures
         if bucket_ids is not None:
             rows = rows.loc[rows.bucket_id.isin(bucket_ids)]
-        values = rows.market_exposure_eur
+        values = rows.market_exposure_reporting
         return float((values.abs() if gross else values).sum())
 
     @property
@@ -73,7 +74,7 @@ class PortfolioExposure:
             return None
         capital = self.capital.loc[self.capital.bucket_id.isin(bucket_ids)]
         rows = self.exposures.loc[self.exposures.bucket_id.isin(bucket_ids)]
-        field = 'market_exposure_eur' if market else 'exposure_eur'
+        field = 'market_exposure_reporting' if market else 'exposure_reporting'
         denominator = capital.value.sum()
         if capital.value.isna().any() or rows[field].isna().any() or denominator <= 0:
             return None
@@ -81,21 +82,29 @@ class PortfolioExposure:
 
     @property
     def futures_multiple(self):
-        return self.ratio(float(self.exposures.loc[self.exposures.source_type.eq('future'), 'exposure_eur'].sum()))
+        return self.ratio(float(self.exposures.loc[self.exposures.source_type.eq('future'), 'exposure_reporting'].sum()))
 
 
 def finite(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
-def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=None, liabilities=(), fund_factors=()):
+def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=None, liabilities=(), fund_factors=(), reporting_currency=None):
     """No cash posting: cumulative mock settlement is a separate adjustment once.
 
     Liability balances are explicit positive EUR amounts owed (None = unknown).
     Fund factors are explicit, documented current daily equity factors. They
     replace parent exposure and do not manufacture shareholder debt.
     """
-    require_eur_reporting(valued)
+    if reporting_currency is None:
+        require_eur_reporting(valued)
+        reporting_currency = 'EUR'
+    elif reporting_currency not in {'EUR', 'USD', 'GBP'} or valued.attrs.get('reporting_currency', reporting_currency) != reporting_currency or 'reporting_currency' not in valued or not valued.reporting_currency.eq(reporting_currency).all():
+        from portfolio_app.holdings import DataError
+        raise DataError('Exposure inputs require consistent reporting currency.')
+    if reporting_currency != 'EUR' and (future is not None or liabilities):
+        from portfolio_app.holdings import DataError
+        raise DataError('Legacy futures and liabilities require EUR reporting.')
     capital, rows, issues = [], [], []
     complete = True
     leaves = allocation.leaves() if allocation else set()
@@ -107,7 +116,7 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
         return key if key in leaves else ''
     def add(common, asset_id, name, value, exposure, kind, status='', method='', as_of='', market=None):
         rows.append(dict(**common, asset_id=asset_id, asset_name=name, value=value,
-                         exposure_eur=exposure, market_exposure_eur=exposure if market is None else market, source_type=kind, status=status, method=method, as_of=as_of))
+                         exposure_reporting=exposure, market_exposure_reporting=exposure if market is None else market, source_type=kind, status=status, method=method, as_of=as_of))
     for position in valued.to_dict('records'):
         if position.get('shares', 1) == 0:
             continue
@@ -121,12 +130,36 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
         declared = position.get('exposure_kind', 'unknown')
         fund = matching_fund(position, funds)
         factor = factors.get(pid)
+        if kind == 'liability':
+            capital[-1]['kind'] = 'liability'
         if not finite(value):
             complete = False
             issues.append('Missing price or FX: recorded net equity and exposure ratios are unavailable.')
             add(common, position['id'], position['name'], float('nan'), float('nan'), 'instrument', 'Missing valuation')
             continue
-        if factor:
+        if kind == 'liability':
+            capital[-1]['kind'] = 'liability'
+            add(common, position['id'], position['name'], value, 0., 'liability', 'Funding', market=0.)
+        elif kind == 'future':
+            notional = position.get('signed_notional_reporting', float('nan'))
+            if not finite(notional):
+                complete = False
+            proxy_id = position.get('proxy_position_id', '')
+            candidates = valued.loc[valued.position_id.eq(proxy_id)]
+            proxy = matching_fund(candidates.iloc[0].to_dict(), funds) if not candidates.empty else None
+            if proxy is not None and proxy_id not in factors:
+                method = f'ETF holdings proxy: {proxy.name}; {proxy.proxy_source or proxy.source}. Approximate index composition.'
+                for constituent in fund_breakdown(proxy).to_dict('records'):
+                    interpreted = interpret_constituent(constituent, fallback_kind=fund_kind(proxy))
+                    known = interpreted.proxy_company_known
+                    aid, name = resolve(constituent) if known else ('future-other:' + position['id'], position['name'] + ' · Unresolved proxy remainder')
+                    weight = constituent['weight']
+                    add(common, aid, name, value * weight, notional * weight, 'future',
+                        'ETF holdings proxy' if known else 'Unresolved index exposure; proxy residual / non-equity', method, str(proxy.as_of))
+            else:
+                add(common, 'index:' + position.get('contract_id', position['id']), position['name'], value,
+                    notional, 'future', 'Unresolved index constituents', position.get('price_source', ''), position.get('quote_date', ''))
+        elif factor:
             if kind != 'etf':
                 complete = False
                 issues.append('A fund factor refers to a position that is no longer a fund.')
@@ -169,8 +202,9 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
         issues.append('A fund adapter refers to a missing source position; review leverage settings.')
         complete = False
     assets_complete = all(finite(row['value']) for row in capital)
-    assets = sum(row['value'] for row in capital) if assets_complete else None
-    debt = 0.
+    assets = sum(row['value'] for row in capital if row['kind'] != 'liability') if assets_complete else None
+    debt_rows = [row for row in capital if row['kind'] == 'liability']
+    debt = -sum(row['value'] for row in debt_rows) if all(finite(row['value']) for row in debt_rows) else None
     for liability in liabilities:
         amount = liability.balance_eur
         if amount is None:
@@ -212,14 +246,19 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
     if equity is not None and equity <= 0:
         issues.append('Net equity is zero or negative; exposure ratios are unavailable.')
     columns = ['source_position_id', 'source_instrument', 'bucket_id', 'account', 'asset_id', 'asset_name',
-               'value', 'exposure_eur', 'market_exposure_eur', 'source_type', 'status', 'method', 'as_of']
+               'value', 'exposure_reporting', 'market_exposure_reporting', 'source_type', 'status', 'method', 'as_of']
+    exposures = pd.DataFrame(rows, columns=columns)
+    if reporting_currency == 'EUR':
+        exposures['exposure_eur'] = exposures.exposure_reporting
+        exposures['market_exposure_eur'] = exposures.market_exposure_reporting
     return PortfolioExposure(pd.DataFrame(capital, columns=['source_position_id', 'name', 'bucket_id', 'value', 'kind']),
-                             pd.DataFrame(rows, columns=columns), assets, debt, settlement, equity,
-                             tuple(dict.fromkeys(issues)), complete, strategy_value)
+                             exposures, assets, debt, settlement, equity,
+                             tuple(dict.fromkeys(issues)), complete, strategy_value, reporting_currency)
 
 
-def strategy_exposure(result, config: Allocation, bucket='', *, measure='exposure_eur'):
+def strategy_exposure(result, config: Allocation, bucket='', *, measure='exposure_reporting'):
     """Immediate child rollups; filtering never changes the equity denominator."""
+    measure = {'exposure_eur': 'exposure_reporting', 'market_exposure_eur': 'market_exposure_reporting'}.get(measure, measure)
     children = [(b.id, b.name) for b in config.children(bucket)]
     selected = result.exposures
     if bucket:

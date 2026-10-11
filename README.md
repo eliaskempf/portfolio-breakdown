@@ -77,7 +77,9 @@ and other features. Installed versions also include offline documentation, acces
 
 ## Development branch
 
-This branch includes experimental EUR futures and leverage analysis. See the
+This branch includes manually recorded futures and margin accounts in EUR, USD
+and GBP, plus exposure analysis and hypothetical funding studies. No broker
+connection is required. See the
 [futures and leverage guide](docs/user/futures.md) for scope, accounting and setup.
 Published installers retain their documented release behavior.
 

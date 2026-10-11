@@ -28,6 +28,13 @@ valuation diagnostics without Streamlit. `input_cache.py` returns named
 and lazy view dispatch. Optional fundamentals and risk remain in
 `analytics_service.py`; opening an unrelated view must not fetch them.
 
+Actual accounts join the same pipeline at the reporting-currency valuation
+boundary. `account_journal.py` replays native Decimal cash, explicit loans, futures
+lots and pending claims. `actual_portfolio.py` projects these into valued rows,
+replacing adopted cash holdings and retaining position/account provenance.
+`portfolio_exposure.py` then uses separate capital and signed-exposure measures;
+provider parsing and journal persistence do not belong in the aggregation engine.
+
 ### Calculation contracts
 
 - Saved positions retain their instrument ID and stable position ID. A
@@ -42,9 +49,22 @@ and lazy view dispatch. Optional fundamentals and risk remain in
   its coverage policy: an equity fund's residual can be equity exposure while
   remaining unresolved company exposure. Futures proxy coverage also retains
   its stricter treatment of unidentified and non-equity weights.
-- `FuturePosition` owns futures arithmetic. `future_projections.py` supplies named
-  capital, exposure and risk adapters. Funded strategy cash and lifetime P&L are
-  wealth; signed notional is exposure. They must never be summed as one measure.
+- Actual contract facts use `derivative_types.py`; `account_journal.py` owns
+  signed lot arithmetic, FIFO reductions, settlements and native postings.
+  Settled P&L is already cash; only unsettled P&L and pending claims add derivative
+  wealth. Notional is exposure, never wealth. Security collateral is a quantity
+  reservation against an existing holding, not another asset.
+- `account_observations.py` and `derivative_market.py` keep dated marks and free
+  exact-contract observations separate from cash postings. `account_margin.py`
+  evaluates entered requirements and haircuts without inferring broker rules.
+  `account_planning.py` previews integer trades without changing account facts.
+- `FuturePosition` and `future_projections.py` retain the legacy EUR sandbox's
+  funded-strategy arithmetic and named capital, exposure and risk adapters.
+  Legacy simulation value must not enter actual account projections.
+- `generalized_studies.py` consumes copied scenario inputs, native price paths
+  and explicit FX, margin, rate and transfer assumptions. Its results never write
+  the account journal. `study_market.py` validates history identity, currency and
+  return convention before a proxy can drive a reconstruction.
 - Missing amounts are not zero. Callers retain completeness information when
   projecting known contributions. `prepare_market_analysis` returns separate
   known-value chart nodes and completeness-preserving table nodes. Composition
@@ -86,9 +106,10 @@ cache writers preserve their own validation and failure fallback. ETF snapshot
 publication still writes the manifest last; it is a separate multi-file protocol.
 
 `money.py` formats scalar amounts with explicit currency and no Streamlit state.
-`currency_display.py` supplies session reporting units for ordinary views and
-numeric formats for native grids. Fixed-EUR futures views use `money.euros`;
-formatting never converts amounts. Missing values remain missing. Shared list
+`currency_display.py` supplies session reporting units and numeric formats for
+native grids. Actual account entries retain EUR/USD/GBP units; projections perform
+explicit conversion before display. Only legacy fixed-EUR sandbox views use
+`money.euros`; formatting never converts amounts. Missing values remain missing. Shared list
 columns retain numeric sorting and their browser formatter. `charts.chart_config`
 provides compact allocation controls and explicit zoom/pan/reset controls for
 scenario studies; each chart receives independent configuration containers.
@@ -117,9 +138,12 @@ listing search, minimum-trade and minimum-cash rebalancing, trade-count tradeoff
 empty-position redistribution, Git privacy guards, and Streamlit controls. The server health
 endpoint is `/_stcore/health`.
 
-Independent target overrides on analytical-taxonomy nodes, realized P&L and
-transaction-based personal return history remain unsupported. Strategic category
-targets, instrument price history and historical risk analysis are supported.
+Independent target overrides on analytical-taxonomy nodes, ordinary-security
+sales/realized P&L and transaction-based personal return history remain
+unsupported. The development account journal records actual futures settlements
+and closes; an opening snapshot does not reconstruct pre-snapshot gains.
+Strategic category targets, instrument price history and historical risk analysis
+are supported.
 
 
 ## Shared list presentation
@@ -209,15 +233,23 @@ development requirements. These notes contain no working portfolio data.
   sum to portfolio volatility; negative contributions are possible.
 - This is a hypothetical constant-weight allocation, not the user's historical
   return series. It requires no transaction history and does not use buy-in prices.
-- Cash in the reporting currency has zero FX returns. Manual/unlisted positions without supported history
-  are excluded. Covered weights are renormalized, and partial coverage is shown.
-  Missing valuations prevent claiming whole-portfolio coverage.
+- Cash in the reporting currency has zero FX returns. In ordinary asset analysis,
+  manual/unlisted positions without supported history are excluded, covered
+  weights are renormalized, and partial coverage is shown. Missing valuations
+  prevent claiming whole-portfolio coverage. Integrated account leverage instead
+  withholds unsupported aggregate risk when the required coverage is incomplete.
 - ETFs use their own adjusted price histories for risk, not constituent expansion.
   Category beta is computed in exactly the same way within the selected category;
   its benchmark remains the selected benchmark, even for a non-equity category.
 - The released app uses asset-normalized beta. The development branch adds
-  [explicit EUR leverage](futures.md), with a separate net-equity denominator;
-  asset-normalized beta must not be presented as levered equity beta.
+  [actual-account leverage](futures.md) in EUR/USD/GBP, with a separate net-equity
+  denominator. Asset-normalized beta must not be presented as levered equity beta;
+  legacy sandbox risk remains EUR-only.
+- Actual futures risk uses signed notional with compatible contract-currency
+  histories and converts native changes at dated FX. It must not apply the FX
+  return on the whole futures notional. Foreign cash, claims and debt carry their
+  own FX risk. A documented leveraged ETF factor changes current exposure; risk
+  still uses that fund's own price returns without multiplying leverage twice.
 
 ### Code map
 
@@ -263,10 +295,12 @@ These are ideas, not promises or already implemented features.
 3. **Beta stability.** Add rolling beta or comparisons across windows, confidence
    intervals, and benchmark explanatory power. A point estimate alone should not
    imply a stable forecast. Do not confuse beta with total volatility.
-4. **Leverage-aware planning.** Requires an explicit liabilities/net-equity model,
-   financing costs, exposure definitions, and rebalancing assumptions. A leveraged
-   ETF's advertised daily multiple is not a guaranteed multiyear return multiple
-   or its beta against an arbitrary benchmark. This needs domain design before code.
+4. **Joint funded-asset and futures planning.** The development branch already
+   provides actual-account futures plans alongside the capital planner. Joint
+   routing between funded holdings and derivatives would need explicit funding,
+   transfer and financing assumptions. A leveraged ETF's advertised daily
+   multiple is neither a guaranteed multiyear return multiple nor its beta against
+   an arbitrary benchmark.
 5. **Downside scenarios.** Separate simple beta-based shocks from historical
    constant-weight scenarios. Neither reconstructs personal performance or sets
    a worst-case loss bound. Define treatment of missing assets and costs first.

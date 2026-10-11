@@ -11,6 +11,9 @@ import pandas as pd
 
 # Names introduced by calculation stages cannot also be custom CSV metadata.
 DERIVED_COLUMNS = frozenset({
+    'point_multiplier', 'return_convention', 'product', 'current_fx_rate', 'contract_currency',
+    'journal_managed', 'signed_notional_reporting', 'current_value_native', 'contracts', 'contract_id',
+    'exposure_reporting', 'market_exposure_reporting', 'unit_exposure_reporting',
     'position_id', 'asset_id', 'asset_name', 'value', 'source_position_id',
     'source_type', 'source_instrument', 'direct_or_indirect', 'portfolio_weight',
     'current_price', 'quote_currency', 'fx_to_reporting', 'current_value_reporting',

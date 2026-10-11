@@ -25,7 +25,7 @@ class ExposureTargets:
 
     @property
     def field(self):
-        return 'market_exposure_eur' if self.universe == 'market' else 'exposure_eur'
+        return 'market_exposure_reporting' if self.universe == 'market' else 'exposure_reporting'
 
 
 def leaf_composition(targets, allocation):
@@ -135,8 +135,8 @@ def exposure_gaps(result, targets, allocation, *, parent=None):
         target = sum(desired.get(leaf, 0.) for leaf in memberships[key])
         current_composition = 100*current/actual_total if actual_total > 0 else float('nan')
         desired_composition = 100*target/total if total > 0 else float('nan')
-        records.append({'Bucket ID': key, 'Category': names.get(key, 'Unknown category'), 'Current exposure (EUR)': current,
-                        'Desired exposure (EUR)': target, 'Gap (EUR)': target-current,
+        records.append({'Bucket ID': key, 'Category': names.get(key, 'Unknown category'), f'Current exposure ({result.reporting_currency})': current,
+                        f'Desired exposure ({result.reporting_currency})': target, f'Gap ({result.reporting_currency})': target-current,
                         'Current (% equity)': 100*current/result.denominator,
                         'Desired (% equity)': 100*target/result.denominator,
                         'Gap (pp)': 100*(target-current)/result.denominator,

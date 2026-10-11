@@ -2,7 +2,7 @@
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from portfolio_app.money import euros
+from portfolio_app.money import euros, format_money
 from portfolio_app.charts import chart_config
 
 from portfolio_app.charts import style_figure, hatch_foregrounds
@@ -34,7 +34,7 @@ def render_equity_exposure_metric(result, *, market=False, bucket_ids=None):
 
 def exposure_basis(key):
     basis = st.segmented_control('Exposure basis', ['Total market', 'Equity only'], default='Total market', key=key)
-    return 'exposure_eur' if basis == 'Equity only' else 'market_exposure_eur'
+    return 'exposure_reporting' if basis == 'Equity only' else 'market_exposure_reporting'
 
 
 def render_saved_collateral(future):
@@ -48,11 +48,16 @@ def render_saved_collateral(future):
                    'Legacy collateral assumptions and standalone Starting cash do not create portfolio assets.')
 
 
-def render_capital_reconciliation(result):
+def render_capital_reconciliation(result, *, actual=False):
+    if actual:
+        st.caption('Ordinary assets + account cash + unsettled claims − debt = net equity. Posted settlement is already in cash; collateral is an existing asset and notional is exposure only.')
+        st.dataframe(pd.DataFrame({'Capital component': ['Assets, cash and unsettled claims', 'Recorded debt / overdrafts', 'Net equity'],
+            result.reporting_currency: [result.owned_assets, -result.liabilities if result.liabilities is not None else None, result.net_equity]}), hide_index=True, width='stretch')
+        return
     st.caption('Owned holdings + funded futures strategy + legacy mock settlement adjustment − liabilities = net equity. '
                'The funded strategy includes its dedicated cash and lifetime gains once. Notional is never wealth.')
     st.dataframe(pd.DataFrame({'Capital component': ['Owned assets', 'Funded futures strategy', 'Mock settlement adjustment', 'Recorded liabilities', 'Net equity'],
-        'EUR': [result.owned_assets, result.futures_capital_value, result.settlement_adjustment, -result.liabilities if result.liabilities is not None else None, result.net_equity]}),
+        result.reporting_currency: [result.owned_assets, result.futures_capital_value, result.settlement_adjustment, -result.liabilities if result.liabilities is not None else None, result.net_equity]}),
         hide_index=True, width='stretch')
 
 
@@ -103,8 +108,8 @@ def render_market_analysis(result, config, classifications, valued, funds, *, fu
     with chart:
         if prepared.signed:
             root_id = nodes.loc[nodes.parent_id.eq(''), 'node_id'].iloc[0] if not nodes.empty else ''
-            signed = nodes.loc[nodes.parent_id.eq(root_id), ['label', 'value']].rename(columns={'label': 'Category', 'value': 'Exposure (EUR)'})
-            signed_chart(signed, 'Category', 'Exposure (EUR)', 'exposure_market_chart')
+            signed = nodes.loc[nodes.parent_id.eq(root_id), ['label', 'value']].rename(columns={'label': 'Category', 'value': f'Exposure ({result.reporting_currency})'})
+            signed_chart(signed, 'Category', f'Exposure ({result.reporting_currency})', 'exposure_market_chart')
         elif not nodes.empty and nodes.value.max() > 0:
             figure = hierarchy_chart(nodes, 'Sunburst', preserve_order=True)
             if view == 'ETF sources' and future:
@@ -122,18 +127,18 @@ def render_market_analysis(result, config, classifications, valued, funds, *, fu
         else:
             st.info('No positive market exposure in this selection.')
     with table_column:
-        table = hierarchy_table(table_nodes).rename(columns={'Value': 'Exposure (EUR)', 'Allocation %': '% of exposure'})
+        table = hierarchy_table(table_nodes).rename(columns={'Value': f'Exposure ({result.reporting_currency})', 'Allocation %': '% of exposure'})
         ordered = sort_allocation_nodes(table_nodes)
         table['% of portfolio equity'] = prepared.equity_percentages.reindex(ordered.loc[ordered.parent_id.ne(''), 'node_id']).to_numpy()
         st.dataframe(table, hide_index=True, width='stretch', height=480, column_config={
             'Category': st.column_config.TextColumn(width='medium'),
-            'Exposure (EUR)': st.column_config.NumberColumn('Exposure (€)', format='%.2f', width='small'),
+            f'Exposure ({result.reporting_currency})': st.column_config.NumberColumn(f'Exposure ({result.reporting_currency})', format='%.2f', width='small'),
             '% of exposure': st.column_config.NumberColumn('% exposure', format='%.2f', width='small'),
             '% of portfolio equity': st.column_config.NumberColumn('% equity', format='%.2f', width='small')})
         st.caption('Areas and composition percentages use selected exposure. Portfolio impact uses whole-portfolio net equity.')
     render_company_move(result, rows)
     with st.expander('Exposure provenance & unresolved coverage'):
-        st.dataframe(rows.rename(columns={'value': 'Attributed funded value (EUR)', 'exposure_eur': 'Signed equity exposure (EUR)', 'market_exposure_eur': 'Signed total market exposure (EUR)'}), hide_index=True, width='stretch')
+        st.dataframe(rows.rename(columns={'value': f'Attributed funded value ({result.reporting_currency})', 'exposure_reporting': f'Signed equity exposure ({result.reporting_currency})', 'market_exposure_reporting': f'Signed total market exposure ({result.reporting_currency})'}), hide_index=True, width='stretch')
         st.caption('ETF holdings approximate the future’s index composition and can differ in weights, coverage and date. '
                    'Residual and non-equity proxy weights remain unresolved index exposure. Notional is never added to wealth.')
 
@@ -141,7 +146,7 @@ def render_market_analysis(result, config, classifications, valued, funds, *, fu
 def render_company_move(result, rows):
     from portfolio_app.exposure_presentation import company_move
     with st.expander('Company move'):
-        candidates = rows.loc[rows.exposure_eur.notna() & rows.exposure_eur.ne(0)
+        candidates = rows.loc[rows.exposure_reporting.notna() & rows.exposure_reporting.ne(0)
                               & ~rows.status.str.contains('Unresolved|Unknown|Funding|Non-equity', case=False)]
         names = candidates.groupby('asset_id').asset_name.first().to_dict()
         if not names:
@@ -153,12 +158,12 @@ def render_company_move(result, rows):
         if asset is not None:
             pnl, impact = company_move(result, asset, change, rows=rows)
             left, right = st.columns(2)
-            left.metric('Estimated P&L', euros(pnl))
+            left.metric('Estimated P&L', format_money(pnl, result.reporting_currency))
             right.metric('Portfolio impact', '—' if impact is None else f'{impact:+.2f}%')
             sources = rows.loc[rows.asset_id.eq(asset)].copy()
             sources['Channel'] = sources.source_type.map(lambda kind: 'Futures proxy' if kind == 'future' else 'ETF holdings' if kind.startswith('etf_') else 'Direct holdings')
-            table = sources.groupby('Channel').exposure_eur.sum().rename('Exposure (EUR)').reset_index()
-            table['Estimated P&L (EUR)'] = table['Exposure (EUR)'] * change / 100
+            table = sources.groupby('Channel').exposure_reporting.sum().rename(f'Exposure ({result.reporting_currency})').reset_index()
+            table[f'Estimated P&L ({result.reporting_currency})'] = table[f'Exposure ({result.reporting_currency})'] * change / 100
             st.dataframe(table, hide_index=True, width='stretch')
         st.caption('Identified exposure only. Isolated company price move with other prices and FX unchanged. Futures contribution uses approximate index weights; this is not a forecast of correlated market moves.')
 
@@ -236,7 +241,7 @@ def render_leverage_editor(directory, valued, *, future=None):
             debts = st.data_editor(pd.DataFrame([asdict(x) for x in settings.liabilities], columns=['id', 'name', 'balance_eur', 'account']),
                 num_rows='dynamic', hide_index=True, key='exposure_debts_' + str(revision), column_config={'balance_eur': st.column_config.NumberColumn(min_value=0.)})
             positions = valued.loc[valued.get('instrument_type', pd.Series('', index=valued.index)).eq('etf')]
-            factors = st.data_editor(pd.DataFrame([asdict(x) for x in settings.fund_factors], columns=['position_id', 'factor', 'method', 'as_of']),
+            factors = st.data_editor(pd.DataFrame([asdict(x) for x in settings.fund_factors], columns=['position_id', 'factor', 'method', 'as_of', 'benchmark', 'proxy_position_id', 'reset_convention']),
                 num_rows='dynamic', hide_index=True, key='exposure_factors_' + str(revision),
                 column_config={'position_id': st.column_config.SelectboxColumn(options=positions.position_id.tolist()), 'factor': st.column_config.NumberColumn()})
             st.caption('Fund source IDs: ' + '; '.join(f'{r.position_id}: {r.name}' for r in positions.itertuples()))

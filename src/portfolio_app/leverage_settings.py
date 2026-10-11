@@ -115,7 +115,11 @@ def save_leverage_settings(directory, settings, expected_revision):
         from portfolio_app.portfolio_settings import load_settings
         from portfolio_app.futures_workspace import load_sandbox
         sandbox = load_sandbox(directory)
-        if requires_legacy_eur(settings, sandbox[0] if sandbox else None) and load_settings(directory).reporting_currency != 'EUR':
+        from portfolio_app.account_journal import load_journal
+        journal, _ = load_journal(directory)
+        remaining = replace(settings, liabilities=tuple(x for x in settings.liabilities if x.id not in journal.adopted_liability_ids))
+        legacy_future = sandbox[0] if sandbox and not journal.accounts else None
+        if requires_legacy_eur(remaining, legacy_future) and load_settings(directory).reporting_currency != 'EUR':
             raise DataError('Legacy EUR debt and sandbox futures require EUR reporting.')
         if not settings.enabled and requires_leverage(settings, sandbox[0] if sandbox else None):
             raise DataError('Close/remove leverage records before disabling leverage; funded futures still require it.')

@@ -22,6 +22,45 @@ per-document `.backups`. Keep the whole directory private. App-managed saves
 validate data, check file revisions and back up previous files before atomic
 replacement. Those backups do not protect against loss of the entire drive.
 
+### Futures and account records (development)
+
+The futures development branch also keeps these private documents in the same
+workspace:
+
+| Document | Contents |
+| --- | --- |
+| `account-journal.json` | Accounts, exact contract definitions, position identities, dated transactions and corrections, cash/holding bindings, collateral reservations and entered margin requirements |
+| `account-observations.json` | Dated valuation marks and manual FX observations; these do not post cash |
+| `generalized-study-settings.json` | Named hypothetical scenarios, cash reserves, policies and input assumptions |
+| `leverage-settings.json` | Existing leverage settings, legacy liabilities and documented fund exposure factors |
+
+Public settlement/history downloads are cached separately from the journal.
+A cache refresh is not a transaction. Missing or failed downloads do not justify
+reconstructing account balances from estimated prices. Keep the whole workspace,
+including caches and study inputs, private.
+
+When existing cash is adopted by an account, its original holding identity is
+retained and linked to one native account balance. Account cash replaces that
+holding's valuation contribution. Subsequent balance changes belong in
+**Futures → Cash & financing**, not a second cash holding or an ordinary holdings
+edit. Linking assets may save persistent position keys without changing their
+quantities. Security collateral reservations reference owned share/unit quantities;
+they do not create additional assets.
+
+Transactions preserve original native-currency amounts. Corrections retain the
+original entries and append replacement/reversal facts. A snapshot can start
+accounting at a known cash balance and clearing basis without inventing older
+transactions. Delayed cash remains a recorded claim until an explicit receipt or
+payment. Changing reporting currency changes valuation, not saved native amounts.
+
+Legacy `futures-sandbox.json` and its comparison/history/funding settings remain
+separate simulation documents. They are not automatically converted into actual
+positions. Adopting a legacy liability records its existing debt and marks the
+old record as already included, preserving the original settings while preventing
+duplicate debt. Use the app's reviewed saves to preserve these relationships;
+copying individual account files between unrelated holdings workspaces can leave
+invalid references. See [Futures and leverage](futures.md) for the workflows.
+
 ## Back up and restore {#backup}
 
 Open **Portfolio settings → Create backup** while **My portfolio** is selected.
@@ -33,6 +72,10 @@ portfolio unchanged. Unsaved forms are not included.
 The versioned archive preserves saved holdings and purchase-cost components/FX,
 reporting currency, categories and targets, classifications, ETF holdings and
 substitute baskets, overrides, portfolio caches and hidden document backups.
+On the futures development branch it also preserves the account journal,
+valuation observations, collateral/account bindings, named study settings and
+legacy sandbox documents. Restore validates account references against the saved
+holdings; it does not promote simulated positions into real transactions.
 Runtime locks and temporary files are excluded. The app briefly coordinates
 persistent writes while capturing a consistent snapshot; network requests and
 compression do not hold that barrier. Close external editors first: they cannot
@@ -131,6 +174,12 @@ issuer ETF data. Search text and selected instrument identifiers go to providers
 position quantities and purchase costs are not sent as part of those lookups.
 Import files and review drafts are processed locally. The explicit offline demo
 avoids market requests; normal demo mode uses the network.
+
+Futures data requests use public product, contract, date, FX and explicitly chosen
+proxy identifiers. Account cash, contract quantities and manually entered taxes
+are stored locally; no broker connection is required. Market downloads, account
+transaction entry and hypothetical studies are separate operations. Futures
+transaction CSV import is not supported by the development account journal.
 
 Do not commit personal holdings, accounts, costs, targets, classifications,
 imports, screenshots, reports, caches, backups or credentials. The entire `data/`

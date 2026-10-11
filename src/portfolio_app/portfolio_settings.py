@@ -37,7 +37,10 @@ def validate_currency_change(directory: Path, currency: str) -> None:
     sandbox = load_sandbox(directory)
     future = sandbox[0] if sandbox else None
     leverage, _ = load_leverage_settings(directory, future=future)
-    if leverage.enabled or requires_leverage(leverage, future):
+    from portfolio_app.account_journal import load_journal
+    journal, _ = load_journal(directory)
+    remaining = [x for x in leverage.liabilities if x.id not in journal.adopted_liability_ids]
+    if remaining or future is not None and not journal.accounts:
         raise DataError('Leverage records currently require EUR reporting. Select capital planning and disable leverage before changing currency; active records must first be closed/removed.')
 
 

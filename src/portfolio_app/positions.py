@@ -72,6 +72,9 @@ def save_position(
     The revision binds a generated position_id to the exact file the user saw.
     Existing columns and unchanged cell values survive the round trip.
     """
+    if position_id is not None:
+        from portfolio_app.actual_portfolio import assert_cash_editable
+        assert_cash_editable(path, [position_id])
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(f".{path.name}.lock")
     with _write_lock(lock_path):

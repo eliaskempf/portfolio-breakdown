@@ -114,3 +114,15 @@ def test_empty_eur_portfolio_can_still_value_funded_future():
     frame.attrs['reporting_currency'] = 'EUR'
     result = calculate_portfolio_exposure(frame, future=FUTURE, allocation=CONFIG)
     assert result.net_equity == 10. and result.net_exposure == 40.
+
+
+@pytest.mark.parametrize('currency', ['USD', 'GBP'])
+def test_currency_independent_exposure_projection_without_actual_account(currency):
+    frame = invented().assign(reporting_currency=currency)
+    frame.attrs['reporting_currency'] = currency
+    result = calculate_portfolio_exposure(frame, allocation=CONFIG, reporting_currency=currency)
+    projected = exposure_positions(frame, result)
+    assert projected.current_value_reporting.item() == 90
+    assert projected.attrs['reporting_currency'] == currency
+    plan = plan_exposure(result, TARGET, CONFIG, frame, permitted=['stock'])
+    assert plan.equity == 90

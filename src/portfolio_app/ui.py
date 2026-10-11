@@ -120,6 +120,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         mark_view_ready()
         return
     sandbox, leverage = leverage_context.sandbox, leverage_context.settings
+    journal = leverage_context.journal
+    actual_active = bool(journal and journal.accounts)
+    actual_future = leverage_context.future
     leverage_supported, feature_active = leverage_context.supported, leverage_context.active
     unsupported_records = leverage_context.unsupported_records
     if unsupported_records:
@@ -182,6 +185,18 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         prepared = prepare_application(inputs, price_service, refresh=refresh,
             reporting_currency=reporting_currency, historical=historical)
     valued, status = prepared.valued, prepared.status
+    ordinary_valued = valued
+    if actual_active:
+        from portfolio_app.actual_portfolio import journal_positions
+        from portfolio_app.account_observations import load_observations, current_marks
+        try:
+            marks, manual_fx, _ = load_observations(data_dir)
+            valued = journal_positions(valued, journal, price_service, reporting_currency=reporting_currency,
+                marks=current_marks(journal, marks), fx_rates=manual_fx)
+        except DataError as exc:
+            st.error(str(exc))
+            mark_view_ready()
+            return
     if notice := st.session_state.pop('currency_notice', None):
         st.info(notice)
     if render_currency_dialog(data_dir, snapshot, currency_settings, price_service, historical):
@@ -225,22 +240,30 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         st.session_state['main_tabs'] = 'Positions' if holdings.empty and not feature_active else 'Overview'
     from portfolio_app.tour import prepare_tour, render_tour
     prepare_tour()
-    tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox else [])
+    tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or actual_active else [])
     if st.session_state['main_tabs'] not in tab_names:
         st.session_state['main_tabs'] = 'Overview'
     tabs = st.tabs(tab_names,
         default='Overview', key='main_tabs', on_change='rerun')
     overview, exposure, positions, rebalance = tabs[:4]
-    if sandbox and tabs[4].open and leverage_supported:
+    if (sandbox or actual_active) and tabs[4].open:
         with tabs[4]:
-            from portfolio_app.futures_ui import render_futures
-            render_futures(valued, data_dir, *sandbox, allocation=allocation, funds=funds, leverage=leverage)
+            if actual_active:
+                from portfolio_app.accounts_ui import render_accounts
+                render_accounts(data_dir, snapshot, valued, allocation=allocation)
+            elif leverage_supported:
+                from portfolio_app.futures_ui import render_futures
+                render_futures(valued, data_dir, *sandbox, allocation=allocation, funds=funds, leverage=leverage)
     visible = valued.loc[valued.shares.gt(0)].copy() if hide_empty else valued
     if positions.open:
         with positions:
             render_position_editor(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, embedded=True,
                                    allocation=allocation, valued=visible, percent=percent, defer_dialog=True)
     def open_valued_position(position_id, *, editing=False):
+        if actual_active and (position_id in {p.id for p in journal.positions} | {link.position_id for link in journal.cash_links} or str(position_id).startswith('account-')):
+            st.session_state['main_tabs'] = 'Futures'
+            st.session_state['accounts_requested_position'] = position_id
+            return
         if read_snapshot(data_dir / 'holdings.csv').revision != snapshot.revision:
             st.session_state['position_stale_notice'] = 'The portfolio changed. Select the position again from the refreshed view.'
             return
@@ -260,20 +283,20 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                 overview_exposure = exposure_result if allocation or not feature_active else prepare_exposure(
                     overview_values, funds, overview_config, leverage_context)
                 from portfolio_app.portfolio_analytics_ui import render_portfolio_analytics
-                render_strategic_overview(overview_values, overview_config, data_dir=data_dir, exposure_result=overview_exposure, future=sandbox[0] if sandbox else None, open_position=open_valued_position,
-                                          leverage_enabled=leverage.enabled and leverage_supported,
+                render_strategic_overview(overview_values, overview_config, data_dir=data_dir, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
+                                          leverage_enabled=(leverage.enabled or actual_active) and leverage_supported,
                                           percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
                                           edit_position=lambda position_id: open_valued_position(position_id, editing=True),
                                           analytics=lambda selected, scope, scoped_future, scoped: render_portfolio_analytics(
                                               selected, data_dir, funds, demo=offline_demo, scope=scope, future=scoped_future,
-                                              portfolio_result=overview_exposure if sandbox or leverage.liabilities else None, scoped=scoped))
+                                              portfolio_result=overview_exposure if actual_active or sandbox or leverage.liabilities else None, scoped=scoped))
     if exposure.open and not unsupported_records:
         with exposure:
             measure = st.segmented_control('Exposure measure', ['Market exposure', 'Funded holdings analysis'],
-                default='Market exposure', key='exposure_measure') if leverage.enabled and leverage_supported else 'Funded holdings analysis'
+                default='Market exposure', key='exposure_measure') if (leverage.enabled or actual_active) and leverage_supported else 'Funded holdings analysis'
             if measure == 'Market exposure':
                 from portfolio_app.allocation import Allocation
-                render_market_analysis(exposure_result, allocation or Allocation(()), classifications, valued, funds, future=sandbox[0] if sandbox else None)
+                render_market_analysis(exposure_result, allocation or Allocation(()), classifications, valued, funds, future=actual_future)
             elif visible.empty:
                 st.info('No visible positions. Add a position or turn off Hide empty positions.')
             else:
@@ -288,31 +311,38 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                     from portfolio_app.allocation_ui import render_allocation_editor
                     from portfolio_app.portfolio_exposure_ui import render_policy_settings
                     if leverage_supported:
-                        render_policy_settings(data_dir, leverage, allocation, future=sandbox[0] if sandbox else None)
+                        render_policy_settings(data_dir, leverage, allocation, future=actual_future)
                     else:
                         st.caption('Leverage settings currently require EUR reporting.')
-                    target_mode = st.segmented_control('Target measure', ['Capital targets', 'Exposure targets'], default='Exposure targets' if leverage.active_basis == 'exposure' else 'Capital targets', key='exposure_target_mode') if leverage.enabled and leverage_supported else 'Capital targets'
+                    target_mode = st.segmented_control('Target measure', ['Capital targets', 'Exposure targets'], default='Exposure targets' if leverage.active_basis == 'exposure' else 'Capital targets', key='exposure_target_mode') if (leverage.enabled or actual_active) and leverage_supported else 'Capital targets'
                     if target_mode == 'Exposure targets':
                         render_exposure_targets(data_dir, allocation, exposure_result)
                     else:
                         render_allocation_editor(data_dir / 'holdings.csv', snapshot, allocation)
-                    if leverage.enabled and leverage_supported:
-                        render_leverage_editor(data_dir, valued, future=sandbox[0] if sandbox else None)
+                    if (leverage.enabled or actual_active) and leverage_supported:
+                        from portfolio_app.leveraged_funds_ui import render_leveraged_funds
+                        render_leveraged_funds(data_dir, valued)
+                        if not actual_active and reporting_currency == 'EUR':
+                            render_leverage_editor(data_dir, valued, future=actual_future)
             if plan_tab.open:
                 with plan_tab:
-                    if leverage.enabled and leverage_supported:
+                    if (leverage.enabled or actual_active) and leverage_supported:
                         from portfolio_app.portfolio_exposure_ui import render_policy_settings
-                        render_policy_settings(data_dir, leverage, allocation, future=sandbox[0] if sandbox else None, planning=True)
+                        render_policy_settings(data_dir, leverage, allocation, future=actual_future, planning=True)
                     try:
-                        if leverage.enabled and leverage_supported and leverage.active_basis == 'exposure':
+                        if (leverage.enabled or actual_active) and leverage_supported and leverage.active_basis == 'exposure':
                             from portfolio_app.exposure_plan_ui import render_exposure_plan
-                            render_exposure_plan(data_dir, exposure_result, allocation, valued, future=sandbox[0] if sandbox else None)
+                            if actual_active:
+                                from portfolio_app.account_planning import render_account_plan
+                                render_account_plan(data_dir, exposure_result, allocation, valued, journal)
+                            else:
+                                render_exposure_plan(data_dir, exposure_result, allocation, valued, future=actual_future)
                         elif allocation:
-                            if leverage.enabled and leverage_supported:
+                            if (leverage.enabled or actual_active) and leverage_supported:
                                 st.caption('Capital plan · Recorded holdings only; excludes dedicated futures strategy cash. Notional is not spendable cash.')
-                            render_scoped_rebalancing(valued, allocation)
+                            render_scoped_rebalancing(ordinary_valued.loc[~ordinary_valued.position_id.isin({x.position_id for x in journal.cash_links})] if actual_active else valued, allocation)
                         else:
-                            render_rebalancing(valued)
+                            render_rebalancing(ordinary_valued.loc[~ordinary_valued.position_id.isin({x.position_id for x in journal.cash_links})] if actual_active else valued)
                     except RebalanceError as exc:
                         st.error(str(exc))
     render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued)

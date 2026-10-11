@@ -183,7 +183,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                             key='strategic_allocation_table', context=f'{position_context}_{bucket}_{measure}',
                             title=title, default_sort='Exposure' if market else 'Value')
     st.subheader('Positions')
-    exposure_amounts = (exposure_result.exposures.groupby('source_position_id').market_exposure_eur.agg(
+    exposure_amounts = (exposure_result.exposures.groupby('source_position_id').market_exposure_reporting.agg(
         lambda values: values.sum() if values.notna().all() else float('nan')).to_dict()
         if mode != 'Performance' and measure == 'Market exposure' else None)
     render_overview_positions(selected, config, exposure_amounts=exposure_amounts, context=f'overview_{position_context}_{bucket}', scope=scope,
@@ -193,4 +193,4 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
     if exposure_result is not None and not bucket:
         from portfolio_app.portfolio_exposure_ui import render_capital_reconciliation
         with st.expander('Portfolio value reconciliation'):
-            render_capital_reconciliation(exposure_result)
+            render_capital_reconciliation(exposure_result, actual=bool(valued.attrs.get('actual_accounts')))

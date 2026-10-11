@@ -33,20 +33,28 @@ class LeverageContext:
     supported: bool
     active: bool
     unsupported_records: bool
+    journal: object | None = None
+    journal_revision: str | None = None
 
     @property
     def future(self):
-        return self.sandbox[0] if self.sandbox else None
+        return self.sandbox[0] if self.sandbox and not (self.journal and self.journal.accounts) else None
 
 
 def load_leverage_context(directory, reporting_currency):
     sandbox = load_sandbox(directory)
     future = sandbox[0] if sandbox else None
     settings, _ = load_leverage_settings(directory, future=future)
-    supported = reporting_currency == 'EUR'
+    from portfolio_app.account_journal import load_journal
+    journal, journal_revision = load_journal(directory)
+    actual = bool(journal.accounts)
+    legacy_debt = tuple(x for x in settings.liabilities if x.id not in journal.adopted_liability_ids)
+    legacy_required = bool(legacy_debt or (sandbox is not None and not actual))
+    supported = reporting_currency == 'EUR' or not legacy_required
     return LeverageContext(sandbox, settings, supported,
-        supported and (settings.enabled or sandbox is not None),
-        not supported and (settings.enabled or requires_leverage(settings, future)))
+        supported and (settings.enabled or sandbox is not None or actual),
+        not supported and legacy_required, journal, journal_revision)
+
 
 
 def select_price_service(directory, *, offline_demo=False, supplied=None, live_prices=None):
@@ -123,4 +131,6 @@ def prepare_exposure(valued, funds, allocation, context):
     if not context.active:
         return None
     return calculate_portfolio_exposure(valued, funds, future=context.future, allocation=allocation,
-        liabilities=context.settings.liabilities, fund_factors=context.settings.fund_factors)
+        liabilities=tuple(x for x in context.settings.liabilities if not context.journal or x.id not in context.journal.adopted_liability_ids),
+        fund_factors=context.settings.fund_factors,
+        reporting_currency=valued.attrs.get('reporting_currency', 'EUR') if context.future is None and not context.settings.liabilities or context.journal and context.journal.accounts else None)
