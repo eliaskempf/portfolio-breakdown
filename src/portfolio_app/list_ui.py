@@ -48,7 +48,7 @@ input{width:min(100%,360px);background:var(--st-secondary-background-color);bord
 input::placeholder{color:inherit;opacity:.55}.scroll{overflow-x:auto;border:1px solid color-mix(in srgb,currentColor 15%,transparent);border-radius:5px}
 table{width:100%;border-collapse:collapse;font-size:14px;text-align:left}th,td{padding:10px 12px;border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent);white-space:nowrap}
 table.sized{table-layout:fixed}table.sized tr[data-position-id]>td{overflow:hidden;text-overflow:ellipsis}
-th{position:sticky;top:0;background:var(--st-secondary-background-color);font-weight:600;z-index:1}.header-help{display:none;position:absolute;top:100%;left:0;white-space:normal;text-align:left;width:260px;padding:9px 12px;border-radius:5px;background:var(--st-secondary-background-color);color:var(--st-text-color);box-shadow:0 2px 8px #0003;font-size:12px;font-weight:400;z-index:5}th:hover,th:focus-within{z-index:3}th:hover .header-help,th:focus-within .header-help{display:block}th button{width:100%;padding:0;border:0;background:transparent;text-align:inherit;font-weight:inherit;cursor:pointer}
+th{position:sticky;top:0;background:var(--st-secondary-background-color);font-weight:600;z-index:1}.header-help{position:fixed;inset:auto;margin:0;border:0;white-space:normal;text-align:left;width:min(260px,calc(100vw - 16px));padding:9px 12px;border-radius:5px;background:var(--st-secondary-background-color);color:var(--st-text-color);box-shadow:0 2px 8px #0003;font-size:12px;font-weight:400;pointer-events:none}th button{width:100%;padding:0;border:0;background:transparent;text-align:inherit;font-weight:inherit;cursor:pointer}
 section[data-interactive="true"] tbody tr{cursor:pointer}tbody tr:hover,tbody tr:focus{background:var(--st-secondary-background-color)}tbody tr:last-child td{border-bottom:0}
 tr:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:-2px}input:focus-visible,button:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:2px}
 td.number,th.number{text-align:right;font-variant-numeric:tabular-nums}td:first-child{font-weight:500}.secondary{display:block;font-size:12px;font-weight:400;opacity:.7;margin-top:4px;white-space:normal}
@@ -75,6 +75,12 @@ button[data-preview-toggle]{border:0;background:transparent;padding:0;font-weigh
 JS = """
 export default function({parentElement:root,data,setTriggerValue}) {
   root.previewResizeObserver?.disconnect();
+  root.tooltipEvents?.abort();
+  const tooltipEvents=new AbortController();root.tooltipEvents=tooltipEvents;
+  // Top-layer help cannot enlarge or be clipped by the table's scroll viewport.
+  const hideHints=()=>root.querySelectorAll('.header-help:popover-open').forEach(hint=>hint.hidePopover());
+  window.addEventListener('scroll',hideHints,{capture:true,signal:tooltipEvents.signal});
+  window.addEventListener('resize',hideHints,{signal:tooltipEvents.signal});
   const input=root.querySelector('input'), head=root.querySelector('thead tr'), body=root.querySelector('tbody');
   const section=root.querySelector('section'), viewport=root.querySelector('.scroll'), table=root.querySelector('table');
   section.dataset.interactive=String(data.interactive);
@@ -216,8 +222,20 @@ export default function({parentElement:root,data,setTriggerValue}) {
       if(key===field)th.setAttribute('aria-sort',direction===1?'ascending':'descending');
       button.type='button';button.onclick=()=>{state.key=field;state.direction=key===field?-direction:1;persist();render();head.querySelectorAll('button')[columns.findIndex(c=>c.key===field)].focus();};
       const explanation=(help?help+' ':'')+'Activate to sort by '+label+'.';
-      button.title=explanation;button.setAttribute('aria-description',explanation);
+      button.setAttribute('aria-description',explanation);
       const hint=element('span',explanation);hint.className='header-help';hint.setAttribute('role','tooltip');hint.setAttribute('aria-hidden','true');
+      hint.setAttribute('popover','manual');
+      const showHint=()=>{
+        hideHints();hint.showPopover();
+        const anchor=button.getBoundingClientRect(),box=hint.getBoundingClientRect();
+        hint.style.left=Math.max(8,Math.min(anchor.left,window.innerWidth-box.width-8))+'px';
+        hint.style.top=Math.max(8,anchor.bottom+6+box.height<=window.innerHeight-8
+          ?anchor.bottom+6:anchor.top-box.height-6)+'px';
+      };
+      th.onmouseenter=showHint;button.onfocus=showHint;
+      th.onmouseleave=()=>{if(!th.matches(':focus-within'))hint.hidePopover();};
+      button.onblur=()=>hint.hidePopover();
+      button.onkeydown=event=>{if(event.key==='Escape'){hint.hidePopover();event.stopPropagation();}};
       th.append(button,hint);head.appendChild(th);
     }
     if(data.editable){const actions=element('th','');actions.scope='col';actions.setAttribute('aria-label','Actions');head.appendChild(actions);}
@@ -271,7 +289,7 @@ export default function({parentElement:root,data,setTriggerValue}) {
     const focused=body.querySelector('tr[data-position-id="'+CSS.escape(state.focus)+'"]');
     (state.focusAction==='preview'?focused?.querySelector('[data-preview-toggle]'):state.focusAction==='disclosure'?focused?.querySelector('[data-detail-toggle]'):focused)?.focus({preventScroll:true});
   }
-  return ()=>observer.disconnect();
+  return ()=>{observer.disconnect();tooltipEvents.abort();hideHints();};
 }
 """
 

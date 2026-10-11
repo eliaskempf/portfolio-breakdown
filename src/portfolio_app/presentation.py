@@ -47,6 +47,9 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 :is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetric"] > div > div:has(> [data-testid="stMetricDelta"]) {grid-column:2;grid-row:2;margin-top:0;flex-wrap:wrap;}
 .st-key-overview_allocation {container-type:inline-size;}
 .st-key-overview_allocation_summary {transform:translateY(-24px);}
+/* A non-wrapping Streamlit row defaults to overflow:auto. This is a heading,
+   not a scroll viewport; allow help and focus outlines beyond its line box. */
+.st-key-overview_allocation .st-key-overview_allocation_heading {overflow:visible;}
 :is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"], .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"] {cursor:pointer;}
 :is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:hover, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:hover {filter:brightness(.85);}
 :is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:focus-visible, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}

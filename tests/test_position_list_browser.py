@@ -139,3 +139,23 @@ def test_metric_columns_sort_numerically_keep_missing_last_and_preserve_identity
     root.get_by_role('searchbox').fill('small')
     root.locator('tbody tr').dblclick()
     assert page.evaluate('window.syntheticMetricEvent.id') == 'small'
+
+
+def test_header_help_does_not_change_scroll_extent(position_page):
+    page, _ = position_page
+    table = page.get_by_role('table', name='Positions', exact=True)
+    for width in (1400, 620):
+        page.set_viewport_size({'width': width, 'height': 1000})
+        for button in table.locator('th button').all():
+            button.scroll_into_view_if_needed()
+            before = table.evaluate('el => [el.parentElement.scrollWidth, el.parentElement.scrollHeight]')
+            button.hover()
+            hint = button.locator('..').locator('.header-help')
+            playwright.expect(hint).to_be_visible()
+            assert table.evaluate('el => [el.parentElement.scrollWidth, el.parentElement.scrollHeight]') == before
+            bounds = hint.bounding_box()
+            assert bounds['x'] >= 0 and bounds['x'] + bounds['width'] <= width
+            button.focus()
+            playwright.expect(hint).to_be_visible()
+            button.press('Escape')
+            playwright.expect(hint).not_to_be_visible()
