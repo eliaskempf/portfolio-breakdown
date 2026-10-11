@@ -49,7 +49,7 @@ def _consume_position_event(path, snapshot):
         from portfolio_app.account_journal import load_journal
         journal, _ = load_journal(path.parent)
         identity = event.get('id', '')
-        actual = identity in {p.id for p in journal.positions} | {link.position_id for link in journal.cash_links} or (journal.accounts and str(identity).startswith('account-'))
+        actual = identity in {p.id for p in journal.positions} | {investment.id for investment in journal.investments} | {link.position_id for link in journal.cash_links} or (journal.accounts and str(identity).startswith('account-'))
         current = event.get('context') == list_context(path) and event.get('revision') == snapshot.revision
         if current and actual:
             st.session_state['positions_workflow_request'] = 'Accounts & futures'
@@ -62,7 +62,8 @@ def _consume_position_event(path, snapshot):
 
 
 def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False, allocation=None,
-                           valued=None, percent=False, defer_dialog=False):
+                           valued=None, account_valued=None, percent=False, defer_dialog=False):
+    account_valued = account_valued if account_valued is not None else valued
     _consume_position_event(path, snapshot)
     if warning := st.session_state.pop('position_stale_notice', None):
         st.warning(warning)
@@ -87,7 +88,7 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
                                     key='positions_workflow', on_change=_dismiss)
     if workflow == 'Accounts & futures':
         from portfolio_app.accounts_ui import render_accounts
-        render_accounts(path.parent, snapshot, valued if valued is not None else snapshot.holdings, allocation=allocation)
+        render_accounts(path.parent, snapshot, account_valued if account_valued is not None else snapshot.holdings, allocation=allocation)
     elif workflow == 'Import portfolio':
         from portfolio_app.import_ui import render_import
         render_import(path, snapshot, funds)
@@ -105,7 +106,7 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
                 st.session_state['position_saved_notice'] = notice
             st.rerun()
     else:
-        if snapshot.holdings.empty:
+        if snapshot.holdings.empty and (valued is None or valued.empty):
             st.info('Add your first position or import a holdings file to see its value and allocation.')
             def start_import():
                 st.session_state['positions_workflow'] = 'Import portfolio'
@@ -113,11 +114,11 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
         else:
             st.caption('Select a position for details and price history. Use the pencil to edit.')
             with st.container(key='tour_position_list'):
-                render_position_list(path, snapshot, allocation, valued=valued, percent=percent, demo=demo)
+                render_position_list(path, snapshot, allocation, valued=valued, account_valued=account_valued, percent=percent, demo=demo)
     if workflow == 'Positions':
         from portfolio_app.account_journal import load_journal
         from portfolio_app.accounts_ui import render_actual_positions
-        render_actual_positions(path.parent, load_journal(path.parent)[0], valued=valued)
+        render_actual_positions(path.parent, load_journal(path.parent)[0], valued=account_valued)
     if not defer_dialog:
         render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=valued)
 

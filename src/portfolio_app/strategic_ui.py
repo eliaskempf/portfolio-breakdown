@@ -26,7 +26,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         valued = position_performance(valued)
     from portfolio_app.futures import funded_strategy_positions
     valued = funded_strategy_positions(valued, future, config)
-    has_strategy = future is not None and future.reference_capital_eur is not None
+    has_strategy = (future is not None and future.reference_capital_eur is not None) or bool(valued.attrs.get('investment_members'))
     paths = bucket_paths(config)
     names = {b.id: b.name for b in config.buckets} | {'unassigned': 'Unassigned'}
     labels = category_labels(config) | {'': 'Portfolio', 'unassigned': 'Unassigned'}
@@ -82,8 +82,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         if assigned not in bucket_ids:
             scoped_future = None
     count = len(selected) + int(scoped_future is not None and scoped_future.contracts != 0 and not has_strategy)
-    exclusions = ' · Includes closed-contract gains for the funded strategy; excludes dividends' if has_strategy else ' · Excludes dividends and realized gains'
-    st.caption(f'{scope} · {count} positions · Performance coverage: {performance.coverage} {'eligible' if performance.cash_balance_count else 'held'} positions · converted buy-ins{exclusions}')
+    exclusions = ' · Includes cumulative futures P&L, fees and recorded taxes; excludes dividends' if valued.attrs.get('investment_members') else ' · Includes closed-contract gains for the funded strategy; excludes dividends' if has_strategy else ' · Excludes dividends and realized gains'
+    st.caption(f'{scope} · {count} positions · Performance coverage: {performance.coverage} {'eligible' if performance.cash_balance_count else 'held'} positions · {'buy-ins and reference capital' if has_strategy else 'converted buy-ins'}{exclusions}')
     if performance.cash_balance_count:
         st.caption('Cash balances without a recorded conversion basis are outside purchase-based performance. Interest and FX gains are not inferred from balances.')
     if missing:
@@ -106,7 +106,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'], help='Choose the financial measure represented by the chart.',
                 default='Return (%)', key='strategic_performance_measure') or 'Return (%)'
             chart_percent = measure == 'Return (%)'
-            st.caption('Return compares unrealized gain with recorded buy-in cost. Monetary gain shows the amount gained or lost. Both are shown in the tables and on hover.')
+            st.caption('Holdings use unrealized gain / recorded buy-in cost. Futures investments use cumulative net P&L / fixed reference capital; funding changes are not gains. Native futures gains are translated at current FX, without reconstructing historical currency returns.' if valued.attrs.get('investment_members') else 'Return compares unrealized gain with recorded buy-in cost. Monetary gain shows the amount gained or lost. Both are shown in the tables and on hover.')
             available = table.dropna(subset=[measure]).sort_values(measure)
             if not available.empty:
                 hover = [[money(row["Cost"]), money(row["Gain"], signed=True),

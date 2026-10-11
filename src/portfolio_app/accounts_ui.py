@@ -32,14 +32,15 @@ def _money_input(label, key, value='0'):
     return decimal(st.text_input(label, value=value, key=key), label)
 
 
-def _save_review(directory, journal, revision, candidate, key, *, holdings_revision=None):
+def _save_review(directory, journal, revision, candidate, key, *, holdings_revision=None,
+                 review_label='Review changes', save_label='Save reviewed changes'):
     """Require explicit review; preserve the exact reviewed candidate on reruns."""
     ledger = _imports()
     import json
     raw = asdict(candidate)
     raw['events'] = [{k:v for k,v in asdict(e).items() if k != 'id'} for e in candidate.events]
     signature = json.dumps(raw, default=str, sort_keys=True)
-    if st.button('Review changes', key=key + 'review'):
+    if st.button(review_label, key=key + 'review'):
         state = ledger.replay(candidate)
         st.session_state[key + 'pending'] = (candidate, revision, holdings_revision, signature)
     pending = st.session_state.get(key + 'pending')
@@ -52,12 +53,17 @@ def _save_review(directory, journal, revision, candidate, key, *, holdings_revis
         return
     st.markdown('**Reviewed changes**')
     events = proposed.events[len(journal.events):]
-    st.dataframe(pd.DataFrame([dict(Date=e.date, Action=e.kind, Currency=e.currency,
-        Amount=str(e.amount), Quantity=e.quantity, Price=str(e.price or ''), Note=e.note) for e in events]), hide_index=True)
+    if events:
+        st.dataframe(pd.DataFrame([dict(Date=e.date, Action=e.kind, Currency=e.currency,
+            Amount=str(e.amount), Quantity=e.quantity, Price=str(e.price or ''), Note=e.note) for e in events]), hide_index=True)
+    from portfolio_app.investment_ui import investment_review_rows
+    investment_changes = investment_review_rows(journal, proposed)
+    if investment_changes:
+        st.dataframe(pd.DataFrame(investment_changes), hide_index=True)
     state = ledger.replay(proposed)
     st.dataframe(pd.DataFrame([{'Account': a, 'Currency': c, 'Cash after posting': str(v)} for (a,c),v in state.cash.items()]), hide_index=True)
     st.caption('Save posts the reviewed entries above. Review again to include changed inputs.')
-    if st.button('Save reviewed changes', type='primary', key=key + 'save'):
+    if st.button(save_label, type='primary', key=key + 'save'):
         try:
             from portfolio_app.workspace_lock import workspace_lock
             from portfolio_app.actual_portfolio import freeze_position_keys, validate_links
@@ -141,6 +147,9 @@ def render_future_entry(directory, snapshot, *, valued=None, allocation=None):
         price = _money_input('Fill price' if mode == 'New opening trade' else 'Last settled price / clearing basis', key+'price', '')
         fees = _money_input('Opening fees' if mode == 'New opening trade' else 'New fees to record (exclude costs already in opening cash)', key+'fees')
         candidate, account = _account_choice(directory, journal, snapshot, valued, key=key, day=day)
+        investment_name = st.text_input('Investment name', value=f'{contract.product} futures', key=key+'investment_name')
+        capital = _money_input(f'Initial allocated capital ({contract.currency})', key+'investment_capital')
+        st.caption('Attribute part of the account cash to this investment. This is not a new cash deposit or the contract notional. Enter zero to allocate capital later.')
         leaves = allocation.leaves() if allocation else set()
         labels = {b.id: b.name for b in allocation.buckets} if allocation else {}
         bucket = st.selectbox('Category', ['', *sorted(leaves)], format_func=lambda x: labels.get(x, 'Unassigned'), key=key+'bucket')
@@ -155,6 +164,10 @@ def render_future_entry(directory, snapshot, *, valued=None, allocation=None):
         if fees:
             candidate = ledger.append_event(candidate, _event(candidate, 'fee', day, account_id=account,
                 currency=contract.currency, amount=fees, position_id=identity))
+        from portfolio_app.futures_investments import assign_investment
+        investment_id = st.session_state.setdefault(key+'investment_id', 'investment:' + uuid4().hex)
+        candidate = assign_investment(candidate, ledger.InvestmentSpec(
+            investment_id, investment_name.strip(), account, contract.currency, capital, capital), [identity])
         if mode != 'New opening trade':
             st.caption('Opening cash already includes previous settlements. Performance begins at this snapshot; earlier gains stay unknown.')
         _save_review(directory, journal, revision, candidate, key, holdings_revision=snapshot.revision)
@@ -165,12 +178,13 @@ def render_future_entry(directory, snapshot, *, valued=None, allocation=None):
 def render_actual_positions(directory, journal, *, valued=None):
     ledger = _imports()
     state = ledger.replay(journal)
-    if not state.positions:
+    ungrouped = {identity: balance for identity, balance in state.positions.items() if not balance.spec.investment_id}
+    if not ungrouped:
         return
     names = {a.id: a.name for a in journal.accounts}
-    st.markdown('**Futures positions**')
+    st.markdown('**Ungrouped futures contracts**' if journal.investments else '**Futures positions**')
     records = []
-    for identity, balance in state.positions.items():
+    for identity, balance in ungrouped.items():
         records.append({'Position': identity, 'Account': names[balance.spec.account_id], 'Product': balance.contract.product,
             'Maturity': balance.contract.expiry, 'Contracts': balance.quantity, 'Currency': balance.contract.currency,
             'Settled trading P&L since start': str(balance.realized_pnl), 'Fees': str(balance.fees), 'Entered taxes': str(balance.taxes)})
@@ -188,9 +202,14 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
     names = {a.id: a.name for a in journal.accounts}
     requested = st.session_state.pop('accounts_requested_position', None)
     if requested is not None:
-        if requested in state.positions:
+        from portfolio_app.investment_ui import route_investment_request
+        if route_investment_request(journal, requested, key):
+            st.session_state[key+'view'] = 'Positions & transactions'
+        elif requested in state.positions:
             st.session_state[key+'view'] = 'Positions & transactions'
             st.session_state[key+'transaction_position'] = requested
+            from portfolio_app.investment_ui import sync_contract_investment
+            sync_contract_investment(journal, key)
         else:
             st.session_state[key+'view'] = 'Cash & financing'
     view = st.segmented_control('Account workspace', ['Positions & transactions', 'Cash & financing', 'Collateral', 'Marks & FX', 'Studies'],
@@ -219,7 +238,10 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
         from portfolio_app.currency_display import reporting_currency
         render_account_margin(directory, journal, revision, snapshot.holdings, valued, reporting_currency(), load_observations(directory)[1])
         return
-    render_actual_positions(directory, journal, valued=valued)
+    from portfolio_app.investment_ui import render_investments
+    render_investments(directory, journal, revision, valued, key=key)
+    if not journal.investments:
+        render_actual_positions(directory, journal, valued=valued)
     if state.positions:
         render_transaction(directory, journal, revision)
     with st.expander('Recorded transactions'):
@@ -242,8 +264,13 @@ def render_transaction(directory, journal, revision):
     from portfolio_app.derivative_types import ContractSpec
     state = ledger.replay(journal)
     key = _key(directory)+'transaction_'
-    identity = st.selectbox('Contract position', list(state.positions), format_func=lambda p: f'{state.positions[p].contract.product} {state.positions[p].contract.expiry} · {state.positions[p].spec.account_id[:8]}', key=key+'position')
+    from portfolio_app.investment_ui import sync_contract_investment
+    identity = st.selectbox('Contract position', list(state.positions),
+        format_func=lambda p: f'{state.positions[p].contract.product} {state.positions[p].contract.expiry} · {state.positions[p].spec.account_id[:8]}',
+        key=key+'position', on_change=sync_contract_investment, args=(journal, _key(directory)))
     balance = state.positions[identity]
+    if journal.investments and not balance.spec.investment_id:
+        st.caption('This contract is not yet part of a named investment. Use the grouping control above to attribute capital and include its history.')
     contract, account = balance.contract, balance.spec.account_id
     action = st.selectbox('Action', ['Record settlement', 'Final settlement / expiry', 'Increase / reduce position', 'Close position', 'Roll position', 'Fee', 'Tax payment / withholding', 'Receive pending cash'], key=key+'action')
     day = st.date_input('Event date', max_value=date.today(), key=key+'date')
@@ -279,7 +306,8 @@ def render_transaction(directory, journal, revision):
                     next_contract = replace(contract, expiry=expiry.isoformat(), last_trade_date='', final_settlement_date='')
                     next_id = st.session_state.setdefault(key+'next_position_id_' + identity + '_' + expiry.isoformat(), uuid4().hex)
                     candidate = ledger.add_contract(candidate, next_contract)
-                    candidate = ledger.add_position(candidate, ledger.PositionSpec(next_id, account, next_contract.id, balance.spec.bucket_id, balance.spec.proxy_position_id))
+                    candidate = ledger.add_position(candidate, ledger.PositionSpec(next_id, account, next_contract.id,
+                        balance.spec.bucket_id, balance.spec.proxy_position_id, investment_id=balance.spec.investment_id))
                     opening_event = _event(candidate, 'trade', day, account_id=account, currency=contract.currency, position_id=next_id, quantity=new_quantity, price=new_price)
                     group = st.session_state.setdefault(key+'roll_group_' + identity + '_' + expiry.isoformat(), uuid4().hex)
                     candidate = ledger.roll(candidate, close=replace(close_event,group_id=group), opening=replace(opening_event,group_id=group,sequence=close_event.sequence+1))

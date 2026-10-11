@@ -92,6 +92,7 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
             quote_currency=currency, acquisition_currency=currency, reporting_currency=reporting_currency,
             current_value_reporting=converted(amount, currency), current_price=float(amount) if amount is not None else float('nan'),
             current_value_native=float(amount) if amount is not None else float('nan'),
+            current_fx_rate=rates.get(currency),
             account=accounts[account_id], account_id=account_id, portfolio='', bucket_id='',
             within_bucket_target=float('nan'), target_allocation=float('nan'), acquisition_price=float('nan'),
             cost_basis=float('nan'), cost_basis_reporting=float('nan'), unrealized_gain=float('nan'),
@@ -142,5 +143,5 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
                 f'{accounts[pending.account_id]} · cash in transit', 'cash')
     if rows:
         result = pd.concat([result, pd.DataFrame(rows)], ignore_index=True)
-    result.attrs = dict(valued.attrs, reporting_currency=reporting_currency, actual_accounts=True)
+    result.attrs = dict(valued.attrs, reporting_currency=reporting_currency, actual_accounts=True, account_fx_rates=rates)
     return result

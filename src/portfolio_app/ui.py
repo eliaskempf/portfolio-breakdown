@@ -223,6 +223,12 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                 mark_view_ready()
         return
     exposure_result = prepare_exposure(valued, funds, allocation, leverage_context)
+    display_valued, display_exposure = valued, exposure_result
+    if actual_active:
+        from portfolio_app.futures_investments import investment_positions
+        from portfolio_app.investment_presentation import investment_exposure, investment_risk_positions
+        display_valued = investment_positions(valued, journal)
+        display_exposure = investment_exposure(exposure_result, display_valued)
     if price_service.cache_warning:
         st.warning(price_service.cache_warning)
     if status.missing_costs or status.missing_prices or status.stale_quotes:
@@ -258,9 +264,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if positions.open:
         with positions:
             render_position_editor(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, embedded=True,
-                                   allocation=allocation, valued=visible, percent=percent, defer_dialog=True)
+                                   allocation=allocation, valued=display_valued.loc[display_valued.shares.gt(0)].copy() if hide_empty else display_valued,
+                                   account_valued=valued, percent=percent, defer_dialog=True)
     def open_valued_position(position_id, *, editing=False):
-        if actual_active and (position_id in {p.id for p in journal.positions} | {link.position_id for link in journal.cash_links} or str(position_id).startswith('account-')):
+        if actual_active and (position_id in {p.id for p in journal.positions} | {investment.id for investment in journal.investments} | {link.position_id for link in journal.cash_links} or str(position_id).startswith('account-')):
             st.session_state['main_tabs'] = 'Futures'
             st.session_state['accounts_requested_position'] = position_id
             return
@@ -274,21 +281,32 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                 empty_overview()
             else:
                 if allocation:
-                    overview_config, overview_values = allocation, valued
+                    overview_config, overview_values = allocation, display_valued
                 else:
-                    overview_config, overview_values = migration_preview(valued)
+                    overview_config, overview_values = migration_preview(display_valued)
                     # Legacy targets are percentages of the whole portfolio; don't
                     # reinterpret them as within-category targets in this overview.
                     overview_values['within_bucket_target'] = float('nan')
-                overview_exposure = exposure_result if allocation or not feature_active else prepare_exposure(
-                    overview_values, funds, overview_config, leverage_context)
+                if actual_active and not allocation:
+                    # Apply preview categories to exact contracts before projecting
+                    # their exposure; grouped capital rows are never pricing inputs.
+                    raw_overview = valued.copy()
+                    owners = overview_values.attrs.get('investment_source_map', {})
+                    categories = overview_values.set_index('position_id').bucket_id.to_dict()
+                    raw_overview['bucket_id'] = raw_overview.position_id.map(
+                        lambda identity: categories.get(owners.get(identity, identity), ''))
+                    overview_exposure = investment_exposure(
+                        prepare_exposure(raw_overview, funds, overview_config, leverage_context), overview_values)
+                else:
+                    overview_exposure = display_exposure if allocation or not feature_active else prepare_exposure(
+                        overview_values, funds, overview_config, leverage_context)
                 from portfolio_app.portfolio_analytics_ui import render_portfolio_analytics
                 render_strategic_overview(overview_values, overview_config, data_dir=data_dir, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
                                           leverage_enabled=(leverage.enabled or actual_active) and leverage_supported,
                                           percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
                                           edit_position=lambda position_id: open_valued_position(position_id, editing=True),
                                           analytics=lambda selected, scope, scoped_future, scoped: render_portfolio_analytics(
-                                              selected, data_dir, funds, demo=offline_demo, scope=scope, future=scoped_future,
+                                              investment_risk_positions(selected, valued) if actual_active else selected, data_dir, funds, demo=offline_demo, scope=scope, future=scoped_future,
                                               portfolio_result=overview_exposure if actual_active or sandbox or leverage.liabilities else None, scoped=scoped))
     if exposure.open and not unsupported_records:
         with exposure:

@@ -30,6 +30,54 @@ and index-holdings proxy choices control classification and approximate exposure
 Choose **Review changes**, inspect the proposal, then **Save reviewed changes**.
 The record persists in the existing workspace without a sandbox marker.
 
+## Investment capital and contract history
+
+The normal entry form also asks for an **Investment name** and **Initial allocated
+capital** in the contract's settlement currency. This declares how much existing
+account cash belongs to the investment. It neither creates a deposit nor buys the
+contract's notional. Zero is allowed; monetary P&L remains available, while a
+percentage return requires positive initial capital. Collateral remains an
+independent account reservation and is not added to investment value.
+
+Overview and Positions show one persistent investment row across contract rolls:
+
+```text
+investment capital value = allocated principal + recorded cumulative net P&L
+recorded net P&L = settled trading P&L + open P&L − fees − entered taxes
+reference return = recorded net P&L / fixed initial allocated capital
+```
+
+Explicitly attributed interest is included in net P&L. Account-level expenses
+without a contract attribution remain outside investment performance. The gain
+includes closed contracts and pending payments; posting a settlement or receiving
+pending cash changes its location, not the gain. Market exposure remains separate.
+For example, an invented €20,000 allocation and €1,000 net gain display as a
+€21,000 investment with €1,000 gain and 5% reference return, regardless of how much
+of that gain has already settled into cash. If the account also contains €3,000
+unallocated cash, that appears separately. Attributed cash is counted only once.
+
+Select the investment to inspect its capital, net gain, notional exposure and
+contract history, including closed expiries. A roll retains the investment's name,
+initial capital and cumulative performance. Separate investments can use the same
+account; each has its own capital attribution. Shared capital pools across
+investments are not currently modeled.
+
+Under **Futures → Positions & transactions**, **Edit investment allocation**
+changes total allocated principal, excluding gains and losses. Its difference
+from initial capital is net funding, not profit. The initial reference stays fixed;
+this percentage is neither time-weighted nor annualized. A cash deposit/withdrawal
+must still be recorded separately when actual account cash changes. An account
+withdrawal can leave a negative unallocated remainder: this is an allocation
+shortfall to reconcile, not an additional loan.
+
+Existing journals retain their original account and contract records without
+automatic allocation. Choose **Group an existing contract history as an
+investment** to supply a name and capital at the recorded start. Explicitly linked
+rolls join the same investment. For an already-open snapshot, its opening cash
+already includes earlier settlements; performance before the snapshot stays
+unknown. EUR, USD and GBP amounts are converted at current reporting FX. These
+investment gains do not reconstruct historical FX gains on allocated capital.
+
 ## Cash, settlement and exposure
 
 The account journal distinguishes wealth from contractual exposure:

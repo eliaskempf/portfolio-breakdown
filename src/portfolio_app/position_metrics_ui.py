@@ -25,7 +25,7 @@ LABELS = {name: definition.label + (' (%)' if definition.unit == 'fraction' else
           'beta': 'Beta', 'volatility': 'Volatility (%)'}
 
 
-def position_metric_toolbar(holdings, data_dir, *, demo=False):
+def position_metric_toolbar(holdings, data_dir, *, demo=False, account_valued=None):
     key = context_key(data_dir, demo) + '_positions'
     toolbar, settings = st.columns([5, 1], vertical_alignment='center')
     with toolbar:
@@ -48,7 +48,11 @@ def position_metric_toolbar(holdings, data_dir, *, demo=False):
             st.info('Current valuations are needed to calculate risk.')
         elif benchmark:
             with st.spinner('Calculating risk…'):
-                risk, status = load_risk(holdings, data_dir, demo, benchmark, years, refresh)
+                from portfolio_app.investment_presentation import investment_risk_positions
+                risk_positions = investment_risk_positions(holdings, account_valued) if account_valued is not None else holdings
+                risk, status = load_risk(risk_positions, data_dir, demo, benchmark, years, refresh)
+            if holdings.attrs.get('investment_members'):
+                st.caption('Grouped futures investment metrics are shown by their exact contract and cash components in Overview → Analytics.')
             st.caption(f'{benchmark} · {years}-year window · {reporting_currency()} weekly returns · {risk.observations} common observations')
             if risk.excluded:
                 st.caption(f'{len(risk.excluded)} instruments lack comparable history or valuation. Open data details for exclusions.')

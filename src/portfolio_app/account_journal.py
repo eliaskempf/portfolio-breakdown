@@ -48,12 +48,38 @@ class PositionSpec:
     contract_id: str
     bucket_id: str = ''
     proxy_position_id: str = ''
+    investment_id: str = ''
 
     def __post_init__(self):
         for name in ('id', 'account_id', 'contract_id'):
             identifier(getattr(self, name), name)
-        if not isinstance(self.bucket_id, str) or not isinstance(self.proxy_position_id, str):
+        if not all(isinstance(value, str) for value in (self.bucket_id, self.proxy_position_id, self.investment_id)):
             raise DataError('Category and proxy IDs must be text.')
+
+
+@dataclass(frozen=True)
+class InvestmentSpec:
+    """Presentation ownership of capital; never an additional account balance.
+
+    Reference capital is fixed at the recorded start. Allocated capital is that
+    principal plus subsequent net allocations, excluding trading gains.
+    """
+    id: str
+    name: str
+    account_id: str
+    currency: str
+    reference_capital: Decimal
+    allocated_capital: Decimal
+
+    def __post_init__(self):
+        for field in ('id', 'name', 'account_id'):
+            identifier(getattr(self, field), field)
+        currency(self.currency)
+        for field in ('reference_capital', 'allocated_capital'):
+            value = money(getattr(self, field))
+            if value < 0:
+                raise DataError('Allocated and reference capital must be nonnegative.')
+            object.__setattr__(self, field, value)
 
 
 @dataclass(frozen=True)
@@ -170,6 +196,7 @@ class Journal:
     margin_requirements: tuple[MarginRequirement, ...] = ()
     adopted_liability_ids: tuple[str, ...] = ()
     version: int = 1
+    investments: tuple[InvestmentSpec, ...] = ()
 
     def __post_init__(self):
         if type(self.version) is not int or self.version != 1:
@@ -182,12 +209,13 @@ class Journal:
         object.__setattr__(self, 'adopted_liability_ids', adopted)
         for name, cls in (('accounts', Account), ('contracts', ContractSpec),
                           ('positions', PositionSpec), ('events', Event), ('cash_links', CashLink),
-                          ('holding_links', HoldingLink), ('margin_requirements', MarginRequirement)):
+                          ('holding_links', HoldingLink), ('margin_requirements', MarginRequirement),
+                          ('investments', InvestmentSpec)):
             values = tuple(getattr(self, name))
             if any(not isinstance(item, cls) for item in values):
                 raise DataError(f'Invalid {name} records.')
             object.__setattr__(self, name, values)
-        for name in ('accounts', 'contracts', 'positions', 'events', 'margin_requirements'):
+        for name in ('accounts', 'contracts', 'positions', 'events', 'margin_requirements', 'investments'):
             ids = [item.id for item in getattr(self, name)]
             if len(set(ids)) != len(ids):
                 raise DataError(f'Duplicate {name} IDs.')
@@ -197,6 +225,24 @@ class Journal:
         for item in self.positions:
             if item.account_id not in accounts or item.contract_id not in contracts:
                 raise DataError('Position refers to an unknown account or contract.')
+        investments = {item.id: item for item in self.investments}
+        if set(investments).intersection(positions):
+            raise DataError('Investment and contract position IDs must be distinct.')
+        for item in self.investments:
+            if item.account_id not in accounts:
+                raise DataError('Investment refers to an unknown account.')
+        contract_specs = {item.id: item for item in self.contracts}
+        investment_contracts = {}
+        for item in self.positions:
+            if not item.investment_id:
+                continue
+            owner = investments.get(item.investment_id)
+            contract = contract_specs[item.contract_id]
+            if owner is None or (owner.account_id, owner.currency) != (item.account_id, contract.currency):
+                raise DataError('Investment requires positions in its account and settlement currency.')
+            signature = (contract.exchange, contract.product, item.bucket_id, item.proxy_position_id)
+            if investment_contracts.setdefault(owner.id, signature) != signature:
+                raise DataError('An investment must retain one product, category and index proxy across its contracts.')
         for name, keys in (('cash_links', [(item.account_id, item.currency) for item in self.cash_links]),
                            ('cash_links', [item.position_id for item in self.cash_links]),
                            ('holding_links', [item.position_id for item in self.holding_links])):
@@ -581,6 +627,8 @@ def roll(journal, *, close: Event, opening: Event, charges: Iterable[Event] = ()
     old_contract, new_contract = state.positions[old.id].contract, state.positions[new.id].contract
     if (old_contract.exchange, old_contract.product, old_contract.currency) != (new_contract.exchange, new_contract.product, new_contract.currency):
         raise DataError('A roll must keep the same product and settlement currency.')
+    if old.investment_id != new.investment_id:
+        raise DataError('A roll must retain the same investment identity.')
     current = state.positions[old.id].quantity
     if not current or close.quantity * current >= 0 or abs(close.quantity) > abs(current) or opening.quantity != -close.quantity:
         raise DataError('Roll closes an existing quantity and opens the same signed quantity.')
@@ -597,7 +645,7 @@ def journal_from_dict(raw):
     fields = dict(raw)
     for name, cls in (('accounts', Account), ('contracts', ContractSpec), ('positions', PositionSpec),
                       ('events', Event), ('cash_links', CashLink), ('holding_links', HoldingLink),
-                      ('margin_requirements', MarginRequirement)):
+                      ('margin_requirements', MarginRequirement), ('investments', InvestmentSpec)):
         fields[name] = tuple(cls(**item) for item in fields.get(name, ()))
     result = Journal(**fields)
     replay(result)
