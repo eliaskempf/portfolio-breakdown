@@ -93,7 +93,7 @@ def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = ""
     children = config.children(bucket) if bucket != "unassigned" else []
     records = []
     choices = [(item.id, item.name, item.target) for item in children]
-    if not bucket and valued.bucket_id.eq("").any():
+    if not bucket and valued.loc[valued.bucket_id.eq(""), 'current_value_reporting'].ne(0).any():
         choices.append(("unassigned", "Unassigned", None))
     if not choices:
         choices = [(row.position_id, instrument_name(row), row.within_bucket_target)

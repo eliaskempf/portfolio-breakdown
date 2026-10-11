@@ -39,21 +39,32 @@ include descendants: adding parent and child values double-counts them.
 Missing prices suppress complete percentages; the chart represents known value.
 Exposure filters and ETF expansion do not alter strategic ownership.
 
-With leverage enabled, **Overview → Market exposure** compares current exposure
-with saved exposure targets. Use **Set exposure targets** or **Edit exposure
+With leverage enabled, **Market exposure** is the first and default allocation
+view in Overview. It shows current share, target share and **Gap (pp)**, where
+positive means overweight (current minus target). **Capital allocation** remains
+available with its own capital targets; exposure targets are not cash targets.
+Use **Set exposure targets** or **Edit exposure
 targets** to open their editor. Exposure targets are a separate policy under
 **Rebalance → Targets → Exposure targets**: choose a desired total multiple of
 portfolio net equity and category composition. Capital targets stay unchanged.
 
 Target amounts always use the saved whole-portfolio policy. Within a selected
 category, current percentages divide by its current exposure, and target
-percentages divide by its desired exposure. **Gap** is target minus current
-exposure; it is not an amount of cash available to invest. Signed exposures stay
+percentages divide by its desired exposure. The Overview gap is the difference
+between these displayed percentages. Monetary exposure gaps in Rebalance remain
+target minus current exposure; they are not cash purchase budgets. Signed exposures stay
 signed, and percentages are unavailable when their total is zero or negative.
 At a leaf category the comparison shows the category total; exposure targets do
 not imply individual position targets. A saved equity-only policy is labeled as
 such and is not compared against the broader Market exposure view. Switching its
 universe to Total market requires an explicit save in the exposure target editor.
+
+Data-coverage details appear when hovering over category names. Unassigned means
+no strategic category is assigned; an empty zero-value/zero-exposure row is hidden.
+Offsetting long and short exposures remain represented even if their net is zero.
+The **Notifications** tab holds stale ETF snapshots, manual-price notices,
+valuation/performance gaps and refresh problems. Tooltips explain metrics and
+table columns without adding paragraphs to the overview.
 
 ## Analytical labels are separate {#classifications}
 

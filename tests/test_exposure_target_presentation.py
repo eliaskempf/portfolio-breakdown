@@ -33,6 +33,7 @@ def test_nested_scope_keeps_absolute_targets_and_scopes_composition():
     assert category.loc['Invented stock', 'Target (%)'] == pytest.approx(100*2/3)
     assert category.loc['Invented stock', 'Target exposure'] == 60.
     assert category.loc['Invented stock', 'Gap'] == -20.
+    assert category.loc['Invented stock', 'Gap (pp)'] == pytest.approx(80-100*2/3)
     assert category['Target exposure'].sum() == portfolio.loc['Invented risk', 'Target exposure']
     leaf = market_target_summary(invented_result(), TARGET, CONFIG, 'stock')
     assert leaf.Category.tolist() == ['Invented stock']
@@ -88,14 +89,15 @@ def test_overview_target_controls_unset_legacy_and_market(tmp_path):
     app.session_state.directory = str(tmp_path)
     app.run()
     assert not app.exception
-    assert any('Exposure targets are unset' in x.value for x in app.caption)
+    assert not app.caption
+    assert 'Capital targets are separate' in app.button[0].help
     assert app.button[0].label == 'Set exposure targets'
     app.button[0].click().run()
     assert app.session_state.opened
     assert not list(tmp_path.iterdir())
     save_exposure_targets(tmp_path, replace(TARGET, universe='equity'), CONFIG, None)
     app.run()
-    assert any('equity only' in x.value for x in app.caption)
+    assert 'equity only' in app.button[0].help
     assert not app.dataframe
     assert app.button[0].label == 'Edit exposure targets'
     from portfolio_app.exposure_targets import load_exposure_targets
@@ -104,7 +106,8 @@ def test_overview_target_controls_unset_legacy_and_market(tmp_path):
     app.run()
     assert not app.exception
     assert 'Target exposure' in app.dataframe[0].value
-    assert any('Gap = target − current' in x.value for x in app.caption)
+    assert not app.caption
+    assert '1.5×' in app.button[0].help
 
 
 def test_normal_overview_market_targets_and_editor_navigation(tmp_path):
@@ -123,12 +126,32 @@ def test_normal_overview_market_targets_and_editor_navigation(tmp_path):
     table = list_frame(app, 'Market exposure').set_index('Category')
     assert table.loc['Core', 'Target exposure'] == 120000.
     assert table.loc['Core', 'Gap'] == 10000.
+    from list_helpers import list_data
+    columns = list_data(app, 'Market exposure')['columns']
+    assert [column['key'] for column in columns] == ['Category', '% of exposure', 'Target (%)', 'Gap (pp)']
+    assert columns[0]['tooltip'] == 'Row details'
+    assert 'value' not in [column['key'] for column in list_data(app, 'Positions')['columns']]
     by_label(app.selectbox, 'Category').set_value('core').run()
     table = list_frame(app, 'Market exposure')
     assert table.Category.tolist() == ['Core']
     assert table['Target (%)'].item() == 100.
-    assert any('category as a whole' in x.value for x in app.caption)
+    assert not any('category as a whole' in x.value for x in app.caption)
     by_label(app.button, 'Edit exposure targets').click().run()
     assert not app.exception
     assert by_label(app.get('button_group'), 'Target measure').value == 'Exposure targets'
     assert by_label(app.number_input, 'Desired total exposure (× net equity)').value == 1.5
+
+
+def test_zero_unassigned_hidden_but_cash_and_offsetting_exposures_remain():
+    source = invented_result()
+    unassigned = dict(bucket_id='', market_exposure_reporting=0., exposure_reporting=0.,
+                      source_type='direct', status='')
+    rows = pd.concat([source.exposures, pd.DataFrame([unassigned])], ignore_index=True)
+    result = replace(source, exposures=rows)
+    assert 'Unassigned' not in market_target_summary(result, TARGET, CONFIG).Category.tolist()
+    capital = pd.DataFrame([dict(bucket_id='', value=25.)])
+    assert 'Unassigned' in market_target_summary(replace(result, capital=capital), TARGET, CONFIG).Category.tolist()
+    rows = pd.concat([source.exposures, pd.DataFrame([
+        dict(unassigned, market_exposure_reporting=10.), dict(unassigned, market_exposure_reporting=-10.)])])
+    table = market_target_summary(replace(source, exposures=rows), TARGET, CONFIG).set_index('Category')
+    assert table.loc['Unassigned', 'Exposure'] == 0.

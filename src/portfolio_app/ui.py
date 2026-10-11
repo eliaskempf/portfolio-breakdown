@@ -144,9 +144,6 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         mark_view_ready()
         return
     coordinator.schedule(data_dir, holdings, funds, demo=offline_demo)
-    if not demo_pending:
-        with st.container(key='refresh_status'):
-            render_refresh_status(data_dir, funds, etf_revision, demo=offline_demo)
     context_key = sha256(str(data_dir.resolve()).encode()).hexdigest()[:12]
     unit_key = f'performance_unit_{context_key}_{reporting_currency}'
     def remember_unit():
@@ -202,9 +199,6 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if render_currency_dialog(data_dir, snapshot, currency_settings, price_service, historical):
         mark_view_ready()
         return
-    estimates = status.estimated_costs
-    if estimates:
-        st.warning(f'{estimates} positions use confirmed FX estimates. Their gains and returns are estimated.')
     if demo_pending:
         if background_prices:
             render_market_status(market_workspace, market_revision, show_caption=False)
@@ -229,29 +223,25 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         from portfolio_app.investment_presentation import investment_exposure, investment_risk_positions
         display_valued = investment_positions(valued, journal)
         display_exposure = investment_exposure(exposure_result, display_valued)
-    if price_service.cache_warning:
-        st.warning(price_service.cache_warning)
-    if status.missing_costs or status.missing_prices or status.stale_quotes:
-        with st.expander(f'Data status · {status.missing_prices} missing prices · {status.missing_costs} performance gaps · {status.stale_quotes} stale quotes'):
-            st.dataframe(status.problems, hide_index=True, width='stretch')
-            st.caption('Edit a position to complete its buy-in or pricing details.' if status.missing_costs else 'Review missing or stale prices and exchange rates.')
-            if st.button('Complete buy-ins' if status.missing_costs else 'Review pricing', help='Open Positions to review the missing cost or pricing information shown above.'):
-                st.session_state['main_tabs'] = 'Positions'
-                st.session_state['positions_workflow_request'] = 'Update balances'
-    elif not offline_demo and not valued.price_status.eq('manual').any():
-        st.caption('Latest available daily close · Prices may be delayed')
-    if valued.price_status.eq('manual').any():
-        st.caption(f"{valued.price_status.eq('manual').sum()} dated manual/snapshot prices · These do not refresh automatically.")
     if 'main_tabs' not in st.session_state:
         st.session_state['main_tabs'] = 'Positions' if holdings.empty and not feature_active else 'Overview'
     from portfolio_app.tour import prepare_tour, render_tour
     prepare_tour()
-    tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or actual_active else [])
+    tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or actual_active else []) + ['Notifications']
     if st.session_state['main_tabs'] not in tab_names:
         st.session_state['main_tabs'] = 'Overview'
     tabs = st.tabs(tab_names,
         default='Overview', key='main_tabs', on_change='rerun')
     overview, exposure, positions, rebalance = tabs[:4]
+    if tabs[-1].open:
+        from portfolio_app.notifications_ui import render_notifications
+        with tabs[-1]:
+            render_notifications(data_dir, funds, etf_revision, valued, status, demo=offline_demo,
+                cache_warning=price_service.cache_warning, exposure_issues=exposure_result.issues if exposure_result else (),
+                prices_pending=background_prices and market_coordinator.pending(market_workspace))
+    elif not demo_pending:
+        # Keep background completion reruns active without displaying notices.
+        render_refresh_status(data_dir, funds, etf_revision, demo=offline_demo, show_messages=False)
     if (sandbox or actual_active) and tabs[4].open:
         with tabs[4]:
             if actual_active:
@@ -372,7 +362,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                         st.error(str(exc))
     render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued)
     if background_prices:
-        render_market_status(market_workspace, market_revision)
+        render_market_status(market_workspace, market_revision, show_caption=False)
     render_tour(empty=holdings.empty)
     finish_view_inputs()
     mark_view_ready()

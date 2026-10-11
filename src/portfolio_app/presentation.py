@@ -110,9 +110,8 @@ def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle
     with st.container(key=key):
         st.metric(label or ('Priced value' if missing else 'Current value'), money(value),
                   delta=gain_text, delta_color='normal' if gain else 'off', delta_arrow='off',
-                  delta_description=('Gain / cost and reference capital' if percent else 'Holdings and strategy gain') if strategy_gain else ('Funded holdings return' if percent else 'Funded holdings gain') if funded_gain else ('Return on cost' if percent else 'Unrealized gain / loss'),
-                  help=('Futures gain includes settled and open P&L across contracts, less fees and recorded taxes, divided by fixed initial capital. Extra funding is excluded from gain. Other holdings use unrealized gain / recorded cost. ' if strategy_gain else '') + f'{missing} missing prices. Performance coverage: {performance.coverage} eligible positions with converted costs and available prices. Cash balances without a conversion basis are outside this measure. ' + ('Excludes dividends and realized gains on ordinary holdings.' if strategy_gain else 'Excludes dividends and realized gains.'))
-    if performance.estimated_count:
-        st.caption(f'Estimated gains · {performance.estimated_count} positions use confirmed FX approximations')
+                  help=('Assets minus debt. Gain includes holdings performance and net futures P&L. ' if strategy_gain else
+                        'Current holdings value and gain on recorded costs. ') +
+                       f'{missing} missing prices. Performance coverage: {performance.coverage}. Click gain to switch amount / %.')
     if on_toggle_gain:
         toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain, container_key=key)

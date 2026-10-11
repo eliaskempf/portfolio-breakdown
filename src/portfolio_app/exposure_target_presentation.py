@@ -10,6 +10,7 @@ TARGET_COLUMN_HELP = {
     'Target exposure': 'Desired exposure in reporting currency, using the saved whole-portfolio net-equity target.',
     'Target (%)': 'Desired exposure divided by the selected category’s total desired exposure.',
     'Gap': 'Target minus current exposure in reporting currency. This exposure gap is not a cash purchase budget.',
+    'Gap (pp)': 'Current exposure share minus target share, in percentage points. Positive means overweight.',
 }
 
 
@@ -27,6 +28,12 @@ def market_target_summary(result, targets, allocation, bucket=''):
         gaps = gaps.loc[gaps['Bucket ID'].eq('')].copy()
     else:
         gaps = exposure_gaps(result, targets, allocation, parent=bucket)
+    if bucket != 'unassigned':
+        unassigned = result.exposures.loc[result.exposures.bucket_id.eq(''), targets.field]
+        capital = result.capital
+        unassigned_capital = capital.loc[capital.bucket_id.eq(''), 'value'] if 'bucket_id' in capital else unassigned.iloc[:0]
+        if unassigned.eq(0).all() and unassigned_capital.eq(0).all():
+            gaps = gaps.loc[gaps['Bucket ID'].ne('')]
     currency = result.reporting_currency
     table = gaps.rename(columns={
         f'Current exposure ({currency})': 'Exposure',
@@ -38,8 +45,9 @@ def market_target_summary(result, targets, allocation, bucket=''):
     target_total = table['Target exposure'].sum()
     table['% of exposure'] = table.Exposure * 100 / current_total if current_total > 0 else float('nan')
     table['Target (%)'] = table['Target exposure'] * 100 / target_total if target_total > 0 else float('nan')
+    table['Gap (pp)'] = table['% of exposure']-table['Target (%)']
     table['Status'] = table.Status.replace('Known', '')
-    return table[['Category', 'Exposure', '% of exposure', 'Target exposure', 'Target (%)', 'Gap', 'Status']].sort_values(
+    return table[['Category', 'Exposure', '% of exposure', 'Target exposure', 'Target (%)', 'Gap', 'Gap (pp)', 'Status']].sort_values(
         ['Exposure', 'Category'], ascending=[False, True], ignore_index=True)
 
 
@@ -56,26 +64,19 @@ def render_market_target_summary(result, allocation, data_dir, bucket, *, open_t
         st.warning(str(exc))
         targets = None
     table = None
+    help_text = 'Set desired exposure and category targets. Capital targets are separate.'
     if targets is None:
-        st.caption('Exposure targets are unset. Set desired total exposure and category composition separately from capital targets.')
+        pass
     elif targets.universe != 'market':
-        st.caption(f'Saved targets cover equity only ({targets.multiple:g}× portfolio net equity). '
-                   'This view includes other market exposure, so those targets are not compared here. '
-                   'Edit exposure targets to explicitly choose Total market.')
+        help_text = 'Saved targets cover equity only. Edit the policy to compare Total market exposure.'
+        st.badge('Equity-only targets', icon=':material/info:')
     else:
         try:
             table = market_target_summary(result, targets, allocation, bucket)
         except DataError as exc:
             st.warning(str(exc))
-        st.caption(f'Target: {targets.multiple:g}× whole-portfolio net equity · amounts in {result.reporting_currency}. '
-                   'Gap = target − current exposure, not a cash purchase budget. '
-                   'Current and target percentages each use their selected category’s exposure total; '
-                   'target amounts retain the whole-portfolio policy.')
-        if bucket and bucket != 'unassigned' and not allocation.children(bucket):
-            st.caption('Exposure targets apply to this category as a whole; its positions are listed below.')
+        help_text = f'Total exposure target: {targets.multiple:g}× portfolio net equity. Targets apply to categories, not individual positions.'
     if open_targets is not None:
         st.button('Edit exposure targets' if targets else 'Set exposure targets',
-                  key='overview_exposure_targets', on_click=open_targets, type='tertiary')
-    else:
-        st.caption('Configure this policy under Rebalance → Targets → Exposure targets.')
+                  key='overview_exposure_targets', on_click=open_targets, type='tertiary', help=help_text)
     return table

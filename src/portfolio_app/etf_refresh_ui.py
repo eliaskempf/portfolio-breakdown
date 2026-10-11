@@ -14,7 +14,7 @@ def refresh_revision(data_dir):
         return 0
 
 
-def render_refresh_status(data_dir, funds, revision, *, demo=False):
+def render_refresh_status(data_dir, funds, revision, *, demo=False, show_messages=True):
     if demo:
         return  # Offline fixtures have invented dates, not stale provider data.
     running = not demo and coordinator.running(data_dir)
@@ -24,6 +24,8 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False):
         pending = not demo and coordinator.running(data_dir)
         if not pending and (running or refresh_revision(data_dir) != revision):
             st.rerun()
+        if not show_messages:
+            return
         if pending:
             st.caption('Discovering and updating ETF holdings · Using saved snapshots')
         else:

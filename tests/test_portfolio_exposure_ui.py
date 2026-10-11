@@ -37,7 +37,7 @@ def test_saved_overlay_default_allocation_signed_views_and_navigation(tmp_path):
     by_label(app.number_input, 'Signed contracts').set_value(-2).run()
     activate(app, 'Overview')
     assert not app.exception
-    assert by_label(app.get('button_group'), 'Allocation measure').value == 'Capital allocation'
+    assert by_label(app.get('button_group'), 'Allocation measure').value == 'Market exposure'
     assert by_label(app.metric, 'Portfolio leverage · net').value == '1.40×'
     assert not any(item.label == 'Portfolio leverage · gross' for item in app.metric)
     by_label(app.get('button_group'), 'Allocation measure').set_value('Market exposure').run()

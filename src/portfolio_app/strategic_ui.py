@@ -31,7 +31,9 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
     names = {b.id: b.name for b in config.buckets} | {'unassigned': 'Unassigned'}
     labels = category_labels(config) | {'': 'Portfolio', 'unassigned': 'Unassigned'}
     options = ['', *[b.id for b in config.buckets]]
-    if valued.bucket_id.eq('').any() or (exposure_result is not None and exposure_result.exposures.bucket_id.eq('').any()):
+    if (valued.loc[valued.bucket_id.eq(''), 'current_value_reporting'].ne(0).any() or
+        (exposure_result is not None and exposure_result.exposures.loc[
+            exposure_result.exposures.bucket_id.eq(''), 'market_exposure_reporting'].ne(0).any())):
         options.append('unassigned')
     key = 'strategic_category'
     if st.session_state.get(key, '') not in options:
@@ -74,39 +76,27 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 from portfolio_app.portfolio_exposure_ui import render_equity_exposure_metric
                 render_equity_exposure_metric(exposure_result, market=True, bucket_ids=bucket_ids)
 
-    if performance.estimated_count:
-        st.warning(f'Performance includes {performance.estimated_count} positions with estimated FX costs.')
     scoped_future = future
     if future is not None and bucket:
         assigned = future.bucket_id if future.bucket_id in config.leaves() else ''
         if assigned not in bucket_ids:
             scoped_future = None
-    count = len(selected) + int(scoped_future is not None and scoped_future.contracts != 0 and not has_strategy)
-    exclusions = ' · Includes cumulative futures P&L, fees and recorded taxes; excludes dividends' if valued.attrs.get('investment_members') else ' · Includes closed-contract gains for the funded strategy; excludes dividends' if has_strategy else ' · Excludes dividends and realized gains'
-    st.caption(f'{scope} · {count} positions · Performance coverage: {performance.coverage} {'eligible' if performance.cash_balance_count else 'held'} positions · {'buy-ins and reference capital' if has_strategy else 'converted buy-ins'}{exclusions}')
-    if performance.cash_balance_count:
-        st.caption('Cash balances without a recorded conversion basis are outside purchase-based performance. Interest and FX gains are not inferred from balances.')
-    if missing:
-        st.warning(f'{missing} position(s) missing prices. Chart areas use priced value; full allocation percentages are unavailable.')
-    if exposure_result is not None and leverage_enabled:
-        for issue in exposure_result.issues:
-            st.warning(issue)
     measure = 'Capital allocation'
     with st.container(horizontal=True, vertical_alignment='center', gap='medium', key='overview_view_controls'):
         mode = st.segmented_control('Overview view', ['Allocation', 'Performance', *(['Analytics'] if analytics else [])], help='Switch between allocation, performance and available portfolio analytics.', default='Allocation', key='strategic_view', selection_mode='single', label_visibility='collapsed')
         if mode not in {'Performance', 'Analytics'} and exposure_result is not None and leverage_enabled:
-            measure = st.segmented_control('Allocation measure', ['Capital allocation', 'Market exposure'],
-                default='Capital allocation', key='strategic_allocation_measure', label_visibility='collapsed')
+            measure = st.segmented_control('Allocation measure', ['Market exposure', 'Capital allocation'],
+                default='Market exposure', key='strategic_allocation_measure', label_visibility='collapsed',
+                help='Exposure compares market exposure with exposure targets. Capital compares invested value with capital targets.')
     if mode == 'Analytics':
         analytics(selected.loc[selected.position_id.ne('future:overlay')], scope, scoped_future, bool(bucket))
         return
     if mode == 'Performance':
         with st.container(key='tour_performance'):
             table = strategic_performance(valued, config, bucket)
-            measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'], help='Choose the financial measure represented by the chart.',
+            measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'], help='Holdings use unrealized gain / recorded cost. Futures use cumulative net P&L / initial allocated capital.',
                 default='Return (%)', key='strategic_performance_measure') or 'Return (%)'
             chart_percent = measure == 'Return (%)'
-            st.caption('Holdings use unrealized gain / recorded buy-in cost. Futures investments use cumulative net P&L / fixed reference capital; funding changes are not gains. Native futures gains are translated at current FX, without reconstructing historical currency returns.' if valued.attrs.get('investment_members') else 'Return compares unrealized gain with recorded buy-in cost. Monetary gain shows the amount gained or lost. Both are shown in the tables and on hover.')
             available = table.dropna(subset=[measure]).sort_values(measure)
             if not available.empty:
                 hover = [[money(row["Cost"]), money(row["Gain"], signed=True),
@@ -177,7 +167,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 table = strategic_summary(plotted, config, bucket)
                 target_help = {}
                 if market:
-                    table = table.drop(columns=['Target (%)', 'Gap (pp)']).rename(columns={'Value': 'Exposure', 'Current (%)': '% of exposure'})
+                    table = table.rename(columns={'Value': 'Exposure', 'Current (%)': '% of exposure'})
+                    table[['Target (%)', 'Gap (pp)']] = float('nan')
                     from portfolio_app.exposure_target_presentation import TARGET_COLUMN_HELP, render_market_target_summary
                     target_table = render_market_target_summary(exposure_result, config, data_dir, bucket,
                                                                 open_targets=open_exposure_targets)
@@ -187,12 +178,19 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 for col in table:
                     if col not in {'Category', 'Status'}:
                         table[col] = pd.to_numeric(table[col], errors='coerce')
-                if table['Status'].eq('').all():
-                    table = table.drop(columns='Status')
+                # Keep row qualifications on hover instead of a sparse Status column.
+                table['Row details'] = table['Status'].replace({
+                    'Unresolved constituents': 'Market exposure is known; some underlying constituents are unresolved.',
+                    'Unassigned': 'No strategic category assigned.',
+                    'Missing price': 'Missing valuation; percentages are unavailable.',
+                    'Empty': 'No current holdings.'})
+                columns = [column for column in table if column not in {'Status', 'Row details'} |
+                           ({'Exposure', 'Target exposure', 'Gap'} if market else set())]
                 render_list(frame_rows(table), [ListColumn(column, f'% of {scope}' if column == 'Current (%)' else column,
-                            help=target_help.get(column, column_help(column, scope=scope)), numeric=column not in {'Category', 'Status'}, signed=column in {'Gap (pp)', 'Gap'}, color_signed=False) for column in table],
+                            tooltip='Row details' if column == 'Category' else '',
+                            help=target_help.get(column, column_help(column, scope=scope)), numeric=column not in {'Category', 'Status'}, signed=column in {'Gap (pp)', 'Gap'}, color_signed=False) for column in columns],
                             key='strategic_allocation_table', context=f'{position_context}_{bucket}_{measure}',
-                            title=title, default_sort='Exposure' if market else 'Value')
+                            title=title, default_sort='% of exposure' if market else 'Value')
     st.subheader('Positions')
     exposure_amounts = (exposure_result.exposures.groupby('source_position_id').market_exposure_reporting.agg(
         lambda values: values.sum() if values.notna().all() else float('nan')).to_dict()

@@ -49,7 +49,7 @@ def test_sandbox_starts_on_overview_and_preserves_navigation(tmp_path):
     app = launch(sandbox, open_futures=False)
     assert not app.exception
     assert app.session_state['main_tabs'] == 'Overview'
-    assert by_label(app.get('button_group'), 'Allocation measure').value == 'Capital allocation'
+    assert by_label(app.get('button_group'), 'Allocation measure').value == 'Market exposure'
     activate(app, 'Futures')
     app.run()
     assert app.session_state['main_tabs'] == 'Futures'

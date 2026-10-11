@@ -104,7 +104,7 @@ def render_overview_positions(valued, config, *, context, scope, open_position=N
         if callback:
             callback(event['id'])
 
-    columns = [('name', 'Investment'), ('value', 'Exposure' if exposure_amounts is not None else 'Value'), ('allocation', '% of exposure' if exposure_amounts is not None else f'% of {scope}'),
+    columns = [('name', 'Investment'), *([] if exposure_amounts is not None else [('value', 'Value')]), ('allocation', '% of exposure' if exposure_amounts is not None else f'% of {scope}'),
                ('returnPct', 'Return (%)'), ('gainReporting', 'Gain')]
     _render_table(rows, columns, context=context, revision=revision, on_open=open_row,
                   interactive=bool(open_position), editable=bool(edit_position), details_column='name')
@@ -138,4 +138,4 @@ def _render_table(rows, columns, *, context, revision, on_open, interactive=True
     render_list(rows, column_specs, key=f'position_list_{context}', context=context, title='Positions',
                 revision=revision, on_open=on_open if interactive else None, editable=editable,
                 search_label='Filter positions', search_fields=['name', 'fullName', 'ticker', 'isin', 'account', 'portfolio', 'bucket'],
-                default_sort='value', details_column=details_column)
+                default_sort='value' if any(field == 'value' for field, _ in columns) else 'allocation', details_column=details_column)
