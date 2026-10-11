@@ -218,8 +218,9 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
             sync_contract_investment(journal, key)
         else:
             st.session_state[key+'view'] = 'Cash & financing'
+    st.session_state.setdefault(key+'view', 'Positions & transactions')
     view = st.segmented_control('Account workspace', ['Positions & transactions', 'Cash & financing', 'Collateral', 'Marks & FX', 'Settlement history', 'Studies'],
-        default='Positions & transactions', key=key+'view')
+        key=key+'view')
     if view == 'Studies':
         from portfolio_app.generalized_studies_ui import render_generalized_studies
         from portfolio_app.account_observations import load_observations, current_marks
