@@ -133,8 +133,9 @@ def render_future_entry(directory, snapshot, *, valued=None, allocation=None):
     valued = snapshot.holdings if valued is None else valued
     st.caption('Record an actual position. A futures contract adds exposure; its notional is not deducted from cash.')
     mode = st.radio('Record', ['New opening trade', 'Already-open position snapshot'], horizontal=True, key=key+'mode')
+    product = st.selectbox('Futures product', [*CATALOG, 'Manual contract'],
+        format_func=lambda code: f'{code} · {CATALOG[code].name}' if code in CATALOG else code, key=key+'product')
     day = st.date_input('Trade / snapshot date', value=date.today(), max_value=date.today(), key=key+'date')
-    product = st.selectbox('Futures product', [*CATALOG, 'Manual contract'], key=key+'product')
     from portfolio_app.contract_maturity_ui import maturity_input
     expiry = maturity_input(product, key=key+'expiry_')
     if expiry is None:
