@@ -140,13 +140,13 @@ def render_risk_dashboard(result, status, holdings, *, future=None, scoped=False
             st.info(result.note)
         columns = st.columns(3)
         columns[0].metric('Beta contribution' if result.integrated and scoped else 'Beta', '—' if result.beta is None else f'{result.beta:.2f}',
-            help=f'Sensitivity to the selected benchmark on one common weekly {reporting_currency()} sample. Integrated weights use whole-portfolio net equity, including when filtering; cash has zero beta.')
+            help=f'Sensitivity to the selected benchmark on one common weekly {reporting_currency()} sample. Integrated weights use whole-portfolio net equity, including when filtering; foreign cash and debt include FX risk.')
         columns[1].metric('Annualized volatility', '—' if result.volatility is None else f'{result.volatility:.2%}')
         columns[2].metric('Benchmark correlation', '—' if result.correlation is None else f'{result.correlation:.2f}')
         if result.start:
             st.caption(f'{result.observations} common weekly returns · {result.start} to {result.end} · Today’s weights held constant, not personal historical performance.')
         if result.integrated:
-            st.caption('Risk weights use whole-portfolio net equity; debt reduces that denominator. Futures use signed notional and an MSCI World EUR ETF proxy. Fund price histories already include their embedded leverage.')
+            st.caption('Risk weights use whole-portfolio net equity; debt reduces that denominator. Futures use signed notional with identified contract-currency proxies. Foreign cash, debt and unsettled claims include FX risk. Fund price histories already include their embedded leverage.')
     if not result.holdings.empty:
         names = {row.id: instrument_name(row) for row in holdings.itertuples()}
         if future is not None:

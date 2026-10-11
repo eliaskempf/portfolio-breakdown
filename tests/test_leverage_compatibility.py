@@ -25,8 +25,8 @@ def test_currency_change_and_fork_reject_active_eur_records(tmp_path, currency):
     with pytest.raises(DataError, match='EUR source'):
         fork_futures_workspace(source, tmp_path / 'unsupported')
     assert not (tmp_path / 'unsupported').exists()
-    with pytest.raises(DataError, match='requires EUR'):
-        save_leverage_settings(source, LeverageSettings(enabled=True), None)
+    with pytest.raises(DataError, match='require EUR'):
+        save_leverage_settings(source, LeverageSettings(liabilities=(MarginLiability('synthetic', 'Invented debt', 10.),)), None)
 
 
 def test_funded_closed_future_and_unknown_debt_still_require_eur(tmp_path):
@@ -86,13 +86,14 @@ def test_workspace_validation_rejects_corrupt_leverage_settings(tmp_path):
         validate_workspace(source)
 
 
-def test_active_exposure_policy_cannot_silently_become_capital_plan(tmp_path):
+@pytest.mark.parametrize('currency', ['EUR', 'USD', 'GBP'])
+def test_enabled_only_exposure_policy_is_currency_independent_and_preserves_basis(tmp_path, currency):
+    from portfolio_app.leverage_settings import load_leverage_settings
     source = create_demo_data(tmp_path / 'synthetic')
+    save_settings(source, currency, None)
     save_leverage_settings(source, LeverageSettings(enabled=True, active_basis='exposure'), None)
-    before = inventory(source)
-    with pytest.raises(DataError, match='disable leverage'):
-        save_settings(source, 'USD', None)
-    assert before == inventory(source)
+    assert load_settings(source).reporting_currency == currency
+    assert load_leverage_settings(source)[0].active_basis == 'exposure'
 
 
 @pytest.mark.parametrize('contracts', [0, 1])
@@ -141,7 +142,8 @@ def test_currency_and_leverage_commands_validate_inside_workspace_transaction(tm
     monkeypatch.setattr(module, 'save_document', paused_write)
     commands = {
         'currency': lambda: save_settings(tmp_path, 'USD', None),
-        'leverage': lambda: save_leverage_settings(tmp_path, LeverageSettings(enabled=True), None),
+        'leverage': lambda: save_leverage_settings(tmp_path, LeverageSettings(
+            liabilities=(MarginLiability('synthetic', 'Invented debt', 10.),)), None),
     }
     def other():
         competing.set()

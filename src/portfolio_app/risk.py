@@ -1,4 +1,4 @@
-"""Risk of constant current weights, from synchronized weekly EUR returns."""
+"""Risk of constant current weights, from synchronized weekly reporting returns."""
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -45,6 +45,28 @@ def weekly_returns(prices, *, today=None):
     return weekly.pct_change(fill_method=None).replace([np.inf, -np.inf], np.nan)
 
 
+def native_future_weekly_returns(prices, *, fx=None, current_fx=1., today=None):
+    """Translate native variation, never the return of FX-valued full notional.
+
+    Replay each native weekly move against today's native notional and convert
+    that variation at the observed week-end FX. The result is expressed per unit
+    of today's reporting-currency notional. Separate cash/claim/debt histories
+    carry their own FX returns. This is a fixed-notional risk approximation, not
+    a reconstruction of trading or settlement cash through time.
+    """
+    if finite(current_fx) is None or current_fx <= 0:
+        raise ValueError('A positive current reporting FX rate is required for futures risk.')
+    returns = weekly_returns(prices, today=today)
+    if fx is not None:
+        prices = daily_prices(prices)
+        aligned_fx = daily_prices(fx).reindex(prices.index)
+        # Use the FX on the actual last index observation of each week. last()
+        # would silently substitute an earlier FX when the closing FX is absent.
+        endpoints = aligned_fx.resample('W-FRI').apply(lambda values: values.iloc[-1] if len(values) else np.nan)
+        returns = returns * endpoints.reindex(returns.index) / current_fx
+    return returns
+
+
 @dataclass
 class RiskAnalytics:
     status: str = 'unavailable'
@@ -66,7 +88,8 @@ class RiskAnalytics:
 
 
 def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series,
-                   *, today=None, years=3, failures=None, exposures=None, net_equity=None) -> RiskAnalytics:
+                   *, today=None, years=3, failures=None, exposures=None, net_equity=None,
+                   return_series=None) -> RiskAnalytics:
     """Explicit exposures use fixed net equity; partial coverage never renormalizes.
 
     Fund price histories already include embedded leverage. Their weights remain
@@ -102,9 +125,15 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
             continue
         if value <= 0 and not integrated:
             continue
-        cash = rows.get('instrument_type', pd.Series('', index=rows.index)).eq('cash').all() and rows.quote_currency.eq(target).all()
+        cash = rows.get('instrument_type', pd.Series('', index=rows.index)).isin(['cash', 'liability']).all() and rows.quote_currency.eq(target).all()
         if cash or (integrated and value == 0):
             series = pd.Series(0., index=bench.index)
+        elif identity in (return_series or {}):
+            series = return_series[identity]
+            if (not isinstance(series.index, pd.DatetimeIndex) or series.index.has_duplicates
+                    or series.index.tz is not None or not series.index.is_monotonic_increasing):
+                raise ValueError('Explicit risk returns require ordered unique weekly dates.')
+            series = pd.to_numeric(series, errors='coerce').replace([np.inf, -np.inf], np.nan).reindex(bench.index)
         elif identity in histories:
             series = weekly_returns(histories[identity], today=end).reindex(bench.index)
         else:
