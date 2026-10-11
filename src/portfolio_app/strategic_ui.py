@@ -85,8 +85,11 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
     with st.container(horizontal=True, vertical_alignment='center', gap='medium', key='overview_view_controls'):
         mode = st.segmented_control('Overview view', ['Allocation', 'Performance', *(['Analytics'] if analytics else [])], help='Switch between allocation, performance and available portfolio analytics.', default='Allocation', key='strategic_view', selection_mode='single', label_visibility='collapsed')
         if mode not in {'Performance', 'Analytics'} and exposure_result is not None and leverage_enabled:
+            # Recover sessions left with no selection by the former toggle behavior.
+            if st.session_state.get('strategic_allocation_measure', 'Market exposure') is None:
+                st.session_state['strategic_allocation_measure'] = 'Market exposure'
             measure = st.segmented_control('Allocation measure', ['Market exposure', 'Capital allocation'],
-                default='Market exposure', key='strategic_allocation_measure', label_visibility='collapsed',
+                default='Market exposure', required=True, key='strategic_allocation_measure', label_visibility='collapsed',
                 help='Exposure compares market exposure with exposure targets. Capital compares invested value with capital targets.')
     if mode == 'Analytics':
         analytics(selected.loc[selected.position_id.ne('future:overlay')], scope, scoped_future, bool(bucket))

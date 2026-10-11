@@ -161,3 +161,34 @@ def test_zero_unassigned_hidden_but_cash_and_offsetting_exposures_remain():
         dict(unassigned, market_exposure_reporting=10.), dict(unassigned, market_exposure_reporting=-10.)])])
     table = market_target_summary(replace(source, exposures=rows), TARGET, CONFIG).set_index('Category')
     assert table.loc['Unassigned', 'Exposure'] == 0.
+
+
+def test_overview_requires_measure_and_never_falls_back_to_capital_targets(tmp_path):
+    from portfolio_app.allocation import save_allocation
+    from portfolio_app.positions import read_snapshot
+    from test_futures_ui import launch as launch_app
+    from test_portfolio_exposure import CONFIG as categories
+    from test_portfolio_exposure_ui import synthetic_workspace
+    from test_ui import by_label, list_frame
+
+    _, workspace = synthetic_workspace(tmp_path)
+    categories = replace(categories, buckets=tuple(replace(b, target=t)
+        for b, t in zip(categories.buckets, (.2, .3, .5))))
+    path = workspace/'allocation.yaml'
+    from portfolio_app.storage import revision
+    save_allocation(path, categories, read_snapshot(workspace/'holdings.csv').holdings, revision(path))
+    target = ExposureTargets(1.5, 'composition', {'core': .8, 'stocks': .2, 'cash': 0.}, version=2, universe='market')
+    save_exposure_targets(workspace, target, categories, None)
+    app = launch_app(workspace, open_futures=False)
+    for mode, title, expected in [('Market exposure', 'Market exposure', 80.),
+                                  ('Capital allocation', 'Allocation', 20.),
+                                  ('Market exposure', 'Market exposure', 80.)]:
+        by_label(app.get('button_group'), 'Allocation measure').set_value(mode).run()
+        assert not app.exception
+        assert by_label(app.get('button_group'), 'Allocation measure').proto.required
+        assert list_frame(app, title).set_index('Category').loc['Core', 'Target (%)'] == expected
+    app.session_state['strategic_allocation_measure'] = None
+    app.run()
+    assert not app.exception
+    assert by_label(app.get('button_group'), 'Allocation measure').value == 'Market exposure'
+    assert list_frame(app, 'Market exposure').set_index('Category').loc['Core', 'Target (%)'] == 80.
