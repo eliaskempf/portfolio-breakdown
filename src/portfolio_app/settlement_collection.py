@@ -1,4 +1,4 @@
-"""Background exact-contract history collection; never writes account transactions."""
+"""Background exact-contract history collection and idempotent daily cash settlement."""
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
 from datetime import date, datetime, timedelta, timezone
@@ -139,6 +139,7 @@ class SettlementCollector:
         self._workers={}
         self._errors={}
         self._failed_at={}
+        self._processed={}
 
     def running(self,directory):
         with self._lock:
@@ -162,7 +163,10 @@ class SettlementCollector:
             with self._lock: self._errors[key]=str(exc)
             return False
         migration = any((directory/'.cache'/'derivative-settlements').glob('*/*.json')) and not (directory/'settlement-archive.json').exists()
-        if not eligible and not migration:return False
+        signature=(revision(directory/ledger.FILE), SettlementArchive(directory).revision())
+        with self._lock:
+            pending_archive=signature[1] is not None and self._processed.get(key)!=signature
+        if not eligible and not migration and not pending_archive:return False
         with self._lock:
             if key in self._workers and self._workers[key].is_alive():return False
             if not force and key in self._failed_at and self.now()-self._failed_at[key]<timedelta(hours=1):return False
@@ -187,6 +191,8 @@ class SettlementCollector:
                         cached=legacy.load(contract,path.stem)
                         if cached is not None and archive.load(contract,path.stem) is None:
                             archive.record(contract,cached)
+                from portfolio_app.automatic_settlements import apply_archived_settlements
+                apply_archived_settlements(directory, today=self.now().date())
                 for cid,(contract,held_days) in tracked_contracts(journal,self.now().date()).items():
                     prior=records.get(cid,{})
                     if not force and not due(prior,self.now()):continue
@@ -194,6 +200,11 @@ class SettlementCollector:
                     days=sorted(day for day in held_days if force or day>=overlap or archive.load(contract,day) is None)
                     results=scan_dates(directory,contract,days,fetch=self.fetch)
                     _save_status(directory,cid,{'attempted_at':self.now().isoformat(),'dates':{}})
+                with workspace_lock(directory):
+                    apply_archived_settlements(directory, today=self.now().date())
+                    signature=(revision(directory/ledger.FILE),archive.revision())
+                with self._lock:
+                    self._processed[str(directory)]=signature
         except BlockingIOError:
             return
         except Exception as exc:

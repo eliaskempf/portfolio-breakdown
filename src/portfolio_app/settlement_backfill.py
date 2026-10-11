@@ -80,8 +80,8 @@ def retrieve_settlements(journal, position_id, start, end, *, fetch=fetch_settle
         return tuple(pool.map(retrieve, days))
 
 
-def propose_settlements(journal, position_id, start, end, observations):
-    """Append daily end-of-day postings; saving remains an explicit UI action."""
+def propose_settlements(journal, position_id, start, end, observations, *, automatic=False):
+    """Append validated daily end-of-day postings; callers control persistence."""
     eligible = {day.date for day in settlement_days(journal, position_id, start, end)
                 if day.status == 'Ready to retrieve'}
     position = ledger.replay(journal).positions[position_id]
@@ -99,5 +99,5 @@ def propose_settlements(journal, position_id, start, end, observations):
         entries.append(ledger.Event(uuid4().hex, observed.date, 'settlement',
             position_id=position_id, account_id=position.spec.account_id,
             currency=position.contract.currency, price=observed.price, sequence=sequence,
-            source=observed.source, note='Reviewed daily settlement; cash posted on business date'))
+            source=observed.source, note=('Automatic' if automatic else 'Reviewed')+' daily settlement; cash posted on business date'))
     return ledger.append_events(journal, entries)

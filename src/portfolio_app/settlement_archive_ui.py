@@ -1,4 +1,4 @@
-"""History reconciliation and background scheduling without automatic cash posting."""
+"""History reconciliation and background daily-settlement scheduling."""
 from datetime import date, timedelta
 
 import pandas as pd
@@ -32,19 +32,19 @@ def settlement_notices(directory, journal):
 
 def _signature(directory):
     return tuple((directory/name).stat().st_mtime_ns if (directory/name).exists() else 0
-                 for name in ('settlement-archive.json','settlement-collection.json'))+(collector.error(directory),)
+                 for name in ('settlement-archive.json','settlement-collection.json',ledger.FILE))+(collector.error(directory),)
 
 
 def watch_settlements(directory, journal, *, demo=False):
     if demo or not journal or not journal.positions:
         return
-    collector.schedule(directory,journal)
     signature = _signature(directory)
+    collector.schedule(directory,journal)
     @st.fragment(run_every=2 if collector.running(directory) else 60)
     def watch():
         latest,_ = ledger.load_journal(directory)
         started = collector.schedule(directory,latest)
-        if _signature(directory) != signature or started:
+        if _signature(directory) != signature or latest != journal or started:
             st.rerun()
     watch()
 
@@ -65,7 +65,7 @@ def render_history_checks(directory,journal,members,*,key):
             start=left.date_input('Check from',value=yesterday-timedelta(days=6),max_value=yesterday,key=key+'from')
             end=right.date_input('Check through',value=yesterday,max_value=yesterday,key=key+'through')
             if st.button('Check source history',icon=':material/sync:',key=key+'scan',
-                help='Re-download up to 31 days and compare with archived and recorded daily settlements. Historical source coverage may be incomplete. No account transactions are changed.'):
+                help='Re-download up to 31 days and compare with archived and recorded daily settlements. Historical source coverage may be incomplete. New eligible daily settlements update automatically; existing recorded prices need separate corrections.'):
                 with st.spinner('Comparing exact-contract history…'):
                     results=scan_dates(directory,contract,weekdays(start.isoformat(),end.isoformat(),contract))
                 st.session_state[key+'scan_result']=(selected,start,end,results)
@@ -89,7 +89,7 @@ def render_history_checks(directory,journal,members,*,key):
                     row=changed[chosen]
                     st.write(f"Archived: {row['Archived price']} → retrieved: {row['Retrieved price']} points")
                     if st.button('Use retrieved price in archive',key=key+'accept',
-                        help='Updates the accepted archive price and retains both versions. Recorded settlements remain unchanged; correct those separately if needed.'):
+                        help='Updates the accepted archive price and retains both versions. Existing recorded settlements remain unchanged; correct those separately if needed.'):
                         archive.accept_latest(contracts[row['contract_id']],row['Date'],row['Retrieved price'])
                         st.rerun()
                 st.caption('Recorded differences require reviewing the original transaction under Futures → Positions & transactions.')

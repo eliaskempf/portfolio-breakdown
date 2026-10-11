@@ -41,7 +41,10 @@ Daily settlements are archived separately from the journal and included in
 workspace backups. Clearing `.cache` does not remove this archive; closing or
 rolling a position retains its history. Archive writes retain observation versions
 in the document rather than creating a full per-download backup copy. Other
-public history downloads may remain in caches. A refresh is not a transaction. Missing or failed downloads do not justify
+public history downloads may remain in caches. Eligible daily futures settlements
+are applied automatically from the archive using their recorded quantities and
+clearing basis; duplicate dates and manual corrections are preserved. Other market
+observations do not create transactions. Missing or failed downloads do not justify
 reconstructing account balances from estimated prices. Keep the whole workspace,
 including caches and study inputs, private.
 

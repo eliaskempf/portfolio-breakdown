@@ -1,4 +1,4 @@
-"""Offline durable collection, throttling, corrections and unchanged journal facts."""
+"""Offline durable collection, throttling, corrections and automatic journal updates."""
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -31,7 +31,7 @@ def join(collector,directory):
     assert not collector.error(directory)
 
 
-def test_startup_collection_rechecks_overlap_and_does_not_post(tmp_path):
+def test_startup_collection_posts_once_and_rechecks_overlap_without_rewriting(tmp_path):
     journal,contract=workspace(tmp_path)
     now=datetime(2026,1,7,12,tzinfo=timezone.utc)
     calls=[]
@@ -39,13 +39,17 @@ def test_startup_collection_rechecks_overlap_and_does_not_post(tmp_path):
         calls.append(d)
         return quote(c,d)
     worker=SettlementCollector(fetch=fetch,now=lambda:now)
-    before=(tmp_path/ledger.FILE).read_bytes()
+    original_events=journal.events
     assert worker.schedule(tmp_path,journal)
     join(worker,tmp_path)
     assert sorted(calls)==['2026-01-02','2026-01-05','2026-01-06']
     archive=SettlementArchive(tmp_path)
     assert len(archive.entries(contract))==3
-    assert not worker.schedule(tmp_path,journal)
+    posted,_=ledger.load_journal(tmp_path)
+    assert posted.events[:len(original_events)]==original_events
+    assert len([e for e in posted.events if e.kind=='settlement'])==3
+    assert ledger.replay(posted).cash['a','EUR']==21992
+    assert not worker.schedule(tmp_path,posted)
     now+=timedelta(days=1)
     worker.fetch=lambda c,d:quote(c,d,1020)
     assert worker.schedule(tmp_path,journal)
@@ -53,7 +57,9 @@ def test_startup_collection_rechecks_overlap_and_does_not_post(tmp_path):
     assert archive.load(contract,'2026-01-05').price==1010
     assert archive.latest(contract,'2026-01-05').price==1020
     assert any('Source changed' in row['Status'] for row in reconciliation_rows(journal,archive))
-    assert (tmp_path/ledger.FILE).read_bytes()==before
+    updated,_=ledger.load_journal(tmp_path)
+    assert updated.events[:len(posted.events)]==posted.events
+    assert len([e for e in updated.events if e.kind=='settlement'])==4
 
 
 def test_missing_source_keeps_archive_and_uses_retry_throttle(tmp_path):
@@ -83,9 +89,12 @@ def test_single_worker_demo_and_closed_history_retention(tmp_path):
     assert worker.schedule(tmp_path,journal)
     assert not worker.schedule(tmp_path,journal)
     gate.set();join(worker,tmp_path)
-    closed=ledger.append_event(journal,ledger.Event('close','2026-01-07','trade',position_id='p',quantity=-2,price=1020))
+    posted,_=ledger.load_journal(tmp_path)
+    closed=ledger.append_event(posted,ledger.Event('close','2026-01-07','trade',position_id='p',quantity=-2,price=1020))
     _,rev=ledger.load_journal(tmp_path);ledger.save_journal(tmp_path,closed,rev)
     worker.now=lambda:datetime(2026,3,1,12,tzinfo=timezone.utc)
+    assert worker.schedule(tmp_path,closed)
+    join(worker,tmp_path)
     assert not worker.schedule(tmp_path,closed)
     assert len(SettlementArchive(tmp_path).entries(contract))==3
 

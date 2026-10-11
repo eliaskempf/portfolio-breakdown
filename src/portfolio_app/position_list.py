@@ -80,15 +80,8 @@ def overview_position_rows(valued, config, *, future=None):
 
 
 def render_overview_positions(valued, config, *, context, scope, open_position=None, edit_position=None,
-                              future=None, open_future=None, exposure_amounts=None):
+                              future=None, open_future=None):
     rows = overview_position_rows(valued, config, future=future)
-    if exposure_amounts is not None:
-        total = sum(exposure_amounts.get(row['id'], float('nan')) for row in rows)
-        complete = math.isfinite(total) and total > 0
-        for row in rows:
-            amount = exposure_amounts.get(row['id'], float('nan'))
-            row['value'] = float(amount) if math.isfinite(amount) else None
-            row['allocation'] = amount / total * 100 if complete and math.isfinite(amount) else None
     if future and future.proxy_position_id:
         for row in rows:
             if row['id'] == 'future:overlay':
@@ -104,7 +97,7 @@ def render_overview_positions(valued, config, *, context, scope, open_position=N
         if callback:
             callback(event['id'])
 
-    columns = [('name', 'Investment'), ('value', 'Exposure' if exposure_amounts is not None else 'Value'), ('allocation', '% of exposure' if exposure_amounts is not None else f'% of {scope}'),
+    columns = [('name', 'Investment'), ('value', 'Value'), ('allocation', f'% of {scope}'),
                ('returnPct', 'Return (%)'), ('gainReporting', 'Gain')]
     _render_table(rows, columns, context=context, revision=revision, on_open=open_row,
                   interactive=bool(open_position), editable=bool(edit_position), details_column='name')

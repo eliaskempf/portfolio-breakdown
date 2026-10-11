@@ -105,3 +105,21 @@ def test_roll_keeps_investment_and_group_request_opens_active_contract(tmp_path)
     histories = [frame.value for frame in app.dataframe if 'Status' in frame.value]
     assert len(histories) == 1
     assert histories[0].Status.tolist() == ['Closed', 'Open']
+
+
+def test_overview_positions_keep_capital_values_when_allocation_measure_changes(tmp_path):
+    import pandas as pd
+    from test_futures_investments import grouped
+    from list_helpers import list_frame, list_data
+    _,journal,_=grouped(tmp_path,capital=5000)
+    save_journal(tmp_path,journal,None)
+    app=launch_actual(tmp_path)
+    by_label(app.get('button_group'),'Allocation measure').set_value('Market exposure').run()
+    exposure_mode=list_frame(app,'Positions')
+    assert exposure_mode.set_index('id').loc['investment:synthetic','value']==4992
+    columns=list_data(app,'Positions')['columns']
+    assert next(c['label'] for c in columns if c['key']=='value')=='Value (EUR)'
+    by_label(app.get('button_group'),'Allocation measure').set_value('Capital allocation').run()
+    assert not app.exception
+    pd.testing.assert_frame_equal(list_frame(app,'Positions'),exposure_mode)
+    assert list_data(app,'Positions')['columns']==columns

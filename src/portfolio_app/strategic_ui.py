@@ -200,10 +200,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                             key='strategic_allocation_table', context=f'{position_context}_{bucket}_{measure}',
                             title=title, default_sort='% of exposure' if market else 'Value')
     st.subheader('Positions')
-    exposure_amounts = (exposure_result.exposures.groupby('source_position_id').market_exposure_reporting.agg(
-        lambda values: values.sum() if values.notna().all() else float('nan')).to_dict()
-        if mode != 'Performance' and measure == 'Market exposure' else None)
-    render_overview_positions(selected, config, exposure_amounts=exposure_amounts, context=f'overview_{position_context}_{bucket}', scope=scope,
+    render_overview_positions(selected, config, context=f'overview_{position_context}_{bucket}', scope=scope,
                               open_position=open_position, edit_position=edit_position, future=scoped_future,
                               open_future=lambda: render_future_position(scoped_future, data_dir))
 

@@ -67,7 +67,9 @@ the content, while **Edit position**, **Record transaction** and **Roll contract
 open separate action forms. **Back to position** returns to the selected view.
 Closed expiries remain in contract history. The holdings list keeps
 its capital-value columns; futures exposure is available in the popup and the
-Overview **Market exposure** view. A roll retains the investment's name,
+Overview **Market exposure** view. Switching between market exposure and capital
+allocation changes the chart and category summary; the positions list always
+keeps actual investment values and capital percentages. A roll retains the investment's name,
 initial capital and cumulative performance. Separate investments can use the same
 account; each has its own capital attribution. Shared capital pools across
 investments are not currently modeled.
@@ -136,8 +138,9 @@ investment's contract history: date, expiry, signed quantity at settlement, pric
 value date, actual posting date, source and notes.
 Corrections update this effective view while the original journal facts remain
 preserved. Closing trades contribute to realized P&L but are not daily settlements.
-Downloaded market observations do not create entries in this recorded history
-until reviewed and saved.
+Available daily settlement prices automatically create dated settlement entries
+for eligible recorded positions. Their source and automatic origin remain visible
+in **Posting details**. Other valuation marks do not create settlement transactions.
 
 ### Automatic history archive and comparisons
 
@@ -146,12 +149,19 @@ history in the background. Startup fills missing dates within the previous 31
 calendar days; a daily refresh rechecks the most recent week for source revisions.
 Recent unavailable dates retry hourly. Active contracts and recently closed or
 rolled legs are eligible. Weekends and final-settlement dates are excluded;
-source holidays or unavailable historical records remain visible gaps. No download
-creates a cash posting, transaction or tax entry.
+source holidays or unavailable historical records remain visible gaps. Accepted
+daily prices are applied automatically to eligible recorded positions, including
+prices already in the archive at startup. Cash posts on the business date, after
+that day’s recorded trades, and the clearing basis updates once. The same ledger
+calculation updates investment P&L and value without counting the cash gain twice.
+No fees, taxes or final-settlement transactions are inferred.
 
 Saved observations survive cache clearing and closing or rolling the position.
 Existing exact-contract settlement caches migrate into the archive. Source
-revisions preserve the accepted price and both versions. The notification bell
+revisions preserve the accepted price and both versions; they never rewrite
+existing transactions. Manually corrected or voided settlement dates are not
+recreated. Snapshot dates and periods already covered by a later cash balance or
+reconciliation are skipped to avoid duplicating included gains. The notification bell
 flags source changes, recorded-price differences and unavailable downloads.
 
 Open **Settlements → History checks** in position details, or **Futures → Settlement
@@ -173,9 +183,10 @@ not assumed to be exchange holidays. Availability varies by contract and date;
 this is not a complete long-term historical archive.
 
 Select available dates to record, inspect each day’s quantity and settlement P&L,
-then choose **Review settlements → Save settlements**. Fetching alone only caches
-market observations. Saving posts the selected daily settlements after that day’s
-recorded trades, with cash posted on the business date. For different cash value
+then choose **Review settlements → Save settlements** if they have not already
+been applied automatically. Existing entries are skipped. This manual backfill
+posts selected daily settlements after that day’s recorded trades, with cash
+posted on the business date. For different cash value
 dates, use **Record transaction** instead. Final/expiry-day settlements stay manual.
 
 Backfill uses historical quantities, including partial closes and contract rolls,

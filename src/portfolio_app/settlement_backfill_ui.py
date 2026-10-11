@@ -30,7 +30,7 @@ def render_settlement_backfill(directory, journal, revision, members, *, key):
     end = right.date_input('Through', value=yesterday, max_value=yesterday, key=key+'through')
     context = (revision, start.isoformat(), end.isoformat(), SettlementArchive(directory).revision())
     if st.button('Retrieve settlements', icon=':material/download:', key=key+'fetch',
-                 help='Free exact-contract daily prices, up to 31 calendar days. Missing dates stay visible. Fetching does not change account cash.'):
+                 help='Free exact-contract daily prices, up to 31 calendar days. Eligible settlements update automatically; missing dates remain visible.'):
         try:
             def fetch(contract, day):
                 return fetch_archived(directory,contract,day)
