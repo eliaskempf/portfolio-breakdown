@@ -39,6 +39,22 @@ include descendants: adding parent and child values double-counts them.
 Missing prices suppress complete percentages; the chart represents known value.
 Exposure filters and ETF expansion do not alter strategic ownership.
 
+With leverage enabled, **Overview → Market exposure** compares current exposure
+with saved exposure targets. Use **Set exposure targets** or **Edit exposure
+targets** to open their editor. Exposure targets are a separate policy under
+**Rebalance → Targets → Exposure targets**: choose a desired total multiple of
+portfolio net equity and category composition. Capital targets stay unchanged.
+
+Target amounts always use the saved whole-portfolio policy. Within a selected
+category, current percentages divide by its current exposure, and target
+percentages divide by its desired exposure. **Gap** is target minus current
+exposure; it is not an amount of cash available to invest. Signed exposures stay
+signed, and percentages are unavailable when their total is zero or negative.
+At a leaf category the comparison shows the category total; exposure targets do
+not imply individual position targets. A saved equity-only policy is labeled as
+such and is not compared against the broader Market exposure view. Switching its
+universe to Total market requires an explicit save in the exposure target editor.
+
 ## Analytical labels are separate {#classifications}
 
 Strategic categories are a non-overlapping ownership tree. Analytical taxonomies

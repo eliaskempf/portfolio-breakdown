@@ -40,6 +40,7 @@ def _clear_editor() -> None:
 def request_position(position_id, *, editing=False):
     if st.session_state.get('position_edit_selected') != position_id:
         _clear_editor()
+    st.session_state['position_edit_detail_requested'] = True
     st.session_state.update(position_edit_selected=position_id,
         position_edit_action='Edit position' if editing else 'Details', position_edit_dialog=True)
 
@@ -51,7 +52,10 @@ def _consume_position_event(path, snapshot):
         identity = event.get('id', '')
         actual = identity in {p.id for p in journal.positions} | {investment.id for investment in journal.investments} | {link.position_id for link in journal.cash_links} or (journal.accounts and str(identity).startswith('account-'))
         current = event.get('context') == list_context(path) and event.get('revision') == snapshot.revision
-        if current and actual:
+        future_position = identity in {p.id for p in journal.positions} | {investment.id for investment in journal.investments}
+        if current and future_position:
+            request_position(identity, editing=event.get('action', 'edit') == 'edit')
+        elif current and actual:
             st.session_state['positions_workflow_request'] = 'Accounts & futures'
             st.session_state['accounts_requested_position'] = identity
             st.session_state['position_edit_dialog'] = False
@@ -120,7 +124,7 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
         from portfolio_app.accounts_ui import render_actual_positions
         render_actual_positions(path.parent, load_journal(path.parent)[0], valued=account_valued)
     if not defer_dialog:
-        render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=valued)
+        render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=account_valued)
 
 
 def _remember_draft():
@@ -143,8 +147,12 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
     if not st.session_state.get('position_edit_dialog'):
         return
 
+    from portfolio_app.account_journal import load_journal
+    dialog_journal, dialog_revision = load_journal(path.parent)
+    future_ids = {p.id for p in dialog_journal.positions} | {item.id for item in dialog_journal.investments}
+    actual_future = st.session_state.get('position_edit_selected') in future_ids
     title = st.session_state.get('position_edit_action', 'Details')
-    title = 'Position details' if title == 'Details' else title
+    title = 'Position details' if title == 'Details' or actual_future else title
     @st.dialog(title, width='large', on_dismiss=_dismiss)
     def dialog():
         # Button callbacks run before the dialog body. Never execute its data
@@ -156,7 +164,15 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
             if key not in st.session_state:
                 st.session_state[key] = value
         action = st.session_state.get('position_edit_action', 'Details')
-        if action == 'Details':
+        if actual_future:
+            journal, revision = load_journal(path.parent)
+            if revision != dialog_revision:
+                st.rerun(scope='app')
+            from portfolio_app.investment_detail_ui import render_investment_detail
+            render_investment_detail(path.parent, journal, revision, valued,
+                st.session_state.get('position_edit_selected'), allocation=allocation, editing=action == 'Edit position')
+            st.button('Close', help='Close this detail view and return to the portfolio.', on_click=_dismiss)
+        elif action == 'Details':
             selected = current.holdings.loc[current.holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
             if selected.empty:
                 st.warning('This position no longer exists.')

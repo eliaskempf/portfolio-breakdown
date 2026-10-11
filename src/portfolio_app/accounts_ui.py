@@ -54,14 +54,17 @@ def _save_review(directory, journal, revision, candidate, key, *, holdings_revis
     st.markdown('**Reviewed changes**')
     events = proposed.events[len(journal.events):]
     if events:
-        st.dataframe(pd.DataFrame([dict(Date=e.date, Action=e.kind, Currency=e.currency,
+        contracts = {p.id: next(c for c in proposed.contracts if c.id == p.contract_id) for p in proposed.positions}
+        st.dataframe(pd.DataFrame([dict(Date=e.date, Action=e.kind,
+            Contract=(contracts[e.position_id].product + ' ' + contracts[e.position_id].expiry) if e.position_id in contracts else '', Currency=e.currency,
             Amount=str(e.amount), Quantity=e.quantity, Price=str(e.price or ''), Note=e.note) for e in events]), hide_index=True)
     from portfolio_app.investment_ui import investment_review_rows
     investment_changes = investment_review_rows(journal, proposed)
     if investment_changes:
         st.dataframe(pd.DataFrame(investment_changes), hide_index=True)
     state = ledger.replay(proposed)
-    st.dataframe(pd.DataFrame([{'Account': a, 'Currency': c, 'Cash after posting': str(v)} for (a,c),v in state.cash.items()]), hide_index=True)
+    names = {a.id: a.name for a in proposed.accounts}
+    st.dataframe(pd.DataFrame([{'Account': names[a], 'Currency': c, 'Cash after posting': str(v)} for (a,c),v in state.cash.items()]), hide_index=True)
     st.caption('Save posts the reviewed entries above. Review again to include changed inputs.')
     if st.button(save_label, type='primary', key=key + 'save'):
         try:
@@ -259,31 +262,43 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
                 st.info(str(exc))
 
 
-def render_transaction(directory, journal, revision):
+def render_transaction(directory, journal, revision, *, position_ids=None, key_prefix=None):
     ledger = _imports()
     from portfolio_app.derivative_types import ContractSpec
     state = ledger.replay(journal)
-    key = _key(directory)+'transaction_'
+    key = key_prefix or _key(directory)+'transaction_'
+    choices = list(state.positions) if position_ids is None else list(position_ids)
+    if not choices:
+        return
     from portfolio_app.investment_ui import sync_contract_investment
-    identity = st.selectbox('Contract position', list(state.positions),
-        format_func=lambda p: f'{state.positions[p].contract.product} {state.positions[p].contract.expiry} · {state.positions[p].spec.account_id[:8]}',
-        key=key+'position', on_change=sync_contract_investment, args=(journal, _key(directory)))
+    names = {a.id: a.name for a in journal.accounts}
+    if key_prefix is not None and key+'position' not in st.session_state:
+        st.session_state[key+'position'] = next((p for p in reversed(choices) if state.positions[p].quantity), choices[-1])
+    identity = st.selectbox('Contract position', choices,
+        format_func=lambda p: f'{state.positions[p].contract.product} {state.positions[p].contract.expiry} · {names[state.positions[p].spec.account_id]}',
+        key=key+'position', on_change=sync_contract_investment if key_prefix is None else None, args=(journal, _key(directory)) if key_prefix is None else None)
     balance = state.positions[identity]
     if journal.investments and not balance.spec.investment_id:
         st.caption('This contract is not yet part of a named investment. Use the grouping control above to attribute capital and include its history.')
     contract, account = balance.contract, balance.spec.account_id
-    action = st.selectbox('Action', ['Record settlement', 'Final settlement / expiry', 'Increase / reduce position', 'Close position', 'Roll position', 'Fee', 'Tax payment / withholding', 'Receive pending cash'], key=key+'action')
+    actions = ['Record settlement', 'Final settlement / expiry', 'Increase / reduce position', 'Close position', 'Roll position', 'Fee', 'Tax payment / withholding', 'Receive pending cash']
+    if key_prefix is not None:
+        actions.remove('Roll position')
+    action = st.selectbox('Action', actions, key=key+'action')
     day = st.date_input('Event date', max_value=date.today(), key=key+'date')
     value_day = st.date_input('Cash value date', value=day, key=key+'value_date')
     try:
         candidate = journal
         base = dict(account_id=account, currency=contract.currency, position_id=identity, value_date=value_day.isoformat())
         if action == 'Receive pending cash':
-            choices = [p.id for p in state.pending.values() if p.account_id == account]
+            choices = [p.id for p in state.pending.values() if p.account_id == account
+                       and (position_ids is None or p.position_id in position_ids)]
             if not choices:
                 st.info('No pending cash for this account.')
                 return
-            pending = st.selectbox('Cash claim', choices, key=key+'pending_id')
+            pending = st.selectbox('Cash claim', choices,
+                format_func=lambda p: f'{state.pending[p].kind} · {state.pending[p].due_date} · {state.pending[p].amount} {state.pending[p].currency}',
+                key=key+'pending_id')
             candidate = ledger.append_event(candidate, _event(candidate, 'receive', day, account_id=account, reference=pending))
         elif action in {'Fee', 'Tax payment / withholding'}:
             amount = _money_input(f'Amount ({contract.currency})', key+'amount')

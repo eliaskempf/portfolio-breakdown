@@ -56,8 +56,11 @@ For example, an invented €20,000 allocation and €1,000 net gain display as a
 of that gain has already settled into cash. If the account also contains €3,000
 unallocated cash, that appears separately. Attributed cash is counted only once.
 
-Select the investment to inspect its capital, net gain, notional exposure and
-contract history, including closed expiries. A roll retains the investment's name,
+Select the investment in Overview or Positions to open **Position details**,
+using the same popup as ordinary holdings. It shows capital, net gain, notional
+exposure and contract history, including closed expiries. The holdings list keeps
+its capital-value columns; futures exposure is available in the popup and the
+Overview **Market exposure** view. A roll retains the investment's name,
 initial capital and cumulative performance. Separate investments can use the same
 account; each has its own capital attribution. Shared capital pools across
 investments are not currently modeled.
@@ -77,6 +80,25 @@ rolls join the same investment. For an already-open snapshot, its opening cash
 already includes earlier settlements; performance before the snapshot stays
 unknown. EUR, USD and GBP amounts are converted at current reporting FX. These
 investment gains do not reconstruct historical FX gains on allocated capital.
+
+## Roll from position details
+
+Open a futures investment and choose **Roll contracts**. Select the current
+contract, roll date and number of contracts. Under **Close the current contract**,
+enter its executed closing price. Under **Open the new maturity**, enter the exact
+later maturity and its executed opening price. Enter the total roll fees once.
+
+**Review roll** shows both contract legs and resulting account cash. **Save roll**
+records both legs together. The same signed quantity opens in the new maturity;
+a partial roll leaves the remaining contracts in the old one. The price difference
+between expiries establishes the new basis, not an immediate profit. Investment
+identity, capital allocation and cumulative performance are retained. This records
+executed transactions; it does not send orders to a broker.
+
+Use **Record transaction** in the popup for settlements, increases/reductions,
+closes, fees and optional manually recorded tax payments. **Edit allocation**
+changes the investment name or attributed principal. Account-wide cash, financing,
+collateral and corrections remain available under **Futures**.
 
 ## Cash, settlement and exposure
 

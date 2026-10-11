@@ -71,11 +71,11 @@ def _investment_history(journal, investment):
     st.dataframe(pd.DataFrame(rows), hide_index=True)
 
 
-def _edit_investment(directory, journal, revision, investment, key):
+def _edit_investment(directory, journal, revision, investment, key, *, show_toggle=True):
     from portfolio_app.accounts_ui import _money_input, _save_review
     from portfolio_app.futures_investments import assign_investment
     edit_key = key + 'edit_' + investment.id + '_'
-    if not st.toggle('Edit investment allocation', key=edit_key+'open'):
+    if show_toggle and not st.toggle('Edit investment allocation', key=edit_key+'open'):
         return
     name = st.text_input('Investment name', value=investment.name, key=edit_key+'name')
     capital = _money_input(f'Allocated principal ({investment.currency})', edit_key+'capital', str(investment.allocated_capital))

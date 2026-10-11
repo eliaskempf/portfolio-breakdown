@@ -112,4 +112,6 @@ def test_grouped_investment_normal_overview_and_navigation(tmp_path):
         context=list_context(tmp_path / 'holdings.csv'), revision=read_snapshot(tmp_path / 'holdings.csv').revision, action='edit')
     app.run()
     assert not app.exception
-    assert app.session_state['positions_workflow'] == 'Accounts & futures'
+    assert app.session_state['positions_workflow'] == 'Positions'
+    assert app.session_state['position_edit_dialog']
+    assert len(app.get('dialog')) == 1

@@ -21,7 +21,7 @@ from portfolio_app.performance import position_performance, summarize_performanc
 from portfolio_app.strategic import bucket_paths, category_labels, bucket_positions, strategic_summary, strategic_tree, strategic_performance
 
 
-def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True):
+def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None):
     if 'unrealized_gain_reporting' not in valued:
         valued = position_performance(valued)
     from portfolio_app.futures import funded_strategy_positions
@@ -175,15 +175,22 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 title = 'Market exposure' if market else 'Allocation'
                 st.markdown(f'**{title}**')
                 table = strategic_summary(plotted, config, bucket)
+                target_help = {}
                 if market:
                     table = table.drop(columns=['Target (%)', 'Gap (pp)']).rename(columns={'Value': 'Exposure', 'Current (%)': '% of exposure'})
+                    from portfolio_app.exposure_target_presentation import TARGET_COLUMN_HELP, render_market_target_summary
+                    target_table = render_market_target_summary(exposure_result, config, data_dir, bucket,
+                                                                open_targets=open_exposure_targets)
+                    if target_table is not None:
+                        table = target_table
+                        target_help = TARGET_COLUMN_HELP
                 for col in table:
                     if col not in {'Category', 'Status'}:
                         table[col] = pd.to_numeric(table[col], errors='coerce')
                 if table['Status'].eq('').all():
                     table = table.drop(columns='Status')
                 render_list(frame_rows(table), [ListColumn(column, f'% of {scope}' if column == 'Current (%)' else column,
-                            help=column_help(column, scope=scope), numeric=column not in {'Category', 'Status'}, signed=column == 'Gap (pp)', color_signed=False) for column in table],
+                            help=target_help.get(column, column_help(column, scope=scope)), numeric=column not in {'Category', 'Status'}, signed=column in {'Gap (pp)', 'Gap'}, color_signed=False) for column in table],
                             key='strategic_allocation_table', context=f'{position_context}_{bucket}_{measure}',
                             title=title, default_sort='Exposure' if market else 'Value')
     st.subheader('Positions')

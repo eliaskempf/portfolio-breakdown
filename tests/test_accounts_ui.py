@@ -105,5 +105,7 @@ def test_normal_list_opens_actual_position_in_account_workspace(tmp_path):
     app.session_state['position_edit_open_request'] = dict(id='p',context=list_context(tmp_path/'holdings.csv'),revision=snapshot.revision,action='edit')
     app.run()
     assert not app.exception
-    assert app.session_state['positions_workflow'] == 'Accounts & futures'
-    assert by_label(app.selectbox, 'Contract position').value == 'p'
+    assert app.session_state['positions_workflow'] == 'Positions'
+    assert app.session_state['position_edit_dialog']
+    assert len(app.get('dialog')) == 1
+    assert by_label(app.get('button_group'), 'Futures position view').value == 'Contract history'

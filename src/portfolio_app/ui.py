@@ -267,6 +267,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                                    allocation=allocation, valued=display_valued.loc[display_valued.shares.gt(0)].copy() if hide_empty else display_valued,
                                    account_valued=valued, percent=percent, defer_dialog=True)
     def open_valued_position(position_id, *, editing=False):
+        if actual_active and position_id in {p.id for p in journal.positions} | {investment.id for investment in journal.investments}:
+            request_position(position_id, editing=editing)
+            return
         if actual_active and (position_id in {p.id for p in journal.positions} | {investment.id for investment in journal.investments} | {link.position_id for link in journal.cash_links} or str(position_id).startswith('account-')):
             st.session_state['main_tabs'] = 'Futures'
             st.session_state['accounts_requested_position'] = position_id
@@ -301,7 +304,11 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                     overview_exposure = display_exposure if allocation or not feature_active else prepare_exposure(
                         overview_values, funds, overview_config, leverage_context)
                 from portfolio_app.portfolio_analytics_ui import render_portfolio_analytics
-                render_strategic_overview(overview_values, overview_config, data_dir=data_dir, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
+                if leverage.active_basis == 'exposure':
+                    st.session_state.setdefault('strategic_allocation_measure', 'Market exposure')
+                def open_exposure_targets():
+                    st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Exposure targets')
+                render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
                                           leverage_enabled=(leverage.enabled or actual_active) and leverage_supported,
                                           percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
                                           edit_position=lambda position_id: open_valued_position(position_id, editing=True),

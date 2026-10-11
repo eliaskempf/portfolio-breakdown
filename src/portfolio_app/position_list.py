@@ -56,8 +56,6 @@ def render_position_list(path, snapshot, allocation=None, *, valued=None, accoun
     columns = [('name', 'Investment'), ('bucket', 'Category') if allocation else ('portfolio', 'Portfolio / sleeve'),
                ('quantity', 'Quantity'), ('value', 'Value'), ('allocation', 'Allocation (%)'),
                ('gain', 'Return (%)' if percent else 'Gain')]
-    if holdings.attrs.get('investment_members'):
-        columns.insert(4, ('exposure', 'Market exposure'))
     if view != 'Holdings':
         columns = [('name', 'Investment'), ('value', 'Value'), *metric_columns]
     _render_table(rows, columns, context=context, revision=snapshot.revision, on_open=open_position)
@@ -108,8 +106,6 @@ def render_overview_positions(valued, config, *, context, scope, open_position=N
 
     columns = [('name', 'Investment'), ('value', 'Exposure' if exposure_amounts is not None else 'Value'), ('allocation', '% of exposure' if exposure_amounts is not None else f'% of {scope}'),
                ('returnPct', 'Return (%)'), ('gainReporting', 'Gain')]
-    if exposure_amounts is None and valued.attrs.get('investment_members'):
-        columns.insert(2, ('exposure', 'Market exposure'))
     _render_table(rows, columns, context=context, revision=revision, on_open=open_row,
                   interactive=bool(open_position), editable=bool(edit_position), details_column='name')
 
