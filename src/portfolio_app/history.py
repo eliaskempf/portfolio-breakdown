@@ -139,11 +139,18 @@ class HistoryService:
         return result
 
 
+def _trading_dates(dates):
+    # Daily bars are keyed by the provider's local trading date. Parse offsets
+    # individually: DST varies within cached ISO dates, and converting midnight
+    # to UTC would shift positive-offset markets onto the previous FX date.
+    return pd.DatetimeIndex([pd.Timestamp(stamp).date() for stamp in dates])
+
+
 def convert_price_history(result, target, legs):
     """Convert unadjusted closes on dates with available historical FX."""
     if result.currency == target:
         return result
-    prices = pd.Series(result.prices, index=pd.DatetimeIndex(result.dates).tz_localize(None).normalize())
+    prices = pd.Series(result.prices, index=_trading_dates(result.dates))
     statuses = [result.status]
     for currency, inverse in ((result.currency, False), (target, True)):
         if currency == 'EUR':
@@ -151,7 +158,7 @@ def convert_price_history(result, target, legs):
         fx = legs.get(currency)
         if fx is None or not fx.prices or fx.currency != 'EUR':
             return HistoryResult(currency=target, note='Historical FX unavailable or loading. Native-currency history remains available.')
-        rates = pd.Series(fx.prices, index=pd.DatetimeIndex(fx.dates).tz_localize(None).normalize())
+        rates = pd.Series(fx.prices, index=_trading_dates(fx.dates))
         prices = prices / rates.reindex(prices.index) if inverse else prices * rates.reindex(prices.index)
         statuses.append(fx.status)
     prices = prices.replace([float('inf'), -float('inf')], float('nan')).dropna()
