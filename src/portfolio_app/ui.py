@@ -227,16 +227,23 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         from portfolio_app.investment_presentation import investment_exposure, investment_risk_positions
         display_valued = investment_positions(valued, journal)
         display_exposure = investment_exposure(exposure_result, display_valued)
+    from portfolio_app.monitoring_ui import apply_monitoring_route
+    apply_monitoring_route()
     if 'main_tabs' not in st.session_state:
         st.session_state['main_tabs'] = 'Positions' if holdings.empty and not feature_active else 'Overview'
     from portfolio_app.tour import prepare_tour, render_tour
     prepare_tour()
-    tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or actual_active else [])
+    tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or actual_active else []) + ['Monitoring']
     if st.session_state['main_tabs'] not in tab_names:
         st.session_state['main_tabs'] = 'Overview'
     tabs = st.tabs(tab_names,
         default='Overview', key='main_tabs', on_change='rerun')
     overview, exposure, positions, rebalance = tabs[:4]
+    from portfolio_app.monitoring_ui import watch_monitoring, render_monitoring, render_alert_dialog
+    watch_monitoring(data_dir, demo=offline_demo, disabled=tour_active())
+    if tabs[-1].open:
+        with tabs[-1]:
+            render_monitoring(data_dir, holdings, journal, demo=offline_demo)
     from portfolio_app.notifications_ui import notification_bell
     notifications_panel = notification_bell(notifications_slot, data_dir, funds, valued, status,
         demo=offline_demo, cache_warning=price_service.cache_warning,
@@ -372,9 +379,11 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                             render_rebalancing(ordinary_valued.loc[~ordinary_valued.position_id.isin({x.position_id for x in journal.cash_links})] if actual_active else valued)
                     except RebalanceError as exc:
                         st.error(str(exc))
-    render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued)
-    if background_prices:
+    if background_prices or market_coordinator.pending(market_workspace) or market_coordinator.revision(market_workspace) != market_revision:
         render_market_status(market_workspace, market_revision, show_caption=False)
+    if not tour_active():
+        render_alert_dialog(data_dir)
+    render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued)
     render_tour(empty=holdings.empty)
     finish_view_inputs()
     mark_view_ready()

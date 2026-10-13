@@ -66,7 +66,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         with filter_col:
             filters = st.popover('Filters', help='Limit the holdings contributing to the exposure analysis.', width='stretch')
         with settings_col:
-            settings_panel = st.popover('Data & settings', help='Configure fund breakdowns, refresh sources and exposure-specific settings.', width='stretch')
+            settings_panel = (st.expander('Data & settings', expanded=True) if st.session_state.get('exposure_notification_sources') else
+                st.popover('Data & settings', help='Configure fund breakdowns, refresh sources and exposure-specific settings.', width='stretch'))
     # Place results before the settings content in the page's document order.
     summary_area = st.container(key='exposure_summary')
     results_area = st.container(key='exposure_results')
@@ -75,7 +76,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         show_chart = st.checkbox('Show largest exposures chart', help='Show a chart of the largest exposures in the current selection.', key='exposure_show_chart')
         with st.expander('Individual ETFs'):
             expanded_funds = render_etf_choices(holdings, funds, data_dir, enabled=lookthrough)
-        refresh_panel = st.expander('ETF refresh & snapshots')
+        refresh_panel = st.expander('ETF refresh & snapshots', expanded=st.session_state.pop('exposure_notification_sources', False))
         with refresh_panel:
             render_refresh_controls(data_dir, holdings, funds, demo=demo)
         display_group = smh_group_control(holdings, funds)

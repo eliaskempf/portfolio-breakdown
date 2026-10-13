@@ -74,6 +74,8 @@ def render_account_margin(directory, journal, revision, holdings, valued, report
         _, fx_rates, _ = load_observations(directory)
     names = {account.id: account.name for account in journal.accounts}
     account = st.selectbox('Collateral account', list(names), format_func=names.get, key=key+'account')
+    from portfolio_app.monitoring_ui import request_monitoring
+    st.button('Create account alert', key=key+'monitoring', on_click=request_monitoring, kwargs={'account':account})
     denomination = st.selectbox('Coverage currency', CURRENCIES, index=CURRENCIES.index(reporting_currency), key=key+'currency')
     st.caption('Coverage compares explicitly pledged assets after entered haircuts with your recorded requirements. '
                'It is not broker buying power. Foreign collateral does not pay settlement-currency cash obligations automatically.')

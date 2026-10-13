@@ -241,6 +241,8 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
         return
     if not journal.accounts:
         st.info('Add a futures position from Positions → Add position → Future, or create an account below.')
+    from portfolio_app.monitoring_ui import request_monitoring
+    st.button('Create account alert', key=key+'monitoring', on_click=request_monitoring)
     if view == 'Cash & financing':
         render_cash(directory, journal, revision, snapshot, valued)
         return

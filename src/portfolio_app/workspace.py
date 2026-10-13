@@ -19,6 +19,8 @@ def validate_workspace(directory: Path, *, allow_empty: bool = False) -> None:
         raise DataError('Workspace must contain holdings.csv.')
     from portfolio_app.portfolio_settings import load_settings
     load_settings(directory)
+    from portfolio_app.monitoring_store import load_monitoring
+    load_monitoring(directory)
     snapshot = read_snapshot(directory / 'holdings.csv')
     allocation = load_allocation(directory / 'allocation.yaml', snapshot.holdings)
     if (directory / 'classifications.yaml').exists():

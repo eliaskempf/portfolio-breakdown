@@ -79,3 +79,16 @@ def test_ordinary_history_still_uses_yahoo():
     provider=MarketHistoryProvider(fetch=lambda _:pytest.fail('Unexpected MSCI request'),yahoo=yahoo)
     assert provider.history('SYNTHETIC','1y') is expected
     assert calls==[('SYNTHETIC','1y')]
+
+
+@pytest.mark.parametrize('code',['891800','892400'])
+@pytest.mark.parametrize('currency',['EUR','USD','GBP'])
+def test_monitoring_benchmarks_validate_the_requested_index(code,currency):
+    calls=[]
+    def fetch(params):
+        calls.append(params)
+        return {**payload(currency),'msci_index_code':code}
+    result=MarketHistoryProvider(fetch=fetch,today=lambda:date(2026,1,31)).history(f'MSCI:{code}:NETR:{currency}','max')
+    assert result.currency==currency and calls[0]['index_codes']==code
+    with pytest.raises(ValueError,match='metadata'):
+        parse_levels(payload(currency),currency,date(2026,1,1),date(2026,1,31),index_code=code)

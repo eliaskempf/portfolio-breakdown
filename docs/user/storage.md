@@ -30,6 +30,7 @@ workspace:
 
 | Document | Contents |
 | --- | --- |
+| `monitoring.json` | Saved rules and revisions, recorded metric observations, alert episodes and read/acknowledgment state |
 | `account-journal.json` | Accounts, exact contract definitions, position identities, dated transactions and corrections, cash/holding bindings, collateral reservations and entered margin requirements |
 | `settlement-archive.json` | Durable exact-contract daily settlement observations, retained source revisions and accepted prices |
 | `settlement-collection.json` | Last automatic collection attempts and dated source availability |

@@ -1,4 +1,4 @@
-"""Direct MSCI World daily net-return levels for market-context charts only."""
+"""Direct MSCI daily net-return levels with validated index and currency identity."""
 from datetime import date, datetime
 import math
 
@@ -8,7 +8,8 @@ import requests
 from portfolio_app.history import HistoryResult, YahooHistoryProvider
 
 ENDPOINT = 'https://app2.msci.com/products/service/index/indexmaster/getLevelDataForGraph'
-SYMBOLS = {f'MSCI:990100:NETR:{currency}': currency for currency in ('EUR', 'USD', 'GBP')}
+INDEX_NAMES = {'990100': 'MSCI World', '891800': 'MSCI Emerging Markets', '892400': 'MSCI ACWI'}
+SYMBOLS = {f'MSCI:{code}:NETR:{currency}': currency for code in INDEX_NAMES for currency in ('EUR', 'USD', 'GBP')}
 
 
 def fetch_levels(params):
@@ -17,9 +18,9 @@ def fetch_levels(params):
     return response.json()
 
 
-def parse_levels(raw, currency, start, end):
+def parse_levels(raw, currency, start, end, *, index_code='990100'):
     """Reject a different index, currency or return convention, including empty data."""
-    if (raw.get('msci_index_code') != '990100' or raw.get('index_variant_type') != 'NETR'
+    if (raw.get('msci_index_code') != index_code or raw.get('index_variant_type') != 'NETR'
             or raw.get('ISO_currency_symbol') != currency):
         raise ValueError('MSCI history metadata does not match the requested index.')
     rows = raw['indexes']['INDEX_LEVELS']
@@ -62,10 +63,11 @@ class MarketHistoryProvider:
         else:
             raise ValueError('Unsupported history period.')
         currency = SYMBOLS[ticker]
+        index_code = ticker.split(':')[1]
         raw = self.fetch(dict(currency_symbol=currency, index_variant='NETR',
             start_date=start.strftime('%Y%m%d'), end_date=end.strftime('%Y%m%d'),
-            data_frequency='DAILY', index_codes='990100'))
-        result = parse_levels(raw, currency, start, end)
+            data_frequency='DAILY', index_codes=index_code))
+        result = parse_levels(raw, currency, start, end, index_code=index_code)
         if period == 'max':
             from dataclasses import replace
             result = replace(result, note=result.note + ' · Max requests daily history from 2000; earlier history is not included.')

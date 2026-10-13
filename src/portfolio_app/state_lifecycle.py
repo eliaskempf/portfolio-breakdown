@@ -69,6 +69,10 @@ def exposure_mounted(key, state):
 # Each declaration owns all its transitions. New widget keys belong beside their
 # feature here, rather than in separate navigation/workspace/currency/tour lists.
 FEATURES = (
+    FeatureState('monitoring', Keys(prefixes=('monitoring_',)),
+        inputs=Keys(names=('monitoring_view', 'monitoring_selected'),
+            predicate=lambda key: key.startswith(('monitoring_browse_', 'monitoring_account_', 'monitoring_edit_', 'monitoring_chart_')) and not key.endswith(('_save', '_refresh'))),
+        mounted=tab('Monitoring')),
     FeatureState('notifications', Keys(names=('notification_seen',)), workspace=False),
     FeatureState('overview', Keys(prefixes=('strategic_',)),
         inputs=Keys(names=('strategic_category', 'strategic_view', 'strategic_performance_measure', 'strategic_allocation_measure')),

@@ -54,6 +54,7 @@ nav:
       - Exposure and ETFs: exposure.md
       - Prices and performance: performance.md
       - Analytics and risk: analytics.md
+      - Monitoring and alerts: monitoring.md
       - Futures and leverage (development): futures.md
   - Planning:
       - Categories and targets: allocation.md

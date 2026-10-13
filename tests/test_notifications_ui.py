@@ -41,7 +41,7 @@ def test_data_notices_live_in_notifications_and_navigation_preserves_portfolio(t
     assert app.session_state['notification_seen'][str(tmp_path.resolve())] == seen
     monkeypatch.setattr('portfolio_app.etf_refresh_ui.coordinator.error', lambda _: 'Invented refresh outage')
     app.run()
-    assert any('content:""' in item.proto.body for item in app.get('html'))
+    assert any('min-width:15px' in item.proto.body for item in app.get('html'))
     app.session_state['workspace_notifications'] = True
     app.run()
     assert len(app.session_state['notification_seen'][str(tmp_path.resolve())]) > len(seen)

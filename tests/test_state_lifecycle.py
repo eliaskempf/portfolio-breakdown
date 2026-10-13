@@ -41,6 +41,13 @@ def test_remount_tracking_clears_on_workspace_and_tour_transitions():
         assert saved == {}
 
 
+def test_monitoring_navigation_retains_drafts_without_reassigning_buttons():
+    saved = dict(main_tabs='Positions', monitoring_browse_symbol='INVENTED',
+                 monitoring_browse_save=False, monitoring_account_save=False,
+                 monitoring_edit_invented_1_save=False, monitoring_browse_refresh=False)
+    assert set(retained_inputs(saved, returning=tuple(saved))) == {'monitoring_browse_symbol'}
+
+
 def test_remount_is_restored_until_view_dispatch_completes(monkeypatch):
     from types import SimpleNamespace
     from portfolio_app import view_state

@@ -17,6 +17,7 @@ For an existing holdings report, use the [reviewed import](import.md#import).
 | See direct and indirect holdings together | [Exposure and ETFs](exposure.md#look-through) |
 | Understand prices, gains and missing values | [Prices and performance](performance.md#prices) |
 | Interpret historical risk and fund metrics | [Analytics](analytics.md#risk) |
+| Track moving averages and account thresholds | [Monitoring and alerts](monitoring.md) |
 | Preview a contribution or rebalance | [Rebalance](rebalance.md#planning) |
 | Record futures and account financing in the development branch | [Futures and leverage](futures.md) |
 | Back up, restore or move your data | [Storage and recovery](storage.md#backup) |

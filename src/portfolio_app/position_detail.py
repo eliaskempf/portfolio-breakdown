@@ -12,6 +12,9 @@ from portfolio_app.presentation import performance_metric
 
 def render_position_detail(row, data_dir, *, demo=False, allocation=None):
     st.subheader(instrument_name(row))
+    if row.get('ticker'):
+        from portfolio_app.monitoring_ui import request_monitoring
+        st.button('Track this asset', key='position_track_'+row.position_id, on_click=request_monitoring, kwargs={'symbol':row.ticker})
     st.caption(' · '.join(str(value) for value in [row['name'], row.get('ticker'), row.get('isin')] if value))
     def money(value, currency=None, signed=False):
         currency = currency or reporting_currency()
