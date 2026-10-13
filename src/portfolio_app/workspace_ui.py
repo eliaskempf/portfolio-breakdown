@@ -56,6 +56,7 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                         st.link_button('Getting started', guide_url('getting-started/'))
                         st.link_button('Categories and targets', guide_url('allocation/'))
                         st.link_button('ETF breakdowns', guide_url('exposure/'))
+                        st.link_button('Monitoring and alerts', guide_url('monitoring/'))
                     if demo and not touring:
                         st.caption('Invented holdings and buy-ins. Demo changes reset on restart.')
                         st.caption('Synthetic offline prices.' if offline else 'Public market quotes and history; availability varies.')

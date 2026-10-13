@@ -1,8 +1,8 @@
 # Your first portfolio {#first-portfolio}
 
 This walkthrough follows the app tour: understand an allocation, look inside
-funds, inspect positions, then try a contribution plan. Afterwards, switch to
-your own workspace, save a holding and make a backup. If you have not installed
+funds, inspect positions, try a contribution plan, then explore Monitoring.
+Afterwards, switch to your own workspace, save a holding and make a backup. If you have not installed
 the app, start with [Install and run](install.md#install).
 
 ## Explore a temporary demo {#demo}
@@ -36,7 +36,14 @@ or personal portfolio. Use **Back**, **Next**, or the chapter shortcuts. Try the
 highlighted chart when invited. Risk and a €500 contribution example are
 calculated for you. **Finish**, **Skip tour**, or **Escape** returns to your
 original workspace and view, including filters, without changing saved holdings
-or targets. You can then repeat these actions yourself:
+or targets, Monitoring rules, or alert acknowledgments.
+
+The Monitoring chapter first shows a plain MSCI World / 200-session SMA chart.
+It then configures an invented example; **Next** saves it only in the temporary
+tour workspace. Review its triggered condition, then try **Acknowledge alert**.
+The +10% threshold is chosen to demonstrate a trigger on synthetic history; it
+is not a suggested investment rule. Tour rules disappear when you leave.
+You can then repeat these actions yourself:
 
 ### 1. Understand Overview
 

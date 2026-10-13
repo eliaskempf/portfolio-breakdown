@@ -193,3 +193,41 @@ def test_help_chevron_keeps_menu_open(intro_page):
     playwright.expect(page.get_by_role('button', name='Take the tour', exact=True)).to_be_visible()
     page.keyboard.press('Escape')
     playwright.expect(page.get_by_role('button', name='Take the tour', exact=True)).to_be_hidden()
+
+
+def test_monitoring_tour_acknowledgment_is_interactive_and_restores_draft(intro_page):
+    page, url, _ = intro_page
+    card = enter(page, url)
+    first = next(i for i, s in enumerate(STEPS) if s.tab == 'Monitoring')
+    for chapter in ['Exposure', 'Positions', 'Rebalance', 'Monitoring']:
+        card.get_by_role('button', name=f'Skip to {chapter} →', exact=True).click()
+    card = step(page, first)
+    threshold = page.get_by_role('spinbutton', name='Distance from SMA trigger (%)', exact=True)
+    playwright.expect(threshold).to_have_value('')
+    assert page.locator('.st-key-tour_monitoring_chart .js-plotly-plot').evaluate('(el) => el.data.length') == 2
+    card.get_by_role('button', name='Next', exact=True).click()
+    card = step(page, first+1)
+    playwright.expect(threshold).to_have_value('10.00')
+    card.get_by_role('button', name='Next', exact=True).click()
+    card = step(page, first+2)
+    playwright.expect(page.locator('.st-key-tour_monitoring_tracked')).to_be_visible()
+    card.get_by_role('button', name='Next', exact=True).click()
+    card = step(page, first+3)
+    alert = page.locator('.st-key-tour_monitoring_alert')
+    playwright.expect(alert).to_contain_text('Condition:')
+    playwright.expect(alert).to_contain_text('Observed:')
+    acknowledge = alert.get_by_role('button', name='Acknowledge alert', exact=True)
+    card.get_by_role('button', name='Finish', exact=True).focus()
+    for _ in range(8):
+        page.keyboard.press('Tab')
+        if acknowledge.evaluate('(el) => el === document.activeElement'):
+            break
+    playwright.expect(acknowledge).to_be_focused()
+    page.keyboard.press('Enter')
+    playwright.expect(alert).to_contain_text('Alert acknowledged')
+    card.get_by_role('button', name='Finish', exact=True).click()
+    select_tab(page, 'Monitoring')
+    playwright.expect(threshold).to_have_value('')
+    page.get_by_role('radio', name='Tracked rules', exact=True).click()
+    playwright.expect(page.get_by_text('No tracked rules yet.', exact=False)).to_be_visible()
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

@@ -104,7 +104,8 @@ def _plot(rule, series, *, key='monitoring_chart_', show_condition=True, tracked
     figure = style_figure(figure)
     figure.update_layout(height=440, yaxis_title=series.currency, legend=dict(orientation='h'), margin=dict(l=12,r=12,t=20,b=30),
                          meta=dict(symbol=rule.series.symbol, basis=rule.series.basis, start=str(start), end=str(end)))
-    st.plotly_chart(figure, width='stretch')
+    with st.container(key='tour_monitoring_chart'):
+        st.plotly_chart(figure, width='stretch')
     historical = end < latest.date()
     row = display.iloc[-1]
     value = row.distance if historical else current.value
@@ -212,7 +213,8 @@ def _browse(directory, holdings, *, demo=False, existing=None):
     cadences = ['daily', 'monthly'] + ([] if symbol.startswith('MSCI:') else ['intraday'])
     cadence = cadence_column.selectbox('Evaluate on', cadences, index=cadences.index(existing.cadence) if existing else 0,
         format_func=lambda x: {'daily':'Completed daily close', 'monthly':'Completed month-end close', 'intraday':'Latest intraday observation'}[x], key=key+'cadence_'+('msci' if symbol.startswith('MSCI:') else 'market'), help='Daily and month-end decisions use completed closes. Direct MSCI references supply daily levels only.')
-    direction, threshold, warning = _rule_controls(key, existing)
+    with st.container(key='tour_monitoring_condition'):
+        direction, threshold, warning = _rule_controls(key, existing)
     if not existing:
         st.caption('Untracked preview', help='Browsing and entering a condition do not enable alerts. Enter a threshold and choose Track rule to start monitoring.')
     age_default = existing.max_age_minutes if existing else 30 if cadence == 'intraday' else 10080
@@ -233,20 +235,21 @@ def _browse(directory, holdings, *, demo=False, existing=None):
     if series and series.dates:
         spec = replace(spec, currency=series.currency) if not spec.currency else spec
         rule = replace(rule, series=spec)
-    name_slot, delivery_slot, save_slot = st.columns([3,2,1.3], vertical_alignment='bottom')
-    name_input = name_slot.text_input('Rule name', value=existing.name if existing else f'{spec.name or symbol} SMA {window}', key=key+'name_'+sha256(symbol.encode()).hexdigest()[:10])
-    with delivery_slot:
-        delivery = _delivery(key, existing)
-    if save_slot.button('Save changes' if existing else 'Track rule', key=key+'save', type='primary', width='stretch',
-                        disabled=threshold is None or not name_input.strip() or not series or not series.dates,
-                        help='Enter a trigger threshold and name, and load market history before saving.'):
-        saved = replace(rule, name=name_input, delivery=delivery, revision=existing.revision+1 if existing else 1,
-                        enabled=existing.enabled if existing else True, created_at=utc_now().isoformat())
-        save_rule(directory, saved, expected_rule_revision=existing.revision if existing else None)
-        st.session_state.pop('monitoring_editing', None)
-        open_rule(saved.id)
-        service.schedule(refresh=True)
-        st.rerun()
+    with st.container(key='tour_monitoring_save'):
+        name_slot, delivery_slot, save_slot = st.columns([3,2,1.3], vertical_alignment='bottom')
+        name_input = name_slot.text_input('Rule name', value=existing.name if existing else f'{spec.name or symbol} SMA {window}', key=key+'name_'+sha256(symbol.encode()).hexdigest()[:10])
+        with delivery_slot:
+            delivery = _delivery(key, existing)
+        if save_slot.button('Save changes' if existing else 'Track rule', key=key+'save', type='primary', width='stretch',
+                            disabled=threshold is None or not name_input.strip() or not series or not series.dates,
+                            help='Enter a trigger threshold and name, and load market history before saving.'):
+            saved = replace(rule, name=name_input, delivery=delivery, revision=existing.revision+1 if existing else 1,
+                            enabled=existing.enabled if existing else True, created_at=utc_now().isoformat())
+            save_rule(directory, saved, expected_rule_revision=existing.revision if existing else None)
+            st.session_state.pop('monitoring_editing', None)
+            open_rule(saved.id)
+            service.schedule(refresh=True)
+            st.rerun()
     if series and series.dates:
         _plot(rule, series, key=key+'chart_', show_condition=threshold is not None, tracked=False)
     else:
@@ -356,7 +359,8 @@ def _tracked(directory, holdings, journal, *, demo=False):
             'Data': state.get('quality','Waiting'), 'Value (%)': value, 'Trigger (%)': rule.threshold,
             'Distance to trigger (pp)': abs(value-rule.threshold) if value is not None else None,
             'Observed': latest.get('observed_at','—')})
-    st.dataframe(pd.DataFrame(records), hide_index=True, width='stretch')
+    with st.container(key='tour_monitoring_tracked'):
+        st.dataframe(pd.DataFrame(records), hide_index=True, width='stretch')
     if st.session_state.get('monitoring_selected') not in rules:
         st.session_state['monitoring_selected'] = next(iter(rules))
     identity = st.selectbox('Rule details', list(rules), format_func=lambda x:rules[x].name, key='monitoring_selected')
@@ -531,26 +535,31 @@ def render_alert_dialog(directory):
         with st.container(key='monitoring_alert_body'):
             for event in events:
                 rule = rule_from_dict(rules[event['rule_id']])
-                condition_text, observed = alert_details(rule, event['evaluation'])
-                st.markdown(f'Your rule **{event["name"]}** has triggered.')
-                st.markdown('**Condition:** '+condition_text)
-                st.markdown('**Observed:** '+observed)
-                st.caption(observation_time(event['observed_at']) + (' · Recovered completed-close event' if event.get('recovered') else ''))
-                with st.expander('Observation details'):
-                    evaluation = event['evaluation']
-                    if rule.kind == 'sma':
-                        st.write(f'{rule.series.source} · {rule.series.currency} · {rule.series.convention}')
-                        a,b = st.columns(2)
-                        a.metric('Observed price', _value(evaluation.get('price'), ' '+rule.series.currency))
-                        b.metric('SMA', _value(evaluation.get('reference'), ' '+rule.series.currency))
-                    else:
-                        st.write('Recorded account inputs · '+rule.currency)
-                    if evaluation.get('note'):
-                        st.write(evaluation['note'])
-                a,b = st.columns(2)
-                a.button('View rule', key='monitoring_dialog_'+event['id'], on_click=review, args=(event['rule_id'],), width='stretch')
-                if b.button('Acknowledge alert', type='primary', key='monitoring_ack_'+event['id'], width='stretch',
-                            help='Silence this alert episode. The rule remains enabled and rearms after recovery.'):
-                    mark_events(directory, [event['id']], acknowledge=True)
-                    st.rerun()
+                render_alert_event(directory, rule, event, review=review)
     dialog()
+
+
+def render_alert_event(directory, rule, event, *, review=None):
+    """Shared alert explanation and acknowledgment for delivery and the isolated tour."""
+    condition_text, observed = alert_details(rule, event['evaluation'])
+    st.markdown(f'Your rule **{event["name"]}** has triggered.')
+    st.markdown('**Condition:** '+condition_text)
+    st.markdown('**Observed:** '+observed)
+    st.caption(observation_time(event['observed_at']) + (' · Recovered completed-close event' if event.get('recovered') else ''))
+    with st.expander('Observation details'):
+        evaluation = event['evaluation']
+        if rule.kind == 'sma':
+            st.write(f'{rule.series.source} · {rule.series.currency} · {rule.series.convention}')
+            a,b = st.columns(2)
+            a.metric('Observed price', _value(evaluation.get('price'), ' '+rule.series.currency))
+            b.metric('SMA', _value(evaluation.get('reference'), ' '+rule.series.currency))
+        else:
+            st.write('Recorded account inputs · '+rule.currency)
+        if evaluation.get('note'):
+            st.write(evaluation['note'])
+    a,b = st.columns(2)
+    a.button('View rule', key='monitoring_dialog_'+event['id'], on_click=review, args=(event['rule_id'],), width='stretch', disabled=review is None)
+    if b.button('Acknowledge alert', type='primary', key='monitoring_ack_'+event['id'], width='stretch',
+                help='Silence this alert episode. The rule remains enabled and rearms after recovery.'):
+        mark_events(directory, [event['id']], acknowledge=True)
+        st.rerun()

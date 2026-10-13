@@ -19,6 +19,11 @@ then name the rule and choose **Track rule** in the save row above the chart.
 pause/resume and deletion. Position details offer **Track this asset**; account
 and collateral views offer **Create account alert**.
 
+For an offline introduction, choose **? → Take the tour** and use the chapter
+shortcuts to reach Monitoring. Its trend, saved rule, triggered alert and
+acknowledgment use a fresh temporary synthetic workspace. Your existing rules
+and acknowledgments are preserved.
+
 ## Moving-average rules {#moving-averages}
 
 The 200-session preset uses 200 completed trading observations, not 200 calendar
@@ -64,8 +69,9 @@ the source, its available history and retrieval time.
 **Chart period** offers one, three, five or ten years, all available history,
 dotcom and GFC periods, or custom start and end dates. Indicators are calculated
 using the full history before the chart is cropped, preserving their warm-up.
-Historical-period metrics describe the final close in that period and are
-labeled **Historical condition**. Browsing the past neither creates alerts nor
+Historical-period metrics describe the final close in that period and, when a
+threshold is configured, are labeled **Historical condition**. With a blank
+threshold, no condition is shown. Browsing the past neither creates alerts nor
 changes a saved rule's live evaluation period; it is not a strategy backtest.
 
 The MSCI source is requested from 2000 onward; actual availability varies by
@@ -114,7 +120,8 @@ the affected rule and offer **View rule**. Existing data-quality notices have
 specific review actions.
 
 Reading and acknowledging are separate. Opening Notifications marks entries
-read; acknowledgment silences that alert and hides its banner. The current
+read; **Acknowledge alert** in the pop-up or **Acknowledge** in Notifications
+silences that alert and hides its banner. The current
 condition remains visible in Tracked rules. Full recovery to normal rearms
 the rule. Escalation from approaching to triggered produces a new alert, but
 unchanged checks and threshold jitter within one warning episode do not repeat

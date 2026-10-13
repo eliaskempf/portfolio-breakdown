@@ -35,6 +35,13 @@ replacing adopted cash holdings and retaining position/account provenance.
 `portfolio_exposure.py` then uses separate capital and signed-exposure measures;
 provider parsing and journal persistence do not belong in the aggregation engine.
 
+`monitoring.py` owns indicator and account-rule calculations; `monitoring_market.py`
+normalizes provider observations, `monitoring_service.py` schedules checks while
+a session is open, and `monitoring_store.py` persists rule revisions and alert
+episodes under the workspace lock. Monitoring does not change holdings or orders.
+`tour_monitoring.py` creates its example only after verifying the active tour-owned
+synthetic directory; it reuses the normal alert explanation and acknowledgment UI.
+
 ### Calculation contracts
 
 - Saved positions retain their instrument ID and stable position ID. A

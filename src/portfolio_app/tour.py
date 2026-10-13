@@ -109,6 +109,9 @@ def _move(index: int) -> None:
         st.session_state[f'etf_lookthrough_{context}'] = step.lookthrough
     elif step.tab == 'Positions':
         st.session_state['positions_workflow'] = 'Positions'
+    elif step.tab == 'Monitoring':
+        from portfolio_app.tour_monitoring import prepare_step
+        prepare_step(demo_directory(), step.view)
     else:
         st.session_state.update(rebalance_tabs=step.view, planning_scope='Portfolio contribution', planning_amount=500.)
 
@@ -149,6 +152,9 @@ def render_tour(*, empty: bool = False) -> None:
     index = st.session_state['tour_step']
     step = STEPS[index]
     st.html('<style>' + CSS + '</style>')
+    if step.tab == 'Monitoring' and step.view == 'Alert':
+        from portfolio_app.tour_monitoring import render_alert
+        render_alert(demo_directory())
     with st.container(key='app_tour', border=True):
         st.caption(f'TOUR · DEMO PORTFOLIO  /  {step.tab}  /  {index + 1} of {len(STEPS)}')
         st.markdown(f'### {step.title}')

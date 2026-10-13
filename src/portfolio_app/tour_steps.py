@@ -20,8 +20,8 @@ class TourStep:
 
 
 STEPS = (
-    TourStep('Overview', 'Four ways to understand your portfolio',
-        'Overview shows what you hold and its allocation. Exposure reveals the companies and regions underneath. Positions manages your holdings. Rebalance plans changes toward your targets.',
+    TourStep('Overview', 'Explore your portfolio',
+        'Overview shows what you hold and its allocation. Exposure reveals the companies and regions underneath. Positions manages your holdings. Rebalance plans changes toward your targets. Monitoring tracks conditions you choose.',
         ('.st-key-main_tabs > div > [role="tablist"]',)),
     TourStep('Overview', 'Choose the portfolio you want to examine',
         'Category focuses the overview on your whole portfolio or a subset. Current value and Portfolio share follow that selection.',
@@ -63,6 +63,18 @@ STEPS = (
         'Choose a planning scope and contribution, then Calculate plan. Options control eligible positions and purchase rules. This demo uses a €500 contribution.',
         ('.st-key-rebalance_tabs [role="tablist"]', '.st-key-planning_scope', '.st-key-planning_amount', '.st-key-planning_calculate'), 'Plan'),
     TourStep('Rebalance', 'Review the proposed changes',
-        'The plan shows suggested purchases and their allocation impact. It does not place trades or change your holdings. Finish returns you to the portfolio and screen where you started.',
+        'The plan shows suggested purchases and their allocation impact. It does not place trades or change your holdings.',
         ('.st-key-tour_plan_results',), 'Plan', calculate_plan=True),
+    TourStep('Monitoring', 'Explore a trend before tracking it',
+        'Browse starts with MSCI World in EUR and a 200-session SMA. The threshold is blank: prices and SMA are visible, but no rule or alert exists. This tour uses invented history.',
+        ('.st-key-tour_monitoring_chart',), 'Browse'),
+    TourStep('Monitoring', 'Configure and save a rule',
+        'This example chooses below +10%, a 1-point approaching band, a name and pop-up alerts. Track rule saves these settings. Next saves this example only in the temporary tour workspace.',
+        ('.st-key-tour_monitoring_condition', '.st-key-tour_monitoring_save'), 'Configure'),
+    TourStep('Monitoring', 'Understand a triggered alert',
+        'The invented close is at or below this example’s SMA threshold, so the saved rule is Triggered. Check Data and Observed alongside the condition. Checks run only while an app session is open.',
+        ('.st-key-tour_monitoring_tracked',), 'Tracked rules'),
+    TourStep('Monitoring', 'Acknowledge the alert',
+        'These are the same controls shown in an alert pop-up. Try Acknowledge alert: it silences this episode while the rule stays enabled. Recovery to normal rearms it. Finish restores your original workspace and draft.',
+        ('.st-key-tour_monitoring_alert',), 'Alert', interactive='.st-key-tour_monitoring_alert'),
 )
