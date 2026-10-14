@@ -1,4 +1,5 @@
 """Read-only navigation of notifications in an invented actual-account workspace."""
+import pytest
 from portfolio_app.account_journal import save_journal, load_journal
 from test_accounts_ui import launch_actual
 from test_futures_investments import grouped
@@ -78,7 +79,8 @@ def test_refresh_notice_identity_ignores_check_time_but_tracks_changed_issue(tmp
     assert refresh_notices(tmp_path, [], demo=True) == ([], ())
 
 
-def test_running_refresh_does_not_hide_notices_being_marked_seen(tmp_path, monkeypatch):
+@pytest.mark.parametrize('include_notices', [True, False])
+def test_running_refresh_does_not_hide_notices_being_marked_seen(tmp_path, monkeypatch, include_notices):
     from streamlit.testing.v1 import AppTest
     path = tmp_path/'.cache'/'etf-refresh'/'status.json'
     path.parent.mkdir(parents=True)
@@ -88,8 +90,8 @@ def test_running_refresh_does_not_hide_notices_being_marked_seen(tmp_path, monke
 from pathlib import Path
 from portfolio_app.etf_refresh_ui import render_refresh_status, refresh_revision
 root = Path({str(tmp_path)!r})
-render_refresh_status(root, [], refresh_revision(root))
+render_refresh_status(root, [], refresh_revision(root), include_notices={include_notices!r})
 ''').run()
     assert not app.exception
     assert any('Discovering and updating' in item.value for item in app.caption)
-    assert any('1 ETF breakdown(s) unavailable' in item.value for item in app.caption)
+    assert any('1 ETF breakdown(s) unavailable' in item.value for item in app.caption) == include_notices

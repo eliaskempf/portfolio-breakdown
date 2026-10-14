@@ -1,6 +1,7 @@
 """Real browser signed charts, on invented data only."""
 from dataclasses import asdict
 import json
+import re
 
 from portfolio_app.futures import FuturePosition
 from portfolio_app.futures_workspace import SANDBOX_FILE
@@ -65,15 +66,18 @@ def test_normal_and_sandbox_exposure_controls(ux_page):  # noqa: F811
     future_row = page.locator('tr[data-position-id="future:overlay"]')
     playwright.expect(future_row).to_be_visible()
     cells = future_row.locator('td')
-    playwright.expect(cells.nth(1)).to_contain_text('-500.00')
+    # Unfunded capital is unavailable; -500 is signed notional, shown above
+    # in the exposure chart and below in contract details, never owned wealth.
+    playwright.expect(cells.nth(1)).to_have_text('—')
     playwright.expect(cells.nth(2)).to_have_text('—')
     playwright.expect(cells.nth(3)).to_have_text('—')
     playwright.expect(future_row.locator('.secondary')).to_have_count(0)
     playwright.expect(future_row.get_by_role('button', name='Show contract details for FMWN future', exact=True)).to_have_attribute('aria-expanded', 'false')
-    playwright.expect(page.get_by_role('columnheader', name='Value (EUR)', exact=True)).to_have_count(0)
+    playwright.expect(page.get_by_role('table', name='Positions', exact=True).get_by_role('columnheader', name=re.compile(r'^Value \(EUR\)'))).to_have_count(1)
     future_row.click()
     page.get_by_role('dialog').get_by_text('Contract & collateral', exact=True).click()
     playwright.expect(page.get_by_role('dialog')).to_contain_text('Signed notional exposure')
+    playwright.expect(page.get_by_role('dialog')).to_contain_text('€-500.00')
     page.get_by_role('button', name='Close', exact=True).click()
     playwright.expect(page.get_by_role('dialog')).to_have_count(0)
     page.wait_for_timeout(500)
@@ -203,6 +207,8 @@ def test_funded_strategy_value_return_close_and_negative_chart(ux_page):
     (directory / SANDBOX_FILE).write_text(json.dumps(dict(version=2, simulation=True, instrument='FMWN', position=asdict(position))))
     page.reload()
     page.get_by_role('tab', name='Overview', exact=True).click()
+    page.get_by_role('radio', name='Capital allocation', exact=True).click()
+    playwright.expect(page.get_by_role('radio', name='Capital allocation', exact=True)).to_be_checked()
     chart = page.locator('.st-key-signed_capital_chart .js-plotly-plot')
     playwright.expect(chart).to_be_visible()
     assert chart.evaluate('el => el.data[0].type') == 'bar'
@@ -255,6 +261,10 @@ def test_linked_future_hatching_exposure_sunburst_and_company_shock(ux_page):
     page.reload()
     row = page.locator('tr[data-position-id="future:overlay"]')
     playwright.expect(row).to_be_visible()
+    playwright.expect(page.get_by_role('radio', name='Market exposure', exact=True)).to_be_checked()
+    page.get_by_role('radio', name='Capital allocation', exact=True).click()
+    settle(page)
+    playwright.expect(row.locator('td').nth(1)).to_contain_text('200.00')
     assert row.evaluate('(el, companion) => el.previousElementSibling.dataset.positionId === companion', companion)
     chart = page.locator('.st-key-overview_allocation .js-plotly-plot')
     playwright.expect(chart).to_be_visible()
@@ -273,10 +283,16 @@ def test_linked_future_hatching_exposure_sunburst_and_company_shock(ux_page):
     row.locator('[data-detail-toggle]').click()
     playwright.expect(page.get_by_role('dialog')).to_have_count(0)
     page.get_by_role('radio', name='Market exposure', exact=True).click()
+    settle(page)
     playwright.expect(chart).to_be_visible()
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning' && !!document.querySelector('.st-key-overview_allocation .js-plotly-plot')?._fullData?.[0]")
     assert chart.evaluate('el => el.data[0].type') == 'sunburst'
-    playwright.expect(row.locator('td').nth(1)).to_contain_text('500.00')
+    playwright.expect(row.locator('td').nth(1)).to_contain_text('200.00')
+    playwright.expect(page.get_by_role('table', name='Positions', exact=True).get_by_role('columnheader', name=re.compile(r'^Value \(EUR\)'))).to_be_visible()
+    assert chart.evaluate('''el => {
+      const trace = el._fullData[0];
+      return trace.values[trace.ids.findIndex(id => JSON.parse(id)[2] === 'future:overlay')];
+    }''') == 500
     page.get_by_role('combobox', name='Category', exact=True).click()
     page.get_by_role('combobox', name='Category', exact=True).press('ArrowDown')
     page.get_by_role('option', name='ETF core', exact=True).click()

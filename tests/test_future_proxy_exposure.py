@@ -1,7 +1,9 @@
 """Synthetic companion funds and isolated shocks; no working data or providers."""
 from dataclasses import replace
 from datetime import date
+import base64
 import json
+import numpy as np
 import pandas as pd
 import pytest
 from portfolio_app.etf import FundSnapshot
@@ -126,12 +128,17 @@ def test_companion_ui_sunbursts_and_company_move(tmp_path):
     from test_futures_ui import launch
     from test_ui import activate, by_label, list_frame
     from portfolio_app.futures_workspace import load_sandbox, save_sandbox
+    def chart_values(trace):
+        values = trace['values']
+        return np.frombuffer(base64.b64decode(values['bdata']), dtype=values['dtype']) if isinstance(values, dict) else values
     _, directory = synthetic_workspace(tmp_path)
     write_proxy(directory)
     future, revision = load_sandbox(directory)
     save_sandbox(directory, replace(future, reference_capital_eur=20000., proxy_position_id='fund'), revision)
     app = launch(directory, open_futures=False)
     assert not app.exception
+    assert by_label(app.get('button_group'), 'Allocation measure').value == 'Market exposure'
+    by_label(app.get('button_group'), 'Allocation measure').set_value('Capital allocation').run()
     capital = json.loads(app.get('plotly_chart')[0].proto.spec)['data'][0]
     ids = [json.loads(key)[2] for key in capital['ids']]
     fi, ci = ids.index('future:overlay'), ids.index('fund')
@@ -141,12 +148,22 @@ def test_companion_ui_sunbursts_and_company_move(tmp_path):
     assert capital['marker']['pattern']['bgcolor'][fi] == capital['marker']['colors'][ci]
     assert capital['marker']['pattern']['fillmode'] == 'overlay'
     assert capital['marker']['pattern']['fgcolor'][fi] != capital['marker']['colors'][ci]
+    assert chart_values(capital)[fi] == 20000
+    capital_rows = list_frame(app, 'Positions')
     assert not any('swatchColor' in row for row in list_frame(app, 'Positions').to_dict('records'))
     by_label(app.get('button_group'), 'Allocation measure').set_value('Market exposure').run()
     exposure = json.loads(app.get('plotly_chart')[0].proto.spec)['data'][0]
     assert exposure['type'] == 'sunburst'
-    assert list_frame(app, 'Positions').set_index('id').loc['future:overlay', 'value'] == 50000
+    exposure_ids = [json.loads(key)[2] for key in exposure['ids']]
+    assert chart_values(exposure)[exposure_ids.index('future:overlay')] == 50000
+    # Only the chart/category summary changes measure; owned capital is stable.
+    pd.testing.assert_frame_equal(list_frame(app, 'Positions'), capital_rows)
+    from list_helpers import list_data
+    columns = list_data(app, 'Positions')['columns']
+    assert next(column['label'] for column in columns if column['key'] == 'value') == 'Value (EUR)'
+    assert capital_rows.set_index('id').loc['future:overlay', 'value'] == 20000
     by_label(app.selectbox, 'Category').set_value('core').run()
+    assert list_frame(app, 'Market exposure')['Exposure'].sum() == 110000
     assert by_label(app.metric, 'Category leverage · net').value == '1.38×'
     activate(app, 'Exposure')
     by_label(app.selectbox, 'Company').set_value('stock').run()

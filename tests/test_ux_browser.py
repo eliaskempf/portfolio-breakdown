@@ -174,7 +174,7 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     assert page.locator('.js-plotly-plot').first.evaluate('el => el.data[0].type') == 'bar'
     playwright.expect(page.get_by_role('radio', name='Return (%)', exact=True)).to_be_checked()
     assert chart.evaluate('el => Array.from(el._fullData[0].x)') == pytest.approx([-100 / 6, 25])
-    assert chart.evaluate('el => el.data[0].customdata[0].slice(1,3)') == ['-10.00 EUR', '-16.67%']
+    assert chart.evaluate('el => el.data[0].customdata[0].slice(1,3)') == ['-€10.00', '-16.67%']
     page.get_by_role('radio', name='Gain', exact=True).click()
     page.wait_for_function("document.querySelector('.js-plotly-plot')?.layout.xaxis.title.text === 'Gain'")
     assert chart.evaluate('el => Array.from(el._fullData[0].x)') == [-10, 40]

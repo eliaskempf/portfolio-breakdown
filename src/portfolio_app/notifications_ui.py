@@ -122,8 +122,8 @@ def render_notifications(directory, funds, revision, valued, status, *, demo=Fal
     parts, _ = refresh_notices(directory, funds, demo=demo)
     for i,message in enumerate(parts):
         _card(Notice('etf_'+str(i), 'ETF data', message, 'warning', Destination('sources'), 'Review ETF sources'), directory)
-    # Preserve background refresh completion polling without mixing progress into alerts.
-    render_refresh_status(directory, funds, revision, demo=demo, show_messages=False)
+    # Transient progress is a caption, separate from actionable/unread notices.
+    render_refresh_status(directory, funds, revision, demo=demo, include_notices=False)
     messages, _ = settlement_notices(directory,journal)
     for i,message in enumerate(messages):
         _card(Notice('settlement_'+str(i), 'Settlement history', message, 'warning', Destination('settlements'), 'Review settlement history'), directory)

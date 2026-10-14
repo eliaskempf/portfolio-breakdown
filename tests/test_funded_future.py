@@ -1,5 +1,6 @@
 """Explicitly invented funded strategies; no working data or network access."""
 from dataclasses import replace
+import json
 import pytest
 from portfolio_app.futures import FuturePosition, close_contract, funded_strategy_positions, futures_scenarios, summarize_future
 from portfolio_app.futures_workspace import load_sandbox, save_sandbox
@@ -100,9 +101,12 @@ def test_funded_ui_roundtrip_negative_chart_and_closed_position(tmp_path):
     by_label(app.button, 'Save mock position').click().run()
     activate(app, 'Overview')
     by_label(app.get('button_group'), 'Overview view').set_value('Allocation').run()
+    by_label(app.get('button_group'), 'Allocation measure').set_value('Capital allocation').run()
     assert not app.exception
-    charts = [x.proto.spec for x in app.get('plotly_chart')]
-    assert any('"type":"bar"' in spec for spec in charts)
+    traces = [trace for chart in app.get('plotly_chart') for trace in json.loads(chart.proto.spec)['data']]
+    assert any(trace['type'] == 'bar' and -9550 in trace['x'] for trace in traces)
+    from test_ui import list_frame
+    assert list_frame(app, 'Positions').set_index('id').loc['future:overlay', 'value'] == -9550
 
 
 def test_future_category_survives_display_name_changes():

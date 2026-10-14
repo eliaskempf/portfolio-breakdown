@@ -9,11 +9,18 @@ def overview_metric(app):
     activate(app, "Exposure")
     return result
 
-def overview_captions(app):
+def assert_cost_coverage(app, coverage, position_name, reason):
     activate(app, "Overview")
-    result = list(app.caption)
+    assert f'Performance coverage: {coverage}' in by_label(app.metric, 'Current value').proto.help
+    app.session_state['workspace_notifications'] = True
+    app.run()
+    assert not app.exception
+    problems = next(item.value for item in app.dataframe if set(item.value.columns) == {'name', 'performance_note', 'valuation_note'})
+    affected = problems.loc[problems.name.eq(position_name)]
+    assert len(affected) == 1
+    assert affected.performance_note.item() == reason
+    app.session_state['workspace_notifications'] = False
     activate(app, "Exposure")
-    return result
 
 
 def test_performance_summary_and_holdings_with_static_prices(tmp_path, sample_data_dir):
@@ -26,7 +33,7 @@ def test_performance_summary_and_holdings_with_static_prices(tmp_path, sample_da
     app = launch(tmp_path)
     assert not app.exception
     assert overview_metric(app).delta == '+€0.00'
-    assert any('coverage: 2 of 3' in item.value for item in overview_captions(app))
+    assert_cost_coverage(app, '2 of 3', 'Synthetic C', 'Missing purchase date or converted cost; excluded from gains')
     table = next(item.value for item in app.tabs[1].dataframe if 'shares' in item.value)
     assert table.loc[table.id == 'c', 'Performance'].isna().all()  # Foreign costs aren't EUR returns.
     by_label(app.get('button_group'), 'Performance display').set_value('%').run()
@@ -48,7 +55,7 @@ def test_legacy_unlabeled_buy_in_explained_without_invented_performance(tmp_path
     (tmp_path / "holdings.csv").write_text("id,name,ticker,shares,acquisition_price\na,Synthetic A,NVDA,1,40\n")
     app = launch(tmp_path)
     assert not app.exception
-    assert any("coverage: 0 of 1" in item.value for item in overview_captions(app))
+    assert_cost_coverage(app, '0 of 1', 'Synthetic A', 'Missing buy-in currency; excluded from gains')
     assert overview_metric(app).delta == 'Unavailable'
     table = next(item.value for item in app.dataframe if "shares" in item.value)
     assert table.Performance.isna().all()

@@ -57,6 +57,9 @@ the provider. The threshold can be set from 1–30 days or automatic checks disa
 snapshots; a fresh check may return the same old holdings date. Snapshots older
 than seven days retain a recency notice. Price refresh and ETF refresh are separate.
 The app must be running for its background checks.
+While a refresh runs, **Notifications** shows its progress separately from alerts.
+Progress does not count as an unread notification; saved snapshots remain usable
+until the completed update is loaded.
 
 ## Set up and inspect a source {#sources}
 

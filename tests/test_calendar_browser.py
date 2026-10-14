@@ -57,7 +57,12 @@ def test_week_preference_changes_grid_and_preserves_date_selection(calendar_page
     grid=page.get_by_role('grid');expect(grid).to_be_visible()
     assert grid.locator('thead th').all_text_contents()==['M','T','W','T','F','S','S']
     assert page.evaluate('navigator.language')=='en-US-u-fw-mon'
+    # Pointer opening keeps focus in the date segments. Start keyboard opening
+    # from a closed picker and wait for its focus transfer before navigating.
+    page.keyboard.press('Escape')
+    expect(grid).not_to_be_visible()
     field.get_by_role('spinbutton').first.press('Alt+ArrowDown')
+    expect(grid.get_by_role('button',name='Wednesday, January 7, 2026 selected',exact=True)).to_be_focused()
     page.keyboard.press('ArrowLeft')
     expect(grid.get_by_role('button',name='Tuesday, January 6, 2026',exact=True)).to_be_focused()
     page.keyboard.press('Enter');settle(page)
