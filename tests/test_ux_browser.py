@@ -12,6 +12,8 @@ from urllib.request import urlopen
 import pytest
 import yaml
 
+from browser_support import select_tab
+
 playwright = pytest.importorskip('playwright.sync_api')
 
 
@@ -276,9 +278,11 @@ def test_overview_list_matches_positions_and_opens_sorted_filtered_rows(ux_page)
     row.click()
     playwright.expect(dialog).to_contain_text('Invented Regional')
     dialog.get_by_role('button', name='Close', exact=True).filter(has_text='Close').click()
-    page.get_by_role('tab', name='Positions', exact=True).click()
+    playwright.expect(dialog).to_have_count(0)
+    # Closing the dialog starts an app rerun; finish it before switching lists.
+    select_tab(page, 'Positions')
     playwright.expect(page.get_by_role('searchbox', name='Filter positions')).to_have_value('')
-    page.get_by_role('tab', name='Overview', exact=True).click()
+    select_tab(page, 'Overview')
     playwright.expect(page.get_by_role('searchbox', name='Filter positions')).to_have_value('Regional')
     table.scroll_into_view_if_needed()
     page.wait_for_function("table => table.getBoundingClientRect().width > 300",
