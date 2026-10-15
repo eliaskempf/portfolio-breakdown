@@ -38,7 +38,7 @@ def freshness(observation, *, now=None, fallback=False, error='', closed=False, 
         minutes = max(0, int((now - stamp).total_seconds() // 60))
         age = f'{minutes}m' if minutes < 60 else f'{minutes // 60}h' if minutes < 1440 else f'{minutes // 1440}d'
         status = 'delayed' if now - stamp <= timedelta(minutes=30) else 'stale'
-        label = ('Delayed' if status == 'delayed' else 'Stale') + f' · {age}'
+        label = '' if status == 'delayed' else f'Stale · {age}'
         detail += f' Quote time {observation.quote_at}; declared delay {observation.delay_minutes or 0} minutes.'
         if disputed:
             status, label = 'revised', f'Revised · {age}'
@@ -141,10 +141,10 @@ def summarize_freshness(rows):
     """Scope-local summary; investment rows already summarize only their open legs."""
     if 'valuation_qualified' not in rows:
         return '', '', False
-    relevant = rows.loc[rows.valuation_label.fillna('').ne('') & rows.valuation_status.fillna('').ne('closed')]
+    relevant = rows.loc[~rows.valuation_status.fillna('').isin(['', 'closed'])]
     affected = relevant.loc[relevant.valuation_qualified.eq(True)]
     if relevant.empty:
         return '', '', False
-    label = f'{len(affected)} dated futures valuation' + ('s' if len(affected) != 1 else '') if len(affected) else 'Delayed futures quotes'
+    label = f'{len(affected)} dated futures valuation' + ('s' if len(affected) != 1 else '') if len(affected) else ''
     details = '\n'.join(f'{r.name}: {r.valuation_label}. {r.valuation_detail}' for r in relevant.itertuples())
     return label, details, not affected.empty

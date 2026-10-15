@@ -48,6 +48,7 @@ def test_market_fall_changes_value_exposure_not_cash_then_settlement_once(tmp_pa
     old = PriceObservation(contract.id, '2026-01-06', 1010, source='Invented settlement')
     marks = select_valuations(journal, automatic={contract.id:quote(contract)}, settlements={contract.id:[old]}, now=NOW)
     assert marks['p'].observation.price == 990 and marks['p'].status == 'delayed'
+    assert marks['p'].label == '' and 'Quote time' in marks['p'].detail
     valued = value_holdings(read_snapshot(tmp_path/'holdings.csv').holdings, service)
     rates = {(contract.currency,'EUR'):dict(rate='1')} if contract.currency != 'EUR' else {}
     result = journal_positions(valued, journal, service, valuations=marks, fx_rates=rates)

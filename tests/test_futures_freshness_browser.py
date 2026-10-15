@@ -124,7 +124,7 @@ def test_stale_fresh_failure_settlement_and_popup_navigation(futures_page):
     record_result(root,contract,fresh,'',attempted_at=now,now=now)
     page.get_by_role('button',name='Refresh prices').click();settle(page)
     row=page.locator('tr[data-position-id="investment:synthetic"]')
-    playwright.expect(row.locator('summary')).to_contain_text('Delayed')
+    playwright.expect(row.locator('summary')).to_have_count(0)
     assert row.locator('td.negative').count()==1
     assert ledger.load_journal(root)[0]==journal
     before_value=row.locator('td').nth(3).inner_text()
@@ -135,11 +135,11 @@ def test_stale_fresh_failure_settlement_and_popup_navigation(futures_page):
     assert apply_archived_settlements(root)==0
     page.get_by_role('button',name='Refresh prices').click();settle(page)
     assert row.locator('td').nth(3).inner_text()==before_value
-    playwright.expect(row.locator('summary')).to_contain_text('Delayed')
+    playwright.expect(row.locator('summary')).to_have_count(0)
     record_result(root,contract,None,'Invented refresh failure',attempted_at=utc_now(),now=utc_now())
     page.get_by_role('button',name='Refresh prices').click();settle(page)
-    row.locator('summary').click()
-    playwright.expect(row).to_contain_text('Invented refresh failure')
+    playwright.expect(row.locator('summary')).to_have_count(0)
+    assert row.locator('td[title]').evaluate_all("cells => cells.some(cell => cell.title.includes('Invented refresh failure'))")
     select_tab(page,'Futures')
     page.get_by_text('Marks & FX',exact=True).click();settle(page)
     page.get_by_role('textbox',name='Manual mark price',exact=True).fill('995')

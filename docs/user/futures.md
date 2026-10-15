@@ -277,7 +277,8 @@ as intraday quotes. Deferred maturities and thinly traded products can therefore
 remain at a dated settlement or recorded price. This public website is not a
 guaranteed API or a promise of real-time data.
 
-Compact labels beside affected values show **Delayed**, **Stale**, **Settlement**,
+Routine delayed quotes show no age label; their source time and delay remain in
+the value/P&L help. Compact labels beside affected values show **Stale**, **Settlement**,
 **Manual**, **Recorded**, **Revised**, or **No price**. Conflicting prices at the
 same quote time retain the first observation with neutral styling until a newer
 quote or manual mark resolves valuation. Delayed trade quotes older than 30 minutes
