@@ -1,12 +1,13 @@
 """Streamlit controls and presentation; calculations live in pure modules."""
 
-from portfolio_app.currency_display import currency_symbol
+from portfolio_app.currency_display import money_format
 
 import json
 from collections import Counter
 from hashlib import sha256
 
 import streamlit as st
+from portfolio_app.charts import chart_config
 
 from portfolio_app.aggregation import aggregate, aggregate_dimension
 from portfolio_app.charts import bar_chart, hierarchy_chart, hierarchy_table, pie_chart, sort_allocation_nodes
@@ -39,13 +40,31 @@ from portfolio_app.stock_exposure import load_company_identities
 from portfolio_app.company_merges import build_plan, load_company_names, load_settings
 from portfolio_app.company_merge_ui import render_company_merges
 from portfolio_app.input_cache import cached_input
+from portfolio_app.exposure_workspace import analytical_signature
 from portfolio_app.geography import resolve_geography
 from portfolio_app.geography_ui import render_geography
 from portfolio_app.sector_classification import sector_classifications
 
 
-def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False, source_valued=None, performance_percent=False, allocation=None, etf_revision=0, on_toggle_gain=None):
+def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False, source_valued=None, performance_percent=False, allocation=None, etf_revision=0, on_toggle_gain=None, exposure_result=None, leverage_context=None):
     dimensions = metadata_dimensions(holdings)
+    unified = exposure_result is not None
+    if unified:
+        from portfolio_app.exposure_workspace import analysis_sources, analysis_contributions
+        from portfolio_app.application import prepare_exposure
+        original_valued = source_valued
+        source_valued = analysis_sources(source_valued, exposure_result, leverage_context.future)
+        # Source filters include actual accounts and the sandbox overlay. Only
+        # original metadata dimensions become controls, not calculated fields.
+        holdings = source_valued.copy()
+        for dimension in dimensions:
+            if dimension not in holdings:
+                holdings[dimension] = ''
+            holdings[dimension] = holdings[dimension].fillna('')
+    elif source_valued is not None:
+        holdings = holdings.loc[holdings.position_id.isin(source_valued.position_id)]
+    measure, field = 'Funded value', 'market_exposure_reporting'
+
     with st.container(key='exposure_toolbar'):
         scope_col, search_col, breakdown_col, filter_col, settings_col = st.columns([2, 2, 1.4, 1, 1.4], vertical_alignment='bottom')
         with scope_col:
@@ -61,20 +80,29 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         with search_col:
             query = st.text_input('Search exposure', help='Filter the displayed exposures by name or identifier.', placeholder='Investment or ticker…', key='exposure_search')
         with breakdown_col, st.container(key='tour_etf_breakdown'):
-            lookthrough = render_etf_toggle(data_dir)
+            lookthrough = render_etf_toggle(data_dir, futures=unified and holdings.instrument_type.eq('future').any())
         with filter_col:
             filters = st.popover('Filters', help='Limit the holdings contributing to the exposure analysis.', width='stretch')
         with settings_col:
-            settings_panel = st.popover('Data & settings', help='Configure fund breakdowns, refresh sources and exposure-specific settings.', width='stretch')
+            settings_panel = (st.expander('Data & settings', expanded=True) if st.session_state.get('exposure_notification_sources') else
+                st.popover('Data & settings', help='Configure fund breakdowns, refresh sources and exposure-specific settings.', width='stretch'))
     # Place results before the settings content in the page's document order.
     summary_area = st.container(key='exposure_summary')
     results_area = st.container(key='exposure_results')
     with settings_panel:
+        if unified:
+            if st.session_state.get('exposure_measure') == 'Funded holdings analysis':
+                st.session_state['exposure_measure'] = 'Funded value'
+            measure = st.selectbox('Analysis measure', ['Market exposure', 'Funded value'], key='exposure_measure',
+                help='Market exposure includes signed futures notional. Funded value shows capital, cash and claims.')
+            basis = st.segmented_control('Exposure basis', ['Total market', 'Equity only'], default='Total market',
+                key='exposure_market_basis') if measure == 'Market exposure' else 'Total market'
+            field = 'exposure_reporting' if basis == 'Equity only' else 'market_exposure_reporting'
         show_tickers = st.checkbox('Show tickers', help='Display quote tickers alongside investment names.', value=False, key='display_tickers')
         show_chart = st.checkbox('Show largest exposures chart', help='Show a chart of the largest exposures in the current selection.', key='exposure_show_chart')
         with st.expander('Individual ETFs'):
             expanded_funds = render_etf_choices(holdings, funds, data_dir, enabled=lookthrough)
-        refresh_panel = st.expander('ETF refresh & snapshots')
+        refresh_panel = st.expander('ETF refresh & snapshots', expanded=st.session_state.pop('exposure_notification_sources', False))
         with refresh_panel:
             render_refresh_controls(data_dir, holdings, funds, demo=demo)
         display_group = smh_group_control(holdings, funds)
@@ -82,10 +110,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             settings = load_settings(data_dir / 'company-merges.yaml')
             identities = load_company_identities(data_dir / 'company-identities.yaml')
             company_names = load_company_names(data_dir / 'company-names.yaml')
-            signature = sha256((str(data_dir.resolve()) + holdings.to_json()
-                + repr((settings, identities, company_names, classifications))
-                + ''.join(repr((f.isin, f.name, f.as_of, f.equity_fund, f.proxy_source)) + f.constituents.to_json()
-                          for f in funds)).encode()).hexdigest()
+            signature = analytical_signature(holdings, funds, str(data_dir.resolve()),
+                settings, identities, company_names, classifications)
             plan = cached_input('company_plan', signature,
                 lambda: build_plan(holdings, funds, identities, settings, classifications, company_names))
             render_company_merges(plan, settings, data_dir / 'company-merges.yaml')
@@ -100,8 +126,9 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     # provider metadata is never mistaken for an authoritative manual override.
     geography = cached_input('geography', (signature, lookthrough),
                              lambda: resolve_geography(holdings, funds, classifications))
-    classifications = fund_classifications(classifications, funds, holdings)
-    classifications = sector_classifications(classifications, holdings, funds)
+    def classify():
+        return sector_classifications(fund_classifications(classifications, funds, holdings), holdings, funds)
+    classifications = cached_input('exposure_classifications', (signature, lookthrough), classify)
     names = taxonomy_names(classifications)
     with filters:
         with st.container():
@@ -172,12 +199,15 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     selected = selection.positions
     total, selected_total = selection.total, selection.selected_total
     missing, all_missing = selection.missing, selection.all_missing
-    with summary_area:
-        first, second = st.columns([2, 1])
-        with first:
-            value_metric(selected_total, summarize_performance(selected), missing=missing,
-                         percent=performance_percent, key='exposure_value', on_toggle_gain=on_toggle_gain)
-        second.metric('Portfolio share', f'{100 * selected_total / total:.1f}%' if not missing and not all_missing and total else '—', help='Current value of this selection divided by total portfolio value.')
+    if not unified:
+        with summary_area:
+            first, second = st.columns([2, 1])
+            with first:
+                from portfolio_app.futures_valuation import summarize_freshness
+                value_metric(selected_total, summarize_performance(selected), missing=missing,
+                             percent=performance_percent, key='exposure_value', on_toggle_gain=on_toggle_gain,
+                             freshness=summarize_freshness(selected))
+            second.metric('Portfolio share', f'{100 * selected_total / total:.1f}%' if not missing and not all_missing and total else '—', help='Current value of this selection divided by total portfolio value.')
     with refresh_panel:
         if lookthrough:
             intact = sum(row.get('shares', 0) > 0 and row.get('instrument_type') == 'etf'
@@ -191,7 +221,37 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             st.info('No holdings match the selected filters.')
         return valued
     try:
-        exposures = prepare_exposures(selected, expanded_funds, holdings, lookthrough=lookthrough)
+        if unified:
+            # Recalculate only when analytical inputs or company identities change.
+            # Proxy lookup keeps the full source universe, independent of scope.
+            merged_valued = valued.loc[valued.position_id.isin(original_valued.position_id)].copy()
+            result = cached_input('analysis_exposure',
+                analytical_signature(merged_valued, funds, str(data_dir.resolve()), allocation, leverage_context),
+                lambda: prepare_exposure(merged_valued, funds, allocation, leverage_context))
+            exposures = cached_input('analysis_contributions',
+                (analytical_signature(merged_valued, funds, leverage_context), tuple(selected.position_id),
+                 measure, field, tuple(f.isin for f in expanded_funds)),
+                lambda: analysis_contributions(result, valued, funds, selected.position_id,
+                    measure=measure, field=field, expanded_funds=expanded_funds))
+            missing = int(exposures.value.isna().sum())
+            selected_total = exposures.known_value.sum(min_count=1)
+            with summary_area:
+                first, second = st.columns([2, 1])
+                from portfolio_app.currency_display import money
+                measure_label = 'Equity exposure' if measure == 'Market exposure' and field == 'exposure_reporting' else measure
+                first.metric(measure_label if not missing else 'Known ' + measure_label.lower(), money(selected_total))
+                second.metric('Portfolio equity', money(result.net_equity) if result.net_equity is not None else '—')
+                st.caption(('Shares use selected exposure; portfolio impact uses whole-portfolio equity. Cash has zero market exposure.'
+                    if measure == 'Market exposure' else 'Funded value includes cash and claims; futures notional is excluded.'))
+            if missing:
+                from portfolio_app.portfolio_exposure_ui import render_exposure_coverage
+                with results_area:
+                    if measure == 'Market exposure':
+                        render_exposure_coverage(result.exposures.loc[result.exposures.source_position_id.isin(selected.position_id)], valued, field=field)
+                    else:
+                        render_exposure_coverage(exposures, valued, field='value')
+        else:
+            exposures = prepare_exposures(selected, expanded_funds, holdings, lookthrough=lookthrough)
     except DataError as exc:
         st.error(str(exc))
         return valued
@@ -203,8 +263,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     effective_exposures = exposures
     saved_classifications = classifications
     mode = results_area.segmented_control('Exposure view', ['Assets', 'Themes & sectors', 'Geography'], help='Choose the exposure analysis to display.', default='Assets', key='exposure_view')
+    targets, performance = None, None
     if mode == 'Themes & sectors':
-        targets = None
         if display_group is not None:
             try:
                 exposures = group_exposures(exposures, display_group)
@@ -212,7 +272,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             except DataError as exc:
                 st.error(str(exc))
                 return valued
-        if "target_allocation" in valued and valued["target_allocation"].notna().any():
+        if not unified and "target_allocation" in valued and valued["target_allocation"].notna().any():
             try:
                 targets = target_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group, holdings=holdings)
                 for measure in (targets.known, targets.missing):
@@ -220,37 +280,70 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             except DataError as exc:
                 st.error(str(exc))
                 return valued
-        try:
-            performance = performance_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group, holdings=holdings)
-        except DataError as exc:
-            st.error(str(exc))
-            return valued
-        for measure in performance.measures():
-            measure["asset_name"] = measure["asset_name"].map(display_name)
+        if not unified:
+            try:
+                performance = performance_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group, holdings=holdings)
+            except DataError as exc:
+                st.error(str(exc))
+                return valued
+            for amounts in performance.measures():
+                amounts['asset_name'] = amounts['asset_name'].map(display_name)
     match_note = '* Estimated company match · Review or undo in Data & settings → Company merges' if lookthrough and any(group.enabled and group.basis == 'Estimated name match' for group in plan.groups) else ''
+    complete = missing == 0
+    equity = result.denominator if unified else None
+    display_exposures = effective_exposures if unified else complete_exposures(effective_exposures, selected)
     with results_area:
         if mode == 'Geography':
             with st.container(key='tour_geography'):
-                render_geography(complete_exposures(effective_exposures, selected), geography, complete=missing == 0, query=query)
+                render_geography(display_exposures, geography, complete=complete, query=query,
+                    equity=equity, measure=measure if unified else None)
             if match_note:
                 st.caption(match_note)
         elif mode != 'Themes & sectors':
             with st.container(key='tour_exposure_assets'):
-                render_assets(complete_exposures(effective_exposures, selected), selected, holdings, funds, saved_classifications,
+                render_assets(display_exposures, selected, holdings, funds, saved_classifications,
                               query=query, show_tickers=show_tickers, show_chart=show_chart, complete=missing == 0,
-                              breakdown=lookthrough, context=str(data_dir.resolve()), footer=match_note, geography=geography)
+                              breakdown=lookthrough, context=str(data_dir.resolve()) + measure, footer=match_note, geography=geography,
+                              measure=measure if unified else None, equity=equity)
         else:
             render_theme_view(exposures, selected, holdings, classifications, names, dimensions, targets, performance,
-                              total, all_missing, selected_total, show_tickers, performance_percent, query)
+                              total, all_missing, selected_total, show_tickers, performance_percent, query,
+                              measure=measure if unified else None, equity=equity, complete=complete)
             if match_note:
                 st.caption(match_note)
+    if unified:
+        from portfolio_app.portfolio_exposure_ui import render_company_move
+        if measure == 'Market exposure':
+            render_company_move(result, exposures)
+        provenance = st.expander('Exposure provenance & unresolved coverage', key='exposure_provenance_open', on_change='rerun')
+        if provenance.open:
+            with provenance:
+                fields = {'source_position_id': 'Source', 'asset_name': 'Asset', 'value': measure_label,
+                    'market_exposure_reporting': 'Total market exposure', 'exposure_reporting': 'Equity exposure',
+                    'status': 'Coverage', 'method': 'Method', 'as_of': 'As of'}
+                details = exposures[[column for column in fields if column in exposures]].copy()
+                details['source_position_id'] = details.source_position_id.map(valued.set_index('position_id').name)
+                # Selected amount and the two analytical bases can have the same
+                # display label; present each measure once.
+                details = details.rename(columns=fields)
+                st.dataframe(details.loc[:, ~details.columns.duplicated()], hide_index=True, width='stretch')
+                st.caption('Futures proxy weights approximate index composition. Dates and unresolved amounts remain explicit; notional is never wealth.')
     with settings_panel:
         if display_group is not None:
             render_group_members(selected, display_group)
         source_panel = st.expander('Source positions & price details', key='exposure_sources_open', on_change='rerun')
         if source_panel.open:
             with source_panel:
-                render_source_positions(selected, valued, names, saved_classifications, show_tickers, performance_percent, dimensions)
+                if unified:
+                    totals = exposures.groupby('source_position_id').value
+                    amounts = totals.sum().mask(totals.count() < totals.size())
+                    sources = selected[['position_id', 'name', 'account']].copy()
+                    sources[measure] = sources.position_id.map(amounts)
+                    if measure == 'Market exposure':
+                        sources['% of portfolio equity'] = sources[measure] * 100 / equity if complete and equity else float('nan')
+                    st.dataframe(sources.drop(columns='position_id'), hide_index=True, width='stretch')
+                else:
+                    render_source_positions(selected, valued, names, saved_classifications, show_tickers, performance_percent, dimensions)
         stock_panel = st.expander('Stock-only company analysis', key='exposure_stock_open', on_change='rerun')
         if stock_panel.open:
             with stock_panel:
@@ -259,7 +352,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
 
 
 def render_theme_view(exposures, selected, holdings, classifications, names, dimensions, targets, performance,
-                      total, all_missing, selected_total, show_tickers, performance_percent, query):
+                      total, all_missing, selected_total, show_tickers, performance_percent, query, *, measure=None, equity=None, complete=True):
+    market = measure == 'Market exposure'
     options = [('selected_labels', 'Selected labels'),
                *[(f'taxonomy:{name}', name.replace('_', ' ').title()) for name in names],
                *[(f'metadata:{name}', name.replace('_', ' ').title()) for name in dimensions],
@@ -300,7 +394,7 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
         chart_exposures["asset_name"] = [f"{row.asset_name} ({tickers[row.asset_id]})" if tickers[row.asset_id] else row.asset_name for row in exposures.itertuples()]
     if view == "selected_labels":
         render_label_comparison(chart_exposures, classifications, targets=targets, portfolio_value=total, valuation_complete=all_missing == 0,
-                                performance=performance, performance_percent=performance_percent)
+                                performance=performance, performance_percent=performance_percent, measure=measure, equity=equity, complete=complete)
     else:
         if view.startswith("taxonomy:"):
             nodes = aggregate(chart_exposures, classifications, taxonomy=taxonomy, root=root, depth=depth, include_holdings=include_holdings and chart_type not in {"Bar", "Pie"})
@@ -308,22 +402,36 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
             nodes = aggregate_dimension(exposures, "holding" if view == "holding" else view.removeprefix("metadata:"), show_tickers=show_tickers)
             nodes.loc[nodes["parent_id"] == "", "label"] = "Selected holdings"
         nodes = sort_allocation_nodes(nodes)
+        chart_nodes = nodes
+        if not complete:
+            known = chart_exposures.assign(value=chart_exposures.value.fillna(0.))
+            chart_nodes = (aggregate(known, classifications, taxonomy=taxonomy, root=root, depth=depth,
+                include_holdings=include_holdings and chart_type not in {'Bar', 'Pie'}) if view.startswith('taxonomy:')
+                else aggregate_dimension(known, 'holding' if view == 'holding' else view.removeprefix('metadata:'), show_tickers=show_tickers))
+            chart_nodes = sort_allocation_nodes(chart_nodes)
         with st.container(key='exposure_theme_results'):
             chart_area, table_area = st.columns([1, 1.3], gap='large', vertical_alignment='center')
-        if nodes.empty or (selected_total <= 0 and targets is None):
+        if nodes.empty:
             st.info("No positive valued allocation is available for this selection.")
         else:
             root_value = nodes.iloc[0]["value"]
-            if root_value <= 0 and targets is None:
+            if chart_nodes.iloc[0]['value'] <= 0 and targets is None and not exposures.value.lt(0).any():
                 st.info("The selected hierarchy root has no positive valued allocation.")
             else:
                 st.caption("Allocation is relative to the selected category.")
-                if root_value > 0:
-                    figure = bar_chart(nodes) if chart_type == "Bar" else pie_chart(nodes) if chart_type == "Pie" else hierarchy_chart(nodes, chart_type)
+                if exposures.value.lt(0).any() or len(nodes) > 300:
+                    from portfolio_app.portfolio_exposure_ui import signed_chart
+                    with chart_area:
+                        st.caption('Signed contributions' if exposures.value.lt(0).any() else 'Largest contributions; all rows remain in the table.')
+                        signed_chart(chart_nodes.loc[chart_nodes.is_leaf, ['label', 'value']], 'label', 'value', 'exposure_theme_signed')
+                elif chart_nodes.iloc[0]["value"] > 0:
+                    figure = bar_chart(chart_nodes) if chart_type == "Bar" else pie_chart(chart_nodes) if chart_type == "Pie" else hierarchy_chart(chart_nodes, chart_type)
+                    if not complete:
+                        figure.update_traces(hovertemplate='%{label}<br>Known amount: %{value:,.2f}<extra></extra>')
                     figure.update_layout(height=400, uniformtext=None, margin=dict(t=12, b=12, l=12, r=12))
                     chart_key = 'exposure_theme_chart_' + sha256(repr((view, root, depth, include_holdings)).encode()).hexdigest()[:16]
                     with chart_area:
-                        st.plotly_chart(figure, width='stretch', key=chart_key, config={'displayModeBar': False, 'showSendToCloud': False})
+                        st.plotly_chart(figure, width='stretch', key=chart_key, config=chart_config())
                         if chart_type in {'Sunburst', 'Treemap'} and view.startswith('taxonomy:'):
                             categories = {row.node_id: tuple(row.path) for row in nodes.itertuples() if row.kind == 'category'}
                             categories[nodes.iloc[0].node_id] = root[:-1] if root else ()
@@ -335,6 +443,10 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                 total_label = f"{nodes.iloc[0]['label']} — total" if view.startswith("taxonomy:") else "Selected holdings — total"
                 allocation_total(total_label, root_value)
                 allocation = hierarchy_table(nodes, show_paths=show_paths)
+                if not complete:
+                    allocation['Allocation %'] = float('nan')
+                if market:
+                    allocation['% of portfolio equity'] = allocation.Value * 100 / equity if complete and equity and equity > 0 else float('nan')
                 if targets is not None:
                     measures = []
                     for measure in (targets.known, targets.missing):
@@ -348,13 +460,14 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                                                     portfolio_value=total, valuation_complete=all_missing == 0)
                     target_caption(valuation_complete=all_missing == 0)
                 performance_measures = []
-                for measure in performance.measures():
+                for measure in performance.measures() if performance else ():
                     if view.startswith("taxonomy:"):
                         performance_measures.append(aggregate(measure, classifications, taxonomy=taxonomy, root=root, depth=depth,
                                                               include_holdings=include_holdings and chart_type not in {"Bar", "Pie"}))
                     else:
                         performance_measures.append(aggregate_dimension(measure, "holding" if view == "holding" else view.removeprefix("metadata:")))
-                allocation = add_performance_column(allocation, nodes.loc[nodes["parent_id"] != "", "node_id"].tolist(),
+                if performance is not None:
+                    allocation = add_performance_column(allocation, nodes.loc[nodes["parent_id"] != "", "node_id"].tolist(),
                                                     performance_measures, key="node_id", percent=performance_percent)
                 label_config = {}
                 if view == "holding" and names:
@@ -362,10 +475,10 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                     allocation["Labels"] = [asset_badges(classifications, json.loads(node.node_id)[1][0], label_set)
                                             for node in nodes.loc[nodes["parent_id"] != ""].itertuples()]
                     label_config["Labels"] = badge_column("Labels", taxonomy_colors(classifications, label_set))
-                table_area.dataframe(allocation, column_order=['Category', 'Value', 'Allocation %', *(['Labels'] if 'Labels' in allocation else []), *(['Classification path'] if show_paths else [])], hide_index=True, width="stretch", height="content", column_config={
+                table_area.dataframe(allocation, column_order=['Category', 'Value', 'Allocation %', *(['Labels'] if 'Labels' in allocation else []), *(['Classification path'] if show_paths else []), *(['% of portfolio equity'] if market else [])], hide_index=True, width="stretch", height="content", column_config={
                     "Category": "Investment" if view == "holding" else "Category",
                     "Classification path": st.column_config.TextColumn(help="Full breadcrumb within the selected taxonomy."),
-                    "Value": st.column_config.NumberColumn(format=("€ %.2f").replace('€', currency_symbol())),
+                    "Value": st.column_config.NumberColumn(format=money_format()),
                     "Allocation %": st.column_config.NumberColumn(format="%.2f %%"),
                 } | label_config | target_column_config() | performance_column_config(percent=performance_percent))
 
@@ -409,7 +522,7 @@ def render_source_positions(selected, valued, names, classifications, show_ticke
         'Target bucket %': st.column_config.NumberColumn('Target (% of bucket)', help='Desired share of this position’s assigned category.', format='%.2f %%'),
         'holdings_confirmed_on': 'Holdings last confirmed', 'quantity_unit': 'Quantity unit',
         "quote_currency": "Currency", "fx_to_reporting": None,
-        "current_value_reporting": st.column_config.NumberColumn("Current value", help='Current quantity multiplied by its price and converted to the portfolio currency where available.', format=("€ %.2f").replace('€', currency_symbol())),
+        "current_value_reporting": st.column_config.NumberColumn("Current value", help='Current quantity multiplied by its price and converted to the portfolio currency where available.', format=money_format()),
         "portfolio_weight": st.column_config.NumberColumn("Selected weight (%)", help='Share of the currently selected exposure, normalized within that selection.', format="%.2f %%"),
         "target_allocation": st.column_config.NumberColumn("Target allocation (% of whole portfolio)", help='Desired position value as a share of the entire portfolio.', format="%.2f %%"),
         "current_price": st.column_config.NumberColumn("Price (quote currency)", help='Current price per unit in the listing’s trading currency.', format="%.4f"),

@@ -40,21 +40,34 @@ def _clear_editor() -> None:
 def request_position(position_id, *, editing=False):
     if st.session_state.get('position_edit_selected') != position_id:
         _clear_editor()
+    st.session_state['position_edit_detail_requested'] = True
     st.session_state.update(position_edit_selected=position_id,
         position_edit_action='Edit position' if editing else 'Details', position_edit_dialog=True)
 
 
 def _consume_position_event(path, snapshot):
     if event := st.session_state.pop('position_edit_open_request', None):
-        if (event.get('context') == list_context(path) and event.get('revision') == snapshot.revision
-                and event.get('id') in set(snapshot.holdings.position_id)):
-            request_position(event['id'], editing=event.get('action', 'edit') == 'edit')
+        from portfolio_app.account_journal import load_journal
+        journal, _ = load_journal(path.parent)
+        identity = event.get('id', '')
+        actual = identity in {p.id for p in journal.positions} | {investment.id for investment in journal.investments} | {link.position_id for link in journal.cash_links} or (journal.accounts and str(identity).startswith('account-'))
+        current = event.get('context') == list_context(path) and event.get('revision') == snapshot.revision
+        future_position = identity in {p.id for p in journal.positions} | {investment.id for investment in journal.investments}
+        if current and future_position:
+            request_position(identity, editing=event.get('action', 'edit') == 'edit')
+        elif current and actual:
+            st.session_state['positions_workflow_request'] = 'Accounts & futures'
+            st.session_state['accounts_requested_position'] = identity
+            st.session_state['position_edit_dialog'] = False
+        elif current and identity in set(snapshot.holdings.position_id):
+            request_position(identity, editing=event.get('action', 'edit') == 'edit')
         else:
             st.warning('The position list changed. Open the position again from the refreshed list.')
 
 
 def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False, allocation=None,
-                           valued=None, percent=False, defer_dialog=False):
+                           valued=None, account_valued=None, percent=False, defer_dialog=False):
+    account_valued = account_valued if account_valued is not None else valued
     _consume_position_event(path, snapshot)
     if warning := st.session_state.pop('position_stale_notice', None):
         st.warning(warning)
@@ -74,10 +87,13 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
     # restore the import form after a successful save switches to Overview.
     if requested := st.session_state.pop('positions_workflow_request', None):
         st.session_state['positions_workflow'] = requested
-    workflow = st.segmented_control('Position tools', ['Positions', 'Bulk add purchases', 'Update balances', 'Import portfolio', 'Connect live prices'], help='Choose between individual holdings, purchase batches, balance replacement and imports.',
+    workflow = st.segmented_control('Position tools', ['Positions', 'Bulk add purchases', 'Update balances', 'Import portfolio', 'Connect live prices', 'Accounts & futures'], help='Choose between individual holdings, purchase batches, balance replacement and imports.',
                                     default=st.session_state.get('positions_workflow', 'Positions'),
                                     key='positions_workflow', on_change=_dismiss)
-    if workflow == 'Import portfolio':
+    if workflow == 'Accounts & futures':
+        from portfolio_app.accounts_ui import render_accounts
+        render_accounts(path.parent, snapshot, account_valued if account_valued is not None else snapshot.holdings, allocation=allocation)
+    elif workflow == 'Import portfolio':
         from portfolio_app.import_ui import render_import
         render_import(path, snapshot, funds)
     elif workflow == 'Connect live prices':
@@ -94,7 +110,7 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
                 st.session_state['position_saved_notice'] = notice
             st.rerun()
     else:
-        if snapshot.holdings.empty:
+        if snapshot.holdings.empty and (valued is None or valued.empty):
             st.info('Add your first position or import a holdings file to see its value and allocation.')
             def start_import():
                 st.session_state['positions_workflow'] = 'Import portfolio'
@@ -102,9 +118,13 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
         else:
             st.caption('Select a position for details and price history. Use the pencil to edit.')
             with st.container(key='tour_position_list'):
-                render_position_list(path, snapshot, allocation, valued=valued, percent=percent, demo=demo)
+                render_position_list(path, snapshot, allocation, valued=valued, account_valued=account_valued, percent=percent, demo=demo)
+    if workflow == 'Positions':
+        from portfolio_app.account_journal import load_journal
+        from portfolio_app.accounts_ui import render_actual_positions
+        render_actual_positions(path.parent, load_journal(path.parent)[0], valued=account_valued)
     if not defer_dialog:
-        render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=valued)
+        render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=account_valued)
 
 
 def _remember_draft():
@@ -127,8 +147,12 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
     if not st.session_state.get('position_edit_dialog'):
         return
 
+    from portfolio_app.account_journal import load_journal
+    dialog_journal, dialog_revision = load_journal(path.parent)
+    future_ids = {p.id for p in dialog_journal.positions} | {item.id for item in dialog_journal.investments}
+    actual_future = st.session_state.get('position_edit_selected') in future_ids
     title = st.session_state.get('position_edit_action', 'Details')
-    title = 'Position details' if title == 'Details' else title
+    title = 'Position details' if title == 'Details' or actual_future else title
     @st.dialog(title, width='large', on_dismiss=_dismiss)
     def dialog():
         # Button callbacks run before the dialog body. Never execute its data
@@ -140,7 +164,15 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
             if key not in st.session_state:
                 st.session_state[key] = value
         action = st.session_state.get('position_edit_action', 'Details')
-        if action == 'Details':
+        if actual_future:
+            journal, revision = load_journal(path.parent)
+            if revision != dialog_revision:
+                st.rerun(scope='app')
+            from portfolio_app.investment_detail_ui import render_investment_detail
+            render_investment_detail(path.parent, journal, revision, valued,
+                st.session_state.get('position_edit_selected'), allocation=allocation, editing=action == 'Edit position')
+            st.button('Close', help='Close this detail view and return to the portfolio.', on_click=_dismiss)
+        elif action == 'Details':
             selected = current.holdings.loc[current.holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
             if selected.empty:
                 st.warning('This position no longer exists.')
@@ -157,7 +189,7 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
                 render_position_detail(row, path.parent, demo=demo, allocation=allocation)
             st.button('Close', help='Close this detail view and return to the portfolio.', on_click=_dismiss)
         else:
-            rendered = render_position_form(path, current, funds, demo=demo, allocation=allocation, action=action)
+            rendered = render_position_form(path, current, funds, demo=demo, allocation=allocation, action=action, valued=valued)
             _remember_draft()
             if not rendered and st.button('Cancel', help='Discard this position draft without saving.'):
                 _clear_editor()
@@ -165,7 +197,7 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
     dialog()
 
 
-def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, action='Add position'):
+def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, action='Add position', valued=None):
     holdings = snapshot.holdings
     editing = action == "Edit position"
     position_id = None
@@ -195,8 +227,12 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         row = {column: row.get(column, "") for column in ("id", "name", "ticker", "isin", "instrument_type", "exposure_kind", "quantity_unit", "short_name", "price_source")}
     physical = row.get('instrument_type') == 'physical' and not row.get('ticker') and bool(row.get('quantity_unit'))
     if not editing and not identity:
-        entry = kind_column.segmented_control('Position type', ['Listed investment', 'Physical asset'], help='Choose a listed security or a physical holding measured in units or weight.', default='Listed investment',
+        entry = kind_column.segmented_control('Position type', ['Listed investment', 'Physical asset', 'Future'], help='Choose a listed security or a physical holding measured in units or weight.', default='Listed investment',
                                      key='position_edit_fields_entry_kind') or 'Listed investment'
+        if entry == 'Future':
+            from portfolio_app.accounts_ui import render_future_entry
+            render_future_entry(path.parent, snapshot, valued=valued, allocation=allocation)
+            return True
         physical = entry == 'Physical asset'
     context = (str(path.resolve()), action, position_id, identity, physical)
     if st.session_state.get("position_edit_context") != context:

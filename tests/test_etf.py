@@ -367,3 +367,28 @@ def test_ambiguous_company_identity_is_rejected(fund, positions):
     positions = pd.concat([positions, extra], ignore_index=True)
     with pytest.raises(DataError, match="Several asset IDs"):
         expand_etfs(normalize_exposures(positions), [fund], positions)
+
+
+def test_vaneck_rejects_newer_manifest_published_during_download(configured_fund, provider_xlsx):
+    import yaml
+    fund = configured_fund
+    newer = yaml.safe_load(fund.manifest_path.read_text())
+    newer['as_of'] = '2026-09-05'
+    newer['notes'] = 'Invented concurrent review'
+    def fetch():
+        fund.manifest_path.write_text(yaml.safe_dump(newer))
+        return provider_xlsx.read_bytes()  # September 4 must not replace September 5.
+    with pytest.raises(DataError, match='changed during'):
+        refresh_snapshot(fund, fetch=fetch, today=date(2026, 9, 6))
+    assert yaml.safe_load(fund.manifest_path.read_text()) == newer
+    assert not list(fund.manifest_path.parent.glob('*.tmp'))
+
+
+def test_vaneck_refresh_preserves_reviewed_metadata(configured_fund, provider_xlsx):
+    fund = replace(configured_fund, notes='Invented reviewed note', proxy_source='Invented proxy',
+                   basket=configured_fund.constituents.copy(), summaries={'invented': 1})
+    updated = refresh_snapshot(fund, fetch=provider_xlsx.read_bytes, today=date(2026, 9, 5))
+    reloaded = load_funds(fund.manifest_path.parent)[0]
+    assert reloaded.notes == updated.notes == fund.notes
+    assert reloaded.proxy_source == fund.proxy_source and reloaded.summaries == fund.summaries
+    pd.testing.assert_frame_equal(reloaded.basket, fund.basket)

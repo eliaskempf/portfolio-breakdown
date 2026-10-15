@@ -14,6 +14,7 @@ import pytest
 from portfolio_app.demo import create_demo_data
 from portfolio_app.positions import read_snapshot
 from portfolio_app.settings import theme_options
+from browser_support import settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -70,8 +71,10 @@ def intro_page(intro_server):
 
 
 def select_workspace(page, name):
+    settle(page)
     page.get_by_role('combobox', name='Portfolio workspace', exact=True).click()
     page.get_by_role('option', name=name, exact=True).click()
+    settle(page)
 
 
 def test_native_startup_asset_plays_centered_without_a_server(intro_page):
@@ -213,6 +216,7 @@ def test_intro_welcome_navigation_and_help(intro_page):
     dialog = page.get_by_role('dialog')
     playwright.expect(dialog.get_by_role('button', name='Explore demo', exact=True)).to_be_visible(timeout=15000)
     playwright.expect(dialog.get_by_role('button', name='Start my portfolio', exact=True)).to_be_visible()
+    settle(page)
     bounds = dialog.locator('..').bounding_box()
     assert bounds['width'] <= 880 and abs(bounds['x'] - (1440 - bounds['width']) / 2) < 2
     playwright.expect(page.get_by_test_id('stSidebar')).to_have_count(0)
@@ -258,6 +262,8 @@ def test_reduced_motion_and_narrow_welcome(intro_page):
     page.goto(url)
     dialog = page.get_by_role('dialog')
     playwright.expect(dialog).to_be_visible(timeout=10000)
+    # Intro completion replaces the first visible welcome tree during a rerun.
+    settle(page)
     for name in ['Explore demo', 'Start my portfolio']:
         button = dialog.get_by_role('button', name=name, exact=True)
         button.scroll_into_view_if_needed()
@@ -334,6 +340,7 @@ def test_welcome_cards_follow_selected_theme_with_readable_text(intro_page, them
     page.goto(url)
     page.get_by_role('button', name='Explore demo', exact=True).click()
     page.get_by_role('button', name='Not now', exact=True).click()
+    settle(page)
     page.get_by_role('button', name='Main menu', exact=True).click()
     page.get_by_test_id(f'stMainMenuItem-theme-{theme}').click()
     page.keyboard.press('Escape')
@@ -343,6 +350,7 @@ def test_welcome_cards_follow_selected_theme_with_readable_text(intro_page, them
         if reload:
             page.reload()
             playwright.expect(page.get_by_role('dialog')).to_be_visible()
+        settle(page)
         for card in ('welcome_demo', 'welcome_personal'):
             colors = page.locator(f'.st-key-{card}').evaluate('''el => {
                 const ctx = document.createElement('canvas').getContext('2d');
@@ -359,19 +367,21 @@ def test_welcome_cards_follow_selected_theme_with_readable_text(intro_page, them
                     ctx.fillStyle = getComputedStyle(p).color; ctx.fillRect(0, 0, 1, 1);
                     return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
                 });
-                return {bg, text};
+                return {bg, text, connected: el.isConnected};
             }''')
+            assert colors['connected'], 'Welcome card detached while measuring its colors'
             def luminance(rgb):
                 channels = [v/255 for v in rgb]
                 linear = [v/12.92 if v <= .04045 else ((v+.055)/1.055)**2.4 for v in channels]
                 return sum(v*w for v, w in zip(linear, (.2126, .7152, .0722)))
             background = luminance(colors['bg'])
-            assert (background < .1) if theme == 'Dark' else (background > .7)
+            assert ((background < .1) if theme == 'Dark' else (background > .7)), (theme, reload, card, colors)
             assert colors['text']
             for rgb in colors['text']:
                 foreground = luminance(rgb)
                 assert (max(background, foreground)+.05)/(min(background, foreground)+.05) >= 4.5
     page.set_viewport_size({'width': 390, 'height': 844})
+    settle(page)
     assert page.get_by_role('dialog').evaluate('el => el.scrollWidth <= el.clientWidth + 1')
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 

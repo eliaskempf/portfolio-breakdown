@@ -6,18 +6,15 @@ from dataclasses import replace
 from datetime import date
 from datetime import datetime
 from decimal import Decimal
-from hashlib import sha256
 from http.cookiejar import CookieJar
 from io import BytesIO
 from pathlib import Path
 import re
-from tempfile import NamedTemporaryFile
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 import xml.etree.ElementTree as ET
 from zipfile import ZipFile
 
 import pandas as pd
-import yaml
 
 from portfolio_app.etf import FundSnapshot, validate_constituents
 from portfolio_app.holdings import DataError
@@ -83,40 +80,11 @@ def refresh_snapshot(
     """
     if fund.isin != "IE00BMC38736" or fund.manifest_path is None:
         raise DataError("Online updates are supported only for a configured VanEck Semiconductor UCITS snapshot.")
+    from portfolio_app.etf_sources import publish_snapshot
+    prior = fund.manifest_path.read_bytes()
     stamp, frame = parse_holdings(BytesIO(fetch()))
-    as_of = date.fromisoformat(stamp)
-    if as_of < fund.as_of:
-        raise DataError(f"VanEck returned an older snapshot ({stamp}); keeping {fund.as_of}.")
-    if as_of > (today or date.today()):
-        raise DataError(f"VanEck returned a future holdings date ({stamp}).")
-    prior_ids = {row.isin: row.constituent_id for row in fund.constituents.itertuples() if row.isin}
-    frame["constituent_id"] = [prior_ids.get(row.isin, row.constituent_id) for row in frame.itertuples()]
-    frame = validate_constituents(frame)
-    from portfolio_app.workspace_lock import workspace_lock
-    with workspace_lock(fund.manifest_path.parent.parent):
-        manifest = fund.manifest_path
-        raw = yaml.safe_load(manifest.read_text(encoding="utf-8"))
-        if raw["isin"].upper() != fund.isin:
-            raise DataError("ETF configuration changed during the update; reload the page and try again.")
-        csv = frame.to_csv(index=False)
-        filename = f"{manifest.stem}-{stamp}-{sha256(csv.encode()).hexdigest()[:12]}.csv"
-        destination = manifest.parent / filename
-        staged: list[Path] = []
-        try:
-            if not destination.exists():
-                with NamedTemporaryFile(mode="w", encoding="utf-8", dir=manifest.parent, suffix=".tmp", delete=False) as handle:
-                    staged.append(Path(handle.name))
-                    handle.write(csv)
-                staged[-1].replace(destination)
-            raw.update(as_of=stamp, holdings_file=filename, source=SOURCE)
-            with NamedTemporaryFile(mode="w", encoding="utf-8", dir=manifest.parent, suffix=".tmp", delete=False) as handle:
-                staged.append(Path(handle.name))
-                yaml.safe_dump(raw, handle, sort_keys=False)
-            staged[-1].replace(manifest)
-        finally:
-            for path in staged:
-                path.unlink(missing_ok=True)
-    return replace(fund, as_of=as_of, source=SOURCE, constituents=frame)
+    return publish_snapshot(replace(fund, source=SOURCE), frame, date.fromisoformat(stamp),
+                            notes=fund.notes, basket=fund.basket, prior=prior, today=today)
 
 
 def main() -> None:

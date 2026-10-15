@@ -1,6 +1,7 @@
 """The running app refreshes its tables after an offline background update."""
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -11,10 +12,12 @@ from urllib.request import urlopen
 import pytest
 import yaml
 from test_ux_browser import playwright
+from browser_support import settle, select_tab
 
 
-@pytest.mark.parametrize('previous_failure', [False, True])
-def test_background_refresh_keeps_ui_usable_and_reloads_finished_snapshot(tmp_path, previous_failure):
+@pytest.fixture(params=[False, True], ids=['first-refresh', 'retry-failure'])
+def refresh_page(tmp_path, request):
+    previous_failure = request.param
     funds = tmp_path / 'etfs'
     funds.mkdir()
     (tmp_path / 'holdings.csv').write_text('id,name,ticker,isin,shares,instrument_type\na,Invented Alpha,SYN-A,ZZ1111111111,1,equity\nf,Invented ETF,SYN-F,ZZ9999999999,1,etf\n')
@@ -44,6 +47,7 @@ from portfolio_app.ui import render_app
 directory = Path(__file__).parent
 SOURCES['ZZ9999999999'] = None
 def refresh(fund):
+    (directory / 'started').touch()
     # The test releases this gate only after it has used the rendered UI.
     for _ in range(600):
         if (directory / 'release').exists():
@@ -80,25 +84,44 @@ render_app(directory, price_service=PriceService(StaticProvider(directory / 'pri
             browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1440, 'height': 1000}, locale='en-US')
             page.goto(f'http://127.0.0.1:{port}')
-            page.get_by_role('tab', name='Exposure', exact=True).click()
-            refresh_status = page.locator('.st-key-refresh_status').get_by_text('Discovering and updating ETF holdings', exact=False)
-            results = page.locator('.st-key-exposure_results')
-            page.get_by_role('button', name='Data & settings', exact=True).click()
-            page.get_by_text('ETF refresh & snapshots', exact=True).click()
-            playwright.expect(refresh_status).to_be_visible(timeout=15000)
-            page.keyboard.press('Escape')
-            playwright.expect(results.get_by_role('cell', name='70.00', exact=True)).to_have_count(1)
-            page.get_by_role('textbox', name='Search exposure').fill('Alpha')
-            page.get_by_role('textbox', name='Search exposure').press('Enter')
-            playwright.expect(results).to_contain_text('1 matching assets')
-            (tmp_path / 'release').touch()
-            playwright.expect(results.get_by_role('table', name='Exposure assets').get_by_role('cell', name='100.00', exact=True)).to_have_count(1, timeout=15000)
-            playwright.expect(refresh_status).to_have_count(0)
-            playwright.expect(page.get_by_role('textbox', name='Search exposure')).to_have_value('Alpha')
-            playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
-            status = json.loads((tmp_path / '.cache/etf-refresh/status.json').read_text())
-            assert status['ZZ9999999999']['status'] == 'checked'
+            select_tab(page, 'Exposure')
+            deadline = time.monotonic() + 5
+            while not (tmp_path / 'started').exists() and time.monotonic() < deadline:
+                time.sleep(.05)
+            assert (tmp_path / 'started').exists(), 'Synthetic provider did not start'
+            yield page, tmp_path
             browser.close()
     finally:
+        (tmp_path / 'release').touch()
         process.terminate()
         process.wait(timeout=10)
+
+
+def test_background_refresh_progress_in_notifications(refresh_page):
+    page, directory = refresh_page
+    page.get_by_role('button', name=re.compile('Notifications')).click()
+    panel = page.get_by_test_id('stPopoverBody')
+    progress = panel.get_by_text('Discovering and updating ETF holdings', exact=False)
+    playwright.expect(progress).to_be_visible()
+    # The separately rendered stale-data alert must not be repeated by progress.
+    playwright.expect(panel.get_by_text('1 outdated ETF snapshot(s)', exact=True)).to_have_count(1)
+    (directory / 'release').touch()
+    playwright.expect(progress).to_have_count(0, timeout=15000)
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
+def test_background_refresh_keeps_ui_usable_and_reloads_finished_snapshot(refresh_page):
+    page, directory = refresh_page
+    # Completion is independently tested with Notifications closed.
+    results = page.locator('.st-key-exposure_results')
+    playwright.expect(results.get_by_role('cell', name='70.00', exact=True)).to_have_count(1)
+    page.get_by_role('textbox', name='Search exposure').fill('Alpha')
+    page.get_by_role('textbox', name='Search exposure').press('Enter')
+    playwright.expect(results).to_contain_text('1 matching assets')
+    settle(page)
+    (directory / 'release').touch()
+    playwright.expect(results.get_by_role('table', name='Exposure assets').get_by_role('cell', name='100.00', exact=True)).to_have_count(1, timeout=15000)
+    playwright.expect(page.get_by_role('textbox', name='Search exposure')).to_have_value('Alpha')
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+    status = json.loads((directory / '.cache/etf-refresh/status.json').read_text())
+    assert status['ZZ9999999999']['status'] == 'checked'

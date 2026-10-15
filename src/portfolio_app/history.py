@@ -5,7 +5,7 @@ from hashlib import sha256
 import json
 import math
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from portfolio_app.atomic_file import staged_text
 from typing import Protocol
 
 import pandas as pd
@@ -127,29 +127,30 @@ class HistoryService:
                              note='Refresh failed; showing cached market prices.' if cached.prices else 'Market-price history could not be loaded. Try again later.')
         self._memory[ticker, period] = result
         if path:
-            temporary = None
             try:
                 from portfolio_app.workspace_lock import workspace_lock, document_workspace
                 with workspace_lock(document_workspace(path)):
                     path.parent.mkdir(parents=True, exist_ok=True)
-                    with NamedTemporaryFile(mode="w", dir=path.parent, suffix='.tmp', delete=False) as handle:
-                        temporary = Path(handle.name)
-                        json.dump(vars(result), handle)
-                    temporary.replace(path)
+                    with staged_text(path, lambda handle: json.dump(vars(result), handle)) as temporary:
+                        temporary.replace(path)
             except OSError:
                 result = replace(result, note="History loaded, but its cache could not be saved.")
-            finally:
-                if temporary:
-                    temporary.unlink(missing_ok=True)
         self._memory[ticker, period] = result
         return result
+
+
+def _trading_dates(dates):
+    # Daily bars are keyed by the provider's local trading date. Parse offsets
+    # individually: DST varies within cached ISO dates, and converting midnight
+    # to UTC would shift positive-offset markets onto the previous FX date.
+    return pd.DatetimeIndex([pd.Timestamp(stamp).date() for stamp in dates])
 
 
 def convert_price_history(result, target, legs):
     """Convert unadjusted closes on dates with available historical FX."""
     if result.currency == target:
         return result
-    prices = pd.Series(result.prices, index=pd.DatetimeIndex(result.dates).tz_localize(None).normalize())
+    prices = pd.Series(result.prices, index=_trading_dates(result.dates))
     statuses = [result.status]
     for currency, inverse in ((result.currency, False), (target, True)):
         if currency == 'EUR':
@@ -157,7 +158,7 @@ def convert_price_history(result, target, legs):
         fx = legs.get(currency)
         if fx is None or not fx.prices or fx.currency != 'EUR':
             return HistoryResult(currency=target, note='Historical FX unavailable or loading. Native-currency history remains available.')
-        rates = pd.Series(fx.prices, index=pd.DatetimeIndex(fx.dates).tz_localize(None).normalize())
+        rates = pd.Series(fx.prices, index=_trading_dates(fx.dates))
         prices = prices / rates.reindex(prices.index) if inverse else prices * rates.reindex(prices.index)
         statuses.append(fx.status)
     prices = prices.replace([float('inf'), -float('inf')], float('nan')).dropna()

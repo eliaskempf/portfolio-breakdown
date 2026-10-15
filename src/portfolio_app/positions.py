@@ -5,11 +5,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 from io import StringIO
-import os
 from pathlib import Path
 from portfolio_app.workspace_lock import document_write
 import re
-from tempfile import NamedTemporaryFile
+from portfolio_app.atomic_file import staged_text
 from uuid import uuid4
 
 import pandas as pd
@@ -73,6 +72,9 @@ def save_position(
     The revision binds a generated position_id to the exact file the user saw.
     Existing columns and unchanged cell values survive the round trip.
     """
+    if position_id is not None:
+        from portfolio_app.actual_portfolio import assert_cash_editable
+        assert_cash_editable(path, [position_id])
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(f".{path.name}.lock")
     with _write_lock(lock_path):
@@ -136,13 +138,7 @@ def save_position(
             raise DataError("A position for this instrument, account, and portfolio already exists. Edit its total shares instead of adding another position.")
         if validate:
             validate(candidate)
-        temporary = None
-        try:
-            with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, suffix=".tmp", delete=False) as handle:
-                temporary = Path(handle.name)
-                handle.write(csv)
-                handle.flush()
-                os.fsync(handle.fileno())
+        with staged_text(path, lambda handle: handle.write(csv), sync=True) as temporary:
             if original is not None:
                 backup_dir = path.parent / ".backups"
                 backup_dir.mkdir(exist_ok=True)
@@ -155,7 +151,4 @@ def save_position(
             if latest != original:
                 raise DataError("Holdings changed during the save. Reload the form before saving.")
             temporary.replace(path)
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
         return str(selected["id"])

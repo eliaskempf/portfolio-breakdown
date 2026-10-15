@@ -30,13 +30,24 @@ PALETTE = [PRIMARY_COLOR, "#4aa9b3", "#9a6dd7", "#e5a04b", "#d76e91", "#75a565",
 SUNBURST_PALETTE = PALETTE
 
 
+def chart_config(*, zoom=False, toolbar=False):
+    """Shared controls: compact allocations or explicit zoom/pan/reset studies.
+
+Return fresh containers so a view cannot alter another chart's controls.
+"""
+    config = dict(displayModeBar=toolbar, showSendToCloud=False, displaylogo=False)
+    if zoom:
+        config.update(displayModeBar=True, modeBarButtons=[['zoom2d', 'pan2d', 'resetScale2d']], doubleClick='reset')
+    return config
+
+
 def style_figure(figure: go.Figure) -> go.Figure:
     return figure.update_layout(colorway=PALETTE, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                                 font=dict(family="Inter, system-ui, sans-serif", size=12),
                                 hoverlabel=dict(bgcolor="#202632", font_color="white"))
 
 
-def correlation_chart(correlations: pd.DataFrame, names: dict[str, str]) -> go.Figure:
+def correlation_chart(correlations: pd.DataFrame, names: dict[str, str], *, compact: bool = False) -> go.Figure:
     """A full-width matrix with display names and distinct cells for equal names."""
     rows = [escape(names.get(key, key)) for key in correlations.index]
     columns = [escape(names.get(key, key)) for key in correlations.columns]
@@ -57,17 +68,30 @@ def correlation_chart(correlations: pd.DataFrame, names: dict[str, str]) -> go.F
                         autorange='reversed', automargin=True, showgrid=False, zeroline=False)
     figure.update_layout(height=max(640, min(1000, 36 * len(rows) + 220)),
                          margin=dict(l=12, r=20, t=24, b=12))
+    if compact:
+        def short_name(key):
+            name = names.get(key, key)
+            return escape(name if len(name) <= 28 else name[:27] + '…')
+        figure.update_xaxes(ticktext=[short_name(key) for key in correlations.columns], tickangle=-35)
+        figure.update_yaxes(ticktext=[short_name(key) for key in correlations.index])
+        figure.update_traces(xgap=2, ygap=2, colorbar=dict(title='', thickness=10, tickvals=[-1, 0, 1]))
+        figure.update_layout(height=max(420, min(760, 30 * len(rows) + 200)))
+        if max(len(rows), len(columns)) <= 15:
+            figure.update_layout(annotations=[dict(x=x, y=y, text=f'{value:.2f}', showarrow=False,
+                font=dict(size=11, color='#202632' if value >= .75 or value <= -.9 else '#fff'))
+                for y, row in enumerate(correlations.to_numpy()) for x, value in enumerate(row) if pd.notna(value)])
     return figure
 
 
-def hierarchy_chart(nodes: pd.DataFrame, chart_type: str) -> go.Figure:
-    nodes = sort_allocation_nodes(nodes)
+def hierarchy_chart(nodes: pd.DataFrame, chart_type: str, *, preserve_order: bool = False) -> go.Figure:
+    if not preserve_order:
+        nodes = sort_allocation_nodes(nodes)
     trace_class = go.Treemap if chart_type == "Treemap" else go.Sunburst
     figure = style_figure(go.Figure(trace_class(
         ids=nodes["node_id"], parents=nodes["parent_id"], labels=nodes["label"],
         values=nodes["value"], branchvalues="total", sort=False,
         customdata=nodes[["percentage"]].to_numpy(),
-        hovertemplate=("%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>").replace('€', currency_symbol()),
+        hovertemplate='%{label}<br>' + currency_symbol() + '%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>',
         marker=dict(line=dict(color="rgba(127,127,127,0.7)", width=2)),
     )).update_layout(margin=dict(t=24, l=24, r=24, b=24), height=480, treemapcolorway=PALETTE))
     if chart_type == "Sunburst":
@@ -79,6 +103,19 @@ def hierarchy_chart(nodes: pd.DataFrame, chart_type: str) -> go.Figure:
         figure.update_layout(height=640, sunburstcolorway=SUNBURST_PALETTE,
                              uniformtext=dict(minsize=11, mode="hide"))
     return figure
+
+
+def hatch_foregrounds(colors):
+    """Keep hatch strokes legible without changing the shared background."""
+    result = []
+    for color in colors:
+        if color.startswith('#') and len(color) == 7:
+            red, green, blue = (int(color[i:i+2], 16) / 255 for i in (1, 3, 5))
+            brightness = .2126 * red + .7152 * green + .0722 * blue
+            result.append('#f8fafc' if brightness < .55 else '#172033')
+        else:
+            result.append('#172033')
+    return result
 
 
 def strategic_colors(nodes, config):
@@ -113,7 +150,7 @@ def bar_chart(nodes: pd.DataFrame) -> go.Figure:
     return style_figure(go.Figure(go.Bar(
         x=leaves["value"], y=labels, orientation="h",
         customdata=leaves[["percentage"]].to_numpy(),
-        hovertemplate=("%{y}<br>€%{x:,.2f}<br>%{customdata[0]:.2%}<extra></extra>").replace('€', currency_symbol()),
+        hovertemplate='%{y}<br>' + currency_symbol() + '%{x:,.2f}<br>%{customdata[0]:.2%}<extra></extra>',
         text=[f"{value:.1%}" for value in leaves["percentage"]], textposition="auto",
     )).update_layout(xaxis_title=reporting_currency(), margin=dict(t=15, b=0), height=max(350, 32 * len(leaves))))
 
@@ -126,7 +163,7 @@ def pie_chart(nodes: pd.DataFrame) -> go.Figure:
         ids=leaves["node_id"], labels=labels, values=leaves["value"],
         customdata=leaves[["percentage"]].to_numpy(),
         textinfo="percent", hole=.52, marker=dict(colors=PALETTE, line=dict(color="rgba(127,127,127,0.25)", width=1)),
-        hovertemplate=("%{label}<br>€%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>").replace('€', currency_symbol()),
+        hovertemplate='%{label}<br>' + currency_symbol() + '%{value:,.2f}<br>%{customdata[0]:.2%} of displayed root<extra></extra>',
     )).update_layout(margin=dict(t=20, l=15, r=15, b=20), height=480, legend=dict(orientation="h", y=-.08)))
 
 

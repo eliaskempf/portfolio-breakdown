@@ -26,8 +26,11 @@ class ListColumn:
     help: str = ''
     badges: dict[str, str] | None = None
     display: str = ''
+    secondary: str = ''
     width: int | None = None
     color_signed: bool = True
+    neutral_when: str = ''
+    secondary_help: str = ''
 
 
 HTML = """
@@ -37,6 +40,7 @@ HTML = """
     <thead><tr></tr></thead><tbody></tbody>
   </table></div>
   <p class="empty" hidden>No matching rows.</p>
+  <nav class="pagination" aria-label="Table pages" hidden></nav>
 </section>
 """
 
@@ -47,12 +51,18 @@ input{width:min(100%,360px);background:var(--st-secondary-background-color);bord
 input::placeholder{color:inherit;opacity:.55}.scroll{overflow-x:auto;border:1px solid color-mix(in srgb,currentColor 15%,transparent);border-radius:5px}
 table{width:100%;border-collapse:collapse;font-size:14px;text-align:left}th,td{padding:10px 12px;border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent);white-space:nowrap}
 table.sized{table-layout:fixed}table.sized tr[data-position-id]>td{overflow:hidden;text-overflow:ellipsis}
-th{position:sticky;top:0;background:var(--st-secondary-background-color);font-weight:600;z-index:1}.header-help{display:none;position:absolute;top:100%;left:0;white-space:normal;text-align:left;width:260px;padding:9px 12px;border-radius:5px;background:var(--st-secondary-background-color);color:var(--st-text-color);box-shadow:0 2px 8px #0003;font-size:12px;font-weight:400;z-index:5}th:hover,th:focus-within{z-index:3}th:hover .header-help,th:focus-within .header-help{display:block}th button{width:100%;padding:0;border:0;background:transparent;text-align:inherit;font-weight:inherit;cursor:pointer}
+th{position:sticky;top:0;background:var(--st-secondary-background-color);font-weight:600;z-index:1}.header-help{position:fixed;inset:auto;margin:0;border:0;white-space:normal;text-align:left;width:min(260px,calc(100vw - 16px));padding:9px 12px;border-radius:5px;background:var(--st-secondary-background-color);color:var(--st-text-color);box-shadow:0 2px 8px #0003;font-size:12px;font-weight:400;pointer-events:none}th button{width:100%;padding:0;border:0;background:transparent;text-align:inherit;font-weight:inherit;cursor:pointer}
 section[data-interactive="true"] tbody tr{cursor:pointer}tbody tr:hover,tbody tr:focus{background:var(--st-secondary-background-color)}tbody tr:last-child td{border-bottom:0}
+.pagination{display:flex;gap:10px;align-items:center;padding:10px 12px;font-size:13px}.pagination[hidden]{display:none}
+.pagination button{font:inherit;color:inherit;border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:4px;background:transparent;padding:4px 10px;cursor:pointer}.pagination button:disabled{opacity:.45;cursor:default}
 tr:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:-2px}input:focus-visible,button:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:2px}
-td.number,th.number{text-align:right;font-variant-numeric:tabular-nums}td:first-child{font-weight:500}
+td.number,th.number{text-align:right;font-variant-numeric:tabular-nums}td:first-child{font-weight:500}.secondary{display:block;font-size:12px;font-weight:400;opacity:.7;margin-top:4px;white-space:normal}
 td.positive{color:var(--st-green-text-color,__GAIN_COLOR__)}td.negative{color:var(--st-red-text-color,__LOSS_COLOR__)}
 td button{border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:4px;background:transparent;padding:4px 10px;cursor:pointer}
+button[data-detail-toggle]{border:0;background:transparent;padding:2px 7px;margin-left:4px;line-height:1}
+.contract-detail-row>td{white-space:normal;font-weight:400;background:var(--st-secondary-background-color)}
+.contract-details{display:flex;flex-wrap:nowrap;gap:24px;margin:0;font-size:12px;white-space:nowrap}
+.contract-details>div{display:flex;gap:6px}.contract-details dt{opacity:.7}.contract-details dd{margin:0;font-variant-numeric:tabular-nums}
 .preview-row{cursor:default!important}.preview-row>td{padding:0;background:color-mix(in srgb,var(--st-secondary-background-color) 55%,var(--st-background-color))}
 .preview-panel{position:relative;display:grid;contain:inline-size;white-space:normal;font-size:13px;font-weight:400;padding-bottom:6px}
 .preview-items{grid-column:1/-1;display:grid;grid-template-columns:subgrid;list-style:none;margin:0;padding:0}.preview-items li{grid-column:1/-1;display:grid;grid-template-columns:subgrid;min-height:30px}
@@ -70,6 +80,12 @@ button[data-preview-toggle]{border:0;background:transparent;padding:0;font-weigh
 JS = """
 export default function({parentElement:root,data,setTriggerValue}) {
   root.previewResizeObserver?.disconnect();
+  root.tooltipEvents?.abort();
+  const tooltipEvents=new AbortController();root.tooltipEvents=tooltipEvents;
+  // Top-layer help cannot enlarge or be clipped by the table's scroll viewport.
+  const hideHints=()=>root.querySelectorAll('.header-help:popover-open').forEach(hint=>hint.hidePopover());
+  window.addEventListener('scroll',hideHints,{capture:true,signal:tooltipEvents.signal});
+  window.addEventListener('resize',hideHints,{signal:tooltipEvents.signal});
   const input=root.querySelector('input'), head=root.querySelector('thead tr'), body=root.querySelector('tbody');
   const section=root.querySelector('section'), viewport=root.querySelector('.scroll'), table=root.querySelector('table');
   section.dataset.interactive=String(data.interactive);
@@ -90,6 +106,20 @@ export default function({parentElement:root,data,setTriggerValue}) {
   const numeric=new Set(columns.filter(column=>column.numeric).map(column=>column.key));
   const element=(tag,text)=>{const node=document.createElement(tag);node.textContent=text;return node;};
   const open=(row,action='details')=>{if(!data.interactive)return;state.focus=row.id;state.focusAction='details';persist();setTriggerValue('open',{id:row.id,action,revision:data.revision,context:data.context});};
+  if (!data.rows.some(row=>row.id===state.detailId && row.details?.length)) state.detailId=null;
+  const detailId=row=>'contract-details-'+encodeURIComponent(data.context+'-'+row.id);
+  const toggleDetails=row=>{
+    state.detailId=state.detailId===row.id?null:row.id;
+    state.focus=row.id;state.focusAction='disclosure';persist();render();
+    body.querySelector('tr[data-position-id="'+CSS.escape(row.id)+'"] [data-detail-toggle]')?.focus({preventScroll:true});
+  };
+  const detailRow=row=>{
+    const tr=element('tr','');tr.className='contract-detail-row';tr.id=detailId(row);
+    const td=element('td','');td.colSpan=columns.length+(data.editable?1:0);
+    const details=element('dl','');details.className='contract-details';details.setAttribute('aria-label','Contract details for '+row.name);
+    for(const detail of row.details){const item=element('div','');item.append(element('dt',detail.label),element('dd',detail.value));details.appendChild(item);}
+    td.appendChild(details);tr.appendChild(td);tr.onclick=()=>open(row);return tr;
+  };
   const cell=(row,column)=>{
         const field=column.key;
         let value=row[field];
@@ -101,14 +131,26 @@ export default function({parentElement:root,data,setTriggerValue}) {
         if(column.tooltip)td.title=String(row[column.tooltip]||'');
         if(column.signed){
           td.title=String(row.note||column.help||'');
-          if(row[field]>0){if(column.color_signed!==false)td.classList.add('positive');td.textContent='+'+td.textContent;}
-          else if(row[field]<0 && column.color_signed!==false)td.classList.add('negative');
+          const colored=column.color_signed!==false && !(column.neutral_when && row[column.neutral_when]);
+          if(row[field]>0){if(colored)td.classList.add('positive');td.textContent='+'+td.textContent;}
+          else if(row[field]<0 && colored)td.classList.add('negative');
         }
         if(column.badges && Array.isArray(row[field])){
           td.replaceChildren();const badges=element('div','');badges.className='badges';
           for(const label of row[field]){const badge=element('span',label);badge.className='badge';badge.style.setProperty('--badge-color',column.badges[label]||'#7b8493');badges.appendChild(badge);}
           td.appendChild(badges);
         } else if(row[field]!=null && column.prefix)td.textContent=column.prefix+td.textContent;
+    if(column.secondary && row[column.secondary]){
+      if(column.secondary_help && row[column.secondary_help]){
+        const details=element('details','');details.className='secondary';
+        const summary=element('summary',String(row[column.secondary]));details.appendChild(summary);
+        const explanation=element('span',String(row[column.secondary_help]));explanation.style.whiteSpace='normal';details.appendChild(explanation);
+        details.addEventListener('click',event=>event.stopPropagation());
+        details.addEventListener('keydown',event=>event.stopPropagation());td.appendChild(details);
+      } else {
+        const subtitle=element('span',String(row[column.secondary]));subtitle.className='secondary';td.appendChild(subtitle);
+      }
+    }
     return td;
   };
   if (!data.rows.some(row=>row.id===state.expandedId)) state.expandedId=null;
@@ -179,20 +221,50 @@ export default function({parentElement:root,data,setTriggerValue}) {
       if(a[key]==null)return b[key]==null?0:1;if(b[key]==null)return -1;
       return direction*(numeric.has(key)?a[key]-b[key]:String(a[key]||'').localeCompare(String(b[key]||'')));
     });
+    // A derivative follows its companion even when the list is sorted.
+    for(const row of [...rows]){
+      if(row.companionId && rows.some(other=>other.id===row.companionId)){
+        rows.splice(rows.indexOf(row),1);
+        rows.splice(rows.findIndex(other=>other.id===row.companionId)+1,0,row);
+      }
+    }
     head.replaceChildren();body.replaceChildren();
     for(const {key:field,label,width,help} of columns){
       const th=element('th',''),button=element('button',label+(key===field?(direction===1?' ↑':' ↓'):''));
       if(width)th.style.width=width+'px';
       th.scope='col';if(numeric.has(field))th.className='number';
       if(key===field)th.setAttribute('aria-sort',direction===1?'ascending':'descending');
-      button.type='button';button.onclick=()=>{state.key=field;state.direction=key===field?-direction:1;persist();render();head.querySelectorAll('button')[columns.findIndex(c=>c.key===field)].focus();};
+      button.type='button';button.onclick=()=>{state.page=0;state.key=field;state.direction=key===field?-direction:1;persist();render();head.querySelectorAll('button')[columns.findIndex(c=>c.key===field)].focus();};
       const explanation=(help?help+' ':'')+'Activate to sort by '+label+'.';
-      button.title=explanation;button.setAttribute('aria-description',explanation);
+      button.setAttribute('aria-description',explanation);
       const hint=element('span',explanation);hint.className='header-help';hint.setAttribute('role','tooltip');hint.setAttribute('aria-hidden','true');
+      hint.setAttribute('popover','manual');
+      const showHint=()=>{
+        hideHints();hint.showPopover();
+        const anchor=button.getBoundingClientRect(),box=hint.getBoundingClientRect();
+        hint.style.left=Math.max(8,Math.min(anchor.left,window.innerWidth-box.width-8))+'px';
+        hint.style.top=Math.max(8,anchor.bottom+6+box.height<=window.innerHeight-8
+          ?anchor.bottom+6:anchor.top-box.height-6)+'px';
+      };
+      th.onmouseenter=showHint;button.onfocus=showHint;
+      th.onmouseleave=()=>{if(!th.matches(':focus-within'))hint.hidePopover();};
+      button.onblur=()=>hint.hidePopover();
+      button.onkeydown=event=>{if(event.key==='Escape'){hint.hidePopover();event.stopPropagation();}};
       th.append(button,hint);head.appendChild(th);
     }
     if(data.editable){const actions=element('th','');actions.scope='col';actions.setAttribute('aria-label','Actions');head.appendChild(actions);}
-    for(const row of rows){
+    const pages=data.pageSize?Math.max(1,Math.ceil(rows.length/data.pageSize)):1;
+    state.page=Math.min(Math.max(0,state.page||0),pages-1);
+    const pageRows=data.pageSize?rows.slice(state.page*data.pageSize,(state.page+1)*data.pageSize):rows;
+    const pager=root.querySelector('.pagination');pager.hidden=pages<=1;pager.replaceChildren();
+    if(pages>1){
+      const previous=element('button','Previous'),next=element('button','Next');
+      previous.type=next.type='button';previous.disabled=state.page===0;next.disabled=state.page===pages-1;
+      previous.onclick=()=>{state.page--;persist();render();root.querySelector('.pagination button:not(:disabled)')?.focus();};
+      next.onclick=()=>{state.page++;persist();render();[...root.querySelectorAll('.pagination button:not(:disabled)')].at(-1)?.focus();};
+      pager.append(previous,element('span',` Page ${state.page+1} of ${pages} · ${rows.length} assets `),next);
+    }
+    for(const row of pageRows){
       const tr=document.createElement('tr');tr.tabIndex=data.interactive?0:-1;tr.dataset.positionId=row.id;
       tr.onclick=event=>{if(!event.target.closest('button'))activate(row);};
       tr.onkeydown=event=>{
@@ -202,6 +274,13 @@ export default function({parentElement:root,data,setTriggerValue}) {
       };
       for(const column of columns){
         const td=cell(row,column);
+        if(column.key===data.detailsColumn && row.details?.length){
+          const expanded=state.detailId===row.id;
+          const toggle=element('button',expanded?'▾':'▸');toggle.type='button';toggle.dataset.detailToggle='true';
+          toggle.setAttribute('aria-label',(expanded?'Hide':'Show')+' contract details for '+row.name);
+          toggle.setAttribute('aria-expanded',String(expanded));toggle.setAttribute('aria-controls',detailId(row));
+          toggle.onclick=event=>{event.stopPropagation();toggleDetails(row);};td.append(toggle);
+        }
         if(column.key===data.previewValueColumn)td.classList.add('tree-total-parent');
         if(column.key===data.previewColumn){
           const toggle=element('button','');
@@ -218,11 +297,12 @@ export default function({parentElement:root,data,setTriggerValue}) {
       button.title='Edit';button.onclick=()=>open(row,'edit');td.appendChild(button);tr.appendChild(td);}
       if(data.previewColumn)updateToggle(tr,row);
       body.appendChild(tr);
+      if(row.id===state.detailId && row.details?.length)body.appendChild(detailRow(row));
       if(row.id===state.expandedId && data.previews?.[row.id])body.appendChild(previewRow(row));
     }
     root.querySelector('.empty').hidden=rows.length!==0;
   };
-  input.oninput=()=>{state.query=input.value;persist();render();};render();
+  input.oninput=()=>{state.page=0;state.query=input.value;persist();render();};render();
   // Match the parent table's columns after resizing or toggling ticker display.
   // The preview remains local and does not cause a Streamlit rerun.
   const observer=new ResizeObserver(()=>{
@@ -232,9 +312,9 @@ export default function({parentElement:root,data,setTriggerValue}) {
   observer.observe(table);root.previewResizeObserver=observer;
   if(state.focus&&!document.querySelector('[role="dialog"]')){
     const focused=body.querySelector('tr[data-position-id="'+CSS.escape(state.focus)+'"]');
-    (state.focusAction==='preview'?focused?.querySelector('[data-preview-toggle]'):focused)?.focus({preventScroll:true});
+    (state.focusAction==='preview'?focused?.querySelector('[data-preview-toggle]'):state.focusAction==='disclosure'?focused?.querySelector('[data-detail-toggle]'):focused)?.focus({preventScroll:true});
   }
-  return ()=>observer.disconnect();
+  return ()=>{observer.disconnect();tooltipEvents.abort();hideHints();};
 }
 """
 
@@ -249,7 +329,7 @@ def frame_rows(table, *, id_column=None):
 
 def render_list(rows, columns, *, key, context, title, on_open=None, editable=False,
                 revision=None, max_height=None, search_label=None, search_fields=(), default_sort=None,
-                preview_column=None, preview_value_column=None, preview_share_column=None, previews=None):
+                preview_column=None, preview_value_column=None, preview_share_column=None, previews=None, details_column=None, page_size=None):
     revision = revision or sha256(repr(rows).encode()).hexdigest()
     def handle_open():
         event = st.session_state.get(key, {}).get('open')
@@ -272,6 +352,6 @@ def render_list(rows, columns, *, key, context, title, on_open=None, editable=Fa
     component = st.components.v2.component('portfolio_data_list', html=HTML, css=CSS, js=JS)
     component(key=key, data={'rows': rows, 'columns': specs,
         'revision': revision, 'context': context, 'title': title, 'interactive': bool(on_open),
-        'editable': editable, 'maxHeight': max_height, 'searchLabel': search_label,
-        'searchFields': search_fields, 'defaultSort': default_sort,
+        'editable': editable, 'maxHeight': max_height, 'pageSize': page_size, 'searchLabel': search_label,
+        'searchFields': search_fields, 'defaultSort': default_sort, 'detailsColumn': details_column,
         'previewColumn': preview_column, 'previewValueColumn': preview_value_column, 'previewShareColumn': preview_share_column, 'previews': previews}, on_open_change=handle_open)

@@ -235,3 +235,55 @@ def test_closed_first_position_ignores_delayed_valuation_callback(tmp_path, monk
     monkeypatch.setattr('portfolio_app.position_ui.st.session_state', closed_state)
     callback()
     assert closed_state == {}
+
+
+def test_monitoring_tour_saves_acknowledges_and_restores_original_draft(tmp_path, monkeypatch):
+    from portfolio_app.monitoring import Rule, SeriesSpec, Evaluation
+    from portfolio_app.monitoring_store import load_monitoring, save_rule, record_evaluations
+    from portfolio_app.monitoring_service import monitoring_for
+    original = create_demo_data(tmp_path / 'invented-original')
+    rule = Rule('original-example', 'Invented original rule', series=SeriesSpec('INVENTED'))
+    save_rule(original, rule)
+    record_evaluations(original, rule, [Evaluation('2026-10-13', -3., condition='triggered')])
+    # Keep original observations fixed; this test concerns the tour's isolation.
+    monkeypatch.setattr(monitoring_for(original, demo=True), 'schedule', lambda **kw: None)
+    app = launch_workspaces(tmp_path / 'personal', original, start_demo=True)
+    activate(app, 'Monitoring')
+    by_label(app.number_input, 'Distance from SMA trigger (%)').set_value(-7.).run()
+    before = tree_bytes(original)
+    click(app, 'Take the tour')
+    temporary = Path(app.session_state['tour_directory'].name)
+    first = next(i for i, s in enumerate(STEPS) if s.tab == 'Monitoring')
+    for _ in range(first):
+        click(app, 'Next')
+    assert by_label(app.number_input, 'Distance from SMA trigger (%)').value is None
+    assert load_monitoring(temporary)[0]['rules'] == []
+    click(app, 'Next')
+    assert by_label(app.number_input, 'Distance from SMA trigger (%)').value == 10.
+    assert load_monitoring(temporary)[0]['rules'] == []
+    click(app, 'Next')
+    doc, _ = load_monitoring(temporary)
+    assert len(doc['rules']) == len(doc['events']) == 1
+    assert doc['events'][0]['condition'] == 'triggered'
+    click(app, 'Next')
+    click(app, 'Acknowledge alert')
+    doc, _ = load_monitoring(temporary)
+    assert doc['events'][0]['acknowledged'] and doc['rules'][0]['enabled']
+    click(app, 'Back')
+    click(app, 'Next')
+    assert len(load_monitoring(temporary)[0]['events']) == 1
+    assert any('Alert acknowledged' in x.value for x in app.success)
+    click(app, 'Finish')
+    assert not temporary.exists()
+    assert app.session_state['main_tabs'] == 'Monitoring'
+    assert by_label(app.number_input, 'Distance from SMA trigger (%)').value == -7.
+    assert tree_bytes(original) == before
+
+
+def test_monitoring_tour_rejects_non_tour_workspace(tmp_path):
+    from portfolio_app.tour_monitoring import prepare_step
+    directory = create_demo_data(tmp_path / 'invented-non-tour')
+    before = tree_bytes(directory)
+    with pytest.raises(ValueError, match='own synthetic workspace'):
+        prepare_step(directory, 'Tracked rules')
+    assert tree_bytes(directory) == before

@@ -4,7 +4,7 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from portfolio_app.atomic_file import staged_text
 
 from portfolio_app.holdings import DataError
 from portfolio_app.settings import state_path
@@ -41,14 +41,5 @@ def selection(launch: Path) -> Selection:
 def save_selection(launch: Path, chosen: Selection) -> None:
     path = selection_file(launch)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, suffix='.tmp', delete=False) as handle:
-            temporary = Path(handle.name)
-            json.dump(dict(version=1, directory=str(chosen.directory), generation=chosen.generation), handle)
-            handle.flush()
-            os.fsync(handle.fileno())
+    with staged_text(path, lambda handle: json.dump(dict(version=1, directory=str(chosen.directory), generation=chosen.generation), handle), sync=True) as temporary:
         temporary.replace(path)
-    finally:
-        if temporary:
-            temporary.unlink(missing_ok=True)

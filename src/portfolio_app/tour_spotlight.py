@@ -135,7 +135,9 @@ export default function({parentElement, data, setTriggerValue}) {
       event.preventDefault(); event.stopImmediatePropagation();
       setTriggerValue('exit', {step:data.step});
     } else if (event.key === 'Tab' && card) {
-      const buttons = [...card.querySelectorAll('button:not(:disabled)')];
+      const interactive = data.interactive && document.querySelector(data.interactive);
+      const buttons = [...card.querySelectorAll('button:not(:disabled)'),
+        ...(interactive?.querySelectorAll('button:not(:disabled), input:not(:disabled), [tabindex="0"]') || [])];
       const index = buttons.indexOf(document.activeElement);
       event.preventDefault();
       buttons[(index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length]?.focus();

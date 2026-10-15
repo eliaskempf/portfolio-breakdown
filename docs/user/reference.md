@@ -12,7 +12,11 @@ examples here are invented; instrument identities are public metadata.
 `account`, `acquisition_currency`, and `target_allocation`. The app-managed
 `purchase_history` column stores bulk-entry records and is excluded from filters
 and allocations. Other additional text columns become metadata filters and allocation
-dimensions. Shares must be finite and nonnegative; zero-share positions are
+dimensions. Calculation output names are reserved: these include `position_id`,
+`asset_id`, `asset_name`, `value`, `source_*`, `direct_or_indirect`,
+`analysis_asset_*`, `reporting_currency` and calculated price, FX, value, cost,
+gain and performance fields. A conflicting column produces an error identifying
+the name to change; the application never renames or rewrites it automatically. Shares must be finite and nonnegative; zero-share positions are
 allowed. Acquisition price is optional and is displayed as entered.
 
 ```csv

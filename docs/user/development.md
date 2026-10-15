@@ -4,6 +4,35 @@ This page is for contributors working in a source checkout. Installed-app users
 can use their shortcut and the in-app controls; Python and uv are not needed.
 Start with [source installation](install.md#source) before running these commands.
 
+## Interface design
+
+The main interface prioritizes quantitative results, exploration and actions.
+Labels, grouping and consistent controls should make the view understandable
+without introductory paragraphs or repeated explanations.
+
+- Keep visible prose minimal. Prefer concise labels and short, contextual status
+  text. Put definitions in tooltips or help popovers, and methodology, assumptions,
+  provenance and extended explanations in expandable details or the user guide.
+- Preserve essential meaning in the main view: selected scope, units, the metric's
+  basis and whether a result is approximate, partial or unavailable. Explanations
+  may be disclosed on demand; material limitations must remain discoverable from
+  a visible status beside the affected result.
+- Use compact, local indicators for routine partial coverage, excluded holdings
+  and cached data. Reserve prominent warning banners for blocking problems or
+  situations requiring timely action. Match color and visual prominence to the
+  importance of the state; ordinary analytical limitations should not dominate
+  the page.
+- Put secondary figures near their primary metric. Consolidate repeated status
+  messages and avoid stacks of captions above or below a result. Keep controls
+  aligned with the section they affect and use space to communicate hierarchy.
+- Preserve established styling and shared components. Improve density, placement
+  and consistency before adding decorative elements, new panels or new navigation.
+- Keep help and status details accessible by keyboard and touch, with meaningful
+  labels. Color and hover alone must not carry essential information.
+
+Apply these principles across the application, including new features and error
+states. They govern presentation without weakening calculation or coverage rules.
+
 ## Architecture and verification
 
 Business logic is independent of Streamlit:
@@ -20,6 +49,114 @@ transformation and aggregation engine. All chart types share the same aggregatio
 `exposure_analysis.py` owns source selection and normalized ETF expansion without
 Streamlit; the UI supplies selections and renders the resulting tables.
 `currencies.py` shares quote-subunit normalization across spot and historical prices.
+
+`application.py` selects price/FX services, checks leverage eligibility and prepares
+valuation diagnostics without Streamlit. `input_cache.py` returns named
+`PortfolioInputs` and copies cached inputs before handing them to calculations.
+`ui.py` owns workspace recovery, widget interactions, explicit refresh requests
+and lazy view dispatch. Optional fundamentals and risk remain in
+`analytics_service.py`; opening an unrelated view must not fetch them.
+
+Actual accounts join the same pipeline at the reporting-currency valuation
+boundary. `account_journal.py` replays native Decimal cash, explicit loans, futures
+lots and pending claims. `actual_portfolio.py` projects these into valued rows,
+replacing adopted cash holdings and retaining position/account provenance.
+`portfolio_exposure.py` then uses separate capital and signed-exposure measures;
+provider parsing and journal persistence do not belong in the aggregation engine.
+
+`monitoring.py` owns indicator and account-rule calculations; `monitoring_market.py`
+normalizes provider observations, `monitoring_service.py` schedules checks while
+a session is open, and `monitoring_store.py` persists rule revisions and alert
+episodes under the workspace lock. Monitoring does not change holdings or orders.
+`tour_monitoring.py` creates its example only after verifying the active tour-owned
+synthetic directory; it reuses the normal alert explanation and acknowledgment UI.
+
+### Calculation contracts
+
+- Saved positions retain their instrument ID and stable position ID. A
+  contribution has an analytical asset ID plus its source position/instrument
+  identity; company grouping must not overwrite the original security identity.
+- `exposures.project_contributions` accepts an explicitly aligned measure and
+  copies source dimensions. Current value, target fractions and performance
+  amounts can use the same transformation without pretending to be the same
+  financial measure. Reserved calculation columns are rejected as custom CSV
+  metadata. New calculated fields must extend that reservation.
+- `constituents.py` interprets normalized constituent facts. Each consumer owns
+  its coverage policy: an equity fund's residual can be equity exposure while
+  remaining unresolved company exposure. Futures proxy coverage also retains
+  its stricter treatment of unidentified and non-equity weights.
+- Actual contract facts use `derivative_types.py`; `account_journal.py` owns
+  signed lot arithmetic, FIFO reductions, settlements and native postings.
+  Settled P&L is already cash; only unsettled P&L and pending claims add derivative
+  wealth. Notional is exposure, never wealth. Security collateral is a quantity
+  reservation against an existing holding, not another asset.
+- `account_observations.py` and `derivative_market.py` keep dated marks and free
+  exact-contract observations separate from cash postings. `account_margin.py`
+  evaluates entered requirements and haircuts without inferring broker rules.
+  `eurex_quotes.py` isolates the anonymous public quote protocol and exact monthly
+  contract validation. `futures_quotes.py` retains automatic observations and
+  refresh status separately from manual marks and the journal;
+  `futures_valuation.py` selects absolute prices and derives local freshness.
+  Quote timestamps and retrieval timestamps must remain distinct. Settlement
+  reference time orders valuations; it is not a fabricated quote/publication time.
+  Daily cash eligibility uses Europe/Berlin business dates, independent of whether
+  the archive changed since the last worker run.
+  `account_planning.py` previews integer trades without changing account facts.
+- `FuturePosition` and `future_projections.py` retain the legacy EUR sandbox's
+  funded-strategy arithmetic and named capital, exposure and risk adapters.
+  Legacy simulation value must not enter actual account projections.
+- `generalized_studies.py` consumes copied scenario inputs, native price paths
+  and explicit FX, margin, rate and transfer assumptions. Its results never write
+  the account journal. `study_market.py` validates history identity, currency and
+  return convention before a proxy can drive a reconstruction.
+- Missing amounts are not zero. Callers retain completeness information when
+  projecting known contributions. `prepare_market_analysis` returns separate
+  known-value chart nodes and completeness-preserving table nodes. Composition
+  percentages use selected exposure; portfolio impact uses whole-portfolio equity.
+
+Preparation results own their output frames; frozen result containers do not make
+pandas frames deeply immutable. Treat inputs as borrowed, copy before mutation,
+and verify conservation, source provenance and input nonmutation when changing
+these boundaries. `company_analysis.py` prepares company grouping and coverage;
+renderers consume the prepared results.
+
+### Session lifetimes
+
+`state_lifecycle.py` is the single catalog of feature-owned navigation,
+workspace, currency and tour policies. Add an ordinary widget input to its
+feature's declaration, with the correct mount boundary. Inputs may survive lazy
+unmounts and are restored once on remount so the browser receives the retained
+value. Remount bookkeeping is consumed only after view dispatch, preserving it
+across early-return dialogs. Buttons, upload handles and editor patches must not
+be reassigned as ordinary input state. Imports and persistent editors keep their specialized
+adapters. Calculation fingerprints stay with the calculators that understand
+their assumptions.
+
+Currency changes clear monetary drafts and prior monetary plans while retaining
+scope and percentage preferences. Workspace changes clear owned drafts/results;
+workspace-keyed analytics preferences remain isolated by their keys. Tour capture
+copies only declared restorable state. Exercise real navigation as well as pure
+transition tests, including date controls and nested lazy views.
+
+Document writes retain their workspace locking, revision checks and backup
+policies. Commands validating multiple documents must hold the workspace lock
+from validation through publication. Cache and document writers deliberately
+retain different failure/recovery policies; sharing serialization mechanics must
+not erase those differences. `atomic_file.staged_text` only creates and cleans up
+a same-directory text stage, optionally flushing and syncing its content. Callers
+choose serialization, locks, backups and revision checks, then explicitly replace
+the destination. Document writers sync before backing up and rechecking revisions;
+cache writers preserve their own validation and failure fallback. ETF snapshot
+publication still writes the manifest last; it is a separate multi-file protocol.
+
+`money.py` formats scalar amounts with explicit currency and no Streamlit state.
+`currency_display.py` supplies session reporting units and numeric formats for
+native grids. Actual account entries retain EUR/USD/GBP units; projections perform
+explicit conversion before display. Only legacy fixed-EUR sandbox views use
+`money.euros`; formatting never converts amounts. Missing values remain missing. Shared list
+columns retain numeric sorting and their browser formatter. `charts.chart_config`
+provides compact allocation controls and explicit zoom/pan/reset controls for
+scenario studies; each chart receives independent configuration containers.
 
 ```bash
 uv run pytest
@@ -45,9 +182,12 @@ listing search, minimum-trade and minimum-cash rebalancing, trade-count tradeoff
 empty-position redistribution, Git privacy guards, and Streamlit controls. The server health
 endpoint is `/_stcore/health`.
 
-Independent target overrides on analytical-taxonomy nodes, realized P&L and
-transaction-based personal return history remain unsupported. Strategic category
-targets, instrument price history and historical risk analysis are supported.
+Independent target overrides on analytical-taxonomy nodes, ordinary-security
+sales/realized P&L and transaction-based personal return history remain
+unsupported. The development account journal records actual futures settlements
+and closes; an opening snapshot does not reconstruct pre-snapshot gains.
+Strategic category targets, instrument price history and historical risk analysis
+are supported.
 
 
 ## Shared list presentation
@@ -128,8 +268,11 @@ development requirements. These notes contain no working portfolio data.
 - Risk uses adjusted market-price histories, converted with historical FX to
   the reporting currency. The latest available price within each completed Friday-ending week is
   used. Empty weeks are not filled, and returns do not bridge missing endpoints.
-- Default benchmark is IUSQ.DE, a global equity ETF proxy; windows are 1, 3, or
-  5 years, default 3. All included holdings and the benchmark share the same
+- Default benchmark is the direct MSCI ACWI net-return index (892400, NETR),
+  requested in reporting currency and validated against returned metadata.
+  Usable cached index levels precede a disclosed IUSQ.DE fallback. Custom tickers
+  do not substitute automatically; neither index nor equity histories are stitched.
+  Windows are 1, 3, or 5 years, default 3. All included holdings and the benchmark share the same
   sample of at least 52 weekly returns. Provider-supplied betas are not used.
 - Portfolio weekly return is the sum of holding weekly returns × today's
   weights. Beta is covariance with the benchmark / benchmark variance.
@@ -137,14 +280,33 @@ development requirements. These notes contain no working portfolio data.
   sum to portfolio volatility; negative contributions are possible.
 - This is a hypothetical constant-weight allocation, not the user's historical
   return series. It requires no transaction history and does not use buy-in prices.
-- Cash in the reporting currency has zero FX returns. Manual/unlisted positions without supported history
-  are excluded. Covered weights are renormalized, and partial coverage is shown.
-  Missing valuations prevent claiming whole-portfolio coverage.
+- Cash in the reporting currency has zero FX returns. In ordinary asset analysis,
+  manual/unlisted positions without supported history are excluded, covered
+  weights are renormalized, and partial coverage is shown. Missing valuations
+  prevent claiming whole-portfolio coverage. Integrated account leverage shows a
+  labelled covered-holdings estimate with exclusions and fixed whole-portfolio
+  net-equity weights; missing histories do not suppress otherwise usable metrics.
+  Missing/nonpositive net equity or an insufficient common sample still prevents
+  an estimate. Reviewed same-share equity history fallbacks are currency-converted
+  independently and disclosed; valuation tickers and futures proxies stay separate.
 - ETFs use their own adjusted price histories for risk, not constituent expansion.
-  Category beta is computed in exactly the same way within the selected category;
-  its benchmark remains the selected benchmark, even for a non-equity category.
-- Borrowing, liabilities, derivative notionals, and net-equity leverage are not
-  modeled. Asset-normalized beta must not be presented as levered equity beta.
+  Category/account subsets show standalone beta and volatility on selected
+  capital, with portfolio beta contribution secondary. Ordinary subsets normalize
+  covered net funded values; derivative subsets require positive, fully valued
+  selected backing capital. Count unsettled claims once before adding risk-only
+  FX rows; never use margin or bare-contract gains as capital. A missing subset
+  base does not suppress an otherwise supported portfolio beta contribution.
+  The benchmark remains selected even for non-equity categories. Subset and
+  contribution metrics use the same sample, which can differ across categories.
+- The released app uses asset-normalized beta. The development branch adds
+  [actual-account leverage](futures.md) in EUR/USD/GBP, with a separate net-equity
+  denominator. Asset-normalized beta must not be presented as levered equity beta;
+  legacy sandbox risk remains EUR-only.
+- Actual futures risk uses signed notional with compatible contract-currency
+  histories and converts native changes at dated FX. It must not apply the FX
+  return on the whole futures notional. Foreign cash, claims and debt carry their
+  own FX risk. A documented leveraged ETF factor changes current exposure; risk
+  still uses that fund's own price returns without multiplying leverage twice.
 
 ### Code map
 
@@ -156,6 +318,7 @@ development requirements. These notes contain no working portfolio data.
 | `risk_data.py` | Adjusted price histories and historical reporting-currency conversion |
 | `risk.py` | Pure common-sample weekly risk calculations |
 | `analytics_service.py` | Provider/cache orchestration for fundamentals and risk, independent of Streamlit |
+| `company_analysis.py` | Pure company grouping and exposure preparation, plus workspace mapping loading |
 | `analytics_ui.py` | Shared formatting, sources, benchmark settings |
 | `portfolio_analytics_ui.py` | Overview analytics presentation |
 | `position_metrics_ui.py` | Position metric presets, details, fee maintenance |
@@ -189,10 +352,12 @@ These are ideas, not promises or already implemented features.
 3. **Beta stability.** Add rolling beta or comparisons across windows, confidence
    intervals, and benchmark explanatory power. A point estimate alone should not
    imply a stable forecast. Do not confuse beta with total volatility.
-4. **Leverage-aware planning.** Requires an explicit liabilities/net-equity model,
-   financing costs, exposure definitions, and rebalancing assumptions. A leveraged
-   ETF's advertised daily multiple is not a guaranteed multiyear return multiple
-   or its beta against an arbitrary benchmark. This needs domain design before code.
+4. **Joint funded-asset and futures planning.** The development branch already
+   provides actual-account futures plans alongside the capital planner. Joint
+   routing between funded holdings and derivatives would need explicit funding,
+   transfer and financing assumptions. A leveraged ETF's advertised daily
+   multiple is neither a guaranteed multiyear return multiple nor its beta against
+   an arbitrary benchmark.
 5. **Downside scenarios.** Separate simple beta-based shocks from historical
    constant-weight scenarios. Neither reconstructs personal performance or sets
    a worst-case loss bound. Define treatment of missing assets and costs first.

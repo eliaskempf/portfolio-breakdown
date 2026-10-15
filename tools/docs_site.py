@@ -44,6 +44,8 @@ TOPICS = {
     'prices': 'performance/#valuation',
     'performance': 'performance/#performance',
     'history': 'performance/#history',
+    'monitoring': 'monitoring/#monitoring',
+    'monitoring-alerts': 'monitoring/#notifications',
     'risk': 'analytics/#risk',
     'metrics': 'analytics/#metrics',
     'fund-fees': 'analytics/#sources',

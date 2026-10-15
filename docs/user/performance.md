@@ -35,6 +35,15 @@ does not redefine their costs. Gain is current reporting value minus converted
 purchase cost. Category return divides summed covered gain by summed covered cost;
 it does not average individual percentage returns.
 
+Cash balances without a recorded cost/conversion basis show **N/A — cash balance**
+for purchase-based performance. They remain in portfolio value and allocation,
+but do not produce missing-buy-in warnings or reduce coverage of eligible
+positions. Balance increases from deposits or futures settlements are not inferred
+as cash investment gains. Interest is separate. Foreign cash still changes
+reporting value with current FX; calculating its FX gain needs a recorded opening
+or conversion basis. Explicit cash costs, including incomplete conversions, retain
+the existing cost-based calculation and coverage checks.
+
 Each purchase, including fees, is converted separately. A supplied converted cost
 takes precedence over a supplied rate, which takes precedence over historical
 market FX. Historical lookup uses the purchase date or the most recent available
@@ -55,11 +64,18 @@ gains or losses, remain labelled, and keep their confirmed rates across refreshe
 and restarts. An undated conversion or estimate applies only to its saved target
 currency; switching again may create new coverage gaps.
 
-These figures exclude dividends and realized gains. Purchase fees affect results
+These ordinary-holding figures exclude dividends and realized gains. Purchase fees affect results
 only when included in recorded cost. Reconcile remaining-position costs after
 sales or corporate actions. Expanded ETF constituents have unavailable performance:
 current weights cannot reconstruct their historical costs. Whole-fund performance
 remains usable in instruments mode. Labels follow the same path splits as allocation.
+
+Futures investments use a separate recorded-performance basis: cumulative net
+P&L across open and closed contracts, including fees and manually entered taxes,
+divided by fixed initial allocated capital. Settlement does not erase gains.
+Allocation changes affect capital value, not profit. Current reporting FX converts
+native amounts; historical FX performance of contributed capital is not inferred.
+See [Investment capital and contract history](futures.md#investment-capital-and-contract-history).
 
 ## Market-price history {#history}
 

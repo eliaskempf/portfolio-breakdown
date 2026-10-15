@@ -12,6 +12,8 @@ from urllib.request import urlopen
 import pytest
 import yaml
 
+from browser_support import select_tab
+
 playwright = pytest.importorskip('playwright.sync_api')
 
 
@@ -97,7 +99,7 @@ def assert_gain_color(locator, *, positive):
 
 def test_category_scope_performance_and_tab_roundtrip(ux_page):
     page, directory = ux_page
-    value_card = page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))
+    value_card = page.locator('.st-key-overview_value').get_by_test_id('stMetric')
     playwright.expect(value_card).to_contain_text('€330.00')
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+€60.00')
     assert_gain_color(value_card.get_by_test_id('stMetricDelta'), positive=True)
@@ -174,7 +176,7 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     assert page.locator('.js-plotly-plot').first.evaluate('el => el.data[0].type') == 'bar'
     playwright.expect(page.get_by_role('radio', name='Return (%)', exact=True)).to_be_checked()
     assert chart.evaluate('el => Array.from(el._fullData[0].x)') == pytest.approx([-100 / 6, 25])
-    assert chart.evaluate('el => el.data[0].customdata[0].slice(1,3)') == ['-10.00 EUR', '-16.67%']
+    assert chart.evaluate('el => el.data[0].customdata[0].slice(1,3)') == ['-€10.00', '-16.67%']
     page.get_by_role('radio', name='Gain', exact=True).click()
     page.wait_for_function("document.querySelector('.js-plotly-plot')?.layout.xaxis.title.text === 'Gain'")
     assert chart.evaluate('el => Array.from(el._fullData[0].x)') == [-10, 40]
@@ -276,9 +278,11 @@ def test_overview_list_matches_positions_and_opens_sorted_filtered_rows(ux_page)
     row.click()
     playwright.expect(dialog).to_contain_text('Invented Regional')
     dialog.get_by_role('button', name='Close', exact=True).filter(has_text='Close').click()
-    page.get_by_role('tab', name='Positions', exact=True).click()
+    playwright.expect(dialog).to_have_count(0)
+    # Closing the dialog starts an app rerun; finish it before switching lists.
+    select_tab(page, 'Positions')
     playwright.expect(page.get_by_role('searchbox', name='Filter positions')).to_have_value('')
-    page.get_by_role('tab', name='Overview', exact=True).click()
+    select_tab(page, 'Overview')
     playwright.expect(page.get_by_role('searchbox', name='Filter positions')).to_have_value('Regional')
     table.scroll_into_view_if_needed()
     page.wait_for_function("table => table.getBoundingClientRect().width > 300",
@@ -362,7 +366,7 @@ def test_tiny_labels_reappear_when_scoped_and_losses_are_red(ux_page):
     page.get_by_role('option', name='Satellites', exact=True).click()
     page.wait_for_function("document.querySelector('.js-plotly-plot')?.data?.[0]?.labels?.[0] === 'Satellites'")
     assert chart.evaluate("el => el.data[0].text[el.data[0].labels.indexOf('Invented Satellite')]")
-    card = page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))
+    card = page.locator('.st-key-overview_value').get_by_test_id('stMetric')
     playwright.expect(card.get_by_test_id('stMetricDelta')).to_contain_text('-€49.00')
     assert_gain_color(card.get_by_test_id('stMetricDelta'), positive=False)
     open_settings(page)

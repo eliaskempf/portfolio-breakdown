@@ -10,6 +10,7 @@ import yaml
 
 from portfolio_app.holdings import DataError
 from portfolio_app.valuation import portfolio_weights
+from portfolio_app.constituents import fund_kind, interpret_constituent
 
 
 @dataclass(frozen=True)
@@ -226,16 +227,10 @@ def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd
             row["ticker"], row["isin"] = constituent["ticker"], constituent["isin"]
             if 'wkn' in row:
                 row['wkn'] = ''
-            kind = constituent.get('instrument_type')
-            if not isinstance(kind, str) or not kind:
-                kind = ('equity' if fund.equity_fund else 'non_equity'
-                        if fund.asset_class in {'fixed_income', 'money_market'} else 'unknown')
-            row['instrument_type'] = kind
-            declared = constituent.get('exposure_kind')
-            row['exposure_kind'] = declared if isinstance(declared, str) and declared else (
-                'equity' if kind == 'equity' else 'non_equity'
-                if kind in {'cash', 'bond', 'money_market', 'overnight_rate', 'non_equity', 'crypto', 'physical'} else 'unknown')
-            row["source_type"] = "etf_other" if constituent["constituent_id"].startswith("etf-other:") else "etf_constituent"
+            interpreted = interpret_constituent(constituent, fallback_kind=fund_kind(fund))
+            row['instrument_type'] = interpreted.kind
+            row['exposure_kind'] = interpreted.exposure_kind
+            row["source_type"] = "etf_other" if interpreted.residual else "etf_constituent"
             row["direct_or_indirect"] = "indirect"
             # Instrument quantities, quotes, and targets do not describe its constituents.
             for field in ("shares", "acquisition_price", "current_price", "fx_to_reporting", "target_allocation", "portfolio_weight"):

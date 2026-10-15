@@ -35,6 +35,7 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                     st.session_state['portfolio_workspace_context'] = context
             offline = demo and not (data_dir / '.live-demo').exists()
             refresh = st.button('Refresh prices', help='Request updated quotes and exchange rates. Unavailable in the synthetic offline demo.', icon=':material/refresh:', type='tertiary', disabled=offline)
+            notifications = st.container(key='header_notifications', width=44)
             if touring:
                 st.button('Portfolio settings', icon=':material/tune:', disabled=True)
                 st.button('?', disabled=True)
@@ -55,10 +56,11 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                         st.link_button('Getting started', guide_url('getting-started/'))
                         st.link_button('Categories and targets', guide_url('allocation/'))
                         st.link_button('ETF breakdowns', guide_url('exposure/'))
+                        st.link_button('Monitoring and alerts', guide_url('monitoring/'))
                     if demo and not touring:
                         st.caption('Invented holdings and buy-ins. Demo changes reset on restart.')
                         st.caption('Synthetic offline prices.' if offline else 'Public market quotes and history; availability varies.')
-    return data_dir, demo, refresh, settings
+    return data_dir, demo, refresh, settings, notifications
 
 
 def workspace_info(active: Path, persistent: Path, *, demo: bool) -> None:

@@ -14,17 +14,19 @@ from portfolio_app.etf_refresh_ui import refresh_revision, render_refresh_status
 from portfolio_app.holdings import DataError
 from portfolio_app.position_ui import render_position_editor, render_position_dialog, request_position
 from portfolio_app.positions import read_snapshot
-from portfolio_app.portfolio import prepare_portfolio
 from portfolio_app.rebalancing import RebalanceError
 from portfolio_app.rebalance_ui import render_rebalancing
-from portfolio_app.prices import PriceService, StaticProvider, UnavailableProvider
+from portfolio_app.prices import PriceService, StaticProvider
 from portfolio_app.presentation import apply_style, empty_overview, mark_view_ready
-from portfolio_app.allocation import analysis_targets, migration_preview
+from portfolio_app.allocation import migration_preview
 from portfolio_app.strategic_ui import render_strategic_overview
 from portfolio_app.scoped_ui import render_scoped_rebalancing
-from portfolio_app.input_cache import load_inputs
+from portfolio_app.input_cache import load_inputs, cached_input
+from portfolio_app.exposure_workspace import analytical_signature
 from portfolio_app.market_data import coordinator as market_coordinator, prices_for
-from portfolio_app.view_state import preserve_view_inputs
+from portfolio_app.view_state import preserve_view_inputs, finish_view_inputs
+from portfolio_app.application import (historical_for, load_leverage_context, prepare_application,
+    prepare_exposure, select_price_service)
 
 
 def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None, intro: bool = False, ignore_selection: bool = False) -> None:
@@ -57,7 +59,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if not render_startup_intro():
             return
     preserve_view_inputs()
-    data_dir, demo, refresh, settings_panel = app_header(data_dir, demo_dir, demo=demo)
+    data_dir, demo, refresh, settings_panel, notifications_slot = app_header(data_dir, demo_dir, demo=demo)
+    from portfolio_app.calendar_ui import configure_calendar
+    configure_calendar(data_dir, settings_panel)
     from portfolio_app.backup_ui import backup_controls, render_backup_dialog
     if not demo and not ignore_selection:
         bind_workspace(persistent_data_dir, chosen)
@@ -73,7 +77,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         # Always value the isolated tour with its own synthetic quotes.
         price_service = PriceService(StaticProvider(data_dir / 'demo_prices.json'))
     from portfolio_app.portfolio_settings import load_settings
-    from portfolio_app.currency_ui import render_currency_setting, render_currency_dialog, historical_for
+    from portfolio_app.currency_ui import render_currency_setting, render_currency_dialog
     from portfolio_app.currency_display import currency_symbol
     try:
         currency_settings = load_settings(data_dir)
@@ -111,9 +115,32 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if demo and not demo_pending:
         st.caption("Offline demo · Invented prices, buy-ins and ETF weights · Resets on restart" if offline_demo else
                    "Demo · Invented quantities, targets and buy-ins · Public market data · Resets on restart")
+    from portfolio_app.portfolio_exposure_ui import render_exposure_targets, render_leverage_editor
+    try:
+        leverage_context = load_leverage_context(data_dir, reporting_currency)
+    except DataError as exc:
+        st.error(str(exc))
+        mark_view_ready()
+        return
+    sandbox, leverage = leverage_context.sandbox, leverage_context.settings
+    journal = leverage_context.journal
+    actual_active = bool(journal and journal.accounts)
+    from portfolio_app.settlement_archive_ui import watch_settlements
+    watch_settlements(data_dir,journal,demo=demo,force=refresh)
+    actual_future = leverage_context.future
+    leverage_supported, feature_active = leverage_context.supported, leverage_context.active
+    unsupported_records = leverage_context.unsupported_records
+    if unsupported_records:
+        st.warning('Saved leverage records are in EUR. Switch reporting currency to EUR to see complete portfolio totals, exposure, risk and plans. Your saved records are unchanged.')
+        from dataclasses import asdict
+        with st.expander('Saved EUR leverage records'):
+            if sandbox:
+                st.json(asdict(sandbox[0]))
+            st.json(asdict(leverage))
     etf_revision = refresh_revision(data_dir)
     try:
-        snapshot, allocation, classifications, funds = load_inputs(data_dir)
+        inputs = load_inputs(data_dir)
+        snapshot, allocation, classifications, funds = inputs
         holdings = snapshot.holdings
         validate_fund_listings(holdings, funds)
     except DataError as exc:
@@ -122,9 +149,6 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         mark_view_ready()
         return
     coordinator.schedule(data_dir, holdings, funds, demo=offline_demo)
-    if not demo_pending:
-        with st.container(key='refresh_status'):
-            render_refresh_status(data_dir, funds, etf_revision, demo=offline_demo)
     context_key = sha256(str(data_dir.resolve()).encode()).hexdigest()[:12]
     unit_key = f'performance_unit_{context_key}_{reporting_currency}'
     def remember_unit():
@@ -147,7 +171,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if render_currency_dialog(data_dir, snapshot, currency_settings, price_service or prices_for(data_dir), historical):
             mark_view_ready()
             return
-    if holdings.empty and not demo:
+    if holdings.empty and not demo and not feature_active:
         from portfolio_app.onboarding_ui import render_welcome, render_guided_setup
         if render_welcome(demo_available=demo_dir is not None):
             mark_view_ready()
@@ -158,26 +182,28 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     background_prices = price_service is None and not offline_demo
     market_workspace = str(data_dir.resolve())
     market_revision = market_coordinator.revision(market_workspace)
-    if price_service is None:
-        if offline_demo:
-            try:
-                provider = StaticProvider(data_dir / 'demo_prices.json')
-            except (OSError, ValueError):
-                provider = UnavailableProvider()
-            price_service = PriceService(provider)
-        else:
-            price_service = prices_for(data_dir)
-    source = analysis_targets(holdings, allocation) if allocation else holdings
+    price_service = select_price_service(data_dir, offline_demo=offline_demo, supplied=price_service, live_prices=prices_for)
     with st.spinner('Valuing portfolio…'):
-        valued = prepare_portfolio(source, price_service, refresh=refresh, reporting_currency=reporting_currency, historical=historical)
+        prepared = prepare_application(inputs, price_service, refresh=refresh,
+            reporting_currency=reporting_currency, historical=historical)
+    valued, status = prepared.valued, prepared.status
+    ordinary_valued = valued
+    if actual_active:
+        from portfolio_app.actual_portfolio import journal_positions
+        from portfolio_app.futures_valuation import load_valuations
+        try:
+            valuations, manual_fx = load_valuations(data_dir, journal)
+            valued = journal_positions(valued, journal, price_service, reporting_currency=reporting_currency,
+                valuations=valuations, fx_rates=manual_fx)
+        except DataError as exc:
+            st.error(str(exc))
+            mark_view_ready()
+            return
     if notice := st.session_state.pop('currency_notice', None):
         st.info(notice)
     if render_currency_dialog(data_dir, snapshot, currency_settings, price_service, historical):
         mark_view_ready()
         return
-    estimates = int(valued.cost_estimated.sum())
-    if estimates:
-        st.warning(f'{estimates} positions use confirmed FX estimates. Their gains and returns are estimated.')
     if demo_pending:
         if background_prices:
             render_market_status(market_workspace, market_revision, show_caption=False)
@@ -187,94 +213,180 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             if market_coordinator.pending(market_workspace):
                 # Keep the status running across renders; a context manager would
                 # mark it complete as soon as this non-blocking render returns.
-                status = st.status('Preparing your demo…', state='running', expanded=True)
-                status.write('Fetching current market prices. Your demo will open automatically.')
+                demo_status = st.status('Preparing your demo…', state='running', expanded=True)
+                demo_status.write('Fetching current market prices. Your demo will open automatically.')
             else:
                 st.warning('Some prices could not be loaded. Choose Refresh prices to try again.')
                 st.dataframe(valued.loc[valued.current_value_reporting.isna(), ['name', 'valuation_note']], hide_index=True)
                 st.caption('You can also explore an offline example with ? → Take the tour, or return to My portfolio using the workspace menu.')
                 mark_view_ready()
         return
-    if price_service.cache_warning:
-        st.warning(price_service.cache_warning)
-    missing_cost = (valued.shares.gt(0) & valued.unrealized_gain_reporting.isna()).sum()
-    missing_price = valued.current_value_reporting.isna().sum()
-    stale = (valued.price_status.isin(['cached fallback', 'stale']) | valued.fx_status.isin(['cached fallback', 'stale'])).sum()
-    if missing_cost or missing_price or stale:
-        with st.expander(f'Data status · {missing_price} missing prices · {missing_cost} performance gaps · {stale} stale quotes'):
-            problems = valued.loc[valued.shares.gt(0) & (valued.unrealized_gain_reporting.isna() | (valued.price_status.isin(['cached fallback', 'stale']) | valued.fx_status.isin(['cached fallback', 'stale'])))]
-            st.dataframe(problems[['name', 'performance_note', 'valuation_note']], hide_index=True, width='stretch')
-            st.caption('Edit a position to complete its buy-in or pricing details.')
-            if st.button('Complete buy-ins', help='Open Positions to complete missing purchase cost or pricing details.'):
-                st.session_state['main_tabs'] = 'Positions'
-                st.session_state['positions_workflow_request'] = 'Update balances'
-    elif not offline_demo and not valued.price_status.eq('manual').any():
-        st.caption('Latest available daily close · Prices may be delayed')
-    if valued.price_status.eq('manual').any():
-        st.caption(f"{valued.price_status.eq('manual').sum()} dated manual/snapshot prices · These do not refresh automatically.")
+    exposure_result = cached_input(
+        'portfolio_exposure', analytical_signature(valued, funds, str(data_dir.resolve()), allocation, leverage_context),
+        lambda: prepare_exposure(valued, funds, allocation, leverage_context))
+    display_valued, display_exposure = valued, exposure_result
+    if actual_active:
+        from portfolio_app.futures_investments import investment_positions
+        from portfolio_app.investment_presentation import investment_exposure, investment_risk_positions
+        display_valued = investment_positions(valued, journal)
+        display_exposure = investment_exposure(exposure_result, display_valued)
+    from portfolio_app.monitoring_ui import apply_monitoring_route
+    apply_monitoring_route()
     if 'main_tabs' not in st.session_state:
-        st.session_state['main_tabs'] = 'Positions' if holdings.empty else 'Overview'
+        st.session_state['main_tabs'] = 'Positions' if holdings.empty and not feature_active else 'Overview'
     from portfolio_app.tour import prepare_tour, render_tour
     prepare_tour()
-    overview, exposure, positions, rebalance = st.tabs(['Overview', 'Exposure', 'Positions', 'Rebalance'],
+    tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or actual_active else []) + ['Monitoring']
+    if st.session_state['main_tabs'] not in tab_names:
+        st.session_state['main_tabs'] = 'Overview'
+    tabs = st.tabs(tab_names,
         default='Overview', key='main_tabs', on_change='rerun')
-    visible = valued.loc[valued.shares.gt(0)].copy() if hide_empty else valued
+    overview, exposure, positions, rebalance = tabs[:4]
+    from portfolio_app.monitoring_ui import watch_monitoring, render_monitoring, render_alert_dialog
+    watch_monitoring(data_dir, demo=offline_demo, disabled=tour_active())
+    if tabs[-1].open:
+        with tabs[-1]:
+            render_monitoring(data_dir, holdings, journal, demo=offline_demo)
+    from portfolio_app.notifications_ui import notification_bell
+    notifications_panel = notification_bell(notifications_slot, data_dir, funds, valued, status,
+        demo=offline_demo, cache_warning=price_service.cache_warning,
+        exposure_issues=exposure_result.issues if exposure_result else (), disabled=tour_active(), journal=journal)
+    if notifications_panel.open:
+        from portfolio_app.notifications_ui import render_notifications
+        with notifications_panel:
+            render_notifications(data_dir, funds, etf_revision, valued, status, demo=offline_demo,
+                cache_warning=price_service.cache_warning, exposure_issues=exposure_result.issues if exposure_result else (),
+                prices_pending=background_prices and market_coordinator.pending(market_workspace), journal=journal)
+    elif not demo_pending:
+        # Keep background completion reruns active without displaying notices.
+        render_refresh_status(data_dir, funds, etf_revision, demo=offline_demo, show_messages=False)
+    if (sandbox or actual_active) and tabs[4].open:
+        with tabs[4]:
+            if actual_active:
+                from portfolio_app.accounts_ui import render_accounts
+                render_accounts(data_dir, snapshot, valued, allocation=allocation)
+            elif leverage_supported:
+                from portfolio_app.futures_ui import render_futures
+                render_futures(valued, data_dir, *sandbox, allocation=allocation, funds=funds, leverage=leverage)
+    visible = valued.loc[valued.shares.ne(0)].copy() if hide_empty else valued
     if positions.open:
         with positions:
             render_position_editor(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, embedded=True,
-                                   allocation=allocation, valued=visible, percent=percent, defer_dialog=True)
+                                   allocation=allocation, valued=display_valued.loc[display_valued.shares.gt(0)].copy() if hide_empty else display_valued,
+                                   account_valued=valued, percent=percent, defer_dialog=True)
     def open_valued_position(position_id, *, editing=False):
+        if actual_active and position_id in {p.id for p in journal.positions} | {investment.id for investment in journal.investments}:
+            request_position(position_id, editing=editing)
+            return
+        if actual_active and (position_id in {p.id for p in journal.positions} | {investment.id for investment in journal.investments} | {link.position_id for link in journal.cash_links} or str(position_id).startswith('account-')):
+            st.session_state['main_tabs'] = 'Futures'
+            st.session_state['accounts_requested_position'] = position_id
+            return
         if read_snapshot(data_dir / 'holdings.csv').revision != snapshot.revision:
             st.session_state['position_stale_notice'] = 'The portfolio changed. Select the position again from the refreshed view.'
             return
         request_position(position_id, editing=editing)
-    if overview.open:
+    if overview.open and not unsupported_records:
         with overview:
-            if valued.empty:
+            if valued.empty and not feature_active:
                 empty_overview()
             else:
                 if allocation:
-                    overview_config, overview_values = allocation, valued
+                    overview_config, overview_values = allocation, display_valued
                 else:
-                    overview_config, overview_values = migration_preview(valued)
+                    overview_config, overview_values = migration_preview(display_valued)
                     # Legacy targets are percentages of the whole portfolio; don't
                     # reinterpret them as within-category targets in this overview.
                     overview_values['within_bucket_target'] = float('nan')
+                if actual_active and not allocation:
+                    # Apply preview categories to exact contracts before projecting
+                    # their exposure; grouped capital rows are never pricing inputs.
+                    raw_overview = valued.copy()
+                    owners = overview_values.attrs.get('investment_source_map', {})
+                    categories = overview_values.set_index('position_id').bucket_id.to_dict()
+                    raw_overview['bucket_id'] = raw_overview.position_id.map(
+                        lambda identity: categories.get(owners.get(identity, identity), ''))
+                    overview_exposure = investment_exposure(
+                        prepare_exposure(raw_overview, funds, overview_config, leverage_context), overview_values)
+                else:
+                    overview_exposure = display_exposure if allocation or not feature_active else prepare_exposure(
+                        overview_values, funds, overview_config, leverage_context)
                 from portfolio_app.portfolio_analytics_ui import render_portfolio_analytics
-                render_strategic_overview(overview_values, overview_config, open_position=open_valued_position,
+                if leverage.active_basis == 'exposure':
+                    st.session_state.setdefault('strategic_allocation_measure', 'Market exposure')
+                def open_exposure_targets():
+                    st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Exposure targets')
+                def open_capital_targets():
+                    st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Category targets')
+                render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_capital_targets=open_capital_targets, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
+                                          leverage_enabled=(leverage.enabled or actual_active) and leverage_supported,
                                           percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
                                           edit_position=lambda position_id: open_valued_position(position_id, editing=True),
-                                          analytics=lambda selected, scope: render_portfolio_analytics(
-                                              selected, data_dir, funds, demo=offline_demo, scope=scope))
-    if exposure.open:
+                                          analytics=lambda selected, scope, scoped_future, scoped: render_portfolio_analytics(
+                                              investment_risk_positions(selected, valued) if actual_active else selected, data_dir, funds, demo=offline_demo, scope=scope, future=scoped_future,
+                                              portfolio_result=overview_exposure if actual_active or sandbox or leverage.liabilities else None,
+                                              portfolio_net_equity=(overview_exposure.net_equity if overview_exposure is not None else
+                                                  valued.loc[valued.shares.gt(0), 'current_value_reporting'].sum(skipna=False)), scoped=scoped))
+    if exposure.open and not unsupported_records:
         with exposure:
-            if visible.empty:
+            if visible.empty and exposure_result is None:
                 st.info('No visible positions. Add a position or turn off Hide empty positions.')
             else:
-                render_analysis(data_dir, holdings.loc[holdings.position_id.isin(visible.position_id)], classifications,
-                                funds, demo=offline_demo, price_service=price_service, source_valued=visible, performance_percent=percent,
-                                allocation=allocation, etf_revision=etf_revision, on_toggle_gain=toggle_unit)
-    if rebalance.open:
+                render_analysis(data_dir, holdings, classifications, funds, demo=offline_demo,
+                    price_service=price_service, source_valued=visible, performance_percent=percent,
+                    allocation=allocation, etf_revision=etf_revision, on_toggle_gain=toggle_unit,
+                    exposure_result=exposure_result, leverage_context=leverage_context)
+    if rebalance.open and not unsupported_records:
         with rebalance:
             plan_tab, targets_tab = st.tabs(['Plan', 'Targets'], key='rebalance_tabs', on_change='rerun')
             if targets_tab.open:
                 with targets_tab:
                     from portfolio_app.allocation_ui import render_allocation_editor
-                    with st.container(key='tour_targets'):
+                    from portfolio_app.portfolio_exposure_ui import render_policy_settings
+                    if leverage_supported:
+                        render_policy_settings(data_dir, leverage, allocation, future=actual_future)
+                    else:
+                        st.caption('Leverage settings currently require EUR reporting.')
+                    if st.session_state.get('exposure_target_mode') == 'Capital targets':
+                        st.session_state['exposure_target_mode'] = 'Category targets'
+                    target_mode = st.segmented_control('Target measure', ['Category targets', 'Exposure targets'], default='Exposure targets' if leverage.active_basis == 'exposure' else 'Category targets', key='exposure_target_mode') if (leverage.enabled or actual_active) and leverage_supported else 'Category targets'
+                    if target_mode == 'Exposure targets':
+                        render_exposure_targets(data_dir, allocation, exposure_result)
+                    else:
                         render_allocation_editor(data_dir / 'holdings.csv', snapshot, allocation)
+                    if (leverage.enabled or actual_active) and leverage_supported:
+                        from portfolio_app.leveraged_funds_ui import render_leveraged_funds
+                        render_leveraged_funds(data_dir, valued)
+                        if not actual_active and reporting_currency == 'EUR':
+                            render_leverage_editor(data_dir, valued, future=actual_future)
             if plan_tab.open:
                 with plan_tab:
+                    if (leverage.enabled or actual_active) and leverage_supported:
+                        from portfolio_app.portfolio_exposure_ui import render_policy_settings
+                        render_policy_settings(data_dir, leverage, allocation, future=actual_future, planning=True)
                     try:
-                        if allocation:
-                            render_scoped_rebalancing(valued, allocation)
+                        if (leverage.enabled or actual_active) and leverage_supported and leverage.active_basis == 'exposure':
+                            from portfolio_app.exposure_plan_ui import render_exposure_plan
+                            if actual_active:
+                                from portfolio_app.account_planning import render_account_plan
+                                render_account_plan(data_dir, exposure_result, allocation, valued, journal)
+                            else:
+                                render_exposure_plan(data_dir, exposure_result, allocation, valued, future=actual_future)
+                        elif allocation:
+                            if (leverage.enabled or actual_active) and leverage_supported:
+                                st.caption('Capital plan · Recorded holdings only; excludes dedicated futures strategy cash. Notional is not spendable cash.')
+                            render_scoped_rebalancing(ordinary_valued.loc[~ordinary_valued.position_id.isin({x.position_id for x in journal.cash_links})] if actual_active else valued, allocation)
                         else:
-                            render_rebalancing(valued)
+                            render_rebalancing(ordinary_valued.loc[~ordinary_valued.position_id.isin({x.position_id for x in journal.cash_links})] if actual_active else valued)
                     except RebalanceError as exc:
                         st.error(str(exc))
+    if background_prices or market_coordinator.pending(market_workspace) or market_coordinator.revision(market_workspace) != market_revision:
+        render_market_status(market_workspace, market_revision, show_caption=False)
+    if not tour_active():
+        render_alert_dialog(data_dir)
     render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued)
-    if background_prices:
-        render_market_status(market_workspace, market_revision)
     render_tour(empty=holdings.empty)
+    finish_view_inputs()
     mark_view_ready()
 
 

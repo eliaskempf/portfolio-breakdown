@@ -1,5 +1,6 @@
 """Slow providers are controlled with events; no live data or network access."""
 from datetime import timedelta
+from pathlib import Path
 from threading import Event
 from time import monotonic
 
@@ -151,9 +152,9 @@ def test_history_uses_memory_if_refresh_cannot_be_saved(tmp_path, now, monkeypat
     service = HistoryService(provider, tmp_path, now=lambda: clock[0])
     service.get('SYNTH')
     clock[0] += timedelta(hours=2)
-    def cannot_write(**kwargs):
+    def cannot_write(*args):
         raise PermissionError('Synthetic unwritable cache')
-    monkeypatch.setattr('portfolio_app.history.NamedTemporaryFile', cannot_write)
+    monkeypatch.setattr('pathlib.Path.replace', cannot_write)
     assert 'could not be saved' in service.get('SYNTH').note
     assert service.get('SYNTH').status == 'cached'
     assert provider.calls == 2
@@ -171,4 +172,37 @@ def test_history_cooldown_starts_after_a_long_failed_request(now):
     service = HistoryService(provider, now=lambda: clock[0])
     service.get('SYNTH')
     service.get('SYNTH')
+    assert provider.calls == 1
+
+
+@pytest.mark.parametrize('kind', ['price', 'history'])
+def test_fetched_data_survives_cache_publication_and_cleanup_failure(tmp_path, now, monkeypatch, kind):
+    class Provider:
+        calls = 0
+        def price(self, ticker):
+            self.calls += 1
+            return Quote(42., 'EUR', now)
+        def history(self, ticker, period):
+            self.calls += 1
+            return HistoryResult(('2026-01-01',), (42.,), 'EUR', 'fresh')
+    provider = Provider()
+    service = (PriceService(provider, tmp_path / 'prices.json', now=lambda: now) if kind == 'price'
+               else HistoryService(provider, tmp_path, now=lambda: now))
+    def cannot_replace(*args):
+        raise PermissionError('Invented publication failure')
+    unlink = Path.unlink
+    def cannot_clean_stage(path, *args, **kwargs):
+        if path.suffix == '.tmp':
+            raise PermissionError('Invented cleanup failure')
+        return unlink(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'replace', cannot_replace)
+    monkeypatch.setattr(Path, 'unlink', cannot_clean_stage)
+    if kind == 'price':
+        assert service.price('SYNTH').quote.price == 42.
+        assert 'could not be saved' in service.cache_warning
+        assert service.price('SYNTH').quote.price == 42.
+    else:
+        result = service.get('SYNTH')
+        assert result.prices == (42.,) and 'could not be saved' in result.note
+        assert service.get('SYNTH').prices == (42.,)
     assert provider.calls == 1

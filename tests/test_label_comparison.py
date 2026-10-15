@@ -116,11 +116,11 @@ def test_empty_unknown_and_zero_label_selections(comparison_data):
     assert zero.table["Portfolio %"].isna().all()
 
 
-@pytest.mark.parametrize("value", [-1., float("inf")])
+@pytest.mark.parametrize("value", [float("inf"), float("-inf")])
 def test_invalid_values_are_rejected(comparison_data, value):
     exposures, classified = comparison_data
     exposures.loc[0, "value"] = value
-    with pytest.raises(ValueError, match="nonnegative"):
+    with pytest.raises(ValueError, match="finite"):
         compare_labels(exposures, classified, [Label("labels", ("Group A",))], overlap="split")
 
 

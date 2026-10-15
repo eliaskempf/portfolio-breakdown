@@ -14,30 +14,8 @@ from portfolio_app.portfolio_settings import REPORTING_CURRENCIES, load_settings
 from portfolio_app.storage import revision
 
 
-def historical_for(directory, *, demo=False):
-    from portfolio_app.fx import HistoricalFX
-    from portfolio_app.market_data import coordinator
-    if demo:
-        from portfolio_app.fx import DatedRate
-        class OfflineFX:
-            def get(self, source, target, day):
-                # Explicitly invented FX history, never used for live portfolios.
-                rates = {'EUR': 1., 'USD': .9, 'GBP': 1.2}
-                if source not in rates or target not in rates:
-                    return DatedRate(note='No synthetic history for this currency.')
-                return DatedRate(rates[source] / rates[target], day, 'Synthetic demo FX')
-        return OfflineFX()
-    workspace = str(directory.resolve())
-    service = HistoricalFX(directory=directory / '.cache' / 'purchase-fx')
-
-    class BackgroundFX:
-        def get(self, source, target, day):
-            result, due = service.cached(source, target, day)
-            if due:
-                coordinator.request(workspace, f'purchase-fx-v1:{source}:{target}:{day}',
-                                    lambda: service.get(source, target, day, refresh=True))
-            return result
-    return BackgroundFX()
+# Compatibility import for position/cost editors; service construction is UI-free.
+from portfolio_app.application import historical_for
 
 
 def render_currency_setting(directory, settings):
@@ -52,17 +30,8 @@ def render_currency_setting(directory, settings):
 
 
 def reset_currency_views():
-    # Keep scope/navigation/targets. Clear amounts and calculations, not percentages.
-    for key in list(st.session_state):
-        if key.startswith(('position_edit_', 'currency_estimate_')) or key in {
-            'planning_amount', 'planning_minimum', 'rebalance_cash', 'rebalance_minimum_purchase', 'rebalance_result', 'portfolio_contribution_result',
-            'position_draft'}:
-            del st.session_state[key]
-    for bucket in ('view_editor_drafts', 'view_editor_bases'):
-        drafts = st.session_state.get(bucket, {})
-        for key in list(drafts):
-            if key.startswith('balance_'):
-                del drafts[key]
+    from portfolio_app.state_lifecycle import transition
+    transition(st.session_state, 'currency')
     st.session_state['currency_notice'] = 'Portfolio currency updated. Monetary planning inputs and previous plans have been cleared.'
 
 
@@ -80,12 +49,25 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
     def review():
         from portfolio_app.portfolio import prepare_portfolio
         from portfolio_app.balances import patch_holdings
+        from portfolio_app.portfolio_settings import validate_currency_change
+        try:
+            validate_currency_change(directory, target)
+        except DataError as exc:
+            st.error(str(exc))
+            if st.button('Cancel currency change'):
+                dismiss()
+                st.rerun()
+            return
         candidate = prepare_portfolio(snapshot.holdings, prices, reporting_currency=target, historical=historical)
         held = candidate.loc[candidate.shares.gt(0)]
-        missing = held.loc[held.cost_basis_reporting.isna()]
+        from portfolio_app.performance import cash_balance_only
+        eligible = held.loc[~cash_balance_only(held)]
+        missing = eligible.loc[eligible.cost_basis_reporting.isna()]
         st.write(f'{settings.reporting_currency} → {target}')
         st.caption('Original purchases remain in their recorded currencies. Current values use current FX; gains need converted purchase costs.')
-        st.write(f'{held.unrealized_gain_reporting.notna().sum()} of {len(held)} positions have comparable gains in {target}.')
+        st.write(f'{eligible.unrealized_gain_reporting.notna().sum()} of {len(eligible)} positions have comparable gains in {target}.')
+        if len(eligible) < len(held):
+            st.caption('Cash balances without a recorded conversion basis are excluded from purchase-based performance. Their values still use current FX; FX gains and interest are not inferred.')
         if not missing.empty:
             st.warning(f'{len(missing)} positions have incomplete costs in {target} and will be excluded from gains. Their available current values still count.')
             st.dataframe(missing[['name', 'performance_note']].rename(columns={'name': 'Position', 'performance_note': 'Missing information'}), hide_index=True)
@@ -125,6 +107,7 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
                 with workspace_lock(directory):
                     if revision(directory / 'holdings.csv') != snapshot.revision or load_settings(directory).revision != settings.revision:
                         raise DataError('Portfolio changed during review. Reopen the currency review.')
+                    validate_currency_change(directory, target)
                     if selection:
                         patch_holdings(directory / 'holdings.csv', saved['changes'], expected_revision=snapshot.revision)
                     save_settings(directory, target, settings.revision)

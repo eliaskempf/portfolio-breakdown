@@ -7,14 +7,14 @@ from portfolio_app.display_names import compact_fund_name, instrument_name
 from portfolio_app.etf import matching_fund
 
 
-def render_etf_toggle(data_dir):
+def render_etf_toggle(data_dir, *, futures=False):
     context = sha256(str(data_dir.resolve()).encode()).hexdigest()[:16]
     key = f'etf_lookthrough_{context}'
     def remember():
         choices = dict(st.session_state.get('etf_breakdown_preferences', {}))
         choices[context] = st.session_state[key]
         st.session_state['etf_breakdown_preferences'] = choices
-    return st.toggle('Break down ETFs', key=key, on_change=remember,
+    return st.toggle('Look through funds & futures' if futures else 'Break down ETFs', key=key, on_change=remember,
                      value=st.session_state.get('etf_breakdown_preferences', {}).get(context, True))
 
 

@@ -2,6 +2,7 @@
 import json
 import yaml
 import pytest
+from browser_support import select_tab
 
 from test_ux_browser import ux_page as ux_page, playwright
 
@@ -17,7 +18,7 @@ def exposure_page(ux_page):
         as_of='2026-09-01', source='https://example.invalid', holdings_file='invented.csv')))
     (directory / 'classifications.yaml').write_text('c:\n  classifications:\n    labels: [[Theme, Child]]\n')
     page.reload()
-    page.get_by_role('tab', name='Exposure', exact=True).click()
+    select_tab(page, 'Exposure')
     page.get_by_role('table', name='Exposure assets', exact=True).wait_for()
     return page, directory
 
@@ -28,7 +29,10 @@ def test_assets_first_filters_breakdown_and_source_dialog(exposure_page):
     playwright.expect(results.locator('.js-plotly-plot')).to_have_count(0)
     playwright.expect(page.get_by_text('ETF refresh & snapshots', exact=True)).not_to_be_visible()
     table = results.get_by_role('table', name='Exposure assets', exact=True)
-    assert table.bounding_box()['y'] < 650
+    # The capital/market selector adds controls above this view. Check that the
+    # results themselves remain compact instead of fixing a page-wide pixel Y.
+    classification = page.get_by_role('combobox', name='Asset classifications', exact=True).bounding_box()
+    assert 0 <= table.bounding_box()['y'] - classification['y'] - classification['height'] < 48
     summary = page.locator('.st-key-exposure_summary')
     playwright.expect(summary).not_to_contain_text('source positions')
     playwright.expect(summary).not_to_contain_text('use a proxy')
@@ -108,7 +112,7 @@ def test_exposure_lists_expand_without_breakdown_and_bound_long_breakdowns(expos
                              for index in range(40)})
     (directory / 'demo_prices.json').write_text(json.dumps(prices))
     page.reload()
-    page.get_by_role('tab', name='Exposure', exact=True).click()
+    select_tab(page, 'Exposure')
     table = page.get_by_role('table', name='Exposure assets', exact=True)
     playwright.expect(table.locator('tbody tr')).to_have_count(43)
     assert table.evaluate('el => el.parentElement.scrollHeight > el.parentElement.clientHeight')
@@ -137,7 +141,7 @@ def test_sources_show_direct_and_each_etf_with_asset_relative_percentages(exposu
     sent = []
     page.on('websocket', lambda socket: socket.on('framesent', lambda frame: sent.append(frame)))
     page.reload()
-    page.get_by_role('tab', name='Exposure', exact=True).click()
+    select_tab(page, 'Exposure')
     table = page.get_by_role('table', name='Exposure assets', exact=True)
     row = table.locator('tr[data-position-id="c"]')
     playwright.expect(row).to_contain_text('3 positions')

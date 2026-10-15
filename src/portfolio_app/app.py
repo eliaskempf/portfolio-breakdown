@@ -37,6 +37,8 @@ def main(*, presentation: Presentation | None = None) -> None:
     action.add_argument('--migrate-from', type=Path, help='Copy an existing workspace into the NEW --data-dir')
     action.add_argument('--backup-to', type=Path, help='Copy the stopped workspace to a NEW backup directory')
     action.add_argument('--restore-from', type=Path, help='Restore a backup into the NEW --data-dir')
+    action.add_argument('--fork-futures', type=Path, metavar='DIRECTORY',
+                        help='Copy a stopped EUR portfolio into a NEW private futures sandbox')
     args, streamlit_args = parser.parse_known_args()
     directory = workspace_path(args.data_dir)
     try:
@@ -61,6 +63,12 @@ def main(*, presentation: Presentation | None = None) -> None:
             source = args.migrate_from or args.restore_from or effective
             print(copy_workspace(source, args.backup_to or directory))
             return
+        if args.fork_futures:
+            if args.demo or args.offline_demo:
+                parser.error('--fork-futures cannot be combined with a demo')
+            from portfolio_app.futures_workspace import fork_futures_workspace
+            directory = fork_futures_workspace(effective, args.fork_futures)
+            effective = directory
         if args.port is not None and not 1 <= args.port <= 65535:
             parser.error('--server.port must be between 1 and 65535')
         browser = not args.no_browser and args.headless != 'true'

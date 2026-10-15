@@ -1,6 +1,6 @@
 """Shared visual styling for the local app; no portfolio calculations."""
 
-from portfolio_app.currency_display import currency_symbol
+from portfolio_app.currency_display import money
 
 from html import escape
 
@@ -18,8 +18,14 @@ CSS = """
    far edge of the input. Use semantic test IDs instead of generated classes. */
 [data-testid="stWidgetLabel"] > div:has(> [data-testid="stTooltipIcon"]) {flex:0 0 auto;margin-inline-start:6px;}
 .st-key-app_header {border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent);padding-bottom:16px;margin-bottom:8px;}
-.app-brand {display:flex;align-items:center;gap:10px;font-size:1.3rem;font-weight:650;letter-spacing:-.5px;}
-.app-brand img {width:38px;height:38px;flex-shrink:0;}
+.app-brand {display:flex;align-items:center;gap:12px;font-size:1.85rem;font-weight:650;letter-spacing:-.5px;}
+.app-brand img {width:56px;height:56px;flex-shrink:0;}
+/* Keep the bell's text available to assistive technology without a visible label. */
+.st-key-header_notifications [data-testid="stPopoverButton"] [data-testid="stMarkdownContainer"] {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+.st-key-header_notifications [data-testid="stPopoverButton"] [aria-hidden="true"] {display:none;}
+.st-key-header_notifications [data-testid="stPopoverButton"] {position:relative;padding:0;}
+.st-key-header_notifications [data-testid="stIconMaterial"] {position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:20px;line-height:1;}
+.st-key-header_notifications [data-testid="stPopoverButton"]::after {content:none;position:absolute;right:7px;top:7px;width:8px;height:8px;border-radius:50%;background:#d04755;box-shadow:0 0 0 2px var(--st-background-color);pointer-events:none;}
 .st-key-app_header [data-testid="stHorizontalBlock"] {flex-wrap:wrap;gap:12px;}
 .stDialog > div:has(.st-key-welcome_personal) {width:min(880px,calc(100vw - 32px))!important;max-width:880px;margin:clamp(24px,12vh,120px) auto!important;}
 .st-key-welcome_demo,.st-key-welcome_personal {padding:24px!important;border-radius:16px!important;min-height:285px;}
@@ -41,14 +47,17 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 :is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetric"] > div > div:has(> [data-testid="stMetricDelta"]) {grid-column:2;grid-row:2;margin-top:0;flex-wrap:wrap;}
 .st-key-overview_allocation {container-type:inline-size;}
 .st-key-overview_allocation_summary {transform:translateY(-24px);}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"] {cursor:pointer;}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:hover {filter:brightness(.85);}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
+/* A non-wrapping Streamlit row defaults to overflow:auto. This is a heading,
+   not a scroll viewport; allow help and focus outlines beyond its line box. */
+.st-key-overview_allocation .st-key-overview_allocation_heading {overflow:visible;}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"], .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"] {cursor:pointer;}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:hover, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:hover {filter:brightness(.85);}
+:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:focus-visible, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
 .st-key-exposure_theme_results {container-type:inline-size;}
 .st-key-exposure_toolbar [data-testid="stColumn"] {min-width:0;}
 @container(max-width:860px) {
   .st-key-overview_allocation_summary {transform:none;}
-  .st-key-overview_allocation [data-testid="stHorizontalBlock"] {flex-direction:column;align-items:stretch;}
+  .st-key-overview_allocation [data-testid="stHorizontalBlock"]:not(.st-key-overview_allocation_heading) {flex-direction:column;align-items:stretch;}
   .st-key-overview_allocation [data-testid="stColumn"] {width:100%!important;flex:1 1 100%;min-width:0;}
   .st-key-exposure_theme_results [data-testid="stHorizontalBlock"] {flex-direction:column;align-items:stretch;}
   .st-key-exposure_theme_results [data-testid="stColumn"] {width:100%!important;flex:1 1 100%;min-width:0;}
@@ -93,26 +102,29 @@ def empty_overview() -> None:
 
 
 def allocation_total(label: str, value: float) -> None:
-    st.html((f'<div class="allocation-total"><span>{escape(label)}</span><span>€{value:,.2f} · 100%</span></div>').replace('€', currency_symbol()))
+    st.html(f'<div class="allocation-total"><span>{escape(label)}</span><span>{money(value)} · 100%</span></div>')
 
 
-def performance_metric(label: str, value: str, amount, *, key: str) -> None:
+def performance_metric(label: str, value: str, amount, *, key: str, qualified=False, help=None) -> None:
     """Keep signed performance readable even without colour or a known cost."""
     tone = 'positive' if amount is not None and amount > 0 else 'negative' if amount is not None and amount < 0 else 'neutral'
+    if qualified:
+        tone = 'neutral'
     with st.container(key=f'gain_{tone}_{key}'):
-        st.metric(label, value)
+        st.metric(label, value, help=help)
 
 
-def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None):
+def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False, freshness=None):
     """One value card with an adjacent, optionally clickable unrealized gain."""
     gain = performance.return_pct if percent else performance.gain_reporting
-    gain_text = 'Unavailable' if gain is None else f'{gain:+,.2f}%' if percent else (f'{"-" if gain < 0 else "+"}€{abs(gain):,.2f}').replace('€', currency_symbol())
+    gain_text = ('N/A · Cash balance' if performance.cash_only else 'Unavailable') if gain is None else f'{gain:+,.2f}%' if percent else money(gain, signed=True)
     with st.container(key=key):
-        st.metric('Priced value' if missing else 'Current value', (f'€{value:,.2f}').replace('€', currency_symbol()),
-                  delta=gain_text, delta_color='normal' if gain else 'off', delta_arrow='off',
-                  delta_description='Return on cost' if percent else 'Unrealized gain / loss',
-                  help=f'{missing} missing prices. Performance coverage: {performance.covered_count} of {performance.held_count} held positions with converted costs and available prices. Excludes dividends and realized gains.')
-    if performance.estimated_count:
-        st.caption(f'Estimated gains · {performance.estimated_count} positions use confirmed FX approximations')
+        st.metric(label or ('Priced value' if missing else 'Current value'), money(value),
+                  delta=gain_text, delta_color='normal' if gain and not (freshness and freshness[2]) else 'off', delta_arrow='off',
+                  help=('Assets minus debt. Gain includes holdings performance and net futures P&L. ' if strategy_gain else
+                        'Current holdings value and gain on recorded costs. ') +
+                       f'{missing} missing prices. Performance coverage: {performance.coverage}. Click gain to switch amount / %.')
+        if freshness and freshness[0]:
+            st.caption(freshness[0], help=freshness[1])
     if on_toggle_gain:
         toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain, container_key=key)

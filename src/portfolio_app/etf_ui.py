@@ -4,6 +4,7 @@ from portfolio_app.ui_help import column_help
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from portfolio_app.charts import chart_config
 
 from portfolio_app.etf import FundSnapshot, fund_breakdown, matching_fund, constituent_resolver, snapshot_age_days
 from portfolio_app.display_names import display_name, compact_fund_name, instrument_name
@@ -143,7 +144,7 @@ def render_fund_summary(fund, *, key_prefix=''):
     chart = px.bar(frame, x='Fund allocation %', y=dimension, orientation='h')
     chart.update_layout(yaxis={'categoryorder': 'total ascending'}, height=max(280, min(650, len(frame) * 28)))
     st.plotly_chart(chart, width='stretch', key=f'{key_prefix}fund_summary_chart_{fund.fund_id}',
-                    config={'showSendToCloud': False})
+                    config=chart_config(toolbar='hover'))
     st.dataframe(frame, hide_index=True, width='stretch')
     labels = {'modelOad': 'Effective duration (years)', 'effectiveDuration': 'Effective duration (years)',
               'weightedAvgLife': 'Weighted average maturity (years)', 'weightedAverageMaturity': 'Weighted average maturity (years)',

@@ -19,8 +19,10 @@ def validate_workspace(directory: Path, *, allow_empty: bool = False) -> None:
         raise DataError('Workspace must contain holdings.csv.')
     from portfolio_app.portfolio_settings import load_settings
     load_settings(directory)
+    from portfolio_app.monitoring_store import load_monitoring
+    load_monitoring(directory)
     snapshot = read_snapshot(directory / 'holdings.csv')
-    load_allocation(directory / 'allocation.yaml', snapshot.holdings)
+    allocation = load_allocation(directory / 'allocation.yaml', snapshot.holdings)
     if (directory / 'classifications.yaml').exists():
         load_classifications(directory / 'classifications.yaml')
     # External ETF files would leave the copy dependent on the original location.
@@ -43,6 +45,27 @@ def validate_workspace(directory: Path, *, allow_empty: bool = False) -> None:
     load_company_names(directory / 'company-names.yaml')
     load_company_identities(directory / 'company-identities.yaml')
     load_fee_overrides(directory / 'fund-fees.json')
+    from portfolio_app.futures_workspace import load_sandbox, load_comparison, load_historical
+    from portfolio_app.leverage_settings import load_leverage_settings
+    from portfolio_app.exposure_targets import load_exposure_targets
+    sandbox = load_sandbox(directory)
+    load_leverage_settings(directory, future=sandbox[0] if sandbox else None)
+    load_exposure_targets(directory, allocation)
+    if sandbox:
+        load_comparison(directory)
+        load_historical(directory)
+    from portfolio_app.futures_funding_data import load_funding_settings
+    load_funding_settings(directory)
+    from portfolio_app.account_journal import load_journal
+    from portfolio_app.actual_portfolio import validate_links
+    from portfolio_app.account_observations import load_observations
+    validate_links(load_journal(directory)[0], snapshot.holdings)
+    load_observations(directory)
+    from portfolio_app.futures_quotes import read_quotes
+    read_quotes(directory)
+    from portfolio_app.generalized_studies_ui import load_study_settings
+    load_study_settings(directory)
+
 
 
 def inventory(directory: Path) -> dict[str, str]:

@@ -8,6 +8,7 @@ from pathlib import Path
 import streamlit as st
 import yaml
 
+from portfolio_app.application import PortfolioInputs
 from portfolio_app.allocation import load_allocation
 from portfolio_app.etf import load_funds
 from portfolio_app.positions import read_snapshot
@@ -57,4 +58,4 @@ def load_inputs(directory):
         files = []
     signature = (str(directory.resolve()), manifest_stamp, tuple(file_stamp(p) for p in files))
     funds = cached_input('funds', signature, lambda: load_funds(directory / 'etfs'))
-    return snapshot, allocation, classifications, funds
+    return PortfolioInputs(snapshot, allocation, classifications, funds)

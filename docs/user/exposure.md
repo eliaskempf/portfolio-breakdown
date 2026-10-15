@@ -29,6 +29,52 @@ Unknown company sectors, unsupported fund breakdowns and uncovered ETF weights
 remain Unclassified. Saved sector labels and provider sectors take precedence;
 custom themes are not automatically assigned.
 
+## Futures and exposure measures
+
+With futures or leverage enabled, Exposure opens the same Assets table with
+**Market exposure** selected. Contributions from direct holdings, ETFs and
+futures proxies combine under the same company. Expand Sources to distinguish
+those channels; details retain proxy dates, methods and unresolved weights.
+Proxy composition is approximate, not a claim to own the index constituents.
+
+**% of selected exposure** uses the signed exposure of the selected source scope.
+**% of portfolio equity** uses whole-portfolio net equity and can exceed 100%.
+Cash contributes to equity but has zero market exposure. Shorts remain negative;
+nonpositive or incomplete denominators make composition percentages unavailable.
+Charts use signed bars where an area chart would obscure negative contributions.
+
+Under **Data & settings**, **Analysis measure → Funded value** uses the same
+controls to inspect funded holdings, cash and claims. Futures capital remains at
+source level rather than being attributed to proxy companies. Notional never
+becomes wealth, a gain or a purchase budget. Ordinary portfolios without leverage
+retain their existing funded look-through presentation.
+
+**Look through funds & futures** controls expansion when futures are present.
+The linked ETF's choice under **Individual ETFs** also controls its use as a
+futures composition proxy. A collapsed future retains its full signed exposure.
+Source filters do not remove the proxy metadata needed to analyze a selected
+future when its companion ETF is outside the source scope.
+
+Assets opens without a chart. Lists above 200 assets use 100-row pages; sorting,
+search and percentages use the complete selection. The optional company chart
+shows at most 30 contributions by absolute amount. Theme charts initially show
+categories; large individual-asset charts use bounded bars. Detailed provenance,
+company scenarios and source tables are prepared when opened.
+
+Ordinary equity funds use their current value as the exposure basis, excluding
+explicit cash. An unsupported constituent type does not invalidate that fund
+total: its weight stays in **Other**, with the original security named in
+provenance. This is unresolved attribution of the fund's exposure, not a computed
+delta or notional for a right, warrant or other underlying derivative. Explicit
+leveraged/inverse fund factors take precedence; unknown leverage remains unknown.
+
+When the fund's exposure basis itself is unknown, or valuation is missing,
+**Why is exposure incomplete?** identifies the source and constituent.
+Overview and collapsed fund rows retain **Known exposure** subtotals; their
+charts show resolved contributions only. The full total, composition percentages
+and leverage ratios remain unavailable where they require the unresolved amount.
+An unknown contribution is never treated as zero or silently reclassified.
+
 ## Understand Other and dates {#other}
 
 Constituent weights are fractions of the **whole fund**. In an invented 80%-covered
@@ -57,6 +103,9 @@ the provider. The threshold can be set from 1–30 days or automatic checks disa
 snapshots; a fresh check may return the same old holdings date. Snapshots older
 than seven days retain a recency notice. Price refresh and ETF refresh are separate.
 The app must be running for its background checks.
+While a refresh runs, **Notifications** shows its progress separately from alerts.
+Progress does not count as an unread notification; saved snapshots remain usable
+until the completed update is loaded.
 
 ## Set up and inspect a source {#sources}
 

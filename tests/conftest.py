@@ -32,7 +32,7 @@ def pytest_sessionfinish(session, exitstatus):
 
 @pytest.fixture(autouse=True)
 def stateful_layout_test_support(monkeypatch):
-    # Streamlit 1.63's AppTest does not serialize tab-container widget state.
+    # Streamlit's AppTest does not serialize stateful layout widget state.
     # Supply the same value the browser sends, without changing app behavior.
     from streamlit.testing.v1.element_tree import ElementTree
     from streamlit.proto.WidgetStates_pb2 import WidgetState
@@ -43,6 +43,9 @@ def stateful_layout_test_support(monkeypatch):
             if node.type == 'tab_container' and node.proto.tab_container.id:
                 identity = node.proto.tab_container.id
                 result.widgets.append(WidgetState(id=identity, string_value=tree.session_state[identity]))
+            elif node.type == 'expander' and node.proto.id:
+                identity = node.proto.id
+                result.widgets.append(WidgetState(id=identity, bool_value=tree.session_state[identity]))
         return result
     monkeypatch.setattr(ElementTree, 'get_widget_states', states)
 
@@ -53,6 +56,13 @@ def no_background_network(monkeypatch):
     # Background refresh is tested separately with injected offline providers.
     from portfolio_app.etf_refresh import coordinator
     monkeypatch.setattr(coordinator, 'schedule', lambda *args, **kwargs: False)
+    from portfolio_app.settlement_collection import collector
+    monkeypatch.setattr(collector, 'schedule', lambda *args, **kwargs: False)
+    from portfolio_app.futures_quotes import collector as quotes
+    monkeypatch.setattr(quotes, 'schedule', lambda *args, **kwargs: False)
+    from portfolio_app.derivative_market import make_contract
+    monkeypatch.setattr('portfolio_app.contract_maturity_ui.listed_contracts',
+        lambda product: tuple(make_contract(product, day) for day in ('2027-03-19','2027-06-18')))
 
 
 @pytest.fixture(scope="session")

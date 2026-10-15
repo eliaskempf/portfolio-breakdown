@@ -87,9 +87,13 @@ def test_currency_estimates_need_review_and_confirmation(tmp_path):
     assert load_settings(directory).reporting_currency == 'USD'
     row = read_snapshot(directory / 'holdings.csv').holdings.iloc[0]
     assert resolve_cost(active_components(row), 'USD').estimated
-    assert any('confirmed FX estimates' in w.value for w in app.warning)
+    app.session_state['workspace_notifications'] = True
+    app.run()
+    assert any('estimated FX costs' in item.value for item in app.markdown)
     restarted = launch(directory, 'Overview')
-    assert any('confirmed FX estimates' in w.value for w in restarted.warning)
+    restarted.session_state['workspace_notifications'] = True
+    restarted.run()
+    assert any('estimated FX costs' in item.value for item in restarted.markdown)
 
 
 def test_foreign_buy_in_controls_supplied_rate_and_restart(tmp_path):

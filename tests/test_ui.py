@@ -108,7 +108,8 @@ def test_optional_smh_grouping_stock_choice_lookthrough_and_filters(grouped_data
         table = app.tabs[1].dataframe[-1].value
         assert table["Value"].sum() == 944
         assert table.loc[table.Category == "SMH + related stocks", "Value"].tolist() == [560]
-        assert table["Allocation %"].sum() == pytest.approx(100)
+        # This synthetic selection includes an unpriced position.
+        assert table["Allocation %"].isna().all()
     by_label(app.get('button_group'), 'Exposure view').set_value('Assets').run()
     effective = list_frame(app, 'Exposure assets')
     assert effective.loc[effective.Asset == "Nvidia", "Total"].tolist() == [256]
@@ -122,6 +123,7 @@ def test_optional_smh_grouping_stock_choice_lookthrough_and_filters(grouped_data
     by_label(app.multiselect, "Holdings").set_value(["nvda"]).run()
     assert not app.exception
     assert app.tabs[1].dataframe[-1].value["Value"].tolist() == [240]
+    assert app.tabs[1].dataframe[-1].value["Allocation %"].tolist() == [100.]
     by_label(app.checkbox, "Group SMH with related stocks").uncheck().run()
     assert not app.exception
     assert app.tabs[1].dataframe[-1].value.Category.tolist() == ["Nvidia (NVDA)"]

@@ -3,7 +3,7 @@
 Understand what you own, how it is allocated, and how a proposed contribution
 would change it. Portfolio Breakdown runs locally, in a standalone window or
 in your browser. It supports current holdings, hierarchical categories, ETF exposure and planning; it does
-not execute trades or maintain tax accounts.
+not execute trades or calculate taxes.
 
 Start with [installation](install.md#install), then
 [explore the demo or create an empty portfolio](getting-started.md#first-portfolio).
@@ -17,7 +17,9 @@ For an existing holdings report, use the [reviewed import](import.md#import).
 | See direct and indirect holdings together | [Exposure and ETFs](exposure.md#look-through) |
 | Understand prices, gains and missing values | [Prices and performance](performance.md#prices) |
 | Interpret historical risk and fund metrics | [Analytics](analytics.md#risk) |
+| Track moving averages and account thresholds | [Monitoring and alerts](monitoring.md) |
 | Preview a contribution or rebalance | [Rebalance](rebalance.md#planning) |
+| Record futures and account financing in the development branch | [Futures and leverage](futures.md) |
 | Back up, restore or move your data | [Storage and recovery](storage.md#backup) |
 | Resolve a problem | [Troubleshooting](troubleshooting.md#troubleshooting) |
 
@@ -29,5 +31,7 @@ copies refer to fixed source commits. Use the help linked by your installed
 version; a newer development guide may describe different controls.
 
 This guide covers the v1 feature set, including holdings import and extended ETF
-support. It does not describe the separate futures sandbox. A package version
-alone may be shared by several candidates: the source commit distinguishes them.
+support. The [futures and leverage guide](futures.md) describes actual-account
+recording in EUR/USD/GBP and hypothetical studies in the development branch,
+separate from published installers. A package version alone may be shared by
+several candidates: the source commit distinguishes them.

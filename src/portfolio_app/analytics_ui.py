@@ -14,6 +14,12 @@ def context_key(data_dir, demo=False):
     return 'analytics_' + sha256(f'{data_dir.resolve()}:{demo}:{reporting_currency()}'.encode()).hexdigest()[:12]
 
 
+def benchmark_name(symbol):
+    if symbol == DEFAULT_BENCHMARK or symbol.startswith(DEFAULT_BENCHMARK + ':'):
+        return 'MSCI ACWI · Net return'
+    return 'MSCI ACWI · ETF proxy' if symbol == 'IUSQ.DE' else symbol
+
+
 def display_value(metric, key):
     value = finite(metric.value)
     if value is None:
@@ -30,10 +36,10 @@ def display_value(metric, key):
 
 
 def risk_settings(key):
-    benchmark = st.text_input('Benchmark ticker', DEFAULT_BENCHMARK, help='Quote ticker for the comparison benchmark; this does not add a holding.', key=key + '_benchmark').strip().upper()
+    benchmark = st.text_input('Benchmark ticker', DEFAULT_BENCHMARK, help='MSCI:892400:NETR selects the MSCI ACWI net-return index in the reporting currency. Alternatively enter a quote ticker. This does not add a holding.', key=key + '_benchmark').strip().upper()
     years = st.selectbox('History window', [1, 3, 5], help='Historical period used to estimate returns and risk; insufficient data remains visible.', index=1,
                          format_func=lambda years: f'{years} year' + ('s' if years != 1 else ''), key=key + '_years')
-    st.caption(f'Default: MSCI ACWI ETF (IUSQ.DE). Adjusted weekly returns in {reporting_currency()}; at least 52 common observations.')
+    st.caption(f'Default: MSCI ACWI Net Return · {reporting_currency()}. IUSQ.DE is a disclosed fallback when index history is unavailable.')
     return benchmark, years
 
 

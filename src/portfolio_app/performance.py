@@ -6,6 +6,21 @@ import pandas as pd
 from portfolio_app.cost_basis import active_components, resolve_cost
 
 
+def cash_balance_only(positions):
+    """Cash without a recorded cost is a balance, not an incomplete purchase."""
+    cash = positions.get('instrument_type', pd.Series('', index=positions.index)).eq('cash')
+    result = pd.Series(False, index=positions.index)
+    for index, row in positions.loc[cash].iterrows():
+        result.at[index] = not any(part.get('amount') not in ('', None) for part in active_components(row))
+    return result
+
+
+def cash_performance_note(currency, reporting_currency):
+    if currency and currency != reporting_currency:
+        return 'Cash balance: FX gain needs a recorded opening/conversion basis. Interest is separate.'
+    return 'Cash balance: purchase-based return is not applicable. Interest is separate.'
+
+
 def position_performance(valued, fx_to_reporting=None, *, reporting_currency='EUR', historical=None):
     result = valued.copy()
     for column in ('cost_basis', 'unrealized_gain', 'native_return_pct', 'return_pct',
@@ -15,9 +30,13 @@ def position_performance(valued, fx_to_reporting=None, *, reporting_currency='EU
     result['cost_estimated'] = False
     result['reporting_currency'] = reporting_currency
     rates = fx_to_reporting or {}
+    balances = cash_balance_only(result)
     for index, row in result.iterrows():
         if row.shares == 0:
             result.at[index, 'performance_note'] = 'No shares held'
+            continue
+        if balances.at[index]:
+            result.at[index, 'performance_note'] = cash_performance_note(row.get('quote_currency', ''), reporting_currency)
             continue
         cost, currency = row.get('acquisition_price', float('nan')), row.get('acquisition_currency', '')
         if pd.notna(cost) and currency:
@@ -60,14 +79,29 @@ class PerformanceSummary:
     gain_reporting: float | None
     return_pct: float | None
     estimated_count: int = 0
+    cash_balance_count: int = 0
+
+    @property
+    def eligible_count(self):
+        return self.held_count - self.cash_balance_count
+
+    @property
+    def cash_only(self):
+        return self.cash_balance_count > 0 and self.eligible_count == 0
+
+    @property
+    def coverage(self):
+        return f'{self.covered_count} of {self.eligible_count}'
 
 
 def summarize_performance(performance):
     held = performance.loc[performance.shares > 0]
-    covered = held.loc[held.unrealized_gain_reporting.notna()]
+    balances = cash_balance_only(held)
+    covered = held.loc[~balances & held.unrealized_gain_reporting.notna()]
+    cash_count = int(balances.sum())
     if covered.empty:
-        return PerformanceSummary(len(held), 0, None, None, None)
+        return PerformanceSummary(len(held), 0, None, None, None, cash_balance_count=cash_count)
     cost = float(covered.cost_basis_reporting.sum())
     gain = float(covered.unrealized_gain_reporting.sum())
     estimated = int(covered.get('cost_estimated', pd.Series(False, index=covered.index)).sum())
-    return PerformanceSummary(len(held), len(covered), cost, gain, 100 * gain / cost if cost > 0 else None, estimated)
+    return PerformanceSummary(len(held), len(covered), cost, gain, 100 * gain / cost if cost > 0 else None, estimated, cash_count)

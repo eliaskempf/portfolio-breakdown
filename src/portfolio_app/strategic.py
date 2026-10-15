@@ -50,7 +50,7 @@ def bucket_positions(valued: pd.DataFrame, config: Allocation, bucket: str = "")
 
 
 def strategic_tree(valued: pd.DataFrame, config: Allocation, bucket: str = "") -> pd.DataFrame:
-    """Chart areas use known EUR only; missing totals remain explicit metadata.
+    """Chart areas use known reporting-currency values only; missing totals remain explicit metadata.
 
     IDs, rather than display names, define the hierarchy. Empty buckets get zero
     area, never a fabricated current allocation based on their target.
@@ -85,7 +85,7 @@ def strategic_tree(valued: pd.DataFrame, config: Allocation, bucket: str = "") -
     return nodes.reset_index(drop=True)
 
 
-def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = "") -> pd.DataFrame:
+def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = "", *, known_exposure=None) -> pd.DataFrame:
     """Disjoint immediate children; current/target columns share the view scope."""
     selected = bucket_positions(valued, config, bucket)
     total = float(selected.current_value_reporting.sum())
@@ -93,7 +93,7 @@ def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = ""
     children = config.children(bucket) if bucket != "unassigned" else []
     records = []
     choices = [(item.id, item.name, item.target) for item in children]
-    if not bucket and valued.bucket_id.eq("").any():
+    if not bucket and valued.loc[valued.bucket_id.eq(""), 'current_value_reporting'].ne(0).any():
         choices.append(("unassigned", "Unassigned", None))
     if not choices:
         choices = [(row.position_id, instrument_name(row), row.within_bucket_target)
@@ -111,7 +111,9 @@ def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = ""
                         "Current (%)": current, "Target (%)": target,
                         "Gap (pp)": current - target,
                         "Status": "Missing price" if not known else "Empty" if not len(rows) or rows.shares.eq(0).all() else ""})
-    return pd.DataFrame(records, columns=["Category", "Value", "Current (%)", "Target (%)", "Gap (pp)", "Status"]).sort_values(
+        if known_exposure is not None:
+            records[-1]['Known exposure'] = rows.position_id.map(known_exposure).sum(min_count=1) if len(rows) else 0.
+    return pd.DataFrame(records, columns=["Category", "Value", *(['Known exposure'] if known_exposure is not None else []), "Current (%)", "Target (%)", "Gap (pp)", "Status"]).sort_values(
         ["Value", "Category"], ascending=[False, True], na_position="last", ignore_index=True)
 
 
@@ -133,15 +135,18 @@ def strategic_performance(valued, config, bucket=""):
     counts = Counter(name for name, _ in choices)
     choices = [(name + (f' ({index + 1})' if counts[name] > 1 else ''), positions)
                for index, (name, positions) in enumerate(choices)]
-    rows = []
+    rows, freshness = [], {}
     for name, positions in choices:
+        from portfolio_app.futures_valuation import summarize_freshness
+        freshness[name] = summarize_freshness(positions)
         summary = summarize_performance(positions)
         rows.append({"Category": name, "Cost": summary.cost_reporting,
                      "Gain": summary.gain_reporting, "Return (%)": summary.return_pct,
-                     "Coverage": f"{summary.covered_count} of {summary.held_count}",
-                     "Status": ("Complete" if summary.covered_count == summary.held_count and summary.held_count else
+                     "Coverage": summary.coverage,
+                     "Status": ("N/A · Cash balance" if summary.cash_only else "Complete" if summary.covered_count == summary.eligible_count and summary.eligible_count else
                                "Partial" if summary.covered_count else "Unavailable") + (" · Estimated" if summary.estimated_count else "")})
     result = pd.DataFrame(rows, columns=["Category", "Cost", "Gain", "Return (%)", "Coverage", "Status"])
     for column in ("Cost", "Gain", "Return (%)"):
         result[column] = pd.to_numeric(result[column], errors="coerce")
+    result.attrs['valuation_freshness'] = freshness
     return result

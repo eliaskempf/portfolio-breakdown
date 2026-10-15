@@ -93,3 +93,19 @@ def test_invalid_targets(tmp_path, target):
     path.write_text(f"id,name,shares,target_allocation\na,Asset,1,{target}\n")
     with pytest.raises(DataError, match="target_allocation"):
         load_holdings(path)
+
+
+@pytest.mark.parametrize('column', ['asset_id', 'asset_name', 'value', 'source_position_id', 'current_value_reporting'])
+def test_derived_columns_cannot_shadow_user_metadata(tmp_path, column):
+    path = tmp_path / 'holdings.csv'
+    content = f'id,name,shares,{column}\ninvented,Invented asset,1,Invented metadata\n'
+    path.write_text(content)
+    with pytest.raises(DataError, match=f'reserved.*{column}'):
+        load_holdings(path)
+    assert path.read_text() == content
+
+
+def test_nonconflicting_custom_metadata_remains_available(tmp_path):
+    path = tmp_path / 'holdings.csv'
+    path.write_text('id,name,shares,custom_theme\ninvented,Invented asset,1,Invented theme\n')
+    assert 'custom_theme' in metadata_dimensions(load_holdings(path))

@@ -13,10 +13,19 @@ from portfolio_app.valuation import portfolio_weights
 @dataclass(frozen=True)
 class ExposureSelection:
     positions: pd.DataFrame
-    total: float
-    selected_total: float
+    known_total: float
+    selected_known_total: float
     missing: int
     all_missing: int
+
+    @property
+    def total(self):
+        """Compatibility alias: this is a known subtotal when all_missing > 0."""
+        return self.known_total
+
+    @property
+    def selected_total(self):
+        return self.selected_known_total
 
 
 def select_sources(valued, classifications, *, metadata=None, asset_ids=None,

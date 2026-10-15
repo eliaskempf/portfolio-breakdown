@@ -1,6 +1,6 @@
 """Interactive, read-only position plans, shared by legacy and category scopes."""
 
-from portfolio_app.currency_display import currency_symbol, money_label
+from portfolio_app.currency_display import money, money_label
 from hashlib import sha256
 
 import pandas as pd
@@ -54,7 +54,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
                 minimum_purchase = st.number_input(money_label("Minimum purchase"), help="Minimum size of each suggested purchase; this affects which plans are feasible.", min_value=.01, value=25., step=5.,
                                                     key="rebalance_minimum_purchase")
                 if buy_all:
-                    st.caption((f'Minimum contribution for this selection: €{len(eligible_ids) * minimum_purchase:,.2f}').replace('€', currency_symbol()))
+                    st.caption(f'Minimum contribution for this selection: {money(len(eligible_ids) * minimum_purchase)}')
                 else:
                     prefer_fewer = st.toggle("Prefer fewer trades", key="rebalance_prefer_fewer",
                         help="Choose the fewest trades within your allowed extra target error, while investing as much as possible.")
@@ -159,7 +159,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
             })
             show_table(frontier)
             index = st.selectbox("Plan to inspect", list(range(len(plans))), help='Choose a calculated candidate plan to review.', index=index,
-                                 format_func=lambda i: (f"{plans[i].trade_count} trades · €{plans[i].unallocated_cash:.2f} unallocated").replace('€', currency_symbol()),
+                                 format_func=lambda i: f"{plans[i].trade_count} trades · {money(plans[i].unallocated_cash)} unallocated",
                                  key=f"rebalance_plan_{fingerprint}")
         plan = plans[index]
         st.metric("Deviation outside ranges", f"{plan.deviation_after:.3f} pp",

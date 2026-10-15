@@ -1,4 +1,4 @@
-"""Accessible unit toggle on the overview's native performance metric."""
+"""Accessible click/keyboard toggles on native metrics."""
 
 import streamlit as st
 
@@ -7,10 +7,12 @@ JS = """
 export default function({parentElement, data, setTriggerValue}) {
   // Streamlit invokes this again when data changes, keeping the component host.
   // Dispose the prior listeners before attaching the updated unit toggle.
-  parentElement.disposeGainToggle?.();
+  parentElement.disposeMetricToggle?.();
   // Lazy tabs can briefly retain the outgoing component host while mounting
   // its replacement. Only one host may own the metric's DOM listeners.
-  window.__portfolioGainToggle?.();
+  const registry = window.__portfolioMetricToggles ??= {};
+  const interaction = data.interactionKey || 'gain';
+  registry[interaction]?.();
   let target;
   const activate = () => setTriggerValue('toggle', {nonce: crypto.randomUUID()});
   const keydown = event => {
@@ -27,7 +29,7 @@ export default function({parentElement, data, setTriggerValue}) {
     target = undefined;
   };
   const attach = () => {
-    const candidate = document.querySelector('.st-key-'+CSS.escape(data.containerKey)+' [data-testid="stMetricDelta"]');
+    const candidate = document.querySelector('.st-key-'+CSS.escape(data.containerKey)+' [data-testid="'+(data.target || 'stMetricDelta')+'"]');
     if (candidate === target || !candidate) return;
     detach();
     target = candidate;
@@ -43,10 +45,10 @@ export default function({parentElement, data, setTriggerValue}) {
   attach();
   const dispose = () => {
     observer.disconnect(); detach();
-    if (window.__portfolioGainToggle === dispose) delete window.__portfolioGainToggle;
+    if (registry[interaction] === dispose) delete registry[interaction];
   };
-  parentElement.disposeGainToggle = dispose;
-  window.__portfolioGainToggle = dispose;
+  parentElement.disposeMetricToggle = dispose;
+  registry[interaction] = dispose;
   return dispose;
 }
 """
@@ -57,4 +59,12 @@ def toggle_gain_unit(*, percent: bool, on_toggle, container_key='overview_value'
     component(key=f'{container_key}_gain_toggle', data={
         'containerKey': container_key,
         'label': 'Show gain as amount' if percent else 'Show gain as percentage',
+    }, on_toggle_change=on_toggle)
+
+
+def toggle_metric_value(*, label: str, on_toggle, container_key: str, interaction_key: str) -> None:
+    component = st.components.v2.component('portfolio_metric_toggle', js=JS)
+    component(key=f'{container_key}_value_toggle', data={
+        'containerKey': container_key, 'target': 'stMetricValue',
+        'interactionKey': interaction_key, 'label': label,
     }, on_toggle_change=on_toggle)

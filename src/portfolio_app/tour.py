@@ -1,7 +1,8 @@
 """Optional guided tour in a fresh, isolated, synthetic workspace."""
 import json
 from pathlib import Path
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tempfile import TemporaryDirectory
+from portfolio_app.atomic_file import staged_text
 
 import streamlit as st
 
@@ -20,17 +21,9 @@ def dismissed() -> bool:
 def save_dismissal() -> None:
     directory = state_path()
     directory.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with NamedTemporaryFile(mode='w', encoding='utf-8', dir=directory,
-                                prefix='.app-tour-', delete=False) as handle:
-            temporary = Path(handle.name)
-            json.dump({'dismissed': True}, handle)
-            handle.write('\n')
-        temporary.replace(directory / 'app-tour.json')
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    path = directory / 'app-tour.json'
+    with staged_text(path, lambda handle: handle.write(json.dumps({'dismissed': True}) + '\n')) as temporary:
+        temporary.replace(path)
 
 
 def active() -> bool:
@@ -116,6 +109,9 @@ def _move(index: int) -> None:
         st.session_state[f'etf_lookthrough_{context}'] = step.lookthrough
     elif step.tab == 'Positions':
         st.session_state['positions_workflow'] = 'Positions'
+    elif step.tab == 'Monitoring':
+        from portfolio_app.tour_monitoring import prepare_step
+        prepare_step(demo_directory(), step.view)
     else:
         st.session_state.update(rebalance_tabs=step.view, planning_scope='Portfolio contribution', planning_amount=500.)
 
@@ -156,6 +152,9 @@ def render_tour(*, empty: bool = False) -> None:
     index = st.session_state['tour_step']
     step = STEPS[index]
     st.html('<style>' + CSS + '</style>')
+    if step.tab == 'Monitoring' and step.view == 'Alert':
+        from portfolio_app.tour_monitoring import render_alert
+        render_alert(demo_directory())
     with st.container(key='app_tour', border=True):
         st.caption(f'TOUR · DEMO PORTFOLIO  /  {step.tab}  /  {index + 1} of {len(STEPS)}')
         st.markdown(f'### {step.title}')
