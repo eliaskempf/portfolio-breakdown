@@ -18,6 +18,26 @@ def invented_holdings():
                          'current_value_reporting': [80000., 20000.], 'reporting_currency': ['EUR', 'EUR'], 'instrument_type': ['equity', 'cash']})
 
 
+@pytest.mark.parametrize('newline', [b'\n', b'\r\n'])
+def test_sandbox_revision_uses_file_bytes_for_all_line_endings(tmp_path, newline):
+    from hashlib import sha256
+    source = tmp_path / 'source'
+    create_demo_data(source)
+    sandbox = fork_futures_workspace(source, tmp_path / 'sandbox')
+    path = sandbox / SANDBOX_FILE
+    original = path.read_bytes().replace(b'\r\n', b'\n').replace(b'\n', newline)
+    path.write_bytes(original)
+
+    position, revision = load_sandbox(sandbox)
+    assert revision == sha256(original).hexdigest()
+    changed = replace(position, mark_price=position.mark_price + 1)
+    save_sandbox(sandbox, changed, revision)
+    assert load_sandbox(sandbox)[0] == changed
+    assert original in [backup.read_bytes() for backup in (sandbox / '.backups').glob('futures-sandbox-*.json')]
+    with pytest.raises(DataError, match='changed'):
+        save_sandbox(sandbox, position, revision)
+
+
 def test_futures_notional_is_not_wealth_and_collateral_is_not_a_cost():
     position = FuturePosition(contracts=2, entry_price=500, mark_price=525, collateral_budget=15000)
     summary = summarize_future(invented_holdings(), position)

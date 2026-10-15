@@ -66,7 +66,7 @@ def load_sandbox(directory: Path) -> tuple[FuturePosition, str] | None:
     if not path.exists():
         return None
     try:
-        content = path.read_text(encoding='utf-8')
+        content = path.read_bytes()
         raw = json.loads(content)
         if raw['version'] not in (1, 2) or raw['instrument'] not in CONTRACTS or raw['simulation'] is not True:
             raise ValueError('Unsupported futures sandbox format')
@@ -76,7 +76,7 @@ def load_sandbox(directory: Path) -> tuple[FuturePosition, str] | None:
         fields['instrument'] = raw['instrument']
         position = FuturePosition(**fields)
         from hashlib import sha256
-        return position, sha256(content.encode()).hexdigest()
+        return position, sha256(content).hexdigest()
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise DataError(f'Cannot load the futures sandbox: {exc}') from exc
 
