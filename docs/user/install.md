@@ -117,13 +117,31 @@ its command-line demo/live launch mode.
 
 Installed apps check GitHub for a newer stable release at most once a day while
 open. A compatible download must be available for your platform. **View release**
-opens its release notes and downloads in your browser; installation remains manual.
-The app does not download or execute installers automatically.
+opens its release notes and downloads in your browser. Downloads and installation
+always require an explicit action.
+
+In the installed Windows app, choose **Download update**, then **Exit and update**
+when the download is ready. The app checks the installer's size and SHA-256 digest
+against GitHub release metadata before offering installation, and verifies it
+again before exiting. Save any pending edits, create a [backup](storage.md#backup),
+and close other Portfolio Breakdown windows first. The current app closes and
+the normal Windows Setup wizard opens; complete the wizard and reopen the app.
+The updater does not force-close other applications, reboot Windows, or change
+portfolio files. If you cancel Setup, reopen the existing app from its shortcut.
+
+This workflow requires the per-user Windows installation registered by Setup;
+portable copies, source installations, Linux and macOS use **View release** and
+the manual steps below. If verification or downloading fails, the app remains
+open and the release-page link is still available. Release assets without a
+GitHub SHA-256 digest require manual installation. Checksums detect changed or
+incomplete downloads; they do not replace publisher signing. Windows reputation
+warnings can still apply to unsigned installers.
 
 An update reminder appears on Overview after other dialogs are closed.
 **Remind me in a week**, or closing the reminder, postpones it for seven days.
 The release also appears in **Notifications**. **Never remind me again** turns off
-automatic checks and reminders across all your portfolios on this computer.
+automatic checks and reminders for **all future releases**, across all your
+portfolios on this computer. It does not just skip the currently offered version.
 Use **Portfolio settings → Updates** to re-enable checks or **Check for updates**
 manually. Preferences survive application restarts and updates. Offline failures
 do not interrupt portfolio use; the update settings show the last successful check.

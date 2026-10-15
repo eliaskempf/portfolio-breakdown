@@ -73,6 +73,13 @@ not a pending manual task.
       portfolio-app.exe remains available for CLI diagnostics.
 - [ ] Repeat launch opens existing app; occupied port and startup failure are understandable.
 - [ ] Stop/restart leaves no server behind; closing only the browser is documented.
+- [ ] For installed Windows upgrades, Download update verifies the installer;
+      Exit and update closes the server and opens Setup in both window and browser
+      modes. Test cancellation, another open app workspace, paths with spaces and
+      non-ASCII characters, and corrupted/missing downloads. Failed validation
+      leaves the app usable. Saved synthetic portfolio files survive the upgrade.
+      Portable and source copies offer the release-page fallback. Opting out of
+      reminders suppresses later release versions as well as the current one.
 - [ ] Intro completes before the welcome dialog; reduced motion and automatic timeout
       on a failed component work, with no Skip button.
       Normal reruns/workspace switches do not replay it.

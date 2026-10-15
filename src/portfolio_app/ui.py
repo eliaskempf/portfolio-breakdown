@@ -389,7 +389,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     alert_open = render_alert_dialog(data_dir) if not tour_active() else False
     render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued)
     render_tour(empty=holdings.empty)
-    render_update_dialog(disabled=updates_disabled or bool(alert_open))
+    render_update_dialog(disabled=updates_disabled or bool(alert_open), directory=None if demo else persistent_data_dir)
     finish_view_inputs()
     mark_view_ready()
 

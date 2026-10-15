@@ -72,6 +72,19 @@ tours and monitoring dialogs take precedence. Invalid preferences suspend checks
 without replacing the file. Source checkouts default to manual checks. Update
 tests inject release responses and clocks; they do not require GitHub access.
 
+`windows_update.py` handles explicit installer downloads for registered per-user
+Windows installs. It fetches exact stable-release metadata, requires an uploaded
+installer with a bounded size and SHA-256 digest, and downloads by GitHub asset ID
+into per-user state with atomic publication. The authenticated launcher control
+accepts only a release tag, re-fetches metadata and verifies the staged bytes
+before requesting shutdown. The launcher starts the interactive installer only
+after the server and its native process job have stopped; launching it from a
+Streamlit callback would kill the installer during shutdown. Installer arguments
+prevent automatic application closure and Windows reboot. Source and portable
+copies cannot replace a registered install. Native acceptance must exercise both
+window and browser launch modes, cancellation, locked files from another app
+window, and paths with spaces/non-ASCII characters.
+
 `monitoring.py` owns indicator and account-rule calculations; `monitoring_market.py`
 normalizes provider observations, `monitoring_service.py` schedules checks while
 a session is open, and `monitoring_store.py` persists rule revisions and alert

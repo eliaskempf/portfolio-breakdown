@@ -58,8 +58,8 @@ def request_instance(directory: Path, action: str = 'status', *, payload: dict |
         request = Request(f'http://127.0.0.1:{int(info["control_port"])}/{action}',
                           headers={'Authorization': 'Bearer ' + info['token']},
                           data=json.dumps(payload).encode() if payload is not None else None,
-                          method='POST' if action in {'stop', 'focus', 'activate'} else 'GET')
-        with urlopen(request, timeout=60 if action == 'activate' else 2) as response:
+                          method='POST' if action in {'stop', 'focus', 'activate', 'update'} else 'GET')
+        with urlopen(request, timeout=60 if action in {'activate', 'update'} else 2) as response:
             result = json.load(response)
         return result if result.get('instance') == info['token'] else None
     except (OSError, ValueError, KeyError, TypeError):
@@ -104,7 +104,7 @@ def ready(url: str) -> bool:
 
 
 @contextmanager
-def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool, focus: Callable[[], None] | None = None, activation=None):
+def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool, focus: Callable[[], None] | None = None, activation=None, update=None):
     token = secrets.token_urlsafe(32)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -119,6 +119,8 @@ def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool,
                 actions.add(('POST', '/activate'))
             if focus is not None:
                 actions.add(('POST', '/focus'))
+            if update is not None:
+                actions.add(('POST', '/update'))
             if (self.command, self.path) not in actions:
                 self.send_error(404)
                 return
@@ -127,6 +129,20 @@ def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool,
             if self.path == '/focus':
                 focus()
             error = ''
+            if self.path == '/update':
+                try:
+                    if stopped.is_set():
+                        raise DataError('The application is already stopping.')
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= 256:
+                        raise DataError('Invalid update request size.')
+                    raw = json.loads(self.rfile.read(length))
+                    if not isinstance(raw, dict) or set(raw) != {'tag'}:
+                        raise DataError('Invalid update request.')
+                    update(raw['tag'])
+                    stopped.set()
+                except (DataError, OSError, ValueError, TypeError) as exc:
+                    error = str(exc) or 'Update could not start. Retry or use View release.'
             if self.path == '/activate':
                 try:
                     if stopped.is_set():
@@ -140,7 +156,7 @@ def instance(directory: Path, url: str, stopped: threading.Event, *, demo: bool,
                     activation.activate(Path(raw['directory']), raw['generation'], raw['digests'])
                 except (DataError, OSError, ValueError, KeyError, TypeError) as exc:
                     error = str(exc) or 'Invalid activation request.'
-            result = dict(instance=token, url=url, ready=ready(url), demo=demo,
+            result = dict(instance=token, url=url, ready=ready(url), demo=demo, error=error,
                           presentation='window' if focus is not None else 'browser')
             if activation is not None:
                 result.update(workspace=activation.status(), error=error)
@@ -239,6 +255,8 @@ def run_server(command: list[str], directory: Path, *, port: int, browser: bool,
     """Supervise only our own child; never kill a process based on a stale PID."""
     url = f'http://127.0.0.1:{port}'
     stopped = threading.Event()
+    from portfolio_app.windows_update import InstallerHandoff, installed_directory
+    updater = InstallerHandoff() if not demo and installed_directory() is not None else None
     previous = signal.signal(signal.SIGTERM, lambda *args: stopped.set())
     try:
         from portfolio_app.workspace_activation import WorkspaceActivation
@@ -246,16 +264,23 @@ def run_server(command: list[str], directory: Path, *, port: int, browser: bool,
             child_context = presentation.child(command) if presentation else owned_child(command)
             child = children.enter_context(child_context)
             with instance(directory, url, stopped, demo=demo,
-                          focus=presentation.focus if presentation else None, activation=activation):
+                          focus=presentation.focus if presentation else None, activation=activation,
+                          update=updater.request if updater else None):
                 def monitor(on_ready):
                     return monitor_server(child, url, stopped, on_ready)
                 if presentation:
-                    return presentation.run(url, stopped, monitor)
-                def show_browser():
-                    if browser:
-                        from portfolio_app.desktop import open_browser
-                        open_browser(url)
-                return monitor(show_browser)
+                    result = presentation.run(url, stopped, monitor)
+                else:
+                    def show_browser():
+                        if browser:
+                            from portfolio_app.desktop import open_browser
+                            open_browser(url)
+                    result = monitor(show_browser)
+        # Only hand off after successful server/job cleanup. Launching from the
+        # Streamlit child would make the installer part of the job being killed.
+        if updater is not None:
+            updater.launch()
+        return result
     finally:
         signal.signal(signal.SIGTERM, previous)
 

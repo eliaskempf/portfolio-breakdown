@@ -191,6 +191,10 @@ release metadata are stored in `updates.json` in the operating system's per-user
 application state directory, separately from portfolio workspaces and their
 backups. **Portfolio settings → Updates** controls these checks. Manual checks
 remain available after opting out; the offline demo makes no update requests.
+Explicit Windows installer downloads are cached under `updates/` in that same
+application state directory, outside portfolio backups. These contain public
+installer files, not portfolio records. They can be removed while the app and
+installer are stopped; a later download will fetch them again.
 
 Futures data requests use public product, contract, date, FX and explicitly chosen
 proxy identifiers. Account cash, contract quantities and manually entered taxes

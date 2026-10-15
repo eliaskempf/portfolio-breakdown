@@ -5,6 +5,43 @@ import streamlit as st
 
 from portfolio_app.settings import app_version
 from portfolio_app.updates import UpdateStateError, updates_for, source_checkout, version_number
+from portfolio_app.windows_update import downloads_for, installed_directory
+
+
+def render_install_action(release, directory, *, key, disabled=False):
+    if disabled or directory is None or installed_directory() is None:
+        return
+    downloads = downloads_for()
+    initial = downloads.status()
+    @st.fragment(run_every=1 if initial.phase == 'downloading' else None)
+    def action():
+        status = downloads.status()
+        if initial.phase == 'downloading' and status.phase != 'downloading':
+            st.rerun()  # Stop polling after completion; preserve popover scrolling.
+        if status.phase == 'downloading':
+            st.progress(status.progress, text='Downloading update…')
+            return
+        if status.tag == release.tag and status.phase == 'ready':
+            st.caption('Update ready · Save your changes before exiting.')
+            if st.button('Exit and update', key=f'updates_install_{key}', type='primary',
+                         help='Close this app and open the Windows installer. Close other app windows first. Saved portfolio data stays in place.'):
+                from portfolio_app.launcher import request_instance
+                with st.spinner('Preparing update…'):
+                    result = request_instance(directory, 'update', payload={'tag': release.tag})
+                if result is None or result.get('error'):
+                    message = (result or {}).get('error') or 'Could not contact the launcher. Restart the app or use View release.'
+                    downloads.retry_after_error(release.tag, message)
+                    st.rerun()
+                else:
+                    st.info('Closing the app. Continue in the Windows installer.')
+        else:
+            if status.tag == release.tag and status.error:
+                st.error(status.error)
+            if st.button('Download update', key=f'updates_download_{key}',
+                         help='Download and verify the Windows installer. The app stays open until you choose Exit and update.'):
+                downloads.start(release.tag)
+                st.rerun()
+    action()
 
 
 def _read(service):
@@ -14,7 +51,7 @@ def _read(service):
         return None
 
 
-def render_update_settings(*, offline=False):
+def render_update_settings(*, offline=False, directory=None):
     service = updates_for()
     with st.expander('Updates'):
         raw = _read(service)
@@ -53,6 +90,7 @@ def render_update_settings(*, offline=False):
         release = service.available(raw, app_version())
         if release:
             st.link_button(f'View release {release.version}', release.url)
+            render_install_action(release, directory, key='settings', disabled=offline)
         elif version_number(app_version()) is None:
             st.caption('This build cannot be compared with stable release versions.')
         elif check.get('checked') and not check.get('failed'):
@@ -108,7 +146,7 @@ def render_update_notice(*, disabled=False):
             pass
 
 
-def render_update_dialog(*, disabled=False):
+def render_update_dialog(*, disabled=False, directory=None):
     # Only interrupt the main results view; editors, onboarding, tours and
     # higher-priority alerts own their existing dialog lifecycles.
     blocked = ('position_edit_dialog', 'tour_welcome', 'workspace_settings', 'workspace_notifications', 'help_menu')
@@ -140,10 +178,12 @@ def render_update_dialog(*, disabled=False):
         st.markdown(f'**Portfolio Breakdown {release.version}**')
         st.caption(f'Installed: {app_version()}')
         st.link_button('View release', release.url, type='primary')
+        render_install_action(release, directory, key='dialog')
         if st.button('Remind me in a week', key='updates_later'):
             dismiss()
             st.rerun()
-        if st.button('Never remind me again', key='updates_never'):
+        if st.button('Never remind me again', key='updates_never',
+                     help='Disable automatic checks and reminders for all future releases. Re-enable them in Portfolio settings → Updates.'):
             try:
                 service.store.enable(False)
             except (OSError, UpdateStateError):

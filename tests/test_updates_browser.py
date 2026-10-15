@@ -42,6 +42,26 @@ def update_service():
     return UpdateService(root/'app-state', 'linux-x64', fetch=fetch,
                          now=lambda: float((root/'clock').read_text()))
 update_ui.updates_for = update_service
+update_ui.app_version = lambda: '0.1.0'
+if st.query_params.get('windows') == '1':
+    from portfolio_app.windows_update import InstallerDownload, DownloadStatus
+    from portfolio_app import launcher
+    class SyntheticDownload(InstallerDownload):
+        def _download(self, tag):
+            time.sleep(.5)
+            self._set(DownloadStatus(tag, 'ready', 1))
+    @st.cache_resource
+    def downloads():
+        return SyntheticDownload(root/'downloads')
+    update_ui.downloads_for = downloads
+    update_ui.installed_directory = lambda: root/'invented-install'
+    def handoff(directory, action, **kwargs):
+        assert action == 'update' and kwargs['payload'] == {'tag': 'v0.2.0'}
+        marker = root/'handoff'
+        failed = not marker.exists()
+        marker.write_text('synthetic handoff only')
+        return {'error': 'Invented verification failure' if failed else ''}
+    launcher.request_instance = handoff
 coordinator.schedule = lambda *args, **kwargs: False
 st.session_state.setdefault('main_tabs', st.query_params.get('start', 'Overview'))
 render_app(root/'synthetic', ignore_selection=True,
@@ -131,3 +151,25 @@ def test_update_waits_for_position_editor_and_notification_navigation(update_pag
     page.get_by_role('button', name=re.compile('Notifications')).click()
     playwright.expect(page.get_by_role('link', name='View release', exact=True)).to_be_visible()
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
+def test_windows_download_survives_dialog_close_and_failed_handoff(update_page):
+    page, url, root, store, clock = update_page
+    original = (root / 'holdings.csv').read_bytes()
+    page.goto(url + '?windows=1')
+    dialog = page.get_by_role('dialog', name='Update available')
+    playwright.expect(dialog).to_be_visible()
+    dialog.get_by_role('button', name='Download update', exact=True).click()
+    playwright.expect(dialog.get_by_role('button', name='Exit and update', exact=True)).to_be_visible()
+    assert not (root.parent / 'handoff').exists()
+    dialog.get_by_role('button', name='Remind me in a week').click()
+    playwright.expect(dialog).to_have_count(0)
+    page.get_by_role('button', name=re.compile('Portfolio settings')).click()
+    page.get_by_text('Updates', exact=True).click()
+    page.get_by_role('button', name='Exit and update', exact=True).click()
+    playwright.expect(page.get_by_text('Invented verification failure', exact=True)).to_be_visible()
+    page.get_by_role('button', name='Download update', exact=True).click()
+    page.get_by_role('button', name='Exit and update', exact=True).click()
+    playwright.expect(page.get_by_text('Closing the app. Continue in the Windows installer.', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+    assert (root / 'holdings.csv').read_bytes() == original
