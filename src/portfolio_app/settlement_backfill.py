@@ -8,6 +8,7 @@ from portfolio_app import account_journal as ledger
 from portfolio_app.derivative_types import PriceObservation, iso_date
 from portfolio_app.derivative_market import fetch_settlement
 from portfolio_app.holdings import DataError
+from portfolio_app.futures_clock import business_date, utc_now
 
 
 @dataclass(frozen=True)
@@ -18,7 +19,7 @@ class SettlementDay:
     message: str = ''
 
 
-def settlement_days(journal, position_id, start, end):
+def settlement_days(journal, position_id, start, end, *, today=None):
     """Weekday eligibility at each day's close, after that day's recorded trades.
 
     Snapshots already include their day's clearing balance. Cash reconciliations
@@ -28,7 +29,7 @@ def settlement_days(journal, position_id, start, end):
     first, last = date.fromisoformat(iso_date(start)), date.fromisoformat(iso_date(end))
     if first > last or (last-first).days > 30:
         raise DataError('Choose an ordered range of at most 31 calendar days.')
-    if last >= date.today():
+    if last >= (today or business_date(utc_now())):
         raise DataError('Retrieve completed business dates, ending before today.')
     state = ledger.replay(journal)
     if position_id not in state.positions:
@@ -80,9 +81,9 @@ def retrieve_settlements(journal, position_id, start, end, *, fetch=fetch_settle
         return tuple(pool.map(retrieve, days))
 
 
-def propose_settlements(journal, position_id, start, end, observations, *, automatic=False):
+def propose_settlements(journal, position_id, start, end, observations, *, automatic=False, today=None):
     """Append validated daily end-of-day postings; callers control persistence."""
-    eligible = {day.date for day in settlement_days(journal, position_id, start, end)
+    eligible = {day.date for day in settlement_days(journal, position_id, start, end, today=today)
                 if day.status == 'Ready to retrieve'}
     position = ledger.replay(journal).positions[position_id]
     observations = sorted(observations, key=lambda item: item.date)

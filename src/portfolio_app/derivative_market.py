@@ -20,6 +20,14 @@ from portfolio_app.holdings import DataError
 from portfolio_app.storage import revision, save_document
 
 
+class SettlementNotPublished(DataError):
+    """The source still advertises an earlier business date."""
+
+
+class SettlementUnavailable(DataError):
+    """The requested historical date/contract has no available source row."""
+
+
 @dataclass(frozen=True)
 class ProductDefinition:
     product: str
@@ -191,6 +199,21 @@ def fetch_settlement(contract, business_date, fetch=download):
         raise
     except (ValueError, TypeError) as exc:
         raise DataError('Market source returned invalid statistics.') from exc
+    try:
+        if raw['meta']['productCode'] != product.product or raw['meta']['isin'] != product.product_isin:
+            raise ValueError('Wrong product')
+        published = [datetime.strptime(value, '%d-%m-%Y %H:%M').date() for value in raw['header']['tradingDates']]
+        if published and day > max(published):
+            raise SettlementNotPublished('Awaiting publication for the requested business date.')
+        if day not in published or not raw.get('dataRows'):
+            raise SettlementUnavailable('Daily settlement history is unavailable for this business date.')
+        if not any(row.get('contractType') == 'M' and row.get('date') == contract.expiry.replace('-', '')
+                   for row in raw['dataRows']):
+            raise SettlementUnavailable('The exact maturity has no published daily settlement.')
+    except (SettlementNotPublished, SettlementUnavailable):
+        raise
+    except (KeyError, ValueError, TypeError, AttributeError) as exc:
+        raise DataError('Cannot verify settlement publication status.') from exc
     return parse_settlement(raw, contract, day, source=url)
 
 

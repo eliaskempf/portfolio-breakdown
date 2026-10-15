@@ -58,6 +58,8 @@ def no_background_network(monkeypatch):
     monkeypatch.setattr(coordinator, 'schedule', lambda *args, **kwargs: False)
     from portfolio_app.settlement_collection import collector
     monkeypatch.setattr(collector, 'schedule', lambda *args, **kwargs: False)
+    from portfolio_app.futures_quotes import collector as quotes
+    monkeypatch.setattr(quotes, 'schedule', lambda *args, **kwargs: False)
     from portfolio_app.derivative_market import make_contract
     monkeypatch.setattr('portfolio_app.contract_maturity_ui.listed_contracts',
         lambda product: tuple(make_contract(product, day) for day in ('2027-03-19','2027-06-18')))

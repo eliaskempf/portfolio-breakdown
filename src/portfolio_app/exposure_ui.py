@@ -203,8 +203,10 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         with summary_area:
             first, second = st.columns([2, 1])
             with first:
+                from portfolio_app.futures_valuation import summarize_freshness
                 value_metric(selected_total, summarize_performance(selected), missing=missing,
-                             percent=performance_percent, key='exposure_value', on_toggle_gain=on_toggle_gain)
+                             percent=performance_percent, key='exposure_value', on_toggle_gain=on_toggle_gain,
+                             freshness=summarize_freshness(selected))
             second.metric('Portfolio share', f'{100 * selected_total / total:.1f}%' if not missing and not all_missing and total else '—', help='Current value of this selection divided by total portfolio value.')
     with refresh_panel:
         if lookthrough:

@@ -7,6 +7,7 @@ from portfolio_app.holdings import DataError
 from portfolio_app.settlement_archive import SettlementArchive
 from portfolio_app.settlement_backfill import propose_settlements, settlement_days
 from portfolio_app.workspace_lock import workspace_lock
+from portfolio_app.futures_clock import business_date, utc_now
 
 
 def propose_automatic_settlements(journal, archive, *, today=None):
@@ -15,7 +16,7 @@ def propose_automatic_settlements(journal, archive, *, today=None):
     Existing, corrected and voided settlements remain user-owned. A source
     revision never replaces a recorded price. Unknown dates are never invented.
     """
-    today = today or date.today()
+    today = today or business_date(utc_now())
     candidate = journal
     state = ledger.replay(journal)
     for position in state.positions.values():
@@ -35,11 +36,11 @@ def propose_automatic_settlements(journal, archive, *, today=None):
         while stamps:
             start = stamps[0]
             end = min(stamps[-1], (date.fromisoformat(start)+timedelta(days=30)).isoformat())
-            eligible = {day.date for day in settlement_days(candidate, position.spec.id, start, end)
+            eligible = {day.date for day in settlement_days(candidate, position.spec.id, start, end, today=today)
                         if day.status == 'Ready to retrieve'}
             observations = [available[stamp] for stamp in stamps if stamp <= end and stamp in eligible]
             if observations:
-                candidate = propose_settlements(candidate, position.spec.id, start, end, observations, automatic=True)
+                candidate = propose_settlements(candidate, position.spec.id, start, end, observations, automatic=True, today=today)
             stamps = [stamp for stamp in stamps if stamp > end]
     return candidate
 

@@ -33,7 +33,7 @@ def render_exposure_coverage(rows, sources, *, field='market_exposure_reporting'
         st.caption('A known fund price does not establish exposure for every constituent. Unresolved amounts are neither zero nor missing ETF prices.')
 
 
-def render_equity_exposure_metric(result, *, market=False, bucket_ids=None):
+def render_equity_exposure_metric(result, *, market=False, bucket_ids=None, freshness=None):
     from portfolio_app.metric_interactions import toggle_metric_value
     gross = st.session_state.get('exposure_multiple_mode', 'net') == 'gross'
     basis = 'market' if market else 'equity'
@@ -53,6 +53,8 @@ def render_equity_exposure_metric(result, *, market=False, bucket_ids=None):
                        'Futures contribute contract notional to exposure; their allocated cash is counted only in capital. '
                        'Portfolio debt is included only at portfolio scope; category leverage is unavailable with unassigned debt. '
                        'Gold and crypto count; cash contributes zero exposure.')
+        if freshness and freshness[0]:
+            st.caption(freshness[0], help=freshness[1])
     def toggle():
         st.session_state['exposure_multiple_mode'] = 'net' if gross else 'gross'
     toggle_metric_value(label=f'Show {"net" if gross else "gross"} {basis} exposure',

@@ -93,6 +93,14 @@ synthetic directory; it reuses the normal alert explanation and acknowledgment U
 - `account_observations.py` and `derivative_market.py` keep dated marks and free
   exact-contract observations separate from cash postings. `account_margin.py`
   evaluates entered requirements and haircuts without inferring broker rules.
+  `eurex_quotes.py` isolates the anonymous public quote protocol and exact monthly
+  contract validation. `futures_quotes.py` retains automatic observations and
+  refresh status separately from manual marks and the journal;
+  `futures_valuation.py` selects absolute prices and derives local freshness.
+  Quote timestamps and retrieval timestamps must remain distinct. Settlement
+  reference time orders valuations; it is not a fabricated quote/publication time.
+  Daily cash eligibility uses Europe/Berlin business dates, independent of whether
+  the archive changed since the last worker run.
   `account_planning.py` previews integer trades without changing account facts.
 - `FuturePosition` and `future_projections.py` retain the legacy EUR sandbox's
   funded-strategy arithmetic and named capital, exposure and risk adapters.

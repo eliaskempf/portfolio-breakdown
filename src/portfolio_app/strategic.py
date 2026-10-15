@@ -135,8 +135,10 @@ def strategic_performance(valued, config, bucket=""):
     counts = Counter(name for name, _ in choices)
     choices = [(name + (f' ({index + 1})' if counts[name] > 1 else ''), positions)
                for index, (name, positions) in enumerate(choices)]
-    rows = []
+    rows, freshness = [], {}
     for name, positions in choices:
+        from portfolio_app.futures_valuation import summarize_freshness
+        freshness[name] = summarize_freshness(positions)
         summary = summarize_performance(positions)
         rows.append({"Category": name, "Cost": summary.cost_reporting,
                      "Gain": summary.gain_reporting, "Return (%)": summary.return_pct,
@@ -146,4 +148,5 @@ def strategic_performance(valued, config, bucket=""):
     result = pd.DataFrame(rows, columns=["Category", "Cost", "Gain", "Return (%)", "Coverage", "Status"])
     for column in ("Cost", "Gain", "Return (%)"):
         result[column] = pd.to_numeric(result[column], errors="coerce")
+    result.attrs['valuation_freshness'] = freshness
     return result

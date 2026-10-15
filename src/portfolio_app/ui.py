@@ -126,7 +126,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     journal = leverage_context.journal
     actual_active = bool(journal and journal.accounts)
     from portfolio_app.settlement_archive_ui import watch_settlements
-    watch_settlements(data_dir,journal,demo=demo)
+    watch_settlements(data_dir,journal,demo=demo,force=refresh)
     actual_future = leverage_context.future
     leverage_supported, feature_active = leverage_context.supported, leverage_context.active
     unsupported_records = leverage_context.unsupported_records
@@ -190,11 +190,11 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     ordinary_valued = valued
     if actual_active:
         from portfolio_app.actual_portfolio import journal_positions
-        from portfolio_app.account_observations import load_observations, current_marks
+        from portfolio_app.futures_valuation import load_valuations
         try:
-            marks, manual_fx, _ = load_observations(data_dir)
+            valuations, manual_fx = load_valuations(data_dir, journal)
             valued = journal_positions(valued, journal, price_service, reporting_currency=reporting_currency,
-                marks=current_marks(journal, marks), fx_rates=manual_fx)
+                valuations=valuations, fx_rates=manual_fx)
         except DataError as exc:
             st.error(str(exc))
             mark_view_ready()

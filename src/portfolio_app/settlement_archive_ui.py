@@ -17,7 +17,7 @@ def settlement_notices(directory, journal):
         issues = reconciliation_rows(journal,SettlementArchive(directory))
         mismatches = [row for row in issues if row['Status'] != 'No archived price']
         gaps = [(cid,day,row.get('error','')) for cid,record in read_status(directory)['contracts'].items()
-                for day,row in record.get('dates',{}).items() if row.get('status')=='unavailable']
+                for day,row in record.get('dates',{}).items() if row.get('status') in {'unavailable', 'failed'}]
         messages = ([f'{len(mismatches)} settlement price mismatch(es) · Review settlement history.'] if mismatches else [])
         if gaps:
             messages.append(f'{len(gaps)} settlement date(s) unavailable · See history checks for dates and sources.')
@@ -32,19 +32,26 @@ def settlement_notices(directory, journal):
 
 def _signature(directory):
     return tuple((directory/name).stat().st_mtime_ns if (directory/name).exists() else 0
-                 for name in ('settlement-archive.json','settlement-collection.json',ledger.FILE))+(collector.error(directory),)
+                 for name in ('settlement-archive.json','settlement-collection.json','futures-quotes.json',ledger.FILE))+(collector.error(directory),)
 
 
-def watch_settlements(directory, journal, *, demo=False):
+def watch_settlements(directory, journal, *, demo=False, force=False):
     if demo or not journal or not journal.positions:
         return
     signature = _signature(directory)
-    collector.schedule(directory,journal)
-    @st.fragment(run_every=2 if collector.running(directory) else 60)
+    from portfolio_app.futures_quotes import collector as quotes
+    collector.schedule(directory,journal,force=force)
+    quotes.schedule(directory,journal,force=force)
+    quote_error = quotes.error(directory)
+    from portfolio_app.futures_clock import utc_now
+    minute = int(utc_now().timestamp() // 60)
+    @st.fragment(run_every=2 if collector.running(directory) or quotes.running(directory) else 60)
     def watch():
         latest,_ = ledger.load_journal(directory)
         started = collector.schedule(directory,latest)
-        if _signature(directory) != signature or latest != journal or started:
+        quote_started = quotes.schedule(directory,latest)
+        if (_signature(directory) != signature or latest != journal or started or quote_started
+                or quote_error != quotes.error(directory) or minute != int(utc_now().timestamp() // 60)):
             st.rerun()
     watch()
 
@@ -70,8 +77,9 @@ def render_history_checks(directory,journal,members,*,key):
                     results=scan_dates(directory,contract,weekdays(start.isoformat(),end.isoformat(),contract))
                 st.session_state[key+'scan_result']=(selected,start,end,results)
             saved_checks=read_status(directory)['contracts'].get(selected,{}).get('dates',{})
-            unavailable=[{'Date':day,'Source check':row['status'],'Detail':row.get('error','')}
-                         for day,row in sorted(saved_checks.items(),reverse=True) if row['status']=='unavailable']
+            labels = {'not_published': 'Awaiting publication', 'unavailable': 'Unavailable', 'failed': 'Request failed'}
+            unavailable=[{'Date':day,'Source check':labels.get(row['status'], row['status']),'Detail':row.get('error','')}
+                         for day,row in sorted(saved_checks.items(),reverse=True) if row['status'] != 'checked']
             if unavailable:
                 st.dataframe(pd.DataFrame(unavailable),hide_index=True,width='stretch')
             result=st.session_state.get(key+'scan_result')

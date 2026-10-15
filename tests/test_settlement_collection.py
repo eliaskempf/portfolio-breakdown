@@ -75,7 +75,7 @@ def test_missing_source_keeps_archive_and_uses_retry_throttle(tmp_path):
     record=read_status(tmp_path)['contracts'][contract.id]
     assert not due(record,now+timedelta(minutes=59))
     assert due(record,now+timedelta(hours=1))
-    assert all(row['status']=='unavailable' for row in record['dates'].values())
+    assert all(row['status']=='failed' for row in record['dates'].values())
 
 
 def test_single_worker_demo_and_closed_history_retention(tmp_path):

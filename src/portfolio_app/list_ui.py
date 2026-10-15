@@ -29,6 +29,8 @@ class ListColumn:
     secondary: str = ''
     width: int | None = None
     color_signed: bool = True
+    neutral_when: str = ''
+    secondary_help: str = ''
 
 
 HTML = """
@@ -129,8 +131,9 @@ export default function({parentElement:root,data,setTriggerValue}) {
         if(column.tooltip)td.title=String(row[column.tooltip]||'');
         if(column.signed){
           td.title=String(row.note||column.help||'');
-          if(row[field]>0){if(column.color_signed!==false)td.classList.add('positive');td.textContent='+'+td.textContent;}
-          else if(row[field]<0 && column.color_signed!==false)td.classList.add('negative');
+          const colored=column.color_signed!==false && !(column.neutral_when && row[column.neutral_when]);
+          if(row[field]>0){if(colored)td.classList.add('positive');td.textContent='+'+td.textContent;}
+          else if(row[field]<0 && colored)td.classList.add('negative');
         }
         if(column.badges && Array.isArray(row[field])){
           td.replaceChildren();const badges=element('div','');badges.className='badges';
@@ -138,7 +141,15 @@ export default function({parentElement:root,data,setTriggerValue}) {
           td.appendChild(badges);
         } else if(row[field]!=null && column.prefix)td.textContent=column.prefix+td.textContent;
     if(column.secondary && row[column.secondary]){
-      const subtitle=element('span',String(row[column.secondary]));subtitle.className='secondary';td.appendChild(subtitle);
+      if(column.secondary_help && row[column.secondary_help]){
+        const details=element('details','');details.className='secondary';
+        const summary=element('summary',String(row[column.secondary]));details.appendChild(summary);
+        const explanation=element('span',String(row[column.secondary_help]));explanation.style.whiteSpace='normal';details.appendChild(explanation);
+        details.addEventListener('click',event=>event.stopPropagation());
+        details.addEventListener('keydown',event=>event.stopPropagation());td.appendChild(details);
+      } else {
+        const subtitle=element('span',String(row[column.secondary]));subtitle.className='secondary';td.appendChild(subtitle);
+      }
     }
     return td;
   };

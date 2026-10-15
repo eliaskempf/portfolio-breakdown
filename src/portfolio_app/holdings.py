@@ -18,6 +18,7 @@ DERIVED_COLUMNS = frozenset({
     'source_type', 'source_instrument', 'direct_or_indirect', 'portfolio_weight',
     'current_price', 'quote_currency', 'fx_to_reporting', 'current_value_reporting',
     'price_age_hours', 'fx_age_hours', 'price_status', 'fx_status',
+    'valuation_status', 'valuation_label', 'valuation_detail', 'valuation_qualified', 'quote_at', 'quote_date',
     'price_observed_at', 'fx_observed_at', 'valuation_note', 'reporting_currency',
     'cost_basis', 'cost_basis_reporting', 'unrealized_gain', 'unrealized_gain_reporting',
     'return_pct', 'native_return_pct', 'cost_estimated', 'performance_note', 'analysis_asset_id', 'analysis_asset_name',

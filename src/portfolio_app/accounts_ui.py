@@ -224,10 +224,10 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
         key=key+'view')
     if view == 'Studies':
         from portfolio_app.generalized_studies_ui import render_generalized_studies
-        from portfolio_app.account_observations import load_observations, current_marks
+        from portfolio_app.futures_valuation import load_valuations
         from portfolio_app.currency_display import reporting_currency
-        marks, _, _ = load_observations(directory)
-        marks = current_marks(journal, marks)
+        valuations, _ = load_valuations(directory, journal)
+        marks = {pid: value.observation for pid, value in valuations.items() if value.observation}
         positions = [dict(id=p.spec.id, name=f'{p.contract.product} {p.contract.expiry}', contract=p.contract,
             quantity=p.quantity, last_price=marks[p.spec.id].price if p.spec.id in marks else p.last_price) for p in state.positions.values()]
         render_generalized_studies(directory, positions=positions, reporting_currency=reporting_currency())

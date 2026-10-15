@@ -98,6 +98,10 @@ class PriceObservation:
     kind: str = 'daily_settlement'
     source: str = 'manual'
     observed_at: str = ''
+    # observed_at is retrieval time, including in legacy files. Never use it as
+    # the market timestamp. Date-only observations deliberately leave quote_at empty.
+    quote_at: str = ''
+    delay_minutes: int | None = None
 
     def __post_init__(self):
         identifier(self.contract_id, 'Contract ID'); iso_date(self.date)
@@ -108,6 +112,15 @@ class PriceObservation:
         if self.kind not in ('daily_settlement', 'final_settlement', 'mark', 'manual'):
             raise DataError('Unknown observation kind.')
         identifier(self.source, 'Price source')
+        if self.delay_minutes is not None and (type(self.delay_minutes) is not int or self.delay_minutes < 0):
+            raise DataError('Quote delay must be nonnegative minutes.')
+        if self.quote_at:
+            try:
+                stamp = datetime.fromisoformat(self.quote_at.replace('Z', '+00:00'))
+                if stamp.tzinfo is None:
+                    raise ValueError
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise DataError('Quote time must include a timezone.') from exc
         if self.observed_at:
             try:
                 datetime.fromisoformat(self.observed_at.replace('Z', '+00:00'))

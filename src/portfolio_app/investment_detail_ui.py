@@ -171,10 +171,13 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
             row = matches.iloc[0]
             realized, unrealized = pnl_breakdown(journal, members, valued)
             capital, gain, exposure = st.columns(3)
-            capital.metric('Capital value' if investment else 'Unsettled value', format_money(row.current_value_reporting,currency))
+            capital.metric('Capital value' if investment else 'Unsettled value', format_money(row.current_value_reporting,currency),
+                help=row.get('valuation_detail', ''))
+            capital.caption(row.get('valuation_label', ''), help=row.get('valuation_detail', ''))
             with gain:
                 performance_metric('Net P&L', format_money(row.unrealized_gain_reporting,currency,signed=True),
-                    row.unrealized_gain_reporting,key=key+'gain')
+                    row.unrealized_gain_reporting,key=key+'gain', qualified=row.get('valuation_qualified', False),
+                    help=row.get('valuation_detail', ''))
                 st.caption(f'Unrealized {format_money(unrealized,currency,signed=True)} · '
                            f'Realized {format_money(realized,currency,signed=True)}')
             exposure.metric('Market exposure', format_money(row.signed_notional_reporting,currency),

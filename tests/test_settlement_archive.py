@@ -63,13 +63,14 @@ def test_preserves_versions_and_canonical_until_review(tmp_path, contract):
     assert not (tmp_path / '.cache').exists()
 
 
-def test_repeated_retrieval_updates_time_without_unbounded_versions(tmp_path, contract):
+def test_repeated_retrieval_preserves_observation_and_tracks_check_time(tmp_path, contract):
     archive = SettlementArchive(tmp_path)
     archive.record(contract, quote(contract))
     for day in range(7, 20):
         archive.record(contract, quote(contract, at=f'2026-01-{day:02}T12:00:00+00:00'))
     assert len(archive.versions(contract, '2026-01-05')) == 1
-    assert archive.latest(contract, '2026-01-05').observed_at == '2026-01-19T12:00:00+00:00'
+    assert archive.latest(contract, '2026-01-05').observed_at == '2026-01-06T12:00:00+00:00'
+    assert archive._day(contract, '2026-01-05').checked_at == '2026-01-19T12:00:00+00:00'
     assert not (tmp_path / '.backups').exists()
 
 

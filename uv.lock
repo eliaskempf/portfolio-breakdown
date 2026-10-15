@@ -1418,6 +1418,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "scipy" },
     { name = "streamlit" },
+    { name = "websockets" },
     { name = "yfinance" },
 ]
 
@@ -1460,6 +1461,7 @@ requires-dist = [
     { name = "qtpy", marker = "sys_platform == 'linux' and extra == 'window'", specifier = ">=2.4,<3" },
     { name = "scipy", specifier = ">=1.14,<2" },
     { name = "streamlit", specifier = ">=1.63,<2" },
+    { name = "websockets", specifier = ">=15,<17" },
     { name = "yfinance", specifier = ">=0.2.65,<2" },
 ]
 provides-extras = ["window"]

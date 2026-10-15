@@ -55,6 +55,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     on_click=lambda: st.session_state.update({key: paths[bucket][-2] if len(paths[bucket]) > 1 else ''}))
         scope = names.get(bucket, 'Portfolio')
         selected = bucket_positions(valued, config, bucket)
+        from portfolio_app.futures_valuation import summarize_freshness
+        freshness = summarize_freshness(selected)
         subtotal = float(selected.current_value_reporting.sum())
         missing = int(selected.current_value_reporting.isna().sum())
         whole = float(valued.current_value_reporting.sum())
@@ -70,11 +72,11 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                          performance, missing=missing, percent=percent, key='overview_value',
                          on_toggle_gain=on_toggle_gain,
                          label=('Category value' if bucket else 'Portfolio value') if exposure_result is not None else None,
-                         funded_gain=exposure_result is not None, strategy_gain=has_strategy)
+                         funded_gain=exposure_result is not None, strategy_gain=has_strategy, freshness=freshness)
         if second is not None:
             with second:
                 from portfolio_app.portfolio_exposure_ui import render_equity_exposure_metric
-                render_equity_exposure_metric(exposure_result, market=True, bucket_ids=bucket_ids)
+                render_equity_exposure_metric(exposure_result, market=True, bucket_ids=bucket_ids, freshness=freshness)
 
     scoped_future = future
     if future is not None and bucket:
@@ -97,6 +99,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
     if mode == 'Performance':
         with st.container(key='tour_performance'):
             table = strategic_performance(valued, config, bucket)
+            category_freshness = table.attrs.get('valuation_freshness', {})
             measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'], help='Holdings use unrealized gain / recorded cost. Futures use cumulative net P&L / initial allocated capital.',
                 default='Return (%)', key='strategic_performance_measure') or 'Return (%)'
             chart_percent = measure == 'Return (%)'
@@ -104,9 +107,10 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             if not available.empty:
                 hover = [[money(row["Cost"]), money(row["Gain"], signed=True),
                           f'{row["Return (%)"]:+,.2f}%' if pd.notna(row['Return (%)']) else 'Unavailable',
-                          row['Coverage'], row['Status']] for _, row in available.iterrows()]
+                          row['Coverage'], row['Status'] + ' · ' + category_freshness.get(row.Category, ('', '', False))[0]] for _, row in available.iterrows()]
                 figure = style_figure(go.Figure(go.Bar(x=available[measure], y=available.Category, orientation='h',
-                    marker_color=[LOSS_COLOR if value < 0 else GAIN_COLOR for value in available[measure]],
+                    marker_color=['#808890' if category_freshness.get(row.Category, ('', '', False))[2]
+                                  else LOSS_COLOR if row[measure] < 0 else GAIN_COLOR for _, row in available.iterrows()],
                     text=[f'{value:+,.2f}%' if chart_percent else money(value, signed=True) for value in available[measure]], textposition='auto',
                     customdata=hover, hovertemplate='%{y}<br>Return: %{customdata[2]}<br>Gain: %{customdata[1]}<br>Buy-in cost: %{customdata[0]}<br>Coverage: %{customdata[3]} · %{customdata[4]}<extra></extra>')))
                 figure.update_layout(height=max(260, 36 * len(available)), xaxis_title=measure, margin=dict(l=12, r=12, t=12, b=30))
@@ -117,9 +121,15 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 st.info('N/A — cash balance. Purchase-based return does not apply without a recorded conversion basis; interest is separate.')
             else:
                 st.info('Add convertible buy-ins to see performance for this category.')
-            render_list(frame_rows(table), [ListColumn(column, column, help=column_help(column, scope=scope),
+            performance_rows = frame_rows(table)
+            for row in performance_rows:
+                label, detail, qualified = category_freshness.get(row['Category'], ('', '', False))
+                row.update(valuationLabel=label, valuationDetail=detail, valuationQualified=qualified)
+            render_list(performance_rows, [ListColumn(column, column, help=column_help(column, scope=scope),
                         numeric=column in {'Cost', 'Gain', 'Return (%)'},
-                        signed=column in {'Gain', 'Return (%)'}) for column in table],
+                        signed=column in {'Gain', 'Return (%)'}, neutral_when='valuationQualified',
+                        secondary='valuationLabel' if column == 'Gain' else '',
+                        secondary_help='valuationDetail' if column == 'Gain' else '') for column in table],
                         key='strategic_performance_table', context=f'{position_context}_{bucket}_performance',
                         title='Category performance', default_sort=measure)
     else:

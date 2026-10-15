@@ -37,7 +37,12 @@ def position_rows(holdings, allocation=None, *, percent=False):
             quantity=getattr(row, 'contracts', row.shares) if getattr(row, 'instrument_type', '') == 'future' else row.shares,
             value=value, allocation=100 * value / total if complete and total > 0 and value is not None else None,
             gain=gain, gainReporting=gain_reporting, returnPct=return_pct,
-            exposure=number(getattr(row, 'signed_notional_reporting', None)), note=getattr(row, 'performance_note', '')))
+            exposure=number(getattr(row, 'signed_notional_reporting', None)), note=getattr(row, 'performance_note', ''),
+            valuationLabel=getattr(row, 'valuation_label', '') if isinstance(getattr(row, 'valuation_label', ''), str) else '',
+            valuationDetail=getattr(row, 'valuation_detail', '') if isinstance(getattr(row, 'valuation_detail', ''), str) else '',
+            valuationQualified=getattr(row, 'valuation_qualified', False) == True))
+        note = rows[-1]['note']
+        rows[-1]['note'] = ((note if isinstance(note, str) else '') + ' ' + rows[-1]['valuationDetail']).strip()
     return rows
 
 
@@ -114,6 +119,9 @@ def _render_table(rows, columns, *, context, revision, on_open, interactive=True
     numeric = {'quantity', 'value', 'allocation', 'gain', 'returnPct', 'gainReporting', 'exposure'}
     column_specs = [ListColumn(field, money_label(label) if field in {'value', 'gainReporting', 'exposure'} or (field == 'gain' and label == 'Gain') else label, numeric=field in numeric or field.startswith('metric_'), decimals=10 if field == 'quantity' else 2,
                               signed=field in {'gain', 'returnPct', 'gainReporting'},
+                              neutral_when='valuationQualified',
+                              secondary='valuationLabel' if field == 'value' else '',
+                              secondary_help='valuationDetail' if field == 'value' else '',
                               display=field + '_display' if field.startswith('metric_') else '',
                               help={'name': 'Investment name; select a row for position details.',
                                     'quantity': 'Total units or currently open contracts; a futures investment retains its closed-contract history.',

@@ -7,7 +7,9 @@ from pathlib import Path
 from threading import Lock, Thread
 
 from portfolio_app import account_journal as ledger
-from portfolio_app.derivative_market import SettlementCache, _known_product, fetch_settlement
+from portfolio_app.derivative_market import (SettlementCache, _known_product, fetch_settlement,
+    SettlementNotPublished, SettlementUnavailable)
+from portfolio_app.futures_clock import business_date, instant, settlement_reference, utc_now
 from portfolio_app.holdings import DataError
 from portfolio_app.locking import write_lock
 from portfolio_app.storage import revision, save_document
@@ -30,7 +32,7 @@ def read_status(directory):
                 raise ValueError('Invalid contract collection status')
             for day, result in record.get('dates', {}).items():
                 date.fromisoformat(day)
-                if not isinstance(result, dict) or result.get('status') not in {'checked', 'unavailable'}:
+                if not isinstance(result, dict) or result.get('status') not in {'checked', 'unavailable', 'not_published', 'failed'}:
                     raise ValueError('Invalid date collection status')
         return raw
     except (OSError, ValueError, TypeError, AttributeError) as exc:
@@ -38,17 +40,28 @@ def read_status(directory):
 
 
 def _save_status(directory, contract_id, record):
+    def attempted(item):
+        try:
+            return instant(item['attempted_at'])
+        except (KeyError, ValueError, TypeError):
+            return datetime.min.replace(tzinfo=timezone.utc)
     with workspace_lock(directory):
         raw = read_status(directory)
         prior = raw['contracts'].get(contract_id, {})
-        raw['contracts'][contract_id] = {**prior, **record,
-            'dates': {**prior.get('dates', {}), **record.get('dates', {})}}
+        dates = dict(prior.get('dates', {}))
+        for day, result in record.get('dates', {}).items():
+            if attempted(result) >= attempted(dates.get(day, {})):
+                dates[day] = result
+        if attempted(record) >= attempted(prior):
+            prior = {**prior, **record}
+        raw['contracts'][contract_id] = {**prior, 'dates': dates}
         save_document(Path(directory)/FILE, json.dumps(raw,indent=2)+'\n', revision(Path(directory)/FILE))
 
 
-def weekdays(start, end, contract):
+def weekdays(start, end, contract, *, today=None, include_today=False):
     start, end = date.fromisoformat(start), date.fromisoformat(end)
-    if start > end or (end-start).days > 30 or end >= date.today():
+    today = today or date.today()
+    if start > end or (end-start).days > 30 or end > today or (end == today and not include_today):
         raise DataError('Choose up to 31 calendar days ending before today.')
     return [(start+timedelta(days=i)).isoformat() for i in range((end-start).days+1)
             if (start+timedelta(days=i)).weekday()<5 and
@@ -73,28 +86,40 @@ def fetch_archived(directory, contract, day, *, refresh=False, fetch=fetch_settl
     return saved
 
 
-def scan_dates(directory, contract, days, *, fetch=fetch_settlement):
-    """Network reads run in parallel; archive writes retain the workspace fence."""
+def scan_dates(directory, contract, days, *, fetch=fetch_settlement, now=None):
+    """Network reads run in parallel; request start orders concurrent results."""
+    from dataclasses import replace
+    now = now or utc_now()
     archive = SettlementArchive(directory)
     def retrieve(day):
         try:
-            quote = fetch(contract,day)
+            quote = fetch(contract, day)
             if quote.contract_id != contract.id or quote.date != day or quote.kind != 'daily_settlement':
                 raise DataError('Retrieved settlement identity does not match the request.')
-            return day,quote,''
-        except (DataError,OSError,ValueError) as exc:
-            return day,None,str(exc)
+            return day, replace(quote, observed_at=now.isoformat()), 'checked', ''
+        except SettlementNotPublished as exc:
+            return day, None, 'not_published', str(exc)
+        except SettlementUnavailable as exc:
+            return day, None, 'unavailable', str(exc)
+        except (DataError, OSError, ValueError) as exc:
+            return day, None, 'failed', str(exc)
     result = {}
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for day,quote,error in pool.map(retrieve,days):
+        for day, quote, status, error in pool.map(retrieve, days):
             if quote is not None:
-                archive.record(contract,quote)
-            result[day] = {'status':'checked' if quote else 'unavailable','error':error}
+                archive.record(contract, quote)
+            reference = settlement_reference(date.fromisoformat(day))
+            recent = (business_date(now) - date.fromisoformat(day)).days <= 3
+            minutes = 15 if reference <= now < reference + timedelta(hours=2) else 60 if recent else 1440
+            if status == 'checked':
+                minutes = 1440
+            result[day] = dict(status=status, error=error, attempted_at=now.isoformat(),
+                               next_attempt_at=(now + timedelta(minutes=minutes)).isoformat())
     _save_status(directory, contract.id, {'dates': result})
     return result
 
 
-def tracked_contracts(journal, today):
+def tracked_contracts(journal, today, *, include_today=False):
     """Active contracts and recently closed legs, deduplicated across accounts."""
     state = ledger.replay(journal)
     events = ledger.effective_events(journal)
@@ -109,11 +134,11 @@ def tracked_contracts(journal, today):
         except DataError:
             continue
         first = max(min(e.date for e in history),cutoff)
-        last = min((today-timedelta(days=1)).isoformat(),max(e.date for e in history) if not balance.quantity else today.isoformat())
+        last = min((today-timedelta(days=0 if include_today else 1)).isoformat(),max(e.date for e in history) if not balance.quantity else today.isoformat())
         if first>last:
             continue
         contract = balance.contract
-        days = set(weekdays(first,last,contract))
+        days = set(weekdays(first,last,contract,today=today,include_today=include_today))
         if contract.id in result:
             days |= result[contract.id][1]
         result[contract.id] = contract,days
@@ -121,14 +146,39 @@ def tracked_contracts(journal, today):
 
 
 def due(record, now):
+    """Compatibility with legacy contract-level scheduling records."""
     try:
-        checked = datetime.fromisoformat(record['attempted_at'])
-        # Retry recent unavailable prices hourly; older gaps get daily attempts.
-        recent = (now.date()-timedelta(days=3)).isoformat()
-        failed = any(day>=recent and row.get('status')=='unavailable' for day,row in record.get('dates',{}).items())
-        return now<checked or now-checked >= timedelta(hours=1 if failed else 24)
-    except (KeyError,ValueError,TypeError):
+        checked = instant(record['attempted_at'])
+        if business_date(now) != business_date(checked):
+            return True
+        recent = (business_date(now)-timedelta(days=3)).isoformat()
+        failed = any(day >= recent and row.get('status') in {'unavailable', 'failed', 'not_published'}
+                     for day, row in record.get('dates', {}).items())
+        return now < checked or now-checked >= timedelta(hours=1 if failed else 24)
+    except (KeyError, ValueError, TypeError):
         return True
+
+
+def due_days(record, held_days, now, *, force=False):
+    if not record.get('dates') and record.get('attempted_at') and not force and not due(record, now):
+        return []
+    result = []
+    overlap = (business_date(now)-timedelta(days=7)).isoformat()
+    for day in sorted(held_days):
+        if date.fromisoformat(day) == business_date(now) and now < settlement_reference(business_date(now)):
+            continue
+        row = record.get('dates', {}).get(day, {})
+        if row.get('status') == 'checked' and day < overlap and not force:
+            continue
+        try:
+            checked = instant(row['attempted_at'])
+            ready = (now >= instant(row['next_attempt_at']) or now < checked
+                     or (row.get('status') == 'checked' and business_date(now) > business_date(checked)))
+        except (KeyError, ValueError, TypeError):
+            ready = True
+        if force or ready:
+            result.append(day)
+    return result
 
 
 class SettlementCollector:
@@ -157,13 +207,13 @@ class SettlementCollector:
         key=str(directory)
         try:
             records=read_status(directory)['contracts']
-            eligible={cid:pair for cid,pair in tracked_contracts(journal,self.now().date()).items()
-                      if force or due(records.get(cid,{}),self.now())}
+            eligible={cid:pair for cid,pair in tracked_contracts(journal,business_date(self.now()),include_today=True).items()
+                      if due_days(records.get(cid,{}),pair[1],self.now(),force=force)}
         except (DataError,OSError) as exc:
             with self._lock: self._errors[key]=str(exc)
             return False
         migration = any((directory/'.cache'/'derivative-settlements').glob('*/*.json')) and not (directory/'settlement-archive.json').exists()
-        signature=(revision(directory/ledger.FILE), SettlementArchive(directory).revision())
+        signature=(revision(directory/ledger.FILE), SettlementArchive(directory).revision(), business_date(self.now()))
         with self._lock:
             pending_archive=signature[1] is not None and self._processed.get(key)!=signature
         if not eligible and not migration and not pending_archive:return False
@@ -192,17 +242,18 @@ class SettlementCollector:
                         if cached is not None and archive.load(contract,path.stem) is None:
                             archive.record(contract,cached)
                 from portfolio_app.automatic_settlements import apply_archived_settlements
-                apply_archived_settlements(directory, today=self.now().date())
-                for cid,(contract,held_days) in tracked_contracts(journal,self.now().date()).items():
+                apply_archived_settlements(directory, today=business_date(self.now()))
+                for cid,(contract,held_days) in tracked_contracts(journal,business_date(self.now()),include_today=True).items():
                     prior=records.get(cid,{})
-                    if not force and not due(prior,self.now()):continue
-                    overlap=(self.now().date()-timedelta(days=7)).isoformat()
-                    days=sorted(day for day in held_days if force or day>=overlap or archive.load(contract,day) is None)
-                    results=scan_dates(directory,contract,days,fetch=self.fetch)
-                    _save_status(directory,cid,{'attempted_at':self.now().isoformat(),'dates':{}})
+                    days = due_days(prior, held_days, self.now(), force=force)
+                    if not days:
+                        continue
+                    attempted = self.now()
+                    scan_dates(directory,contract,days,fetch=self.fetch,now=attempted)
+                    _save_status(directory,cid,{'attempted_at':attempted.isoformat(),'dates':{}})
                 with workspace_lock(directory):
-                    apply_archived_settlements(directory, today=self.now().date())
-                    signature=(revision(directory/ledger.FILE),archive.revision())
+                    apply_archived_settlements(directory, today=business_date(self.now()))
+                    signature=(revision(directory/ledger.FILE),archive.revision(),business_date(self.now()))
                 with self._lock:
                     self._processed[str(directory)]=signature
         except BlockingIOError:

@@ -135,6 +135,18 @@ def investment_positions(valued, journal):
         value = principal + gain
         rate = rates.get(investment.currency)
         template = indexed.loc[members[-1]].to_dict()
+        from portfolio_app.futures_valuation import summarize_freshness
+        active_ids = [pid for pid in members if state.positions[pid].quantity]
+        active_rows = indexed.loc[active_ids]
+        if len(active_rows) == 1 and 'valuation_status' in active_rows:
+            template.update({key: active_rows.iloc[0][key] for key in (
+                'valuation_status', 'valuation_label', 'valuation_detail', 'valuation_qualified',
+                'quote_date', 'quote_at', 'price_source', 'price_status')})
+        else:
+            label, detail, qualified = summarize_freshness(active_rows)
+            template.update(valuation_status='mixed' if active_ids else 'closed',
+                valuation_label=label if active_ids else 'Closed', valuation_detail=detail,
+                valuation_qualified=qualified, quote_date='', quote_at='', price_source='Multiple contract observations')
         complete = all(state.positions[p].history_complete for p in members)
         note = ('Recorded net futures P&L including settled and open gains, fees and entered taxes; '
                 'return uses fixed initial allocated capital. Allocation changes are not gains. '

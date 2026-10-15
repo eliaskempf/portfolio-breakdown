@@ -107,7 +107,7 @@ def save_observations(directory, marks, rates, expected_revision):
     save_document(Path(directory) / FILE, content, expected_revision)
 
 
-def current_marks(journal, marks):
+def current_marks(journal, marks, *, today=None):
     """Withhold stale basis bindings; old unbound same-day marks are ambiguous.
 
     Corrections are resolved before comparison. Voiding a later basis event can
@@ -121,10 +121,10 @@ def current_marks(journal, marks):
         events = _basis_events(journal, position.id)
         latest = max((e.date for e in events), default='')
         if isinstance(mark, BoundPriceObservation):
-            valid = mark.basis_fingerprint == _fingerprint(events) and mark.date >= latest
+            valid = mark.date > latest or (mark.basis_fingerprint == _fingerprint(events) and mark.date >= latest)
         else:
             valid = mark.date > latest
-        if valid and mark.date <= date.today().isoformat():
+        if valid and mark.date <= (today or date.today()).isoformat():
             result[position.id] = mark
     return result
 

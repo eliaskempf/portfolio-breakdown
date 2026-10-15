@@ -17,6 +17,13 @@ from portfolio_app.locking import write_lock
 from portfolio_app.storage import revision
 from portfolio_app.workspace_lock import workspace_lock
 
+
+def _retrieval_time(value):
+    # Legacy retrieval timestamps allowed no offset. This ordering convention
+    # never supplies a quote time or changes the settlement's business date.
+    stamp = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
+
 FILE = 'settlement-archive.json'
 
 
@@ -25,6 +32,7 @@ class _Day:
     versions: list[PriceObservation]
     canonical: int = 0
     latest: int = 0
+    checked_at: str = ''
 
 
 @dataclass
@@ -93,7 +101,7 @@ class SettlementArchive:
                 days = {}
                 for stamp, saved in item['days'].items():
                     iso_date(stamp)
-                    if set(saved) != {'versions', 'canonical', 'latest'} or not isinstance(saved['versions'], list):
+                    if set(saved) - {'versions', 'canonical', 'latest', 'checked_at'} or not isinstance(saved['versions'], list):
                         raise ValueError('Invalid settlement history')
                     observations = [PriceObservation(**value) for value in saved['versions']]
                     for observed in observations:
@@ -106,7 +114,9 @@ class SettlementArchive:
                     if any(type(saved[field]) is not int or not 0 <= saved[field] < len(observations)
                            for field in ('canonical', 'latest')):
                         raise ValueError('Invalid settlement version selection')
-                    days[stamp] = _Day(observations, saved['canonical'], saved['latest'])
+                    days[stamp] = _Day(observations, saved['canonical'], saved['latest'], saved.get('checked_at', ''))
+                    if days[stamp].checked_at:
+                        _retrieval_time(days[stamp].checked_at)
                 histories[identity] = _History(contract, days)
             return histories
         except (OSError, ValueError, TypeError, KeyError, AttributeError, DataError) as exc:
@@ -115,7 +125,7 @@ class SettlementArchive:
     def _write(self, histories, expected):
         contracts = {identity: {'contract': asdict(history.contract), 'days': {
             stamp: {'versions': [asdict(item) for item in day.versions],
-                    'canonical': day.canonical, 'latest': day.latest}
+                    'canonical': day.canonical, 'latest': day.latest, 'checked_at': day.checked_at}
             for stamp, day in sorted(history.days.items())}}
             for identity, history in sorted(histories.items())}
         content = json.dumps({'version': 1, 'contracts': contracts}, default=str, indent=2) + '\n'
@@ -173,7 +183,7 @@ class SettlementArchive:
                 history = histories[contract.id] = _History(contract, {})
             saved = history.days.get(observation.date)
             if saved is None:
-                history.days[observation.date] = _Day([observation])
+                history.days[observation.date] = _Day([observation], checked_at=observation.observed_at)
             else:
                 version = next((index for index, item in enumerate(saved.versions)
                                 if (item.price, item.source) == (observation.price, observation.source)), None)
@@ -183,8 +193,12 @@ class SettlementArchive:
                 else:
                     if saved.versions[version] == observation and saved.latest == version:
                         return
-                    saved.versions[version] = observation
-                saved.latest = version
+                    # Preserve original observation metadata on repeated reads.
+                previous = saved.versions[saved.latest]
+                checked = saved.checked_at or previous.observed_at
+                if not checked or _retrieval_time(observation.observed_at) >= _retrieval_time(checked):
+                    saved.latest = version
+                    saved.checked_at = observation.observed_at
             self._write(histories, expected)
 
     def accept_latest(self, contract, day, expected_price) -> None:

@@ -105,22 +105,26 @@ def allocation_total(label: str, value: float) -> None:
     st.html(f'<div class="allocation-total"><span>{escape(label)}</span><span>{money(value)} · 100%</span></div>')
 
 
-def performance_metric(label: str, value: str, amount, *, key: str) -> None:
+def performance_metric(label: str, value: str, amount, *, key: str, qualified=False, help=None) -> None:
     """Keep signed performance readable even without colour or a known cost."""
     tone = 'positive' if amount is not None and amount > 0 else 'negative' if amount is not None and amount < 0 else 'neutral'
+    if qualified:
+        tone = 'neutral'
     with st.container(key=f'gain_{tone}_{key}'):
-        st.metric(label, value)
+        st.metric(label, value, help=help)
 
 
-def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False):
+def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False, freshness=None):
     """One value card with an adjacent, optionally clickable unrealized gain."""
     gain = performance.return_pct if percent else performance.gain_reporting
     gain_text = ('N/A · Cash balance' if performance.cash_only else 'Unavailable') if gain is None else f'{gain:+,.2f}%' if percent else money(gain, signed=True)
     with st.container(key=key):
         st.metric(label or ('Priced value' if missing else 'Current value'), money(value),
-                  delta=gain_text, delta_color='normal' if gain else 'off', delta_arrow='off',
+                  delta=gain_text, delta_color='normal' if gain and not (freshness and freshness[2]) else 'off', delta_arrow='off',
                   help=('Assets minus debt. Gain includes holdings performance and net futures P&L. ' if strategy_gain else
                         'Current holdings value and gain on recorded costs. ') +
                        f'{missing} missing prices. Performance coverage: {performance.coverage}. Click gain to switch amount / %.')
+        if freshness and freshness[0]:
+            st.caption(freshness[0], help=freshness[1])
     if on_toggle_gain:
         toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain, container_key=key)

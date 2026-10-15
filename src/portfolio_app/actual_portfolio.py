@@ -65,11 +65,20 @@ def assert_cash_editable(path, position_ids):
         raise DataError('This cash balance is maintained in Accounts. Record a dated reconciliation there.')
 
 
-def journal_positions(valued, journal, prices, *, reporting_currency='EUR', marks=None, fx_rates=None):
+def journal_positions(valued, journal, prices, *, reporting_currency='EUR', marks=None, fx_rates=None, valuations=None, now=None):
     from portfolio_app.account_journal import replay
     validate_links(journal, valued)
     state = replay(journal)
     marks = marks or {}
+    from portfolio_app.futures_valuation import freshness, select_valuations, valuation_fields
+    if valuations is None:
+        valuations = select_valuations(journal, now=now)
+        # This projection API accepts caller-selected prices. The application
+        # selects manual/automatic observations with load_valuations beforehand.
+        for identity, observation in marks.items():
+            balance = state.positions.get(identity)
+            if balance and observation.contract_id == balance.contract.id:
+                valuations[identity] = freshness(observation, now=now, closed=not balance.quantity)
     accounts = {a.id: a.name for a in journal.accounts}
     linked = {(x.account_id, x.currency): x.position_id for x in journal.cash_links}
     original = valued.set_index('position_id')
@@ -120,8 +129,9 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
                 f'{accounts[account]} · {loan}', 'liability')
     for identity, balance in state.positions.items():
         contract, spec = balance.contract, balance.spec
-        observation = marks.get(identity)
-        mark = observation.price if observation is not None else balance.last_price
+        valuation = valuations[identity]
+        observation = valuation.observation
+        mark = observation.price if observation is not None else None
         pending = sum((p.amount for p in state.pending.values() if p.position_id == identity and p.currency == contract.currency), Decimal(0))
         amount = balance.unsettled_pnl(mark) + pending if mark is not None else (pending if balance.quantity == 0 else None)
         notional = balance.notional(mark) if mark is not None else (Decimal(0) if not balance.quantity else None)
@@ -133,8 +143,7 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
             product=contract.product, current_fx_rate=rates.get(contract.currency), contract_currency=contract.currency,
             proxy_position_id=spec.proxy_position_id, contract_id=contract.id,
             mark_price=float(mark) if mark is not None else float('nan'),
-            price_source=observation.source if observation else 'Last recorded clearing basis',
-            quote_date=observation.date if observation else '',
+            **valuation_fields(valuation),
             valuation_note='Unsettled P&L and outstanding cash claims only; settled P&L is in account cash.')
     # Delayed internal transfers are wealth in transit, counted at neither endpoint.
     for identity, pending in state.pending.items():

@@ -147,12 +147,19 @@ in **Posting details**. Other valuation marks do not create settlement transacti
 While the normal app is open, eligible contracts collect available daily settlement
 history in the background. Startup fills missing dates within the previous 31
 calendar days; a daily refresh rechecks the most recent week for source revisions.
-Recent unavailable dates retry hourly. Active contracts and recently closed or
+Collection begins checking today at the published settlement reference time
+(17:30 Europe/Berlin for the curated products). This is not a promised publication
+time: the source must actually publish the requested daily settlement. Pending
+publication retries every 15 minutes during the first two hours, then hourly for
+recent dates; older gaps retry daily. History checks distinguish awaiting
+publication, unavailable history and failed requests. Active contracts and recently closed or
 rolled legs are eligible. Weekends and final-settlement dates are excluded;
 source holidays or unavailable historical records remain visible gaps. Accepted
-daily prices are applied automatically to eligible recorded positions, including
-prices already in the archive at startup. Cash posts on the business date, after
-that day’s recorded trades, and the clearing basis updates once. The same ledger
+daily prices can update dated valuation immediately. Cash posting waits until
+the business date has ended in Europe/Berlin, without another 24-hour delay.
+Eligible archived prices are also applied at startup. The journal dates cash to
+the settlement business date, after that day’s recorded trades, and updates the
+clearing basis once. The same ledger
 calculation updates investment P&L and value without counting the cash gain twice.
 No fees, taxes or final-settlement transactions are inferred.
 
@@ -245,19 +252,53 @@ any of those wealth totals.
 
 ## Marks and free data
 
-**Futures → Marks & FX** keeps valuation observations separate from transactions.
-Fetch an exact-contract settlement for the selected business date, or save a
-manual dated mark and source. **Save mark only** changes valuation; it does not
-post settlement cash. Record the corresponding settlement separately after
-reviewing it. Dated manual FX observations are also supported.
+While the normal app is open, held curated contracts refresh from the free,
+15-minute-delayed quote service behind Eurex's public product pages. Refreshes
+run every five minutes during the weekday trading window and hourly outside it.
+Failures back off for 5, 15 and then 60 minutes. **Refresh prices** retries now.
+Collection does not run while the app is closed.
 
-The product catalog includes MSCI World EUR/USD/GBP, EURO STOXX 50, FTSE 100 and
-DAX, Mini-DAX and Micro-DAX futures. Free public data availability varies by
-product, maturity and date. A product appearing in the catalog does not guarantee
-an available observation or complete historical archive. A failed fetch does not
-invent a price or replace an exact expiry with a nearby contract. Manual entry
-remains available. Sources and observation dates should be reviewed alongside
-values; an old clearing basis is not a fresh market quote.
+A timestamped exact-contract trade changes unsettled P&L, investment capital
+value and signed exposure. It never posts cash or changes the clearing basis.
+When the corresponding daily settlement posts, settled and unsettled amounts
+change location without creating a second gain. A newer market quote remains
+selected when an earlier settlement arrives late.
+
+The supported lookup covers FMWN (EUR), FMWO (USD), FMWB (GBP), FESX, FDAX,
+FDXM, FDXS (EUR) and FTUK (GBP). Each request verifies the product, monthly series,
+canonical expiry, currency and multiplier. MSCI quote-feed maturity labels use a
+different date from the statistics listing; the adapter verifies their unique
+monthly series without altering the recorded contract expiry. It never substitutes
+an index, ETF, daily contract or nearby maturity.
+
+Availability depends on actual trading in that maturity. The website sometimes
+returns settlement-like last prices without trade volume; those do not qualify
+as intraday quotes. Deferred maturities and thinly traded products can therefore
+remain at a dated settlement or recorded price. This public website is not a
+guaranteed API or a promise of real-time data.
+
+Compact labels beside affected values show **Delayed**, **Stale**, **Settlement**,
+**Manual**, **Recorded**, **Revised**, or **No price**. Conflicting prices at the
+same quote time retain the first observation with neutral styling until a newer
+quote or manual mark resolves valuation. Delayed trade quotes older than 30 minutes
+are stale. Date-only marks and recorded prices always disclose their business
+date. Stale/fallback-dependent P&L retains its value and sign with neutral styling.
+Portfolio and category summaries indicate affected futures; closed contract legs
+do not make an open investment stale. Expand a row's freshness label, or open its
+help, for source time, retrieval time, declared delay and any refresh failure.
+Downloading the same observation again never makes its price time newer.
+
+**Futures → Marks & FX** keeps manual marks and FX separate from transactions.
+Fetch an exact-contract settlement or save a dated manual mark and source.
+**Save mark only** changes valuation; it does not post settlement cash. A verified
+newer automatic quote may supersede a manual mark, while an ambiguous same-day
+comparison keeps the valid manual mark. Manual records remain preserved.
+
+Automatic quote history and collection status are private workspace files,
+separate from manual observations, settlement archives and account transactions.
+Failures retain earlier observations. Source revisions preserve history and never
+silently correct account postings. Free settlement history is incomplete; verified
+manual records remain available for gaps and unsupported contracts.
 
 ## Market history in position details
 
