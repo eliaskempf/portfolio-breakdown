@@ -115,6 +115,26 @@ its command-line demo/live launch mode.
 
 ## Update or remove {#update}
 
+Installed apps check GitHub for a newer stable release at most once a day while
+open. A compatible download must be available for your platform. **View release**
+opens its release notes and downloads in your browser; installation remains manual.
+The app does not download or execute installers automatically.
+
+An update reminder appears on Overview after other dialogs are closed.
+**Remind me in a week**, or closing the reminder, postpones it for seven days.
+The release also appears in **Notifications**. **Never remind me again** turns off
+automatic checks and reminders across all your portfolios on this computer.
+Use **Portfolio settings → Updates** to re-enable checks or **Check for updates**
+manually. Preferences survive application restarts and updates. Offline failures
+do not interrupt portfolio use; the update settings show the last successful check.
+
+Source checkouts default to manual checks and compare installed package versions,
+not Git commits. You can enable automatic checks explicitly. Checks are paused in
+the offline demo and during the guided tour. Older app versions without this
+feature need one manual upgrade before they can show reminders.
+
+To install an update:
+
 1. Stop the old app and [back up the workspace](storage.md#backup).
 2. Run the new Windows Setup, install the new Ubuntu `.deb` with
    `sudo apt install ./portfolio-breakdown-experimental_<version>_amd64.deb`,

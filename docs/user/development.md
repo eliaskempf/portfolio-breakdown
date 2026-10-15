@@ -64,6 +64,14 @@ replacing adopted cash holdings and retaining position/account provenance.
 `portfolio_exposure.py` then uses separate capital and signed-exposure measures;
 provider parsing and journal persistence do not belong in the aggregation engine.
 
+`updates.py` checks public stable-release metadata in a background thread and
+stores per-user preferences independently of portfolio state. Checks use a daily
+interval, an hourly failure retry, and a one-minute manual-check cooldown.
+`update_ui.py` owns the settings, notification entry and weekly reminder; editors,
+tours and monitoring dialogs take precedence. Invalid preferences suspend checks
+without replacing the file. Source checkouts default to manual checks. Update
+tests inject release responses and clocks; they do not require GitHub access.
+
 `monitoring.py` owns indicator and account-rule calculations; `monitoring_market.py`
 normalizes provider observations, `monitoring_service.py` schedules checks while
 a session is open, and `monitoring_store.py` persists rule revisions and alert

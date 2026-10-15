@@ -537,6 +537,7 @@ def render_alert_dialog(directory):
                 rule = rule_from_dict(rules[event['rule_id']])
                 render_alert_event(directory, rule, event, review=review)
     dialog()
+    return True
 
 
 def render_alert_event(directory, rule, event, *, review=None):

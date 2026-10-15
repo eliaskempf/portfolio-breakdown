@@ -47,6 +47,8 @@ def notification_bell(slot, directory, funds, valued, status, *, demo=False, cac
     workspace = str(directory.resolve())
     saved_seen = set(doc['notice_seen']) | set(seen.get(workspace, ()))
     count = len(current-saved_seen) + sum(not e['read'] for e in doc['events'])
+    from portfolio_app.update_ui import update_unread
+    count += int(update_unread(disabled=demo or disabled))
     with slot:
         panel = st.popover('Notifications', icon=':material/notifications:',
             help=f'{count} unread notifications' if count else 'Notifications',
@@ -103,6 +105,8 @@ def render_notifications(directory, funds, revision, valued, status, *, demo=Fal
     from portfolio_app.monitoring_store import mark_events
     from portfolio_app.settlement_archive_ui import settlement_notices
     st.subheader('Notifications')
+    from portfolio_app.update_ui import render_update_notice
+    render_update_notice(disabled=demo)
     doc = _monitoring_document(directory)
     events = [e for e in doc['events'] if not e.get('resolved') and not e['acknowledged']]
     st.caption(f"{len(events)} active rule alert(s) · Opening this panel marks entries read; acknowledgment is separate.")

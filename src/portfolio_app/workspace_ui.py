@@ -64,6 +64,8 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
 
 
 def workspace_info(active: Path, persistent: Path, *, demo: bool) -> None:
+    from portfolio_app.update_ui import render_update_settings
+    render_update_settings(offline=demo and not (active / '.live-demo').exists())
     with st.expander('App & workspace'):
         st.caption(f'Portfolio Breakdown {app_version()} · GPL-3.0-only')
         st.caption('Temporary demo folder' if demo else 'Portfolio folder')

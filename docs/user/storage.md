@@ -185,6 +185,13 @@ position quantities and purchase costs are not sent as part of those lookups.
 Import files and review drafts are processed locally. The explicit offline demo
 avoids market requests; normal demo mode uses the network.
 
+Automatic application update checks request public release metadata from GitHub.
+They send no portfolio records or credentials. Update preferences and cached
+release metadata are stored in `updates.json` in the operating system's per-user
+application state directory, separately from portfolio workspaces and their
+backups. **Portfolio settings → Updates** controls these checks. Manual checks
+remain available after opting out; the offline demo makes no update requests.
+
 Futures data requests use public product, contract, date, FX and explicitly chosen
 proxy identifiers. Account cash, contract quantities and manually entered taxes
 are stored locally; no broker connection is required. Market downloads, account

@@ -60,6 +60,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return
     preserve_view_inputs()
     data_dir, demo, refresh, settings_panel, notifications_slot = app_header(data_dir, demo_dir, demo=demo)
+    from portfolio_app.update_ui import watch_updates, render_update_dialog
+    from portfolio_app.tour import active as tour_active
+    updates_disabled = tour_active() or (demo and not (data_dir / '.live-demo').exists())
+    watch_updates(disabled=updates_disabled)
     from portfolio_app.calendar_ui import configure_calendar
     configure_calendar(data_dir, settings_panel)
     from portfolio_app.backup_ui import backup_controls, render_backup_dialog
@@ -382,10 +386,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                         st.error(str(exc))
     if background_prices or market_coordinator.pending(market_workspace) or market_coordinator.revision(market_workspace) != market_revision:
         render_market_status(market_workspace, market_revision, show_caption=False)
-    if not tour_active():
-        render_alert_dialog(data_dir)
+    alert_open = render_alert_dialog(data_dir) if not tour_active() else False
     render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued)
     render_tour(empty=holdings.empty)
+    render_update_dialog(disabled=updates_disabled or bool(alert_open))
     finish_view_inputs()
     mark_view_ready()
 
