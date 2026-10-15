@@ -115,3 +115,57 @@ def test_normal_list_opens_actual_position_in_shared_popup(tmp_path):
     assert app.session_state['position_edit_dialog']
     assert len(app.get('dialog')) == 1
     assert by_label(app.get('button_group'), 'Futures position view').value == 'Chart'
+
+
+def test_backdated_cash_reconciliation_preserves_later_deposit_and_settlement(tmp_path):
+    from datetime import date
+    from portfolio_app.account_journal import Event, append_events, replay
+
+    _, journal, _ = invented(tmp_path)
+    journal = append_events(journal, (
+        Event('later-deposit', '2026-01-04', 'cash_adjust', account_id='a', currency='EUR', amount=200),
+        Event('later-settlement', '2026-01-05', 'settlement', account_id='a', position_id='p', price=1010),
+    ))
+    save_journal(tmp_path, journal, None)
+    app = launch_actual(tmp_path)
+    activate(app, 'Futures')
+    by_label(app.get('button_group'), 'Account workspace').set_value('Cash & financing').run()
+    by_label(app.selectbox, 'Cash action').set_value('Reconcile cash balance').run()
+    by_label(app.date_input, 'Balance / financing date').set_value(date(2026, 1, 3)).run()
+    by_label(app.text_input, 'Amount (signed for deposits, withdrawals and interest)').set_value('19000').run()
+    by_label(app.button, 'Review changes').click().run()
+    assert not app.exception
+    by_label(app.button, 'Save reviewed changes').click().run()
+    assert not app.exception
+
+    saved, _ = load_journal(tmp_path)
+    assert saved.events[:-1] == journal.events
+    assert saved.events[-1].amount == -992
+    assert replay(saved, as_of='2026-01-03').cash['a', 'EUR'] == 19000
+    assert replay(saved).cash['a', 'EUR'] == 19400
+    assert replay(saved).positions['p'] == replay(journal).positions['p']
+
+
+def test_cash_deposit_keeps_prior_settlements_eligible(tmp_path):
+    from datetime import date
+    from portfolio_app.account_journal import replay
+    from portfolio_app.settlement_backfill import settlement_days
+
+    _, journal, _ = invented(tmp_path)
+    save_journal(tmp_path, journal, None)
+    app = launch_actual(tmp_path)
+    activate(app, 'Futures')
+    by_label(app.get('button_group'), 'Account workspace').set_value('Cash & financing').run()
+    by_label(app.selectbox, 'Cash action').set_value('Deposit / withdrawal').run()
+    by_label(app.date_input, 'Balance / financing date').set_value(date(2026, 1, 5)).run()
+    by_label(app.text_input, 'Amount (signed for deposits, withdrawals and interest)').set_value('200').run()
+    by_label(app.button, 'Review changes').click().run()
+    assert not app.exception
+    by_label(app.button, 'Save reviewed changes').click().run()
+    assert not app.exception
+
+    saved, _ = load_journal(tmp_path)
+    assert saved.events[-1].kind == 'cash_flow'
+    assert replay(saved).cash['a', 'EUR'] == 20192
+    assert all(day.status == 'Ready to retrieve'
+               for day in settlement_days(saved, 'p', '2026-01-02', '2026-01-05'))

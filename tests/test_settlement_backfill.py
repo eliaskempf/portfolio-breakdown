@@ -82,3 +82,53 @@ def test_signed_backfill_preserves_native_currency(tmp_path,currency,multiplier)
         ledger.Event('open','2026-01-02','trade',position_id='p',quantity=-2,price=1000),))
     candidate=propose_settlements(journal,'p','2026-01-02','2026-01-02',[observed(contract,'2026-01-02',1010)])
     assert ledger.replay(candidate).cash['a',currency] == -20*multiplier
+
+
+@pytest.mark.parametrize('currency', ['EUR', 'USD', 'GBP'])
+@pytest.mark.parametrize('amount', [200, -200])
+def test_explicit_cash_flows_preserve_backfill_and_original_records(tmp_path, currency, amount):
+    from portfolio_app.derivative_types import ContractSpec
+    contract = ContractSpec('SYNTH', '2026-03-20', currency, 10, 1)
+    journal = ledger.Journal(accounts=(ledger.Account('a', 'Invented'),), contracts=(contract,),
+        positions=(ledger.PositionSpec('p', 'a', contract.id),), events=(
+        ledger.Event('cash', '2026-01-02', 'cash_open', account_id='a', currency=currency, amount=1000),
+        ledger.Event('open', '2026-01-02', 'trade', position_id='p', quantity=1, price=1000),
+        ledger.Event('flow', '2026-01-05', 'cash_flow', account_id='a', currency=currency, amount=amount)))
+    ledger.save_journal(tmp_path, journal, None)
+    restored, _ = ledger.load_journal(tmp_path)
+    assert restored == journal
+    assert all(day.status == 'Ready to retrieve'
+               for day in settlement_days(restored, 'p', '2026-01-02', '2026-01-05'))
+    settled = propose_settlements(restored, 'p', '2026-01-02', '2026-01-02',
+                                 [observed(contract, '2026-01-02', 1010)])
+    assert settled.events[:-1] == journal.events
+    assert ledger.replay(settled).cash['a', currency] == 1100 + amount
+    assert settlement_days(settled, 'p', '2026-01-02', '2026-01-02')[0].status == 'Already recorded'
+
+
+@pytest.mark.parametrize('direction', [1, -1])
+@pytest.mark.parametrize('closed', [1, 2, 3])
+def test_backfill_retains_zero_close_claim_and_existing_receipt(tmp_path, direction, closed):
+    from portfolio_app.derivative_types import ContractSpec
+    contract = ContractSpec('SYNTH', '2026-03-20', 'EUR', 10, 1)
+    journal = ledger.Journal(accounts=(ledger.Account('a', 'Invented'),), contracts=(contract,),
+        positions=(ledger.PositionSpec('p', 'a', contract.id),), events=(
+        ledger.Event('open', '2026-01-02', 'trade', position_id='p', quantity=direction*2, price=1000,
+                     value_date='2026-01-05'),
+        ledger.Event('close', '2026-01-05', 'trade', position_id='p', quantity=-direction*closed, price=1010,
+                     value_date='2026-01-06'),
+        ledger.Event('receipt', '2026-01-06', 'receive', account_id='a', reference='close')))
+    # A deferred value date on an opening alone creates no cash claim.
+    assert not ledger.replay(journal, as_of='2026-01-02').pending
+    before = ledger.replay(journal)
+    settled = propose_settlements(journal, 'p', '2026-01-02', '2026-01-02',
+                                 [observed(contract, '2026-01-02', 1010)])
+    assert settled.events[:-1] == journal.events
+    assert ledger.replay(settled, as_of='2026-01-05').pending['close'].amount == 0
+    after = ledger.replay(settled)
+    assert not after.pending
+    assert after.cash['a', 'EUR'] == direction*200
+    assert after.cash['a', 'EUR'] + after.positions['p'].unsettled_pnl(1010) == (
+        before.cash['a', 'EUR'] + before.positions['p'].unsettled_pnl(1010))
+    ledger.save_journal(tmp_path, settled, None)
+    assert ledger.load_journal(tmp_path)[0] == settled

@@ -24,7 +24,7 @@ from portfolio_app.holdings import DataError
 from portfolio_app.storage import save_document
 
 FILE = 'account-journal.json'
-KINDS = frozenset(('cash_open', 'cash_adjust', 'snapshot', 'trade', 'settlement',
+KINDS = frozenset(('cash_open', 'cash_adjust', 'cash_flow', 'snapshot', 'trade', 'settlement',
     'final_settlement', 'receive', 'fee', 'tax', 'interest', 'transfer', 'fx',
     'debt_open', 'borrow', 'repay', 'reserve', 'release', 'void'))
 
@@ -444,7 +444,10 @@ def replay(journal: Journal, *, as_of: str | None = None) -> JournalState:
                             lots.pop(0)
                     if remaining:
                         lots.append(Lot(event.id, remaining, event.price, event.price, event.date))
-                    if pnl:
+                    # Backfills can reduce a close's residual claim to zero.
+                    # Retain its identity so an existing receipt still replays.
+                    deferred_close = remaining != event.quantity and event.value_date and event.value_date > event.date
+                    if pnl or deferred_close:
                         pay_or_pending(event, p.spec.account_id, p.contract.currency, pnl)
                     positions[p.spec.id] = replace(p, quantity=sum(lot.quantity for lot in lots),
                         lots=tuple(lots), last_price=event.price, realized_pnl=p.realized_pnl+money(pnl))
@@ -518,7 +521,7 @@ def replay(journal: Journal, *, as_of: str | None = None) -> JournalState:
         if event.account_id not in accounts:
             raise DataError('Cash/debt event requires an account.')
         currency(event.currency)
-        if event.kind in ('cash_open', 'cash_adjust'):
+        if event.kind in ('cash_open', 'cash_adjust', 'cash_flow'):
             if event.kind == 'cash_open':
                 key = event.account_id, event.currency
                 if key in opened_cash or key in cash:

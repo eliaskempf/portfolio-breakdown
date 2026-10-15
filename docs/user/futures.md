@@ -362,12 +362,18 @@ same account workflow without requiring a placeholder contract.
 **Cash & financing** records opening balances, reconciliations, deposits,
 withdrawals, transfers, actual currency-conversion legs, existing loans,
 borrowing, repayment and interest. A reconciliation records the difference needed
-to reach the entered balance; it is not classified as a futures gain. Negative
+to reach the entered balance on its selected date; later cash movements remain
+intact. It is not classified as a futures gain. Negative
 cash is a signed cash balance, not an automatically duplicated loan. Record a
 separate loan only when it is a separate obligation. Borrowing increases cash and
 debt equally; principal repayment decreases both. Interest is a separate expense.
 Ordinary security purchases and sales do not acquire transaction bookkeeping
 through this account workflow.
+
+New deposits and withdrawals are explicit cash flows, so they do not prevent
+retrieval of earlier missing settlements. Older untyped cash adjustments retain
+their original records and are conservatively treated as reconciliations when
+checking settlement eligibility.
 
 Under **Collateral**, link an existing security holding to its owning account,
 reserve shares/units or native cash, and enter a haircut. Security reservations

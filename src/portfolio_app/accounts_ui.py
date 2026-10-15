@@ -382,11 +382,12 @@ def render_cash(directory, journal, revision, snapshot, valued):
         amount = _money_input('Amount (signed for deposits, withdrawals and interest)', key+'amount')
         note = st.text_input('Description', key=key+'note')
         base = dict(account_id=account, currency=currency, amount=amount, note=note)
-        kind = {'Opening currency balance':'cash_open', 'Reconcile cash balance':'cash_adjust', 'Deposit / withdrawal':'cash_adjust',
+        kind = {'Opening currency balance':'cash_open', 'Reconcile cash balance':'cash_adjust', 'Deposit / withdrawal':'cash_flow',
             'Transfer':'transfer','Currency conversion':'fx','Record existing debt':'debt_open','Borrow':'borrow','Repay':'repay',
             'Interest':'interest','Fee':'fee','Tax payment':'tax'}[action]
         if action == 'Reconcile cash balance':
-            base['amount'] = amount - state.cash.get((account,currency), Decimal(0))
+            dated_state = ledger.replay(journal, as_of=day.isoformat())
+            base['amount'] = amount - dated_state.cash.get((account,currency), Decimal(0))
             base['note'] = 'Balance reconciliation: ' + note
             st.caption(f'Adjustment to reach entered cash balance: {base["amount"]} {currency}. This is not classified as trading profit.')
         if kind in {'borrow','repay','debt_open'}:
