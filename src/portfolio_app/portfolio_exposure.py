@@ -175,22 +175,33 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
         elif kind == 'equity' and fund is None:
             add(common, position.get('analysis_asset_id') or position['id'], position.get('analysis_asset_name') or position['name'], value, value, 'instrument')
         elif fund:
+            basis = fund_kind(fund, equity_declared=declared == 'equity')
             for constituent in fund_breakdown(fund).to_dict('records'):
                 amount = value * constituent['weight']
                 if not amount:
                     continue
-                interpreted = interpret_constituent(constituent,
-                    fallback_kind=fund_kind(fund, equity_declared=declared == 'equity'))
+                interpreted = interpret_constituent(constituent, fallback_kind=basis)
                 residual, ck = interpreted.residual, interpreted.kind
                 # Nested equity has known exposure, not resolved company coverage.
                 nested_equity = interpreted.nested_equity
-                exposure = amount if ck == 'equity' or nested_equity else 0. if ck in NON_EQUITY_KINDS else float('nan')
+                # A missing constituent classification does not erase an
+                # ordinary equity fund's value-based exposure. Keep that amount
+                # as unresolved allocation, without calling it a company or
+                # interpreting a right/warrant's value as its own delta/notional.
+                # Explicit leverage adapters above still replace this basis.
+                unresolved_allocation = basis == 'equity' and ck not in NON_EQUITY_KINDS and ck != 'equity' and not nested_equity
+                exposure = amount if ck == 'equity' or nested_equity or unresolved_allocation else 0. if ck in NON_EQUITY_KINDS else float('nan')
                 if not finite(exposure):
                     complete = False
                 asset_id, name = resolve(constituent)
+                method = fund.proxy_source or fund.source
+                if unresolved_allocation:
+                    asset_id, name = f'etf-other:{fund.fund_id}', f'{fund.name} / Other'
+                    method += f'; Fund-value exposure basis; unresolved constituent: {constituent["name"]}'
+                    residual = True
                 add(common, asset_id, name, amount, exposure, 'etf_other' if residual else 'etf_constituent',
-                    'Unresolved equity residual' if residual and ck == 'equity' else 'Unresolved equity fund' if nested_equity else 'Unknown composition' if not finite(exposure) else '',
-                    fund.proxy_source or fund.source, str(fund.as_of),
+                    'Unresolved equity allocation; fund-value basis' if unresolved_allocation else 'Unresolved equity residual' if residual and ck == 'equity' else 'Unresolved equity fund' if nested_equity else 'Unknown composition' if not finite(exposure) else '',
+                    method, str(fund.as_of),
                     market=amount if ck in {'bond', 'non_equity', 'crypto', 'physical'} else exposure)
         elif declared == 'equity':
             add(common, position['id'], position['name'], value, value, 'instrument', 'Unresolved equity fund')

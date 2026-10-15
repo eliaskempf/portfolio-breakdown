@@ -38,6 +38,7 @@ HTML = """
     <thead><tr></tr></thead><tbody></tbody>
   </table></div>
   <p class="empty" hidden>No matching rows.</p>
+  <nav class="pagination" aria-label="Table pages" hidden></nav>
 </section>
 """
 
@@ -50,6 +51,8 @@ table{width:100%;border-collapse:collapse;font-size:14px;text-align:left}th,td{p
 table.sized{table-layout:fixed}table.sized tr[data-position-id]>td{overflow:hidden;text-overflow:ellipsis}
 th{position:sticky;top:0;background:var(--st-secondary-background-color);font-weight:600;z-index:1}.header-help{position:fixed;inset:auto;margin:0;border:0;white-space:normal;text-align:left;width:min(260px,calc(100vw - 16px));padding:9px 12px;border-radius:5px;background:var(--st-secondary-background-color);color:var(--st-text-color);box-shadow:0 2px 8px #0003;font-size:12px;font-weight:400;pointer-events:none}th button{width:100%;padding:0;border:0;background:transparent;text-align:inherit;font-weight:inherit;cursor:pointer}
 section[data-interactive="true"] tbody tr{cursor:pointer}tbody tr:hover,tbody tr:focus{background:var(--st-secondary-background-color)}tbody tr:last-child td{border-bottom:0}
+.pagination{display:flex;gap:10px;align-items:center;padding:10px 12px;font-size:13px}.pagination[hidden]{display:none}
+.pagination button{font:inherit;color:inherit;border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:4px;background:transparent;padding:4px 10px;cursor:pointer}.pagination button:disabled{opacity:.45;cursor:default}
 tr:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:-2px}input:focus-visible,button:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:2px}
 td.number,th.number{text-align:right;font-variant-numeric:tabular-nums}td:first-child{font-weight:500}.secondary{display:block;font-size:12px;font-weight:400;opacity:.7;margin-top:4px;white-space:normal}
 td.positive{color:var(--st-green-text-color,__GAIN_COLOR__)}td.negative{color:var(--st-red-text-color,__LOSS_COLOR__)}
@@ -220,7 +223,7 @@ export default function({parentElement:root,data,setTriggerValue}) {
       if(width)th.style.width=width+'px';
       th.scope='col';if(numeric.has(field))th.className='number';
       if(key===field)th.setAttribute('aria-sort',direction===1?'ascending':'descending');
-      button.type='button';button.onclick=()=>{state.key=field;state.direction=key===field?-direction:1;persist();render();head.querySelectorAll('button')[columns.findIndex(c=>c.key===field)].focus();};
+      button.type='button';button.onclick=()=>{state.page=0;state.key=field;state.direction=key===field?-direction:1;persist();render();head.querySelectorAll('button')[columns.findIndex(c=>c.key===field)].focus();};
       const explanation=(help?help+' ':'')+'Activate to sort by '+label+'.';
       button.setAttribute('aria-description',explanation);
       const hint=element('span',explanation);hint.className='header-help';hint.setAttribute('role','tooltip');hint.setAttribute('aria-hidden','true');
@@ -239,7 +242,18 @@ export default function({parentElement:root,data,setTriggerValue}) {
       th.append(button,hint);head.appendChild(th);
     }
     if(data.editable){const actions=element('th','');actions.scope='col';actions.setAttribute('aria-label','Actions');head.appendChild(actions);}
-    for(const row of rows){
+    const pages=data.pageSize?Math.max(1,Math.ceil(rows.length/data.pageSize)):1;
+    state.page=Math.min(Math.max(0,state.page||0),pages-1);
+    const pageRows=data.pageSize?rows.slice(state.page*data.pageSize,(state.page+1)*data.pageSize):rows;
+    const pager=root.querySelector('.pagination');pager.hidden=pages<=1;pager.replaceChildren();
+    if(pages>1){
+      const previous=element('button','Previous'),next=element('button','Next');
+      previous.type=next.type='button';previous.disabled=state.page===0;next.disabled=state.page===pages-1;
+      previous.onclick=()=>{state.page--;persist();render();root.querySelector('.pagination button:not(:disabled)')?.focus();};
+      next.onclick=()=>{state.page++;persist();render();[...root.querySelectorAll('.pagination button:not(:disabled)')].at(-1)?.focus();};
+      pager.append(previous,element('span',` Page ${state.page+1} of ${pages} · ${rows.length} assets `),next);
+    }
+    for(const row of pageRows){
       const tr=document.createElement('tr');tr.tabIndex=data.interactive?0:-1;tr.dataset.positionId=row.id;
       tr.onclick=event=>{if(!event.target.closest('button'))activate(row);};
       tr.onkeydown=event=>{
@@ -277,7 +291,7 @@ export default function({parentElement:root,data,setTriggerValue}) {
     }
     root.querySelector('.empty').hidden=rows.length!==0;
   };
-  input.oninput=()=>{state.query=input.value;persist();render();};render();
+  input.oninput=()=>{state.page=0;state.query=input.value;persist();render();};render();
   // Match the parent table's columns after resizing or toggling ticker display.
   // The preview remains local and does not cause a Streamlit rerun.
   const observer=new ResizeObserver(()=>{
@@ -304,7 +318,7 @@ def frame_rows(table, *, id_column=None):
 
 def render_list(rows, columns, *, key, context, title, on_open=None, editable=False,
                 revision=None, max_height=None, search_label=None, search_fields=(), default_sort=None,
-                preview_column=None, preview_value_column=None, preview_share_column=None, previews=None, details_column=None):
+                preview_column=None, preview_value_column=None, preview_share_column=None, previews=None, details_column=None, page_size=None):
     revision = revision or sha256(repr(rows).encode()).hexdigest()
     def handle_open():
         event = st.session_state.get(key, {}).get('open')
@@ -327,6 +341,6 @@ def render_list(rows, columns, *, key, context, title, on_open=None, editable=Fa
     component = st.components.v2.component('portfolio_data_list', html=HTML, css=CSS, js=JS)
     component(key=key, data={'rows': rows, 'columns': specs,
         'revision': revision, 'context': context, 'title': title, 'interactive': bool(on_open),
-        'editable': editable, 'maxHeight': max_height, 'searchLabel': search_label,
+        'editable': editable, 'maxHeight': max_height, 'pageSize': page_size, 'searchLabel': search_label,
         'searchFields': search_fields, 'defaultSort': default_sort, 'detailsColumn': details_column,
         'previewColumn': preview_column, 'previewValueColumn': preview_value_column, 'previewShareColumn': preview_share_column, 'previews': previews}, on_open_change=handle_open)

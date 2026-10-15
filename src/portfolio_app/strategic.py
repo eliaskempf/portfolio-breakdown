@@ -85,7 +85,7 @@ def strategic_tree(valued: pd.DataFrame, config: Allocation, bucket: str = "") -
     return nodes.reset_index(drop=True)
 
 
-def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = "") -> pd.DataFrame:
+def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = "", *, known_exposure=None) -> pd.DataFrame:
     """Disjoint immediate children; current/target columns share the view scope."""
     selected = bucket_positions(valued, config, bucket)
     total = float(selected.current_value_reporting.sum())
@@ -111,7 +111,9 @@ def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = ""
                         "Current (%)": current, "Target (%)": target,
                         "Gap (pp)": current - target,
                         "Status": "Missing price" if not known else "Empty" if not len(rows) or rows.shares.eq(0).all() else ""})
-    return pd.DataFrame(records, columns=["Category", "Value", "Current (%)", "Target (%)", "Gap (pp)", "Status"]).sort_values(
+        if known_exposure is not None:
+            records[-1]['Known exposure'] = rows.position_id.map(known_exposure).sum(min_count=1) if len(rows) else 0.
+    return pd.DataFrame(records, columns=["Category", "Value", *(['Known exposure'] if known_exposure is not None else []), "Current (%)", "Target (%)", "Gap (pp)", "Status"]).sort_values(
         ["Value", "Category"], ascending=[False, True], na_position="last", ignore_index=True)
 
 

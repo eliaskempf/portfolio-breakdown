@@ -21,7 +21,8 @@ from portfolio_app.presentation import apply_style, empty_overview, mark_view_re
 from portfolio_app.allocation import migration_preview
 from portfolio_app.strategic_ui import render_strategic_overview
 from portfolio_app.scoped_ui import render_scoped_rebalancing
-from portfolio_app.input_cache import load_inputs
+from portfolio_app.input_cache import load_inputs, cached_input
+from portfolio_app.exposure_workspace import analytical_signature
 from portfolio_app.market_data import coordinator as market_coordinator, prices_for
 from portfolio_app.view_state import preserve_view_inputs, finish_view_inputs
 from portfolio_app.application import (historical_for, load_leverage_context, prepare_application,
@@ -114,7 +115,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if demo and not demo_pending:
         st.caption("Offline demo · Invented prices, buy-ins and ETF weights · Resets on restart" if offline_demo else
                    "Demo · Invented quantities, targets and buy-ins · Public market data · Resets on restart")
-    from portfolio_app.portfolio_exposure_ui import render_market_analysis, render_exposure_targets, render_leverage_editor
+    from portfolio_app.portfolio_exposure_ui import render_exposure_targets, render_leverage_editor
     try:
         leverage_context = load_leverage_context(data_dir, reporting_currency)
     except DataError as exc:
@@ -220,7 +221,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                 st.caption('You can also explore an offline example with ? → Take the tour, or return to My portfolio using the workspace menu.')
                 mark_view_ready()
         return
-    exposure_result = prepare_exposure(valued, funds, allocation, leverage_context)
+    exposure_result = cached_input(
+        'portfolio_exposure', analytical_signature(valued, funds, str(data_dir.resolve()), allocation, leverage_context),
+        lambda: prepare_exposure(valued, funds, allocation, leverage_context))
     display_valued, display_exposure = valued, exposure_result
     if actual_active:
         from portfolio_app.futures_investments import investment_positions
@@ -265,7 +268,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             elif leverage_supported:
                 from portfolio_app.futures_ui import render_futures
                 render_futures(valued, data_dir, *sandbox, allocation=allocation, funds=funds, leverage=leverage)
-    visible = valued.loc[valued.shares.gt(0)].copy() if hide_empty else valued
+    visible = valued.loc[valued.shares.ne(0)].copy() if hide_empty else valued
     if positions.open:
         with positions:
             render_position_editor(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, embedded=True,
@@ -321,20 +324,18 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                                           edit_position=lambda position_id: open_valued_position(position_id, editing=True),
                                           analytics=lambda selected, scope, scoped_future, scoped: render_portfolio_analytics(
                                               investment_risk_positions(selected, valued) if actual_active else selected, data_dir, funds, demo=offline_demo, scope=scope, future=scoped_future,
-                                              portfolio_result=overview_exposure if actual_active or sandbox or leverage.liabilities else None, scoped=scoped))
+                                              portfolio_result=overview_exposure if actual_active or sandbox or leverage.liabilities else None,
+                                              portfolio_net_equity=(overview_exposure.net_equity if overview_exposure is not None else
+                                                  valued.loc[valued.shares.gt(0), 'current_value_reporting'].sum(skipna=False)), scoped=scoped))
     if exposure.open and not unsupported_records:
         with exposure:
-            measure = st.segmented_control('Exposure measure', ['Market exposure', 'Funded holdings analysis'],
-                default='Market exposure', key='exposure_measure') if (leverage.enabled or actual_active) and leverage_supported else 'Funded holdings analysis'
-            if measure == 'Market exposure':
-                from portfolio_app.allocation import Allocation
-                render_market_analysis(exposure_result, allocation or Allocation(()), classifications, valued, funds, future=actual_future)
-            elif visible.empty:
+            if visible.empty and exposure_result is None:
                 st.info('No visible positions. Add a position or turn off Hide empty positions.')
             else:
-                render_analysis(data_dir, holdings.loc[holdings.position_id.isin(visible.position_id)], classifications,
-                                funds, demo=offline_demo, price_service=price_service, source_valued=visible, performance_percent=percent,
-                                allocation=allocation, etf_revision=etf_revision, on_toggle_gain=toggle_unit)
+                render_analysis(data_dir, holdings, classifications, funds, demo=offline_demo,
+                    price_service=price_service, source_valued=visible, performance_percent=percent,
+                    allocation=allocation, etf_revision=etf_revision, on_toggle_gain=toggle_unit,
+                    exposure_result=exposure_result, leverage_context=leverage_context)
     if rebalance.open and not unsupported_records:
         with rebalance:
             plan_tab, targets_tab = st.tabs(['Plan', 'Targets'], key='rebalance_tabs', on_change='rerun')

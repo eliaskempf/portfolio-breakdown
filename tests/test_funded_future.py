@@ -137,9 +137,11 @@ def test_futures_beta_integration_category_and_account_filters(tmp_path):
     assert table.Investment.str.contains('FMWN future').any()
     by_label(app.selectbox,'Category').set_value('core').run()
     assert not app.exception
-    assert by_label(app.metric,'Beta contribution').value!='—'
+    assert by_label(app.metric,'Subset beta').value!='—'
+    contribution=next(item.value for item in app.caption if 'Portfolio contribution' in item.value)
+    assert '—' not in contribution
     accounts=by_label(app.multiselect,'Accounts')
     accounts.set_value([x for x in accounts.value if not x.startswith('__future_overlay__')]).run()
     assert not app.exception
-    table=next(item.value for item in app.dataframe if 'Beta contribution' in item.value)
+    table=next(item.value for item in app.dataframe if 'Contribution to subset beta' in item.value)
     assert not table.Investment.str.contains('FMWN future').any()

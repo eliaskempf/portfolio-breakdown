@@ -34,12 +34,29 @@ def test_funding_and_liabilities_affect_denominator_not_market_weight():
         assert result.status=='unavailable'
 
 
-def test_missing_proxy_does_not_silently_exclude_future_or_renormalize():
+def test_missing_proxy_shows_partial_estimate_without_renormalizing():
     result=calculate(1,missing=True)
-    assert result.beta is result.volatility is result.correlation is None
+    assert result.beta == pytest.approx(80/120)
+    assert result.volatility > 0 and result.correlation == pytest.approx(1.)
     assert result.status=='partial' and 'future:overlay' in result.excluded
+    assert 'covered holdings only' in result.note
     assert result.holdings.loc['fund','Weight']==pytest.approx(80/120)
     assert calculate(0,missing=True).beta==pytest.approx(80/120)
+
+
+@pytest.mark.parametrize('notional', [50., -50.])
+def test_short_stock_history_keeps_future_and_debt_weights_in_partial_estimate(notional):
+    bench = history(market())
+    positions = held(['stock', 'new', 'cash', 'debt', 'future'],
+                     [80., 40., 20., -30., 0.], ['equity', 'equity', 'cash', 'liability', 'future'])
+    result = risk_analytics(positions, {'stock': bench, 'new': bench.tail(8), 'future': bench},
+                           bench, today=TODAY, exposures={'future': notional}, net_equity=110.)
+    assert result.status == 'partial' and set(result.excluded) == {'new'}
+    assert result.beta == pytest.approx((80 + notional) / 110)
+    assert result.holdings.loc['debt', 'Weight'] == pytest.approx(-30/110)
+    assert result.holdings.loc['future', 'Weight'] == pytest.approx(notional/110)
+    assert result.holdings['Beta contribution'].sum() == pytest.approx(result.beta)
+    assert result.holdings['Volatility contribution'].sum() == pytest.approx(result.volatility)
 
 
 def test_filtered_category_retains_whole_portfolio_denominator_and_negative_capital():

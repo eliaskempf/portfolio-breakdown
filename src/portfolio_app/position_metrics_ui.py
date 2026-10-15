@@ -8,7 +8,7 @@ import streamlit as st
 
 from portfolio_app.analytics import metric_value
 from portfolio_app.analytics_service import load_metrics, load_risk
-from portfolio_app.analytics_ui import (context_key, data_quality_caption, display_value,
+from portfolio_app.analytics_ui import (benchmark_name, context_key, data_quality_caption, display_value,
     render_sources, risk_settings)
 from portfolio_app.fundamentals import DEFINITIONS, FundFee, Metric, fee_key, finite, load_fee_overrides, save_fee_override
 from portfolio_app.holdings import DataError
@@ -43,6 +43,7 @@ def position_metric_toolbar(holdings, data_dir, *, demo=False, account_valued=No
         benchmark, years = risk_settings(key) if view == 'Risk' else ('', 3)
         refresh = st.button('Refresh metrics', help='Request fresh fundamentals for the displayed instruments.', icon=':material/refresh:', disabled=demo, key=key + '_refresh_' + view)
     snapshots, risk = {}, None
+    benchmark_label = benchmark_name(benchmark)
     if view == 'Risk':
         if 'current_value_reporting' not in holdings:
             st.info('Current valuations are needed to calculate risk.')
@@ -53,7 +54,10 @@ def position_metric_toolbar(holdings, data_dir, *, demo=False, account_valued=No
                 risk, status = load_risk(risk_positions, data_dir, demo, benchmark, years, refresh)
             if holdings.attrs.get('investment_members'):
                 st.caption('Grouped futures investment metrics are shown by their exact contract and cash components in Overview → Analytics.')
-            st.caption(f'{benchmark} · {years}-year window · {reporting_currency()} weekly returns · {risk.observations} common observations')
+            benchmark_label = benchmark_name(status.attrs.get('benchmark_symbol', benchmark))
+            st.caption(f'{benchmark_label} · {years}-year window · {reporting_currency()} weekly returns · {risk.observations} common observations')
+            if status.attrs.get('benchmark_fallback'):
+                st.caption('ETF benchmark fallback · Direct index history unavailable or insufficient')
             if risk.excluded:
                 st.caption(f'{len(risk.excluded)} instruments lack comparable history or valuation. Open data details for exclusions.')
             if status.Status.eq('stale').any():
@@ -76,7 +80,7 @@ def position_metric_toolbar(holdings, data_dir, *, demo=False, account_valued=No
                 value = finite(risk.holdings.loc[identity, 'Beta' if name == 'beta' else 'Annual volatility']) if risk and identity in risk.holdings.index else None
                 if name == 'volatility' and value is not None:
                     value *= 100
-                entry[field + '_note'] = f'{benchmark} · {years} years · {reporting_currency()} weekly returns'
+                entry[field + '_note'] = f'{benchmark_label} · {years} years · {reporting_currency()} weekly returns'
             else:
                 snapshot = snapshots.get(identity)
                 metric = snapshot.metrics.get(name, Metric()) if snapshot else Metric()

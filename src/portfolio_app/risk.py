@@ -9,7 +9,7 @@ from portfolio_app.currencies import quote_unit
 
 from portfolio_app.fundamentals import finite
 
-DEFAULT_BENCHMARK = 'IUSQ.DE'
+DEFAULT_BENCHMARK = 'MSCI:892400:NETR'
 MIN_OBSERVATIONS = 52
 
 
@@ -38,7 +38,7 @@ def weekly_returns(prices, *, today=None):
     prices = daily_prices(prices)
     prices = prices.loc[prices.index < today]
     if prices.empty:
-        return pd.Series(dtype=float)
+        return pd.Series(dtype=float, index=pd.DatetimeIndex([]))
     # Resampling retains empty weeks; pct_change must not fill their endpoints.
     weekly = prices.resample('W-FRI').last()
     weekly = weekly.loc[weekly.index < today]
@@ -85,15 +85,19 @@ class RiskAnalytics:
     excluded: dict[str, str] = field(default_factory=dict)
     integrated: bool = False
     denominator: float | None = None
+    scoped: bool = False
+    portfolio_beta_contribution: float | None = None
 
 
 def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series,
                    *, today=None, years=3, failures=None, exposures=None, net_equity=None,
-                   return_series=None) -> RiskAnalytics:
-    """Explicit exposures use fixed net equity; partial coverage never renormalizes.
+                   return_series=None, scoped=False, subset_capital=None) -> RiskAnalytics:
+    """Whole-portfolio risk uses net equity; standalone subsets use their own base.
 
     Fund price histories already include embedded leverage. Their weights remain
     funded values; only derivatives use separately supplied signed notionals.
+    Ordinary subsets normalize covered funded values. Derivative subsets require
+    explicit selected capital, supplied before risk-only claim rows are added.
     """
     if years not in (1, 3, 5):
         raise ValueError('Risk window must be 1, 3 or 5 years')
@@ -105,8 +109,9 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
         valid = held.current_value_reporting.map(finite).notna()
     result = RiskAnalytics(known_value=float(held.loc[valid, 'current_value_reporting'].sum()),
                            valuation_complete=bool(valid.all()), integrated=integrated,
-                           denominator=net_equity if integrated else None)
-    if integrated and (finite(net_equity) is None or net_equity <= 0):
+                           denominator=net_equity if integrated else None, scoped=scoped)
+    equity_valid = finite(net_equity) is not None and net_equity > 0
+    if integrated and not scoped and not equity_valid:
         result.note = 'Positive, complete portfolio net equity is required for integrated risk.'
         return result
     end = pd.Timestamp(today or date.today()).normalize()
@@ -159,7 +164,18 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
         return result
     result.start, result.end = sample.index[0].date().isoformat(), sample.index[-1].date().isoformat()
     asset_returns, bench = sample[list(returns)], sample['__benchmark__']
-    weights = pd.Series(values) / (net_equity if integrated else result.covered_value)
+    has_derivatives = held.get('instrument_type', pd.Series('', index=held.index)).eq('future').any()
+    if scoped:
+        denominator = subset_capital if has_derivatives else sum(values.values())
+    else:
+        denominator = net_equity if integrated else result.covered_value
+    denominator_valid = finite(denominator) is not None and denominator > 0
+    result.denominator = float(denominator) if denominator_valid else None
+    # A unit base lets us retain a meaningful portfolio beta contribution even
+    # when a bare contract has no standalone capital base. Never display that
+    # temporary base as a standalone return or allocation.
+    calculation_base = denominator if denominator_valid else 1.
+    weights = pd.Series(values) / calculation_base
     covariance = asset_returns.cov() * 52
     marginal = covariance @ weights
     variance = max(0., float(weights @ marginal))
@@ -170,6 +186,8 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
     result.beta = finite(portfolio.cov(bench) / bench_var) if has_benchmark_variance else None
     result.volatility = float(sigma)
     result.correlation = finite(portfolio.corr(bench)) if has_benchmark_variance and sigma > 1e-10 else None
+    if scoped and equity_valid and result.beta is not None:
+        result.portfolio_beta_contribution = result.beta * calculation_base / net_equity
     result.holdings = pd.DataFrame({
         'Weight': weights,
         'Beta': [finite(asset_returns[key].cov(bench) / bench_var) if has_benchmark_variance else None for key in weights.index],
@@ -184,7 +202,22 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
     result.note = 'Today’s weights held constant across weekly historical returns; not personal historical performance.'
     if not has_benchmark_variance:
         result.note += ' Benchmark variance is zero; beta and benchmark correlation are undefined.'
-    if integrated and result.status != 'complete':
+    if scoped and result.status != 'complete':
+        basis = ('Covered positions retain weights against selected capital, including futures notionals.' if has_derivatives
+                 else 'Weights are renormalized within the selected holdings with usable history.')
+        result.note = 'Approximate risk of covered holdings only; exclusions may increase or decrease total risk. ' + basis + ' ' + result.note
+    elif integrated and result.status != 'complete':
+        result.note = ('Approximate risk of covered holdings only; excluded holdings may increase or decrease total risk. '
+                       'Covered holdings retain their weights against whole-portfolio net equity, including futures notionals; '
+                       'weights are not renormalized. ' + result.note)
+    if not denominator_valid:
         result.beta = result.volatility = result.correlation = None
-        result.note = 'Incomplete risk history: total risk is unavailable. Known contributions use portfolio net equity without renormalization.'
+        result.holdings[['Weight', 'Volatility contribution']] = np.nan
+        if 'Beta contribution' in result.holdings:
+            result.holdings['Beta contribution'] = np.nan
+        result.status = 'unavailable'
+        result.note = ('Standalone subset risk requires positive, fully valued selected capital. '
+                       'Include the capital backing the future or select its funded investment; '
+                       'contract notional, margin requirements and unsettled gains alone are not a capital base.'
+                       if has_derivatives else 'Standalone subset risk requires positive covered net capital.')
     return result

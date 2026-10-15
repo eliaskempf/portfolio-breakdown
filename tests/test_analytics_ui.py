@@ -41,7 +41,7 @@ def test_position_presets_details_and_risk(sample_data_dir):
     assert not app.exception
     by_label(app.get('button_group'), 'Position view').set_value('Risk').run()
     assert not app.exception
-    assert by_label(app.text_input, 'Benchmark ticker').value == 'IUSQ.DE'
+    assert by_label(app.text_input, 'Benchmark ticker').value == 'MSCI:892400:NETR'
     by_label(app.selectbox, 'History window').set_value(1).run()
     assert not app.exception
     activate(app, 'Overview')
@@ -79,6 +79,16 @@ def test_portfolio_analytics_uses_overview_scope_and_risk(sample_data_dir):
     assert app.session_state['strategic_category'] == category
     assert by_label(app.get('button_group'), 'Overview view').value == 'Analytics'
     assert not app.exception
+    assert by_label(app.metric, 'Subset beta').value != '—'
+    assert by_label(app.metric, 'Subset volatility (annualized)').value != '—'
+    by_label(app.selectbox, 'Category').set_value('').run()
+    assert by_label(app.metric, 'Beta').value != '—'
+    accounts = by_label(app.multiselect, 'Accounts')
+    assert len(accounts.options) > 1
+    accounts.set_value([accounts.options[0]]).run()
+    assert not app.exception
+    assert by_label(app.metric, 'Subset beta').value != '—'
+    assert any('Portfolio contribution' in item.value for item in app.caption)
     by_label(app.multiselect, 'Accounts').set_value([]).run()
     assert not app.exception
     assert any('No held positions' in info.value for info in app.info)
@@ -119,6 +129,36 @@ def test_fundamental_fetch_deduplicates_account_rows(tmp_path, monkeypatch):
     assert set(snapshots) == {'a'}
 
 
+@pytest.mark.parametrize('scoped', [False, True])
+def test_partial_integrated_risk_shows_metrics_and_visible_exclusions(scoped):
+    script = '''
+import pandas as pd
+from portfolio_app.risk import risk_analytics
+from portfolio_app.portfolio_analytics_ui import render_risk_dashboard
+dates = pd.date_range('2023-01-06', periods=131, freq='W-FRI')
+prices = pd.Series([100 * (1.001 ** i) * (1.01 if i % 2 else 1) for i in range(131)], index=dates)
+held = pd.DataFrame(dict(id=['covered', 'new'], name=['Invented established share', 'Invented recent share'],
+    shares=[1., 1.], ticker=['SYNTH-OLD', 'SYNTH-NEW'], instrument_type='equity',
+    current_value_reporting=[80., 20.], quote_currency='EUR'))
+result = risk_analytics(held, {'covered': prices, 'new': prices.tail(8)}, prices,
+    today=dates[-1] + pd.Timedelta(days=2), exposures={}, net_equity=100.)
+render_risk_dashboard(result, pd.DataFrame({'Status': ['cached']}), held)
+'''
+    if scoped:
+        script = script.replace('net_equity=100.)', 'net_equity=100., scoped=True)')
+        script = script.replace("['cached']}), held)", "['cached']}), held, scoped=True)")
+    app = AppTest.from_string(script).run()
+    assert not app.exception
+    assert by_label(app.metric, 'Subset beta' if scoped else 'Beta').value == ('1.00' if scoped else '0.80')
+    assert by_label(app.metric, 'Subset volatility (annualized)' if scoped else 'Annualized volatility').value != '—'
+    assert not app.warning
+    assert any('Partial estimate' in item.value and '1 excluded' in item.value for item in app.caption)
+    assert any('Invented recent share' in frame.value.to_string() for frame in app.dataframe)
+    assert any(('renormalized within the selected' if scoped else 'not renormalized') in item.value for item in app.markdown)
+    if scoped:
+        assert any('Portfolio contribution **0.80**' in item.value for item in app.caption)
+
+
 def test_workspace_switch_resets_analytics_options(tmp_path, sample_data_dir):
     import shutil
     second = tmp_path / 'second-demo'
@@ -138,3 +178,46 @@ def test_workspace_switch_resets_analytics_options(tmp_path, sample_data_dir):
     by_label(app.selectbox, 'Test workspace').set_value(1).run()
     assert len(by_label(app.multiselect, 'Accounts').value) == 2
     assert not app.exception
+
+
+@pytest.mark.parametrize('cash_only', [False, True])
+def test_heatmap_omits_undefined_cash_but_preserves_risk_and_fx_cash(cash_only):
+    import json
+    script = '''
+import numpy as np
+import pandas as pd
+from portfolio_app.risk import risk_analytics
+from portfolio_app.portfolio_analytics_ui import render_risk_dashboard
+cash_only = CASH_ONLY
+dates = pd.date_range('2023-01-06', periods=131, freq='W-FRI')
+prices = pd.Series(100 * np.cumprod(1 + .01 * np.sin(np.arange(131))), index=dates)
+held = pd.DataFrame(dict(id=['eur', 'fx'], name=['Invented EUR cash', 'Invented FX cash'],
+    shares=[1., 1.], ticker=['', ''], instrument_type='cash',
+    current_value_reporting=[80., 20.], quote_currency=['EUR', 'USD']))
+if cash_only:
+    held = held.iloc[:1]
+result = risk_analytics(held, {'fx': prices}, prices, today=dates[-1] + pd.Timedelta(days=2))
+before_holdings = result.holdings.copy(deep=True)
+before_correlations = result.correlations.copy(deep=True)
+before_metrics = (result.beta, result.volatility, result.correlation, result.covered_value)
+render_risk_dashboard(result, pd.DataFrame({'Status': ['cached']}), held)
+pd.testing.assert_frame_equal(result.holdings, before_holdings)
+pd.testing.assert_frame_equal(result.correlations, before_correlations)
+assert (result.beta, result.volatility, result.correlation, result.covered_value) == before_metrics
+assert 'eur' in result.holdings.index and result.correlations.loc['eur'].isna().all()
+'''.replace('CASH_ONLY', repr(cash_only))
+    app = AppTest.from_string(script).run()
+    assert not app.exception
+    assert any('Invented EUR cash' in frame.value.to_string() for frame in app.dataframe)
+    if cash_only:
+        assert len(app.get('plotly_chart')) == 0
+        assert any(item.value == 'No varying returns to compare.' for item in app.caption)
+        assert not any(item.label == 'Expand' for item in app.toggle)
+    else:
+        chart = json.loads(app.get('plotly_chart')[0].proto.spec)
+        assert chart['layout']['xaxis']['ticktext'] == ['Invented FX cash']
+        assert chart['layout']['yaxis']['ticktext'] == ['Invented FX cash']
+        by_label(app.toggle, 'Expand').set_value(True).run()
+        assert not app.exception
+        expanded = json.loads(app.get('plotly_chart')[0].proto.spec)
+        assert expanded['layout']['xaxis']['ticktext'] == ['Invented FX cash']

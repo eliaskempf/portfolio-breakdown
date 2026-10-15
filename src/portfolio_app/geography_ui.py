@@ -12,7 +12,7 @@ from portfolio_app.geography import (
 )
 
 
-def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete: bool, query: str = ''):
+def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete: bool, query: str = '', equity=None, measure=None):
     allocations = geography_allocations(exposures, geography)
     total = exposures.value.sum()
     unknown = allocations.loc[allocations.path.map(lambda p: p[0] == UNKNOWN), 'value'].sum()
@@ -57,8 +57,15 @@ def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete:
         table = geography_table(allocations, level='Countries' if root else level, root=root,
                                 denominator=total, complete=complete)
         category = 'Category'
+    if measure == 'Market exposure':
+        table = table.rename(columns={'% of selected portfolio': '% of selected exposure'})
+        table['% of portfolio equity'] = 100 * table['Value'] / equity if complete and equity and equity > 0 else float('nan')
     chart_area, table_area = st.columns([1, 1.3], gap='large')
-    plotted = table.loc[table['Value'].notna() & table['Value'].gt(0)].iloc[::-1]
+    plotted = table.loc[table['Value'].notna() & table['Value'].ne(0)]
+    if len(plotted) > 30:
+        st.caption('Chart: 30 largest absolute contributions. The table retains every row.')
+        plotted = plotted.loc[plotted.Value.abs().nlargest(30).index]
+    plotted = plotted.iloc[::-1]
     if not plotted.empty:
         figure = style_figure(go.Figure(go.Bar(x=plotted['Value'], y=plotted[category], orientation='h',
                                               hovertemplate='%{y}<br>' + currency_symbol() + '%{x:,.2f}<extra></extra>')))
@@ -66,14 +73,16 @@ def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete:
                              margin=dict(t=12, b=20, l=12, r=12))
         chart_area.plotly_chart(figure, width='stretch', config=chart_config())
     else:
-        chart_area.info('No positive priced exposure in this selection.')
+        chart_area.info('No nonzero priced exposure in this selection.')
     if not table['Missing valuations'].any():
         table = table.drop(columns='Missing valuations')
     table_area.dataframe(table, hide_index=True, width='stretch', column_config={
         'Value': st.column_config.NumberColumn('Value' if complete else 'Known Value', help='Exposure in the portfolio currency with available valuations; unavailable prices remain excluded.', format=money_format()),
         '% of selected portfolio': st.column_config.NumberColumn(format='%.2f %%'),
     })
-    if total > 0:
+    if exposures.value.lt(0).any():
+        st.caption('Signed exposure includes short positions. Unknown geography and non-geographic amounts remain separate; offsets can reduce totals.')
+    elif total > 0:
         st.caption((f'Country coverage: {country_value / total:.1%} of {"selected" if complete else "priced"} value · '
                    f'Non-geographic: {money(special)} · Region only: {money(regional_only)} · Unknown geography: {money(unknown)}'))
     if not complete:

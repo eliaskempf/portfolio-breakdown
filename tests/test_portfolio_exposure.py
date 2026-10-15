@@ -221,22 +221,21 @@ def test_nested_equity_fund_coverage_is_separate_from_company_coverage(nested_ex
     fund = FundSnapshot('parent', 'Invented parent fund', 'ZZ0000000000', ('SYNTH',),
                         date(2026, 1, 1), 'Synthetic', constituents, equity_fund=True)
     result = calculate(frame, funds=[fund], future=FuturePosition(contracts=-1, bucket_id='core'))
-    nested = result.exposures.loc[result.exposures.asset_id.eq('nested')].iloc[0]
+    nested = result.exposures.loc[result.exposures.asset_id.eq('nested' if nested_exposure == 'equity' else 'etf-other:parent')].iloc[0]
     assert result.net_equity == 60000.
     assert result.exposures.value.sum() == 60000.
     assert len(result.exposures) == 4  # Constituents replace the parent, plus the overlay.
+    assert result.exposure_complete
+    assert nested.exposure_eur == 15000.
+    assert result.net_multiple == pytest.approx(-2000/60000)
+    assert result.gross_multiple == pytest.approx(98000/60000)
+    targets = ExposureTargets(1.2, 'composition', {'core': 1.})
+    assert not exposure_gaps(result, targets, CONFIG).empty
     if nested_exposure == 'equity':
-        assert result.exposure_complete
-        assert nested.exposure_eur == 15000.
         assert nested.status == 'Unresolved equity fund'
-        assert result.net_multiple == pytest.approx(-2000/60000)
-        assert result.gross_multiple == pytest.approx(98000/60000)
-        targets = ExposureTargets(1.2, 'composition', {'core': 1.})
-        assert not exposure_gaps(result, targets, CONFIG).empty
     else:
-        assert not result.exposure_complete
-        assert pd.isna(nested.exposure_eur)
-        assert result.net_multiple is result.gross_multiple is None
+        assert nested.status == 'Unresolved equity allocation; fund-value basis'
+        assert 'Invented nested fund' in nested.method
 
 
 def test_total_market_includes_gold_crypto_but_equity_targets_do_not():
@@ -282,3 +281,36 @@ def test_combined_position_rows_keep_future_notional_out_of_capital_and_returns(
 def test_total_market_preserves_unknown_leverage_coverage():
     result = calculate(fund_factors=(FundFactor('fund', None),))
     assert result.net_market_multiple is result.gross_market_multiple is None
+
+
+@pytest.mark.parametrize('declared,metadata', [('equity', False), ('unknown', True)])
+def test_equity_fund_value_basis_survives_unclassified_security(declared, metadata):
+    frame = invented().iloc[[0]].copy()
+    frame['ticker'] = 'SYNTH'
+    frame['exposure_kind'] = declared
+    fund = FundSnapshot('ordinary', 'Invented ordinary equity ETF', 'ZZ0000000000', ('SYNTH',),
+        date(2026, 1, 1), 'Synthetic', pd.DataFrame([
+            dict(constituent_id='stock', name='Invented company', ticker='', isin='', weight=.89, instrument_type='equity'),
+            dict(constituent_id='right', name='Invented subscription right', ticker='', isin='', weight=.01, instrument_type='unknown'),
+            dict(constituent_id='cash', name='Invented cash', ticker='', isin='', weight=.10, instrument_type='cash'),
+        ]), equity_fund=metadata)
+    result = calculate(frame, funds=[fund])
+    assert result.exposure_complete
+    assert result.net_equity == 60000.
+    assert result.market_amount() == pytest.approx(54000.)
+    assert result.net_exposure == pytest.approx(54000.)
+    other = result.exposures.loc[result.exposures.asset_id.eq('etf-other:ordinary')].iloc[0]
+    assert other.market_exposure_reporting == 600.
+    assert other.source_type == 'etf_other'
+    assert other.status.startswith('Unresolved')
+    assert 'Invented subscription right' in other.method
+    assert 'right' not in set(result.exposures.asset_id)
+    assert result.exposures.loc[result.exposures.asset_id.eq('cash'), 'market_exposure_reporting'].item() == 0.
+    assert result.exposures.value.sum() == 60000.
+    # Explicit leverage factors, including unknown leverage, take precedence.
+    adapted = calculate(frame, funds=[fund], fund_factors=(FundFactor('fund', 2., 'Synthetic', '2026-01-01'),))
+    assert adapted.market_amount() == 120000.
+    unknown = calculate(frame, funds=[fund], fund_factors=(FundFactor('fund', None),))
+    assert not unknown.exposure_complete
+    assert unknown.exposures.market_exposure_reporting.isna().all()
+    assert unknown.net_market_multiple is None

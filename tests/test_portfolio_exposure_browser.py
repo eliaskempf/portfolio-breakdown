@@ -16,17 +16,22 @@ def test_market_basis_survives_real_browser_remount(ux_page):
         instrument='FMWN', position=asdict(position))))
     page.reload()
     select_tab(page, 'Exposure')
+    page.get_by_role('button', name='Data & settings', exact=True).click()
     basis = page.get_by_role('radio', name='Equity only', exact=True)
     basis.click()
     playwright.expect(basis).to_be_checked()
     settle(page)
     playwright.expect(basis).to_be_checked()
+    page.keyboard.press('Escape')
     select_tab(page, 'Positions')
     select_tab(page, 'Exposure')
+    page.get_by_role('button', name='Data & settings', exact=True).click()
     playwright.expect(basis).to_be_checked()
     # A subsequent edit must use the restored value rather than overwriting it
     # with the browser's old default on its next request.
-    page.get_by_role('radio', name='ETF sources', exact=True).click()
+    page.keyboard.press('Escape')
+    page.get_by_role('radio', name='Geography', exact=True).click()
+    page.get_by_role('button', name='Data & settings', exact=True).click()
     settle(page)
     playwright.expect(basis).to_be_checked()
 
@@ -95,11 +100,14 @@ def test_normal_and_sandbox_exposure_controls(ux_page):  # noqa: F811
     playwright.expect(page.get_by_role('tab', name='Futures', exact=True)).to_have_attribute('aria-selected', 'true')
     page.get_by_role('tab', name='Exposure', exact=True).click()
     playwright.expect(page.locator('.st-key-equity_exposure_metric')).to_have_count(0)
-    for view in ['Assets & companies', 'Themes & sectors', 'Geography', 'ETF sources']:
+    for view in ['Assets', 'Themes & sectors', 'Geography']:
         if not page.get_by_role('radio', name=view, exact=True).is_checked():
             page.get_by_role('radio', name=view, exact=True).click()
         settle(page)
-        playwright.expect(page.locator('.st-key-exposure_market_chart .js-plotly-plot')).to_be_visible()
+        if view == 'Assets':
+            playwright.expect(page.get_by_role('table', name='Exposure assets', exact=True)).to_be_visible()
+        else:
+            playwright.expect(page.locator('.st-key-exposure_results .js-plotly-plot').first).to_be_visible()
         playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
     page.get_by_role('tab', name='Rebalance', exact=True).click()
     playwright.expect(page.get_by_text('Capital plan', exact=False)).to_be_visible()
@@ -232,7 +240,6 @@ def test_future_signed_beta_and_core_contribution(ux_page):
         metric = page.get_by_test_id('stMetric').filter(has=page.get_by_text('Beta', exact=True))
         playwright.expect(metric).to_be_visible()
         betas.append(float(metric.get_by_test_id('stMetricValue').inner_text()))
-        page.get_by_text('Holding correlations', exact=True).click()
         chart = page.locator('.js-plotly-plot').filter(has=page.locator('.heatmaplayer'))
         playwright.expect(chart).to_be_visible()
         assert 'FMWN future · index proxy' in chart.evaluate('el => el.layout.xaxis.ticktext')
@@ -242,7 +249,9 @@ def test_future_signed_beta_and_core_contribution(ux_page):
     category.click()
     category.press('ArrowDown')
     page.get_by_role('option', name='ETF core', exact=True).click()
-    playwright.expect(page.get_by_text('Beta contribution', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_text('Subset beta', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_text('Subset volatility (annualized)', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_text('Portfolio contribution', exact=False)).to_be_visible()
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
 
@@ -300,10 +309,9 @@ def test_linked_future_hatching_exposure_sunburst_and_company_shock(ux_page):
     playwright.expect(page.locator('.st-key-equity_exposure_metric')).to_have_count(1)
     playwright.expect(page.locator('.st-key-equity_exposure_metric')).to_contain_text('1.67×')
     page.get_by_role('tab', name='Exposure', exact=True).click()
-    exposure = page.locator('.st-key-exposure_market_chart .js-plotly-plot')
-    playwright.expect(exposure).to_be_visible()
-    page.wait_for_function("!!document.querySelector('.st-key-exposure_market_chart .js-plotly-plot')?._fullData?.[0]")
-    page.wait_for_function("document.querySelector('.st-key-exposure_market_chart .js-plotly-plot')?.data?.[0]?.type === 'sunburst'")
+    exposure = page.locator('.st-key-exposure_results .js-plotly-plot')
+    playwright.expect(page.get_by_role('table', name='Exposure assets', exact=True)).to_be_visible()
+    playwright.expect(exposure).to_have_count(0)
     page.get_by_text('Company move', exact=True).click()
     settle(page)
     company = page.get_by_role('combobox', name='Company', exact=True)
@@ -312,12 +320,10 @@ def test_linked_future_hatching_exposure_sunburst_and_company_shock(ux_page):
     page.get_by_role('option', name='Invented Satellite', exact=True).click()
     playwright.expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Estimated P&L', exact=True))).to_contain_text('€-18.00')
     page.screenshot(path=str(directory / 'synthetic-proxy-exposure.png'), full_page=True)
-    for view in ['Themes & sectors', 'Geography', 'ETF sources']:
+    for view in ['Themes & sectors', 'Geography']:
         page.get_by_role('radio', name=view, exact=True).click()
         settle(page)
         playwright.expect(exposure).to_be_visible()
-        page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning' && !!document.querySelector('.st-key-exposure_market_chart .js-plotly-plot')?._fullData?.[0]")
-        page.wait_for_function("document.querySelector('.st-key-exposure_market_chart .js-plotly-plot')?.data?.[0]?.type === 'sunburst'")
         playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
 

@@ -55,6 +55,12 @@ Read the project specification / implementation handoff before making substantia
 
 Do not duplicate those requirements here.
 
+## Interface design
+
+Read and follow the [interface design principles](docs/user/development.md#interface-design)
+before changing the UI. These are product requirements: prioritize results and
+concise labels, keep routine status compact, and reveal explanations on demand.
+
 ---
 
 ## Environment

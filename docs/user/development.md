@@ -4,6 +4,35 @@ This page is for contributors working in a source checkout. Installed-app users
 can use their shortcut and the in-app controls; Python and uv are not needed.
 Start with [source installation](install.md#source) before running these commands.
 
+## Interface design
+
+The main interface prioritizes quantitative results, exploration and actions.
+Labels, grouping and consistent controls should make the view understandable
+without introductory paragraphs or repeated explanations.
+
+- Keep visible prose minimal. Prefer concise labels and short, contextual status
+  text. Put definitions in tooltips or help popovers, and methodology, assumptions,
+  provenance and extended explanations in expandable details or the user guide.
+- Preserve essential meaning in the main view: selected scope, units, the metric's
+  basis and whether a result is approximate, partial or unavailable. Explanations
+  may be disclosed on demand; material limitations must remain discoverable from
+  a visible status beside the affected result.
+- Use compact, local indicators for routine partial coverage, excluded holdings
+  and cached data. Reserve prominent warning banners for blocking problems or
+  situations requiring timely action. Match color and visual prominence to the
+  importance of the state; ordinary analytical limitations should not dominate
+  the page.
+- Put secondary figures near their primary metric. Consolidate repeated status
+  messages and avoid stacks of captions above or below a result. Keep controls
+  aligned with the section they affect and use space to communicate hierarchy.
+- Preserve established styling and shared components. Improve density, placement
+  and consistency before adding decorative elements, new panels or new navigation.
+- Keep help and status details accessible by keyboard and touch, with meaningful
+  labels. Color and hover alone must not carry essential information.
+
+Apply these principles across the application, including new features and error
+states. They govern presentation without weakening calculation or coverage rules.
+
 ## Architecture and verification
 
 Business logic is independent of Streamlit:
@@ -231,8 +260,11 @@ development requirements. These notes contain no working portfolio data.
 - Risk uses adjusted market-price histories, converted with historical FX to
   the reporting currency. The latest available price within each completed Friday-ending week is
   used. Empty weeks are not filled, and returns do not bridge missing endpoints.
-- Default benchmark is IUSQ.DE, a global equity ETF proxy; windows are 1, 3, or
-  5 years, default 3. All included holdings and the benchmark share the same
+- Default benchmark is the direct MSCI ACWI net-return index (892400, NETR),
+  requested in reporting currency and validated against returned metadata.
+  Usable cached index levels precede a disclosed IUSQ.DE fallback. Custom tickers
+  do not substitute automatically; neither index nor equity histories are stitched.
+  Windows are 1, 3, or 5 years, default 3. All included holdings and the benchmark share the same
   sample of at least 52 weekly returns. Provider-supplied betas are not used.
 - Portfolio weekly return is the sum of holding weekly returns × today's
   weights. Beta is covariance with the benchmark / benchmark variance.
@@ -243,11 +275,21 @@ development requirements. These notes contain no working portfolio data.
 - Cash in the reporting currency has zero FX returns. In ordinary asset analysis,
   manual/unlisted positions without supported history are excluded, covered
   weights are renormalized, and partial coverage is shown. Missing valuations
-  prevent claiming whole-portfolio coverage. Integrated account leverage instead
-  withholds unsupported aggregate risk when the required coverage is incomplete.
+  prevent claiming whole-portfolio coverage. Integrated account leverage shows a
+  labelled covered-holdings estimate with exclusions and fixed whole-portfolio
+  net-equity weights; missing histories do not suppress otherwise usable metrics.
+  Missing/nonpositive net equity or an insufficient common sample still prevents
+  an estimate. Reviewed same-share equity history fallbacks are currency-converted
+  independently and disclosed; valuation tickers and futures proxies stay separate.
 - ETFs use their own adjusted price histories for risk, not constituent expansion.
-  Category beta is computed in exactly the same way within the selected category;
-  its benchmark remains the selected benchmark, even for a non-equity category.
+  Category/account subsets show standalone beta and volatility on selected
+  capital, with portfolio beta contribution secondary. Ordinary subsets normalize
+  covered net funded values; derivative subsets require positive, fully valued
+  selected backing capital. Count unsettled claims once before adding risk-only
+  FX rows; never use margin or bare-contract gains as capital. A missing subset
+  base does not suppress an otherwise supported portfolio beta contribution.
+  The benchmark remains selected even for non-equity categories. Subset and
+  contribution metrics use the same sample, which can differ across categories.
 - The released app uses asset-normalized beta. The development branch adds
   [actual-account leverage](futures.md) in EUR/USD/GBP, with a separate net-equity
   denominator. Asset-normalized beta must not be presented as levered equity beta;

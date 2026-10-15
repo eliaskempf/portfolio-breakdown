@@ -353,14 +353,22 @@ notional; gross exposure is calculated before long/short netting. An explicitly
 linked ETF can approximate underlying index holdings, with unresolved weights
 kept visible rather than renormalized away. Category filters do not replace the
 whole-portfolio net-equity denominator for portfolio impact.
+Risk analytics additionally shows standalone subset beta and volatility using
+the selected investment's funded capital. Ordinary selected holdings normalize
+their covered net values; futures use selected backing capital with unsettled
+claims counted once. A bare contract without backing capital still has a
+portfolio beta contribution, but no standalone capital-based risk estimate.
 
 Documented fund factors describe approximate current leveraged/inverse ETF
 exposure. They create neither shareholder debt nor additional wealth. Risk uses
 the fund's own return history without applying its embedded leverage again.
 Futures risk uses a compatible native-currency history and translates native
 variation; cash and claims retain their separate FX risk. Available proxy coverage
-is narrower than contract-entry coverage. Incomplete compatible history withholds
-unsupported integrated risk rather than silently substituting another index.
+is narrower than contract-entry coverage. Incomplete compatible history excludes
+that position and shows a labelled estimate for covered holdings with the same
+whole-portfolio net-equity denominator. Exclusions are shown beside the estimate;
+another index is never silently substituted. Missing positions can increase or
+decrease actual risk, so this is not a complete portfolio-risk estimate.
 
 Actual-futures plans require permitted positions, integer limits, categories,
 initial-margin assumptions and fees. Funding is checked separately by account and

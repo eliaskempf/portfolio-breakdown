@@ -12,6 +12,7 @@ import pytest
 
 from test_monitoring_service import account_workspace
 from portfolio_app.monitoring_store import load_monitoring
+from browser_support import settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -77,6 +78,9 @@ def test_trigger_dialog_acknowledgment_and_account_rule_navigation(monitoring_pa
     page.get_by_role('radio',name='Tracked rules',exact=True).click()
     playwright.expect(page.get_by_role('tab',name='Monitoring',exact=True)).to_have_attribute('aria-selected','true')
     playwright.expect(page.get_by_role('combobox',name='Rule details',exact=True)).to_be_visible()
+    # The previous rule controls can remain visible while Streamlit replaces
+    # the tracked-rules view. Click Edit only after that render has settled.
+    settle(page)
     page.get_by_role('button',name='Edit rule',exact=True).click()
     page.get_by_role('textbox',name='Maximum LTV (%)',exact=True).fill('70')
     page.get_by_role('button',name='Save account rule',exact=True).click()
@@ -143,6 +147,9 @@ def test_alerts_arrive_on_every_tab_without_global_status_or_banners(monitoring_
         playwright.expect(dialog).to_contain_text('Your rule')
         playwright.expect(dialog).to_contain_text('Condition:')
         playwright.expect(dialog).to_contain_text('Observed:')
+        playwright.expect(dialog.get_by_role('button',name='View rule',exact=True)).to_be_visible()
+        playwright.expect(dialog.get_by_role('button',name='Acknowledge alert',exact=True)).to_be_visible()
+        settle(page)
         a=dialog.get_by_role('button',name='View rule',exact=True).bounding_box()
         b=dialog.get_by_role('button',name='Acknowledge alert',exact=True).bounding_box()
         assert abs(a['y']-b['y'])<3

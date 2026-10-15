@@ -34,6 +34,8 @@ def test_performance_summary_and_holdings_with_static_prices(tmp_path, sample_da
     assert not app.exception
     assert overview_metric(app).delta == '+€0.00'
     assert_cost_coverage(app, '2 of 3', 'Synthetic C', 'Missing purchase date or converted cost; excluded from gains')
+    app.session_state['exposure_sources_open'] = True
+    app.run()
     table = next(item.value for item in app.tabs[1].dataframe if 'shares' in item.value)
     assert table.loc[table.id == 'c', 'Performance'].isna().all()  # Foreign costs aren't EUR returns.
     by_label(app.get('button_group'), 'Performance display').set_value('%').run()
@@ -56,6 +58,8 @@ def test_legacy_unlabeled_buy_in_explained_without_invented_performance(tmp_path
     app = launch(tmp_path)
     assert not app.exception
     assert_cost_coverage(app, '0 of 1', 'Synthetic A', 'Missing buy-in currency; excluded from gains')
+    app.session_state['exposure_sources_open'] = True
+    app.run()
     assert overview_metric(app).delta == 'Unavailable'
     table = next(item.value for item in app.dataframe if "shares" in item.value)
     assert table.Performance.isna().all()

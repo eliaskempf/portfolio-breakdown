@@ -86,7 +86,7 @@ FEATURES = (
         inputs=Keys(names=('exposure_measure', 'exposure_market_basis', 'exposure_market_scope', 'exposure_market_view',
             'exposure_market_taxonomy', 'exposure_market_depth', 'exposure_scope', 'exposure_search', 'exposure_view',
             'exposure_group', 'exposure_show_chart', 'exposure_sources_open', 'exposure_stock_open', 'exposure_merges_open',
-            'exposure_show_price_details', 'exposure_stock_enabled', 'exposure_stock_excluded'),
+            'exposure_provenance_open', 'exposure_company_open', 'exposure_show_price_details', 'exposure_stock_enabled', 'exposure_stock_excluded'),
             prefixes=('filter_', 'label_compare_', 'allocation_group_', 'exposure_control_', 'exposure_root_')),
         mounted=exposure_mounted, tour=Keys(prefixes=('exposure_', 'filter_', 'label_compare_', 'allocation_group_'))),
     FeatureState('planning', Keys(prefixes=('rebalance_', 'planning_'), names=('ignore_empty_positions', 'portfolio_contribution_result')),

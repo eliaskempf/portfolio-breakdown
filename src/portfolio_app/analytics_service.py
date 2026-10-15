@@ -5,9 +5,9 @@ import pandas as pd
 
 from portfolio_app.fundamentals import (PUBLIC_FEES, DemoFundamentalsProvider, Fundamentals,
     FundamentalsService, FundFee, Metric, YahooFundamentalsProvider, apply_fund_metadata, fee_key,
-    load_fee_overrides)
+    load_fee_overrides, finite)
 from portfolio_app.risk import risk_analytics, native_future_weekly_returns
-from portfolio_app.risk_data import DemoRiskHistoryProvider, RiskHistoryService, YahooRiskHistoryProvider
+from portfolio_app.risk_data import DemoRiskHistoryProvider, RiskHistoryService, MarketRiskHistoryProvider, benchmark_risk_history, equity_risk_history
 
 
 def load_metrics(holdings, data_dir, *, demo=False, fetch=True, refresh=False):
@@ -125,8 +125,8 @@ def _actual_future_risk(valued, data_dir, service, target, years, refresh, memo,
 
 
 def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future=None, portfolio_result=None,
-              service=None, today=None, qualified_histories=None):
-    service = service or RiskHistoryService(DemoRiskHistoryProvider() if demo else YahooRiskHistoryProvider(),
+              service=None, today=None, qualified_histories=None, scoped=False, portfolio_net_equity=None):
+    service = service or RiskHistoryService(DemoRiskHistoryProvider() if demo else MarketRiskHistoryProvider(),
                                            None if demo else data_dir / '.cache' / 'risk-history')
     target = valued.reporting_currency.iloc[0] if len(valued) and 'reporting_currency' in valued else 'EUR'
     actual = bool(valued.attrs.get('actual_accounts'))
@@ -134,8 +134,8 @@ def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
         from portfolio_app.holdings import DataError
         raise DataError('Integrated leverage risk currently requires EUR reporting.')
     memo, histories, failures, status = {}, {}, {}, []
-    bench = service.in_currency(benchmark, target, years, refresh=refresh, memo=memo)
-    status.append(dict(Instrument=benchmark, Status=bench.status, Retrieved=bench.fetched_at, Note=bench.note))
+    bench, benchmark_symbol = benchmark_risk_history(service, benchmark, target, years, refresh=refresh, memo=memo, today=today)
+    status.append(dict(Instrument=benchmark_symbol, Status=bench.status, Retrieved=bench.fetched_at, Note=bench.note))
     for identity, rows in valued.loc[valued.shares.gt(0)].groupby('id'):
         row = rows.iloc[0]
         if actual and row.get('instrument_type') == 'future':
@@ -151,7 +151,12 @@ def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
         if not row.ticker or pd.notna(row.get('manual_price', float('nan'))):
             failures[identity] = 'no supported history for a manual or unlisted asset'
             continue
-        history = service.in_currency(row.ticker, target, years, refresh=refresh, memo=memo)
+        if row.get('instrument_type') == 'equity':
+            isin = row.get('isin', '')
+            history = equity_risk_history(service, row.ticker, isin if pd.notna(isin) else '', target,
+                bench.prices, years, refresh=refresh, memo=memo, today=today)
+        else:
+            history = service.in_currency(row.ticker, target, years, refresh=refresh, memo=memo)
         status.append(dict(Instrument=row.ticker, Status=history.status, Retrieved=history.fetched_at, Note=history.note))
         if not history.prices.empty:
             histories[identity] = history.prices
@@ -159,6 +164,16 @@ def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
             failures[identity] = history.note or 'history unavailable'
     exposures = None
     explicit_returns = None
+    # Capital is measured before projecting an unsettled claim into an extra FX
+    # risk row. That claim already belongs to the contract's current value.
+    selected = valued.loc[valued.shares.gt(0)]
+    capital = selected.current_value_reporting
+    kinds = selected.get('instrument_type', pd.Series('', index=selected.index))
+    has_backing = selected.loc[kinds.ne('future'), 'current_value_reporting'].gt(0).any()
+    if future is not None:
+        capital = pd.concat([capital, pd.Series([future.capital_value])], ignore_index=True)
+        has_backing = has_backing or future.reference_capital_eur is not None
+    subset_capital = float(capital.sum()) if has_backing and capital.map(finite).notna().all() else None
     if actual:
         valued, exposures, explicit_returns = _actual_future_risk(valued, data_dir, service, target, years, refresh,
             memo, histories, failures, status, today=today, qualified_histories=qualified_histories)
@@ -181,8 +196,11 @@ def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
             elif future.contracts:
                 failures[identity] = 'No supported index-risk proxy for this contract'
     result = risk_analytics(valued, histories, bench.prices, years=years, failures=failures, today=today,
-        exposures=exposures, net_equity=portfolio_result.net_equity if portfolio_result is not None else None,
-        return_series=explicit_returns)
+        exposures=exposures, net_equity=portfolio_result.net_equity if portfolio_result is not None else portfolio_net_equity,
+        return_series=explicit_returns, scoped=scoped, subset_capital=subset_capital)
     if actual:
         result.note += ' Futures replay native weekly moves at current native notional, converting variation at historical week-end FX; cash, debt and unsettled claims carry separate FX risk.'
-    return result, pd.DataFrame(status).drop_duplicates('Instrument')
+    sources = pd.DataFrame(status).drop_duplicates('Instrument')
+    sources.attrs['benchmark_symbol'] = benchmark_symbol
+    sources.attrs['benchmark_fallback'] = benchmark.startswith('MSCI:') and benchmark_symbol == 'IUSQ.DE'
+    return result, sources

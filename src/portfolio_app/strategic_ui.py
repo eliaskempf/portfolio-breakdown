@@ -127,14 +127,21 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         market = measure == 'Market exposure'
         plotted = exposure_positions(valued, exposure_result, future) if market else valued
         plotted_selection = bucket_positions(plotted, config, bucket)
+        partial = market and plotted_selection.current_value_reporting.isna().any()
+        chart_positions = exposure_positions(valued, exposure_result, future, known_only=True) if partial else plotted
+        if partial:
+            from portfolio_app.portfolio_exposure_ui import render_exposure_coverage
+            scoped_rows = exposure_result.exposures.loc[exposure_result.exposures.source_position_id.isin(plotted_selection.position_id)]
+            render_exposure_coverage(scoped_rows, plotted)
+            st.caption('Chart and Known exposure show only resolved contributions. Total exposure stays unavailable for affected rows.')
         with st.container(key='overview_allocation'):
             chart_column, table_column = st.columns([1, 1.3], gap='large', vertical_alignment='center')
             with chart_column:
-                tree = companion_nodes(sort_allocation_nodes(strategic_tree(plotted, config, bucket)), future)
-                if plotted_selection.current_value_reporting.lt(0).any():
+                tree = companion_nodes(sort_allocation_nodes(strategic_tree(chart_positions, config, bucket)), future)
+                if bucket_positions(chart_positions, config, bucket).current_value_reporting.lt(0).any():
                     from portfolio_app.portfolio_exposure_ui import signed_chart
                     amount = 'Exposure' if market else 'Value'
-                    table = strategic_summary(plotted, config, bucket).rename(columns={'Value': amount})
+                    table = strategic_summary(chart_positions, config, bucket).rename(columns={'Value': amount})
                     signed_chart(table, 'Category', amount, 'strategic_exposure_chart' if market else 'signed_capital_chart')
                 elif not tree.empty and tree.value.max() > 0:
                     figure = hierarchy_chart(tree, 'Sunburst', preserve_order=True)
@@ -153,6 +160,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                                             fgcolor=hatch_foregrounds(shades), fgopacity=1, size=8, solidity=.12),
                         hovertemplate='%{label}<br>' + currency_symbol() + '%{value:,.2f}<br>%{customdata[0]:.2%} of ' + ('selected market exposure' if market else scope.replace('<', '&lt;')) + '<extra></extra>')
                     figure.update_layout(height=420, uniformtext=None, margin=dict(t=10, b=10, l=10, r=10))
+                    if partial:
+                        figure.update_traces(hovertemplate='%{label}<br>Known exposure: ' + currency_symbol() + '%{value:,.2f}<extra></extra>')
                     signature = sha256(repr((config, list(plotted.position_id), bucket, market)).encode()).hexdigest()[:16]
                     chart_key = f'strategic_chart_{signature}'
                     st.plotly_chart(figure, width='stretch', height=420, theme='streamlit', key=chart_key, config=chart_config())
@@ -175,7 +184,10 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     with target_controls:
                         st.button('Edit', icon=':material/edit:', key='overview_capital_targets',
                                   on_click=open_capital_targets, type='tertiary', help='Edit capital allocation targets.')
-                table = strategic_summary(plotted, config, bucket)
+                table = strategic_summary(plotted, config, bucket,
+                    known_exposure=chart_positions.set_index('position_id').current_value_reporting if partial else None)
+                if partial:
+                    table['Status'] = table.Status.replace('Missing price', 'Partial exposure: see unresolved assets above.')
                 target_help = {}
                 if market:
                     table = table.rename(columns={'Value': 'Exposure', 'Current (%)': '% of exposure'})

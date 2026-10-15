@@ -96,13 +96,15 @@ def test_all_reporting_currencies_signed_notional_and_same_currency_debt(currenc
     assert result.holdings.loc['loan', 'Beta contribution'] == 0
 
 
-def test_missing_qualified_history_or_fx_withholds_aggregate_without_renormalizing(tmp_path):
+def test_missing_qualified_history_or_fx_shows_covered_cash_estimate_without_renormalizing(tmp_path):
     prices = history(market())
     positions = actual([row('cash', 'cash', 100, 'EUR'), future()])
     for kwargs in ({}, {'qualified_histories': qualified(prices)}):
         result, _ = load_risk(positions, tmp_path, False, 'BENCH', 3, service=SyntheticService(prices), today=TODAY,
             portfolio_result=SimpleNamespace(net_equity=100.), **kwargs)
-        assert result.status == 'partial' and result.beta is result.volatility is None
+        assert result.status == 'partial' and result.beta == result.volatility == 0.
+        assert result.correlation is None
+        assert 'covered holdings only' in result.note
         assert result.holdings.loc['cash', 'Weight'] == 1.
         assert 'future:synthetic' in result.excluded
 
@@ -135,7 +137,8 @@ def test_linked_msci_proxy_stays_contract_native_and_leveraged_proxy_is_rejected
     save_leverage_settings(tmp_path, LeverageSettings(fund_factors=(FundFactor('proxy', None),)), None)
     blocked, _ = load_risk(positions, tmp_path, False, 'BENCH', 3, service=service, today=TODAY,
                           portfolio_result=SimpleNamespace(net_equity=100.))
-    assert blocked.status == 'partial' and blocked.beta is None
+    assert blocked.status == 'partial' and blocked.beta == 0.
+    assert 'future:synthetic' in blocked.excluded
 
 
 def test_price_index_does_not_inherit_msci_proxy_but_explicit_matching_history_works(tmp_path):

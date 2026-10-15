@@ -6,7 +6,7 @@ import pandas as pd
 from portfolio_app.futures import require_eur_reporting
 
 
-def exposure_positions(valued, result, future=None):
+def exposure_positions(valued, result, future=None, *, known_only=False):
     if result.reporting_currency == 'EUR':
         require_eur_reporting(valued)
     elif (future is not None or 'reporting_currency' not in valued
@@ -21,7 +21,8 @@ def exposure_positions(valued, result, future=None):
             projected = pd.concat([projected, pd.DataFrame([dict(position_id='future:overlay',
                 id=future.instrument, name=f'{future.instrument} future', shares=1.,
                 current_value_reporting=0., reporting_currency='EUR', bucket_id=source.bucket_id.iloc[0], within_bucket_target=float('nan'))])], ignore_index=True)
-    amounts = result.exposures.groupby('source_position_id').market_exposure_reporting.agg(
+    grouped = result.exposures.groupby('source_position_id').market_exposure_reporting
+    amounts = grouped.sum(min_count=1) if known_only else grouped.agg(
         lambda values: values.sum() if values.notna().all() else float('nan'))
     projected['current_value_reporting'] = projected.position_id.map(amounts)
     projected.attrs = dict(valued.attrs, reporting_currency=result.reporting_currency)

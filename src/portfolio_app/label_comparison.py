@@ -74,8 +74,8 @@ def compare_labels(exposures: pd.DataFrame, classifications: Classifications, la
         raise ValueError("Choose how to allocate assets matching multiple labels.")
     labels = list(dict.fromkeys(labels))
     valued = exposures.loc[exposures["value"].notna()]
-    if any(not math.isfinite(value) or value < 0 for value in valued["value"]):
-        raise ValueError("Label comparison requires finite, nonnegative exposure values.")
+    if any(not math.isfinite(value) for value in valued["value"]):
+        raise ValueError("Label comparison requires finite exposure values.")
     memberships = label_memberships(valued, classifications, labels)
     totals = dict.fromkeys(labels, 0.0)
     assets = {label: set() for label in labels}
@@ -106,29 +106,29 @@ def compare_labels(exposures: pd.DataFrame, classifications: Classifications, la
     # Include explicitly chosen zero-value labels in the comparison table.
     table = pd.DataFrame([{
         "Label": label.title, "Value": totals[label], "Assets": len(assets[label]),
-        "Selected labels %": 100 * totals[label] / matched_value if matched_value else float("nan"),
-        "Portfolio %": 100 * totals[label] / portfolio_value if portfolio_value else float("nan"),
+        "Selected labels %": 100 * totals[label] / matched_value if matched_value > 0 else float("nan"),
+        "Portfolio %": 100 * totals[label] / portfolio_value if portfolio_value > 0 else float("nan"),
     } for label in labels], columns=["Label", "Value", "Assets", "Selected labels %", "Portfolio %"])
     table = table.sort_values(["Value", "Label"], ascending=[False, True], kind="stable", ignore_index=True)
     nodes = build_tree(pd.DataFrame(allocations, columns=ALLOCATION_COLUMNS), root_label="Selected labels")
     titles = {label.key: label.title for label in labels}
     nodes.loc[nodes["depth"] == 1, "label"] = nodes.loc[nodes["depth"] == 1, "label"].map(titles)
     nodes["path"] = nodes["path"].map(lambda path: (titles[path[0]],) if path else ())
-    if matched_value:
+    if matched_value > 0:
         nodes["percentage"] = nodes["value"] / matched_value
     return LabelComparison(table, nodes, pd.DataFrame(details, columns=ALLOCATION_COLUMNS),
                            portfolio_value, matched_value, math.fsum(overlapping))
 
 
 def comparison_tree(comparison: LabelComparison, labels: list[Label], *,
-                    root: TaxonomyPath = (), assets_only: bool = False) -> pd.DataFrame:
+                    root: TaxonomyPath = (), assets_only: bool = False, include_holdings: bool = True) -> pd.DataFrame:
     """Decompose assigned label amounts without recalculating their membership.
 
     Within a label, multiple matching classification paths share its assigned
     value equally. Drilling never restores an asset's pre-split whole value.
     """
     nodes = build_tree(comparison.allocations, root=root, depth=(0 if root else 1) if assets_only else None,
-                       include_holdings=True, root_label="Selected labels")
+                       include_holdings=include_holdings, root_label="Selected labels")
     titles = {label.key: label.title for label in labels}
     nodes["label"] = nodes["label"].map(lambda label: titles.get(label, label))
     nodes["path"] = nodes["path"].map(lambda path: (titles[path[0]], *path[1:]) if path else ())
@@ -148,7 +148,7 @@ def comparison_assets(comparison: LabelComparison, root: TaxonomyPath, *, includ
     rows = comparison.allocations.loc[comparison.allocations["path"].map(lambda path: is_descendant(path, root))]
     assets = rows.groupby(["asset_id", "asset_name"], sort=False, as_index=False)["value"].sum()
     total = assets["value"].sum()
-    assets["Allocation %"] = 100 * assets["value"] / total if total else float("nan")
+    assets["Allocation %"] = 100 * assets["value"] / total if total > 0 else float("nan")
     return assets.rename(columns={"asset_name": "Investment", "value": "Value"}).sort_values(
         ["Value", "Investment"], ascending=[False, True], kind="stable", ignore_index=True,
     )[[*(["asset_id"] if include_ids else []), "Investment", "Value", "Allocation %"]]

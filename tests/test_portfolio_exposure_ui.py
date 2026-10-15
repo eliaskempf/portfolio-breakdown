@@ -47,8 +47,8 @@ def test_saved_overlay_default_allocation_signed_views_and_navigation(tmp_path):
     table = list_frame(app, 'Market exposure')
     assert table['Exposure'].sum() == 110000.
     activate(app, 'Exposure')
-    for view in ['Assets & companies', 'Themes & sectors', 'Geography', 'ETF sources']:
-        by_label(app.get('button_group'), 'Market exposure view').set_value(view).run()
+    for view in ['Assets', 'Themes & sectors', 'Geography']:
+        by_label(app.get('button_group'), 'Exposure view').set_value(view).run()
         assert not app.exception
     activate(app, 'Rebalance')
     assert any('Capital plan' in x.value for x in app.caption)

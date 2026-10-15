@@ -166,15 +166,17 @@ def test_companion_ui_sunbursts_and_company_move(tmp_path):
     assert list_frame(app, 'Market exposure')['Exposure'].sum() == 110000
     assert by_label(app.metric, 'Category leverage · net').value == '1.38×'
     activate(app, 'Exposure')
+    app.session_state['exposure_company_open'] = True
+    app.run()
     by_label(app.selectbox, 'Company').set_value('stock').run()
     assert by_label(app.metric, 'Estimated P&L').value == '€-3,700.00'
     assert by_label(app.metric, 'Portfolio impact').value == '-3.08%'
     channels = next(item.value for item in app.dataframe if 'Channel' in item.value)
     assert set(channels.Channel) == {'Direct holdings', 'ETF holdings', 'Futures proxy'}
-    for view in ['Themes & sectors', 'Geography', 'ETF sources']:
-        by_label(app.get('button_group'), 'Market exposure view').set_value(view).run()
+    for view in ['Themes & sectors', 'Geography']:
+        by_label(app.get('button_group'), 'Exposure view').set_value(view).run()
         assert not app.exception
-        assert json.loads(app.get('plotly_chart')[0].proto.spec)['data'][0]['type'] == 'sunburst'
+        assert app.get('plotly_chart')
     activate(app, 'Futures')
     assert by_label(app.selectbox, 'Companion ETF / holdings proxy').value == 'fund'
 
@@ -194,20 +196,16 @@ def test_provider_name_aliases_do_not_overwrite_shared_company_chart_nodes():
 
 
 def test_unknown_exposure_is_unavailable_in_table_not_zero():
-    from streamlit.testing.v1 import AppTest
-    app = AppTest.from_string('''
-from test_future_proxy_exposure import fixture, calculate
-from test_portfolio_exposure import CONFIG
-from portfolio_app.portfolio_exposure_ui import render_market_analysis
-frame, fund, future = fixture()
-frame.loc[1, 'current_value_reporting'] = float('nan')
-result = calculate(frame, fund, future)
-render_market_analysis(result, CONFIG, {}, frame, [fund], future=future)
-''').run()
-    assert not app.exception
-    table = next(item.value for item in app.dataframe if '% of exposure' in item.value)
-    assert table['Exposure (EUR)'].isna().any()
-    assert app.warning
+    from portfolio_app.exposure_workspace import analysis_sources, analysis_contributions
+    from portfolio_app.exposure_tables import asset_exposure_table
+    frame, fund, future = fixture()
+    frame.loc[1, 'current_value_reporting'] = float('nan')
+    result = calculate(frame, fund, future)
+    sources = analysis_sources(frame, result, future)
+    rows = analysis_contributions(result, sources, [fund], sources.position_id, expanded_funds=[fund])
+    table = asset_exposure_table(rows, complete=False)
+    assert table.Total.isna().any()
+    assert table['Allocation %'].isna().all()
 
 
 def test_companion_chart_preserves_node_order_and_style_indices():

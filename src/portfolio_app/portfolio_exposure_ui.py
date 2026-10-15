@@ -5,13 +5,32 @@ import streamlit as st
 from portfolio_app.money import euros, format_money
 from portfolio_app.charts import chart_config
 
-from portfolio_app.charts import style_figure, hatch_foregrounds
-from portfolio_app.etf import fund_classifications
+from portfolio_app.charts import style_figure
 from portfolio_app.exposure_targets import ExposureTargets, exposure_gaps, load_exposure_targets, save_exposure_targets
 from portfolio_app.holdings import DataError
 from portfolio_app.leverage_settings import FundFactor, LeverageSettings, MarginLiability, load_leverage_settings, save_leverage_settings, requires_leverage
 from portfolio_app.strategic import category_labels
-from portfolio_app.taxonomy import taxonomy_names
+
+
+def render_exposure_coverage(rows, sources, *, field='market_exposure_reporting'):
+    """Explain unavailable exposure separately from source price/FX coverage."""
+    missing = rows.loc[rows[field].isna()]
+    if missing.empty:
+        return
+    st.warning('Exposure is partially known. Known contributions remain visible; total-exposure shares and leverage ratios need complete coverage.')
+    details = missing[['source_position_id', 'asset_name', 'status']].drop_duplicates().copy()
+    names = sources.set_index('position_id')['name']
+    details['source_position_id'] = details.source_position_id.map(names)
+    details['status'] = details.status.replace({
+        'Unknown composition': 'Constituent exposure cannot be determined from its reported market value.',
+        'Missing valuation': 'Source price or currency conversion is unavailable.',
+    })
+    with st.expander('Why is exposure incomplete?', expanded=len(details) <= 5):
+        st.dataframe(details.rename(columns={'source_position_id': 'Source', 'asset_name': 'Unresolved asset',
+            'status': 'Reason'}).head(20), hide_index=True, width='stretch')
+        if len(details) > 20:
+            st.caption('First 20 unresolved entries. Full details are available in Exposure provenance.')
+        st.caption('A known fund price does not establish exposure for every constituent. Unresolved amounts are neither zero nor missing ETF prices.')
 
 
 def render_equity_exposure_metric(result, *, market=False, bucket_ids=None):
@@ -38,11 +57,6 @@ def render_equity_exposure_metric(result, *, market=False, bucket_ids=None):
         st.session_state['exposure_multiple_mode'] = 'net' if gross else 'gross'
     toggle_metric_value(label=f'Show {"net" if gross else "gross"} {basis} exposure',
                         on_toggle=toggle, container_key='equity_exposure_metric', interaction_key='equity_exposure')
-
-
-def exposure_basis(key):
-    basis = st.segmented_control('Exposure basis', ['Total market', 'Equity only'], default='Total market', key=key)
-    return 'exposure_reporting' if basis == 'Equity only' else 'market_exposure_reporting'
 
 
 def render_saved_collateral(future):
@@ -87,73 +101,12 @@ def signed_chart(table, label, measure, key):
     st.plotly_chart(figure, key=key, width='stretch', config=chart_config())
 
 
-def render_market_analysis(result, config, classifications, valued, funds, *, future=None):
-    from portfolio_app.charts import hierarchy_chart, hierarchy_table, sort_allocation_nodes, SUNBURST_PALETTE
-    from portfolio_app.exposure_presentation import companion_nodes, prepare_market_analysis
-    from portfolio_app.futures_proxy import linked_fund
-    import json
-    labels = {'': 'Portfolio', **category_labels(config), 'unassigned': 'Unassigned'}
-    scope = st.selectbox('Exposure category', list(labels), format_func=labels.get, key='exposure_market_scope')
-    field = exposure_basis('exposure_market_basis')
-    view = st.segmented_control('Market exposure view', ['Assets & companies', 'Themes & sectors', 'Geography', 'ETF sources'],
-                                default='Assets & companies', key='exposure_market_view')
-    taxonomy, level = 'sector', 2
-    if view in {'Themes & sectors', 'Geography'}:
-        classifications = fund_classifications(classifications, funds, valued)
-        names = taxonomy_names(classifications)
-        taxonomy = 'geography' if view == 'Geography' else st.selectbox('Exposure taxonomy', names or ['sector'], key='exposure_market_taxonomy')
-        level = st.number_input('Exposure hierarchy depth', min_value=1, max_value=10, value=2, step=1, key='exposure_market_depth')
-    prepared = prepare_market_analysis(result, config, classifications, valued, scope=scope,
-        field=field, view=view, taxonomy=taxonomy, depth=level, root_label=labels[scope], future=future)
-    rows, nodes, table_nodes = prepared.rows, prepared.chart_nodes, prepared.table_nodes
-    if prepared.missing:
-        st.warning('Some exposure amounts are unknown. Charts show known amounts; coverage remains incomplete.')
-    nodes = companion_nodes(sort_allocation_nodes(nodes), future) if view == 'ETF sources' else sort_allocation_nodes(nodes)
-    proxy = linked_fund(future, valued, funds)
-    if proxy and rows.loc[rows.source_type.eq('future'), 'method'].str.startswith('ETF holdings proxy:').any():
-        st.caption(f'{future.instrument}: approximate index holdings via {proxy.name} · {proxy.as_of}. Unresolved weights remain visible.')
-    chart, table_column = st.columns([1, 1.3], gap='large', vertical_alignment='center')
-    with chart:
-        if prepared.signed:
-            root_id = nodes.loc[nodes.parent_id.eq(''), 'node_id'].iloc[0] if not nodes.empty else ''
-            signed = nodes.loc[nodes.parent_id.eq(root_id), ['label', 'value']].rename(columns={'label': 'Category', 'value': f'Exposure ({result.reporting_currency})'})
-            signed_chart(signed, 'Category', f'Exposure ({result.reporting_currency})', 'exposure_market_chart')
-        elif not nodes.empty and nodes.value.max() > 0:
-            figure = hierarchy_chart(nodes, 'Sunburst', preserve_order=True)
-            if view == 'ETF sources' and future:
-                ids = [json.loads(row.node_id)[2] for row in nodes.itertuples()]
-                colors = {identity: SUNBURST_PALETTE[i % len(SUNBURST_PALETTE)] for i, identity in enumerate(sorted(set(ids) - {''}))}
-                colors['future:overlay'] = colors.get(future.proxy_position_id, '#7b8493')
-                shades = [colors.get(identity, 'rgba(127,127,127,.12)') for identity in ids]
-                figure.update_traces(marker_colors=shades, leaf=dict(opacity=1),
-                    marker_pattern=dict(shape=['/' if identity == 'future:overlay' else '' for identity in ids],
-                                        fillmode='overlay', bgcolor=shades, fgcolor=hatch_foregrounds(shades),
-                                        fgopacity=1, size=8, solidity=.12))
-            figure.update_traces(maxdepth=3, insidetextorientation='auto')
-            figure.update_layout(height=480, margin=dict(l=10, r=10, t=10, b=10))
-            st.plotly_chart(figure, key='exposure_market_chart', width='stretch', config=chart_config())
-        else:
-            st.info('No positive market exposure in this selection.')
-    with table_column:
-        table = hierarchy_table(table_nodes).rename(columns={'Value': f'Exposure ({result.reporting_currency})', 'Allocation %': '% of exposure'})
-        ordered = sort_allocation_nodes(table_nodes)
-        table['% of portfolio equity'] = prepared.equity_percentages.reindex(ordered.loc[ordered.parent_id.ne(''), 'node_id']).to_numpy()
-        st.dataframe(table, hide_index=True, width='stretch', height=480, column_config={
-            'Category': st.column_config.TextColumn(width='medium'),
-            f'Exposure ({result.reporting_currency})': st.column_config.NumberColumn(f'Exposure ({result.reporting_currency})', format='%.2f', width='small'),
-            '% of exposure': st.column_config.NumberColumn('% exposure', format='%.2f', width='small'),
-            '% of portfolio equity': st.column_config.NumberColumn('% equity', format='%.2f', width='small')})
-        st.caption('Areas and composition percentages use selected exposure. Portfolio impact uses whole-portfolio net equity.')
-    render_company_move(result, rows)
-    with st.expander('Exposure provenance & unresolved coverage'):
-        st.dataframe(rows.rename(columns={'value': f'Attributed funded value ({result.reporting_currency})', 'exposure_reporting': f'Signed equity exposure ({result.reporting_currency})', 'market_exposure_reporting': f'Signed total market exposure ({result.reporting_currency})'}), hide_index=True, width='stretch')
-        st.caption('ETF holdings approximate the future’s index composition and can differ in weights, coverage and date. '
-                   'Residual and non-equity proxy weights remain unresolved index exposure. Notional is never added to wealth.')
-
-
 def render_company_move(result, rows):
     from portfolio_app.exposure_presentation import company_move
-    with st.expander('Company move'):
+    panel = st.expander('Company move', key='exposure_company_open', on_change='rerun')
+    if not panel.open:
+        return
+    with panel:
         candidates = rows.loc[rows.exposure_reporting.notna() & rows.exposure_reporting.ne(0)
                               & ~rows.status.str.contains('Unresolved|Unknown|Funding|Non-equity', case=False)]
         names = candidates.groupby('asset_id').asset_name.first().to_dict()

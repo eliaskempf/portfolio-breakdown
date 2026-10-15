@@ -47,7 +47,7 @@ def style_figure(figure: go.Figure) -> go.Figure:
                                 hoverlabel=dict(bgcolor="#202632", font_color="white"))
 
 
-def correlation_chart(correlations: pd.DataFrame, names: dict[str, str]) -> go.Figure:
+def correlation_chart(correlations: pd.DataFrame, names: dict[str, str], *, compact: bool = False) -> go.Figure:
     """A full-width matrix with display names and distinct cells for equal names."""
     rows = [escape(names.get(key, key)) for key in correlations.index]
     columns = [escape(names.get(key, key)) for key in correlations.columns]
@@ -68,6 +68,18 @@ def correlation_chart(correlations: pd.DataFrame, names: dict[str, str]) -> go.F
                         autorange='reversed', automargin=True, showgrid=False, zeroline=False)
     figure.update_layout(height=max(640, min(1000, 36 * len(rows) + 220)),
                          margin=dict(l=12, r=20, t=24, b=12))
+    if compact:
+        def short_name(key):
+            name = names.get(key, key)
+            return escape(name if len(name) <= 28 else name[:27] + '…')
+        figure.update_xaxes(ticktext=[short_name(key) for key in correlations.columns], tickangle=-35)
+        figure.update_yaxes(ticktext=[short_name(key) for key in correlations.index])
+        figure.update_traces(xgap=2, ygap=2, colorbar=dict(title='', thickness=10, tickvals=[-1, 0, 1]))
+        figure.update_layout(height=max(420, min(760, 30 * len(rows) + 200)))
+        if max(len(rows), len(columns)) <= 15:
+            figure.update_layout(annotations=[dict(x=x, y=y, text=f'{value:.2f}', showarrow=False,
+                font=dict(size=11, color='#202632' if value >= .75 or value <= -.9 else '#fff'))
+                for y, row in enumerate(correlations.to_numpy()) for x, value in enumerate(row) if pd.notna(value)])
     return figure
 
 

@@ -25,7 +25,8 @@ from portfolio_app.target_ui import target_caption, target_column_config
 
 def render_label_comparison(exposures: pd.DataFrame, classifications: Classifications, *,
                             targets: TargetExposures | None = None, portfolio_value: float = 0., valuation_complete: bool = True,
-                            performance: PerformanceExposures | None = None, performance_percent: bool = True) -> None:
+                            performance: PerformanceExposures | None = None, performance_percent: bool = True, measure=None, equity=None, complete=True) -> None:
+    market = measure == 'Market exposure'
     st.subheader("Themes & sectors")
     choose, navigation, options = st.columns([1.2, 3, 1.2], vertical_alignment='bottom')
     controls = options.popover('Chart options', help='Adjust the grouping, hierarchy and display of this chart.')
@@ -63,7 +64,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         st.info("Choose one or more labels to compare their combined asset allocations.")
         return
     memberships = label_memberships(exposures, classifications, labels)
-    has_overlap = any(row.value > 0 and len(memberships[row.asset_id]) > 1 for row in exposures.itertuples())
+    has_overlap = any(row.value != 0 and len(memberships[row.asset_id]) > 1 for row in exposures.itertuples())
     if targets is not None:
         for measure in (targets.known, targets.missing):
             target_memberships = label_memberships(measure, classifications, labels)
@@ -90,11 +91,14 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         target_comparisons = [compare_labels(measure, classifications, labels, overlap=policy)
                               for measure in (targets.known, targets.missing)]
         target_caption(valuation_complete=valuation_complete)
-    if not comparison.matched_value:
+    if comparison.allocations.empty:
         st.info("No positive valued assets match these labels in the current portfolio selection.")
     else:
-        coverage = comparison.matched_value / comparison.portfolio_value
-        st.caption(f"Coverage: {coverage:.1%} of selected portfolio · {money(comparison.unmatched_value)} falls outside these labels.")
+        coverage = comparison.matched_value / comparison.portfolio_value if comparison.portfolio_value > 0 else float("nan")
+        if complete and comparison.portfolio_value > 0:
+            st.caption(f"Coverage: {coverage:.1%} of selected exposure · {money(comparison.unmatched_value)} falls outside these labels.")
+        else:
+            st.caption('Composition percentages are unavailable with incomplete or nonpositive totals.')
         if has_overlap:
             st.caption(f"{money(comparison.overlapping_value)} matches multiple selected labels. " +
                        ("Its value is split equally between those labels." if policy == "split" else
@@ -111,33 +115,40 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             navigation.button("Back to overview", help='Return to the overview of all labels in this selection.', on_click=lambda: st.session_state.update({detail_key: ()}))
         assets_only = (controls.checkbox("Show individual assets directly", help='Display individual investments instead of grouping them beneath labels.', key="label_compare_assets_only")
                        if root or chart_type in {"Sunburst", "Treemap"} else False)
-        tree = sort_allocation_nodes(comparison_tree(comparison, labels, root=root, assets_only=assets_only))
+        tree = sort_allocation_nodes(comparison_tree(comparison, labels, root=root, assets_only=assets_only, include_holdings=assets_only))
         if root:
             nodes = immediate_children(tree)
         else:
             nodes = sort_allocation_nodes(comparison.nodes)
-        if chart_type in {"Sunburst", "Treemap"}:
-            # Full descendants are present even while collapsed. Plotly's native
-            # branch clicks can zoom all the way from labels to individual assets.
-            figure = hierarchy_chart(tree, chart_type)
-            figure.update_traces(maxdepth=3,
-                                 hovertemplate='%{label}<br>' + currency_symbol() + '%{value:,.2f}<br>%{customdata[0]:.2%} of ' +
-                                 ("detail total" if root else "selected labels") + "<extra></extra>")
-        else:
-            figure = bar_chart(nodes) if chart_type == "Bar" else pie_chart(nodes)
-        color_label_chart(figure, tree if chart_type in {"Sunburst", "Treemap"} else nodes, colors,
-                          detail_color=colors[by_key[root[0]].title] if root else None)
-        if float(tree.iloc[0]["value"]) > 0:
-            figure.update_layout(height=400, uniformtext=None, margin=dict(t=12, b=12, l=12, r=12))
-            chart_key = f'exposure_label_chart_{detail_key}_{sha256(repr(root).encode()).hexdigest()[:10]}'
+        signed = exposures.value.lt(0).any()
+        bounded = len(tree) > 300
+        if signed or bounded:
+            from portfolio_app.portfolio_exposure_ui import signed_chart
             with chart_area:
-                st.plotly_chart(figure, width='stretch', key=chart_key, config=chart_config())
-                if chart_type in {'Sunburst', 'Treemap'}:
-                    categories = {row.node_id: tuple(json.loads(row.node_id)[1]) for row in tree.itertuples() if row.kind == 'category'}
-                    categories[tree.iloc[0].node_id] = root[:-1] if root else ()
-                    sync_chart_category(chart_key, categories, detail_key, event_name=f'plotly_{chart_type.lower()}click')
+                st.caption('Signed contributions' if signed else 'Largest contributions; all rows remain available in the table.')
+                shown = tree.loc[tree.is_leaf, ['label', 'value']]
+                signed_chart(shown, 'label', 'value', 'exposure_label_signed')
         else:
-            st.info("This branch has no current allocation. Its targets are shown below.")
+            if chart_type in {"Sunburst", "Treemap"}:
+                figure = hierarchy_chart(tree, chart_type)
+                figure.update_traces(maxdepth=3)
+            else:
+                figure = bar_chart(nodes) if chart_type == "Bar" else pie_chart(nodes)
+            color_label_chart(figure, tree if chart_type in {"Sunburst", "Treemap"} else nodes, colors,
+                              detail_color=colors[by_key[root[0]].title] if root else None)
+            if not complete:
+                figure.update_traces(hovertemplate='%{label}<br>Known amount: %{value:,.2f}<extra></extra>')
+            if float(tree.iloc[0]["value"]) > 0:
+                figure.update_layout(height=400, uniformtext=None, margin=dict(t=12, b=12, l=12, r=12))
+                chart_key = f'exposure_label_chart_{detail_key}_{sha256(repr(root).encode()).hexdigest()[:10]}'
+                with chart_area:
+                    st.plotly_chart(figure, width='stretch', key=chart_key, config=chart_config())
+                    if chart_type in {'Sunburst', 'Treemap'}:
+                        categories = {row.node_id: tuple(json.loads(row.node_id)[1]) for row in tree.itertuples() if row.kind == 'category'}
+                        categories[tree.iloc[0].node_id] = root[:-1] if root else ()
+                        sync_chart_category(chart_key, categories, detail_key, event_name=f'plotly_{chart_type.lower()}click')
+            else:
+                st.info("This branch has no positive allocation. Its amounts are shown below.")
         if root:
             allocation_total(" › ".join((by_key[root[0]].title, *root[1:])), float(tree.iloc[0]["value"]))
             st.caption("Asset percentages use this detail’s assigned value. Assets with several paths within a label share its value equally across those paths.")
@@ -157,8 +168,14 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                 performance_details = [item.allocations.loc[item.allocations["path"].map(lambda path: path[:len(root)] == root)]
                                        for item in performance_comparisons]
                 assets = add_performance_column(assets, assets.asset_id.tolist(), performance_details, key="asset_id", percent=performance_percent)
+            if not complete:
+                assets['Allocation %'] = float('nan')
+                unknown_assets = set(exposures.loc[exposures.value.isna(), 'asset_id'])
+                assets.loc[assets.asset_id.isin(unknown_assets), 'Value'] = float('nan')
+            if market:
+                assets['% of portfolio equity'] = assets.Value * 100 / equity if complete and equity and equity > 0 else float('nan')
             assets["Labels"] = assets.pop("asset_id").map(lambda asset: asset_badges(classifications, asset, taxonomy))
-            table_area.dataframe(assets, column_order=['Investment', 'Value', 'Allocation %', 'Labels'], hide_index=True, height="content", width="stretch", column_config={
+            table_area.dataframe(assets, column_order=['Investment', 'Value', 'Allocation %', 'Labels', *(['% of portfolio equity'] if market else [])], hide_index=True, height="content", width="stretch", column_config={
                 "Labels": badge_column("Labels", colors),
                 "Value": st.column_config.NumberColumn(format=money_format()),
                 "Allocation %": st.column_config.NumberColumn("Within this detail (%)", help='Share normalized within this selected detail, not the entire portfolio.', format="%.2f %%"),
@@ -173,8 +190,15 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
     if performance_comparisons is not None:
         table = add_performance_column(table, table.Label.tolist(), [item.table for item in performance_comparisons],
                                        key="Label", value="Value", percent=performance_percent)
+    if not complete:
+        table[['Portfolio %', 'Selected labels %']] = float('nan')
+        unknown_memberships = label_memberships(exposures.loc[exposures.value.isna()], classifications, labels)
+        unknown_labels = {label.title for matches in unknown_memberships.values() for label in matches}
+        table.loc[table.Label.isin(unknown_labels), 'Value'] = float('nan')
+    if market:
+        table['% of portfolio equity'] = table.Value * 100 / equity if complete and equity and equity > 0 else float('nan')
     table["Label"] = table["Label"].map(lambda label: [label])
-    table_area.dataframe(table, column_order=['Label', 'Value', 'Portfolio %', 'Selected labels %'], hide_index=True, height="content", width="stretch", column_config={
+    table_area.dataframe(table, column_order=['Label', 'Value', 'Portfolio %', 'Selected labels %', *(['% of portfolio equity'] if market else [])], hide_index=True, height="content", width="stretch", column_config={
         "Label": badge_column("Label", colors),
         "Value": st.column_config.NumberColumn(format=money_format()),
         "Selected labels %": st.column_config.NumberColumn("% of labels", format="%.2f %%",
