@@ -14,6 +14,7 @@ import pytest
 from portfolio_app.demo import create_demo_data
 from portfolio_app.positions import read_snapshot
 from portfolio_app.settings import theme_options
+from browser_support import settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -213,6 +214,7 @@ def test_intro_welcome_navigation_and_help(intro_page):
     dialog = page.get_by_role('dialog')
     playwright.expect(dialog.get_by_role('button', name='Explore demo', exact=True)).to_be_visible(timeout=15000)
     playwright.expect(dialog.get_by_role('button', name='Start my portfolio', exact=True)).to_be_visible()
+    settle(page)
     bounds = dialog.locator('..').bounding_box()
     assert bounds['width'] <= 880 and abs(bounds['x'] - (1440 - bounds['width']) / 2) < 2
     playwright.expect(page.get_by_test_id('stSidebar')).to_have_count(0)
@@ -258,6 +260,8 @@ def test_reduced_motion_and_narrow_welcome(intro_page):
     page.goto(url)
     dialog = page.get_by_role('dialog')
     playwright.expect(dialog).to_be_visible(timeout=10000)
+    # Intro completion replaces the first visible welcome tree during a rerun.
+    settle(page)
     for name in ['Explore demo', 'Start my portfolio']:
         button = dialog.get_by_role('button', name=name, exact=True)
         button.scroll_into_view_if_needed()
