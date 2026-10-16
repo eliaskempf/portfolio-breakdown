@@ -12,7 +12,7 @@ import pytest
 
 from test_monitoring_service import account_workspace
 from portfolio_app.monitoring_store import load_monitoring
-from browser_support import settle
+from browser_support import select_tab, settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -141,8 +141,13 @@ def test_alerts_arrive_on_every_tab_without_global_status_or_banners(monitoring_
     playwright.expect(dialog).to_have_count(0)
     rule=rule_from_dict(load_monitoring(root)[0]['rules'][0])
     for tab in ['Monitoring','Exposure','Positions','Rebalance','Futures','Overview']:
+        # Arrive on the tab before delivering an alert. Once its modal opens,
+        # navigation behind it is intentionally blocked.
+        select_tab(page, tab)
         record_evaluations(root,rule,[Evaluation('2026-10-13',10.,condition='normal'),Evaluation('2026-10-13',70.,condition='triggered')])
-        page.get_by_role('tab',name=tab,exact=True).click()
+        # This fixture writes the recorded event directly, outside the app's
+        # background worker; rerun the current tab to observe the new document.
+        page.keyboard.press('r')
         playwright.expect(dialog).to_be_visible()
         playwright.expect(dialog).to_contain_text('Your rule')
         playwright.expect(dialog).to_contain_text('Condition:')

@@ -16,6 +16,28 @@ from zipfile import ZipFile
 from playwright.sync_api import sync_playwright, expect
 
 
+def settle_render(page):
+    # Script completion precedes React replacing stale widgets. Wait for a
+    # quiet rendered tree before sending the next navigation event.
+    page.evaluate('''() => {
+        window.__smokeChanged = performance.now();
+        window.__smokeObserver = new MutationObserver(() => {
+            window.__smokeChanged = performance.now();
+        });
+        window.__smokeObserver.observe(document.querySelector('[data-testid=stMain]'),
+            {subtree:true, childList:true, attributes:true, characterData:true});
+    }''')
+    try:
+        page.wait_for_function('''() =>
+            document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'
+            && !document.querySelector('[data-stale="true"]')
+            && performance.now() - window.__smokeChanged >= 200
+        ''')
+    finally:
+        page.evaluate('window.__smokeObserver?.disconnect()')
+    expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
 def synthetic_workbook():
     """Exercise the packaged Excel engine with a genuine, invented XLSX."""
     output = BytesIO()
@@ -230,11 +252,11 @@ def smoke(command, evidence=None):
                     expect(page.get_by_role('tab', name='Futures', exact=True)).to_have_count(0)
                     for tab in ['Exposure', 'Positions', 'Rebalance', 'Overview']:
                         # Demo/tour dismissal can render tabs before they accept input.
-                        expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
+                        settle_render(page)
                         page.get_by_role('tab', name=tab, exact=True).click()
                         expect(page.get_by_role('tab', name=tab, exact=True)).to_have_attribute('aria-selected', 'true')
                         # Wait for Streamlit's rerun, including navigation-triggered imports.
-                        expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
+                        settle_render(page)
                         expect(page.get_by_test_id('stException')).to_have_count(0)
                     page.get_by_role('tab', name='Exposure', exact=True).click()
                     assets = page.get_by_role('table', name='Exposure assets', exact=True)

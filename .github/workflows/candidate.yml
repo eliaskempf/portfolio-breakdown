@@ -53,6 +53,7 @@ jobs:
       - name: Tests (including required browser suites)
         env:
           PORTFOLIO_REQUIRE_BROWSER: '1'
+          PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/candidate-browser
         run: uv run pytest -v --durations=20 --junitxml=dist/test-results.xml
       - name: Source application smoke before freezing
         run: uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/source-smoke"
@@ -80,6 +81,13 @@ jobs:
           overwrite: true
           path: dist/test-results.xml
           retention-days: 30
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: candidate-browser-${{ matrix.platform }}
+          path: ${{ runner.temp }}/candidate-browser
+          if-no-files-found: ignore
+          retention-days: 7
   linux-compatibility:
     # This isolated branch builds only the unpublished Windows updater test.
     if: ${{ false }}

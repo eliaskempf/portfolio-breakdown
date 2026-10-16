@@ -201,9 +201,10 @@ def test_funded_strategy_value_return_close_and_negative_chart(ux_page):
         playwright.expect(page.get_by_role('dialog')).to_contain_text(text)
     playwright.expect(page.get_by_role('dialog')).to_contain_text('Return')
     page.get_by_role('button', name='Open Futures analysis', exact=True).click()
+    settle(page)
     page.get_by_text('Strategy capital & lifetime gains', exact=True).click()
     page.get_by_role('button', name='Close saved contract and retain cash', exact=True).click()
-    page.get_by_role('tab', name='Overview', exact=True).click()
+    select_tab(page, 'Overview')
     playwright.expect(future_row).to_be_visible()
     playwright.expect(future_row.locator('td').nth(1)).to_contain_text('243.00')
     if toggle.get_attribute('aria-expanded') != 'true':
@@ -368,10 +369,11 @@ def test_optional_policy_switch_and_constrained_exposure_plan(ux_page):
     playwright.expect(page.get_by_text('Remaining target gaps:', exact=False)).to_be_visible()
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
     policy = (directory/'exposure-targets.json').read_bytes()
-    page.get_by_role('tab', name='Overview', exact=True).click()
+    select_tab(page, 'Overview')
     page.get_by_role('radio', name='Market exposure', exact=True).click()
+    settle(page)
     page.get_by_role('radio', name='Capital allocation', exact=True).click()
-    page.get_by_role('tab', name='Rebalance', exact=True).click()
+    select_tab(page, 'Rebalance')
     playwright.expect(page.get_by_role('combobox', name='Active planning basis', exact=True)).to_have_value('Market / equity exposure')
     assert holdings.read_bytes() == original
     assert (directory/'allocation.yaml').read_bytes() == capital
