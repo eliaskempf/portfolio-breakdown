@@ -50,10 +50,20 @@ jobs:
       - name: Source packages, documentation and license preflight
         run: uv run python tools/release.py preflight
       - run: uv run playwright install --with-deps chromium
-      - name: Tests (including required browser suites)
+      # Unpublished 0.0.99 updater test only: check affected Windows paths and
+      # browser regressions before packaging.
+      # Keep the normal release workflow on main unchanged.
+      - name: Updater test build checks
         env:
           PORTFOLIO_REQUIRE_BROWSER: '1'
-        run: uv run pytest -v --durations=20 --junitxml=dist/test-results.xml
+        run: >-
+          uv run pytest -v --durations=20 --junitxml=dist/test-results.xml
+          tests/test_updates.py tests/test_updates_ui.py tests/test_updates_browser.py
+          tests/test_windows_update.py tests/test_launcher.py
+          tests/test_window.py tests/test_window_lifecycle.py
+          tests/test_market_data.py tests/test_backup.py
+          tests/test_tour_browser.py tests/test_monitoring_browser.py
+          tests/test_portfolio_exposure_browser.py tests/test_futures_funding_browser.py
       - name: Source application smoke before freezing
         run: uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/source-smoke"
       - run: uv run python tools/release.py build
