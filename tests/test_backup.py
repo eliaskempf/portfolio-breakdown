@@ -359,7 +359,8 @@ def test_queued_market_worker_keeps_its_selection_generation(tmp_path):
         finish.set()
         coordinator.close()
     assert not (launch / '.cache' / 'invented.json').exists()
-    assert 'active portfolio changed' in coordinator._errors[(str(launch), 'invented')]
+    error, = coordinator._errors.values()
+    assert 'active portfolio changed' in error
 
 
 @pytest.mark.skipif(__import__('os').name == 'nt', reason='Creating symlinks requires Windows developer mode')
