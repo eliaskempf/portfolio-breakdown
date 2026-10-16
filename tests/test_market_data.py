@@ -41,6 +41,22 @@ def test_workspace_aliases_share_pending_requests_and_completion(tmp_path, jobs)
     assert jobs.revision(directory) == jobs.revision(alias) == 1
 
 
+def test_windows_case_aliases_share_requests_even_on_posix(tmp_path, jobs, monkeypatch):
+    import ntpath
+    monkeypatch.setattr('portfolio_app.market_data.normcase', ntpath.normcase)
+    directory = tmp_path / 'InventedWorkspace'
+    alias = str(directory).swapcase()
+    release = Event()
+    try:
+        assert jobs.request(alias, 'synthetic', lambda: release.wait(3))
+        assert jobs.pending(directory, 'synthetic')
+        assert not jobs.request(directory, 'synthetic', lambda: None)
+    finally:
+        release.set()
+    finish(jobs, directory)
+    assert jobs.revision(alias) == jobs.revision(directory) == 1
+
+
 def test_slow_quotes_do_not_block_and_requests_are_deduplicated(tmp_path, now, jobs):
     started, release = Event(), Event()
     class Provider:

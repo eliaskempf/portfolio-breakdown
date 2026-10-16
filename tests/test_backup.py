@@ -336,9 +336,15 @@ def test_destination_race_and_copy_failure_leave_source_intact(tmp_path, monkeyp
         draft.close()
 
 
-def test_queued_market_worker_keeps_its_selection_generation(tmp_path):
+@pytest.mark.parametrize('windows_keys', [False, True])
+def test_queued_market_worker_keeps_its_selection_generation(tmp_path, monkeypatch, windows_keys):
     from portfolio_app.market_data import RequestCoordinator
     from portfolio_app.analytics_cache import atomic_json
+    if windows_keys:
+        # Exercise Windows key spelling on Linux CI as well. The rejection
+        # must be checked independently of path casing and slash direction.
+        import ntpath
+        monkeypatch.setattr('portfolio_app.market_data.normcase', ntpath.normcase)
     launch = create_demo_data(tmp_path / 'launch')
     target = create_demo_data(tmp_path / 'restored')
     ready, finish = Event(), Event()
