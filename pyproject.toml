@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "portfolio-breakdown"
-version = "0.1.0"
+version = "0.0.99"
 description = "Local portfolio valuation and hierarchical allocation analysis"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]

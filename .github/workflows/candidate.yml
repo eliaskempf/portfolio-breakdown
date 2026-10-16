@@ -24,8 +24,6 @@ jobs:
         include:
           - os: windows-2022
             platform: windows-x64
-          - os: ubuntu-22.04
-            platform: linux-x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -83,7 +81,8 @@ jobs:
           path: dist/test-results.xml
           retention-days: 30
   linux-compatibility:
-    if: ${{ !inputs.diagnostics_only }}
+    # This isolated branch builds only the unpublished Windows updater test.
+    if: ${{ false }}
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
