@@ -25,6 +25,22 @@ def finish(jobs, workspace):
         Event().wait(.005)
 
 
+def test_workspace_aliases_share_pending_requests_and_completion(tmp_path, jobs):
+    directory = tmp_path / 'synthetic-workspace'
+    directory.mkdir()
+    alias = directory / '..' / directory.name
+    release = Event()
+    try:
+        assert jobs.request(alias, 'monitoring-browse', lambda: release.wait(3))
+        assert jobs.pending(directory, 'monitoring-browse')
+        assert not jobs.request(directory, 'monitoring-browse', lambda: None)
+        assert not jobs.pending(tmp_path / 'different-workspace')
+    finally:
+        release.set()
+    finish(jobs, alias)
+    assert jobs.revision(directory) == jobs.revision(alias) == 1
+
+
 def test_slow_quotes_do_not_block_and_requests_are_deduplicated(tmp_path, now, jobs):
     started, release = Event(), Event()
     class Provider:

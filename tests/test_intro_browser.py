@@ -20,7 +20,7 @@ playwright = pytest.importorskip('playwright.sync_api')
 
 
 @pytest.fixture
-def intro_server(tmp_path_factory):
+def intro_server(tmp_path_factory, request):
     directory = tmp_path_factory.mktemp('synthetic-intro')
     create_demo_data(directory / 'demo')
     fixture_path = directory / 'demo' / 'demo_prices.json'
@@ -36,6 +36,21 @@ from portfolio_app.prices import PriceService, StaticProvider
 render_app(Path(__file__).parent / 'empty', demo_dir=Path(__file__).parent / 'demo', intro=True,
            price_service=PriceService(StaticProvider(Path(__file__).parent / 'demo' / 'demo_prices.json')))
 ''', encoding='utf-8')
+    if getattr(request, 'param', None) == 'aliased-tour':
+        # Windows temporary directories can use a short-name alias, while the
+        # app watches the resolved path. Reproduce that mismatch on every OS.
+        setup = '''
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import portfolio_app.tour as tour
+def aliased_directory(**kwargs):
+    owner = TemporaryDirectory(**kwargs)
+    path = Path(owner.name)
+    owner.name = str(path.parent / '..' / path.parent.name / path.name)
+    return owner
+tour.TemporaryDirectory = aliased_directory
+'''
+        app.write_text(setup + app.read_text(encoding='utf-8'), encoding='utf-8')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]

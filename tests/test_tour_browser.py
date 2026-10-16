@@ -195,6 +195,7 @@ def test_help_chevron_keeps_menu_open(intro_page):
     playwright.expect(page.get_by_role('button', name='Take the tour', exact=True)).to_be_hidden()
 
 
+@pytest.mark.parametrize('intro_server', [None, 'aliased-tour'], indirect=True)
 def test_monitoring_tour_acknowledgment_is_interactive_and_restores_draft(intro_page):
     page, url, _ = intro_page
     card = enter(page, url)

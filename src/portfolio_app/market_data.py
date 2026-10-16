@@ -1,6 +1,7 @@
 """Nonblocking market-data requests. Workers never access Streamlit state."""
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
+from os.path import normcase
 from pathlib import Path
 from threading import RLock
 
@@ -21,7 +22,7 @@ class RequestCoordinator:
         self.capacity = capacity
 
     def request(self, workspace, key, work):
-        identity = (str(workspace), key)
+        identity = (self._workspace(workspace), key)
         with self._lock:
             if identity in self._pending or len(self._pending) >= self.capacity:
                 return False
@@ -44,12 +45,19 @@ class RequestCoordinator:
             self._revisions[identity[0]] = self._revisions.get(identity[0], 0) + 1
 
     def pending(self, workspace, key=None):
+        workspace = self._workspace(workspace)
         with self._lock:
-            return any(w == str(workspace) and (key is None or k == key) for w, k in self._pending)
+            return any(w == workspace and (key is None or k == key) for w, k in self._pending)
 
     def revision(self, workspace):
         with self._lock:
-            return self._revisions.get(str(workspace), 0)
+            return self._revisions.get(self._workspace(workspace), 0)
+
+    @staticmethod
+    def _workspace(workspace):
+        # Requests and UI watchers must agree even for Windows short-name temp
+        # paths, differently cased paths, or directory aliases.
+        return normcase(str(Path(workspace).resolve()))
 
     def close(self):
         self._pool.shutdown(wait=True, cancel_futures=True)
