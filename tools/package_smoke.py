@@ -213,6 +213,11 @@ def smoke(command, evidence=None):
     with TemporaryDirectory(prefix='portfolio smoke ü ') as temporary:
         root = Path(temporary)
         state = root / 'state'
+        # Installed builds check for updates by default, including after this
+        # test leaves Demo. Keep the general packaging smoke independent of
+        # GitHub and update dialogs; dedicated updater tests cover those paths.
+        from portfolio_app.updates import UpdateStore
+        UpdateStore(state).enable(False)
         workspace = root / 'synthetic workspace é'
         env = dict(os.environ, PORTFOLIO_STATE_DIR=str(state), PYTHONPATH='',
                    XDG_DATA_HOME=str(root / 'user-data'), XDG_CACHE_HOME=str(root / 'cache'))

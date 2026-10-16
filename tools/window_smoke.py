@@ -219,6 +219,9 @@ def smoke(executable, *, interactive=False, welcome_only=False):
     api, callback = native_api()
     with TemporaryDirectory(prefix='portfolio-native-synthetic-', ignore_cleanup_errors=True) as temporary:
         root = Path(temporary)
+        from portfolio_app.updates import UpdateStore
+        # This smoke owns temporary state and must not contact GitHub at startup.
+        UpdateStore(root / 'state').enable(False)
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             debug_port = sock.getsockname()[1]
