@@ -66,11 +66,15 @@ jobs:
           tests/test_portfolio_exposure_browser.py tests/test_futures_funding_browser.py
       - name: Source application smoke before freezing
         run: uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/source-smoke"
-      - run: uv run python tools/release.py build
+      - id: package
+        run: uv run python tools/release.py build
       - run: uv run python tools/release.py test
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        # Preserve these unpublished test bytes for diagnosis if a later smoke
+        # fails. A failed run still fails; this is not a publishable candidate.
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         with:
-          name: candidate-${{ matrix.platform }}
+          name: updater-test-${{ matrix.platform }}
           overwrite: true # A retried platform replaces only its own earlier artifact.
           path: dist/candidate/*
           if-no-files-found: error
