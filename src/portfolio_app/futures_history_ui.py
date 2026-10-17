@@ -1,4 +1,5 @@
 """A chart-first historical reconstruction with explicit quarterly roll boundaries."""
+from portfolio_app.chart_hover import chart_hover
 from datetime import date
 
 import plotly.graph_objects as go
@@ -74,7 +75,7 @@ def render_historical(position, directory, context, comparison, settings_area):
         chart.add_vline(x=row.end.timestamp()*1000, line_dash='dot', line_color='#94a3b8')
     chart.update_layout(height=440, xaxis_title='Date · dotted lines mark rolls', yaxis_title='Value including starting cash (€)',
                         legend=dict(orientation='h', y=1.12), margin=dict(l=10, r=10, t=35, b=10))
-    st.plotly_chart(chart, width='stretch', config=chart_config(zoom=True))
+    st.plotly_chart(chart_hover(chart), width='stretch', config=chart_config(zoom=True))
     st.caption('Index buy-and-hold invests the same starting cash in the EUR MSCI World ETF proxy at the start of the selected period. '
                'It follows adjusted prices with reinvested distributions and stays invested throughout, without leverage or margin exits. '
                'It is always long and excludes additional trading costs and taxes; fund costs and tracking differences are embedded in the proxy.')

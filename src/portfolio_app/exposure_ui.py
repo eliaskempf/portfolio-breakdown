@@ -1,4 +1,5 @@
 """Streamlit controls and presentation; calculations live in pure modules."""
+from portfolio_app.chart_hover import chart_hover
 
 from portfolio_app.currency_display import money_format
 
@@ -431,7 +432,7 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                     figure.update_layout(height=400, uniformtext=None, margin=dict(t=12, b=12, l=12, r=12))
                     chart_key = 'exposure_theme_chart_' + sha256(repr((view, root, depth, include_holdings)).encode()).hexdigest()[:16]
                     with chart_area:
-                        st.plotly_chart(figure, width='stretch', key=chart_key, config=chart_config())
+                        st.plotly_chart(chart_hover(figure), width='stretch', key=chart_key, config=chart_config())
                         if chart_type in {'Sunburst', 'Treemap'} and view.startswith('taxonomy:'):
                             categories = {row.node_id: tuple(row.path) for row in nodes.itertuples() if row.kind == 'category'}
                             categories[nodes.iloc[0].node_id] = root[:-1] if root else ()

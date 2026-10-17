@@ -1,4 +1,5 @@
 """Region/country exploration over the same normalized portfolio exposures."""
+from portfolio_app.chart_hover import chart_hover
 
 from portfolio_app.currency_display import money, money_format, currency_symbol
 import pandas as pd
@@ -71,7 +72,7 @@ def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete:
                                               hovertemplate='%{y}<br>' + currency_symbol() + '%{x:,.2f}<extra></extra>')))
         figure.update_layout(height=min(900, max(280, len(plotted) * 28)), xaxis_title='Exposure',
                              margin=dict(t=12, b=20, l=12, r=12))
-        chart_area.plotly_chart(figure, width='stretch', config=chart_config())
+        chart_area.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
     else:
         chart_area.info('No nonzero priced exposure in this selection.')
     if not table['Missing valuations'].any():

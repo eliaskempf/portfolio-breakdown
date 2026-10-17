@@ -36,8 +36,15 @@ def load_inputs(directory):
     directory = Path(directory)
     holdings_path = directory / 'holdings.csv'
     snapshot = cached_input('holdings', file_stamp(holdings_path), lambda: read_snapshot(holdings_path))
+    from portfolio_app.account_journal import load_journal
+    from portfolio_app.security_history import effective_holdings
+    from portfolio_app.positions import HoldingsSnapshot
+    journal, journal_revision = cached_input('history_journal', file_stamp(directory / 'account-journal.json'), lambda: load_journal(directory))
+    if journal.securities:
+        snapshot = HoldingsSnapshot(effective_holdings(snapshot.holdings, journal.securities), snapshot.revision)
+    snapshot.holdings.attrs['history_journal_revision'] = journal_revision
     path = directory / 'allocation.yaml'
-    allocation = cached_input('allocation', (file_stamp(path), snapshot.revision), lambda: load_allocation(path, snapshot.holdings))
+    allocation = cached_input('allocation', (file_stamp(path), snapshot.revision, file_stamp(directory / 'account-journal.json')), lambda: load_allocation(path, snapshot.holdings))
     path = directory / 'classifications.yaml'
     classifications = cached_input('classifications', file_stamp(path), lambda: load_classifications(path) if path.exists() else {})
     manifests = sorted((directory / 'etfs').glob('*.yaml'))

@@ -31,9 +31,10 @@ workspace:
 | Document | Contents |
 | --- | --- |
 | `monitoring.json` | Saved rules and revisions, recorded metric observations, alert episodes and read/acknowledgment state |
-| `account-journal.json` | Accounts, exact contract definitions, position identities, dated transactions and corrections, cash/holding bindings, collateral reservations and entered margin requirements |
+| `account-journal.json` | Optional securities records, reviewed history selections and dated capital allocations; accounts, exact contract definitions, position identities, dated transactions and corrections, cash/holding bindings, collateral reservations and entered margin requirements |
 | `settlement-archive.json` | Durable exact-contract daily settlement observations, retained source revisions and accepted prices |
 | `settlement-collection.json` | Last automatic collection attempts and dated source availability |
+| `history-observations.json` | Dated prices, FX, manual total/boundary valuations, correction history and scope coverage reviews |
 | `account-observations.json` | Dated valuation marks and manual FX observations; these do not post cash |
 | `generalized-study-settings.json` | Named hypothetical scenarios, cash reserves, policies and input assumptions |
 | `leverage-settings.json` | Existing leverage settings, legacy liabilities and documented fund exposure factors |
@@ -195,3 +196,19 @@ Do not commit personal holdings, accounts, costs, targets, classifications,
 imports, screenshots, reports, caches, backups or credentials. The entire `data/`
 directory and personal `handoff.md` are private. Contributor checks are described in [Source development](development.md).
 An automated scan cannot recognize all personal details.
+
+### Transaction-history compatibility
+
+Opening a legacy workspace does not convert its purchase batches or rewrite the
+journal. The first securities-history or dated-allocation save upgrades the
+account journal to version 2 and retains a private backup. Existing native futures
+events preserve their meaning. Older application versions cannot read version 2;
+use a compatible application or restore the complete pre-upgrade backup into a
+separate workspace. Do not replace only the journal while retaining newer history.
+
+History-managed CSV rows retain their source snapshot and metadata. Current
+financial balances are projected from the journal, so the CSV alone is not a
+current-balance export. Back up the entire workspace. Draft evidence, original
+records, observations, coverage reviews and closed positions are included. A
+failed first activation may leave stable position keys, but never a partially
+applied trade or duplicate cash posting.

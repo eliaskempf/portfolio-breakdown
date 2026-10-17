@@ -65,7 +65,7 @@ def _save_review(directory, journal, revision, candidate, key, *, holdings_revis
         st.dataframe(pd.DataFrame(investment_changes), hide_index=True)
     state = ledger.replay(proposed)
     names = {a.id: a.name for a in proposed.accounts}
-    st.dataframe(pd.DataFrame([{'Account': names[a], 'Currency': c, 'Cash after posting': str(v)} for (a,c),v in state.cash.items()]), hide_index=True)
+    st.dataframe(pd.DataFrame([{'Account': names[a], 'Currency': c, 'Cash after posting': 'Unknown' if (a,c) in state.unknown_cash else str(v)} for (a,c),v in state.cash.items()]), hide_index=True)
     st.caption('Save posts the reviewed entries above. Review again to include changed inputs.')
     if st.button(save_label, type='primary', key=key + 'save'):
         try:
@@ -356,7 +356,7 @@ def render_cash(directory, journal, revision, snapshot, valued):
     key = _key(directory)+'cash_'
     state = ledger.replay(journal)
     names = {a.id: a.name for a in journal.accounts}
-    st.dataframe(pd.DataFrame([{'Account': names[a], 'Currency':c, 'Cash':str(v)} for (a,c),v in state.cash.items()]), hide_index=True)
+    st.dataframe(pd.DataFrame([{'Account': names[a], 'Currency':c, 'Cash':'Unknown' if (a,c) in state.unknown_cash else str(v)} for (a,c),v in state.cash.items()]), hide_index=True)
     if state.loans:
         st.dataframe(pd.DataFrame([{'Account': names[a], 'Currency':c, 'Loan':l, 'Debt':str(v)} for (a,c,l),v in state.loans.items()]), hide_index=True)
     day = st.date_input('Balance / financing date', max_value=date.today(), key=key+'date')

@@ -44,6 +44,13 @@ def render_bulk_purchases(path: Path, snapshot: HoldingsSnapshot, funds: list[Fu
     }
     destination = st.selectbox("Purchase destination", ["", *positions], help='Choose the holding to update, or create a new position from these purchases.', format_func=lambda value: positions.get(value, "New position"), key="position_edit_bulk_destination")
     position_id = destination or None
+    if position_id:
+        from portfolio_app.account_journal import load_journal
+        if any(b.position_id == position_id and b.active for b in load_journal(path.parent)[0].securities):
+            st.caption('This position uses transaction history. Add purchases here; linked cash and fees are recorded together.')
+            from portfolio_app.history_ui import render_position_history
+            render_position_history(path.parent, holdings.loc[holdings.position_id == position_id].iloc[0])
+            return None
     row = holdings.loc[holdings["position_id"] == destination].iloc[0].to_dict() if destination else {}
     identity = row.get("id", "")
     if not destination:

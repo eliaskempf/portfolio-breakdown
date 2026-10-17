@@ -101,6 +101,6 @@ render_market_history('INVENTED',Path(st.session_state.directory),key='synthetic
     for period in ('1M','6M','1Y','5Y','Max'):
         app.get('button_group')[0].set_value(period).run()
         assert not app.exception and len(app.get('plotly_chart')) == 1
-    for units in ('Native currency','Portfolio currency'):
-        app.get('button_group')[1].set_value(units).run()
+    for units in ('USD','EUR'):
+        app.selectbox[0].set_value(units).run()
         assert not app.exception and len(app.get('plotly_chart')) == 1

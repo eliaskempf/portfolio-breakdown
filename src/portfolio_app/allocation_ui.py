@@ -21,6 +21,14 @@ def render_balances(path, snapshot):
     if snapshot.holdings.empty:
         return
     rows = snapshot.holdings.copy()
+    from portfolio_app.account_journal import load_journal
+    journal, _ = load_journal(path.parent)
+    managed = {b.position_id for b in journal.securities if b.active} | {link.position_id for link in journal.cash_links}
+    if managed:
+        st.caption('History-managed holdings use Transactions → Replace balance; linked cash uses Accounts → Cash & financing.')
+        rows = rows.loc[~rows.position_id.isin(managed)].copy()
+        if rows.empty:
+            return
     for column, default in [('holdings_confirmed_on', ''), ('acquisition_currency', '')]:
         if column not in rows:
             rows[column] = default

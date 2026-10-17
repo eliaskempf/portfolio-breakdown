@@ -75,6 +75,8 @@ def save_position(
     if position_id is not None:
         from portfolio_app.actual_portfolio import assert_cash_editable
         assert_cash_editable(path, [position_id])
+        from portfolio_app.security_history import assert_security_editable
+        assert_security_editable(path, [position_id], fields)
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(f".{path.name}.lock")
     with _write_lock(lock_path):

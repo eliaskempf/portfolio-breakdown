@@ -25,10 +25,11 @@ key features are:
 - Analyze portfolio exposure by theme, sector, and geography.
 - Examine portfolio beta, annualized volatility, and correlations between assets.
 
-The app focuses on analyzing current holdings rather than tracking historical
-performance. It does not reconstruct or maintain a complete transaction or
-return history, connect to brokerage accounts, automatically import holdings,
-execute trades, or calculate taxes. Automatic ETF breakdowns are limited to
+Current holdings remain usable without transactions. Optional dated snapshots and
+reviewed transaction history support personal value, cash-flow and return analysis
+when the required evidence is available. Missing history is never reconstructed
+automatically. The app does not connect to brokerage accounts, execute trades,
+or calculate taxes. Automatic ETF breakdowns are limited to
 supported providers, and underlying holdings data may be missing or incomplete.
 
 ## How to use

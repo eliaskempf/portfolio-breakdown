@@ -81,6 +81,7 @@ the draft. Cancel discards it. **Save position** saves the holding, metadata and
 purchase records together once. These must be purchases making up the current
 holding without intervening sales or splits; sales accounting is not supported.
 For additional purchases into an existing position, use **Bulk add purchases**.
+An activated transaction history routes purchases to its history editor instead.
 
 ## Add a purchase batch {#purchases}
 
@@ -124,3 +125,104 @@ existing manual holdings only switch when you explicitly choose live spot pricin
 Date pickers show Monday through Sunday by default. Choose **Portfolio settings →
 Week starts on** to switch between Monday and Sunday. This preference is saved
 with the portfolio and applies to its date pickers without changing recorded dates.
+
+## Optional transaction history {#transaction-history}
+
+Total quantity and average buy-in remain sufficient for current portfolio analysis.
+Open a position's **Transactions** view to start an empty list with **Add buy**
+or **Add sell**. **Other transaction** supports distributions, splits, transfers
+and fees. **Save transaction** retains incomplete work without changing the
+current holding. You can enter purchases and sales before deciding how much
+history you can reconstruct.
+
+**Edit transaction** opens a form directly from this list. Choose the transaction,
+change its date, quantity, amount or fees, then **Save changes**. The original
+record is retained, and a correction affects the holding only after review and
+application. The list shows the latest version, with pending edits labelled.
+Money is displayed to two decimal places; the editor and calculations retain the
+full saved precision. Complex starting lots remain available in the advanced editor.
+
+When ready, choose **Review against portfolio**. By default, the selected records
+start with your first purchase and zero shares beforehand. This assumption is
+shown in the review; use **Review options → Add starting balance** if you already
+owned shares before the earliest recorded transaction. Applying history records
+the zero boundary at the end of the day before the earliest transaction or fee;
+merely opening the review saves nothing and does not invent a purchase. The
+internal zero boundary is not a transaction and is omitted from the transaction
+list and the **Included transactions** picker.
+**Review options** also lets you change which records are included and optionally
+link a cash account.
+
+Alternatively, **Add starting balance** records a dated, known quantity and optional
+total acquisition cost when earlier transactions are unavailable. It is optional,
+and saving it also leaves the current holding unchanged. A starting balance is
+an end-of-day boundary; its acquisition cost is separate from the market value
+used to start performance measurement. Earlier transactions are not inferred.
+
+The review compares shares, remaining acquisition cost and average buy-in with
+the current portfolio, and checks linked cash where applicable. **Apply history to portfolio** is the explicit action that accepts the displayed
+holding and any linked cash changes; no separate acceptance checkbox is needed. Backfilled shares are not added to the
+current holding a second time. Resolve discrepancies by correcting records or
+explicitly accepting the reconstructed balance; **Keep portfolio unchanged**
+leaves saved transactions available for later review. **Replace balance** starts
+a new interval for an already active history. Advanced record, lot and fee
+editing is available under **Edit transactions, starting lots and fees**;
+earlier records and corrections remain in its **Retained evidence** view.
+
+The quantity comparison uses the smaller of one billionth of a unit and one
+billionth of the recorded quantity. Comparable costs use a one-cent tolerance.
+These tolerances label differences; they never manufacture an adjustment.
+Unknown or incompatible converted costs are shown as unknown, not as agreement.
+Applying balances does not confirm performance coverage. Review income, fees,
+taxes, offsetting trades, transfers and corporate actions in **History → History inputs**
+before confirming coverage for an interval.
+
+Transaction entry offers **Unit price**, **Trade value (excluding fees)** and
+**Total paid (including fees)** for purchases or **Total received (after fees)**
+for sales. Always enter **Fees** separately: cash totals already include those
+fees, so they are not added or deducted again. Enter **0** for no fees; blank means
+unknown. There is no separate fee-confirmation checkbox for new transactions.
+
+When an earlier saved transaction has unconfirmed fees, **Complete transaction
+fees** in the review lets you supply or confirm them. It saves a correction and
+retains the original record without changing the holding until you apply history.
+Cost and average buy-in remain unknown when required costs or FX are missing;
+the review explains the missing input. **Complete exchange rates** accepts a
+manual rate for each missing date without using current FX. Applying history is disabled while the
+reconstructed cost or affected cash balance is unknown.
+
+Fees can have their own currency and date; **Starting lots, fees and taxes**
+supports multiple fees and recorded taxes. The old purchase-batch editor retains
+its established blank-fee-means-zero convention.
+Purchase fees enter acquisition cost once; sale fees reduce proceeds. Explicit
+taxes are separate expenses, not additions to the remaining FIFO acquisition cost.
+
+Sales use FIFO for analytical remaining costs. Enter actual opening lots where
+known. A snapshot's aggregate cost is not an invented set of purchase lots:
+a partial disposal from unknown opening lots leaves remaining cost unknown.
+Supply lot evidence or a **cost** row to reconcile the remaining total; that total
+does not establish individual lots for another partial disposal. A split row's
+quantity is the ratio of new units to old units. Internal transfers preserve known lot
+provenance and require a destination history for the same instrument.
+**transfer_in** and **transfer_out** record movements across the portfolio boundary;
+supply their dated market value separately from any known acquisition costs.
+
+A linked cash account is maintained once by the account journal. Trade and charge
+postings are derived from the selected securities records. Payments on or before
+an account's cash opening are already included in that opening. Explicit deferred
+claims remain separate until received or paid. Later settlement
+creates a claim until **Accounts & futures → Cash & financing → Receive pending
+cash** records receipt/payment. Do not also enter the same trade payment as a
+manual cash adjustment. Without linked cash, position-level purchases and sale
+proceeds cross the selected position's investment boundary.
+
+Activated holdings obtain current quantities and costs from history. Use **Replace
+balance** for a summary replacement, and Rebalance for category/target edits.
+**Update balances** continues to edit snapshot-only positions. Closed histories
+remain saved. External edits to an activated holding's original CSV balance are
+rejected rather than silently overriding its history.
+
+Legacy purchase batches remain unchanged. **Copy batch to evidence** makes a
+reviewable candidate with a stable reference to its original row. Cost
+recalculations may overlap purchases; inspect the selected rows and acknowledge
+any genuinely distinct matching transactions before activation.

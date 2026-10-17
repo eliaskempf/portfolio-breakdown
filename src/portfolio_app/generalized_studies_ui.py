@@ -269,7 +269,14 @@ def render_generalized_studies(directory=None, *, positions=(), reporting_curren
             'bank_interest', 'broker_interest', 'fees', 'taxes', 'transfer_costs']].median())
         chosen = st.selectbox('Inspect first path', list(examples), key=prefix+'inspect')
         example = examples[chosen]
-        st.line_chart(example.events.set_index('date')[['wealth', 'bank', 'broker', 'transit']])
+        import plotly.graph_objects as go
+        from portfolio_app.charts import chart_config, style_figure
+        from portfolio_app.chart_hover import chart_hover
+        figure = go.Figure()
+        for column, label in [('wealth', 'Total value'), ('bank', 'Bank'), ('broker', 'Broker'), ('transit', 'In transit')]:
+            figure.add_scatter(x=example.events.date, y=example.events[column], name=label, mode='lines')
+        figure.update_layout(yaxis_title=reporting_currency, height=350, legend=dict(orientation='h'))
+        st.plotly_chart(chart_hover(style_figure(figure)), width='stretch', config=chart_config())
         for issue in example.issues:
             st.warning(issue)
         st.caption(f'Cash reconciliation error: {example.reconciliation_error:.8f} {reporting_currency}. '

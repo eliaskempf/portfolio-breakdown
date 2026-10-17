@@ -153,47 +153,51 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
     actual_future = st.session_state.get('position_edit_selected') in future_ids
     title = st.session_state.get('position_edit_action', 'Details')
     title = 'Position details' if title == 'Details' or actual_future else title
+    if title == 'Position details' and not actual_future:
+        selected_title = snapshot.holdings.loc[snapshot.holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
+        if not selected_title.empty:
+            title = instrument_name(selected_title.iloc[0])
     @st.dialog(title, width='large', on_dismiss=_dismiss)
     def dialog():
         # Button callbacks run before the dialog body. Never execute its data
         # loaders again when the user has already requested dismissal.
         if not st.session_state.get('position_edit_dialog'):
             st.rerun()
-        current = read_snapshot(path)
-        for key, value in st.session_state.get('position_draft', {}).items():
-            if key not in st.session_state:
-                st.session_state[key] = value
-        action = st.session_state.get('position_edit_action', 'Details')
-        if actual_future:
-            journal, revision = load_journal(path.parent)
-            if revision != dialog_revision:
-                st.rerun(scope='app')
-            from portfolio_app.investment_detail_ui import render_investment_detail
-            render_investment_detail(path.parent, journal, revision, valued,
-                st.session_state.get('position_edit_selected'), allocation=allocation, editing=action == 'Edit position')
-            st.button('Close', help='Close this detail view and return to the portfolio.', on_click=_dismiss)
-        elif action == 'Details':
-            selected = current.holdings.loc[current.holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
-            if selected.empty:
-                st.warning('This position no longer exists.')
+        with st.container(key='position_dialog_'+str(st.session_state.get('position_edit_selected', 'new'))+'_'+st.session_state.get('position_edit_action', 'Details')):
+            current = read_snapshot(path)
+            for key, value in st.session_state.get('position_draft', {}).items():
+                if key not in st.session_state:
+                    st.session_state[key] = value
+            action = st.session_state.get('position_edit_action', 'Details')
+            if actual_future:
+                journal, revision = load_journal(path.parent)
+                if revision != dialog_revision:
+                    st.rerun(scope='app')
+                from portfolio_app.investment_detail_ui import render_investment_detail
+                render_investment_detail(path.parent, journal, revision, valued,
+                    st.session_state.get('position_edit_selected'), allocation=allocation, editing=action == 'Edit position')
+                st.button('Close', help='Close this detail view and return to the portfolio.', on_click=_dismiss)
+            elif action == 'Details':
+                selected = current.holdings.loc[current.holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
+                if selected.empty:
+                    st.warning('This position no longer exists.')
+                else:
+                    row = selected.iloc[0]
+                    if valued is not None and current.revision == snapshot.revision:
+                        matches = valued.loc[valued.position_id.eq(row.position_id)]
+                        if not matches.empty:
+                            row = matches.iloc[0]
+                    def edit_position():
+                        st.session_state['position_edit_action'] = 'Edit position'
+                    from portfolio_app.position_detail import render_position_detail
+                    render_position_detail(row, path.parent, demo=demo, allocation=allocation, on_edit=edit_position)
+                st.button('Close', help='Close this detail view and return to the portfolio.', on_click=_dismiss)
             else:
-                row = selected.iloc[0]
-                if valued is not None and current.revision == snapshot.revision:
-                    matches = valued.loc[valued.position_id.eq(row.position_id)]
-                    if not matches.empty:
-                        row = matches.iloc[0]
-                if st.button('Edit position', help='Change the saved quantity, costs, classification or target for this holding.', icon=':material/edit:'):
-                    st.session_state['position_edit_action'] = 'Edit position'
+                rendered = render_position_form(path, current, funds, demo=demo, allocation=allocation, action=action, valued=valued)
+                _remember_draft()
+                if not rendered and st.button('Cancel', help='Discard this position draft without saving.'):
+                    _clear_editor()
                     st.rerun()
-                from portfolio_app.position_detail import render_position_detail
-                render_position_detail(row, path.parent, demo=demo, allocation=allocation)
-            st.button('Close', help='Close this detail view and return to the portfolio.', on_click=_dismiss)
-        else:
-            rendered = render_position_form(path, current, funds, demo=demo, allocation=allocation, action=action, valued=valued)
-            _remember_draft()
-            if not rendered and st.button('Cancel', help='Discard this position draft without saving.'):
-                _clear_editor()
-                st.rerun()
     dialog()
 
 
@@ -208,6 +212,15 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         position_id = st.session_state.get('position_edit_selected')
         if position_id not in set(holdings.position_id):
             st.warning('This position no longer exists. Close and reopen the list.')
+            return
+        from portfolio_app.account_journal import load_journal
+        from portfolio_app.security_history import effective_holdings
+        history_journal, _ = load_journal(path.parent)
+        if any(b.position_id == position_id and b.active for b in history_journal.securities):
+            from portfolio_app.history_ui import render_position_history
+            current = effective_holdings(holdings, history_journal.securities)
+            st.caption('Quantity and cost come from history. Use Replace balance for a new snapshot; categories and targets remain editable in Rebalance.')
+            render_position_history(path.parent, current.loc[current.position_id == position_id].iloc[0])
             return
         row = holdings.loc[holdings["position_id"] == position_id].iloc[0].to_dict()
         identity = row["id"]

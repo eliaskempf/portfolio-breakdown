@@ -1,4 +1,5 @@
 """Interactive futures overlay, separate from funded-asset targets."""
+from portfolio_app.chart_hover import chart_hover
 from hashlib import sha256
 from dataclasses import replace
 
@@ -231,7 +232,7 @@ def render_futures(valued, data_dir, position, revision, *, allocation=None, fun
         figure.add_vline(x=move, line_dash='dot', line_color='#94a3b8')
         figure.update_layout(height=340, margin=dict(l=10, r=10, t=15, b=10),
                              xaxis_title='Move from current market (%)', legend=dict(orientation='h', y=1.12))
-        st.plotly_chart(figure, width='stretch', config=chart_config(zoom=True))
+        st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config(zoom=True))
         st.caption('Scenarios keep the contract count fixed. Global-market mode applies each assumed beta to the market move; '
                    'futures-only mode moves the futures price directly. Shared starting cash, margin stress and scaling apply. '
                    'Recorded EUR debt stays fixed. The global-market shock uses an illustrative beta on the funded base, '

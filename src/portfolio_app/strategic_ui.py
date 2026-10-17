@@ -1,4 +1,5 @@
 """Overview with a single authoritative category scope."""
+from portfolio_app.chart_hover import chart_hover
 
 from portfolio_app.currency_display import money, currency_symbol
 from portfolio_app.ui_help import column_help
@@ -21,7 +22,7 @@ from portfolio_app.performance import position_performance, summarize_performanc
 from portfolio_app.strategic import bucket_paths, category_labels, bucket_positions, strategic_summary, strategic_tree, strategic_performance
 
 
-def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None, open_capital_targets=None):
+def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None, open_capital_targets=None, current_valued=None):
     if 'unrealized_gain_reporting' not in valued:
         valued = position_performance(valued)
     from portfolio_app.futures import funded_strategy_positions
@@ -30,11 +31,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
     paths = bucket_paths(config)
     names = {b.id: b.name for b in config.buckets} | {'unassigned': 'Unassigned'}
     labels = category_labels(config) | {'': 'Portfolio', 'unassigned': 'Unassigned'}
-    options = ['', *[b.id for b in config.buckets]]
-    if (valued.loc[valued.bucket_id.eq(''), 'current_value_reporting'].ne(0).any() or
-        (exposure_result is not None and exposure_result.exposures.loc[
-            exposure_result.exposures.bucket_id.eq(''), 'market_exposure_reporting'].ne(0).any())):
-        options.append('unassigned')
+    # Unassigned can retain closed-history gains even with no current value.
+    options = ['', *[b.id for b in config.buckets], 'unassigned']
     key = 'strategic_category'
     if st.session_state.get(key, '') not in options:
         st.session_state[key] = ''
@@ -62,6 +60,28 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         whole = float(valued.current_value_reporting.sum())
         performance = summarize_performance(selected)
         bucket_ids = ({''} if bucket == 'unassigned' else config.leaves(bucket)) if bucket else None
+
+    scoped_future = future
+    if future is not None and bucket:
+        assigned = future.bucket_id if future.bucket_id in config.leaves() else ''
+        if assigned not in bucket_ids:
+            scoped_future = None
+    history = None
+    if data_dir is not None:
+        from portfolio_app.history_ui import prepare_portfolio_history
+        from portfolio_app.positions import read_snapshot
+        from portfolio_app.holdings import DataError
+        try:
+            history = prepare_portfolio_history(data_dir,read_snapshot(data_dir / 'holdings.csv').holdings,
+                config=config,bucket=bucket,displayed=valued, current_valued=current_valued if current_valued is not None else valued)
+        except (DataError,ValueError,OSError) as exc:
+            st.caption(str(exc))
+    has_history = history is not None and history['view'].useful
+    default_view = 'Performance' if has_history else 'Allocation'
+    measure = 'Capital allocation'
+    with st.container(horizontal=True, vertical_alignment='center', gap='medium', key='overview_view_controls'):
+        mode = st.segmented_control('Overview view', ['Allocation', 'Performance', *(['Analytics'] if analytics else [])], help='Switch between allocation, performance and available portfolio analytics.', default=st.session_state.get('strategic_view', default_view), key='strategic_view', selection_mode='single', required=True, label_visibility='collapsed')
+    if mode != 'Performance' or not has_history:
         columns = st.columns([2, 1, 1] if exposure_result is not None and leverage_enabled else [2, 1])
         first, share = columns[:2]
         second = columns[2] if len(columns) == 3 else None
@@ -72,36 +92,34 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                          performance, missing=missing, percent=percent, key='overview_value',
                          on_toggle_gain=on_toggle_gain,
                          label=('Category value' if bucket else 'Portfolio value') if exposure_result is not None else None,
-                         funded_gain=exposure_result is not None, strategy_gain=has_strategy, freshness=freshness)
+                         funded_gain=exposure_result is not None, strategy_gain=has_strategy, freshness=freshness,
+                         known=history.get('current_gain') if history else None,
+                         twr=history['view'].all_result.time_weighted if history else None)
         if second is not None:
             with second:
                 from portfolio_app.portfolio_exposure_ui import render_equity_exposure_metric
                 render_equity_exposure_metric(exposure_result, market=True, bucket_ids=bucket_ids, freshness=freshness)
 
-    scoped_future = future
-    if future is not None and bucket:
-        assigned = future.bucket_id if future.bucket_id in config.leaves() else ''
-        if assigned not in bucket_ids:
-            scoped_future = None
-    measure = 'Capital allocation'
-    with st.container(horizontal=True, vertical_alignment='center', gap='medium', key='overview_view_controls'):
-        mode = st.segmented_control('Overview view', ['Allocation', 'Performance', *(['Analytics'] if analytics else [])], help='Switch between allocation, performance and available portfolio analytics.', default='Allocation', key='strategic_view', selection_mode='single', label_visibility='collapsed')
-        if mode not in {'Performance', 'Analytics'} and exposure_result is not None and leverage_enabled:
-            # Recover sessions left with no selection by the former toggle behavior.
-            if st.session_state.get('strategic_allocation_measure', 'Market exposure') is None:
-                st.session_state['strategic_allocation_measure'] = 'Market exposure'
-            measure = st.segmented_control('Allocation measure', ['Market exposure', 'Capital allocation'],
-                default='Market exposure', required=True, key='strategic_allocation_measure', label_visibility='collapsed',
-                help='Exposure compares market exposure shares with target percentages. Capital compares invested value with target percentages.')
     if mode == 'Analytics':
         analytics(selected.loc[selected.position_id.ne('future:overlay')], scope, scoped_future, bool(bucket))
         return
     if mode == 'Performance':
+        if has_history:
+            from portfolio_app.history_ui import render_portfolio_history
+            render_portfolio_history(data_dir,history,label='Category value' if bucket else 'Portfolio value',
+                                     percent=percent,on_toggle_gain=on_toggle_gain)
         with st.container(key='tour_performance'):
             table = strategic_performance(valued, config, bucket)
+            if history is not None:
+                from portfolio_app.gain_comparison import known_category_performance
+                from portfolio_app.currency_display import reporting_currency
+                table = known_category_performance(valued, read_snapshot(data_dir / 'holdings.csv').holdings,
+                    config, history['journal'], history['observations'],
+                    current_valued if current_valued is not None else valued, bucket, target=reporting_currency())
             category_freshness = table.attrs.get('valuation_freshness', {})
-            measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'], help='Holdings use unrealized gain / recorded cost. Futures use cumulative net P&L / initial allocated capital.',
-                default='Return (%)', key='strategic_performance_measure') or 'Return (%)'
+            st.markdown('**Category comparison**', help='Total known gain includes retained closed holdings and recorded income. Return is full recorded-history time-weighted return (TWR), not gain divided by remaining cost. Current category membership does not reconstruct past assignments; unsupported account splits remain unavailable.')
+            measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'], help='Cumulative TWR requires exact cash-flow boundary valuations. Gain shows supported monetary subtotals, with coverage.',
+                default='Gain', key='strategic_performance_measure') or 'Gain'
             chart_percent = measure == 'Return (%)'
             available = table.dropna(subset=[measure]).sort_values(measure)
             if not available.empty:
@@ -112,40 +130,38 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     marker_color=['#808890' if category_freshness.get(row.Category, ('', '', False))[2]
                                   else LOSS_COLOR if row[measure] < 0 else GAIN_COLOR for _, row in available.iterrows()],
                     text=[f'{value:+,.2f}%' if chart_percent else money(value, signed=True) for value in available[measure]], textposition='auto',
-                    customdata=hover, hovertemplate='%{y}<br>Return: %{customdata[2]}<br>Gain: %{customdata[1]}<br>Buy-in cost: %{customdata[0]}<br>Coverage: %{customdata[3]} · %{customdata[4]}<extra></extra>')))
+                    customdata=hover, hovertemplate='%{y}<br>TWR: %{customdata[2]}<br>Gain: %{customdata[1]}<br>Capital basis: %{customdata[0]}<br>Coverage: %{customdata[3]} · %{customdata[4]}<extra></extra>')))
                 figure.update_layout(height=max(260, 36 * len(available)), xaxis_title=measure, margin=dict(l=12, r=12, t=12, b=30))
-                st.plotly_chart(figure, width='stretch', config=chart_config())
+                st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
             elif chart_percent and table['Gain'].notna().any():
-                st.info('Percentage return is unavailable for zero buy-in cost. Choose Gain to see the monetary amounts.')
+                st.caption('TWR unavailable · Choose Gain for supported monetary results.')
             elif performance.cash_only:
                 st.info('N/A — cash balance. Purchase-based return does not apply without a recorded conversion basis; interest is separate.')
             else:
                 st.info('Add convertible buy-ins to see performance for this category.')
-            performance_rows = frame_rows(table)
-            for row in performance_rows:
-                label, detail, qualified = category_freshness.get(row['Category'], ('', '', False))
-                row.update(valuationLabel=label, valuationDetail=detail, valuationQualified=qualified)
-            render_list(performance_rows, [ListColumn(column, column, help=column_help(column, scope=scope),
-                        numeric=column in {'Cost', 'Gain', 'Return (%)'},
-                        signed=column in {'Gain', 'Return (%)'}, neutral_when='valuationQualified',
-                        secondary='valuationLabel' if column == 'Gain' else '',
-                        secondary_help='valuationDetail' if column == 'Gain' else '') for column in table],
-                        key='strategic_performance_table', context=f'{position_context}_{bucket}_performance',
-                        title='Category performance', default_sort=measure)
+        return
     else:
-        from portfolio_app.exposure_presentation import exposure_positions, companion_nodes
-        market = measure == 'Market exposure'
-        plotted = exposure_positions(valued, exposure_result, future) if market else valued
-        plotted_selection = bucket_positions(plotted, config, bucket)
-        partial = market and plotted_selection.current_value_reporting.isna().any()
-        chart_positions = exposure_positions(valued, exposure_result, future, known_only=True) if partial else plotted
-        if partial:
-            from portfolio_app.portfolio_exposure_ui import render_exposure_coverage
-            scoped_rows = exposure_result.exposures.loc[exposure_result.exposures.source_position_id.isin(plotted_selection.position_id)]
-            render_exposure_coverage(scoped_rows, plotted)
-            st.caption('Chart and Known exposure show only resolved contributions. Total exposure stays unavailable for affected rows.')
         with st.container(key='overview_allocation'):
-            chart_column, table_column = st.columns([1, 1.3], gap='large', vertical_alignment='center')
+            chart_column, table_column = st.columns([1, 1.3], gap='large', vertical_alignment='top')
+            with table_column:
+                if exposure_result is not None and leverage_enabled:
+                    # Recover sessions left with no selection by the former toggle behavior.
+                    if st.session_state.get('strategic_allocation_measure', 'Market exposure') is None:
+                        st.session_state['strategic_allocation_measure'] = 'Market exposure'
+                    measure = st.segmented_control('Allocation measure', ['Market exposure', 'Capital allocation'],
+                        default='Market exposure', required=True, key='strategic_allocation_measure', label_visibility='collapsed',
+                        help='Exposure compares market exposure shares with target percentages. Capital compares invested value with target percentages.')
+            from portfolio_app.exposure_presentation import exposure_positions, companion_nodes
+            market = measure == 'Market exposure'
+            plotted = exposure_positions(valued, exposure_result, future) if market else valued
+            plotted_selection = bucket_positions(plotted, config, bucket)
+            partial = market and plotted_selection.current_value_reporting.isna().any()
+            chart_positions = exposure_positions(valued, exposure_result, future, known_only=True) if partial else plotted
+            if partial:
+                from portfolio_app.portfolio_exposure_ui import render_exposure_coverage
+                scoped_rows = exposure_result.exposures.loc[exposure_result.exposures.source_position_id.isin(plotted_selection.position_id)]
+                render_exposure_coverage(scoped_rows, plotted)
+                st.caption('Chart and Known exposure show only resolved contributions. Total exposure stays unavailable for affected rows.')
             with chart_column:
                 tree = companion_nodes(sort_allocation_nodes(strategic_tree(chart_positions, config, bucket)), future)
                 if bucket_positions(chart_positions, config, bucket).current_value_reporting.lt(0).any():
@@ -174,7 +190,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                         figure.update_traces(hovertemplate='%{label}<br>Known exposure: ' + currency_symbol() + '%{value:,.2f}<extra></extra>')
                     signature = sha256(repr((config, list(plotted.position_id), bucket, market)).encode()).hexdigest()[:16]
                     chart_key = f'strategic_chart_{signature}'
-                    st.plotly_chart(figure, width='stretch', height=420, theme='streamlit', key=chart_key, config=chart_config())
+                    st.plotly_chart(chart_hover(figure), width='stretch', height=420, theme='streamlit', key=chart_key, config=chart_config())
                     categories = {row.node_id: row.path[-1] if row.path else '' for row in tree.itertuples() if row.kind == 'category'}
                     parent = paths[bucket][-2] if len(paths[bucket]) > 1 else ''
                     categories[tree.loc[tree.parent_id.eq(''), 'node_id'].iloc[0]] = parent

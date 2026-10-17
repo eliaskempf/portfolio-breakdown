@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 import streamlit as st
+from portfolio_app.background_ui import refresh_allowed
 
 from portfolio_app import account_journal as ledger
 from portfolio_app.holdings import DataError
@@ -51,7 +52,7 @@ def watch_settlements(directory, journal, *, demo=False, force=False):
         started = collector.schedule(directory,latest)
         quote_started = quotes.schedule(directory,latest)
         if (_signature(directory) != signature or latest != journal or started or quote_started
-                or quote_error != quotes.error(directory) or minute != int(utc_now().timestamp() // 60)):
+                or quote_error != quotes.error(directory) or minute != int(utc_now().timestamp() // 60)) and refresh_allowed():
             st.rerun()
     watch()
 

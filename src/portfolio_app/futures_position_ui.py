@@ -1,4 +1,5 @@
 """Compact position overview, with an explicitly labelled cached index proxy."""
+from portfolio_app.chart_hover import chart_hover
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -36,14 +37,14 @@ def render_index_chart(future, directory):
     normalized = selected / selected.iloc[0] * 100
     figure = style_figure(go.Figure(go.Scatter(x=normalized.index, y=normalized.to_list(), mode='lines',
         name='MSCI World ETF proxy (EUR)', line=dict(color='#5470c6', width=2),
-        hovertemplate='%{x|%d %b %Y}<br>%{y:.2f}<extra>ETF proxy · rebased to 100</extra>')))
+        hovertemplate='ETF proxy: %{y:,.2f} · rebased to 100<extra></extra>')))
     if future.entry_date and selected.index[0] <= pd.Timestamp(future.entry_date) <= selected.index[-1]:
         figure.add_shape(type='line', x0=future.entry_date, x1=future.entry_date, y0=0, y1=1, yref='paper',
                          line=dict(color='#94a3b8', dash='dot'))
         figure.add_annotation(x=future.entry_date, y=1, yref='paper', text='Entry', showarrow=False, yshift=12)
     figure.update_layout(height=280, margin=dict(l=8, r=8, t=24, b=12), showlegend=False,
                          yaxis_title='Rebased to 100', xaxis_title=None)
-    st.plotly_chart(figure, key='future_position_index_chart', width='stretch', config=chart_config())
+    st.plotly_chart(chart_hover(figure), key='future_position_index_chart', width='stretch', config=chart_config())
     st.caption(f'MSCI World ETF proxy · EUNL.DE · adjusted EUR prices through {end:%d %b %Y}')
 
 

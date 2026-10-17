@@ -167,6 +167,7 @@ class ResolvedCost:
     amount: float | None
     estimated: bool = False
     note: str = ''
+    exact_amount: Decimal | None = None
 
 
 def resolve_cost(parts, target, historical=None):
@@ -195,7 +196,8 @@ def resolve_cost(parts, target, historical=None):
             return ResolvedCost(None, note='Missing purchase date or converted cost; excluded from gains')
     value = float(total)
     return ResolvedCost(value if math.isfinite(value) else None, estimated,
-                        '; '.join(dict.fromkeys(notes)) if math.isfinite(value) else 'Cost exceeds supported numeric range')
+                        '; '.join(dict.fromkeys(notes)) if math.isfinite(value) else 'Cost exceeds supported numeric range',
+                        total if math.isfinite(value) else None)
 
 
 def estimate_missing(parts, target, prices, historical=None):

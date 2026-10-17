@@ -39,10 +39,10 @@ def test_performance_summary_and_holdings_with_static_prices(tmp_path, sample_da
     table = next(item.value for item in app.tabs[1].dataframe if 'shares' in item.value)
     assert table.loc[table.id == 'c', 'Performance'].isna().all()  # Foreign costs aren't EUR returns.
     by_label(app.get('button_group'), 'Performance display').set_value('%').run()
-    assert overview_metric(app).delta == '+0.00%'
+    assert overview_metric(app).delta == '—'
     by_label(app.multiselect, 'Holdings').set_value(['a']).run()
     assert not app.exception
-    assert overview_metric(app).delta == '+0.00%'
+    assert overview_metric(app).delta == '—'
     assert next(item.value for item in app.tabs[1].dataframe if 'shares' in item.value).Performance.tolist() == [100 / 3]
     by_label(app.get('button_group'), 'Performance display').set_value('€').run()
     assert next(item.value for item in app.tabs[1].dataframe if 'shares' in item.value).Performance.tolist() == [20]
@@ -66,7 +66,7 @@ def test_legacy_unlabeled_buy_in_explained_without_invented_performance(tmp_path
     assert table.performance_note.tolist() == ["Missing buy-in currency; excluded from gains"]
 
 
-def test_overview_performance_defaults_to_return_and_keeps_both_units(tmp_path, sample_data_dir):
+def test_overview_performance_defaults_to_known_gain_and_withholds_unsupported_twr(tmp_path, sample_data_dir):
     shutil.copy(sample_data_dir / 'demo_prices.json', tmp_path)
     (tmp_path / 'holdings.csv').write_text(
         'id,name,ticker,shares,acquisition_price,acquisition_currency\n'
@@ -76,13 +76,10 @@ def test_overview_performance_defaults_to_return_and_keeps_both_units(tmp_path, 
     activate(app, 'Overview')
     by_label(app.get('button_group'), 'Overview view').set_value('Performance').run()
     assert not app.exception
-    assert by_label(app.get('button_group'), 'Chart measure').value == 'Return (%)'
-    assert any('zero buy-in cost' in item.value for item in app.info)
-    positions = next(json.loads(item.proto.json) for item in app.tabs[0].get('bidi_component')
-                     if item.proto.component_name == 'portfolio_data_list' and json.loads(item.proto.json)['title'] == 'Positions')
-    assert 'account' not in {column['key'] for column in positions['columns']}
-    assert all(row['returnPct'] is None for row in positions['rows'])
-    assert sum(row['gainReporting'] is not None for row in positions['rows']) == 1
+    assert by_label(app.get('button_group'), 'Chart measure').value == 'Gain'
+    assert not any(item.proto.component_name == 'portfolio_data_list' for item in app.tabs[0].get('bidi_component'))
+    by_label(app.get('button_group'), 'Chart measure').set_value('Return (%)').run()
+    assert any('TWR unavailable' in item.value for item in app.caption)
     by_label(app.get('button_group'), 'Chart measure').set_value('Gain').run()
     assert not app.exception
     assert len(app.tabs[0].get('plotly_chart')) == 1

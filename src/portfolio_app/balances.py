@@ -42,6 +42,9 @@ def patch_holdings(path: Path, changes: Mapping[str, Mapping], *, expected_revis
                    replacement: bool = False) -> None:
     from portfolio_app.actual_portfolio import assert_cash_editable
     assert_cash_editable(path, changes)
+    from portfolio_app.security_history import assert_security_editable
+    for identity, fields in changes.items():
+        assert_security_editable(path, [identity], fields)
     if revision(path) != expected_revision:
         raise DataError('Holdings changed. Reload before saving.')
     content = path.read_text(encoding='utf-8-sig') if path.exists() else EMPTY_CSV

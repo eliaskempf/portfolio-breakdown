@@ -22,11 +22,12 @@ from portfolio_app.derivative_types import (
 )
 from portfolio_app.holdings import DataError
 from portfolio_app.storage import save_document
+from portfolio_app.security_history import SecurityBook, CapitalAllocation, validate_books
 
 FILE = 'account-journal.json'
 KINDS = frozenset(('cash_open', 'cash_adjust', 'cash_flow', 'snapshot', 'trade', 'settlement',
     'final_settlement', 'receive', 'fee', 'tax', 'interest', 'transfer', 'fx',
-    'debt_open', 'borrow', 'repay', 'reserve', 'release', 'void'))
+    'debt_open', 'borrow', 'repay', 'reserve', 'release', 'void', 'security_cash', 'security_unknown'))
 
 
 @dataclass(frozen=True)
@@ -197,10 +198,27 @@ class Journal:
     adopted_liability_ids: tuple[str, ...] = ()
     version: int = 1
     investments: tuple[InvestmentSpec, ...] = ()
+    securities: tuple[SecurityBook, ...] = ()
+    capital_history: tuple[CapitalAllocation, ...] = ()
 
     def __post_init__(self):
-        if type(self.version) is not int or self.version != 1:
+        if type(self.version) is not int or self.version not in (1, 2):
             raise DataError('Unsupported account journal version.')
+        object.__setattr__(self, 'securities', tuple(self.securities))
+        object.__setattr__(self, 'capital_history', tuple(self.capital_history))
+        seen_allocations = set()
+        for item in self.capital_history:
+            if not isinstance(item, CapitalAllocation) or item.id in seen_allocations or item.investment_id not in {i.id for i in self.investments}:
+                raise DataError('Invalid dated investment allocation.')
+            if item.replaces and item.replaces not in seen_allocations:
+                raise DataError('Allocation correction requires retained original evidence.')
+            seen_allocations.add(item.id)
+        if any(not isinstance(b, SecurityBook) for b in self.securities):
+            raise DataError('Invalid securities history.')
+        if (self.securities or self.capital_history) and self.version != 2:
+            raise DataError('Securities history requires journal version 2.')
+        if any(e.kind in ('security_cash', 'security_unknown') for e in self.events):
+            raise DataError('Security cash postings are derived; do not save duplicate account events.')
         adopted = tuple(self.adopted_liability_ids)
         for value in adopted:
             identifier(value, 'Adopted liability ID')
@@ -220,6 +238,7 @@ class Journal:
             if len(set(ids)) != len(ids):
                 raise DataError(f'Duplicate {name} IDs.')
         accounts = {item.id for item in self.accounts}
+        validate_books(self.securities, accounts)
         contracts = {item.id for item in self.contracts}
         positions = {item.id: item for item in self.positions}
         for item in self.positions:
@@ -252,6 +271,11 @@ class Journal:
             if item.account_id not in accounts:
                 raise DataError('Account binding refers to an unknown account.')
         holdings = {item.position_id: item.account_id for item in self.holding_links}
+        for book in self.securities:
+            if book.position_id in {link.position_id for link in self.cash_links}:
+                raise DataError('Cash holdings must remain owned by the account journal.')
+            if book.account_id and book.position_id in holdings and holdings[book.position_id] != book.account_id:
+                raise DataError('Security history and collateral binding disagree about account ownership.')
         for link in self.cash_links:
             if link.position_id in holdings and holdings[link.position_id] != link.account_id:
                 raise DataError('Cash and holding links disagree about account ownership.')
@@ -331,8 +355,11 @@ class JournalState:
     pending: dict[str, PendingCash]
     reservations: dict[str, Reservation]
     cash_movements: tuple[CashMovement, ...]
+    unknown_cash: frozenset[tuple[str, str]] = frozenset()
 
     def available_cash(self, account_id, denomination):
+        if (account_id, denomination) in self.unknown_cash:
+            raise DataError('Cash is incomplete; supply missing transaction amounts first.')
         reserved = sum((item.amount for item in self.reservations.values()
                         if item.account_id == account_id and item.currency == denomination and not item.holding_id), ZERO)
         return self.cash.get((account_id, denomination), ZERO) - reserved
@@ -370,8 +397,13 @@ def replay(journal: Journal, *, as_of: str | None = None) -> JournalState:
     positions = {spec.id: PositionBalance(spec, contracts[spec.contract_id]) for spec in journal.positions}
     cash, loans, pending, reservations, movements = {}, {}, {}, {}, []
     opened_cash, started_positions, settled_dates = set(), set(), set()
-    events = effective_events(journal)
-    roots = {}
+    from portfolio_app.security_history import cash_postings
+    postings = cash_postings(journal)
+    if len({e.id for e in postings}) != len(postings) or {e.id for e in postings}.intersection(e.id for e in journal.events):
+        raise DataError('Account event ID collides with a securities posting.')
+    events = tuple(sorted((*effective_events(journal), *postings), key=lambda e: (e.date, e.sequence)))
+    unknown_cash = set()
+    roots = {e.id: e.id for e in postings}
     for event in journal.events:
         roots[event.id] = roots[event.replaces] if event.replaces else event.id
 
@@ -383,7 +415,7 @@ def replay(journal: Journal, *, as_of: str | None = None) -> JournalState:
         key = (account, denomination)
         cash[key] = cash.get(key, ZERO) + amount
         movements.append(CashMovement(event.id, event.date, account, denomination, amount,
-                                      kind or event.kind, position_id if position_id is not None else event.position_id))
+                                      kind or event.kind, position_id if position_id is not None else event.position_id or event.holding_id))
 
     def pay_or_pending(event, account, denomination, amount):
         if account not in accounts:
@@ -467,6 +499,13 @@ def replay(journal: Journal, *, as_of: str | None = None) -> JournalState:
                 positions[p.spec.id] = replace(p, quantity=0 if final else p.quantity,
                     lots=() if final else tuple(replace(lot, basis=event.price) for lot in p.lots),
                     last_price=event.price, realized_pnl=p.realized_pnl+pnl)
+            continue
+        if event.kind == 'security_unknown':
+            unknown_cash.add((event.account_id, event.currency))
+            cash.setdefault((event.account_id, event.currency), ZERO)
+            continue
+        if event.kind == 'security_cash':
+            pay_or_pending(event, event.account_id, event.currency, event.amount)
             continue
         if event.kind == 'receive':
             reference = roots.get(event.reference, event.reference)
@@ -573,7 +612,7 @@ def replay(journal: Journal, *, as_of: str | None = None) -> JournalState:
         for identity in journal.adopted_liability_ids:
             if not any(reference == 'legacy:'+identity for _, _, reference in loans):
                 raise DataError('An adopted liability must retain its loan record; correct or undo the adoption explicitly.')
-    return JournalState(cash, loans, positions, pending, reservations, tuple(movements))
+    return JournalState(cash, loans, positions, pending, reservations, tuple(movements), frozenset(unknown_cash))
 
 
 def append_events(journal: Journal, events: Iterable[Event]) -> Journal:
@@ -639,7 +678,11 @@ def roll(journal, *, close: Event, opening: Event, charges: Iterable[Event] = ()
 
 
 def journal_to_dict(journal):
-    return asdict(journal)
+    result = asdict(journal)
+    if journal.version == 1:
+        result.pop('securities')
+        result.pop('capital_history')
+    return result
 
 
 def journal_from_dict(raw):
@@ -650,6 +693,9 @@ def journal_from_dict(raw):
                       ('events', Event), ('cash_links', CashLink), ('holding_links', HoldingLink),
                       ('margin_requirements', MarginRequirement), ('investments', InvestmentSpec)):
         fields[name] = tuple(cls(**item) for item in fields.get(name, ()))
+    from portfolio_app.security_history import book_from_dict
+    fields['securities'] = tuple(book_from_dict(item) for item in fields.get('securities', ()))
+    fields['capital_history'] = tuple(CapitalAllocation(**item) for item in fields.get('capital_history', ()))
     result = Journal(**fields)
     replay(result)
     return result
@@ -674,7 +720,8 @@ def save_journal(directory: Path, journal: Journal, expected_revision: str | Non
         if any(item.holding_id for item in state.reservations.values()):
             from portfolio_app.account_margin import validate_reservations
             from portfolio_app.positions import read_snapshot
-            validate_reservations(journal, read_snapshot(Path(directory)/'holdings.csv').holdings)
+            from portfolio_app.security_history import effective_holdings
+            validate_reservations(journal, effective_holdings(read_snapshot(Path(directory)/'holdings.csv').holdings, journal.securities))
         content = json.dumps(journal_to_dict(journal), default=lambda value: str(value) if isinstance(value, Decimal) else value,
                              indent=2, sort_keys=True)+'\n'
         save_document(Path(directory)/FILE, content, expected_revision)

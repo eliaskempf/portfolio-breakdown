@@ -73,6 +73,10 @@ MONITORING_INPUTS = Keys(names=('monitoring_view', 'monitoring_selected'),
 
 
 FEATURES = (
+    FeatureState('personal history', Keys(prefixes=('personal_history_',)),
+        inputs=Keys(predicate=lambda key: key.startswith('personal_history_') and not any(x in key for x in ('save', 'reviewed', 'evidence', 'lots_', 'fetch', 'coverage', 'class_save'))),
+        mounted=lambda key, state: state.get('position_edit_dialog', False) or (state.get('main_tabs') == 'Overview' and state.get('strategic_view') == 'Performance'),
+        currency=Keys(prefixes=('personal_history_',))),
     FeatureState('monitoring', Keys(prefixes=('monitoring_',)),
         inputs=MONITORING_INPUTS,
         mounted=tab('Monitoring'),

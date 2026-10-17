@@ -86,6 +86,10 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
     for binding in journal.holding_links:
         result.loc[result.position_id.eq(binding.position_id), 'account'] = accounts[binding.account_id]
         result.loc[result.position_id.eq(binding.position_id), 'account_id'] = binding.account_id
+    for book in journal.securities:
+        if book.account_id and book.active:
+            result.loc[result.position_id.eq(book.position_id), 'account'] = accounts[book.account_id]
+            result.loc[result.position_id.eq(book.position_id), 'account_id'] = book.account_id
     rates = {}
     def converted(amount, currency):
         if currency not in rates:
@@ -121,7 +125,7 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
         if identity in original.index:
             prior = original.loc[identity]
             extra = {key: prior.get(key, '') for key in ('bucket_id', 'portfolio')}
-        row(identity, account, currency, amount, f'{accounts[account]} · {currency} cash',
+        row(identity, account, currency, None if (account, currency) in state.unknown_cash else amount, f'{accounts[account]} · {currency} cash',
             'cash' if amount >= 0 else 'liability', **extra)
     for (account, currency, loan), amount in state.loans.items():
         if amount:

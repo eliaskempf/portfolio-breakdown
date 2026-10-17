@@ -36,7 +36,7 @@ export default function({parentElement, data, setTriggerValue}) {
     target.setAttribute('role', 'button');
     target.setAttribute('tabindex', '0');
     target.setAttribute('aria-label', data.label);
-    target.setAttribute('title', data.label);
+    target.setAttribute('title', data.tooltip || data.label);
     target.addEventListener('click', activate);
     target.addEventListener('keydown', keydown);
   };
@@ -54,10 +54,11 @@ export default function({parentElement, data, setTriggerValue}) {
 """
 
 
-def toggle_gain_unit(*, percent: bool, on_toggle, container_key='overview_value') -> None:
+def toggle_gain_unit(*, percent: bool, on_toggle, container_key='overview_value', interaction_key='gain', tooltip=None) -> None:
     component = st.components.v2.component('overview_gain_toggle', js=JS)
-    component(key=f'{container_key}_gain_toggle', data={
-        'containerKey': container_key,
+    component_key = container_key.rstrip('_') + '_gain_toggle'
+    component(key=component_key, data={
+        'containerKey': container_key, 'interactionKey': interaction_key, 'tooltip': tooltip,
         'label': 'Show gain as amount' if percent else 'Show gain as percentage',
     }, on_toggle_change=on_toggle)
 

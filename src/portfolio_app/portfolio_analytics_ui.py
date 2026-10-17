@@ -1,4 +1,5 @@
 """Analytics within Overview's existing category navigation and visual style."""
+from portfolio_app.chart_hover import chart_hover
 
 from portfolio_app.currency_display import money, reporting_currency
 import pandas as pd
@@ -222,7 +223,7 @@ def render_risk_dashboard(result, status, holdings, *, future=None, scoped=False
             else:
                 expanded = expand.toggle('Expand', key='analytics_correlations_expanded', help='Enlarge the correlation matrix and show full investment names.')
                 figure = correlation_chart(correlations, names, compact=not expanded)
-                st.plotly_chart(figure, width='stretch', config=chart_config())
+                st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
         frame = result.holdings.copy()
         frame.insert(0, 'Investment', [names.get(key, key) for key in frame.index])
         labels = {'Weight': 'Weight / subset capital (%)' if scoped else 'Weight / net equity (%)' if result.integrated else 'Allocation (%)',

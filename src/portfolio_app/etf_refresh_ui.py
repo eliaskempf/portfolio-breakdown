@@ -1,6 +1,7 @@
 """Lightweight status and preferences for the app-owned background updater."""
 from pathlib import Path
 import streamlit as st
+from portfolio_app.background_ui import refresh_allowed
 
 from portfolio_app.display_names import compact_fund_name
 from portfolio_app.etf import snapshot_age_days, matching_fund
@@ -46,7 +47,7 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False, show_message
     @st.fragment(run_every=2 if running else None)
     def status():
         pending = not demo and coordinator.running(data_dir)
-        if not pending and (running or refresh_revision(data_dir) != revision):
+        if not pending and (running or refresh_revision(data_dir) != revision) and refresh_allowed():
             st.rerun()
         if not show_messages:
             return

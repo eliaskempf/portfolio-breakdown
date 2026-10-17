@@ -61,6 +61,10 @@ def validate_workspace(directory: Path, *, allow_empty: bool = False) -> None:
     from portfolio_app.account_observations import load_observations
     validate_links(load_journal(directory)[0], snapshot.holdings)
     load_observations(directory)
+    from portfolio_app.history_observations import load_observations as load_history_observations
+    from portfolio_app.security_history import effective_holdings
+    effective_holdings(snapshot.holdings, load_journal(directory)[0].securities)
+    load_history_observations(directory)
     from portfolio_app.futures_quotes import read_quotes
     read_quotes(directory)
     from portfolio_app.generalized_studies_ui import load_study_settings

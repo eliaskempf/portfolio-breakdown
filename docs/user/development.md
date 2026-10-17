@@ -33,6 +33,22 @@ without introductory paragraphs or repeated explanations.
 Apply these principles across the application, including new features and error
 states. They govern presentation without weakening calculation or coverage rules.
 
+Apply `chart_hover` at each Plotly rendering boundary. Curves share a vertical
+date/value guide and formatted tooltips across the plot area; category and
+allocation charts retain their meaningful category tooltips. Preserve explicit
+units, missing values and purpose-built hover content. Pointer movement must not
+trigger Streamlit reruns. History's value/capital boxes follow the hovered
+observations and include their dates. The inline gain switches from selected-period
+gain to total known gain during hover; All uses the shared current gain calculation.
+Leaving restores the latest value and period gain. Clicking the gain badge toggles between amount and cumulative TWR; its metric name and period
+appear only in a concise tooltip. Return percentages use ↑/↓; monetary gains
+keep +/− signs. Zero and unavailable returns have no direction arrow. TWR requires exact boundaries; no remaining-cost denominator is substituted.
+Annualized money-weighted return always uses full recorded history, independently
+of the chart range or pointer. Keep one summary row below the view tabs.
+The allocation measure switch belongs above the allocation table, aligned with
+its left edge and the top of the chart. Performance keeps category comparison
+visible and leaves detailed category and position lists to their existing views.
+
 ## Architecture and verification
 
 Business logic is independent of Streamlit:
@@ -72,6 +88,15 @@ episodes under the workspace lock. Monitoring does not change holdings or orders
 synthetic directory; it reuses the normal alert explanation and acknowledgment UI.
 
 ### Calculation contracts
+
+- `gain_accounting.py` supplies shared current and historical known-gain results.
+  Security-only and account-only cash flows cancel across their common boundary;
+  account equity includes actual futures once, not their display allocation again.
+  Result coverage and valuation provenance are separate from amounts. Historical
+  acquisition capital and return-opening market value are distinct. Summary-only
+  and snapshot fallbacks remain explicit, and missing return evidence never
+  shortens All. Historical renderers consume calculated gains/TWR in customdata;
+  browser code formats them but does not reconstruct financial calculations.
 
 - Saved positions retain their instrument ID and stable position ID. A
   contribution has an analytical asset ID plus its source position/instrument
@@ -183,7 +208,7 @@ empty-position redistribution, Git privacy guards, and Streamlit controls. The s
 endpoint is `/_stcore/health`.
 
 Independent target overrides on analytical-taxonomy nodes, ordinary-security
-sales/realized P&L and transaction-based personal return history remain
+tax reporting and automatic broker transaction imports remain
 unsupported. The development account journal records actual futures settlements
 and closes; an opening snapshot does not reconstruct pre-snapshot gains.
 Strategic category targets, instrument price history and historical risk analysis
@@ -404,3 +429,59 @@ port before assuming which version a browser tab displays.
 
 Keep the pre-commit hook enabled, run `uv run portfolio-check-private --staged`,
 and inspect the staged diff. Never commit private holdings or portfolio exports.
+
+Background market, monitoring and settlement collection continues while a position
+dialog is open. Defer automatic full-page refreshes until it closes; chart-history
+completion renders inside its local fragment. User-requested saves still revalidate
+revisions and refresh portfolio balances.
+
+### Optional transaction history
+
+`security_history.py` owns fractional Decimal holdings, FIFO cost components,
+opening boundaries and retained evidence. `history_commands.py` coordinates
+reviewed activation with workspace locks and revision guards. Activated holdings
+are materialized before valuation; their CSV source balances are not independently
+updated. Securities cash postings are generated into account replay and are never
+stored as duplicate account events. Futures arithmetic remains in its existing
+replay branches. Incomplete cash amounts carry an explicit unknown-balance mask.
+
+`history_observations.py` stores dated observations and scope-specific coverage
+reviews. `personal_performance.py` computes equity, external flows, money-weighted
+returns and exact time-weighted returns without Streamlit or network calls.
+`personal_market.py` supplies provider observations with explicit adjustment
+semantics. `history_ui.py` renders the optional workflows. Keep source-position
+history separate from present-day ETF constituent expansion and hypothetical risk
+backtests. New evidence must never silently certify historical completeness.
+
+
+## History playground
+
+Create a separate, persistent example with invented holdings, buys, a sale, a
+distribution, fees and cash contributions and withdrawals. `--market-prices`
+downloads actual Yahoo Finance closing prices; omit it for deterministic invented
+prices in offline tests. Invented trade dates use observed market sessions. This reads no user portfolio and refuses to overwrite a nonempty
+directory:
+
+```bash
+uv run python -m portfolio_app.demo_history /tmp/portfolio-history-demo --market-prices
+uv run streamlit run src/portfolio_app/ui.py --server.port=8527 -- --data-dir /tmp/portfolio-history-demo --demo --ignore-workspace-selection --skip-intro
+```
+
+This direct Streamlit launch uses the prepared history directory; the normal
+`portfolio-app --demo` launcher creates its own fresh demonstration data.
+Choose a free port and keep the playground separate from other sessions.
+Restarting this command retains edits; generating another example requires a new,
+empty directory.
+
+Open **Overview → Performance** for total
+value, opening capital plus net contributions, investment gain, annualized
+money-weighted return across all recorded history. Positions with useful history
+open directly on the **History** tab. The playground
+opens portfolio **Performance** by default. Both views use periods ending today.
+**Edit transaction** opens the individual transaction form.
+
+The demo includes exact flow-boundary observations for the portfolio and the
+fee-free money-market holding. The equity holding has a money-weighted return;
+its exact time-weighted return remains unavailable because separate same-day fee
+timing and flow-boundary values are not supplied. Editing financial history
+invalidates the prior coverage confirmation, as it does for any workspace.

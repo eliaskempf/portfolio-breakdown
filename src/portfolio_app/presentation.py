@@ -3,6 +3,7 @@
 from portfolio_app.currency_display import money
 
 from html import escape
+from math import isfinite
 
 import streamlit as st
 from portfolio_app.settings import GAIN_COLOR, LOSS_COLOR
@@ -41,22 +42,20 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 [data-testid="stMetric"] {border:1px solid color-mix(in srgb,currentColor 14%,transparent);border-radius:6px;padding:16px 18px;}
 [data-testid="stMetricValue"] {font-size:1.7rem;font-weight:600;font-variant-numeric:tabular-nums;}
 [data-testid="stMetricLabel"] {font-size:.8rem;opacity:.75;}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetric"] > div {display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:16px;align-items:center;}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricLabel"] {grid-column:1 / -1;}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricValue"] {grid-column:1;grid-row:2;}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetric"] > div > div:has(> [data-testid="stMetricDelta"]) {grid-column:2;grid-row:2;margin-top:0;flex-wrap:wrap;}
+:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetric"] > div {display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:16px;align-items:center;}
+:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetricLabel"] {grid-column:1 / -1;}
+:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetricValue"] {grid-column:1;grid-row:2;}
+:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetric"] > div > div:has(> [data-testid="stMetricDelta"]) {grid-column:2;grid-row:2;margin-top:0;flex-wrap:wrap;}
 .st-key-overview_allocation {container-type:inline-size;}
-.st-key-overview_allocation_summary {transform:translateY(-24px);}
 /* A non-wrapping Streamlit row defaults to overflow:auto. This is a heading,
    not a scroll viewport; allow help and focus outlines beyond its line box. */
 .st-key-overview_allocation .st-key-overview_allocation_heading {overflow:visible;}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"], .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"] {cursor:pointer;}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:hover, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:hover {filter:brightness(.85);}
-:is(.st-key-overview_value,.st-key-exposure_value) [data-testid="stMetricDelta"][role="button"]:focus-visible, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
+:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"], .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"] {cursor:pointer;}
+:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"]:hover, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:hover {filter:brightness(.85);}
+:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"]:focus-visible, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
 .st-key-exposure_theme_results {container-type:inline-size;}
 .st-key-exposure_toolbar [data-testid="stColumn"] {min-width:0;}
 @container(max-width:860px) {
-  .st-key-overview_allocation_summary {transform:none;}
   .st-key-overview_allocation [data-testid="stHorizontalBlock"]:not(.st-key-overview_allocation_heading) {flex-direction:column;align-items:stretch;}
   .st-key-overview_allocation [data-testid="stColumn"] {width:100%!important;flex:1 1 100%;min-width:0;}
   .st-key-exposure_theme_results [data-testid="stHorizontalBlock"] {flex-direction:column;align-items:stretch;}
@@ -114,17 +113,34 @@ def performance_metric(label: str, value: str, amount, *, key: str, qualified=Fa
         st.metric(label, value, help=help)
 
 
-def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False, freshness=None):
+def return_percent(value) -> str:
+    """Format a percentage return with direction, without a duplicate sign."""
+    if value is None or not isfinite(value):
+        return '—'
+    arrow = '↑ ' if value > 0 else '↓ ' if value < 0 else ''
+    return f'{arrow}{abs(value):,.2f}%'
+
+
+def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False, freshness=None, known=None, twr=None):
     """One value card with an adjacent, optionally clickable unrealized gain."""
     gain = performance.return_pct if percent else performance.gain_reporting
-    gain_text = ('N/A · Cash balance' if performance.cash_only else 'Unavailable') if gain is None else f'{gain:+,.2f}%' if percent else money(gain, signed=True)
+    gain_text = ('N/A · Cash balance' if performance.cash_only else 'Unavailable') if gain is None else return_percent(gain) if percent else money(gain, signed=True)
+    if known is not None:
+        gain = (100*twr if twr is not None else None) if percent else known.amount
+        gain_text = ('—' if gain is None else return_percent(gain)) if percent else (
+            'N/A · Cash balance' if gain is None and performance.cash_only else
+            'Unavailable' if gain is None else money(gain, signed=True))
     with st.container(key=key):
         st.metric(label or ('Priced value' if missing else 'Current value'), money(value),
-                  delta=gain_text, delta_color='normal' if gain and not (freshness and freshness[2]) else 'off', delta_arrow='off',
-                  help=('Assets minus debt. Gain includes holdings performance and net futures P&L. ' if strategy_gain else
+                  delta=gain_text, delta_color=('inverse' if percent and gain < 0 else 'normal') if gain and not (freshness and freshness[2]) else 'off', delta_arrow='off',
+                  help=(f'Total known gain: realized + unrealized + recorded income, less costs once. Performance coverage: {known.coverage}. Valued {known.as_of}; quote/FX dates in price details. Click for full-history TWR.' if known is not None else
+                       ('Assets minus debt. Gain includes holdings performance and net futures P&L. ' if strategy_gain else
                         'Current holdings value and gain on recorded costs. ') +
-                       f'{missing} missing prices. Performance coverage: {performance.coverage}. Click gain to switch amount / %.')
+                       f'{missing} missing prices. Performance coverage: {performance.coverage}. Click gain to switch amount / %.'))
+        if known is not None and known.partial:
+            st.caption(f'{known.status} gain · {known.coverage}', help=' '.join(known.reasons))
         if freshness and freshness[0]:
             st.caption(freshness[0], help=freshness[1])
     if on_toggle_gain:
-        toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain, container_key=key)
+        toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain, container_key=key,
+                         tooltip=('TWR · All history · Click for amount' if percent else 'Total gain · Click for TWR') if known is not None else None)

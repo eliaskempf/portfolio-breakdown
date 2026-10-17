@@ -1,4 +1,5 @@
 """Signed exposure displays and opt-in settings; calculations stay in pure modules."""
+from portfolio_app.chart_hover import chart_hover
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -100,7 +101,7 @@ def signed_chart(table, label, measure, key):
     figure.update_yaxes(tickmode='array', tickvals=list(range(len(selected))), ticktext=selected[label].tolist())
     figure.update_xaxes(title=measure, zeroline=True, zerolinewidth=2, zerolinecolor='#888888')
     figure.update_layout(height=max(260, min(900, len(selected)*32)), margin=dict(l=10, r=10, t=10, b=35))
-    st.plotly_chart(figure, key=key, width='stretch', config=chart_config())
+    st.plotly_chart(chart_hover(figure), key=key, width='stretch', config=chart_config())
 
 
 def render_company_move(result, rows):

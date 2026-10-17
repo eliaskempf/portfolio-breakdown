@@ -117,28 +117,34 @@ def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = ""
         ["Value", "Category"], ascending=[False, True], na_position="last", ignore_index=True)
 
 
-def strategic_performance(valued, config, bucket=""):
+def strategic_performance(valued, config, bucket="", *, evaluate=None):
     """Disjoint child totals from owned positions, never look-through holdings."""
     selected = bucket_positions(valued, config, bucket)
     children = config.children(bucket) if bucket != "unassigned" else []
-    choices = [(b.name, bucket_positions(selected, config, b.id)) for b in children]
+    choices = [(b.name, bucket_positions(selected, config, b.id), b.id) for b in children]
     if not bucket and selected.bucket_id.eq("").any():
-        choices.append(("Unassigned", bucket_positions(selected, config, "unassigned")))
+        choices.append(("Unassigned", bucket_positions(selected, config, "unassigned"), 'unassigned'))
     if not choices:
         labels = [instrument_name(row) for row in selected.itertuples()]
         counts = Counter(labels)
         choices = [(label + (' · ' + (getattr(row, 'account', '') or getattr(row, 'portfolio', '') or f'Position {index + 1}')
-                            if counts[label] > 1 else ''), selected.loc[selected.position_id.eq(row.position_id)])
+                            if counts[label] > 1 else ''), selected.loc[selected.position_id.eq(row.position_id)], None)
                    for index, (label, row) in enumerate(zip(labels, selected.itertuples()))]
     # Plotly uses category labels as coordinates. Never place distinct positions
     # or same-named sibling categories on top of each other.
-    counts = Counter(name for name, _ in choices)
-    choices = [(name + (f' ({index + 1})' if counts[name] > 1 else ''), positions)
-               for index, (name, positions) in enumerate(choices)]
+    counts = Counter(name for name, _, _ in choices)
+    choices = [(name + (f' ({index + 1})' if counts[name] > 1 else ''), positions, category)
+               for index, (name, positions, category) in enumerate(choices)]
     rows, freshness = [], {}
-    for name, positions in choices:
+    for name, positions, category in choices:
         from portfolio_app.futures_valuation import summarize_freshness
         freshness[name] = summarize_freshness(positions)
+        if evaluate is not None:
+            gain, twr = evaluate(positions, category)
+            rows.append({'Category':name, 'Cost':gain.capital, 'Gain':gain.amount,
+                         'Return (%)':100*twr if twr is not None else None,
+                         'Coverage':gain.coverage, 'Status':gain.status})
+            continue
         summary = summarize_performance(positions)
         rows.append({"Category": name, "Cost": summary.cost_reporting,
                      "Gain": summary.gain_reporting, "Return (%)": summary.return_pct,

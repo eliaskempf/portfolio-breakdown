@@ -1,4 +1,5 @@
 """Indicator exploration, saved rules and their recorded observations."""
+from portfolio_app.chart_hover import chart_hover
 from dataclasses import replace
 from datetime import date
 from hashlib import sha256
@@ -7,6 +8,7 @@ from uuid import uuid4
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from portfolio_app.background_ui import refresh_allowed
 
 from portfolio_app.charts import style_figure
 from portfolio_app.holdings import DataError
@@ -105,7 +107,7 @@ def _plot(rule, series, *, key='monitoring_chart_', show_condition=True, tracked
     figure.update_layout(height=440, yaxis_title=series.currency, legend=dict(orientation='h'), margin=dict(l=12,r=12,t=20,b=30),
                          meta=dict(symbol=rule.series.symbol, basis=rule.series.basis, start=str(start), end=str(end)))
     with st.container(key='tour_monitoring_chart'):
-        st.plotly_chart(figure, width='stretch')
+        st.plotly_chart(chart_hover(figure), width='stretch')
     historical = end < latest.date()
     row = display.iloc[-1]
     value = row.distance if historical else current.value
@@ -421,7 +423,7 @@ def _history(doc, identity=None):
             valid = [x for x in observations if x['evaluation']['quality'] == 'valid' and x['evaluation']['value'] is not None]
             if valid:
                 chart = go.Figure(go.Scatter(x=[x['recorded_at'] for x in valid], y=[x['evaluation']['value'] for x in valid], mode='markers', name='Observed metric (%)'))
-                st.plotly_chart(style_figure(chart), width='stretch')
+                st.plotly_chart(chart_hover(style_figure(chart)), width='stretch')
     else:
         st.info('No observations recorded yet.')
     st.markdown('**Alert history**')
@@ -478,7 +480,7 @@ def watch_monitoring(directory, *, demo=False, disabled=False):
     def heartbeat():
         if enabled:
             service.schedule()
-        if coordinator.revision(directory) != revision:
+        if coordinator.revision(directory) != revision and refresh_allowed():
             st.rerun()
     heartbeat()
 

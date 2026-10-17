@@ -1,6 +1,6 @@
 """Persistent futures investment presentation over the native account journal."""
 from dataclasses import replace
-from uuid import uuid4
+from uuid import uuid4, uuid5, NAMESPACE_URL
 
 import pandas as pd
 import streamlit as st
@@ -78,11 +78,17 @@ def _edit_investment(directory, journal, revision, investment, key, *, show_togg
     if show_toggle and not st.toggle('Edit investment allocation', key=edit_key+'open'):
         return
     name = st.text_input('Investment name', value=investment.name, key=edit_key+'name')
+    from datetime import date
+    allocation_date = st.date_input('Allocation effective date', max_value=date.today(), key=edit_key+'date')
     capital = _money_input(f'Allocated principal ({investment.currency})', edit_key+'capital', str(investment.allocated_capital))
     st.caption('Enter total contributed principal, excluding investment gains or losses. Changing this attribution moves capital between the investment and unallocated account cash; it does not post a deposit or withdrawal. Initial capital remains fixed.')
     try:
         candidate = assign_investment(journal, replace(investment, name=name.strip(), allocated_capital=capital),
                                       [p.id for p in journal.positions if p.investment_id == investment.id])
+        if capital != investment.allocated_capital:
+            from portfolio_app.security_history import CapitalAllocation
+            candidate = replace(candidate, version=2, capital_history=(*candidate.capital_history,
+                CapitalAllocation('allocation:'+uuid5(NAMESPACE_URL,str(revision)+investment.id+allocation_date.isoformat()+str(capital)).hex, investment.id, allocation_date.isoformat(), capital)))
         _save_review(directory, journal, revision, candidate, edit_key,
                      review_label='Review investment changes', save_label='Save investment changes')
     except (DataError, ValueError) as exc:
@@ -107,6 +113,8 @@ def _create_investment(directory, journal, revision, key):
     position = lookup[identity]
     contract = contracts[position.contract_id]
     name = st.text_input('Investment name', value=f'{contract.product} futures', key=create_key+'name')
+    from datetime import date
+    allocation_date = st.date_input('Initial allocation date', max_value=date.today(), key=create_key+'allocation_date')
     capital = _money_input(f'Initial allocated capital at recorded start ({contract.currency})', create_key+'capital')
     st.caption('Use the capital allocated at the start of the recorded contract history, before its recorded profits, losses and fees. Linked rolls are included automatically. For a snapshot, earlier performance remains unknown.')
     try:
@@ -114,6 +122,9 @@ def _create_investment(directory, journal, revision, key):
         investment_id = st.session_state.setdefault(create_key+'id_' + identity, 'investment:' + uuid4().hex)
         investment = InvestmentSpec(investment_id, name.strip(), position.account_id, contract.currency, capital, capital)
         candidate = assign_investment(journal, investment, identifiers)
+        from portfolio_app.security_history import CapitalAllocation
+        candidate = replace(candidate, version=2, capital_history=(*candidate.capital_history,
+            CapitalAllocation('allocation:'+investment_id, investment_id, allocation_date.isoformat(), capital)))
         _save_review(directory, journal, revision, candidate, create_key,
                      review_label='Review investment changes', save_label='Save investment changes')
     except (DataError, ValueError) as exc:

@@ -1,4 +1,5 @@
 """One searchable exposure table, with on-demand source and fund details."""
+from portfolio_app.chart_hover import chart_hover
 
 from portfolio_app.currency_display import money
 from portfolio_app.ui_help import column_help
@@ -93,7 +94,7 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
             st.caption('Chart: 30 largest absolute contributions. The table retains every asset and percentages use the full selection.')
         figure = style_figure(go.Figure(go.Bar(x=largest[chart_amount], y=largest.Asset, orientation='h')))
         figure.update_layout(height=max(260, 30 * len(largest)), xaxis_title='Exposure', margin=dict(t=12, b=20, l=12, r=12))
-        st.plotly_chart(figure, width='stretch', config=chart_config())
+        st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
     asset = st.session_state.get('exposure_asset_detail')
     if asset not in set(table.asset_id):
         st.session_state.pop('exposure_asset_detail', None)

@@ -5,6 +5,7 @@ from hashlib import sha256
 from pathlib import Path
 
 import streamlit as st
+from portfolio_app.background_ui import refresh_allowed
 
 from portfolio_app.demo import initialize_live_demo, live_demo_pending
 from portfolio_app.etf import validate_fund_listings
@@ -54,6 +55,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     icon = icon_path('favicon.svg')
     st.set_page_config(page_title="Portfolio breakdown", layout="wide", page_icon=str(icon) if icon else None)
     apply_style()
+    from portfolio_app.chart_inspection import install_chart_inspection
+    install_chart_inspection()
     if intro:
         from portfolio_app.intro import render_startup_intro
         if not render_startup_intro():
@@ -101,6 +104,14 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     reporting_currency = currency_settings.reporting_currency
     st.session_state['reporting_currency'] = reporting_currency
     historical = historical_for(data_dir, demo=demo and not (data_dir / '.live-demo').exists())
+    if (data_dir / 'history-observations.json').exists():
+        from portfolio_app.history_observations import ObservationFX, load_observations as load_historical_observations
+        try:
+            historical = ObservationFX(load_historical_observations(data_dir)[0], historical)
+        except DataError as exc:
+            st.error(str(exc))
+            mark_view_ready()
+            return
     display_settings = None
     if settings_panel is not None:
         with settings_panel:
@@ -112,7 +123,11 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     demo_pending = demo and live_demo_pending(data_dir)
     from portfolio_app.import_ui import render_import_next_steps
     render_import_next_steps()
-    if demo and not demo_pending:
+    if demo and (data_dir / '.market-history-demo').exists():
+        st.caption('History demo · Invented holdings and transactions · Downloaded market prices')
+    elif demo and (data_dir / '.history-demo').exists():
+        st.caption('History demo · All holdings, transactions and prices are invented · Edits stay in this playground')
+    elif demo and not demo_pending:
         st.caption("Offline demo · Invented prices, buy-ins and ETF weights · Resets on restart" if offline_demo else
                    "Demo · Invented quantities, targets and buy-ins · Public market data · Resets on restart")
     from portfolio_app.portfolio_exposure_ui import render_exposure_targets, render_leverage_editor
@@ -125,6 +140,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     sandbox, leverage = leverage_context.sandbox, leverage_context.settings
     journal = leverage_context.journal
     actual_active = bool(journal and journal.accounts)
+    security_active = bool(journal and any(b.active for b in journal.securities))
     from portfolio_app.settlement_archive_ui import watch_settlements
     watch_settlements(data_dir,journal,demo=demo,force=refresh)
     actual_future = leverage_context.future
@@ -141,6 +157,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     try:
         inputs = load_inputs(data_dir)
         snapshot, allocation, classifications, funds = inputs
+        if snapshot.holdings.attrs.get('history_journal_revision') != leverage_context.journal_revision:
+            st.rerun()
         holdings = snapshot.holdings
         validate_fund_listings(holdings, funds)
     except DataError as exc:
@@ -171,7 +189,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if render_currency_dialog(data_dir, snapshot, currency_settings, price_service or prices_for(data_dir), historical):
             mark_view_ready()
             return
-    if holdings.empty and not demo and not feature_active:
+    if holdings.empty and not demo and not feature_active and not security_active:
         from portfolio_app.onboarding_ui import render_welcome, render_guided_setup
         if render_welcome(demo_available=demo_dir is not None):
             mark_view_ready()
@@ -233,7 +251,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     from portfolio_app.monitoring_ui import apply_monitoring_route
     apply_monitoring_route()
     if 'main_tabs' not in st.session_state:
-        st.session_state['main_tabs'] = 'Positions' if holdings.empty and not feature_active else 'Overview'
+        st.session_state['main_tabs'] = 'Positions' if holdings.empty and not feature_active and not security_active else 'Overview'
     from portfolio_app.tour import prepare_tour, render_tour
     prepare_tour()
     tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or actual_active else []) + ['Monitoring']
@@ -288,7 +306,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         request_position(position_id, editing=editing)
     if overview.open and not unsupported_records:
         with overview:
-            if valued.empty and not feature_active:
+            if valued.empty and not feature_active and not security_active:
                 empty_overview()
             else:
                 if allocation:
@@ -319,6 +337,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                 def open_capital_targets():
                     st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Category targets')
                 render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_capital_targets=open_capital_targets, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
+                                          current_valued=valued,
                                           leverage_enabled=(leverage.enabled or actual_active) and leverage_supported,
                                           percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
                                           edit_position=lambda position_id: open_valued_position(position_id, editing=True),
@@ -395,7 +414,7 @@ def render_market_status(market_workspace, market_revision, *, show_caption=True
     pending = market_coordinator.pending(market_workspace)
     @st.fragment(run_every=.5 if pending else None)
     def market_status():
-        if market_coordinator.revision(market_workspace) != market_revision:
+        if market_coordinator.revision(market_workspace) != market_revision and refresh_allowed():
             st.rerun()
         if show_caption and market_coordinator.pending(market_workspace):
             st.caption('Updating prices in the background · Saved quotes remain visible with their original dates')
