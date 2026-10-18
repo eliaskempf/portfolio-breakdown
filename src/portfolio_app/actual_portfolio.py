@@ -78,7 +78,7 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
         for identity, observation in marks.items():
             balance = state.positions.get(identity)
             if balance and observation.contract_id == balance.contract.id:
-                valuations[identity] = freshness(observation, now=now, closed=not balance.quantity)
+                valuations[identity] = freshness(observation, now=now, contract=balance.contract, closed=not balance.quantity)
     accounts = {a.id: a.name for a in journal.accounts}
     linked = {(x.account_id, x.currency): x.position_id for x in journal.cash_links}
     original = valued.set_index('position_id')
@@ -157,4 +157,7 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
     if rows:
         result = pd.concat([result, pd.DataFrame(rows)], ignore_index=True)
     result.attrs = dict(valued.attrs, reporting_currency=reporting_currency, actual_accounts=True, account_fx_rates=rates)
+    result.attrs['futures_freshness'] = {identity: value.context for identity, value in valuations.items()
+                                      if value.context is not None}
+    result.attrs['futures_freshness_names'] = result.set_index('position_id')['name'].to_dict()
     return result

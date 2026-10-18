@@ -1,11 +1,11 @@
 """Shared native chart, history controls and loading states for position dialogs."""
-from portfolio_app.chart_hover import chart_hover
+from portfolio_app.chart_hover import chart_hover, money_history_axes
 from dataclasses import replace
 
 import plotly.graph_objects as go
 import streamlit as st
 
-from portfolio_app.charts import chart_config, style_figure
+from portfolio_app.charts import chart_config, style_figure, PALETTE
 from portfolio_app.currency_display import reporting_currency
 from portfolio_app.history import HistoryService, DemoHistoryProvider, PERIODS
 from portfolio_app.market_data import history_for
@@ -24,7 +24,7 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
     initial = service.get(ticker, saved_period, manual=manual)
     native = initial.currency or expected_currency or native_currency
     with st.container(horizontal=True, horizontal_alignment='distribute', vertical_alignment='bottom'):
-        period = st.segmented_control('Period', list(PERIODS), default='1Y', required=True, key=key+'period') or '1Y'
+        period = st.segmented_control('Period', list(PERIODS), default='1Y', required=True, key=key+'period', label_visibility='collapsed') or '1Y'
         history_currency = reporting_currency()
         if not index_points and native and native != reporting_currency():
             history_currency = st.selectbox('Currency', [reporting_currency(), native], key=key+'currency_code', width=110,
@@ -71,8 +71,10 @@ def _draw_history(result, *, index_points, compact, caption):
     if result.prices:
         units = 'Index points' if index_points else result.currency
         figure = style_figure(go.Figure(go.Scatter(x=result.dates, y=result.prices, mode='lines',
-            name='Price', line=dict(color='#5470c6', width=2), hovertemplate='Price: %{y:,.2f} '+units+'<extra></extra>')))
-        figure.update_layout(height=300, yaxis_title=units, margin=dict(l=12, r=12, t=12, b=30))
+            name='Price', line=dict(color=PALETTE[0], width=2.5), hovertemplate='Price: %{y:,.2f} '+units+'<extra></extra>')))
+        figure.update_layout(height=340, yaxis_title=units, margin=dict(l=0, r=0, t=12, b=0))
+        if not index_points:
+            money_history_axes(figure, result.currency)
         st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
         if not compact:
             st.caption(caption.format(currency=result.currency))

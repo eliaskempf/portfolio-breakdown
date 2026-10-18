@@ -29,6 +29,8 @@ def known_category_performance(displayed, holdings, config, journal, observation
               and b.position_id in balances and not balances[b.position_id].quantity]
     comparison = pd.concat([displayed, pd.DataFrame(closed)], ignore_index=True) if closed else displayed
 
+    comparison.attrs = dict(displayed.attrs)
+
     def evaluate(rows, category):
         if category is not None:
             scope = category_history_scope(journal, holdings, config, category, displayed=displayed)

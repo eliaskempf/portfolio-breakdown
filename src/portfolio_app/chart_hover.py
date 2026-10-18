@@ -58,3 +58,14 @@ def chart_hover(figure):
             value = '%{y:,.2f}' + _suffix(yaxis.title.text or '')
             trace.hovertemplate = (label + ': ' + value + '%{_xother}' if unified else '%{x}<br>' + label + ': ' + value) + '<extra></extra>'
     return figure
+
+
+def money_history_axes(figure, currency):
+    """Shared monetary units for personal and instrument history charts."""
+    from portfolio_app.money import currency_symbol
+    symbol = currency_symbol(currency)
+    figure.update_yaxes(title_text=None, tickprefix=symbol, tickformat=',.2f')
+    for trace in figure.data:
+        if trace.type in ('scatter', 'scattergl') and trace.hoverinfo not in ('skip', 'none'):
+            trace.hovertemplate = escape(trace.name or 'Value') + ': ' + symbol + '%{y:,.2f}<extra></extra>'
+    return figure

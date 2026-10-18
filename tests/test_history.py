@@ -104,3 +104,9 @@ render_market_history('INVENTED',Path(st.session_state.directory),key='synthetic
     for units in ('USD','EUR'):
         app.selectbox[0].set_value(units).run()
         assert not app.exception and len(app.get('plotly_chart')) == 1
+        import json
+        figure = json.loads(app.get('plotly_chart')[0].proto.spec)
+        symbol = '$' if units == 'USD' else '€'
+        assert figure['layout']['yaxis']['tickprefix'] == symbol
+        assert 'Price: ' + symbol in figure['data'][0]['hovertemplate']
+        assert figure['layout']['height'] == 340

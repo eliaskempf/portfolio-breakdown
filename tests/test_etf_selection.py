@@ -84,7 +84,7 @@ def test_stock_view_respects_individual_fund_expansion(multi_fund_workspace):
     app = launch(multi_fund_workspace)
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     by_label(app.toggle, 'Synthetic World').set_value(False).run()
-    by_label(app.checkbox, 'Show stock-only company exposure').check().run()
+    by_label(app.get('button_group'), 'Exposure view').set_value('Companies').run()
     assert not app.exception and not app.error
     companies = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total' in item.value)
     assert companies['Total'].sum() == 125.
@@ -127,7 +127,7 @@ def test_reviewed_company_mapping_reaches_allocation_and_stock_ui(multi_fund_wor
     company = effective(app).loc[lambda x: x.Asset == 'Invented Alpha'].iloc[0]
     assert company['Direct'] == 100.
     assert company['ETF-derived'] == 100.
-    by_label(app.checkbox, 'Show stock-only company exposure').check().run()
+    by_label(app.get('button_group'), 'Exposure view').set_value('Companies').run()
     assert not app.exception
     companies = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total' in item.value)
     assert companies['Total'].tolist() == [200.]
@@ -152,7 +152,7 @@ def test_estimated_merge_review_undo_restore_and_reload(multi_fund_workspace):
     assert not app.exception and not app.error
     assert not effective(app).Asset.str.endswith(' *').any()
     assert len(effective(app).loc[lambda x: x.Asset.str.contains('Photon')]) == 2
-    by_label(app.checkbox, 'Show stock-only company exposure').check().run()
+    by_label(app.get('button_group'), 'Exposure view').set_value('Companies').run()
     stock = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total' in item.value)
     assert len(stock) == 3  # The original direct stock plus two separate fund stocks.
     reloaded = launch(multi_fund_workspace)

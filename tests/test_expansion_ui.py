@@ -58,9 +58,9 @@ def test_optional_stock_view_and_manual_position_entry(tmp_path, sample_data_dir
     workspace(tmp_path, sample_data_dir)
     app = launch(tmp_path)
     activate(app, 'Exposure')
-    by_label(app.checkbox, 'Show stock-only company exposure').check().run()
+    by_label(app.get('button_group'), 'Exposure view').set_value('Companies').run()
     assert not app.exception
-    assert any('stock-universe total is unknown' in item.value for item in app.info)
+    assert any('stock-universe percentages unavailable' in item.value for item in app.caption)
     position_action(app, 'Add position')
     by_label(app.button, 'Enter manually').click().run()
     by_label(app.text_input, 'Instrument name').set_value('Invented physical holding')

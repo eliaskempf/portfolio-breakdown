@@ -1,5 +1,5 @@
 """Manual collateral ownership and requirement coverage for actual accounts."""
-from dataclasses import asdict, replace
+from dataclasses import replace
 from datetime import date
 from hashlib import sha256
 from uuid import uuid4
@@ -20,7 +20,44 @@ def _amount(label, key, default='0'):
     return decimal(st.text_input(label, value=default, key=key), label)
 
 
-def _review(directory, original, revision, candidate, holdings_revision, key):
+def _requirement_row(item, holding_names):
+    return {'Date': item.as_of, 'Currency': item.currency,
+            'Initial requirement': str(item.initial),
+            'Maintenance requirement': str(item.maintenance),
+            'Holding': holding_names.get(item.position_id, 'Unavailable holding' if item.position_id else 'Account total'), 'Source': item.source}
+
+
+def _review_rows(original, proposed, holding_names):
+    account_names = {account.id: account.name for account in proposed.accounts}
+    reservations = replay(original).reservations
+    rows = []
+    for event in proposed.events:
+        if event in original.events:
+            continue
+        reservation = reservations.get(event.collateral_id)
+        holding_id = event.holding_id or (reservation.holding_id if reservation else '')
+        row = {'Date': event.date,
+               'Action': {'reserve': 'Reserve collateral', 'release': 'Release reservation',
+                          'debt_open': 'Adopt existing liability'}.get(event.kind, event.kind),
+               'Account': account_names.get(event.account_id, 'Unknown account'),
+               'Holding': holding_names.get(holding_id, 'Cash' if not holding_id else 'Unavailable holding'),
+               'Currency': reservation.currency if reservation else event.currency,
+               'Quantity / native cash': str(reservation.amount if reservation else event.amount)}
+        if event.kind == 'reserve':
+            row['Haircut (%)'] = float(event.haircut * 100)
+        if event.note:
+            row['Note'] = event.note
+        rows.append(row)
+    rows += [{'Action': 'Link holding to account', 'Account': account_names[item.account_id],
+              'Holding': holding_names.get(item.position_id, 'Unavailable holding')}
+             for item in proposed.holding_links if item not in original.holding_links]
+    rows += [dict(Action='Record margin requirement', Account=account_names[item.account_id],
+                  **_requirement_row(item, holding_names))
+             for item in proposed.margin_requirements if item not in original.margin_requirements]
+    return rows
+
+
+def _review(directory, original, revision, candidate, holdings_revision, key, holding_names):
     if st.button('Review collateral changes', key=key+'review'):
         replay(candidate)
         st.session_state[key+'pending'] = candidate, revision, holdings_revision
@@ -29,12 +66,7 @@ def _review(directory, original, revision, candidate, holdings_revision, key):
         return
     proposed, expected, expected_holdings = pending
     st.markdown('**Reviewed account changes**')
-    changed = [asdict(item) for item in proposed.events if item not in original.events]
-    changed += [dict(Action='Account holding binding', **asdict(item))
-                for item in proposed.holding_links if item not in original.holding_links]
-    changed += [dict(Action='Margin requirement', **asdict(item))
-                for item in proposed.margin_requirements if item not in original.margin_requirements]
-    st.dataframe(pd.DataFrame(changed).astype(str), hide_index=True)
+    st.dataframe(pd.DataFrame(_review_rows(original, proposed, holding_names)).fillna(''), hide_index=True)
     st.caption('Save records the reviewed changes. Review again after changing inputs.')
     if st.button('Save reviewed collateral changes', type='primary', key=key+'save'):
         try:
@@ -73,6 +105,7 @@ def render_account_margin(directory, journal, revision, holdings, valued, report
         from portfolio_app.account_observations import load_observations
         _, fx_rates, _ = load_observations(directory)
     names = {account.id: account.name for account in journal.accounts}
+    holding_names = dict(zip(holdings.position_id, holdings.name))
     account = st.selectbox('Collateral account', list(names), format_func=names.get, key=key+'account')
     from portfolio_app.monitoring_ui import request_monitoring
     st.button('Create account alert', key=key+'monitoring', on_click=request_monitoring, kwargs={'account':account})
@@ -98,7 +131,9 @@ def render_account_margin(directory, journal, revision, holdings, valued, report
         st.caption('Pending cash is excluded from collateral. Loans remain separate recorded liabilities; '
                    'entered requirements must reflect the obligations you intend to compare.')
         if coverage.collateral:
-            st.dataframe(pd.DataFrame([{'Reservation': row.id, 'Holding': row.holding_id or 'Cash',
+            reservations = replay(journal).reservations
+            st.dataframe(pd.DataFrame([{'Holding': holding_names.get(row.holding_id, 'Cash' if not row.holding_id else 'Unavailable holding'),
+                'Unit': 'Shares / units' if row.holding_id else reservations[row.id].currency,
                 'Quantity / native cash': str(row.reserved), 'Haircut (%)': float(row.haircut*100),
                 f'Eligible ({denomination})': float(row.eligible_value) if row.eligible_value is not None else None,
                 'Status': row.issue or 'Known'} for row in coverage.collateral]), hide_index=True)
@@ -106,7 +141,7 @@ def render_account_margin(directory, journal, revision, holdings, valued, report
         st.warning(str(exc))
     requirements = [item for item in journal.margin_requirements if item.account_id == account]
     if requirements:
-        st.dataframe(pd.DataFrame([asdict(item) for item in requirements]).astype(str), hide_index=True)
+        st.dataframe(pd.DataFrame([_requirement_row(item, holding_names) for item in requirements]), hide_index=True)
     action = st.selectbox('Collateral action', ('Reserve collateral', 'Release reservation', 'Link holding to account',
         'Record margin requirement', 'Adopt existing liability'), key=key+'action')
     action_key = key+account+'_'+str(('Reserve collateral', 'Release reservation', 'Link holding to account',
@@ -139,7 +174,13 @@ def render_account_margin(directory, journal, revision, holdings, valued, report
             if not reservations:
                 st.info('No reservations to release in this account.')
                 return
-            selected = st.selectbox('Reservation to release', list(reservations), key=action_key+'release')
+            labels = {}
+            for index, (identity, item) in enumerate(reservations.items(), 1):
+                name = holding_names.get(item.holding_id, 'Unavailable holding') if item.holding_id else f'{item.currency} cash'
+                amount = f'{item.amount:g} units' if item.holding_id else format_money(item.amount, item.currency)
+                labels[identity] = f'{index}. {name} · {amount} · {item.haircut:.0%} haircut'
+            selected = st.selectbox('Reservation to release', list(reservations), format_func=labels.get,
+                                    key=action_key+'release')
             candidate = reserve_collateral(journal, Event(uuid4().hex, day.isoformat(), 'release',
                 account_id=account, collateral_id=selected,
                 sequence=max((e.sequence for e in journal.events), default=0)+1), holdings)
@@ -170,6 +211,6 @@ def render_account_margin(directory, journal, revision, holdings, valued, report
                 candidate = reserve_collateral(candidate, Event(uuid4().hex, day.isoformat(), 'reserve',
                     account_id=account, currency=unit, amount=amount, holding_id=holding_id, haircut=haircut,
                     collateral_id=uuid4().hex, sequence=max((e.sequence for e in journal.events), default=0)+1), holdings)
-        _review(directory, journal, revision, candidate, snapshot.revision, action_key)
+        _review(directory, journal, revision, candidate, snapshot.revision, action_key, holding_names)
     except (DataError, ValueError) as exc:
         st.info(str(exc))

@@ -59,6 +59,8 @@ def enter(page, url, manual=False):
         page.get_by_role('button', name='Skip setup', exact=True).click()
     welcome = page.get_by_role('dialog', name='Welcome to Breakdown!', exact=True)
     playwright.expect(welcome).to_be_visible()
+    playwright.expect(page.get_by_role('combobox', name='Portfolio workspace', exact=True)).to_have_value(
+        'My portfolio' if manual else 'Demo portfolio')
     welcome.get_by_role('button', name='Take the tour', exact=True).click()
     return step(page, 0)
 

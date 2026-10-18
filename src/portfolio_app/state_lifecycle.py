@@ -59,10 +59,24 @@ def analytics_mounted(key, state):
 def exposure_mounted(key, state):
     if not tab('Exposure')(key, state):
         return False
-    if key in {'exposure_stock_enabled', 'exposure_stock_excluded'}:
-        return state.get('exposure_stock_open', False)
+    if key == 'exposure_stock_excluded':
+        return state.get('exposure_view') == 'Companies'
     if key == 'exposure_show_price_details':
         return state.get('exposure_sources_open', False)
+    return True
+
+
+def accounts_mounted(key, state):
+    if '_journal_' not in key or not tab('Futures')(key, state):
+        return False
+    base, field = key.split('journal_', 1)
+    if state.get(base+'view', 'Positions & transactions') != 'Positions & transactions':
+        return False
+    if field.startswith('edit_'):
+        selected = state.get(base+'journal_selected', '')
+        prefix = 'edit_'+selected+'_'
+        return field.startswith(prefix) and (field == prefix+'action' or
+            state.get(base+'journal_'+prefix+'action') == 'Correct entry')
     return True
 
 
@@ -119,8 +133,12 @@ FEATURES = (
         inputs=Keys(predicate=lambda key: key.endswith(('_view', '_benchmark', '_years', '_accounts')) or '_columns_' in key),
         mounted=analytics_mounted, tour=Keys(prefixes=('analytics_',))),
     FeatureState('actual accounts', Keys(prefixes=('accounts_',)),
-        inputs=Keys(prefixes=('accounts_input_',)),
+        inputs=Keys(prefixes=('accounts_input_',), predicate=lambda key: '_journal_' in key and key.endswith(
+            ('accounts', 'positions', 'actions', 'since', 'until', 'selected', 'action', 'date', 'note',
+             'position', 'account', 'currency', 'destination', 'quantity', 'price', 'amount'))),
+        mounted=accounts_mounted,
         currency=Keys(prefixes=('accounts_',))),
+    FeatureState('leveraged funds', Keys(prefixes=('leveraged_funds_',))),
     FeatureState('generalized studies', Keys(prefixes=('general_study_', 'generalized_', 'study_')),
         currency=Keys(prefixes=('general_study_', 'generalized_', 'study_'))),
     FeatureState('futures', Keys(prefixes=('futures_', 'future_', 'leverage_', 'funding_')),

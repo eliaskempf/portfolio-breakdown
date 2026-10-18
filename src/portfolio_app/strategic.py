@@ -135,10 +135,11 @@ def strategic_performance(valued, config, bucket="", *, evaluate=None):
     counts = Counter(name for name, _, _ in choices)
     choices = [(name + (f' ({index + 1})' if counts[name] > 1 else ''), positions, category)
                for index, (name, positions, category) in enumerate(choices)]
-    rows, freshness = [], {}
+    rows, freshness, freshness_members = [], {}, {}
     for name, positions, category in choices:
         from portfolio_app.futures_valuation import summarize_freshness
         freshness[name] = summarize_freshness(positions)
+        freshness_members[name] = tuple(positions.position_id)
         if evaluate is not None:
             gain, twr = evaluate(positions, category)
             rows.append({'Category':name, 'Cost':gain.capital, 'Gain':gain.amount,
@@ -155,4 +156,5 @@ def strategic_performance(valued, config, bucket="", *, evaluate=None):
     for column in ("Cost", "Gain", "Return (%)"):
         result[column] = pd.to_numeric(result[column], errors="coerce")
     result.attrs['valuation_freshness'] = freshness
+    result.attrs['valuation_members'] = freshness_members
     return result

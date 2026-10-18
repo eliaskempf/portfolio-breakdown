@@ -22,8 +22,12 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                 image = f'<img alt="" src="data:image/svg+xml;base64,{b64encode(icon.read_bytes()).decode()}" />' if icon else ''
                 st.html(f'<div class="app-brand">{image}<span>Breakdown</span></div>')
             if demo_dir is not None:
+                # Keep the widget default stable across reruns. Changing index
+                # from 0 to None lets the browser clear an implicit selection.
+                if st.session_state.get('active_portfolio') is None:
+                    st.session_state['active_portfolio'] = 'Demo portfolio' if demo else 'My portfolio'
                 workspace = st.selectbox('Portfolio workspace', ['My portfolio', 'Demo portfolio'], help='Switch between your local portfolio and the separate demonstration workspace.',
-                    index=None if 'active_portfolio' in st.session_state else (1 if demo else 0), key='active_portfolio', label_visibility='collapsed', width=200, disabled=touring)
+                    index=None, key='active_portfolio', label_visibility='collapsed', width=200, disabled=touring)
                 demo = workspace == 'Demo portfolio'
                 if demo and not touring:
                     data_dir = demo_dir

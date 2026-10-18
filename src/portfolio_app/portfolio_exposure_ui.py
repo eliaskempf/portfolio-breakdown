@@ -9,7 +9,7 @@ from portfolio_app.charts import chart_config
 from portfolio_app.charts import style_figure
 from portfolio_app.exposure_targets import ExposureTargets, exposure_gaps, load_exposure_targets, save_exposure_targets
 from portfolio_app.holdings import DataError
-from portfolio_app.leverage_settings import FundFactor, LeverageSettings, MarginLiability, load_leverage_settings, save_leverage_settings, requires_leverage
+from portfolio_app.leverage_settings import LeverageSettings, load_leverage_settings, save_leverage_settings, requires_leverage
 from portfolio_app.strategic import category_labels
 
 
@@ -18,7 +18,7 @@ def render_exposure_coverage(rows, sources, *, field='market_exposure_reporting'
     missing = rows.loc[rows[field].isna()]
     if missing.empty:
         return
-    st.warning('Exposure is partially known. Known contributions remain visible; total-exposure shares and leverage ratios need complete coverage.')
+    st.caption('Partial exposure', help='Known contributions remain visible. Total-exposure shares and leverage ratios need complete coverage.')
     details = missing[['source_position_id', 'asset_name', 'status']].drop_duplicates().copy()
     names = sources.set_index('position_id')['name']
     details['source_position_id'] = details.source_position_id.map(names)
@@ -26,7 +26,7 @@ def render_exposure_coverage(rows, sources, *, field='market_exposure_reporting'
         'Unknown composition': 'Constituent exposure cannot be determined from its reported market value.',
         'Missing valuation': 'Source price or currency conversion is unavailable.',
     })
-    with st.expander('Why is exposure incomplete?', expanded=len(details) <= 5):
+    with st.expander('Exposure coverage details'):
         st.dataframe(details.rename(columns={'source_position_id': 'Source', 'asset_name': 'Unresolved asset',
             'status': 'Reason'}).head(20), hide_index=True, width='stretch')
         if len(details) > 20:
@@ -34,7 +34,7 @@ def render_exposure_coverage(rows, sources, *, field='market_exposure_reporting'
         st.caption('A known fund price does not establish exposure for every constituent. Unresolved amounts are neither zero nor missing ETF prices.')
 
 
-def render_equity_exposure_metric(result, *, market=False, bucket_ids=None, freshness=None):
+def render_equity_exposure_metric(result, *, market=False, bucket_ids=None, freshness=None, freshness_rows=None):
     from portfolio_app.metric_interactions import toggle_metric_value
     gross = st.session_state.get('exposure_multiple_mode', 'net') == 'gross'
     basis = 'market' if market else 'equity'
@@ -47,15 +47,20 @@ def render_equity_exposure_metric(result, *, market=False, bucket_ids=None, fres
         amount = result.market_amount(gross=gross) if market else result.gross_exposure if gross else result.net_exposure
         calculation = (f'{format_money(amount,result.reporting_currency)} exposure / '
                        f'{format_money(result.net_equity,result.reporting_currency)} net equity = {value:.4f}×. ')
-    with st.container(key='equity_exposure_metric'):
-        st.metric(label, text,
-                  help=calculation+'Click to switch net/gross. Net offsets longs and shorts; gross adds absolute exposures before offsets. '
-                       'Exposure / selected capital, including allocated futures cash and cumulative P&L. '
-                       'Futures contribute contract notional to exposure; their allocated cash is counted only in capital. '
-                       'Portfolio debt is included only at portfolio scope; category leverage is unavailable with unassigned debt. '
-                       'Gold and crypto count; cash contributes zero exposure.')
-        if freshness and freshness[0]:
-            st.caption(freshness[0], help=freshness[1])
+    from portfolio_app.freshness_ui import render_freshness
+    from portfolio_app.futures_valuation import summarize_freshness
+    def render(rows):
+        current_freshness = summarize_freshness(rows) if rows is not None else freshness
+        with st.container(key='equity_exposure_metric'):
+            st.metric(label, text,
+                      help=calculation+'Click to switch net/gross. Net offsets longs and shorts; gross adds absolute exposures before offsets. '
+                           'Exposure / selected capital, including allocated futures cash and cumulative P&L. '
+                           'Futures contribute contract notional to exposure; their allocated cash is counted only in capital. '
+                           'Portfolio debt is included only at portfolio scope; category leverage is unavailable with unassigned debt. '
+                           'Gold and crypto count; cash contributes zero exposure.')
+            if current_freshness and current_freshness[0]:
+                st.caption(current_freshness[0], help=current_freshness[1])
+    render_freshness(freshness_rows, render)
     def toggle():
         st.session_state['exposure_multiple_mode'] = 'net' if gross else 'gross'
     toggle_metric_value(label=f'Show {"net" if gross else "gross"} {basis} exposure',
@@ -196,34 +201,10 @@ def render_exposure_targets(directory, config, result):
 
 def render_leverage_editor(directory, valued, *, future=None):
     with st.expander('Recorded liabilities & leveraged funds'):
-        settings, revision = load_leverage_settings(directory, future=future)
-        st.caption('Record current EUR debt separately from owned assets. Do not record a liability twice. '
-                   'Blank debt balances mean unknown. Factors apply only to explicitly selected funds; no ticker/name inference. '
-                   'Document a current daily equity factor and date, or leave its factor blank for unknown embedded leverage.')
-        from dataclasses import asdict
-        with st.form('exposure_leverage_form_' + str(revision)):
-            debts = st.data_editor(pd.DataFrame([asdict(x) for x in settings.liabilities], columns=['id', 'name', 'balance_eur', 'account']),
-                num_rows='dynamic', hide_index=True, key='exposure_debts_' + str(revision), column_config={'balance_eur': st.column_config.NumberColumn(min_value=0.)})
-            positions = valued.loc[valued.get('instrument_type', pd.Series('', index=valued.index)).eq('etf')]
-            factors = st.data_editor(pd.DataFrame([asdict(x) for x in settings.fund_factors], columns=['position_id', 'factor', 'method', 'as_of', 'benchmark', 'proxy_position_id', 'reset_convention']),
-                num_rows='dynamic', hide_index=True, key='exposure_factors_' + str(revision),
-                column_config={'position_id': st.column_config.SelectboxColumn(options=positions.position_id.tolist()), 'factor': st.column_config.NumberColumn()})
-            st.caption('Fund source IDs: ' + '; '.join(f'{r.position_id}: {r.name}' for r in positions.itertuples()))
-            save = st.form_submit_button('Save leverage settings')
-        if save:
-            try:
-                def clean(frame):
-                    return [{k: None if pd.isna(v) else v for k, v in row.items()} for row in frame.to_dict('records')]
-                liabilities = tuple(MarginLiability(**row) for row in clean(debts))
-                adapters = tuple(FundFactor(**{**row, 'method': row['method'] or '', 'as_of': row['as_of'] or ''}) for row in clean(factors))
-                if {x.position_id for x in adapters} - set(positions.position_id):
-                    raise DataError('Choose an existing fund source position.')
-                from dataclasses import replace
-                save_leverage_settings(directory, replace(settings, liabilities=liabilities, fund_factors=adapters), revision)
-            except (DataError, OSError, TypeError) as exc:
-                st.error(str(exc))
-            else:
-                st.rerun()
+        from portfolio_app.liabilities_ui import render_liabilities
+        from portfolio_app.leveraged_funds_ui import render_leveraged_funds
+        render_liabilities(directory, future=future)
+        render_leveraged_funds(directory, valued)
 
 
 def render_policy_settings(directory, settings, config, *, future=None, planning=False):

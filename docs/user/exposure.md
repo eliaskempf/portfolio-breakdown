@@ -191,6 +191,35 @@ coverage is partial and never rescaled. This fund's benchmark does not include
 XEON's +8.5bp spread. A changed provider identity, benchmark, currency or replication
 method requires review rather than silently changing the economic interpretation.
 
+## Company ownership
+
+Choose **Exposure → Companies** for direct shares and supported equity holdings
+inside funds. No extra Show checkbox is required. Source scope, individual fund
+choices and company identity rules still apply. Additional category exclusions
+remove source positions before look-through. Searching the displayed companies
+does not change percentage denominators.
+
+This is a funded-ownership view: stock-universe percentages include unresolved
+equity residuals, while portfolio percentages use the selected source scope
+before the additional exclusions. Unknown totals leave percentages unavailable.
+Coverage stays beside the results; residuals, sources and identity explanations
+are expandable. Futures notional is not treated as funded company ownership.
+
+## Liabilities and leveraged funds
+
+In **Rebalance → Targets**, legacy EUR workspaces expose **Recorded liabilities
+& leveraged funds**. Add or select a liability by name, enter its account/lender
+and outstanding EUR balance, then save. Blank means unknown; zero means a known
+zero balance. Editing preserves its identity. Removal requires selecting
+**Remove this liability**. Debt adopted into the account journal is managed under
+**Futures → Cash & financing** instead.
+
+The same named ETF editor is used for fund factors throughout the app. Select
+the held fund and optional unlevered reference by name; retain the dated source,
+signed factor and reset convention. Saved factors whose holdings are unavailable
+remain visible for review and explicit removal. Other liabilities, factors and
+target policies are preserved when saving an individual record.
+
 ## Review company merges and display groups {#merges}
 
 **Company merges** uses shared security identities and reviewed equivalences.

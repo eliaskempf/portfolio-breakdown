@@ -244,6 +244,23 @@ app does not calculate taxes, infer a jurisdiction or give tax advice. Recorded
 transactions can be reversed while retaining their original facts; dependent
 entries may need correction first.
 
+Under **Positions & transactions → Recorded transactions**, filter by account,
+investment/contract, action or date. The journal shows readable names, applicable
+amounts, quantities, prices and correction status. A dated claim is distinct from
+a received cash payment. Internal identifiers and source details are under
+**Entry provenance**.
+
+Select **Transaction details → Correct entry** to edit prefilled facts, compare
+the original and replacement, and choose **Review correction → Save correction**.
+The replacement cancels the original's accounting effect and supplies corrected
+facts in one revision-checked write; both records remain in history. Changed
+inputs or a concurrently updated journal require another review. **Cancel
+correction** discards the draft. **Reverse only** explicitly removes an entry's
+effect without a replacement. Invalid dependent histories block saving and show
+later entries to review. Linked rolls and collateral entries direct you to their
+source workflows rather than allowing partial edits. These actions never confirm
+securities-history completeness.
+
 For example, with invented values: €20,000 cash, two contracts at 1,000 points,
 €10 per point and €8 fees leave €19,992 cash. A mark of 1,010 creates €200
 unsettled P&L, so equity is €20,192. Posting that settlement leaves €20,192 cash
@@ -278,16 +295,33 @@ remain at a dated settlement or recorded price. This public website is not a
 guaranteed API or a promise of real-time data.
 
 Routine delayed quotes show no age label; their source time and delay remain in
-the value/P&L help. Compact labels beside affected values show **Stale**, **Settlement**,
-**Manual**, **Recorded**, **Revised**, or **No price**. Conflicting prices at the
+the value/P&L help. Settlement and market-closed details use a small **ⓘ** beside
+the position name; click it or use the keyboard to see the date and market status.
+Technical source details remain in the position view. Other affected
+values retain **Stale**, **Manual**, **Recorded**, **Revised**, or **No price** labels. Conflicting prices at the
 same quote time retain the first observation with neutral styling until a newer
-quote or manual mark resolves valuation. Delayed trade quotes older than 30 minutes
-are stale. Date-only marks and recorded prices always disclose their business
-date. Stale/fallback-dependent P&L retains its value and sign with neutral styling.
+quote or manual mark resolves valuation. Quotes become stale after 30 minutes
+of scheduled trading time: closed overnight hours, weekends and published exchange
+holidays do not age a recent closing quote. An already-old quote stays stale.
+The latest session's official settlement also retains normal gain coloring while
+the market is closed; it is qualified again when trading reopens. Manual marks
+and execution-price fallbacks remain qualified.
+
+The exemption uses the curated Eurex product schedules and published 2026–2030
+common holidays (FTSE 100-specific closures are verified for 2026 only). Currency
+payment holidays are not exchange closures. Unknown schedules and expiry days
+fall back to the strict wall-clock rule. See the
+[Eurex calendar](https://www.eurex.com/ex-en/trade/trading-calendar/holiday-regulations).
+Date-only marks and recorded prices always disclose their business date. Stale/fallback-dependent P&L retains its value and sign with neutral styling.
 Portfolio and category summaries indicate affected futures; closed contract legs
 do not make an open investment stale. Expand a row's freshness label, or open its
 help, for source time, retrieval time, declared delay and any refresh failure.
 Downloading the same observation again never makes its price time newer.
+Freshness labels and gain coloring update in place as time passes. Background
+checks leave the selected view and open position dialog intact. New prices and
+settlements update portfolio amounts after the dialog closes; its displayed
+observation continues to age while it is open. Source failures and recovery
+update in Notifications without refreshing the page.
 
 **Futures → Marks & FX** keeps manual marks and FX separate from transactions.
 Fetch an exact-contract settlement or save a dated manual mark and source.
@@ -435,6 +469,14 @@ and broker cash by EUR/USD/GBP, opening FX, optional dedicated noncash collatera
 margin, credit/debit interest, execution costs and manually scheduled payments.
 Do not include the same scenario asset in both cash and noncash collateral.
 Running a study never changes actual holdings or account transactions.
+
+Position, horizon, mode and **Run study** sit above the results. Detailed contract,
+cash/collateral, funding/cost and history assumptions are grouped below them.
+Policy components and path accounting are expandable. Changing inputs invalidates
+the displayed generalized-study result until another run. Saved scenarios retain
+all their explicit inputs and evidence requirements. Legacy sandbox funding
+studies similarly keep reserve and candidate controls beside results, with policy
+rules and history settings below; any retained prior result is marked stale.
 
 Available modes are **Forward Monte Carlo**, **Rolling Monte Carlo**,
 **Historical settlements**, **Historical proxy reconstruction** and

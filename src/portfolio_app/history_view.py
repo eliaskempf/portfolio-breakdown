@@ -38,6 +38,10 @@ class HistoryView:
     all_known: GainSummary
     missing: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
+    @property
+    def covers_full_history(self):
+        return self.requested_start <= self.all_start
+
 
 def history_view(journal, scope, observations, period='1Y', *, today=None, target='EUR'):
     observations = index_observations(observations)
@@ -71,9 +75,9 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     all_known = summarize_known_gain(journal,scope,observations,all_end,target)
     window = [stamp for stamp in available if first <= stamp <= last]
     start,end = (window[0],window[-1]) if window else (first,last)
-    if period == 'All':
+    if first <= all_start:
         start, end = all_start, all_end
-    result = (all_result if period == 'All' or (start,end) == (all_start,all_end) else
+    result = (all_result if (start,end) == (all_start,all_end) else
               calculate_history(journal,scope,observations,start,end,target,negative_dates=negative_dates))
     # Capital and hover gains keep the same full-history basis as the user zooms.
     # Period gain remains a separate endpoint/flow calculation. Never subtract

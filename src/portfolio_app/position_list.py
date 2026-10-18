@@ -41,6 +41,15 @@ def position_rows(holdings, allocation=None, *, percent=False):
             valuationLabel=getattr(row, 'valuation_label', '') if isinstance(getattr(row, 'valuation_label', ''), str) else '',
             valuationDetail=getattr(row, 'valuation_detail', '') if isinstance(getattr(row, 'valuation_detail', ''), str) else '',
             valuationQualified=getattr(row, 'valuation_qualified', False) == True))
+        compact = getattr(row, 'valuation_status', '') in {'settlement', 'market_closed'}
+        rows[-1]['valuationCompact'] = compact
+        if compact:
+            if getattr(row, 'valuation_status', '') == 'settlement':
+                status = 'Not current' if rows[-1]['valuationQualified'] else 'Market closed'
+                rows[-1]['valuationDetail'] = rows[-1]['valuationLabel'] + ' · ' + status
+            else:
+                rows[-1]['valuationDetail'] = 'Market closed · Latest available quote'
+            rows[-1]['valuationLabel'] = 'ⓘ'
         note = rows[-1]['note']
         rows[-1]['note'] = ((note if isinstance(note, str) else '') + ' ' + rows[-1]['valuationDetail']).strip()
     return rows
@@ -63,7 +72,7 @@ def render_position_list(path, snapshot, allocation=None, *, valued=None, accoun
                ('gain', 'Return (%)' if percent else 'Gain')]
     if view != 'Holdings':
         columns = [('name', 'Investment'), ('value', 'Value'), *metric_columns]
-    _render_table(rows, columns, context=context, revision=snapshot.revision, on_open=open_position)
+    _render_table(rows, columns, context=context, revision=snapshot.revision, on_open=open_position, freshness_rows=holdings)
     render_position_metric_sources(detail)
 
 
@@ -105,10 +114,10 @@ def render_overview_positions(valued, config, *, context, scope, open_position=N
     columns = [('name', 'Investment'), ('value', 'Value'), ('allocation', f'% of {scope}'),
                ('returnPct', 'Return (%)'), ('gainReporting', 'Gain')]
     _render_table(rows, columns, context=context, revision=revision, on_open=open_row,
-                  interactive=bool(open_position), editable=bool(edit_position), details_column='name')
+                  interactive=bool(open_position), editable=bool(edit_position), details_column='name', freshness_rows=valued)
 
 
-def _render_table(rows, columns, *, context, revision, on_open, interactive=True, editable=True, details_column=None):
+def _render_table(rows, columns, *, context, revision, on_open, interactive=True, editable=True, details_column=None, freshness_rows=None):
     for row in rows:
         row['title'] = ' · '.join(value for value in [row['fullName'], row['ticker'], row['isin'], row['account']] if value)
         row['editLabel'] = 'Edit ' + row['name'] + (' · ' + row['account'] if row['account'] else '')
@@ -120,8 +129,9 @@ def _render_table(rows, columns, *, context, revision, on_open, interactive=True
     column_specs = [ListColumn(field, money_label(label) if field in {'value', 'gainReporting', 'exposure'} or (field == 'gain' and label == 'Gain') else label, numeric=field in numeric or field.startswith('metric_'), decimals=10 if field == 'quantity' else 2,
                               signed=field in {'gain', 'returnPct', 'gainReporting'},
                               neutral_when='valuationQualified',
-                              secondary='valuationLabel' if field == 'value' else '',
-                              secondary_help='valuationDetail' if field == 'value' else '',
+                              secondary='valuationLabel' if field == 'name' else '',
+                              secondary_help='valuationDetail' if field == 'name' else '',
+                              secondary_compact='valuationCompact' if field == 'name' else '',
                               display=field + '_display' if field.startswith('metric_') else '',
                               help={'name': 'Investment name; select a row for position details.',
                                     'quantity': 'Total units or currently open contracts; a futures investment retains its closed-contract history.',
@@ -136,7 +146,23 @@ def _render_table(rows, columns, *, context, revision, on_open, interactive=True
                                     'bucket': 'Category owning this position in the saved allocation hierarchy.',
                                     'metric_beta': 'Sensitivity to the selected benchmark on common weekly reporting-currency returns.',
                                     'metric_volatility': 'Annualized variability estimated from historical weekly reporting-currency returns.'}.get(field, metric_help(field)), tooltip='note' if field in {'gain', 'gainReporting', 'returnPct'} else ('title' if field == 'name' else field + '_note' if field.startswith('metric_') else '')) for field, label in columns]
-    render_list(rows, column_specs, key=f'position_list_{context}', context=context, title='Positions',
-                revision=revision, on_open=on_open if interactive else None, editable=editable,
-                search_label='Filter positions', search_fields=['name', 'fullName', 'ticker', 'isin', 'account', 'portfolio', 'bucket'],
-                default_sort='value' if any(field == 'value' for field, _ in columns) else 'allocation', details_column=details_column)
+    from portfolio_app.freshness_ui import render_freshness
+    action = []
+    def open_row(event):
+        on_open(event)
+        action.append(True)
+    def render(current):
+        if action:
+            action.clear()
+            st.rerun(scope='app')
+        updated_rows = rows
+        if current is not None:
+            dynamic = {row['id']: row for row in position_rows(current)}
+            fields = ('valuationLabel', 'valuationDetail', 'valuationQualified', 'valuationCompact', 'note')
+            updated_rows = [dict(row, **{field: dynamic[row['id']][field] for field in fields})
+                            if row['id'] in dynamic else row for row in rows]
+        render_list(updated_rows, column_specs, key=f'position_list_{context}', context=context, title='Positions',
+                    revision=revision, on_open=open_row if interactive else None, editable=editable,
+                    search_label='Filter positions', search_fields=['name', 'fullName', 'ticker', 'isin', 'account', 'portfolio', 'bucket'],
+                    default_sort='value' if any(field == 'value' for field, _ in columns) else 'allocation', details_column=details_column)
+    render_freshness(freshness_rows, render)

@@ -39,7 +39,9 @@ allocation charts retain their meaningful category tooltips. Preserve explicit
 units, missing values and purpose-built hover content. Pointer movement must not
 trigger Streamlit reruns. History's value/capital boxes follow the hovered
 observations and include their dates. The inline gain switches from selected-period
-gain to total known gain during hover; All uses the shared current gain calculation.
+gain to total known gain during hover. Any range covering the full holding history
+uses the shared total known gain calculation, just like All. Personal and price
+histories use currency symbols consistently in summaries, axes and tooltips.
 Leaving restores the latest value and period gain. Clicking the gain badge toggles between amount and cumulative TWR; its metric name and period
 appear only in a concise tooltip. Return percentages use ↑/↓; monetary gains
 keep +/− signs. Zero and unavailable returns have no direction arrow. TWR requires exact boundaries; no remaining-cost denominator is substituted.
@@ -48,6 +50,32 @@ of the chart range or pointer. Keep one summary row below the view tabs.
 The allocation measure switch belongs above the allocation table, aligned with
 its left edge and the top of the chart. Performance keeps category comparison
 visible and leaves detailed category and position lists to their existing views.
+
+### View changes and progressive disclosure
+
+Related views must share card widths, minimum heights and alignment. Keep their
+navigation and outer container stable. Position detail dialogs keep a viewport-bounded
+height across views and loading states; long content scrolls inside the window.
+Test the outer bounds throughout transitions, not just card dimensions. Replace
+the outgoing content before doing expensive work for the next view. Do not
+calculate a complete history merely to
+choose an already-selected tab, or repeat calculations during the same render.
+Background data refreshes must remain local to the affected result. Verify actual
+transitions with delayed synthetic data: settled screenshots alone miss old
+controls and charts briefly appearing during a switch.
+
+Missing-data interfaces must identify the affected result and provide a relevant
+action. Do not expose a combined list of every metric's requirements as mandatory
+setup. Keep ordinary gaps subtle. Retrieve supported market data automatically;
+manual repair forms should preselect the position, date and currencies when known.
+Internal identities and fingerprints are storage details, not user-facing labels.
+Show overwrite confirmation only when a value will actually be replaced.
+
+Confirm transaction completeness alongside reconciliation, using a plainly named
+action and a visible interval. Reconciliation and completeness are distinct;
+matching today's holding must never silently certify omitted sales or income.
+Manual market-data correction is separate from this review. Broader changes to
+established interfaces require discussion rather than opportunistic redesign.
 
 ## Architecture and verification
 
@@ -434,6 +462,16 @@ Background market, monitoring and settlement collection continues while a positi
 dialog is open. Defer automatic full-page refreshes until it closes; chart-history
 completion renders inside its local fragment. User-requested saves still revalidate
 revisions and refresh portfolio balances.
+
+Settlement polling compares selected valuation inputs and journal changes rather
+than cache modification times. Starting collection, downloading the same quote,
+and crossing a wall-clock minute do not rerun the application. Source-check
+notices update within Notifications. Freshness regions age the displayed snapshot
+without rereading prices or recalculating holdings/history: metrics, position rows
+and category-comparison qualification stay current while navigation and editors
+remain mounted. The list component patches freshness metadata in place to retain
+focus, sorting, scroll and expanded details. Material data changes still revalue
+the portfolio together, deferred while a position dialog is open.
 
 ### Optional transaction history
 

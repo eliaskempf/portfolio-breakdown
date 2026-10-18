@@ -205,3 +205,44 @@ def test_adopted_legacy_debt_does_not_block_foreign_currency_settings(tmp_path):
     save_leverage_settings(tmp_path, replace(settings, active_basis='exposure'), revision)
     assert load_leverage_settings(tmp_path)[0].active_basis == 'exposure'
     assert replay(load_journal(tmp_path)[0]).loans['broker','EUR','legacy:old'] == 300
+
+
+def test_collateral_displays_names_and_financial_details_without_internal_ids(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    from portfolio_app.account_margin_ui import _review_rows
+    (tmp_path/'holdings.csv').write_text(CSV)
+    journal, holdings, _ = fixture()
+    reserved = security_reserve(journal, holdings, identity='opaque-reservation-id')
+    reserved = replace(reserved, margin_requirements=(
+        MarginRequirement('opaque-requirement-id', 'broker', 'EUR', 100, 80, DAY),))
+    rows = _review_rows(journal, reserved, {'security': 'Invented security'})
+    assert any(row.get('Holding') == 'Invented security' and row.get('Haircut (%)') == 20 for row in rows)
+    assert all(row['Account'] == 'Invented broker' for row in rows)
+    assert 'opaque-' not in str(rows)
+    save_journal(tmp_path, reserved, None)
+    app = AppTest.from_string(f'''
+from pathlib import Path
+from portfolio_app.account_journal import load_journal
+from portfolio_app.account_margin_ui import render_account_margin
+from portfolio_app.positions import read_snapshot
+directory = Path({str(tmp_path)!r})
+journal, revision = load_journal(directory)
+holdings = read_snapshot(directory/'holdings.csv').holdings
+valued = holdings.copy()
+valued['current_value_reporting'] = 1000.
+render_account_margin(directory, journal, revision, holdings, valued, 'EUR', fx_rates={{'USD': '.9'}})
+''').run()
+    assert not app.exception
+    next(w for w in app.selectbox if w.label == 'Collateral action').set_value('Release reservation').run()
+    reservation = next(w for w in app.selectbox if w.label == 'Reservation to release')
+    assert reservation.options == ['1. Invented security · 0.125 units · 20% haircut']
+    assert any('Invented security' in frame.value.to_string() for frame in app.dataframe)
+    assert all('opaque-' not in frame.value.to_string() for frame in app.dataframe)
+    next(w for w in app.button if w.label == 'Review collateral changes').click().run()
+    assert not app.exception
+    review = app.dataframe[-1].value
+    assert review.loc[0, 'Action'] == 'Release reservation'
+    assert review.loc[0, 'Holding'] == 'Invented security'
+    assert review.loc[0, 'Quantity / native cash'] == '0.125'
+    assert all('opaque-' not in frame.value.to_string() for frame in app.dataframe)
+    assert 'opaque-reservation-id' in replay(load_journal(tmp_path)[0]).reservations

@@ -46,7 +46,7 @@ from a partial monetary subtotal. Position details retain separately labelled
 unrealized gain and cost-based return.
 
 **Partial** means supported known components are shown, with missing facts in
-help/Required inputs. Summary-only holdings contribute their known unrealized gain;
+metric help. Summary-only holdings contribute their known unrealized gain;
 snapshot histories carry known opening unrealized gain but cannot establish earlier
 realized gains or income. Unreviewed records can support a recorded subtotal, never
 complete returns. Unknown amounts, unsupported actions and missing FX are not zero.
@@ -162,16 +162,21 @@ date beside its value.
 The value and invested capital boxes follow the hovered observations and show
 their dates. Click the gain badge to toggle between an amount and cumulative
 TWR. The metric name and period appear only in a concise tooltip. Gain beside the value shows the selected-period gain at rest and
-cumulative recorded gain to the hovered date during inspection. Leaving the chart
+cumulative recorded gain to the hovered date during inspection. Ranges covering
+the entire holding period use total known gain, just like **All**. Leaving the chart
 restores the latest value and selected-period gain. **Annualized return** stays fixed across both period selection and hover; its tooltip gives
 the calculation dates. Missing opening data or incomplete full-history coverage
 withholds this return rather than substituting a shorter interval. A quiet note below
 the chart indicates missing valuations; no values are interpolated for the boxes
 or returns. A missing daily value need not prevent endpoint-based returns.
 
-Use **History inputs** to supply dated prices, FX, total valuations or
-exact cash-flow boundary values. **Load prices and FX** retrieves available
-observations and accepted exact-contract settlement marks. It does not create
+**Correct market data** provides focused forms for missing or incorrect dated
+prices and exchange rates. Known dates, holdings and currencies are preselected;
+only the selected holdings' observations are shown. **Advanced corrections** retains
+whole-selection valuations, exact cash-flow boundary values and cash adjustment
+classification. Available prices and FX load automatically; **Retry prices** is
+shown after an unsuccessful refresh. Downloads include accepted exact-contract
+settlement marks. It does not create
 trades, distributions or splits. Downloaded closes are converted back to the
 units traded on each date using the provider's split evidence, without dividend
 reinvestment or automatic price repair. Manual observations take precedence.
@@ -179,8 +184,10 @@ Prices and FX must cover the requested dates; gaps are not interpolated or fille
 with current quotes. Missing data can be entered manually. Corrections retain
 original observations.
 
-**Confirm coverage** records your review of the opening inventory and all events
-within the selected interval. Journal changes invalidate that confirmation.
+**Confirm complete history**, beside the position's transaction reconciliation,
+records your review of the opening inventory and all events within the displayed
+interval. Apply pending transaction changes before confirming. Portfolio history
+has a separate **Review history completeness** action for its combined scope. Journal changes invalidate that confirmation.
 Applying transaction history to current balances does not confirm performance
 coverage. A review covers its named members and their subsets for the reviewed
 dates; it does not cover new members or a changed journal.
@@ -224,7 +231,8 @@ Nonconventional cash flows are conservatively withheld when
 uniqueness cannot be established. Exact time-weighted returns remain unavailable
 without reconciled boundary valuations; no end-of-day timing assumption is made.
 Historical value points and monetary gains can remain useful when returns cannot
-be calculated. Review **Required inputs** beside the affected results.
+be calculated. The affected metric’s help explains its own missing requirements;
+other metrics do not inherit that restriction.
 
 Original acquisition costs remain separate from opening market value, so gains
 before the tracking boundary are not attributed to the tracked period. FIFO is

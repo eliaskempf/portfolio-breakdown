@@ -31,6 +31,7 @@ class ListColumn:
     color_signed: bool = True
     neutral_when: str = ''
     secondary_help: str = ''
+    secondary_compact: str = ''
 
 
 HTML = """
@@ -57,6 +58,7 @@ section[data-interactive="true"] tbody tr{cursor:pointer}tbody tr:hover,tbody tr
 .pagination button{font:inherit;color:inherit;border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:4px;background:transparent;padding:4px 10px;cursor:pointer}.pagination button:disabled{opacity:.45;cursor:default}
 tr:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:-2px}input:focus-visible,button:focus-visible{outline:2px solid var(--st-primary-color);outline-offset:2px}
 td.number,th.number{text-align:right;font-variant-numeric:tabular-nums}td:first-child{font-weight:500}.secondary{display:block;font-size:12px;font-weight:400;opacity:.7;margin-top:4px;white-space:normal}
+.secondary.compact{display:inline-block;margin:0 0 0 6px;vertical-align:baseline}.secondary.compact summary{list-style:none;cursor:pointer}.secondary.compact summary::-webkit-details-marker{display:none}.secondary.compact[open]{display:block;text-align:left;max-width:300px}
 td.positive{color:var(--st-green-text-color,__GAIN_COLOR__)}td.negative{color:var(--st-red-text-color,__LOSS_COLOR__)}
 td button{border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:4px;background:transparent;padding:4px 10px;cursor:pointer}
 button[data-detail-toggle]{border:0;background:transparent;padding:2px 7px;margin-left:4px;line-height:1}
@@ -144,6 +146,10 @@ export default function({parentElement:root,data,setTriggerValue}) {
       if(column.secondary_help && row[column.secondary_help]){
         const details=element('details','');details.className='secondary';
         const summary=element('summary',String(row[column.secondary]));details.appendChild(summary);
+        if(column.secondary_compact && row[column.secondary_compact]){
+          details.classList.add('compact');summary.setAttribute('aria-label','Valuation details');
+          summary.title=String(row[column.secondary_help]);
+        }
         const explanation=element('span',String(row[column.secondary_help]));explanation.style.whiteSpace='normal';details.appendChild(explanation);
         details.addEventListener('click',event=>event.stopPropagation());
         details.addEventListener('keydown',event=>event.stopPropagation());td.appendChild(details);
@@ -213,7 +219,52 @@ export default function({parentElement:root,data,setTriggerValue}) {
     if(content.more){const more=element('p','+'+content.more+' more in Details');more.className='preview-more';panel.appendChild(more);}
     td.appendChild(panel);outer.appendChild(td);return outer;
   };
-  const render=()=>{
+  const freshnessKeys=new Set(['valuationLabel','valuationDetail','valuationQualified','valuationCompact','note']);
+  const structure=JSON.stringify({...data,rows:data.rows.map(row=>Object.fromEntries(
+    Object.entries(row).filter(([key])=>!freshnessKeys.has(key))))});
+  const retainRows=root.listStructure===structure;
+  root.listStructure=structure;root.listData=data;
+  const render=(retain=false)=>{
+    // Old header/row listeners also read the latest display metadata.
+    data=root.listData;
+    if(retain){
+      const lookup=new Map(data.rows.map(row=>[String(row.id),row]));
+      for(const tr of body.querySelectorAll('tr[data-position-id]')){
+        const row=lookup.get(tr.dataset.positionId);if(!row)continue;
+        columns.forEach((column,index)=>{
+          const td=tr.children[index];
+          if(column.signed){
+            const colored=column.color_signed!==false && !(column.neutral_when && row[column.neutral_when]);
+            for(const [tone,enabled] of [['positive',colored&&row[column.key]>0],['negative',colored&&row[column.key]<0]]){
+              if(td.classList.contains(tone)!==enabled)td.classList.toggle(tone,enabled);
+            }
+            const title=String(row.note||column.help||'');if(td.title!==title)td.title=title;
+          }
+          if(column.secondary){
+            const old=td.querySelector('.secondary'),next=cell(row,column).querySelector('.secondary');
+            if(old && next && old.tagName===next.tagName){
+              if(old.className!==next.className)old.className=next.className;
+              if(old.tagName==='DETAILS'){
+                for(const selector of ['summary','span']){
+                  const a=old.querySelector(selector),b=next.querySelector(selector);
+                  if(a.textContent!==b.textContent)a.textContent=b.textContent;
+                  for(const attr of ['title','aria-label']){
+                    if(a.getAttribute(attr)!==b.getAttribute(attr)){
+                      if(b.hasAttribute(attr))a.setAttribute(attr,b.getAttribute(attr));else a.removeAttribute(attr);
+                    }
+                  }
+                }
+              }else if(old.textContent!==next.textContent)old.textContent=next.textContent;
+            }else{
+              const focused=old?.contains(document.activeElement);
+              old?.remove();if(next)td.append(next);
+              if(focused)(next?.querySelector('summary')||tr).focus({preventScroll:true});
+            }
+          }
+        });
+      }
+      return;
+    }
     const query=state.query.trim().toLocaleLowerCase();
     const rows=data.rows.filter(row=>(!data.searchLabel||data.searchFields.some(field=>String(row[field]??'').toLocaleLowerCase().includes(query))));
     const {key,direction}=state;
@@ -302,7 +353,7 @@ export default function({parentElement:root,data,setTriggerValue}) {
     }
     root.querySelector('.empty').hidden=rows.length!==0;
   };
-  input.oninput=()=>{state.page=0;state.query=input.value;persist();render();};render();
+  input.oninput=()=>{state.page=0;state.query=input.value;persist();render();};render(retainRows);
   // Match the parent table's columns after resizing or toggling ticker display.
   // The preview remains local and does not cause a Streamlit rerun.
   const observer=new ResizeObserver(()=>{
@@ -310,7 +361,7 @@ export default function({parentElement:root,data,setTriggerValue}) {
     if(panel)alignPreview(panel,{id:state.expandedId});
   });
   observer.observe(table);root.previewResizeObserver=observer;
-  if(state.focus&&!document.querySelector('[role="dialog"]')){
+  if(!retainRows&&state.focus&&!document.querySelector('[role="dialog"]')){
     const focused=body.querySelector('tr[data-position-id="'+CSS.escape(state.focus)+'"]');
     (state.focusAction==='preview'?focused?.querySelector('[data-preview-toggle]'):state.focusAction==='disclosure'?focused?.querySelector('[data-detail-toggle]'):focused)?.focus({preventScroll:true});
   }

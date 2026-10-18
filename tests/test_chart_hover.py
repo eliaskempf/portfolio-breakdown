@@ -41,3 +41,16 @@ def test_numeric_scatter_keeps_point_inspection():
     figure=chart_hover(go.Figure(go.Scatter(x=[.1,.2],y=[1,2],mode='markers',name='Risk')))
     assert figure.layout.hovermode is None
     assert figure.data[0].hovertemplate == '%{x}<br>Risk: %{y:,.2f}<extra></extra>'
+
+
+def test_monetary_history_axes_share_symbols_and_keep_values_exact():
+    from portfolio_app.chart_hover import money_history_axes
+    from portfolio_app.money import format_money
+    for currency, prefix in [('EUR', '€'), ('USD', '$'), ('GBP', '£'), ('KRW', 'KRW ')]:
+        figure = go.Figure(go.Scatter(x=['2024-01-01', '2024-01-02'], y=[1234.56789, 1500], mode='lines', name='Price'))
+        chart_hover(money_history_axes(figure, currency))
+        assert figure.layout.yaxis.tickprefix == prefix
+        assert figure.layout.yaxis.title.text is None
+        assert figure.data[0].hovertemplate == f'Price: {prefix}%{{y:,.2f}}%{{_xother}}<extra></extra>'
+        assert figure.data[0].y == (1234.56789, 1500)
+        assert format_money(1234.56789, currency) == prefix + '1,234.57'

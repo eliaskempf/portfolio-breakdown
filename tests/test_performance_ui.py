@@ -11,7 +11,9 @@ def overview_metric(app):
 
 def assert_cost_coverage(app, coverage, position_name, reason):
     activate(app, "Overview")
-    assert f'Performance coverage: {coverage}' in by_label(app.metric, 'Current value').proto.help
+    assert 'Total known gain: realized + unrealized + recorded income' in by_label(app.metric, 'Current value').proto.help
+    expected = 'Gain unavailable' if coverage == '0 of 1' else 'Incomplete gain history'
+    assert any(item.value == expected for item in app.caption)
     app.session_state['workspace_notifications'] = True
     app.run()
     assert not app.exception
@@ -21,6 +23,7 @@ def assert_cost_coverage(app, coverage, position_name, reason):
     assert affected.performance_note.item() == reason
     app.session_state['workspace_notifications'] = False
     activate(app, "Exposure")
+    assert f'Performance coverage: {coverage}' in by_label(app.metric, 'Current value').proto.help
 
 
 def test_performance_summary_and_holdings_with_static_prices(tmp_path, sample_data_dir):

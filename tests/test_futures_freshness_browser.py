@@ -1,6 +1,6 @@
 """Real browser checks of normal-app futures freshness using invented data only."""
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import os
 import socket
 import subprocess
@@ -13,11 +13,13 @@ from portfolio_app import account_journal as ledger
 from portfolio_app.automatic_settlements import apply_archived_settlements
 from portfolio_app.derivative_market import make_contract
 from portfolio_app.derivative_types import PriceObservation
-from portfolio_app.futures_clock import business_date, utc_now
+from portfolio_app.futures_clock import business_date
 from portfolio_app.futures_quotes import record_result
 from portfolio_app.settlement_archive import SettlementArchive
 from test_futures_investments import grouped
 from browser_support import settle, select_tab
+
+NOW = datetime(2026, 1, 7, 12, tzinfo=timezone.utc)
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -28,7 +30,7 @@ def preview_workspace(root):
     contract = make_contract('FMWN','2027-03-19')
     journal = replace(journal, contracts=(contract,), positions=(replace(journal.positions[0],contract_id=contract.id),))
     ledger.save_journal(root,journal,None)
-    now = utc_now()
+    now = NOW
     old = now-timedelta(days=2)
     mark = PriceObservation(contract.id,business_date(old).isoformat(),1020,kind='mark',source='Invented delayed quote',
                             observed_at=now.isoformat(),quote_at=old.isoformat(),delay_minutes=15)
@@ -54,6 +56,11 @@ charts.history_for = lambda _: SimpleNamespace(get=lambda *a, **kw: HistoryResul
     ('2026-01-02','2026-01-05','2026-01-06'), (100., 105., 98.), 'EUR', 'cached',
     '2026-01-07', 'Invented market context'), pending=lambda *a: False)
 root = Path({str(root)!r})
+import portfolio_app.futures_valuation as valuation
+from datetime import datetime
+valuation.utc_now = lambda: datetime.fromisoformat((root/'clock.txt').read_text())
+count = root/'app-renders.txt'
+count.write_text(str(int(count.read_text())+1 if count.exists() else 1))
 render_app(root, demo=False, ignore_selection=True, price_service=PriceService(StaticProvider(root/'demo_prices.json')))
 '''
 
@@ -64,6 +71,7 @@ def futures_page(tmp_path):
     journal,contract = preview_workspace(root)
     script = tmp_path/'preview.py'
     script.write_text(preview_script(root))
+    (root/'clock.txt').write_text(NOW.isoformat())
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
     process = subprocess.Popen([sys.executable,'-m','streamlit','run',str(script),
@@ -118,7 +126,7 @@ def test_stale_fresh_failure_settlement_and_popup_navigation(futures_page):
     playwright.expect(row.locator('summary')).to_contain_text('Recorded')
     assert row.locator('td.positive,td.negative').count()==0
     saved_quotes.rename(root/'futures-quotes.json')
-    now=utc_now();stamp=now-timedelta(minutes=15)
+    now=NOW;stamp=now-timedelta(minutes=15)
     fresh=PriceObservation(contract.id,business_date(stamp).isoformat(),990,kind='mark',
         source='Invented delayed quote',observed_at=now.isoformat(),quote_at=stamp.isoformat(),delay_minutes=15)
     record_result(root,contract,fresh,'',attempted_at=now,now=now)
@@ -131,12 +139,12 @@ def test_stale_fresh_failure_settlement_and_popup_navigation(futures_page):
     day=business_date(now)-timedelta(days=1)
     while day.weekday()>4:day-=timedelta(days=1)
     SettlementArchive(root).record(contract,PriceObservation(contract.id,day.isoformat(),1005,source='Invented daily settlement'))
-    assert apply_archived_settlements(root)==1
-    assert apply_archived_settlements(root)==0
+    assert apply_archived_settlements(root, today=NOW.date())==1
+    assert apply_archived_settlements(root, today=NOW.date())==0
     page.get_by_role('button',name='Refresh prices').click();settle(page)
     assert row.locator('td').nth(3).inner_text()==before_value
     playwright.expect(row.locator('summary')).to_have_count(0)
-    record_result(root,contract,None,'Invented refresh failure',attempted_at=utc_now(),now=utc_now())
+    record_result(root,contract,None,'Invented refresh failure',attempted_at=NOW,now=NOW)
     page.get_by_role('button',name='Refresh prices').click();settle(page)
     playwright.expect(row.locator('summary')).to_have_count(0)
     assert row.locator('td[title]').evaluate_all("cells => cells.some(cell => cell.title.includes('Invented refresh failure'))")
@@ -147,4 +155,29 @@ def test_stale_fresh_failure_settlement_and_popup_navigation(futures_page):
     playwright.expect(page.get_by_role('button',name='Save mark only',exact=True)).to_be_visible()
     select_tab(page,'Overview')
     page.set_viewport_size({'width':750,'height':1000});settle(page)
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
+def test_closed_market_settlement_has_compact_accessible_details(futures_page):
+    page, root, journal, contract = futures_page
+    row = page.locator('tr[data-position-id="investment:synthetic"]')
+    row.wait_for(); settle(page)
+    (root/'clock.txt').write_text('2026-01-10T12:00:00+00:00')
+    SettlementArchive(root).record(contract, PriceObservation(contract.id, '2026-01-09', 1020,
+        source='Invented settlement'))
+    page.get_by_role('button', name='Refresh prices').click(); settle(page)
+    indicator = row.get_by_label('Valuation details', exact=True)
+    playwright.expect(indicator).to_have_text('ⓘ')
+    playwright.expect(row.locator('td').first.get_by_label('Valuation details')).to_have_count(1)
+    playwright.expect(row.locator('td.number details')).to_have_count(0)
+    playwright.expect(indicator).to_have_attribute('title', 'Settlement · 09 Jan · Market closed')
+    assert row.locator('td.positive').count() >= 1
+    assert 'Settlement' not in row.inner_text()
+    indicator.focus(); page.keyboard.press('Enter')
+    playwright.expect(row.locator('details')).to_have_attribute('open', '')
+    playwright.expect(row).to_contain_text('Settlement · 09 Jan · Market closed')
+    playwright.expect(page.get_by_role('dialog')).to_have_count(0)
+    select_tab(page, 'Positions')
+    row = page.locator('tr[data-position-id="investment:synthetic"]')
+    playwright.expect(row.get_by_label('Valuation details', exact=True)).to_be_visible()
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

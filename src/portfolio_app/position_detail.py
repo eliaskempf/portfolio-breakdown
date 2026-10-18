@@ -1,6 +1,6 @@
 """Read-only position details and instrument market-price history."""
 
-from portfolio_app.currency_display import reporting_currency
+from portfolio_app.currency_display import reporting_currency, money
 import pandas as pd
 import streamlit as st
 
@@ -13,7 +13,20 @@ from portfolio_app.presentation import performance_metric, return_percent
 def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edit=None):
     # Keep the native accessible dialog name; put visible actions alongside the
     # same asset heading, rather than in a separate, widely spaced metadata row.
-    st.html('<style>\n    [role="dialog"]:has(.st-key-position_detail_header) > h2[slot="title"] {display:none;}\n    [role="dialog"] .st-key-position_detail_header {padding-right:40px;}\n    </style>')
+    st.html('''<style>\n    [role="dialog"]:has(.st-key-position_detail_header) > h2[slot="title"] {display:none;}\n    [role="dialog"] .st-key-position_detail_header {padding-right:40px;}\n    /* Keep the window fixed while loading or switching differently sized views.
+       Long forms scroll inside it; the native close button remains reachable. */
+    .stDialog:has(.st-key-position_detail_header) {padding:0;}
+    .stDialog > div:has(.st-key-position_detail_header) {margin:24px auto;}
+    [role="dialog"]:has(.st-key-position_detail_header) {
+        height:min(860px,calc(100dvh - 48px));
+        max-height:calc(100dvh - 48px);
+        display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;
+    }
+    [role="dialog"]:has(.st-key-position_detail_header) > div:last-child {
+        flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable;overscroll-behavior:contain;
+    }
+    .st-key-position_view_body [data-testid="stMetric"] {min-height:104px;}
+    </style>''')
     with st.container(horizontal=True, horizontal_alignment='distribute', vertical_alignment='center', key='position_detail_header'):
         st.subheader(instrument_name(row), width='content')
         with st.container(horizontal=True, width='content', gap='small'):
@@ -26,29 +39,51 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
     identifiers = [str(row.get(k) or '') for k in ('ticker', 'isin')]
     if any(identifiers):
         st.caption(' · '.join(x for x in identifiers if x))
-    def money(value, currency=None, signed=False):
-        currency = currency or reporting_currency()
-        if value is None or pd.isna(value):
-            return '—'
-        return f'{value:+,.2f} {currency}' if signed else f'{value:,.2f} {currency}'
     from portfolio_app.account_journal import load_journal
     journal, _ = load_journal(data_dir)
     has_history = any(b.position_id == row.position_id and b.active for b in journal.securities)
+    view_key = f'position_edit_detail_view_{row.position_id}'
     useful_history = False
-    if has_history:
-        from portfolio_app.history_view import history_view
+    if has_history and view_key not in st.session_state:
+        from portfolio_app.history_scope import can_start_history_chart
         from portfolio_app.history_observations import HistoryScope, load_observations
-        observations, _ = load_observations(data_dir)
-        useful_history = history_view(journal,HistoryScope((row.position_id,)),observations,target=reporting_currency()).useful
+        scope = HistoryScope((row.position_id,))
+        useful_history = can_start_history_chart(journal, scope)
+        if not useful_history:
+            from portfolio_app.history_view import history_view
+            useful_history = history_view(journal, scope, load_observations(data_dir)[0], target=reporting_currency()).useful
     views = ['History', 'Transactions', 'Price history', 'Key metrics', 'Details'] if has_history else ['Price history', 'Key metrics', 'Transactions', 'Details']
     view = st.segmented_control('Position detail view', views,
-        default='History' if useful_history else 'Price history', required=True, key=f'position_edit_detail_view_{row.position_id}', label_visibility='collapsed') or views[0]
+        default='History' if useful_history else 'Price history', required=True, key=view_key, label_visibility='collapsed') or views[0]
+    active_class = 'position_active_'+view.replace(' ', '_')
+    # Native selection changes in the browser before Python finishes its rerun.
+    # Hide the outgoing view at that point, including nested fragments which
+    # Streamlit does not always mark stale during a parent-dialog rerun.
+    rules = []
+    for index, name in enumerate(views, 1):
+        selector = (f'[role="dialog"]:has([aria-label="Position detail view"] [role="radio"]:nth-of-type({index})[aria-checked="true"]) '
+                    f'.st-key-position_view_body:not(:has([data-position-view-ready="{name}"]))')
+        # Streamlit explicitly restores visibility on some element wrappers;
+        # hide descendants too while the incoming view is still being built.
+        rules.append(selector+', '+selector+' * {visibility:hidden!important;}')
+    st.html('<style>'+''.join(rules)+'</style>')
+    # Clear the old subtree before slow work, keeping the dialog/selector stable.
+    # The inner key prevents outgoing controls being reused for another view.
+    with st.container(key='position_view_body'):
+        body = st.empty()
+        with body.container():
+            with st.container(key=active_class):
+                _render_position_view(view, row, data_dir, journal, has_history, demo=demo, allocation=allocation)
+                st.html(f'<span hidden data-position-view-ready="{view}"></span>')
+
+
+def _render_position_view(view, row, data_dir, journal, has_history, *, demo, allocation):
     if view == 'History':
         from portfolio_app.history_ui import render_history_results, _key
         from portfolio_app.history_observations import HistoryScope
-        render_history_results(data_dir,journal,HistoryScope((row.position_id,)),key=_key(data_dir,row.position_id)+'result_',label='Position value')
+        render_history_results(data_dir,journal,HistoryScope((row.position_id,)),key=_key(data_dir,row.position_id)+'result_',label='Position value',automatic=not demo)
         return
-    first, second, third = st.columns(3)
+    first, second, third = st.columns([2, 1, 1])
     first.metric('Current value', money(row.get('current_value_reporting')))
     with second:
         performance_metric('Unrealized gain', money(row.get('unrealized_gain_reporting'), signed=True),
@@ -77,14 +112,16 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
     names = {b.id: b.name for b in allocation.buckets} if allocation else {}
     details = {'Quantity': f"{row.shares:g} {row.get('quantity_unit') or 'units'}", 'Account': row.get('account') or '—',
                'Category': names.get(row.get('bucket_id'), row.get('portfolio') or 'Unassigned'),
-               'Average buy-in': money(row.get('acquisition_price'), row.get('acquisition_currency') or 'currency unspecified'),
-               'Total buy-in': money(row.shares * row.acquisition_price, row.get('acquisition_currency') or 'currency unspecified'),
+               'Average buy-in': money(row.get('acquisition_price'), currency=row.get('acquisition_currency') or 'currency unspecified'),
+               'Total buy-in': money(row.shares * row.acquisition_price, currency=row.get('acquisition_currency') or 'currency unspecified'),
                'Reporting buy-in': money(row.get('cost_basis_reporting')),
                'Reporting average buy-in': money(row.get('cost_basis_reporting') / row.shares if row.shares else None),
-               'Market price': money(row.get('current_price'), row.get('quote_currency') or ''),
+               'Market price': money(row.get('current_price'), currency=row.get('quote_currency') or ''),
                'Quote date': row.get('price_observed_at') or '—'}
     if has_history:
         from datetime import date
+        from portfolio_app.history_observations import load_observations
+        observations, _ = load_observations(data_dir)
         from portfolio_app.gain_components import security_gain_components
         from portfolio_app.gain_accounting import amount
         components = security_gain_components(journal, row.position_id, observations, date.today().isoformat(),

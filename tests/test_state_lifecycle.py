@@ -33,6 +33,20 @@ def test_navigation_retains_inputs_but_not_triggers_uploads_or_editor_patches():
     assert 'planning_calculate' not in set(retained_inputs(saved, returning=['planning_calculate']))
 
 
+def test_journal_inputs_reassign_only_when_unmounted_or_returning():
+    saved = {'main_tabs': 'Futures', 'accounts_example_view': 'Positions & transactions',
+             'accounts_example_journal_selected': 'fee', 'accounts_example_journal_edit_fee_action': 'Correct entry',
+             'accounts_example_journal_edit_fee_amount': '3', 'accounts_example_journal_edit_fee_save': False}
+    assert not set(retained_inputs(saved))
+    saved['main_tabs'] = 'Exposure'
+    unmounted = set(retained_inputs(saved))
+    assert 'accounts_example_journal_edit_fee_amount' in unmounted
+    assert 'accounts_example_journal_edit_fee_save' not in unmounted
+    saved['main_tabs'] = 'Futures'
+    assert set(retained_inputs(saved, returning=unmounted)) == unmounted
+    assert not set(retained_inputs(saved))
+
+
 def test_remount_tracking_clears_on_workspace_and_tour_transitions():
     for event in ('workspace', 'tour'):
         saved = {'view_unmounted_inputs': ['exposure_market_basis']}

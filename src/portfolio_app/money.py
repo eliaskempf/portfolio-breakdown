@@ -3,7 +3,7 @@ import math
 
 
 def currency_symbol(currency):
-    return {'EUR': '€', 'USD': '$', 'GBP': '£'}[currency]
+    return {'EUR': '€', 'USD': '$', 'GBP': '£'}.get(currency, currency + ' ')
 
 
 def format_money(value, currency, *, signed=False, missing='—'):

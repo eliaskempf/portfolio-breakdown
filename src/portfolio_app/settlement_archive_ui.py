@@ -26,33 +26,63 @@ def settlement_notices(directory, journal):
         if error:messages.append('Settlement collection unavailable · '+error)
         identities = tuple(('mismatch',row['identity']) for row in mismatches)+tuple(('gap',*gap) for gap in gaps)
         if error:identities += (('collection-error',error),)
+        from portfolio_app.futures_quotes import read_quotes, collector as quotes
+        failures = tuple(sorted((cid, item['error']) for cid, item in read_quotes(directory)['contracts'].items()
+                                if item.get('error')))
+        if failures or quotes.error(directory):
+            messages.append('Futures quote refresh unavailable · Saved observations retain their original times. Use Refresh prices to retry.')
+            identities += tuple(('quote-error', *failure) for failure in failures)
+            if quotes.error(directory):
+                identities += (('quote-collector-error', quotes.error(directory)),)
         return messages,identities
     except (DataError,OSError) as exc:
         return ['Settlement history needs attention · '+str(exc)], (('archive-error',str(exc)),)
 
 
 def _signature(directory):
+    from portfolio_app.account_observations import FILE as observations
     return tuple((directory/name).stat().st_mtime_ns if (directory/name).exists() else 0
-                 for name in ('settlement-archive.json','settlement-collection.json','futures-quotes.json',ledger.FILE))+(collector.error(directory),)
+                 for name in ('settlement-archive.json','settlement-collection.json','futures-quotes.json',ledger.FILE,observations))+(collector.error(directory),)
+
+
+def valuation_signature(directory, journal, *, now):
+    """Material displayed inputs, excluding check/retrieval times and clock aging."""
+    from portfolio_app.futures_valuation import load_valuations
+    valuations, rates = load_valuations(directory, journal, now=now)
+    observations = []
+    for identity, value in sorted(valuations.items()):
+        quote = value.observation
+        observations.append((identity, None if quote is None else (
+            quote.contract_id, quote.date, quote.price, quote.kind, quote.source,
+            quote.quote_at, quote.delay_minutes), value.context.fallback,
+            value.context.closed, value.context.disputed))
+    return tuple(observations), rates
 
 
 def watch_settlements(directory, journal, *, demo=False, force=False):
     if demo or not journal or not journal.positions:
         return
-    signature = _signature(directory)
     from portfolio_app.futures_quotes import collector as quotes
-    collector.schedule(directory,journal,force=force)
-    quotes.schedule(directory,journal,force=force)
-    quote_error = quotes.error(directory)
-    from portfolio_app.futures_clock import utc_now
-    minute = int(utc_now().timestamp() // 60)
-    @st.fragment(run_every=2 if collector.running(directory) or quotes.running(directory) else 60)
+    from portfolio_app.futures_valuation import utc_now
+    # Only source changes reselect prices; local fragments handle clock aging.
+    now = utc_now()
+    observed_files = _signature(directory)
+    signature = valuation_signature(directory, journal, now=now)
+    changed = False
+    collector.schedule(directory, journal, force=force)
+    quotes.schedule(directory, journal, force=force)
+
+    @st.fragment(run_every=2)
     def watch():
-        latest,_ = ledger.load_journal(directory)
-        started = collector.schedule(directory,latest)
-        quote_started = quotes.schedule(directory,latest)
-        if (_signature(directory) != signature or latest != journal or started or quote_started
-                or quote_error != quotes.error(directory) or minute != int(utc_now().timestamp() // 60)) and refresh_allowed():
+        nonlocal observed_files, changed
+        latest, _ = ledger.load_journal(directory)
+        collector.schedule(directory, latest)
+        quotes.schedule(directory, latest)
+        current_files = _signature(directory)
+        if current_files != observed_files:
+            changed = valuation_signature(directory, latest, now=utc_now()) != signature
+            observed_files = current_files
+        if (changed or latest != journal) and refresh_allowed():
             st.rerun()
     watch()
 

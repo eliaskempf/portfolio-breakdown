@@ -173,9 +173,26 @@ The quantity comparison uses the smaller of one billionth of a unit and one
 billionth of the recorded quantity. Comparable costs use a one-cent tolerance.
 These tolerances label differences; they never manufacture an adjustment.
 Unknown or incompatible converted costs are shown as unknown, not as agreement.
+Opening **History** automatically loads available dated prices and FX in the
+background, from the beginning of recorded history through today. A reconstructed
+purchase/sale history opens this view even before its first prices have loaded;
+snapshot-only positions keep the existing clean default. Saved observations are
+reused on later visits. Failed refreshes retain them and offer **Retry prices**.
+FX currencies come from saved transactions and observed price currency. Manual
+observations are preserved, and downloads never create transactions or confirm
+completeness. Missing prices, FX or transaction records still need to be supplied.
+Personal value uses the shares held on each date and prices in that date's traded
+share units; split-normalized asset-chart prices cannot be reused blindly.
+Offline synthetic demos do not start automatic market requests.
+
 Applying balances does not confirm performance coverage. Review income, fees,
-taxes, offsetting trades, transfers and corporate actions in **History → History inputs**
-before confirming coverage for an interval.
+taxes, offsetting trades, transfers and corporate actions in **Transactions → Review
+against portfolio**. After applying the selected history, **Confirm complete history**
+records this separate declaration for the displayed interval. **History not confirmed** means the
+recorded gain is calculable but this completeness check is still outstanding;
+**Incomplete gain history** identifies other missing evidence or limited coverage,
+with a short explanation in its tooltip. No component count is shown: a calculable
+gain contribution does not establish complete history.
 
 Transaction entry offers **Unit price**, **Trade value (excluding fees)** and
 **Total paid (including fees)** for purchases or **Total received (after fees)**

@@ -39,7 +39,7 @@ def test_assets_first_filters_breakdown_and_source_dialog(exposure_page):
     playwright.expect(summary).not_to_contain_text('ETF snapshot')
     value_card = summary.locator('.st-key-exposure_value')
     value_card.get_by_role('button', name='Show gain as percentage', exact=True).click()
-    playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+22.22%')
+    playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('↑ 22.22%')
     value_card.get_by_role('button', name='Show gain as amount', exact=True).press('Enter')
     playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_contain_text('+€60.00')
     page.screenshot(path=str(directory / 'exposure.png'))

@@ -207,7 +207,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                 from portfolio_app.futures_valuation import summarize_freshness
                 value_metric(selected_total, summarize_performance(selected), missing=missing,
                              percent=performance_percent, key='exposure_value', on_toggle_gain=on_toggle_gain,
-                             freshness=summarize_freshness(selected))
+                             freshness=summarize_freshness(selected), freshness_rows=selected)
             second.metric('Portfolio share', f'{100 * selected_total / total:.1f}%' if not missing and not all_missing and total else '—', help='Current value of this selection divided by total portfolio value.')
     with refresh_panel:
         if lookthrough:
@@ -263,7 +263,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         lambda asset: f'{source_names.get(asset, "ETF")} / Other')
     effective_exposures = exposures
     saved_classifications = classifications
-    mode = results_area.segmented_control('Exposure view', ['Assets', 'Themes & sectors', 'Geography'], help='Choose the exposure analysis to display.', default='Assets', key='exposure_view')
+    mode = results_area.segmented_control('Exposure view', ['Assets', 'Companies', 'Themes & sectors', 'Geography'], help='Choose the exposure analysis to display.', default='Assets', key='exposure_view')
     targets, performance = None, None
     if mode == 'Themes & sectors':
         if display_group is not None:
@@ -294,7 +294,9 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     equity = result.denominator if unified else None
     display_exposures = effective_exposures if unified else complete_exposures(effective_exposures, selected)
     with results_area:
-        if mode == 'Geography':
+        if mode == 'Companies':
+            render_stock_exposure(selected, expanded_funds, data_dir, query=query, allocation=allocation)
+        elif mode == 'Geography':
             with st.container(key='tour_geography'):
                 render_geography(display_exposures, geography, complete=complete, query=query,
                     equity=equity, measure=measure if unified else None)
@@ -345,10 +347,6 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                     st.dataframe(sources.drop(columns='position_id'), hide_index=True, width='stretch')
                 else:
                     render_source_positions(selected, valued, names, saved_classifications, show_tickers, performance_percent, dimensions)
-        stock_panel = st.expander('Stock-only company analysis', key='exposure_stock_open', on_change='rerun')
-        if stock_panel.open:
-            with stock_panel:
-                render_stock_exposure(selected, expanded_funds, data_dir)
     return valued
 
 

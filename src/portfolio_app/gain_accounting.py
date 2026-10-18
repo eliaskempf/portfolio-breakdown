@@ -38,6 +38,30 @@ class GainSummary:
         return 'Unavailable' if self.amount is None else 'Partial' if self.partial else 'Complete'
 
     @property
+    def review_required_only(self):
+        return (self.amount is not None and self.covered == self.count and bool(self.reasons)
+                and all(reason.startswith('Review complete scope') for reason in self.reasons))
+
+    @property
+    def coverage_note(self):
+        if self.amount is None:
+            return 'Gain unavailable'
+        if self.review_required_only:
+            return 'History not confirmed'
+        return 'Incomplete gain history' if self.partial else 'Complete gain history'
+
+    @property
+    def coverage_help(self):
+        if self.review_required_only:
+            return ('Gain uses recorded transactions. Review the selected transactions and confirm history completeness; '
+                    'applying transactions to the portfolio does not confirm completeness.')
+        if self.amount is None:
+            return 'Available values and costs are insufficient to calculate a gain.'
+        return ('Gain uses available costs and recorded transactions. Missing history or inputs '
+                'may leave gains, income or costs unaccounted for.') if self.partial else (
+                    'Gain includes recorded transactions, income and costs.')
+
+    @property
     def coverage(self):
         return f'{self.covered} of {self.count}'
 

@@ -337,7 +337,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                 def open_capital_targets():
                     st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Category targets')
                 render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_capital_targets=open_capital_targets, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
-                                          current_valued=valued,
+                                          current_valued=valued, automatic_history=not offline_demo,
                                           leverage_enabled=(leverage.enabled or actual_active) and leverage_supported,
                                           percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
                                           edit_position=lambda position_id: open_valued_position(position_id, editing=True),
@@ -374,10 +374,11 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                     else:
                         render_allocation_editor(data_dir / 'holdings.csv', snapshot, allocation)
                     if (leverage.enabled or actual_active) and leverage_supported:
-                        from portfolio_app.leveraged_funds_ui import render_leveraged_funds
-                        render_leveraged_funds(data_dir, valued)
                         if not actual_active and reporting_currency == 'EUR':
                             render_leverage_editor(data_dir, valued, future=actual_future)
+                        else:
+                            from portfolio_app.leveraged_funds_ui import render_leveraged_funds
+                            render_leveraged_funds(data_dir, valued)
             if plan_tab.open:
                 with plan_tab:
                     if (leverage.enabled or actual_active) and leverage_supported:

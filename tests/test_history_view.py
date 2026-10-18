@@ -3,6 +3,8 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal as D
 
+import pytest
+
 from portfolio_app.account_journal import Journal
 from portfolio_app.history_observations import HistoryScope, Observation, ObservationStore, CoverageReview
 from portfolio_app.history_view import history_view, period_start
@@ -97,3 +99,61 @@ def test_shorter_coverage_review_cannot_enable_all_history_return():
     assert view.result.money_weighted is not None
     assert view.all_result.money_weighted is None
     assert view.all_result.flow_reasons
+
+
+def test_ranges_covering_entire_holding_preserve_full_history_boundaries():
+    journal, scope, store = fixture()
+    store = replace(store, observations=store.observations[1:])
+    for period in ('YTD', '1Y', '3Y', '5Y', 'All'):
+        view = history_view(journal, scope, store, period, today=date(2024, 6, 16))
+        assert view.covers_full_history
+        assert view.start == view.all_start == '2024-01-01'
+        assert view.result == view.all_result
+        assert view.all_known.amount == 30
+        assert view.result.time_weighted is None  # Missing opening price cannot be bypassed.
+    short = history_view(journal, scope, store, '1M', today=date(2024, 6, 16))
+    assert not short.covers_full_history
+    assert short.result.gain == 20
+
+
+@pytest.mark.parametrize('snapshot', [True, False])
+def test_long_range_headline_shows_total_known_gain(tmp_path, snapshot):
+    from portfolio_app.account_journal import save_journal
+    from portfolio_app.history_observations import save_observations
+    from streamlit.testing.v1 import AppTest
+    journal, scope, store = fixture()
+    book = journal.securities[0]
+    journal = replace(journal, securities=(replace(book, records=(replace(book.records[0], amount=D(80)),)),))
+    store = replace(store, reviews=(replace(store.reviews[0], journal_fingerprint=history_fingerprint(journal)),))
+    if not snapshot:
+        events = (SecurityEvent('open', 'opening', '2024-01-01'),
+                  SecurityEvent('buy', 'buy', '2024-01-02', quantity=D(10), price=D(8), currency='EUR', charges_known=True))
+        journal = replace(journal, securities=(replace(book, records=events, active_ids=('open', 'buy')),))
+        store = replace(store, reviews=(), observations=(*store.observations,
+            Observation('buy-price', 'price', 'holding', '2024-01-02', D(10), 'EUR')))
+    save_journal(tmp_path, journal, None)
+    save_observations(tmp_path, store, None)
+    app = AppTest.from_string(f'''
+from pathlib import Path
+from datetime import date
+import streamlit as st
+from portfolio_app.account_journal import load_journal
+from portfolio_app.history_observations import load_observations, HistoryScope
+from portfolio_app.history_view import history_view
+from portfolio_app.history_ui import _render_history_results
+root = Path({str(tmp_path)!r})
+journal, _ = load_journal(root)
+store, revision = load_observations(root)
+scope = HistoryScope(('holding',))
+period = st.session_state.get('test_period', '1Y')
+view = history_view(journal, scope, store, period, today=date(2024, 6, 16))
+_render_history_results(root, journal, scope, key='test_', include_inputs=False,
+    prepared=dict(view=view, observations=store, revision=revision))
+''').run()
+    for period in ('1Y', '5Y', 'All', '1M'):
+        app.segmented_control[0].set_value(period).run()
+        assert not app.exception
+        assert app.metric[0].delta == ('+€20.00' if period == '1M' and snapshot else '—' if period == '1M' else '+€50.00')
+        assert (app.metric[2].value != '—') == snapshot
+        if not snapshot:
+            assert any(c.value == 'History not confirmed' for c in app.caption)

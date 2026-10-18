@@ -23,7 +23,6 @@ def launch(data_dir, tab="Exposure", subtab=None):
 
     if not app.exception and (data_dir / 'holdings.csv').exists():
         app.session_state['exposure_sources_open'] = True
-        app.session_state['exposure_stock_open'] = True
         app.session_state['exposure_merges_open'] = True
         activate(app, tab, subtab)
     if not (data_dir / 'holdings.csv').exists():

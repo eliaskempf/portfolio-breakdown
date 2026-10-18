@@ -291,3 +291,23 @@ def test_direct_editor_preserves_precision_and_retains_original(tmp_path):
     label(app.text_input,'Trade value (excluding fees)').set_value('42').run()
     label(app.button,'Cancel').click().run()
     assert len(load_journal(tmp_path)[0].securities[0].records)==2
+
+
+def test_transfer_entry_uses_holding_names_and_preserves_destination_identity(tmp_path):
+    fixture(tmp_path)
+    with (tmp_path/'holdings.csv').open('a') as handle:
+        handle.write('invented-destination,Invented destination,0,0,EUR\n')
+    app = launch(tmp_path)
+    label(app.button, 'Other transaction').click().run()
+    label(app.selectbox, 'Transaction').set_value('transfer').run()
+    destination = label(app.selectbox, 'Destination holding')
+    assert destination.options == ['Choose a holding', '2. Invented destination']
+    assert not any('position ID' in field.label for field in app.text_input)
+    destination.set_value('position-1').run()
+    label(app.text_input, 'Quantity').set_value('1').run()
+    label(app.text_input, 'Fees').set_value('0').run()
+    label(app.button, 'Save transaction').click().run()
+    assert not app.exception
+    from portfolio_app.account_journal import load_journal
+    event = load_journal(tmp_path)[0].securities[0].records[-1]
+    assert event.kind == 'transfer' and event.other_position_id == 'position-1'

@@ -169,20 +169,24 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
         matches = display.loc[display.position_id.eq(identity)]
         if not matches.empty:
             row = matches.iloc[0]
+            from portfolio_app.freshness_ui import render_freshness
             realized, unrealized = pnl_breakdown(journal, members, valued)
-            capital, gain, exposure = st.columns(3)
-            capital.metric('Capital value' if investment else 'Unsettled value', format_money(row.current_value_reporting,currency),
-                help=row.get('valuation_detail', ''))
-            if row.get('valuation_label', ''):
-                capital.caption(row.valuation_label, help=row.get('valuation_detail', ''))
-            with gain:
-                performance_metric('Net P&L', format_money(row.unrealized_gain_reporting,currency,signed=True),
-                    row.unrealized_gain_reporting,key=key+'gain', qualified=row.get('valuation_qualified', False),
+            def render_metrics(current):
+                row = current.iloc[0]
+                capital, gain, exposure = st.columns(3)
+                capital.metric('Capital value' if investment else 'Unsettled value', format_money(row.current_value_reporting,currency),
                     help=row.get('valuation_detail', ''))
-                st.caption(f'Unrealized {format_money(unrealized,currency,signed=True)} · '
-                           f'Realized {format_money(realized,currency,signed=True)}')
-            exposure.metric('Market exposure', format_money(row.signed_notional_reporting,currency),
-                help='Signed contract notional, separate from allocated capital.')
+                if row.get('valuation_label', ''):
+                    capital.caption(row.valuation_label, help=row.get('valuation_detail', ''))
+                with gain:
+                    performance_metric('Net P&L', format_money(row.unrealized_gain_reporting,currency,signed=True),
+                        row.unrealized_gain_reporting,key=key+'gain', qualified=row.get('valuation_qualified', False),
+                        help=row.get('valuation_detail', ''))
+                    st.caption(f'Unrealized {format_money(unrealized,currency,signed=True)} · '
+                               f'Realized {format_money(realized,currency,signed=True)}')
+                exposure.metric('Market exposure', format_money(row.signed_notional_reporting,currency),
+                    help='Signed contract notional, separate from allocated capital.')
+            render_freshness(matches, render_metrics)
     view = st.segmented_control('Futures position view', views, key=key+'view',
         default=st.session_state[key+'view'], label_visibility='collapsed') or 'Chart'
     st.session_state[key+'selected_view'] = view

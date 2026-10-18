@@ -63,8 +63,8 @@ def _integer(value, label):
 def render_generalized_studies(directory=None, *, positions=(), reporting_currency='EUR'):
     """`positions` supplies copied {id,name,contract,quantity,last_price} records."""
     st.subheader('Futures studies')
-    st.caption('Hypothetical reserves and trades. Running a study never changes recorded holdings, cash or transactions. '
-               'These scenarios use close-to-close observations and explicit assumptions, not broker liquidation rules.')
+    st.caption('Hypothetical study · ' + reporting_currency, help='Running a study never changes recorded holdings, cash or transactions. '
+               'Scenarios use close-to-close observations and explicit assumptions, not broker liquidation rules.')
     context = sha256(str(directory).encode()).hexdigest()[:10]
     records = {str(p['id']): p for p in positions}
     choices = ['Manual contract', *records]
@@ -90,7 +90,10 @@ def render_generalized_studies(directory=None, *, positions=(), reporting_curren
     draft_revision = st.session_state[prefix+'draft_revision']
     if revision != draft_revision:
         st.warning('Saved study settings changed since this draft opened. Reload before saving; your draft is still visible.')
-    if directory and st.button('Reload saved study settings', key=prefix+'reload'):
+    controls_area = st.container(key=prefix+'controls')
+    results_area = st.container(key=prefix+'results')
+    settings_area = st.container(key=prefix+'assumptions')
+    if directory and settings_area.button('Reload saved study settings', key=prefix+'reload'):
         for state_key in list(st.session_state):
             if state_key.startswith(prefix):
                 del st.session_state[state_key]
@@ -106,7 +109,7 @@ def render_generalized_studies(directory=None, *, positions=(), reporting_curren
         generation = st.session_state.get(prefix+name+'_generation', 0)
         return st.data_editor(pd.DataFrame(values), num_rows='dynamic',
             hide_index=True, key=prefix+name+str(generation), column_config=columns or {})
-    with st.expander('Contract and scenario', expanded=not bool(position)):
+    with settings_area.expander('Contract and scenario', expanded=not bool(position)):
         if selected_contract:
             contract = selected_contract
             st.write(f'{contract.product} · {contract.expiry} · {contract.currency} · multiplier {contract.multiplier:g}')
@@ -120,12 +123,16 @@ def render_generalized_studies(directory=None, *, positions=(), reporting_curren
             convention = st.selectbox('Underlying return convention', ['price', 'net', 'gross', 'unknown'],
                 index=['price', 'net', 'gross', 'unknown'].index(saved.get('convention', 'unknown')), key=prefix+'convention')
             contract = None
-        quantity = number('Signed scenario contracts', 'quantity', int(position['quantity']) if position else 1, step=1)
-        mark = number('Opening price in points', 'mark', float(position.get('last_price') or 1.) if position else 1., min_value=.000001)
+    with controls_area:
+        scenario_columns = st.columns(2)
+        with scenario_columns[0]:
+            quantity = number('Signed scenario contracts', 'quantity', int(position['quantity']) if position else 1, step=1)
+        with scenario_columns[1]:
+            mark = number('Opening price in points', 'mark', float(position.get('last_price') or 1.) if position else 1., min_value=.000001)
         start = text_input('Scenario start date', 'start', date.today().isoformat())
         end = text_input('Scenario end date', 'end', selected_contract.expiry if selected_contract else expiry)
         mode = st.selectbox('Study mode', MODES, index=MODES.index(saved.get('mode', MODES[0])), key=prefix+'mode')
-    with st.expander('Cash, collateral and currency', expanded=True):
+    with settings_area.expander('Cash, collateral and currency', expanded=False):
         st.caption(f'All totals report in {reporting_currency}. FX is {reporting_currency} per currency unit. '
                    'These are separate scenario reserves, never additional assets in your portfolio. '
                    'Foreign collateral supports margin after a haircut but does not pay settlement.')
@@ -140,7 +147,7 @@ def render_generalized_studies(directory=None, *, positions=(), reporting_curren
         haircut = number('Foreign cash haircut (%)', 'haircut', 10., min_value=0., max_value=100.)
         credit = number('Allowed settlement-currency debit', 'credit', 0., min_value=0.)
         scale_margin = st.checkbox('Scale margin with contract price', value=saved.get('scale_margin', False), key=prefix+'scale_margin')
-    with st.expander('Funding policies, costs and manual payments'):
+    with settings_area.expander('Funding policies, costs and manual payments'):
         st.caption('Policy target and trigger are settlement-currency cash amounts. Source order determines which '
                    'bank currency funds a transfer first. Currency conversion occurs at dispatch; arrival follows '
                    'the maintenance check. Below maintenance triggers a close; equality does not.')
@@ -157,7 +164,7 @@ def render_generalized_studies(directory=None, *, positions=(), reporting_curren
         slippage = number('Slippage per side in points', 'slippage', 0., min_value=0.)
         payments = table('Optional manually scheduled payments; no tax calculations', 'payments',
             [dict(date='', currency=reporting_currency, amount=0., kind='tax', pool='broker')])
-    with st.expander('Paths, histories and roll calendar', expanded=True):
+    with settings_area.expander('Paths, histories and roll calendar', expanded=False):
         annual_return = number('Annual underlying growth assumption (%)', 'annual_return', 0.)
         volatility = number('Annual underlying volatility (%)', 'volatility', 20., min_value=0., max_value=300.)
         carry = number('Effective carry after dividend/return-convention adjustment (%)', 'carry', 0.)
@@ -238,14 +245,14 @@ def render_generalized_studies(directory=None, *, positions=(), reporting_curren
     if not selected_contract:
         config.update(product=product, currency=currency, multiplier=multiplier, tick=tick, expiry=expiry, convention=convention)
     digest = sha256(json.dumps(config, sort_keys=True, default=str).encode()).hexdigest()
-    if directory and st.button('Save study settings', key=prefix+'save'):
+    if directory and settings_area.button('Save study settings', key=prefix+'save'):
         try:
             save_study_settings(directory, key, config, draft_revision)
             st.session_state[prefix+'draft_revision'] = load_study_settings(directory)[1]
             st.success('Scenario settings saved. Actual portfolio records are unchanged.')
         except (DataError, OSError) as exc:
             st.error(str(exc))
-    if st.button('Run study', type='primary', key=prefix+'run'):
+    if controls_area.button('Run study', type='primary', key=prefix+'run'):
         try:
             if not contract:
                 contract = ScenarioContract(product, currency, multiplier, expiry, tick, convention)
@@ -255,33 +262,37 @@ def render_generalized_studies(directory=None, *, positions=(), reporting_curren
             st.session_state[prefix+'result'] = (digest, result)
         except (DataError, ValueError, TypeError, KeyError, OverflowError) as exc:
             st.error(str(exc))
-    cached = st.session_state.get(prefix+'result')
-    if cached:
-        if cached[0] != digest:
-            st.info('Inputs changed. Run the study to refresh the results.')
-            return
-        summary, runs, examples = cached[1]
-        st.caption(f'Amounts in {reporting_currency}; frequencies are fractions. Every candidate uses identical paths and starting reserves. '
-                   'Cash and always-long index alternatives use the same starting capital without futures fees/taxes; '
-                   'the index benchmark is unavailable for settlement-only histories.')
-        st.dataframe(summary, hide_index=True)
-        st.dataframe(runs.groupby('policy', sort=False)[['cash_benchmark', 'index_benchmark', 'market_pnl', 'fx_pnl',
-            'bank_interest', 'broker_interest', 'fees', 'taxes', 'transfer_costs']].median())
-        chosen = st.selectbox('Inspect first path', list(examples), key=prefix+'inspect')
-        example = examples[chosen]
-        import plotly.graph_objects as go
-        from portfolio_app.charts import chart_config, style_figure
-        from portfolio_app.chart_hover import chart_hover
-        figure = go.Figure()
-        for column, label in [('wealth', 'Total value'), ('bank', 'Bank'), ('broker', 'Broker'), ('transit', 'In transit')]:
-            figure.add_scatter(x=example.events.date, y=example.events[column], name=label, mode='lines')
-        figure.update_layout(yaxis_title=reporting_currency, height=350, legend=dict(orientation='h'))
-        st.plotly_chart(chart_hover(style_figure(figure)), width='stretch', config=chart_config())
-        for issue in example.issues:
-            st.warning(issue)
-        st.caption(f'Cash reconciliation error: {example.reconciliation_error:.8f} {reporting_currency}. '
-                   'Notional and eligible collateral columns use contract currency; currency-labelled cash columns use their native currencies.')
-        st.dataframe(example.events, hide_index=True)
+    with results_area:
+        cached = st.session_state.get(prefix+'result')
+        if cached:
+            if cached[0] != digest:
+                st.info('Inputs changed. Run the study to refresh the results.')
+                return
+            summary, runs, examples = cached[1]
+            st.caption(f'Amounts in {reporting_currency}; frequencies are fractions. Every candidate uses identical paths and starting reserves. '
+                       'Cash and always-long index alternatives use the same starting capital without futures fees/taxes; '
+                       'the index benchmark is unavailable for settlement-only histories.')
+            st.dataframe(summary, hide_index=True)
+            with st.expander('Policy components'):
+                st.dataframe(runs.groupby('policy', sort=False)[['cash_benchmark', 'index_benchmark', 'market_pnl', 'fx_pnl',
+                    'bank_interest', 'broker_interest', 'fees', 'taxes', 'transfer_costs']].median())
+            chosen = st.selectbox('Inspect first path', list(examples), key=prefix+'inspect')
+            example = examples[chosen]
+            import plotly.graph_objects as go
+            from portfolio_app.charts import chart_config, style_figure
+            from portfolio_app.chart_hover import chart_hover
+            figure = go.Figure()
+            for column, label in [('wealth', 'Total value'), ('bank', 'Bank'), ('broker', 'Broker'), ('transit', 'In transit')]:
+                figure.add_scatter(x=example.events.date, y=example.events[column], name=label, mode='lines')
+            figure.update_layout(yaxis_title=reporting_currency, height=350,
+                                 legend=dict(orientation='h', x=0, y=1.02, yanchor='bottom'))
+            st.plotly_chart(chart_hover(style_figure(figure)), width='stretch', config=chart_config())
+            for issue in example.issues:
+                st.warning(issue)
+            st.caption(f'Cash reconciliation error: {example.reconciliation_error:.8f} {reporting_currency}. '
+                       'Notional and eligible collateral columns use contract currency; currency-labelled cash columns use their native currencies.')
+            with st.expander('Path accounting details'):
+                st.dataframe(example.events, hide_index=True)
 
 
 def prepare_study(config, contract, reporting_currency):

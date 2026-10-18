@@ -48,9 +48,10 @@ def update_fund_factor(directory, position_id, factor, *, settings_revision, hol
 
 def render_leveraged_funds(directory, valued):
     st.subheader('Leveraged funds')
-    st.caption('Record a dated signed exposure factor for a held ETF. For example, 2 means twice its current value; '
-               '−1 means inverse exposure. The ETF retains its actual market value and observed returns. '
-               'A daily reset factor does not promise the same multiple over several days.')
+    with st.expander('About exposure factors'):
+        st.write('Record a dated signed exposure factor for a held ETF. For example, 2 means twice its current value; '
+                 '−1 means inverse exposure. The ETF retains its actual market value and observed returns. '
+                 'A daily reset factor does not promise the same multiple over several days.')
     try:
         settings, revision = load_leverage_settings(directory)
         snapshot = read_snapshot(directory / 'holdings.csv')
@@ -59,11 +60,27 @@ def render_leveraged_funds(directory, valued):
         return
     funds = valued.loc[valued.get('instrument_type', pd.Series('', index=valued.index)).eq('etf')].copy()
     funds = funds.loc[funds.position_id.isin(snapshot.holdings.position_id)] if 'position_id' in funds else funds
-    if funds.empty:
-        st.info('Add an ETF to Holdings before recording its embedded exposure factor.')
-        return
     records = {x.position_id: x for x in settings.fund_factors}
-    names = {row['position_id']: f"{row['name']} · {row.get('account') or row['position_id']}" for row in funds.to_dict('records')}
+    names = {row['position_id']: row['name'] + (f" · {row['account']}" if row.get('account') else '') for row in funds.to_dict('records')}
+    unavailable = {pid: value for pid, value in records.items() if pid not in names}
+    if unavailable:
+        with st.expander('Unavailable saved funds', expanded=True):
+            st.caption('These saved factors no longer match a held ETF. They are retained until explicitly removed.')
+            for index, (pid, value) in enumerate(unavailable.items(), 1):
+                st.write(f"Saved fund {index} · {value.benchmark or 'No benchmark recorded'} · {value.as_of or 'Undated'} · "
+                         + ('Unknown factor' if value.factor is None else f'{value.factor:g}×'))
+                with st.expander(f'Saved fund {index} provenance'):
+                    st.json(value.__dict__)
+                if st.button(f'Remove unavailable fund {index}', key='leveraged_funds_remove_'+pid):
+                    try:
+                        update_fund_factor(directory, pid, None, settings_revision=revision, holdings_revision=snapshot.revision)
+                    except (DataError, OSError) as exc:
+                        st.error(str(exc))
+                    else:
+                        st.rerun()
+    if funds.empty:
+        st.caption('Add an ETF to Holdings to record its exposure factor.')
+        return
     key = 'leveraged_funds_' + sha256(str(directory.resolve()).encode()).hexdigest()[:12]
     position_id = st.selectbox('ETF position', list(names), format_func=names.get, key=key + '_position')
     existing = records.get(position_id)
@@ -83,7 +100,7 @@ def render_leveraged_funds(directory, valued):
         if proxy and proxy not in proxy_options:
             proxy_options.append(proxy)
         proxy_id = st.selectbox('Unlevered reference ETF (optional)', proxy_options, index=proxy_options.index(proxy),
-                                format_func=lambda value: names.get(value, value) if value else 'None')
+                                format_func=lambda value: names.get(value, 'Unavailable saved proxy · choose a held ETF') if value else 'None')
         st.caption('A reference ETF documents the benchmark approximation. Its holdings are not treated as this fund’s owned basket. '
                    'Unknown means exposure remains incomplete; it is not assumed to be 1×.')
         save = st.form_submit_button('Save fund factor')

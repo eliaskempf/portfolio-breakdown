@@ -516,5 +516,5 @@ def test_gold_spot_weight_save_reload_and_details(intro_page):
     playwright.expect(page.get_by_test_id('stMetricValue').first).to_have_text('€4,000.00')
     page.get_by_role('tab', name='Positions', exact=True).click()
     page.get_by_role('table', name='Positions', exact=True).get_by_text('Invented spot gold', exact=True).click()
-    playwright.expect(dialog.get_by_text('Gold spot valuation uses the latest available quote. Gold price history is not available here yet.', exact=True)).to_be_visible()
+    playwright.expect(dialog.get_by_text('Gold spot price history is not available yet.', exact=True)).to_be_visible()
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

@@ -197,3 +197,22 @@ def test_market_basis_survives_navigation(tmp_path):
     activate(app, 'Exposure')
     assert not app.exception
     assert by_label(app.get('button_group'), 'Exposure basis').value == 'Equity only'
+
+
+def test_partial_exposure_uses_compact_status_and_optional_readable_details():
+    from streamlit.testing.v1 import AppTest
+    app = AppTest.from_string('''
+import pandas as pd
+from portfolio_app.portfolio_exposure_ui import render_exposure_coverage
+rows = pd.DataFrame([dict(source_position_id='opaque-synthetic-position', asset_name='Invented component',
+    status='Unknown composition', market_exposure_reporting=None)])
+sources = pd.DataFrame([dict(position_id='opaque-synthetic-position', name='Invented fund')])
+render_exposure_coverage(rows, sources)
+''').run()
+    assert not app.exception
+    assert not app.warning
+    assert any(item.value == 'Partial exposure' for item in app.caption)
+    details = next(item for item in app.expander if item.label == 'Exposure coverage details')
+    assert not details.proto.expanded
+    assert app.dataframe[0].value.Source.tolist() == ['Invented fund']
+    assert 'opaque-synthetic-position' not in app.dataframe[0].value.to_string()

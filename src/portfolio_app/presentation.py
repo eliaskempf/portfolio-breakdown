@@ -121,7 +121,7 @@ def return_percent(value) -> str:
     return f'{arrow}{abs(value):,.2f}%'
 
 
-def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False, freshness=None, known=None, twr=None):
+def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False, freshness=None, known=None, twr=None, freshness_rows=None):
     """One value card with an adjacent, optionally clickable unrealized gain."""
     gain = performance.return_pct if percent else performance.gain_reporting
     gain_text = ('N/A · Cash balance' if performance.cash_only else 'Unavailable') if gain is None else return_percent(gain) if percent else money(gain, signed=True)
@@ -130,17 +130,22 @@ def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle
         gain_text = ('—' if gain is None else return_percent(gain)) if percent else (
             'N/A · Cash balance' if gain is None and performance.cash_only else
             'Unavailable' if gain is None else money(gain, signed=True))
-    with st.container(key=key):
-        st.metric(label or ('Priced value' if missing else 'Current value'), money(value),
-                  delta=gain_text, delta_color=('inverse' if percent and gain < 0 else 'normal') if gain and not (freshness and freshness[2]) else 'off', delta_arrow='off',
-                  help=(f'Total known gain: realized + unrealized + recorded income, less costs once. Performance coverage: {known.coverage}. Valued {known.as_of}; quote/FX dates in price details. Click for full-history TWR.' if known is not None else
-                       ('Assets minus debt. Gain includes holdings performance and net futures P&L. ' if strategy_gain else
-                        'Current holdings value and gain on recorded costs. ') +
-                       f'{missing} missing prices. Performance coverage: {performance.coverage}. Click gain to switch amount / %.'))
-        if known is not None and known.partial:
-            st.caption(f'{known.status} gain · {known.coverage}', help=' '.join(known.reasons))
-        if freshness and freshness[0]:
-            st.caption(freshness[0], help=freshness[1])
+    from portfolio_app.freshness_ui import render_freshness
+    from portfolio_app.futures_valuation import summarize_freshness
+    def render(rows):
+        current_freshness = summarize_freshness(rows) if rows is not None else freshness
+        with st.container(key=key):
+            st.metric(label or ('Priced value' if missing else 'Current value'), money(value),
+                      delta=gain_text, delta_color=('inverse' if percent and gain < 0 else 'normal') if gain and not (current_freshness and current_freshness[2]) else 'off', delta_arrow='off',
+                      help=(f'Total known gain: realized + unrealized + recorded income, less costs once. Valued {known.as_of}; quote/FX dates in price details. Click for full-history TWR.' if known is not None else
+                           ('Assets minus debt. Gain includes holdings performance and net futures P&L. ' if strategy_gain else
+                            'Current holdings value and gain on recorded costs. ') +
+                           f'{missing} missing prices. Performance coverage: {performance.coverage}. Click gain to switch amount / %.'))
+            if known is not None and known.partial:
+                st.caption(known.coverage_note, help=known.coverage_help)
+            if current_freshness and current_freshness[0]:
+                st.caption(current_freshness[0], help=current_freshness[1])
+    render_freshness(freshness_rows, render)
     if on_toggle_gain:
         toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain, container_key=key,
                          tooltip=('TWR · All history · Click for amount' if percent else 'Total gain · Click for TWR') if known is not None else None)

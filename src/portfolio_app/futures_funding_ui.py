@@ -36,7 +36,8 @@ def _rules(prefix, initial):
     return dict(delay=delay, frequency=frequency, trigger=trigger/100 if trigger is not None else None, proportional=scaling)
 
 
-def funding_controls(directory, context):
+def funding_controls(directory, context, *, details_area=None):
+    details_area = details_area or st
     try:
         saved, revision = load_funding_settings(directory)
     except DataError as exc:
@@ -46,13 +47,13 @@ def funding_controls(directory, context):
     if revision_key not in st.session_state:
         st.session_state[revision_key] = revision
     key = f'futures_input_{context}_funding_'
-    st.caption('Experimental reserve only · no deposits, transfers or study results are written into your portfolio.')
+    st.caption('Hypothetical funding reserve', help='Study deposits, transfers and results never change your portfolio.')
     left, right = st.columns(2)
     reserve = left.number_input('Total study reserve (€)', min_value=1., value=study.reserve if study else None,
                                 step=1000., key=key+'reserve', placeholder='Enter broker + bank cash')
     baseline_amount = right.number_input('Baseline cash target or loss buffer (€)', min_value=0.,
         value=study.baseline.amount if study else None, step=1000., key=key+'baseline_amount', placeholder='Enter an explicit baseline')
-    with st.expander('Baseline policy', expanded=False):
+    with details_area.expander('Baseline policy', expanded=False):
         st.caption('This policy stays fixed across candidate comparisons. Market, costs, rates and margin stress apply equally to both sides.')
         base = study.baseline if study else FundingPolicy(0.)
         mode = st.radio('Baseline target type', ['target', 'buffer'], format_func=lambda v: 'Broker cash target' if v == 'target' else 'Maintenance + loss buffer',
@@ -64,11 +65,11 @@ def funding_controls(directory, context):
         value=', '.join(str(p.amount) for p in candidates if p.mode == 'target'), key=key+'targets')
     buffers = right.text_input('Candidate loss buffers (€; comma-separated)',
         value=', '.join(str(p.amount) for p in candidates if p.mode == 'buffer'), key=key+'buffers')
-    with st.expander('Candidate funding rules'):
+    with details_area.expander('Candidate funding rules'):
         rules = _rules(key+'candidate_', candidates[0] if candidates else FundingPolicy(0.))
         st.caption('A loss-buffer policy adds its buffer to current maintenance. Initial-margin funding floors can increase actual cash usage. '
                    'Outgoing sweeps are immediate; incoming transfers arrive after the margin check and earn no interest in transit.')
-    with st.expander('History, cohort & margin stress', expanded=not bool(source)):
+    with details_area.expander('History, cohort & margin stress', expanded=not bool(source)):
         if not source:
             for name in ('funding-history.csv', 'futures-return-history.json'):
                 if (Path(directory)/name).is_file():
@@ -94,7 +95,7 @@ def funding_controls(directory, context):
                              years, step, low_vol, threshold/100, vol_margin)
     except (ValueError, TypeError) as exc:
         st.error(f'Check study inputs: {exc}'); return None, source
-    if st.button('Save funding study settings', key=f'futures_funding_save_{context}'):
+    if details_area.button('Save funding study settings', key=f'futures_funding_save_{context}'):
         try:
             save_funding_settings(directory, study, source, st.session_state[revision_key])
         except (DataError, OSError) as exc:
@@ -107,13 +108,9 @@ def funding_controls(directory, context):
 
 def render_funding(position, settings, provenance, directory, context, settings_area, *, stress=False):
     st.subheader('Stress & history' if stress else 'Funding policies')
-    st.caption('Historical moves applied to the current integer-contract position, including quarterly rolls. '
+    st.caption('Historical policy comparison', help='Historical moves applied to the current integer-contract position, including quarterly rolls. '
                'All candidates have the same reserve and starting exposure as the fixed baseline.')
-    if stress:
-        with settings_area.expander('Funding study inputs'):
-            study, source = funding_controls(directory, context)
-    else:
-        study, source = funding_controls(directory, context)
+    study, source = funding_controls(directory, context, details_area=settings_area)
     history, error, identity = None, None, None
     if source:
         try:
@@ -142,16 +139,16 @@ def render_funding(position, settings, provenance, directory, context, settings_
     result, run_position, run_settings, run_study, run_history = saved_run
     if identity != result.metadata['identity'] or error:
         st.warning('Results are stale: inputs or source changed. Showing the previous run; run the study again to apply edits.')
-    st.caption(f"Run {result.metadata['identity'][:10]} · {result.metadata['model']} · "
-        f"{result.metadata['window_count']:,} overlapping windows · {run_study.years} year(s) · "
+    st.caption(f"{result.metadata['window_count']:,} overlapping windows · {run_study.years} year(s) · "
         f"{result.metadata['excluded_warmup']} excluded for warm-up, {result.metadata['excluded_cohort']} for opening volatility. "
         'Historical frequencies describe this cohort; they are not forecast liquidation probabilities.')
-    st.caption(f"{run_history.source} · {result.metadata['source_start']} → {result.metadata['source_end']}")
     if stress:
         render_stress(result, run_position, run_settings, run_study, run_history, context)
     else:
         render_summary(result, run_study)
     with st.expander('Run assumptions & model'):
+        st.caption(f"{run_history.source} · {result.metadata['source_start']} → {result.metadata['source_end']}")
+        st.caption(f"Model {result.metadata['model']} · Run {result.metadata['identity'][:10]}")
         st.caption(run_history.qualification)
         st.write(f'Bank yield {run_settings.savings_rate:.2%}; broker yield {run_settings.cash_rate:.2%}; financing {run_settings.financing_rate:.2%}. '
                  'Dated starting rates stay constant during replay, with ACT/360 cash accrual. No historical rate reconstruction is implied.')

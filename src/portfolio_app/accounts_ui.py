@@ -34,7 +34,7 @@ def _money_input(label, key, value='0', *, help=None):
 
 
 def _save_review(directory, journal, revision, candidate, key, *, holdings_revision=None,
-                 review_label='Review changes', save_label='Save reviewed changes'):
+                 review_label='Review changes', save_label='Save reviewed changes', compare_balances=False):
     """Require explicit review; preserve the exact reviewed candidate on reruns."""
     ledger = _imports()
     import json
@@ -55,10 +55,12 @@ def _save_review(directory, journal, revision, candidate, key, *, holdings_revis
     st.markdown('**Reviewed changes**')
     events = proposed.events[len(journal.events):]
     if events:
+        from portfolio_app.account_activity import ACTIONS, AMOUNT_KINDS
         contracts = {p.id: next(c for c in proposed.contracts if c.id == p.contract_id) for p in proposed.positions}
-        st.dataframe(pd.DataFrame([dict(Date=e.date, Action=e.kind,
+        st.dataframe(pd.DataFrame([dict(Date=e.date, Action=ACTIONS.get(e.kind, e.kind),
             Contract=(contracts[e.position_id].product + ' ' + contracts[e.position_id].expiry) if e.position_id in contracts else '', Currency=e.currency,
-            Amount=str(e.amount), Quantity=e.quantity, Price=str(e.price or ''), Note=e.note) for e in events]), hide_index=True)
+            Amount=str(e.amount) if e.kind in AMOUNT_KINDS else '', Quantity=e.quantity if e.kind in {'snapshot', 'trade'} else '',
+            Price=str(e.price or ''), Note=e.note) for e in events]), hide_index=True)
     from portfolio_app.investment_ui import investment_review_rows
     investment_changes = investment_review_rows(journal, proposed)
     if investment_changes:
@@ -66,6 +68,12 @@ def _save_review(directory, journal, revision, candidate, key, *, holdings_revis
     state = ledger.replay(proposed)
     names = {a.id: a.name for a in proposed.accounts}
     st.dataframe(pd.DataFrame([{'Account': names[a], 'Currency': c, 'Cash after posting': 'Unknown' if (a,c) in state.unknown_cash else str(v)} for (a,c),v in state.cash.items()]), hide_index=True)
+    if compare_balances:
+        from portfolio_app.account_activity import accounting_effects
+        effects = accounting_effects(journal, proposed)
+        if effects:
+            st.markdown('**Accounting effects**')
+            st.dataframe(pd.DataFrame(effects), hide_index=True, width='stretch')
     st.caption('Save posts the reviewed entries above. Review again to include changed inputs.')
     if st.button(save_label, type='primary', key=key + 'save'):
         try:
@@ -258,19 +266,8 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
         render_actual_positions(directory, journal, valued=valued)
     if state.positions:
         render_transaction(directory, journal, revision)
-    with st.expander('Recorded transactions'):
-        st.dataframe(pd.DataFrame([asdict(e) for e in journal.events]).astype(str), hide_index=True)
-    if journal.events:
-        with st.expander('Correct a recorded transaction'):
-            identifiers = [e.id for e in journal.events if e.kind != 'void']
-            labels = {e.id: f'{e.date} · {e.kind} · {e.note or e.id[:8]}' for e in journal.events}
-            selected = st.selectbox('Entry to reverse', identifiers, format_func=labels.get, key=key+'reverse')
-            st.caption('A reversal preserves history. Dependent entries may need reversal first; re-enter corrected facts afterward.')
-            try:
-                candidate = ledger.append_event(journal, _event(journal, 'void', date.today(), replaces=selected))
-                _save_review(directory, journal, revision, candidate, key+'void_')
-            except DataError as exc:
-                st.info(str(exc))
+    from portfolio_app.account_activity_ui import render_activity
+    render_activity(directory, journal, revision, key=key+'journal_')
 
 
 def render_transaction(directory, journal, revision, *, position_ids=None, key_prefix=None):

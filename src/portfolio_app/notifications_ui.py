@@ -37,33 +37,38 @@ def _monitoring_document(directory):
 
 
 def notification_bell(slot, directory, funds, valued, status, *, demo=False, cache_warning='', exposure_issues=(), disabled=False, journal=None):
-    _, refresh_issues = refresh_notices(directory, funds, demo=demo)
-    from portfolio_app.settlement_archive_ui import settlement_notices
-    _, settlement_issues = settlement_notices(directory,journal)
-    current = notification_fingerprints(valued, status, refresh_issues=(*refresh_issues,*settlement_issues),
-        cache_warning=cache_warning, exposure_issues=exposure_issues)
-    doc = _monitoring_document(directory)
-    seen = st.session_state.setdefault('notification_seen', {})
-    workspace = str(directory.resolve())
-    saved_seen = set(doc['notice_seen']) | set(seen.get(workspace, ()))
-    count = len(current-saved_seen) + sum(not e['read'] for e in doc['events'])
     with slot:
         panel = st.popover('Notifications', icon=':material/notifications:',
-            help=f'{count} unread notifications' if count else 'Notifications',
-            key='workspace_notifications', on_change='rerun', width='stretch', disabled=disabled)
-    unread, seen[workspace] = unread_notifications(current, saved_seen, opened=panel.open)
-    from portfolio_app.monitoring_store import remember_notices, mark_events
-    from portfolio_app.holdings import DataError
-    try:
-        remember_notices(directory, current, opened=panel.open)
-        if panel.open:
-            mark_events(directory, [e['id'] for e in doc['events'] if not e['read']])
-    except (DataError, OSError):
-        pass  # The monitoring area reports persistence problems with recovery guidance.
-    if count and not panel.open:
-        st.html('<style>.st-key-header_notifications [data-testid="stPopoverButton"]::after {'
-            + f'content:"{min(count,99)}";'
-            + 'width:auto;min-width:15px;height:15px;padding:0 2px;right:0;top:0;font-size:10px;color:white;line-height:15px;border-radius:8px;text-align:center;}</style>')
+            help='Notifications', key='workspace_notifications', on_change='rerun',
+            width='stretch', disabled=disabled)
+
+        @st.fragment(run_every=2 if journal and journal.positions and not demo else None)
+        def indicator():
+            _, refresh_issues = refresh_notices(directory, funds, demo=demo)
+            from portfolio_app.settlement_archive_ui import settlement_notices
+            _, settlement_issues = settlement_notices(directory, journal)
+            current = notification_fingerprints(valued, status,
+                refresh_issues=(*refresh_issues, *settlement_issues),
+                cache_warning=cache_warning, exposure_issues=exposure_issues)
+            doc = _monitoring_document(directory)
+            seen = st.session_state.setdefault('notification_seen', {})
+            workspace = str(directory.resolve())
+            saved_seen = set(doc['notice_seen']) | set(seen.get(workspace, ()))
+            count = len(current-saved_seen) + sum(not e['read'] for e in doc['events'])
+            _, seen[workspace] = unread_notifications(current, saved_seen, opened=panel.open)
+            from portfolio_app.monitoring_store import remember_notices, mark_events
+            from portfolio_app.holdings import DataError
+            try:
+                remember_notices(directory, current, opened=panel.open)
+                if panel.open:
+                    mark_events(directory, [e['id'] for e in doc['events'] if not e['read']])
+            except (DataError, OSError):
+                pass  # The monitoring area provides persistence recovery guidance.
+            badge = str(min(count, 99)) if count and not panel.open else ''
+            st.html('<style>.st-key-header_notifications [data-testid="stPopoverButton"]::after {'
+                + f'content:"{badge}";display:{"block" if badge else "none"};'
+                + 'width:auto;min-width:15px;height:15px;padding:0 2px;right:0;top:0;font-size:10px;color:white;line-height:15px;border-radius:8px;text-align:center;}</style>')
+        indicator()
     return panel
 
 
@@ -89,12 +94,12 @@ def _render_notice(message):
         st.markdown(message)
 
 
-def _card(notice, directory):
+def _card(notice, directory, *, on_navigate=None):
     with st.container(border=True):
         st.markdown(f'**{notice.title}**')
         st.markdown(notice.message)
         st.caption(notice.severity.title() + (f' · Observed {notice.observed_at}' if notice.observed_at else ''))
-        st.button(notice.action, key='notice_action_'+notice.id, on_click=navigate, args=(notice.destination,directory))
+        st.button(notice.action, key='notice_action_'+notice.id, on_click=on_navigate or navigate, args=(notice.destination,directory))
 
 
 def render_notifications(directory, funds, revision, valued, status, *, demo=False,
@@ -124,9 +129,20 @@ def render_notifications(directory, funds, revision, valued, status, *, demo=Fal
         _card(Notice('etf_'+str(i), 'ETF data', message, 'warning', Destination('sources'), 'Review ETF sources'), directory)
     # Transient progress is a caption, separate from actionable/unread notices.
     render_refresh_status(directory, funds, revision, demo=demo, include_notices=False)
-    messages, _ = settlement_notices(directory,journal)
-    for i,message in enumerate(messages):
-        _card(Notice('settlement_'+str(i), 'Settlement history', message, 'warning', Destination('settlements'), 'Review settlement history'), directory)
+    action = []
+    def follow_notice(destination, directory):
+        navigate(destination, directory)
+        action.append(True)
+    @st.fragment(run_every=2 if journal and journal.positions and not demo else None)
+    def settlement_cards():
+        if action:
+            action.clear()
+            st.rerun(scope='app')
+        messages, _ = settlement_notices(directory, journal)
+        for i, message in enumerate(messages):
+            _card(Notice('settlement_'+str(i), 'Futures data', message, 'warning',
+                Destination('settlements'), 'Review settlement history'), directory, on_navigate=follow_notice)
+    settlement_cards()
     if prices_pending:
         st.caption('Updating market prices…')
     manual = int(valued.price_status.eq('manual').sum())

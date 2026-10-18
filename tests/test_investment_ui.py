@@ -102,7 +102,7 @@ def test_roll_keeps_investment_and_group_request_opens_active_contract(tmp_path)
     by_label(app.selectbox, 'Contract position').set_value('p').run()
     assert by_label(app.selectbox, 'Contract position').value == 'p'
     assert by_label(app.selectbox, 'Futures investment').value == investment.id
-    histories = [frame.value for frame in app.dataframe if 'Status' in frame.value]
+    histories = [frame.value for frame in app.dataframe if {'Status', 'Maturity', 'Contracts'} <= set(frame.value)]
     assert len(histories) == 1
     assert histories[0].Status.tolist() == ['Closed', 'Open']
 

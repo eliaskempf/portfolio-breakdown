@@ -22,7 +22,7 @@ from portfolio_app.performance import position_performance, summarize_performanc
 from portfolio_app.strategic import bucket_paths, category_labels, bucket_positions, strategic_summary, strategic_tree, strategic_performance
 
 
-def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None, open_capital_targets=None, current_valued=None):
+def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None, open_capital_targets=None, current_valued=None, automatic_history=False):
     if 'unrealized_gain_reporting' not in valued:
         valued = position_performance(valued)
     from portfolio_app.futures import funded_strategy_positions
@@ -76,7 +76,9 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 config=config,bucket=bucket,displayed=valued, current_valued=current_valued if current_valued is not None else valued)
         except (DataError,ValueError,OSError) as exc:
             st.caption(str(exc))
-    has_history = history is not None and history['view'].useful
+    from portfolio_app.history_scope import can_start_history_chart
+    has_history = history is not None and (history['view'].useful or
+        can_start_history_chart(history['journal'], history['scope']))
     default_view = 'Performance' if has_history else 'Allocation'
     measure = 'Capital allocation'
     with st.container(horizontal=True, vertical_alignment='center', gap='medium', key='overview_view_controls'):
@@ -92,13 +94,13 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                          performance, missing=missing, percent=percent, key='overview_value',
                          on_toggle_gain=on_toggle_gain,
                          label=('Category value' if bucket else 'Portfolio value') if exposure_result is not None else None,
-                         funded_gain=exposure_result is not None, strategy_gain=has_strategy, freshness=freshness,
+                         funded_gain=exposure_result is not None, strategy_gain=has_strategy, freshness=freshness, freshness_rows=selected,
                          known=history.get('current_gain') if history else None,
                          twr=history['view'].all_result.time_weighted if history else None)
         if second is not None:
             with second:
                 from portfolio_app.portfolio_exposure_ui import render_equity_exposure_metric
-                render_equity_exposure_metric(exposure_result, market=True, bucket_ids=bucket_ids, freshness=freshness)
+                render_equity_exposure_metric(exposure_result, market=True, bucket_ids=bucket_ids, freshness=freshness, freshness_rows=selected)
 
     if mode == 'Analytics':
         analytics(selected.loc[selected.position_id.ne('future:overlay')], scope, scoped_future, bool(bucket))
@@ -107,7 +109,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         if has_history:
             from portfolio_app.history_ui import render_portfolio_history
             render_portfolio_history(data_dir,history,label='Category value' if bucket else 'Portfolio value',
-                                     percent=percent,on_toggle_gain=on_toggle_gain)
+                                     percent=percent,on_toggle_gain=on_toggle_gain,automatic=automatic_history)
         with st.container(key='tour_performance'):
             table = strategic_performance(valued, config, bucket)
             if history is not None:
@@ -116,7 +118,6 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 table = known_category_performance(valued, read_snapshot(data_dir / 'holdings.csv').holdings,
                     config, history['journal'], history['observations'],
                     current_valued if current_valued is not None else valued, bucket, target=reporting_currency())
-            category_freshness = table.attrs.get('valuation_freshness', {})
             st.markdown('**Category comparison**', help='Total known gain includes retained closed holdings and recorded income. Return is full recorded-history time-weighted return (TWR), not gain divided by remaining cost. Current category membership does not reconstruct past assignments; unsupported account splits remain unavailable.')
             measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'], help='Cumulative TWR requires exact cash-flow boundary valuations. Gain shows supported monetary subtotals, with coverage.',
                 default='Gain', key='strategic_performance_measure') or 'Gain'
@@ -125,14 +126,16 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             if not available.empty:
                 hover = [[money(row["Cost"]), money(row["Gain"], signed=True),
                           f'{row["Return (%)"]:+,.2f}%' if pd.notna(row['Return (%)']) else 'Unavailable',
-                          row['Coverage'], row['Status'] + ' · ' + category_freshness.get(row.Category, ('', '', False))[0]] for _, row in available.iterrows()]
+                          row['Coverage'], row['Status']] for _, row in available.iterrows()]
                 figure = style_figure(go.Figure(go.Bar(x=available[measure], y=available.Category, orientation='h',
-                    marker_color=['#808890' if category_freshness.get(row.Category, ('', '', False))[2]
-                                  else LOSS_COLOR if row[measure] < 0 else GAIN_COLOR for _, row in available.iterrows()],
+                    marker_color=[LOSS_COLOR if row[measure] < 0 else GAIN_COLOR for _, row in available.iterrows()],
                     text=[f'{value:+,.2f}%' if chart_percent else money(value, signed=True) for value in available[measure]], textposition='auto',
                     customdata=hover, hovertemplate='%{y}<br>TWR: %{customdata[2]}<br>Gain: %{customdata[1]}<br>Capital basis: %{customdata[0]}<br>Coverage: %{customdata[3]} · %{customdata[4]}<extra></extra>')))
                 figure.update_layout(height=max(260, 36 * len(available)), xaxis_title=measure, margin=dict(l=12, r=12, t=12, b=30))
-                st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
+                st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config(), key='category_performance_chart')
+                from portfolio_app.freshness_ui import render_comparison_freshness
+                render_comparison_freshness(valued, table.attrs.get('valuation_members', {}),
+                    available.Category.tolist(), chart_key='category_performance_chart')
             elif chart_percent and table['Gain'].notna().any():
                 st.caption('TWR unavailable · Choose Gain for supported monetary results.')
             elif performance.cash_only:

@@ -4,6 +4,15 @@ from portfolio_app.history_observations import HistoryScope
 from portfolio_app.strategic import bucket_positions
 
 
+def can_start_history_chart(journal, scope):
+    """A reconstructible scope may load its first prices; summaries stay clean."""
+    from portfolio_app.security_history import selected_events
+    books = {b.position_id: b for b in journal.securities if b.active}
+    return (not scope.unresolved and set(scope.positions) <= books.keys()
+            and any(e.kind in {'buy', 'sell'} for identity in scope.positions
+                    for e in selected_events(books[identity])))
+
+
 def category_history_scope(journal, holdings, config, bucket='', *, displayed=None):
     if 'bucket_id' not in holdings:
         assignments = displayed.set_index('position_id').bucket_id.to_dict() if displayed is not None else {}
