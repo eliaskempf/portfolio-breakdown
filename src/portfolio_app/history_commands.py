@@ -19,7 +19,7 @@ def replace_book(journal, book):
     books = tuple(book if b.position_id == book.position_id else b for b in journal.securities)
     if book.position_id not in {b.position_id for b in books}:
         books = (*books, book)
-    return replace(journal, version=2, securities=books)
+    return replace(journal, version=max(2, journal.version), securities=books)
 
 
 def book_for(journal, row):
@@ -69,6 +69,10 @@ def save_history(directory, book, *, expected_journal_revision, expected_holding
                 raise DataError('History identity cannot change.')
             if previous.active and book.account_id != previous.account_id:
                 raise DataError('Use an explicit transfer to change an active holding account.')
+        if previous:
+            imported = {e.id for e in previous.records if e.source == 'transaction_csv_v1'}
+            if any(e.replaces in imported for e in book.records[len(previous.records):]) or (activate and imported.intersection(book.active_ids) != imported.intersection(previous.active_ids)):
+                raise DataError('Review imported events in Import transactions so all movements stay together.')
         if activate:
             from portfolio_app.security_history import duplicate_candidates
             if duplicate_candidates(book) and not accept_duplicates:
@@ -137,6 +141,8 @@ def correct_transaction(book, event_id, **changes):
     """Retain an editable correction; selected authority changes only on review."""
     from portfolio_app.security_history import append_evidence
     original = next((e for e in book.records if e.id == event_id), None)
+    if original is not None and original.source == 'transaction_csv_v1':
+        raise DataError('Correct an imported event in Import transactions so all movements stay together.')
     if original is None or original.source == 'confirmed_zero_start' or original.kind == 'void':
         raise DataError('Choose a saved transaction to edit.')
     if any(e.replaces == event_id for e in book.records):

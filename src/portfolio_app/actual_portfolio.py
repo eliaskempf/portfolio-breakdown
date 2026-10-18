@@ -88,7 +88,8 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
         result.loc[result.position_id.eq(binding.position_id), 'account_id'] = binding.account_id
     for book in journal.securities:
         if book.account_id and book.active:
-            result.loc[result.position_id.eq(book.position_id), 'account'] = accounts[book.account_id]
+            if not book.custody_id:
+                result.loc[result.position_id.eq(book.position_id), 'account'] = accounts[book.account_id]
             result.loc[result.position_id.eq(book.position_id), 'account_id'] = book.account_id
     rates = {}
     def converted(amount, currency):

@@ -13,7 +13,7 @@ import math
 from portfolio_app.account_journal import effective_events
 from portfolio_app.history_observations import HistoryScope
 from portfolio_app.personal_performance import calculate_history, external_flows, value_at
-from portfolio_app.security_history import replay_securities, selected_events
+from portfolio_app.security_history import replay_securities, selected_events, affected_positions
 
 ZERO = Decimal(0)
 
@@ -72,8 +72,8 @@ def amount(value):
 
 def scope_dates(journal, scope):
     owners = {p.id: p.account_id for p in journal.positions}
-    dates = [e.date for b in journal.securities if b.position_id in scope.positions
-             for e in selected_events(b) if e.date]
+    dates = [e.date for b in journal.securities for e in selected_events(b)
+             if e.date and affected_positions(b, e).intersection(scope.positions)]
     dates += [e.date for e in effective_events(journal)
               if e.account_id in scope.accounts or e.other_account_id in scope.accounts
               or owners.get(e.position_id) in scope.accounts]
@@ -107,6 +107,29 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     A complete history replaces that fallback, including when quantity is zero.
     Historical callers never project current quantities or costs backwards.
     """
+    # When an imported movement connects positions, value the selected boundary
+    # as a whole before component fallbacks. Missing internal transfer marks must
+    # not prevent cancellation or make a known portfolio gain partial.
+    if journal.transaction_imports and len(scope.positions) > 1 and not scope.unresolved:
+        dates = scope_dates(journal, scope)
+        if dates and dates[0] <= end:
+            result = calculate_history(journal, scope, observations, dates[0], end, target, returns=False)
+            flows, missing = external_flows(journal, scope, observations, dates[0], end, target)
+            review_only = all(r.startswith('Review complete scope') for r in result.flow_reasons)
+            if result.opening_capital is not None and not missing and review_only:
+                value = result.ending_value
+                if current_values is not None:
+                    values = [current_values.get(i) for i in scope.positions]
+                    values += [current_values.get('account:'+a) for a in scope.accounts]
+                    value = sum(values, ZERO) if all(v is not None for v in values) else None
+                if value is not None:
+                    capital = result.opening_capital + sum((f.amount for f in flows), ZERO)
+                    count = len(scope.positions)+len(scope.accounts)
+                    reasons = list(result.flow_reasons)
+                    if any(e.kind == 'opening' and e.quantity for b in journal.securities
+                           if b.position_id in scope.positions for e in selected_events(b)):
+                        reasons.append('Earlier realized gains and income before opening snapshots are unknown')
+                    return GainSummary(value-capital, value, capital, count, count, tuple(reasons), end, target)
     books = {b.position_id: b for b in journal.securities}
     rows = {} if summary_rows is None else summary_rows.set_index('position_id').to_dict('index')
     parts = [(identity, HistoryScope((identity,))) for identity in scope.positions
@@ -158,9 +181,9 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
                 events = [e for e in selected_events(book) if e.date <= end]
                 kinds = {e.kind for e in events}
                 known_parts = [gain if gain is not None else components.unrealized]
-                if 'sell' in kinds:
+                if kinds.intersection({'sell', 'swap'}):
                     known_parts.append(components.realized)
-                if 'distribution' in kinds:
+                if kinds.intersection({'distribution', 'reward'}):
                     known_parts.append(components.income)
                 if components.expenses:
                     known_parts.append(-components.expenses)

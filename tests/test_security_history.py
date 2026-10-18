@@ -85,7 +85,7 @@ def test_internal_security_transfer_preserves_fifo_lots_without_cash():
     result=replay_securities((source,dest))
     assert result.positions['position-0'].quantity==3
     assert result.positions['destination'].quantity==1
-    assert result.positions['destination'].costs[0]['amount']=='20.00'
+    assert D(result.positions['destination'].costs[0]['amount'])==D('20.00')
     assert len(result.cash)==1
 
 

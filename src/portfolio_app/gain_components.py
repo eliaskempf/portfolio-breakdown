@@ -56,7 +56,7 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
         reasons.append('Cash amount or dated FX is missing')
     events = [e for e in selected_events(book) if e.date <= end]
     disposed = {d.event_id:cost(tuple(p for lot in d.lots for p in lot.costs))
-                for d in state.disposals if d.position_id == identity and d.kind == 'sell'}
+                for d in state.disposals if d.position_id == identity and d.kind in ('sell', 'swap')}
     buys, sales, realized, income, expenses = [], [], [], [], []
     for event in events:
         postings = [c for c in cash if c.id == event.id or c.id.startswith(event.id+':charge:')
@@ -69,12 +69,29 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
             sales.append(net)
             basis = disposed.get(event.id)
             realized.append(net-basis if net is not None and basis is not None else None)
+        elif event.kind == 'swap':
+            proceeds = convert(event.valuation_amount, event.valuation_currency, target, event.date, observations)
+            basis = disposed.get(event.id)
+            realized.append(proceeds-basis if proceeds is not None and basis is not None else None)
+            expenses.extend(-converted[c.id] if converted[c.id] is not None else None for c in postings)
+            if proceeds is None:
+                reasons.append('Swap valuation or dated FX is missing')
+        elif event.kind == 'reward':
+            reward = convert(event.valuation_amount, event.valuation_currency, target, event.date, observations)
+            income.append(reward)
+            expenses.extend(-converted[c.id] if converted[c.id] is not None else None for c in postings)
+            if reward is None:
+                reasons.append('Income valuation or dated FX is missing')
         elif event.kind == 'distribution':
             income.append(net)
         elif postings:
             expenses.append(-net if net is not None else None)
         if event.kind in ('transfer', 'transfer_in', 'transfer_out'):
             reasons.append('Transfers retain lot costs; scope returns use transfer-date market values')
+    # A charge may be paid from another asset's book. Its carrying expense belongs
+    # to the paying asset, regardless of which book owns the economic event.
+    expenses.extend(cost(tuple(p for lot in disposal.lots for p in lot.costs))
+                    for disposal in state.disposals if disposal.position_id == identity and disposal.kind == 'asset_fee')
     remaining = cost(balance.costs)
     value = current_value if current_value is not None else value_at(journal,HistoryScope((identity,)),observations,end,target).amount
     unrealized = value-remaining if value is not None and remaining is not None else None

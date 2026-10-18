@@ -523,3 +523,25 @@ fee-free money-market holding. The equity holding has a money-weighted return;
 its exact time-weighted return remains unavailable because separate same-day fee
 timing and flow-boundary values are not supplied. Editing financial history
 invalidates the prior coverage confirmation, as it does for any workspace.
+
+### Transaction CSV boundary
+
+`transaction_csv.py` parses textual CSV facts and retains original evidence without
+market access. `transaction_imports.py` prepares a pure batch reconstruction;
+`transaction_import_commands.py` revalidates revisions under the workspace lock
+and publishes all financial changes in one journal replacement. The interface
+renders the same preview that the save command recomputes.
+
+Journal version 3 retains import provenance and correction lineage. Versions 1
+and 2 retain their semantics and remain readable; mutation must not downgrade a
+version 3 journal. Position preparation writes only empty identity rows and is
+separate from financial activation. Failed publication may leave those identities,
+never partially applied swap or transfer legs. Derived cash postings remain
+unpersisted, and custody identity is separate from cash ownership.
+
+Security replay owns non-cash swaps, in-kind income and asset fees alongside
+existing FIFO history. Lot splits multiply before dividing to avoid avoidable
+intermediate rounding; imported lot ordering retains execution time and explicit
+ties. Monetary gain components distinguish analytical swap proceeds from purchase
+payments and sale cash receipts. Scope calculations cancel internal movements
+before requesting cross-boundary monetary evidence.

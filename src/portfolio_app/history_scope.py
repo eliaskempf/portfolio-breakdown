@@ -6,11 +6,12 @@ from portfolio_app.strategic import bucket_positions
 
 def can_start_history_chart(journal, scope):
     """A reconstructible scope may load its first prices; summaries stay clean."""
-    from portfolio_app.security_history import selected_events
+    from portfolio_app.security_history import selected_events, affected_positions
     books = {b.position_id: b for b in journal.securities if b.active}
     return (not scope.unresolved and set(scope.positions) <= books.keys()
-            and any(e.kind in {'buy', 'sell'} for identity in scope.positions
-                    for e in selected_events(books[identity])))
+            and any(e.kind in {'buy', 'sell', 'swap', 'reward', 'asset_fee', 'transfer'}
+                    and affected_positions(book,e).intersection(scope.positions)
+                    for book in books.values() for e in selected_events(book)))
 
 
 def category_history_scope(journal, holdings, config, bucket='', *, displayed=None):

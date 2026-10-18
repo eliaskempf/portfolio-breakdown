@@ -248,3 +248,16 @@ charges reduce their proceeds, and other expenses are deducted separately. These
 components reconcile to total gain for an ordinary complete trade history.
 Transfers preserve lot costs but cross performance scopes at market value, so
 their acquisition-cost breakdown and scope gain have different boundaries.
+
+Imported swaps and rewards distinguish recorded asset units from supplied monetary
+valuations. A swap's analytical proceeds and incoming basis do not imply a cash
+payment. In-kind rewards add income and basis when their value is supplied, without
+an external contribution. Own-custody transfers preserve original lots; staking
+and unstaking do not recognize the same reward twice.
+
+Asset fees remove units once and expense FIFO carrying cost under the import's
+versioned portfolio policy. That expense is not an inferred market sale. Internal
+transfers and swaps cancel before valuing whole-portfolio flows. A selected subset
+may still need a transfer-date price or swap valuation. Thus portfolio gain can
+be supported while a particular lot cost, gain component or subset return remains
+unknown. See [transaction import](import.md#transactions) for evidence and review.

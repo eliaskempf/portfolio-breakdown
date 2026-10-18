@@ -101,27 +101,48 @@ def render_position_history(directory, row):
             _review_history(directory, journal, revision, snapshot, book, row, key)
         else:
             records = _visible_records(book)
+            editable = [e for e in records if e.source != 'transaction_csv_v1']
+            related = [(b,e) for b in journal.securities if b.position_id != book.position_id
+                       for e in selected_events(b) if e.other_position_id == book.position_id or any(c.position_id == book.position_id for c in e.asset_charges)]
             with st.container(horizontal=True):
                 st.button('Add buy', icon=':material/add:', key=key+'buy', on_click=_history_action, args=(key,'buy'))
                 st.button('Add sell', icon=':material/remove:', key=key+'sell', on_click=_history_action, args=(key,'sell'))
                 st.button('Other transaction', key=key+'add', on_click=_history_action, args=(key,'add'))
-                st.button('Edit transaction', icon=':material/edit:', disabled=not records, key=key+'edit',
+                st.button('Edit transaction', icon=':material/edit:', disabled=not editable, key=key+'edit',
                     on_click=_history_action, args=(key,'edit'))
-            columns = ['Date', 'Transaction', 'Shares', 'Trade value', 'Fees', 'Status']
+            columns = ['Date', 'Transaction', 'Units', 'Trade value', 'Fees', 'Status']
             entries = []
+            names = {r.position_id:r['name'] for _,r in snapshot.holdings.iterrows()}
             for e in records:
                 charges = ' + '.join(_money(c.amount, c.currency) for c in e.charges)
+                asset_fees = ' + '.join(f'{c.quantity} {names.get(c.position_id, "asset units")}' for c in e.asset_charges)
+                charges = ' + '.join(v for v in (charges,asset_fees) if v)
                 entries.append(dict(zip(columns, [e.date or 'Unknown', _KIND_LABELS.get(e.kind,e.kind.title()),
-                    str(e.quantity) if e.quantity else '—', _money(e.gross, e.currency),
+                    str(e.quantity) if e.quantity else '—', '—' if e.kind in ('swap','reward','asset_fee') else _money(e.gross, e.currency),
                     charges or (_money(Decimal(0), e.currency) if e.charges_known else 'Unknown' if e.kind in ('buy','sell','distribution') else '—'),
                     'Applied' if e.id in book.active_ids else 'Changes saved; not applied' if e.replaces else 'Saved; not applied'])))
-            st.dataframe(pd.DataFrame(entries, columns=columns), hide_index=True, width='stretch')
-            if not records:
+                if e.kind in ('swap','reward'):
+                    entries[-1]['Monetary valuation'] = _money(e.valuation_amount,e.valuation_currency)
+            for owner,e in related:
+                if e.other_position_id == book.position_id:
+                    quantity = e.received_quantity if e.kind == 'swap' else e.quantity
+                    entries.append(dict(zip(columns,[e.date,'Swap received' if e.kind == 'swap' else 'Transfer received',str(quantity),'—','—','Applied'])))
+                    if e.kind == 'swap':
+                        entries[-1]['Monetary valuation'] = _money(e.valuation_amount,e.valuation_currency)
+                for c in e.asset_charges:
+                    if c.position_id == book.position_id:
+                        entries.append(dict(zip(columns,[e.date,'Asset fee',str(c.quantity),'—','—','Applied'])))
+            if any('Monetary valuation' in entry for entry in entries):
+                for entry in entries:
+                    entry.setdefault('Monetary valuation','—')
+            entries.sort(key=lambda entry: entry['Date'])
+            st.dataframe(pd.DataFrame(entries, columns=columns+(['Monetary valuation'] if any('Monetary valuation' in e for e in entries) else [])), hide_index=True, width='stretch')
+            if not records and not related:
                 st.caption('No transactions yet. Add buys and sells, then review them against your portfolio.')
             elif any(e.id not in book.active_ids for e in records):
                 st.caption('Saved transactions do not change your holding until you review and apply them.')
             with st.container(horizontal=True):
-                st.button('Review against portfolio', type='primary', disabled=not records,
+                st.button('Review against portfolio', type='primary', disabled=not (records or related),
                     key=key+'review_list', on_click=_history_action, args=(key,'review'))
                 st.button('Add starting balance', type='tertiary', key=key+'starting',
                     help='Optional: the holding before the transactions you have records for.', on_click=_history_action, args=(key,'opening'))
@@ -133,13 +154,22 @@ def render_position_history(directory, row):
 
 def _review_history(directory, journal, revision, snapshot, book, row, key):
     st.markdown('**Review against portfolio**')
+    imported = any(e.source == 'transaction_csv_v1' and (b.position_id == book.position_id or e.other_position_id == book.position_id or any(c.position_id == book.position_id for c in e.asset_charges)) for b in journal.securities for e in b.records)
     records = _visible_records(book)
+    if imported:
+        st.caption('Correct imported movements together in Positions → Import portfolio → Transactions. Applied imports stay selected while you review manual entries.')
+        if not any(e.source != 'transaction_csv_v1' for e in records):
+            from portfolio_app.history_coverage_ui import render_coverage_review
+            render_coverage_review(directory, journal, HistoryScope((book.position_id,)), key=key, can_confirm=book.active)
+            return
     by_id = {e.id:e for e in records}
     superseded = {e.replaces for e in records if e.replaces}
     review = st.container()
     with st.expander('Review options'):
-        chosen = st.multiselect('Included transactions', list(by_id), default=[i for i in by_id if i not in superseded],
-            format_func=lambda i: _event_label(by_id[i]), key=key+'included_'+str(revision))
+        selectable = [i for i,e in by_id.items() if e.source != 'transaction_csv_v1']
+        fixed = [i for i,e in by_id.items() if e.source == 'transaction_csv_v1' and i in book.active_ids]
+        chosen = st.multiselect('Included transactions', selectable, default=[i for i in selectable if i not in superseded],
+            format_func=lambda i: _event_label(by_id[i]), key=key+'included_'+str(revision)) + fixed
         st.button('Add starting balance', type='tertiary', key=key+'review_start',
             help='Use this if you already held shares before your first recorded transaction.',
             on_click=_history_action, args=(key,'opening'))
@@ -167,6 +197,8 @@ def _review_history(directory, journal, revision, snapshot, book, row, key):
                 st.button('Keep portfolio unchanged', key=key+'keep', on_click=_history_action, args=(key,'list'))
         else:
             st.caption('Select transactions in Review options to compare them with your portfolio.')
+    if imported:
+        return
     panel = st.expander('Edit transactions, starting lots and fees', key=key+'advanced', on_change='rerun')
     if panel.open:
         with panel:
@@ -174,7 +206,7 @@ def _review_history(directory, journal, revision, snapshot, book, row, key):
 
 
 _KIND_LABELS = {'opening':'Starting balance', 'buy':'Buy', 'sell':'Sell', 'distribution':'Distribution',
-    'fee':'Fee', 'tax':'Tax', 'split':'Share split', 'transfer':'Transfer between holdings',
+    'swap':'Swap sent', 'reward':'In-kind income', 'asset_fee':'Asset fee', 'fee':'Fee', 'tax':'Tax', 'split':'Share split', 'transfer':'Transfer between holdings',
     'transfer_in':'Transfer in', 'transfer_out':'Transfer out', 'cost':'Remaining acquisition cost', 'note':'Unresolved event'}
 
 
@@ -529,7 +561,7 @@ def _add_transaction(directory, journal, revision, snapshot, book, key):
 
 def _edit_transaction(directory, journal, revision, snapshot, book, key):
     from portfolio_app.history_commands import correct_transaction
-    records = _visible_records(book)
+    records = [e for e in _visible_records(book) if e.source != 'transaction_csv_v1']
     if not records:
         st.caption('No transactions to edit.')
         return

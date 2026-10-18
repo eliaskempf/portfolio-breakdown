@@ -56,6 +56,11 @@ def clear_import():
 
 
 def render_import(path, snapshot, funds):
+    kind = review_control(st.segmented_control, 'Import type', ['Holdings snapshot', 'Transactions'], default='Holdings snapshot', key='import_kind')
+    if kind == 'Transactions':
+        from portfolio_app.transaction_import_ui import render_transaction_import
+        render_transaction_import(path.parent)
+        return
     st.subheader('Import portfolio — experimental')
     st.caption('Current holdings only. Import first; add allocation, targets and classifications later.')
     if not snapshot.holdings.empty:
@@ -166,6 +171,12 @@ def render_import(path, snapshot, funds):
 
 
 def render_import_next_steps():
+    if count := st.session_state.pop('import_tx_pending_complete', None):
+        clear_import()
+        st.session_state['positions_workflow_request'] = 'Import portfolio'
+        st.session_state['import_kind'] = 'Transactions'
+        st.session_state['import_tx_input'] = 'Saved evidence'
+        st.session_state['import_tx_notice'] = f'{count} movements applied. History completeness is reviewed separately.'
     if st.session_state.pop('import_pending_complete', False):
         clear_import()
         st.session_state['import_complete'] = True

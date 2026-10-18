@@ -10,7 +10,7 @@ import math
 
 from portfolio_app.account_journal import effective_events, replay
 from portfolio_app.history_observations import HistoryScope, lookup, rate
-from portfolio_app.security_history import history_fingerprint, replay_securities, selected_events
+from portfolio_app.security_history import history_fingerprint, replay_securities, selected_events, affected_positions
 
 ZERO = Decimal(0)
 
@@ -237,8 +237,16 @@ def coverage_reasons(journal, scope, observations, start, end):
         if any(e.kind in ('opening', 'note', 'cost') and start < e.date <= end
                and not (e.kind == 'opening' and not e.quantity and e.source == 'confirmed_zero_start') for e in events):
             reasons.append(f'{identity}: unresolved event or replacement boundary in interval')
-        if any(e.kind in ('buy', 'sell', 'distribution') and start < e.date <= end and not e.charges_known for e in events):
+        if any(e.kind in ('buy', 'sell', 'distribution', 'swap', 'reward', 'asset_fee', 'transfer') and start < e.date <= end and not e.charges_known and (e.source == 'transaction_csv_v1' or e.kind in ('buy', 'sell', 'distribution')) for e in events):
             reasons.append(f'{identity}: charges have not been confirmed')
+    active_ids = {e.id for b in journal.securities for e in selected_events(b)}
+    superseded = {r.replaces for r in journal.transaction_imports if r.replaces}
+    for receipt in journal.transaction_imports:
+        if receipt.id in superseded or receipt.id in active_ids:
+            continue
+        stamp = receipt.facts.get('timestamp_utc', '')[:10]
+        if (not stamp or start <= stamp <= end) and (not receipt.positions or any(p in scope.positions for _, _, p in receipt.positions)):
+            reasons.append('Unapplied transaction evidence requires review')
     classes = dict(observations.classifications)
     for e in effective_events(journal):
         if e.account_id not in scope.accounts:
@@ -279,6 +287,12 @@ def external_flows(journal, scope, observations, start, end, target):
                 amount = e.amount if e.amount is not None else e.quantity*price.amount if price else None
                 denomination = e.currency if e.amount is not None else price.currency if price else e.currency
                 add(e.id, e.date, e.sequence, None if amount is None else amount*(1 if e.kind == 'transfer_in' else -1), denomination)
+            if e.kind == 'swap' and start < e.date <= end:
+                source_inside, dest_inside = book.position_id in members, e.other_position_id in members
+                if source_inside != dest_inside:
+                    add(e.id, e.date, e.sequence,
+                        None if e.valuation_amount is None else e.valuation_amount*(-1 if source_inside else 1),
+                        e.valuation_currency)
             if e.kind != 'transfer' or not start < e.date <= end:
                 continue
             source_inside, dest_inside = book.position_id in members, e.other_position_id in members
@@ -386,7 +400,7 @@ def known_negative_equity_dates(journal, scope, observations, start, end, target
     subjects = set(scope.positions) | {b.instrument_id for b in journal.securities if b.position_id in scope.positions}
     subjects |= {p.id for p in journal.positions if p.account_id in scope.accounts}
     subjects |= {p.contract_id for p in journal.positions if p.account_id in scope.accounts}
-    dates = {e.date for b in journal.securities if b.position_id in scope.positions for e in selected_events(b)}
+    dates = {e.date for b in journal.securities for e in selected_events(b) if affected_positions(b, e).intersection(scope.positions)}
     dates |= {e.date for e in effective_events(journal)
               if e.account_id in scope.accounts or e.other_account_id in scope.accounts
               or owners.get(e.position_id) in scope.accounts}
