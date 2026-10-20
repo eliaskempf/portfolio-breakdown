@@ -59,6 +59,7 @@ def prepare_positions(directory, additions, *, expected_holdings_revision):
 
 def save_transaction_import(directory, rows, mapping, *, expected_journal_revision,
                             expected_holdings_revision, accept_reconciliation=False,
+                            accept_checkpoints=False,
                             comparison_date='', expected_observations_revision=...,
                             expected_reporting_currency=None, **options):
     """Recompute under the lock; evidence and all activated legs publish together."""
@@ -73,13 +74,15 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
         if selected:
             if not accept_reconciliation:
                 raise DataError('Review and accept the reconstructed balances and cash changes first.')
+            if any(r.identity in selected and r.facts['event_type'] == 'checkpoint' for r in rows) and not accept_checkpoints:
+                raise DataError('Explicitly accept balance checkpoints and their unresolved differences.')
             try:
                 compared = date.fromisoformat(comparison_date)
                 if compared > date.today():
                     raise ValueError
             except ValueError:
                 raise DataError('Supply the actual comparison date, no later than today.') from None
-            if any(r.facts.get('timestamp_utc','')[:10] > comparison_date for r in rows if r.identity in selected):
+            if any(r.date > comparison_date for r in rows if r.identity in selected):
                 raise DataError('The comparison date must cover the selected transactions.')
         from portfolio_app.history_observations import ObservationFX, load_observations
         from portfolio_app.portfolio_settings import load_settings

@@ -21,6 +21,7 @@ class ImportPreview:
     comparisons: tuple[dict, ...]
     cash_changes: tuple[dict, ...]
     warnings: tuple[str, ...]
+    checkpoints: tuple[dict, ...] = ()
 
 
 def event_for(row, mapping, *, replaces=''):
@@ -29,10 +30,11 @@ def event_for(row, mapping, *, replaces=''):
         raise DataError('; '.join(row.issues))
     if not f['fee_amount'] and f['fee_asset_id']:
         raise DataError('Unknown asset fee quantity: retain evidence until the movement is known.')
-    stamp = datetime.fromisoformat(f['timestamp_utc'].replace('Z', '+00:00'))
+    boundary = f['event_type'] in ('opening', 'checkpoint')
+    stamp = datetime.fromisoformat((f.get('effective_date')+'T00:00:00+00:00') if boundary else f['timestamp_utc'].replace('Z', '+00:00'))
     # Stable ordering across reimports and incremental files; never use row number.
     micros = ((stamp.hour*60+stamp.minute)*60+stamp.second)*1000000+stamp.microsecond
-    sequence = micros*1000000+int(f['sequence'] or '0')
+    sequence = (86400000000 if boundary else micros)*1000000+int(f['sequence'] or '0')
     def position(account, asset):
         try:
             return mapping[account, asset]
@@ -46,14 +48,32 @@ def event_for(row, mapping, *, replaces=''):
     kind = {'stake': 'transfer', 'unstake': 'transfer', 'fee': 'asset_fee'}.get(f['event_type'], f['event_type'])
     other = (position(f['counter_account_id'], f['asset_id']) if kind == 'transfer' else
              position(f['account_id'], f['received_asset_id']) if kind == 'swap' else '')
+    costs = ()
+    if f.get('schema_version') == '2' and kind in ('opening', 'checkpoint', 'inventory_in'):
+        from portfolio_app.cost_basis import component
+        cost_quantity = f.get('cost_quantity') or f['quantity']
+        part = component(cost_quantity, Decimal(f['acquisition_cost']) if f['acquisition_cost'] else None, f['acquisition_currency'])
+        if f['acquisition_cost']:
+            part.update(quality=f['cost_quality'], source=f['cost_source'])
+        costs = (part,)
+        if Decimal(cost_quantity) < Decimal(f['quantity']):
+            from decimal import localcontext
+            with localcontext() as context:
+                context.prec = 60
+                costs += (component(Decimal(f['quantity'])-Decimal(cost_quantity), None, f['acquisition_currency']),)
     return SecurityEvent(row.identity, kind, stamp.date().isoformat(), sequence,
         quantity=Decimal(f['quantity']), amount=Decimal(f['gross_amount']) if f['gross_amount'] else None,
         currency=f['currency'], charges=charges, charges_known=bool(f['fee_amount']),
-        other_position_id=other, replaces=replaces, source='transaction_csv_v1',
+        other_position_id=other, replaces=replaces, source='transaction_csv_v'+f['schema_version'],
         received_quantity=Decimal(f['received_quantity'] or '0'),
         valuation_amount=Decimal(f['valuation_amount']) if f['valuation_amount'] else None,
         valuation_currency=f['valuation_currency'], asset_charges=asset_charges,
-        timestamp_utc=f['timestamp_utc'], group_id=f['group_id'], note=f['event_type'])
+        timestamp_utc='' if boundary else f['timestamp_utc'], group_id=f['group_id'],
+        note=f.get('note') or f['event_type'], costs=costs,
+        observed_at=f['timestamp_utc'] if boundary else '',
+        flow_classification=f.get('flow_classification',''),
+        valuation_quality=f.get('valuation_quality') or 'recorded',
+        valuation_source=f.get('valuation_source',''))
 
 
 def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, selected_ids=(),
@@ -166,14 +186,24 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
         books[primary] = book
         touched.update(affected_positions(book, event)); applied += 1
         warnings.extend(row.incomplete)
+        if row.facts.get('cost_quality') == 'estimated' or row.facts.get('valuation_quality') == 'estimated':
+            warnings.append('Supplied estimates retained; affected gains are approximate')
+        if event.kind == 'checkpoint':
+            warnings.append('Balance checkpoint replaces units and remaining cost; it does not certify earlier history')
+            if not event.observed_at:
+                warnings.append('Observation date unknown; effective_date is the reporting boundary, not an acquisition or observation date')
+        if event.flow_classification == 'unresolved':
+            warnings.append('Inventory origin or purpose unresolved; no income or external flow assumed')
     # Start boundaries for destination-only histories too. An explicit confirmation
     # is necessary even when the current summary happens to contain zero units.
     all_events = [(b, e) for b in books.values() for e in selected_events(b)]
     for pos in touched:
         book = books[pos]
-        relevant = [e for b, e in all_events if pos in affected_positions(b, e) and e.kind != 'opening']
-        earliest = min(e.date for e in relevant)
-        openings = [e for e in selected_events(book) if e.kind == 'opening']
+        relevant = [e for b, e in all_events if pos in affected_positions(b, e) and e.kind not in ('opening', 'checkpoint')]
+        earliest = min((e.date for e in relevant), default=None)
+        openings = [e for e in selected_events(book) if e.kind in ('opening', 'checkpoint')]
+        if not relevant:
+            continue
         if not openings:
             if not starts_at_zero:
                 raise DataError('Confirm zero holdings before the first transaction, or supply opening inventory in History.')
@@ -187,9 +217,14 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
     # Same-time ordering cannot depend on row order, import order or position IDs.
     order = {}
     dated_events = {}
+    boundaries = set()
     for book in books.values():
         for e in selected_events(book):
-            if e.kind == 'opening':
+            if e.kind in ('opening', 'checkpoint'):
+                key = book.position_id, e.date, e.sequence
+                if key in boundaries:
+                    raise DataError('Balances on the same day need distinct explicit sequence values.')
+                boundaries.add(key)
                 continue
             key = e.date, e.sequence
             affected = affected_positions(book, e)
@@ -198,12 +233,13 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
                     raise DataError('Same-day imported and manual movements need a shared explicit execution order. Retain evidence until timing is resolved.')
             dated_events.setdefault(e.date, []).append((affected,e))
             for other_positions, other in order.get(key, ()):
-                if affected & other_positions and (e.source == 'transaction_csv_v1' or other.source == 'transaction_csv_v1'):
+                if affected & other_positions and (e.source.startswith('transaction_csv_v') or other.source.startswith('transaction_csv_v')):
                     raise DataError('Simultaneous dependent events need distinct explicit sequence values.')
             order.setdefault(key, []).append((affected, e))
         if duplicate_candidates(book) and book.position_id in touched and not accept_duplicates:
             raise DataError('Matching economic transactions require review as distinct executions.')
-    proposed = replace(journal, version=3, securities=tuple(books.values()), transaction_imports=tuple(receipts))
+    version = max(journal.version, 4 if any(r.facts.get('schema_version') == '2' for r in receipts) else 3)
+    proposed = replace(journal, version=version, securities=tuple(books.values()), transaction_imports=tuple(receipts))
     states = replay_securities(proposed.securities).positions
     before, after = replay(journal), replay(proposed)
     comparisons = []
@@ -223,4 +259,19 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
         new = None if key in after.unknown_cash else after.cash.get(key, Decimal(0))
         if old != new:
             cash_changes.append(dict(account=account, currency=currency, before=old, after=new))
-    return ImportPreview(proposed, added, duplicates, applied, tuple(comparisons), tuple(cash_changes), tuple(dict.fromkeys(warnings)))
+    checkpoints = []
+    for book in proposed.securities:
+        for event in selected_events(book):
+            if event.kind != 'checkpoint' or event.id not in selected_ids:
+                continue
+            earlier = replay_securities(proposed.securities, as_of=event.date, sequence=event.sequence-1).positions.get(book.position_id)
+            from decimal import localcontext
+            with localcontext() as context:
+                context.prec = 60
+                known = earlier is not None and bool(earlier.boundary)
+                checkpoints.append(dict(position_id=book.position_id, effective_date=event.date,
+                    observed_at=event.observed_at or 'Unknown', explained_units=str(earlier.quantity) if known else None,
+                    checkpoint_units=str(event.quantity),
+                    unresolved_difference=str(event.quantity-earlier.quantity) if known else None))
+    return ImportPreview(proposed, added, duplicates, applied, tuple(comparisons), tuple(cash_changes),
+                         tuple(dict.fromkeys(warnings)), tuple(checkpoints))

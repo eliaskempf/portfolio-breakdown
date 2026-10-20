@@ -69,6 +69,10 @@ need no purchase date or conversion.
 
 A position with incomplete costs has no complete cost-based gain, while its
 available current value still counts toward portfolio value and allocation.
+Generic CSV v2 can retain supplied acquisition-cost and monetary-valuation
+estimates, with their sources. Affected gains show an approximate status.
+Costed units can contribute a partial unrealized gain while other units retain
+unknown cost; the unknown units are never treated as free.
 Independently supported recorded income or realized gains can still contribute
 to an explicitly partial monetary subtotal. **Complete**,
 **Partial** and **Unavailable** describe coverage. A partial return is not the

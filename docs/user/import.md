@@ -54,7 +54,7 @@ ETF discovery can separately use issuer-confirmed identity to install a
 ## Import transactions {#transactions}
 
 Choose **Positions → Import portfolio → Transactions**. This optional workflow
-accepts Generic CSV v1 and the explicitly selected Crypto evidence CSV layout.
+accepts Generic CSV v1/v2 and the explicitly selected Crypto evidence CSV layout.
 It works with empty portfolios and existing holdings. It does not synchronize
 with a broker or wallet.
 
@@ -146,3 +146,79 @@ Transfers crossing a selected scope require dated market value; swaps use their
 supplied valuation. Missing prices or valuations affect the metrics that require
 them. Import does not manufacture historical market data or enable a percentage
 return merely because units reconcile.
+
+### Inventory, estimates and balance checkpoints: Generic CSV v2
+
+Version 2 retains the v1 event columns and adds generic inventory evidence. It
+does not require a particular asset class or provider. Use `schema_version=2`
+and **Generic CSV v2**. Existing v1 files and receipt identities remain valid.
+Files may contain events or balance checkpoints; separate files are often easier
+to review. Reuse stable source and event IDs for both.
+
+| Additional field | Meaning |
+| --- | --- |
+| `effective_date` | Required `YYYY-MM-DD` reporting boundary for `opening` and `checkpoint` only |
+| `acquisition_cost`, `acquisition_currency` | Optional total acquisition cost for opening inventory, a checkpoint or an inventory receipt |
+| `cost_quantity` | Optional positive subset of the units covered by that cost; the remaining units have unknown cost |
+| `cost_quality`, `cost_source` | `recorded` or `estimated`, plus a source description; required when supplying acquisition cost |
+| `valuation_quality`, `valuation_source` | `recorded` or `estimated`, plus a source description; required when supplying a monetary valuation |
+| `flow_classification` | `unresolved` or `external`, required for inventory receipts/removals |
+| `note` | Optional context, interpretation and source reference |
+
+The extra event types are:
+
+- **opening:** units already held at an explicit starting boundary. Cost and
+  original acquisition date may be unknown. This is not a purchase or deposit.
+- **inventory_in / inventory_out:** known positive units received or removed,
+  without asserting a purchase, sale, reward or fee. An unresolved origin or
+  purpose remains unresolved. An explicitly external movement uses its separate
+  supplied monetary valuation for performance flows, not acquisition cost.
+- **checkpoint:** an accepted balance at a reporting boundary. It replaces
+  quantity and remaining cost, retaining all earlier event evidence. The review
+  displays the previously explained units, accepted units and difference. Where
+  no opening balance is established, explained units and difference are unknown,
+  not calculated from an invented zero.
+
+For opening/checkpoint rows, `timestamp_utc` is the observation timestamp and may
+be blank. It must not be later than `effective_date`. The effective date is an
+explicit end-of-day reporting boundary, **not an inferred observation or
+acquisition date**. Transactions following an opening must be on later days.
+An undated source balance applied today establishes a reporting boundary today;
+it does not establish today's real balance or backfill earlier history.
+Use `quantity=0` for a confirmed empty balance and `fee_amount=0` with no fee
+denomination for all balance rows. Other movements still require executed
+timestamps; an undated event can be retained as evidence but not activated.
+
+Checkpoints are excluded from the default movement selection. Review their
+units, effective dates, sources and costs, then explicitly **Accept checkpoints
+and retain unresolved differences**. A difference is not a trade, cash flow,
+reward or gain. A checkpoint cannot make an invalid earlier replay valid:
+unsupported history may remain saved and unapplied while the checkpoint
+establishes the supported reporting boundary.
+
+Import checkpoints into the same mapped positions when they describe those
+positions. If a source only reports an aggregate scope, use an explicitly named
+aggregate reporting position; do not invent per-account allocations or retain
+active constituent balances alongside that aggregate. Future activity must use
+the same reviewed scope, or require a separate custody reconciliation.
+
+Supplied estimates are preserved with their source and marked in acquisition
+costs and gains. Aggregate estimated costs are apportioned proportionally when
+units are transferred or sold; this is an explicit approximation, not recovered
+historical lot evidence. If an estimate covers only part of a holding, use
+`cost_quantity` rather than presenting a known subtotal as the full cost.
+Unknown cost remains unknown through transfers and disposals. Where possible,
+the app shows partial unrealized gain for the costed units only. Market value is
+not substituted for missing acquisition cost.
+
+**Recorded unit movements** shows signed quantity changes independently of
+activation, starting inventory and monetary completeness. It includes known
+undated quantities without assigning dates, excludes balance rows, and flags
+unknown asset charges. Identical rows are counted once; conflicting identities
+and malformed quantities do not supply a supported movement. These totals are
+diagnostics, not certified balances or percentage returns.
+
+An inventory addition is not a generic corporate-action implementation. Asset
+migrations, uncertain transfer ordering and unclassified deductions may still
+need review. Completeness and percentage-return requirements remain separate
+from successful holdings reconciliation.

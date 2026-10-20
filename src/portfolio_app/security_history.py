@@ -14,7 +14,7 @@ from portfolio_app.derivative_types import decimal, identifier, iso_date
 from portfolio_app.holdings import DataError
 
 ZERO = Decimal(0)
-KINDS = {'opening', 'buy', 'sell', 'distribution', 'split', 'transfer', 'fee', 'tax', 'cost', 'note', 'void', 'transfer_in', 'transfer_out', 'swap', 'reward', 'asset_fee'}
+KINDS = {'opening', 'checkpoint', 'inventory_in', 'inventory_out', 'buy', 'sell', 'distribution', 'split', 'transfer', 'fee', 'tax', 'cost', 'note', 'void', 'transfer_in', 'transfer_out', 'swap', 'reward', 'asset_fee'}
 
 
 def number(value, label, *, optional=False, positive=False):
@@ -114,8 +114,29 @@ class SecurityEvent:
     asset_charges: tuple[AssetCharge, ...] = ()
     timestamp_utc: str = ''
     group_id: str = ''
+    observed_at: str = ''
+    flow_classification: str = ''
+    valuation_quality: str = 'recorded'
+    valuation_source: str = ''
 
     def __post_init__(self):
+        if self.kind == 'checkpoint' and (self.charges or self.asset_charges or self.price is not None or self.amount is not None):
+            raise DataError('A checkpoint is a balance, not a cash transaction or fee.')
+        if self.flow_classification not in ('', 'unresolved', 'external'):
+            raise DataError('Invalid inventory flow classification.')
+        if self.kind in ('inventory_in', 'inventory_out') and not self.flow_classification:
+            raise DataError('Inventory needs an explicit flow classification.')
+        if self.kind not in ('inventory_in', 'inventory_out') and self.flow_classification:
+            raise DataError('Only inventory movements have a flow classification.')
+        if self.valuation_quality not in ('recorded', 'estimated'):
+            raise DataError('Invalid valuation quality.')
+        if self.valuation_quality == 'estimated' and (self.valuation_amount is None or not self.valuation_source):
+            raise DataError('Estimated valuations require an amount and source.')
+        if self.observed_at:
+            from datetime import datetime
+            observed = datetime.fromisoformat(self.observed_at.replace('Z', '+00:00'))
+            if self.kind not in ('opening', 'checkpoint') or observed.tzinfo is None or observed.date().isoformat() > self.date:
+                raise DataError('Balance observation must precede its reporting boundary.')
         object.__setattr__(self, 'received_quantity', number(self.received_quantity, 'Received quantity'))
         object.__setattr__(self, 'valuation_amount', number(self.valuation_amount, 'Valuation', optional=True))
         denomination(self.valuation_currency, optional=True)
@@ -361,11 +382,11 @@ def replay_securities(books, *, as_of=None, sequence=None):
                 states[charge.position_id] = replace(payer, lots=remaining, quantity=payer.quantity-charge.quantity)
                 disposals.append(SecurityDisposal(e.id, charge.position_id, e.date, 'asset_fee', paid))
             state = states[book.position_id]
-            if e.kind != 'opening' and not state.boundary:
+            if e.kind not in ('opening', 'checkpoint') and not state.boundary:
                 raise DataError('Start history with an explicit opening snapshot, including zero.')
             lots, issues = state.lots, list(state.issues)
-            if e.kind == 'opening':
-                if not e.quantity and e.amount:
+            if e.kind in ('opening', 'checkpoint'):
+                if not e.quantity and (e.amount or any(p['amount'] and Decimal(p['amount']) for p in e.costs)):
                     raise DataError('Positive acquisition cost requires positive opening quantity.')
                 if e.lots:
                     if sum((lot.quantity for lot in e.lots), ZERO) != e.quantity:
@@ -375,21 +396,28 @@ def replay_securities(books, *, as_of=None, sequence=None):
                     lots = tuple(sorted(e.lots, key=lambda lot: (lot.date, lot.sequence)))
                 else:
                     costs = e.costs or (component(e.quantity, e.amount, e.currency),)
-                    lots = (SecurityLot(e.id, e.quantity, costs, False),) if e.quantity else ()
+                    # A supplied aggregate estimate may be apportioned, still
+                    # labelled estimated. It does not establish original lots.
+                    estimated = any(p.get('quality') == 'estimated' for p in costs)
+                    lots = (SecurityLot(e.id, e.quantity, costs, estimated),) if e.quantity else ()
                 states[book.position_id] = SecurityBalance(e.quantity, lots, e.date)
                 continue
-            if e.kind in ('buy', 'sell', 'split', 'transfer', 'transfer_in', 'transfer_out', 'swap', 'reward', 'asset_fee') and not e.quantity:
+            if e.kind in ('buy', 'sell', 'split', 'transfer', 'transfer_in', 'transfer_out', 'inventory_in', 'inventory_out', 'swap', 'reward', 'asset_fee') and not e.quantity:
                 raise DataError('Trade, split and transfer quantities must be positive.')
-            if e.kind == 'transfer_in':
+            if e.kind in ('transfer_in', 'inventory_in'):
                 if e.lots:
                     if sum((lot.quantity for lot in e.lots), ZERO) != e.quantity:
                         raise DataError('Transferred lots must equal transferred units.')
                     incoming = e.lots
                 else:
-                    incoming = (SecurityLot(e.id, e.quantity, e.costs or (component(e.quantity, None, e.currency),), False),)
+                    costs = e.costs or (component(e.quantity, None, e.currency),)
+                    incoming = (SecurityLot(e.id, e.quantity, costs,
+                        any(p.get('quality') == 'estimated' for p in costs), e.date, e.sequence),)
                 lots = tuple(sorted((*lots, *incoming), key=lambda lot: (lot.date, lot.sequence)))
             elif e.kind == 'reward':
                 costs = (component(e.quantity, e.valuation_amount, e.valuation_currency, e.date),)
+                if e.valuation_quality == 'estimated':
+                    costs[0].update(quality='estimated', source=e.valuation_source)
                 lots = (*lots, SecurityLot(e.id, e.quantity, costs, True, e.date, e.sequence))
             elif e.kind == 'buy':
                 costs = [component(e.quantity, e.gross, e.currency, e.date)]
@@ -398,7 +426,7 @@ def replay_securities(books, *, as_of=None, sequence=None):
                 if not e.charges_known:
                     costs.append(component(0, None, e.currency, e.date))
                 lots = (*lots, SecurityLot(e.id, e.quantity, tuple(costs), True, e.date, e.sequence))
-            elif e.kind in ('sell', 'transfer', 'transfer_out', 'swap', 'asset_fee'):
+            elif e.kind in ('sell', 'transfer', 'transfer_out', 'inventory_out', 'swap', 'asset_fee'):
                 lots, moved = _consume(lots, e.quantity)
                 disposals.append(SecurityDisposal(e.id, book.position_id, e.date, e.kind, moved))
                 if e.kind == 'swap':
@@ -407,6 +435,8 @@ def replay_securities(books, *, as_of=None, sequence=None):
                     if destination is None or other is None or not other.boundary or destination.instrument_id == book.instrument_id or not e.received_quantity:
                         raise DataError('A swap needs another asset with an activated opening and received quantity.')
                     costs = (component(e.received_quantity, e.valuation_amount, e.valuation_currency, e.date),)
+                    if e.valuation_quality == 'estimated':
+                        costs[0].update(quality='estimated', source=e.valuation_source)
                     received = SecurityLot(e.id+':received', e.received_quantity, costs, True, e.date, e.sequence)
                     states[destination.position_id] = replace(other, quantity=other.quantity+e.received_quantity,
                         lots=tuple(sorted((*other.lots, received), key=lambda lot: (lot.date, lot.sequence))))
@@ -589,11 +619,18 @@ def duplicate_candidates(book):
     from dataclasses import asdict
     seen, duplicates = {}, []
     for event in selected_events(book):
-        if event.kind not in ('buy', 'sell', 'distribution', 'fee', 'tax', 'transfer', 'transfer_in', 'transfer_out', 'swap', 'reward', 'asset_fee'):
+        if event.kind not in ('buy', 'sell', 'distribution', 'fee', 'tax', 'transfer', 'transfer_in', 'transfer_out', 'inventory_in', 'inventory_out', 'swap', 'reward', 'asset_fee'):
             continue
         facts = asdict(event)
-        for key in ('id', 'sequence', 'source', 'replaces', 'note', 'timestamp_utc', 'group_id'):
+        for key in ('id', 'sequence', 'source', 'replaces', 'note', 'timestamp_utc', 'group_id',
+                    'observed_at', 'valuation_quality', 'valuation_source'):
             facts.pop(key)
+        for part in facts['costs']:
+            part.pop('quality', None)
+            part.pop('source', None)
+            for field in ('shares', 'amount'):
+                if part[field] != '':
+                    part[field] = Decimal(part[field])
         if event.kind in ('buy','sell'):
             facts.pop('price')
             facts['amount'] = event.gross

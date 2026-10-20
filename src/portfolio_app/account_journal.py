@@ -204,7 +204,7 @@ class Journal:
     transaction_imports: tuple[ImportReceipt, ...] = ()
 
     def __post_init__(self):
-        if type(self.version) is not int or self.version not in (1, 2, 3):
+        if type(self.version) is not int or self.version not in (1, 2, 3, 4):
             raise DataError('Unsupported account journal version.')
         object.__setattr__(self, 'transaction_imports', tuple(self.transaction_imports))
         if self.transaction_imports and self.version < 3:
@@ -229,7 +229,13 @@ class Journal:
             raise DataError('Securities history requires journal version 2.')
         if self.version < 3 and any(b.custody_id or any(e.kind in ('swap','reward','asset_fee') or e.asset_charges or e.timestamp_utc or e.valuation_currency or e.received_quantity for e in b.records) for b in self.securities):
             raise DataError('Non-cash transaction movements require journal version 3.')
-        if any(e.source == 'transaction_csv_v1' and e.id not in seen_imports for b in self.securities for e in b.records):
+        if self.version < 4 and (any(r.facts.get('schema_version') == '2' for r in self.transaction_imports)
+                or any(e.kind in ('checkpoint','inventory_in','inventory_out') or e.observed_at
+                       or e.flow_classification or e.valuation_quality != 'recorded' or e.valuation_source
+                       or any(p.get('quality') == 'estimated' for p in e.costs)
+                       for b in self.securities for e in b.records)):
+            raise DataError('Inventory and estimated import evidence require journal version 4.')
+        if any(e.source.startswith('transaction_csv_v') and e.id not in seen_imports for b in self.securities for e in b.records):
             raise DataError('An imported transaction requires retained source evidence.')
         if any(e.kind in ('security_cash', 'security_unknown') for e in self.events):
             raise DataError('Security cash postings are derived; do not save duplicate account events.')
@@ -693,6 +699,11 @@ def roll(journal, *, close: Event, opening: Event, charges: Iterable[Event] = ()
 
 def journal_to_dict(journal):
     result = asdict(journal)
+    if journal.version < 4:
+        for book in result['securities']:
+            for event in book['records']:
+                for field in ('observed_at','flow_classification','valuation_quality','valuation_source'):
+                    event.pop(field)
     if journal.version < 3:
         result.pop('transaction_imports')
         for book in result['securities']:

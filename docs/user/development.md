@@ -117,6 +117,23 @@ synthetic directory; it reuses the normal alert explanation and acknowledgment U
 
 ### Calculation contracts
 
+Generic transaction CSV v2 adds inventory receipts/removals, balance checkpoints
+and sourced monetary estimates to the v1 contract. Journal v4 persists these
+facts; serializers retain v1–v3 wire shapes and receipt identities. A checkpoint
+is an end-of-day reporting boundary with a separate optional observation
+timestamp. It resets authoritative units/cost without synthesizing cash,
+income, an acquisition date or earlier holdings. The import command requires
+explicit checkpoint acceptance under the same revision/lock checks as ordinary
+activation. Prior records and corrections remain retained.
+
+Acquisition cost components may carry `quality` and `source`. Estimate flags
+survive FIFO consumption and custody transfers. `cost_quantity` partitions
+costed and unknown units instead of treating a known subtotal as full cost.
+`transaction_evidence.py` computes signed movement diagnostics independently
+of activated balances and monetary completeness. It must never project those
+changes as balances from an unconfirmed zero. Source-specific archive conversion
+does not belong in these modules.
+
 - `gain_accounting.py` supplies shared current and historical known-gain results.
   Security-only and account-only cash flows cancel across their common boundary;
   account equity includes actual futures once, not their display allocation again.

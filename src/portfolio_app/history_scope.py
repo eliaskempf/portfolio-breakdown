@@ -9,7 +9,7 @@ def can_start_history_chart(journal, scope):
     from portfolio_app.security_history import selected_events, affected_positions
     books = {b.position_id: b for b in journal.securities if b.active}
     return (not scope.unresolved and set(scope.positions) <= books.keys()
-            and any(e.kind in {'buy', 'sell', 'swap', 'reward', 'asset_fee', 'transfer'}
+            and any(e.kind in {'buy', 'sell', 'swap', 'reward', 'asset_fee', 'transfer', 'inventory_in', 'inventory_out', 'checkpoint'}
                     and affected_positions(book,e).intersection(scope.positions)
                     for book in books.values() for e in selected_events(book)))
 

@@ -232,13 +232,25 @@ def coverage_reasons(journal, scope, observations, start, end):
             reasons.append(f'{identity}: history is not activated')
             continue
         events = selected_events(book)
-        if not any(e.kind == 'opening' and e.date <= start for e in events) and not confirmed_empty_before(book, start):
+        if not any(e.kind in ('opening', 'checkpoint') and e.date <= start for e in events) and not confirmed_empty_before(book, start):
             reasons.append(f'{identity}: missing opening snapshot')
-        if any(e.kind in ('opening', 'note', 'cost') and start < e.date <= end
+        if any(e.kind in ('opening', 'checkpoint', 'note', 'cost') and start < e.date <= end
                and not (e.kind == 'opening' and not e.quantity and e.source == 'confirmed_zero_start') for e in events):
             reasons.append(f'{identity}: unresolved event or replacement boundary in interval')
-        if any(e.kind in ('buy', 'sell', 'distribution', 'swap', 'reward', 'asset_fee', 'transfer') and start < e.date <= end and not e.charges_known and (e.source == 'transaction_csv_v1' or e.kind in ('buy', 'sell', 'distribution')) for e in events):
+        if any(e.kind in ('inventory_in','inventory_out') and e.flow_classification == 'unresolved'
+               and start < e.date <= end for e in events):
+            reasons.append(f'{identity}: inventory origin or purpose unresolved')
+        if any(e.kind == 'checkpoint' and e.date <= end and not e.observed_at for e in events):
+            reasons.append(f'{identity}: checkpoint observation date unknown')
+        if any(e.kind in ('buy', 'sell', 'distribution', 'swap', 'reward', 'asset_fee', 'transfer') and start < e.date <= end and not e.charges_known and (e.source.startswith('transaction_csv_v') or e.kind in ('buy', 'sell', 'distribution')) for e in events):
             reasons.append(f'{identity}: charges have not been confirmed')
+    for book in journal.securities:
+        for event in selected_events(book):
+            crosses = (event.kind in ('inventory_in','inventory_out') and event.flow_classification == 'external'
+                       and book.position_id in scope.positions) or (
+                       event.kind == 'swap' and (book.position_id in scope.positions) != (event.other_position_id in scope.positions))
+            if crosses and event.valuation_quality == 'estimated' and start < event.date <= end:
+                reasons.append('Estimated external-flow valuations do not establish exact percentage returns')
     active_ids = {e.id for b in journal.securities for e in selected_events(b)}
     superseded = {r.replaces for r in journal.transaction_imports if r.replaces}
     for receipt in journal.transaction_imports:
@@ -282,6 +294,13 @@ def external_flows(journal, scope, observations, start, end, target):
         add('security:'+c.id, c.date, c.sequence, amount, c.currency)
     for book in journal.securities:
         for e in selected_events(book):
+            if e.kind in ('inventory_in', 'inventory_out') and book.position_id in members and start < e.date <= end:
+                if e.flow_classification == 'external':
+                    add(e.id, e.date, e.sequence,
+                        None if e.valuation_amount is None else e.valuation_amount*(1 if e.kind == 'inventory_in' else -1),
+                        e.valuation_currency)
+                else:
+                    reasons.append(f'{e.id}: inventory origin or purpose unresolved')
             if e.kind in ('transfer_in', 'transfer_out') and book.position_id in members and start < e.date <= end:
                 price = lookup(observations, 'price', book.position_id, e.date) or lookup(observations, 'price', book.instrument_id, e.date)
                 amount = e.amount if e.amount is not None else e.quantity*price.amount if price else None

@@ -48,6 +48,8 @@ class GainSummary:
             return 'Gain unavailable'
         if self.review_required_only:
             return 'History not confirmed'
+        if any('Estimated acquisition cost' in r or 'Estimated monetary valuation' in r for r in self.reasons):
+            return 'Approximate gain · history may be incomplete'
         return 'Incomplete gain history' if self.partial else 'Complete gain history'
 
     @property
@@ -107,6 +109,23 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     A complete history replaces that fallback, including when quantity is zero.
     Historical callers never project current quantities or costs backwards.
     """
+    estimate_notes = []
+    for book in journal.securities:
+        if book.position_id not in scope.positions:
+            continue
+        for event in selected_events(book):
+            if event.date > end:
+                continue
+            if any(p.get('quality') == 'estimated' for p in event.costs):
+                estimate_notes.append('Estimated acquisition cost retained from supplied evidence')
+            if event.valuation_quality == 'estimated':
+                estimate_notes.append('Estimated monetary valuation retained from supplied evidence')
+    if any(p.get('quality') == 'estimated' or e.valuation_quality == 'estimated'
+           for b in journal.securities for e in selected_events(b) for p in (e.costs or ({},))):
+        states = replay_securities(journal.securities, as_of=end).positions
+        if any(p.get('quality') == 'estimated' for identity in scope.positions
+               if identity in states for p in states[identity].costs):
+            estimate_notes.append('Estimated acquisition cost retained from supplied evidence')
     # When an imported movement connects positions, value the selected boundary
     # as a whole before component fallbacks. Missing internal transfer marks must
     # not prevent cancellation or make a known portfolio gain partial.
@@ -125,7 +144,7 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
                 if value is not None:
                     capital = result.opening_capital + sum((f.amount for f in flows), ZERO)
                     count = len(scope.positions)+len(scope.accounts)
-                    reasons = list(result.flow_reasons)
+                    reasons = [*result.flow_reasons, *estimate_notes]
                     if any(e.kind == 'opening' and e.quantity for b in journal.securities
                            if b.position_id in scope.positions for e in selected_events(b)):
                         reasons.append('Earlier realized gains and income before opening snapshots are unknown')
@@ -135,7 +154,7 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     parts = [(identity, HistoryScope((identity,))) for identity in scope.positions
              if not (rows.get(identity, {}).get('shares') == 0 and identity not in books)]
     parts += [('account:'+identity, HistoryScope(accounts=(identity,))) for identity in scope.accounts]
-    gains, values, capitals, reasons = [], [], [], list(scope.unresolved)
+    gains, values, capitals, reasons = [], [], [], [*scope.unresolved, *estimate_notes]
     for identity, member in parts:
         dates = scope_dates(journal, member)
         value = (current_values.get(identity) if current_values is not None else

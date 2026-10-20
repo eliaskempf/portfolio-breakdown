@@ -10,7 +10,7 @@ from portfolio_app.account_journal import load_journal
 from portfolio_app.holdings import DataError
 from portfolio_app.import_state import review_control
 from portfolio_app.positions import read_snapshot
-from portfolio_app.transaction_csv import FIELDS, TransactionRow, digest, read_csv
+from portfolio_app.transaction_csv import FIELDS, FIELDS_V2, TransactionRow, digest, read_csv
 from portfolio_app.transaction_import_commands import prepare_positions, save_transaction_import
 from portfolio_app.transaction_imports import prepare_import
 
@@ -36,10 +36,11 @@ def _rows(journal):
         source=control(st.selectbox,'Saved source',sources,key='saved_source')
         superseded={r.replaces for r in journal.transaction_imports if r.replaces}
         return tuple(TransactionRow(r.raw,r.facts,r.issues) for r in journal.transaction_imports if r.facts['source_id']==source and r.id not in superseded)
-    layout=control(st.selectbox,'CSV format',['Generic CSV v1','Crypto evidence CSV'],key='layout')
+    layout=control(st.selectbox,'CSV format',['Generic CSV v1','Generic CSV v2','Crypto evidence CSV'],key='layout')
     file=_uploads()
     if file is None:
-        st.download_button('Download blank CSV template',(','.join(FIELDS)+'\n').encode(),file_name='transaction-template-v1.csv',mime='text/csv')
+        fields = FIELDS_V2 if layout == 'Generic CSV v2' else FIELDS
+        st.download_button('Download blank CSV template',(','.join(fields)+'\n').encode(),file_name='transaction-template.csv',mime='text/csv')
         return ()
     name,content=file
     st.caption(name)
@@ -151,9 +152,17 @@ def render_transaction_import(directory):
         for row in rows:
             f=row.facts
             status='Applied' if row.identity in active else 'Review required' if row.issues or row.incomplete else 'Ready for review'
-            entries.append(dict(Event=f['event_id'],Time=f['timestamp_utc'],Type=f['event_type'],Account=f['account_id'],
+            entries.append(dict(Event=f['event_id'],Time=f['timestamp_utc'] or 'Unknown',Type=f['event_type'],Account=f['account_id'],
                 Asset=f['asset_id'],Quantity=f['quantity'],Status=status,Details='; '.join((*row.issues,*row.incomplete))))
         st.dataframe(pd.DataFrame(entries),hide_index=True,width='stretch')
+        with st.expander('Recorded unit movements'):
+            from portfolio_app.transaction_evidence import movement_totals
+            st.caption('Signed changes only, not balances from an assumed zero. Opening balances and checkpoints '
+                'are excluded. Known undated quantities remain undated; unknown asset charges keep the totals incomplete.')
+            st.dataframe(pd.DataFrame(movement_totals(rows)).rename(columns={
+                'account':'Account','asset':'Asset','known_unit_change':'Known unit change',
+                'undated_movements':'Undated movements','unknown_asset_charges':'Unknown asset charges',
+                'movements':'Movements'}), hide_index=True, width='stretch')
         corrections=control(st.checkbox,f'Retain {len(conflicts)} changed event(s) as corrections',key=token+'corrections') if conflicts else False
         correction_ids=[r.identity for r in conflicts] if corrections else []
         with st.expander('Movement, valuation and cost policy'):
@@ -161,8 +170,17 @@ def render_transaction_import(directory):
                 'Asset fees consume oldest units first and expense carrying cost. Transfers retain lots. '
                 'Swap and reward valuations are supplied monetary evidence, not cash movements. '
                 'Blank amounts remain unknown. This is portfolio accounting, not a tax report.')
-            stream=StringIO();writer=csv.DictWriter(stream,fieldnames=FIELDS);writer.writeheader();writer.writerows(r.facts for r in rows)
-            st.download_button('Download normalized evidence',stream.getvalue(),file_name='transaction-evidence-v1.csv',mime='text/csv')
+            st.write('Inventory origin may remain unresolved. A checkpoint replaces units and remaining cost at its '
+                'effective date; it does not establish earlier balances or cash flows. Its observation timestamp '
+                'may remain unknown. Recorded and estimated monetary evidence retain their source.')
+            fields = FIELDS_V2 if any(r.facts['schema_version']=='2' for r in rows) else FIELDS
+            stream=StringIO();writer=csv.DictWriter(stream,fieldnames=fields);writer.writeheader();writer.writerows(r.facts for r in rows)
+            st.download_button('Download normalized evidence',stream.getvalue(),file_name='transaction-evidence.csv',mime='text/csv')
+            evidence = [dict(Event=r.facts['event_id'], **{k:r.facts.get(k,'') for k in
+                ('effective_date','acquisition_cost','acquisition_currency','cost_quantity','cost_quality','cost_source',
+                 'valuation_amount','valuation_currency','valuation_quality','valuation_source','flow_classification','note')}) for r in rows]
+            if any(r.facts['schema_version']=='2' for r in rows):
+                st.dataframe(pd.DataFrame(evidence), hide_index=True, width='stretch')
         if st.button('Save evidence only',key='import_tx_save_evidence',disabled=bool(conflicts and not corrections)):
             result=save_transaction_import(directory,rows,{},expected_journal_revision=revision,
                 expected_holdings_revision=snapshot.revision,correction_ids=correction_ids)
@@ -180,7 +198,7 @@ def render_transaction_import(directory):
             return
         mapping,cash,mapping_confirmed,prepared=_mapping(directory,snapshot,journal,rows,token)
         eligible={r.identity:r for r in rows if not r.issues}
-        default=[i for i,r in eligible.items() if not r.incomplete]
+        default=[i for i,r in eligible.items() if not r.incomplete and r.facts['event_type'] != 'checkpoint']
         selected=control(st.multiselect,'Movements to apply',list(eligible),default=default,
             format_func=lambda i:f"{eligible[i].facts['event_id']} · {eligible[i].facts['event_type']} · {eligible[i].facts['asset_id']}",key=token+'selected')
         zero=control(st.checkbox,'Holdings were zero before the first recorded movement',key=token+'zero',
@@ -207,13 +225,26 @@ def render_transaction_import(directory):
             st.dataframe(frame,hide_index=True,width='stretch')
         if preview.cash_changes:
             st.dataframe(pd.DataFrame(preview.cash_changes),hide_index=True,width='stretch')
+        accept_checkpoints = False
+        if preview.checkpoints:
+            st.markdown('**Balance checkpoints**')
+            names = snapshot.holdings.set_index('position_id')['name'].to_dict()
+            frame = pd.DataFrame(preview.checkpoints)
+            frame['position_id'] = frame.position_id.map(names)
+            st.dataframe(frame.rename(columns={'position_id':'Position','effective_date':'Effective from',
+                'observed_at':'Observed at','explained_units':'History explains','checkpoint_units':'Accepted units',
+                'unresolved_difference':'Unresolved difference'}), hide_index=True, width='stretch')
+            st.caption('Unknown means no established earlier balance. Differences are not trades or income. '
+                'Effective dates are reporting boundaries, not inferred observation or acquisition dates.')
+            accept_checkpoints = control(st.checkbox,'Accept checkpoints and retain unresolved differences',key=token+'checkpoints')
         if preview.warnings:
             st.caption('Partial monetary evidence · '+'; '.join(preview.warnings))
         st.caption(f'{preview.applied} movements to apply · {preview.duplicates} retained records · Comparison {comparison.isoformat()}')
         accepted=control(st.checkbox,'Accept reconstructed balances and shown cash changes',key=token+'accept')
-        if st.button('Apply reviewed transactions',type='primary',disabled=not accepted or not preview.applied,key='import_tx_apply'):
+        if st.button('Apply reviewed transactions',type='primary',disabled=not accepted or not preview.applied or bool(preview.checkpoints and not accept_checkpoints),key='import_tx_apply'):
             result=save_transaction_import(directory,rows,mapping,expected_journal_revision=revision,
                 expected_holdings_revision=snapshot.revision,accept_reconciliation=True,comparison_date=comparison.isoformat(),
+                accept_checkpoints=accept_checkpoints,
                 expected_observations_revision=observation_revision,expected_reporting_currency=target,**options)
             st.session_state['import_tx_pending_complete']=result.applied
             st.rerun()

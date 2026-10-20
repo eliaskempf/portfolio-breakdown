@@ -70,7 +70,7 @@ def save_history(directory, book, *, expected_journal_revision, expected_holding
             if previous.active and book.account_id != previous.account_id:
                 raise DataError('Use an explicit transfer to change an active holding account.')
         if previous:
-            imported = {e.id for e in previous.records if e.source == 'transaction_csv_v1'}
+            imported = {e.id for e in previous.records if e.source.startswith('transaction_csv_v')}
             if any(e.replaces in imported for e in book.records[len(previous.records):]) or (activate and imported.intersection(book.active_ids) != imported.intersection(previous.active_ids)):
                 raise DataError('Review imported events in Import transactions so all movements stay together.')
         if activate:
@@ -141,7 +141,7 @@ def correct_transaction(book, event_id, **changes):
     """Retain an editable correction; selected authority changes only on review."""
     from portfolio_app.security_history import append_evidence
     original = next((e for e in book.records if e.id == event_id), None)
-    if original is not None and original.source == 'transaction_csv_v1':
+    if original is not None and original.source.startswith('transaction_csv_v'):
         raise DataError('Correct an imported event in Import transactions so all movements stay together.')
     if original is None or original.source == 'confirmed_zero_start' or original.kind == 'void':
         raise DataError('Choose a saved transaction to edit.')

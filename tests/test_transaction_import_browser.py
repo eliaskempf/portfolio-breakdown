@@ -46,3 +46,34 @@ def test_upload_evidence_reconcile_reimport_and_navigation(import_page):
     page.get_by_role('tab',name='Positions',exact=True).click();settle(page)
     assert not page.get_by_test_id('stException').count()
     assert not page.get_by_role('button',name='Apply reviewed transactions',exact=True).count()
+
+
+def test_estimated_checkpoint_requires_explicit_reconciliation(import_page):
+    from test_inventory_imports import row, estimate
+    from portfolio_app.transaction_csv import FIELDS_V2
+    page,path=import_page
+    page.get_by_role('button',name='Import portfolio — experimental',exact=True).click()
+    page.get_by_text('Transactions',exact=True).click();settle(page)
+    page.get_by_role('combobox',name='CSV format',exact=True).click()
+    page.get_by_role('option',name='Generic CSV v2',exact=True).click();settle(page)
+    r=row('balance',**estimate())
+    stream=StringIO();writer=csv.DictWriter(stream,fieldnames=FIELDS_V2);writer.writeheader();writer.writerow(r.facts)
+    page.locator('input[type=file]').set_input_files({'name':'invented-checkpoint.csv','mimeType':'text/csv','buffer':stream.getvalue().encode()});settle(page)
+    page.get_by_text('I reviewed instrument identity, owned custody accounts and funding',exact=True).click()
+    page.get_by_role('button',name='Create missing positions',exact=True).click();settle(page)
+    page.get_by_role('combobox',name='Movements to apply',exact=True).click()
+    page.get_by_role('option',name='balance · checkpoint · AUR',exact=True).click()
+    page.keyboard.press('Escape');settle(page)
+    page.get_by_text('Balance checkpoints',exact=True).wait_for()
+    page.get_by_text('Accept reconstructed balances and shown cash changes',exact=True).click();settle(page)
+    apply=page.get_by_role('button',name='Apply reviewed transactions',exact=True)
+    playwright.expect(apply).to_be_disabled()
+    page.get_by_text('Accept checkpoints and retain unresolved differences',exact=True).click();settle(page)
+    playwright.expect(apply).to_be_enabled()
+    apply.click();settle(page)
+    page.get_by_text('These events are already applied. Reimport leaves balances unchanged.',exact=True).wait_for()
+    journal,_=load_journal(path.parent)
+    states=replay_securities(journal.securities).positions
+    assert sum(s.quantity for s in states.values())==10
+    assert next(iter(states.values())).costs[0]['quality']=='estimated'
+    assert not page.get_by_test_id('stException').count()

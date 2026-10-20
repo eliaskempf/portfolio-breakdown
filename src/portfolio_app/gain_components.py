@@ -6,7 +6,7 @@ lot cost but cross a performance scope at market value, so their allocation is
 not inferred from this acquisition-cost breakdown.
 """
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 from portfolio_app.cost_basis import resolve_cost
 from portfolio_app.history_observations import HistoryScope, ObservationFX
@@ -40,9 +40,11 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
         if not parts:
             return ZERO
         resolved = resolve_cost(list(parts), target, ObservationFX(observations))
-        if resolved.estimated:
+        if any(p.get('conversions',{}).get(target,{}).get('method') == 'estimate' for p in parts):
             reasons.append('Estimated cost conversion is not historical evidence')
             return None
+        if resolved.estimated:
+            reasons.append('Estimated acquisition cost retained from supplied evidence')
         if resolved.exact_amount is None:
             reasons.append(resolved.note)
         return resolved.exact_amount
@@ -59,6 +61,12 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
                 for d in state.disposals if d.position_id == identity and d.kind in ('sell', 'swap')}
     buys, sales, realized, income, expenses = [], [], [], [], []
     for event in events:
+        if event.kind in ('inventory_in','inventory_out') and event.flow_classification == 'unresolved':
+            reasons.append('Inventory origin or purpose unresolved; gains are partial')
+        if event.kind == 'checkpoint':
+            reasons.append('Balance checkpoint establishes remaining holdings, not complete prior performance')
+        if event.valuation_quality == 'estimated':
+            reasons.append('Estimated monetary valuation retained from supplied evidence')
         postings = [c for c in cash if c.id == event.id or c.id.startswith(event.id+':charge:')
                     or c.id == event.id+':unknown-charges']
         net = total([converted[c.id] for c in postings])
@@ -95,5 +103,23 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
     remaining = cost(balance.costs)
     value = current_value if current_value is not None else value_at(journal,HistoryScope((identity,)),observations,end,target).amount
     unrealized = value-remaining if value is not None and remaining is not None else None
+    if unrealized is None and value is not None and balance.quantity:
+        # Unknown units are not free. A homogeneous holding's market value may
+        # be apportioned to the explicitly costed units for a partial subtotal.
+        known_gains = []
+        with localcontext() as context:
+            context.prec = 60
+            for lot in balance.lots:
+                unknown_charge = any(Decimal(part['shares']) == 0 for part in lot.costs if part['amount'] == '')
+                if unknown_charge:
+                    continue
+                known = [p for p in lot.costs if p['amount'] != '']
+                units = sum((Decimal(p['shares']) for p in known), ZERO)
+                basis = cost(known) if units else None
+                if basis is not None:
+                    known_gains.append(value*units/balance.quantity-basis)
+        if known_gains:
+            unrealized = sum(known_gains, ZERO)
+            reasons.append('Unrealized gain covers only units with supplied acquisition costs')
     return SecurityGainComponents(remaining,unrealized,total(realized),total(income),total(expenses),total(buys),total(sales),
                                   tuple(dict.fromkeys(reasons)))
