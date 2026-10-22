@@ -115,6 +115,39 @@ history; explicit offline demo history is invented. The separate
 
 ## Personal history {#personal-history}
 
+An optional **approximate asset history** view combines selected owned locations
+into one series per asset. Enable it in the transaction importer after saving
+the evidence and reviewing ending balances. It provides Value, Gain, Return and
+Units charts without requiring custody-level FIFO reconstruction.
+
+Period gain is ending value minus opening market value and net external additions.
+Staking rewards increase units and income without increasing contributed capital;
+their receipt value is shown as a breakdown of gain, never added to gain twice.
+Subsequent reward-unit price changes remain part of performance. Staking principal
+and internal wallet transfers do not change performance; fees reduce it once.
+Remaining acquisition cost is not the denominator for historical performance.
+
+The percentage is **linked daily Dietz**, with external flows assumed
+at the midpoint of each day. Daily closing prices estimate transfer/gift values.
+It is explicitly approximate, not exact TWR or annualized return. Missing prices
+are not interpolated; missing flow amounts or negative reconstructed quantities
+leave affected results unavailable. Unknown inventory movements are neutralized
+at their supplied/market value for a *partial known gain*, while their original
+classification remains unresolved. Review these exclusions under **Calculation
+and evidence**. Selecting a shorter period recalculates its market-value opening.
+
+The daily formula is `(ending value − opening value − net flows) /
+(opening value + 0.5 × net flows)`, with daily factors compounded across the
+selected period. This is the midpoint-flow Dietz convention described in the
+[GIPS calculation-methodology handbook](https://www.gipsstandards.org/standards/gips-standards-for-firms/gips-standards-handbook-for-firms/);
+the approximation does not claim exact intraday valuations or GIPS compliance.
+
+This view is conditional on the supplied ending balance and listed movements.
+Its visible location scope matters: transfers to/from excluded locations are
+external flows, so wallet-only performance is not necessarily lifetime performance
+since the original exchange purchase. Unknown balance observation dates and
+supplied reward/date estimates remain visible in the evidence notes.
+
 The **History** position tab and **Overview → Performance** show personal
 history separately from market-price charts and current unrealized gains.
 History is optional; charts stay hidden until at least two supported values exist.

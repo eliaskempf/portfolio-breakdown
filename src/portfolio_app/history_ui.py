@@ -705,6 +705,12 @@ def render_portfolio_history(directory, prepared, *, label='Portfolio value', pe
 
 
 def render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False):
+    from portfolio_app.asset_history_store import settings_for_scope
+    asset_settings = settings_for_scope(directory, scope)
+    if asset_settings is not None:
+        from portfolio_app.asset_history_ui import render_asset_history
+        render_asset_history(directory, journal, scope, asset_settings, key=key)
+        return
     options = dict(key=key, label=label, percent=percent, on_toggle_gain=on_toggle_gain)
     if not automatic:
         _render_history_results(directory, journal, scope, prepared=prepared, **options)

@@ -77,8 +77,10 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         except (DataError,ValueError,OSError) as exc:
             st.caption(str(exc))
     from portfolio_app.history_scope import can_start_history_chart
+    from portfolio_app.asset_history_store import settings_for_scope
     has_history = history is not None and (history['view'].useful or
-        can_start_history_chart(history['journal'], history['scope']))
+        can_start_history_chart(history['journal'], history['scope']) or
+        settings_for_scope(data_dir, history['scope']) is not None)
     default_view = 'Performance' if has_history else 'Allocation'
     measure = 'Capital allocation'
     with st.container(horizontal=True, vertical_alignment='center', gap='medium', key='overview_view_controls'):

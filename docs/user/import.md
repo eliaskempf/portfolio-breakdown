@@ -93,6 +93,31 @@ is cancelled. Current financial balances are unchanged until the journal save
 succeeds. Uploads and review drafts clear on cancellation, completion or workspace
 switching; saved evidence remains in the private account journal and backups.
 
+### Approximate history by asset
+
+After saving transaction evidence and importing the ending holdings, expand
+**Approximate asset history**. Select the owned locations to combine, map each
+asset to its position, and review the ending-balance reference date. Enabling
+this view is separate from activating the custody/FIFO journal. It uses retained
+Generic v1/v2 or normalized Crypto evidence rows; source-specific companion
+inventory must first be mapped to Generic v2.
+
+The view reconstructs units backwards from the selected ending balance and the
+listed movements. This is a conditional reconstruction, not confirmation of an
+empty opening balance or complete history. A reference date must describe the
+selected balance or an explicitly identified reconstruction boundary; an export
+date is not automatically a wallet observation date. Later imported movements
+roll forward from that boundary. Preserve stable source and event IDs: repeated
+imports do not add movements again and reviewed corrections replace earlier facts.
+
+Internal transfers, staking and unstaking principal cancel across selected
+locations. Fees remain, and reward units count as income rather than deposits.
+Transfers involving excluded locations are external flows at daily market value.
+For example, wallet-only performance begins at entry into the wallet; it does
+not include earlier price changes while the asset was held on an excluded exchange.
+Unknown movements are retained and the affected gain stays partial. This feature
+does not certify tax lots or change account-journal balances.
+
 ### Generic CSV v1
 
 Download the blank template from the transaction importer. Each row is one

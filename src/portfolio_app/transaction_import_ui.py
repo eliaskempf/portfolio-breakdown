@@ -187,6 +187,8 @@ def render_transaction_import(directory):
             st.session_state.pop(baseline_key,None)
             st.session_state['import_tx_notice']=f'{result.added} evidence records saved; balances unchanged.'
             st.rerun()
+        from portfolio_app.asset_history_setup_ui import render_asset_history_setup
+        render_asset_history_setup(directory, journal, revision, snapshot, rows)
         if all(row.identity in active for row in rows):
             st.caption('These events are already applied. Reimport leaves balances unchanged.')
             from portfolio_app.history_coverage_ui import render_coverage_review

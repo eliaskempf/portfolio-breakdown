@@ -42,9 +42,12 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
     from portfolio_app.account_journal import load_journal
     journal, _ = load_journal(data_dir)
     has_history = any(b.position_id == row.position_id and b.active for b in journal.securities)
+    from portfolio_app.asset_history_store import settings_for_scope
+    from portfolio_app.history_observations import HistoryScope
+    has_asset_history = settings_for_scope(data_dir, HistoryScope((row.position_id,))) is not None
     view_key = f'position_edit_detail_view_{row.position_id}'
-    useful_history = False
-    if has_history and view_key not in st.session_state:
+    useful_history = has_asset_history
+    if has_history and not has_asset_history and view_key not in st.session_state:
         from portfolio_app.history_scope import can_start_history_chart
         from portfolio_app.history_observations import HistoryScope, load_observations
         scope = HistoryScope((row.position_id,))
@@ -52,7 +55,7 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
         if not useful_history:
             from portfolio_app.history_view import history_view
             useful_history = history_view(journal, scope, load_observations(data_dir)[0], target=reporting_currency()).useful
-    views = ['History', 'Transactions', 'Price history', 'Key metrics', 'Details'] if has_history else ['Price history', 'Key metrics', 'Transactions', 'Details']
+    views = ['History', 'Transactions', 'Price history', 'Key metrics', 'Details'] if has_history or has_asset_history else ['Price history', 'Key metrics', 'Transactions', 'Details']
     view = st.segmented_control('Position detail view', views,
         default='History' if useful_history else 'Price history', required=True, key=view_key, label_visibility='collapsed') or views[0]
     active_class = 'position_active_'+view.replace(' ', '_')

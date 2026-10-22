@@ -117,6 +117,23 @@ synthetic directory; it reuses the normal alert explanation and acknowledgment U
 
 ### Calculation contracts
 
+`asset_history.py` supplies optional approximate asset-level history independently
+of FIFO. Explicit owned-location membership collapses internal principal but
+retains fees and income. `asset-performance.json` version 1 stores the selected
+source namespace, asset/position mapping, ending-balance anchors, reporting
+currency and method `closing-balance-daily-dietz-v1`. The source events remain
+immutable journal receipts; reviewed latest revisions are projected once.
+Configuration saves use workspace locking and journal/holdings/config revision
+checks, and workspace backup validation includes the configuration.
+
+Closing anchors condition the backwards unit reconstruction; they never assert
+complete history or a confirmed zero opening. Selected-period capital starts at
+market value. Reward valuation is a gain breakdown, not a cash contribution.
+Daily Dietz uses midpoint flows and is never labelled exact TWR.
+Price gaps are not filled. Unclassified movements remain unresolved and are
+neutralized only for visibly partial known gain. This analytical projection does
+not activate or alter the custody journal, its FIFO lots, or exact-return coverage.
+
 Generic transaction CSV v2 adds inventory receipts/removals, balance checkpoints
 and sourced monetary estimates to the v1 contract. Journal v4 persists these
 facts; serializers retain v1–v3 wire shapes and receipt identities. A checkpoint
