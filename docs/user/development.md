@@ -73,7 +73,7 @@ evidence repairs and completeness review. Persisted changes refresh current
 position values locally and refresh the parent page once after dismissal. Pending
 evidence alone does not repeat portfolio valuation. Streamlit 1.65 or newer is
 required for the keyed host callbacks; the runtime adapter is isolated in
-`dialog_runtime.py` and covered by browser lifecycle tests. Evidence saves retain revision guards and leave balances unchanged until
+`dialog_runtime.py` and covered by browser lifecycle tests. Transaction list, import, edit and reconciliation screens use distinct keyed containers so their action rows are replaced together. Never leave list actions alongside review/apply controls. Evidence saves retain revision guards and leave balances unchanged until
 explicitly applied. Position detail tabs always use History, Key metrics,
 Transactions and Details. Without recorded history evidence, History shows the
 price chart directly. Otherwise it contains a Holdings / Price selector, defaulting
@@ -253,6 +253,16 @@ synthetic Streamlit app. Install Chromium with
 
 Tests use generated synthetic fixtures, injected prices, FX, search responses,
 and clocks, with no live network required.
+Importer coverage uses independently authored positioned-cell and text-stream
+PDF layouts in `tests/consors_audit_fixtures.py`, alongside the original fixtures.
+Expected quantities, charges, FIFO costs and proceeds are explicit constants,
+not calculated by parser helpers. Public format references inform labels and
+layout only; all fixture identities, dates and financial values are invented.
+Equivalent layout variants must preserve event economics, while unsupported
+or ambiguous fields must remain blocked even when totals happen to balance.
+The importer audit tests also cover retained evidence versus activation,
+revision/duplicate guards, page/row provenance and masked-output sentinels.
+
 They cover valuation, persistent cache fallback, parent/child conservation,
 multi-path classifications, filtering, denominators, targets, ETF residuals,
 company exposure merging, snapshot refresh failure recovery, position saves,

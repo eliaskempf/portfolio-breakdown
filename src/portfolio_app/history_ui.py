@@ -115,47 +115,54 @@ def render_position_history(directory, row):
         if error := st.session_state.pop(key+'save_error', None):
             st.error(error)
         screen = st.session_state.get(key+'screen', 'list')
-        if screen != 'list':
-            st.button('Back to transactions', icon=':material/arrow_back:', key=key+'back',
-                on_click=_history_action, args=(key, 'list'))
-        if screen == 'opening':
-            _opening_form(directory, journal, revision, snapshot, book, row, key)
-        elif screen == 'add':
-            _add_transaction(directory, journal, revision, snapshot, book, key)
-        elif screen == 'edit':
-            _edit_transaction(directory, journal, revision, snapshot, book, key)
-        elif screen == 'replace':
-            _replace_balance(directory, journal, revision, snapshot, book, row, key)
-        elif screen in ('fix', 'review'):
-            _review_history(directory, journal, revision, snapshot, book, row, key)
-        else:
-            records = _visible_records(book)
-            with st.container(horizontal=True):
-                st.button('Add buy', icon=':material/add:', key=key+'buy', on_click=_history_action, args=(key,'buy'))
-                st.button('Add sell', icon=':material/remove:', key=key+'sell', on_click=_history_action, args=(key,'sell'))
-                st.button('Other transaction', key=key+'add', on_click=_history_action, args=(key,'add'))
-                st.button('Edit transaction', icon=':material/edit:', disabled=not records, key=key+'edit',
-                    on_click=_history_action, args=(key,'edit'))
-            columns = ['Date', 'Transaction', 'Shares', 'Trade value', 'Fees', 'Status']
-            entries = []
-            for e in records:
-                charges = ' + '.join(_money(c.amount, c.currency) for c in e.charges)
-                entries.append(dict(zip(columns, [e.date or 'Unknown', _KIND_LABELS.get(e.kind,e.kind.title()),
-                    str(e.quantity) if e.quantity else '—', _money(e.gross, e.currency),
-                    charges or (_money(Decimal(0), e.currency) if e.charges_known else 'Unknown' if e.kind in ('buy','sell','distribution') else '—'),
-                    'Applied' if e.id in book.active_ids else 'Changes saved; not applied' if e.replaces else 'Saved; not applied'])))
-            st.dataframe(pd.DataFrame(entries, columns=columns), hide_index=True, width='stretch')
-            if not records:
-                st.caption('No transactions yet. Add buys and sells, then review them against your portfolio.')
-            elif any(e.id not in book.active_ids for e in records):
-                st.caption('Saved transactions do not change your holding until you review and apply them.')
-            with st.container(horizontal=True):
-                st.button('Review against portfolio', type='primary', disabled=not records,
-                    key=key+'review_list', on_click=_history_action, args=(key,'review'))
-                st.button('Add starting balance', type='tertiary', key=key+'starting',
-                    help='Optional: the holding before the transactions you have records for.', on_click=_history_action, args=(key,'opening'))
-                if book.active:
-                    st.button('Replace balance', type='tertiary', key=key+'replace', on_click=_history_action, args=(key,'replace'))
+        # Separate subviews must replace their whole DOM subtree. Reusing
+        # unkeyed horizontal blocks can briefly mix list and review actions.
+        with st.container(key=key+'screen_'+screen):
+            if screen != 'list':
+                st.button('Back to transactions', icon=':material/arrow_back:', key=key+'back',
+                    on_click=_history_action, args=(key, 'list'))
+            if screen == 'opening':
+                _opening_form(directory, journal, revision, snapshot, book, row, key)
+            elif screen == 'add':
+                _add_transaction(directory, journal, revision, snapshot, book, key)
+            elif screen == 'import_pdf':
+                from portfolio_app.transaction_import_ui import render_pdf_import
+                render_pdf_import(directory, row, book, journal, revision, snapshot, key)
+            elif screen == 'edit':
+                _edit_transaction(directory, journal, revision, snapshot, book, key)
+            elif screen == 'replace':
+                _replace_balance(directory, journal, revision, snapshot, book, row, key)
+            elif screen in ('fix', 'review'):
+                _review_history(directory, journal, revision, snapshot, book, row, key)
+            else:
+                records = _visible_records(book)
+                with st.container(horizontal=True):
+                    st.button('Add buy', icon=':material/add:', key=key+'buy', on_click=_history_action, args=(key,'buy'))
+                    st.button('Add sell', icon=':material/remove:', key=key+'sell', on_click=_history_action, args=(key,'sell'))
+                    st.button('Import PDFs', key=key+'import_pdf', on_click=_history_action, args=(key,'import_pdf'))
+                    st.button('Other transaction', key=key+'add', on_click=_history_action, args=(key,'add'))
+                    st.button('Edit transaction', icon=':material/edit:', disabled=not records, key=key+'edit',
+                        on_click=_history_action, args=(key,'edit'))
+                columns = ['Date', 'Transaction', 'Shares', 'Trade value', 'Fees', 'Status']
+                entries = []
+                for e in records:
+                    charges = ' + '.join(_money(c.amount, c.currency) for c in e.charges)
+                    entries.append(dict(zip(columns, [e.date or 'Unknown', _KIND_LABELS.get(e.kind,e.kind.title()),
+                        str(e.quantity) if e.quantity else '—', _money(e.gross, e.currency),
+                        charges or (_money(Decimal(0), e.currency) if e.charges_known else 'Unknown' if e.kind in ('buy','sell','distribution') else '—'),
+                        'Applied' if e.id in book.active_ids else 'Changes saved; not applied' if e.replaces else 'Saved; not applied'])))
+                st.dataframe(pd.DataFrame(entries, columns=columns), hide_index=True, width='stretch')
+                if not records:
+                    st.caption('No transactions yet. Add buys and sells, then review them against your portfolio.')
+                elif any(e.id not in book.active_ids for e in records):
+                    st.caption('Saved transactions do not change your holding until you review and apply them.')
+                with st.container(horizontal=True):
+                    st.button('Review against portfolio', type='primary', disabled=not records,
+                        key=key+'review_list', on_click=_history_action, args=(key,'review'))
+                    st.button('Add starting balance', type='tertiary', key=key+'starting',
+                        help='Optional: the holding before the transactions you have records for.', on_click=_history_action, args=(key,'opening'))
+                    if book.active:
+                        st.button('Replace balance', type='tertiary', key=key+'replace', on_click=_history_action, args=(key,'replace'))
     except (DataError, ValueError, OSError) as exc:
         _show_error(exc)
 

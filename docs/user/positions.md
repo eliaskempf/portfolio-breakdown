@@ -135,6 +135,85 @@ and fees. **Save transaction** retains incomplete work without changing the
 current holding. You can enter purchases and sales before deciding how much
 history you can reconstruct.
 
+**Import PDFs** accepts a batch of Consorsbank stock/ETF buy and sale statements
+for the selected position and account (up to 100 PDFs / 100 MB per batch,
+20 MB per file). Files are read locally; original PDFs are not stored in history
+or sent to a service. Review the extracted table and select transactions to save.
+Statement details include the identifier, taxes and settlement amount. If the
+position has no stored ISIN/WKN, check the document identifier yourself before
+saving; a filename or instrument name alone does not establish a match.
+When no identifier can be compared, **I checked the instrument identifiers** is
+required before saving. A known ISIN or WKN mismatch cannot be overridden.
+Legacy WKN-only statements are supported when the quoted price has an explicit
+currency; a currency-free quote still requires manual entry.
+For parsing failures, **Statement details → Download masked layout report**
+creates a local text report containing fixed financial labels, token types and
+reconciliation checks. It identifies which rows were parsed and which amounts
+match a settlement discrepancy without exporting those amounts; a match is a
+diagnostic clue, not an automatically applied correction.
+The report lists blocking parser issues and distinguishes exact settlement or
+quoted-price matches from nonzero differences within the rounding tolerance.
+Recognized order limits and tax calculation or allowance balances are labelled
+as informational and retain page/row references. They do not change execution
+prices or become transaction charges. Unexpected amounts on those rows still
+require review.
+It omits filenames, metadata and original names, identifiers, dates and amounts.
+**Statement details** also lists the page and visual row for each extracted field,
+including each fee/tax and conflicting candidates. Rows are counted from the top
+of each page. Compact source locations and the quoted price remain in saved
+transaction notes; raw extracted rows and original PDFs are not retained.
+Review the report before sharing it for troubleshooting; it does not upload anything
+or establish that the extracted financial values are correct.
+The **Document** column beside **File** in Statement details maps report numbers
+to local filenames for the current upload batch. Filenames stay out of the masked
+report. Reordering or changing the upload batch can change document numbers.
+Complete hexadecimal document-reference codes, including margin text, appear as
+`<document-reference>` in the report. They are not transaction amounts; other
+amounts on the same row still require classification.
+
+Identical files already imported anywhere in this portfolio are blocked. Similar
+trades are excluded by default and need explicit confirmation if they are distinct.
+Known instrument mismatches, ambiguous amounts, inconsistent totals, scanned or
+unsupported statements require manual entry. Corrections/reissues and currency
+conversion statements need separate review; this is not universal broker support.
+Unexplained transaction amounts, unsupported signs/refunds, repeated financial totals,
+extra amounts within a field, and a debit/credit direction contradicting the trade
+block saving. Confirming fee completeness cannot override these errors. Separate
+tax-calculation bases are not tax charges; explicitly listed joint-account tax
+charges are each retained, even when their amounts agree.
+After settlement, unfamiliar single amounts inside a recognized tax-detail section
+and separately labelled `ST` quantities are supplementary context. They retain
+source locations and show **Review supplementary details**, without supplying
+execution quantities, fees or taxes. This allows new explanatory labels without
+adding a parser rule for each one. Sections end at page boundaries, new trade
+headings or footer headings; arbitrary amounts elsewhere remain blocking.
+Explicit charges, corrections, malformed known fields and extra amounts remain
+subject to validation even inside supplementary sections.
+
+Reconciliation checks gross plus charges against a purchase debit, or gross minus
+charges against sale proceeds. It never fills a difference with an invented fee or
+tax. Matching totals cannot establish what an unfamiliar row means. Supplementary
+rows therefore prevent automatic charge confirmation: review their source
+locations and confirm completeness, or save with charges still unconfirmed.
+
+Listed fees/taxes are retained separately. Straightforward purchases automatically
+show and save zero statement charges when the fully parsed trade value exactly
+matches the debit in the same currency, no nonzero fees/taxes are listed and no
+unexplained monetary rows remain. This includes eligible savings-plan executions;
+the savings-plan label alone does not establish zero. Separate billing documents
+still need their own expense records. Other statements retain optional fee/tax
+completeness confirmation; leaving it unchecked preserves unconfirmed charges.
+An absent fee row alone does not establish zero. Statement amounts require
+recognized ISO currency codes; custody references and bank/page identifiers are
+not amounts. Unsupported historical currency codes require manual entry.
+
+**Save transactions and review** retains the batch atomically and opens the usual
+reconciliation below. It does not add shares to the current holding or activate
+history. Trade times order same-day imported records where available; otherwise
+upload order is retained and must be checked in the history review. Cancel/back
+before saving changes no portfolio data. Concurrent portfolio edits reject a stale
+save and preserve the uploaded draft for review.
+
 **Edit transaction** opens a form directly from this list. Choose the transaction,
 change its date, quantity, amount or fees, then **Save changes**. The original
 record is retained, and a correction affects the holding only after review and
