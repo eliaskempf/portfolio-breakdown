@@ -2,6 +2,7 @@
 
 Only layout conventions come from public Consors format descriptions. Values,
 identities and dates are invented. No parser helpers calculate fixture totals.
+All-zero IBANs exercise account layout only; they are deliberately invalid.
 """
 import pymupdf
 
@@ -12,10 +13,10 @@ BUY = (
     'Preis pro Anteil 31,250000 EUR NETTO',
     'Kurswert EUR 125,00',
     'Provision 1,00 EUR',
-    'Zulasten IBAN SYNTHETIC 126,00 EUR',
+    'Zulasten IBAN DE00 0000 0000 0000 0000 00 126,00 EUR',
     'Valuta 17.03.2025',
 )
-FREE = (*BUY[:5], 'Zulasten IBAN SYNTHETIC 125,00 EUR', BUY[-1])
+FREE = (*BUY[:5], 'Zulasten IBAN DE00 0000 0000 0000 0000 00 125,00 EUR', BUY[-1])
 COMPANY_FOOTER = (
     'Standort Testort: Musterweg 8, 00000 Testort, '
     'HRB Testort 12345, USt-IdNr. DE000000000')
@@ -27,7 +28,7 @@ SALE = (
     'KURS 45,000000 EUR P.ST. FRANCO COURTAGE',
     'KURSWERT EUR 90,00',
     'Handelsplatzkosten EUR 0,50',
-    'Zugunsten IBAN SYNTHETIC EUR 88,50',
+    'Zugunsten IBAN DE00 0000 0000 0000 0000 00 EUR 88,50',
     'Wert 20.03.2025',
 )
 LOSS_SALE = tuple(r.replace('45,000000', '20,000000').replace('90,00', '40,00')
@@ -114,7 +115,7 @@ def cell_pdf(*, reverse=False, jitter=0):
         (32, 170, 'Preis pro Anteil'), (280, 170, '31,250000'), (390, 170, 'EUR NETTO'),
         (32, 216, 'Kurswert'), (280, 216, 'EUR'), (390, 216, '125,00'),
         (32, 250, 'Provision'), (280, 250, '1,00'), (390, 250, 'EUR'),
-        (32, 294, 'Zulasten IBAN SYNTHETIC'), (280, 294, '126,00'), (390, 294, 'EUR'),
+        (32, 294, 'Zulasten IBAN DE00 0000 0000 0000 0000 00'), (280, 294, '126,00'), (390, 294, 'EUR'),
         (32, 335, 'Valuta 17.03.2025'),
     ]
     with pymupdf.open() as doc:

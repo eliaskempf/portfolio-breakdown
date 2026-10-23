@@ -228,6 +228,39 @@ def test_unsupported_signed_money_cannot_be_saved_in_browser(transaction_page):
     assert load_journal(root) == before
 
 
+@pytest.mark.parametrize('case', ['extra amount', 'currency-free charge'])
+def test_unresolved_financial_rows_offer_diagnostics_but_no_save(transaction_page, case):
+    from pathlib import Path
+    from consors_audit_fixtures import FREE, text_pdf
+    page, root = transaction_page
+    dialog = page.get_by_role('dialog')
+    dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+    dialog.get_by_role('button', name='Import PDFs', exact=True).click(); settle(page)
+    rows = (tuple('Kurswert 999,00 125,00 EUR' if r.startswith('Kurswert') else r for r in FREE)
+            if case == 'extra amount' else (*FREE, 'Servicegebühr 4'))
+    source = root/'invented-unresolved.pdf'
+    source.write_bytes(text_pdf(rows))
+    before = load_journal(root)
+    holdings = (root/'holdings.csv').read_bytes()
+    dialog.locator('input[type=file]').set_input_files([source]); settle(page)
+    assert dialog.get_by_text(
+        'No importable transactions. Use Add buy / Add sell for unsupported statements or missing fields.',
+        exact=True).count() == 1
+    assert dialog.get_by_role('button', name='Save transactions and review', exact=True).count() == 0
+    assert dialog.get_by_text('I checked that all fees and taxes are included', exact=True).count() == 0
+    dialog.get_by_text('Statement details', exact=True).click(); settle(page)
+    with page.expect_download() as pending:
+        dialog.get_by_role('button', name='Download masked layout report', exact=True).click()
+    report = Path(pending.value.path()).read_text()
+    assert 'Automatic zero fees: review required.' in report
+    expected = 'Gross amount unreadable' if case == 'extra amount' else 'unclassified monetary row'
+    assert expected in report
+    assert all(secret not in report for secret in ('999,00', '125,00', 'Servicegebühr', 'XX0000000777'))
+    assert load_journal(root) == before
+    assert (root/'holdings.csv').read_bytes() == holdings
+    assert not page.get_by_test_id('stException').count()
+
+
 def test_stale_pdf_review_keeps_draft_and_rejects_save(transaction_page):
     from consors_audit_fixtures import FREE, text_pdf
     from portfolio_app.account_journal import save_journal

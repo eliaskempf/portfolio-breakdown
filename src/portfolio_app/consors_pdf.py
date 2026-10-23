@@ -42,6 +42,8 @@ _MONEY = re.compile(rf'(?<![\w.,+−-])(?:([A-Z]{{3}})\s+({_NUMBER})|({_NUMBER})
 # Only documented unit-price annotations are stripped; arbitrary suffixes and
 # currency-free quotations remain unresolved.
 _PRICE_SUFFIX = re.compile(r'\s+(?:P\.\s*ST\.\s+)?(?:NETTO|FRANCO\s+COURTAGE)\s*$', re.I)
+_PRICE_LABEL = re.compile(r'^(?:Preis pro Anteil|Preis pro Stück|Kurs)\b', re.I)
+_GROSS_LABEL = re.compile(r'^Kurswert\b', re.I)
 _FEE = re.compile(r'^(?:abzgl\.\s*)?(?:Provision|Grundgebühr|Grundgebuehr|Börsenplatzgebühr|Boersenplatzgebuehr|Handelsentgelt|Handelsplatzkosten|Transaktionsentgelt|Courtage|Eig\.Spesen|Consorsbank Ausgabegebühr)\b', re.I)
 _TAX = re.compile(r'^(?:abzgl\.\s*)?(?:Kapitalertragsteuer|Kapitalertragssteuer|Solidaritätszuschlag|Kirchensteuer|KapSt|SolZ|KiSt)(?=\s|:|$)', re.I)
 _NET = re.compile(r'^(?:Netto\s+)?(?:zulasten|zugunsten|zu lasten|zu gunsten)\b|^Wert\s+\d{2}\.\d{2}\.\d{4}', re.I)
@@ -65,6 +67,18 @@ _INFORMATION = re.compile(
 _MONEY_LIKE = re.compile(rf'(?:\b(?!von\b)[A-Z]{{3}}\s+[+−-]?\s*{_NUMBER}|{_NUMBER}\s*[+−-]?\s*(?:(?!von\b)[A-Z]{{3}}\b|[€$£¥])|[€$£¥]\s*[+−-]?\s*{_NUMBER})', re.I)
 _METADATA = re.compile(r'^(?:(?:CBL|CBF|BLZ)\s+\d+|BIC\s+[A-Z0-9]+|Seite\s*:?\s*\d+\s+von\s+\d+)$', re.I)
 _UNLABELLED_AMOUNT = re.compile(r'(?<![\w.,])\d[\d.]*,\d+(?!\w)')
+# Currency-free integers need a charge cue; standalone dates, reference tokens
+# and page counters must not become amounts. Signs remain unresolved evidence.
+_ADJUSTMENT_NUMBER = re.compile(r'(?<![\w.,/+-])[+-]?\d[\d.,]*[+-]?(?![\w.,/+-])')
+_DATE_OR_TIME = re.compile(
+    r'(?<![\w.,:/+-])(?:\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2}|'
+    r'\d{2}:\d{2}(?::\d{2})?)(?![\w.,:/+-])')
+# Only these settlement metadata layouts are supported. Fixed German IBAN
+# length prevents an adjacent bare amount from being swallowed as account data.
+# Account syntax is recognized locally, never retained or checksum-validated.
+_SETTLEMENT_ACCOUNT = re.compile(
+    r'(?:IBAN\s+(?:DE\d{20}|DE\d{2}(?:\s+\d{4}){4}\s+\d{2})|'
+    r'Konto-Nr\.\s*\d+)', re.I)
 # Match labelled, structured telephone numbers only. Removing their spans still
 # leaves any separate amount on the same visual row subject to money detection.
 _CONTACT_NUMBER = re.compile(
@@ -150,8 +164,10 @@ def unclassified_money(row):
         return ' '
 
     row = _CONTACT_NUMBER.sub(contact, row)
+    unresolved_charge = (_ADJUSTMENT_HINT.search(row)
+                         and _ADJUSTMENT_NUMBER.search(_DATE_OR_TIME.sub(' ', row)))
     return bool(not re.match(r'^ST\b', row, re.I) and not _METADATA.fullmatch(row)
-                and (_MONEY_LIKE.search(row) or _UNLABELLED_AMOUNT.search(row)))
+                and (_MONEY_LIKE.search(row) or _UNLABELLED_AMOUNT.search(row) or unresolved_charge))
 
 
 @dataclass(frozen=True)
@@ -204,9 +220,9 @@ def _money(line):
 
 def monetary_field(row):
     """Classify statement rows using the same rules for parsing and diagnostics."""
-    if re.match(r'^(?:Preis pro Anteil|Preis pro Stück|Kurs)\b', row, re.I):
+    if _PRICE_LABEL.match(row):
         return 'Unit price', _PRICE_SUFFIX.sub('', row)
-    if re.match(r'^Kurswert\b', row, re.I):
+    if _GROSS_LABEL.match(row):
         return 'Gross amount', row
     if _NET.search(row) and not re.fullmatch(r'Wert\s+\d{2}\.\d{2}\.\d{4}', row, re.I):
         return 'Settlement amount', row
@@ -229,9 +245,19 @@ def field_money(field, row):
                 and _money(amounts[0][0]).currency == money.currency)
     if len(amounts) > 1 and not tax_base:
         return None
+    labels = {'Unit price': _PRICE_LABEL, 'Gross amount': _GROSS_LABEL,
+              'Settlement amount': _NET, 'Fee': _FEE, 'Tax': _TAX}
+    label = labels[field].match(row)
+    if not label:
+        return None
+    prefix = row[label.end():_MONEY.search(row).start()].strip().removeprefix(':').strip()
+    # Validate everything between the label and the terminal amount, including
+    # numbers with no currency. A balancing rightmost amount is not sufficient.
+    if field in ('Unit price', 'Gross amount') and prefix:
+        return None
+    if field == 'Settlement amount' and prefix and not _SETTLEMENT_ACCOUNT.fullmatch(prefix):
+        return None
     if field in ('Fee', 'Tax'):
-        label = (_FEE if field == 'Fee' else _TAX).match(row)
-        prefix = row[label.end():_MONEY.search(row).start()].strip().lstrip(':').strip()
         if field == 'Fee' and prefix:
             return None
         # A tax prefix may contain documented percentage shares/rates and an

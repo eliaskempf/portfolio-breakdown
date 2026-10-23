@@ -24,7 +24,7 @@ def statement(*, sale=False, fees=True, taxes=False, quantity='2,00000', price='
                  ('fee2', [(40, 'Börsenplatzgebühr'), (350, 'EUR 2,00')])]
     if taxes:
         rows += [('tax', [(40, 'abzgl. Kapitalertragsteuer'), (350, '3,00 EUR')])]
-    rows += [('net', [(40, 'Zugunsten IBAN INVENTED' if sale else 'Zulasten IBAN INVENTED'),
+    rows += [('net', [(40, 'Zugunsten IBAN DE00 0000 0000 0000 0000 00' if sale else 'Zulasten IBAN DE00 0000 0000 0000 0000 00'),
                      (350, net or f'{total},00'), (460, 'EUR')]),
              ('date', [(40, 'Valuta 09.02.2024')])]
     rows += [('extra', [(40, row)]) for row in extra]

@@ -178,7 +178,11 @@ unsupported statements require manual entry. Corrections/reissues and currency
 conversion statements need separate review; this is not universal broker support.
 Unexplained transaction amounts, unsupported signs/refunds, repeated financial totals,
 extra amounts within a field, and a debit/credit direction contradicting the trade
-block saving. Confirming fee completeness cannot override these errors. Separate
+block saving. Confirming fee completeness cannot override these errors. Amounts
+without a currency also block when embedded in a financial field or
+accompanied by a charge label, including whole-number charges. Settlement rows
+recognize labelled German IBANs (compact or grouped) and legacy `Konto-Nr.`
+account numbers; other account layouts require manual entry. Separate
 tax-calculation bases are not tax charges; explicitly listed joint-account tax
 charges are each retained, even when their amounts agree.
 After settlement, unfamiliar single amounts inside a recognized tax-detail section
