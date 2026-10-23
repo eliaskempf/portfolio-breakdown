@@ -94,6 +94,19 @@ def test_workspace_clears_owned_drafts_results_and_keeps_scoped_preferences():
                      'performance_preferences': {'invented-workspace': 'money'}}
 
 
+def test_position_history_choice_survives_currency_but_is_scoped_to_workspace_and_tour():
+    saved = {'position_history_preferences': {'invented': 'Price'}}
+    transition(saved, 'currency')
+    assert saved == {'position_history_preferences': {'invented': 'Price'}}
+    captured = capture_tour(saved)
+    captured['position_history_preferences']['invented'] = 'Holdings'
+    assert saved['position_history_preferences']['invented'] == 'Price'
+    for event in ('workspace', 'tour'):
+        state = dict(saved)
+        transition(state, event)
+        assert state == {}
+
+
 def test_futures_date_drafts_survive_unmounts():
     saved = {'main_tabs': 'Overview', 'futures_input_start_date': date(2024, 1, 2),
              'futures_input_end_date': date(2025, 1, 2)}

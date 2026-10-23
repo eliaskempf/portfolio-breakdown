@@ -36,7 +36,9 @@ def test_position_presets_details_and_risk(sample_data_dir):
     by_label(app.get('button_group'), 'Position detail view').set_value('Key metrics').run()
     assert not app.exception
     assert by_label(app.metric, 'P/E (trailing)').value == '20.00'
-    by_label(app.button, 'Close').click().run()
+    # Native close is exercised in the browser lifecycle suite.
+    app.session_state['position_edit_dialog'] = False
+    app.run()
     by_label(app.get('button_group'), 'Position view').set_value('Income & fees').run()
     assert not app.exception
     by_label(app.get('button_group'), 'Position view').set_value('Risk').run()

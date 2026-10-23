@@ -157,3 +157,29 @@ _render_history_results(root, journal, scope, key='test_', include_inputs=False,
         assert (app.metric[2].value != '—') == snapshot
         if not snapshot:
             assert any(c.value == 'History not confirmed' for c in app.caption)
+
+
+@pytest.mark.parametrize('reviewed', [True, False])
+def test_chart_reuses_ledger_states_without_changing_dated_results(monkeypatch, reviewed):
+    import portfolio_app.personal_performance as performance
+    from portfolio_app.gain_accounting import summarize_known_gain
+    journal, scope, store = fixture()
+    if not reviewed:
+        store = replace(store, reviews=())
+    calls = []
+    original = performance.replay_securities
+    def counted(*args, **kwargs):
+        calls.append(kwargs.get('as_of'))
+        return original(*args, **kwargs)
+    monkeypatch.setattr(performance, 'replay_securities', counted)
+    view = history_view(journal, scope, store, 'All', today=date(2024, 6, 16))
+    assert len(calls) == len(set(calls)), 'Each dated ledger is replayed only once per chart'
+    for point in view.points:
+        stamp = point['Date']
+        independent = performance.calculate_history(journal, scope, store, view.all_start, stamp)
+        known = summarize_known_gain(journal, scope, store, stamp)
+        assert point['Value'] == independent.ending_value
+        assert point['Total gain'] == known.amount
+        assert point['Invested capital'] == known.capital
+        assert point['TWR'] == independent.time_weighted
+    assert view.result == performance.calculate_history(journal, scope, store, view.start, view.end)

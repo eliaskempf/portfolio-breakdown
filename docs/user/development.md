@@ -37,7 +37,7 @@ Apply `chart_hover` at each Plotly rendering boundary. Curves share a vertical
 date/value guide and formatted tooltips across the plot area; category and
 allocation charts retain their meaningful category tooltips. Preserve explicit
 units, missing values and purpose-built hover content. Pointer movement must not
-trigger Streamlit reruns. History's value/capital boxes follow the hovered
+trigger Streamlit reruns. Overview history's value/capital boxes follow the hovered
 observations and include their dates. The inline gain switches from selected-period
 gain to total known gain during hover. Any range covering the full holding history
 uses the shared total known gain calculation, just like All. Personal and price
@@ -60,9 +60,35 @@ Test the outer bounds throughout transitions, not just card dimensions. Replace
 the outgoing content before doing expensive work for the next view. Do not
 calculate a complete history merely to
 choose an already-selected tab, or repeat calculations during the same render.
+Reuse chart results only while journal facts, observation revisions, scope, currency,
+period and calendar date remain unchanged. Within each chart, share dated ledger
+states across overlapping intervals without relaxing coverage checks.
 Background data refreshes must remain local to the affected result. Verify actual
 transitions with delayed synthetic data: settled screenshots alone miss old
 controls and charts briefly appearing during a switch.
+
+Position opening and clean dismissal rerun only the dialog host. Child workflows
+share a local refresh boundary, including evidence saves, reconciliation, market
+evidence repairs and completeness review. Persisted changes refresh current
+position values locally and refresh the parent page once after dismissal. Pending
+evidence alone does not repeat portfolio valuation. Streamlit 1.65 or newer is
+required for the keyed host callbacks; the runtime adapter is isolated in
+`dialog_runtime.py` and covered by browser lifecycle tests. Evidence saves retain revision guards and leave balances unchanged until
+explicitly applied. Position detail tabs always use History, Key metrics,
+Transactions and Details. Without recorded history evidence, History shows the
+price chart directly. Otherwise it contains a Holdings / Price selector, defaulting
+to Holdings when useful holdings history exists and Price otherwise. Remember an
+explicit choice per position for the session, separately from the editor draft;
+clear these preferences when switching workspaces. Switching history type keeps
+the dialog and selector stable and replaces only the result beneath them.
+Position details keep one shared summary row above the chart selector: Position
+value with supported personal gain, Invested capital, and Annualized return.
+These figures retain their current/all-history basis across tabs, chart types,
+periods and pointer movement. Dated value, capital, total gain and TWR remain in
+chart tooltips; position charts do not rewrite headline cards. Return on cost and
+unrealized gain are listed in Details. Without applied history, capital uses the
+recorded acquisition cost and gain is explicitly unrealized only; annualized
+return remains unavailable. Complete-history gates are unchanged.
 
 Missing-data interfaces must identify the affected result and provide a relevant
 action. Do not expose a combined list of every metric's requirements as mandatory

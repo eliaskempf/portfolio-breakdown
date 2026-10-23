@@ -47,6 +47,19 @@ def _key(directory, identity):
     return 'personal_history_' + sha256((str(directory.resolve())+identity).encode()).hexdigest()[:12] + '_'
 
 
+def prepared_history_view(directory, journal, scope, observations, revision, period='1Y', *, target=None):
+    """Reuse a chart across dialog interactions until its actual inputs change."""
+    from portfolio_app.currency_display import reporting_currency
+    from portfolio_app.history_view import history_view
+    from portfolio_app.input_cache import cached_input
+    from portfolio_app.security_history import history_fingerprint
+    target = target or reporting_currency()
+    stamp = date.today()
+    signature = str(directory.resolve()), history_fingerprint(journal), revision, scope, period, target, stamp
+    return cached_input('history_view_'+scope.key, signature,
+        lambda: history_view(journal, scope, observations, period, today=stamp, target=target))
+
+
 def _record_id(key, record):
     return uuid5(NAMESPACE_URL, key+json.dumps(record, default=str, sort_keys=True)).hex
 
@@ -64,6 +77,20 @@ def _history_action(key, action):
         st.session_state[key+'new_kind'] = action if action in ('buy', 'sell') else 'buy'
         action = 'add'
     st.session_state[key+'screen'] = action
+
+
+def _save_evidence(directory, candidate, journal_revision, holdings_revision, *, screen=None):
+    """Save before rendering the next dialog view, without a full-app rerun."""
+    key = _key(directory, candidate.position_id)
+    try:
+        save_history(directory, candidate, expected_journal_revision=journal_revision,
+                     expected_holdings_revision=holdings_revision)
+    except (DataError, ValueError, OSError) as exc:
+        st.session_state[key+'save_error'] = str(exc)
+        return
+    st.session_state.pop(key+'save_error', None)
+    if screen is not None:
+        _history_action(key, screen)
 
 
 def _visible_records(book):
@@ -85,6 +112,8 @@ def render_position_history(directory, row):
             return
         book = book_for(journal, raw.iloc[0])
         key = _key(directory, row.position_id)
+        if error := st.session_state.pop(key+'save_error', None):
+            st.error(error)
         screen = st.session_state.get(key+'screen', 'list')
         if screen != 'list':
             st.button('Back to transactions', icon=':material/arrow_back:', key=key+'back',
@@ -206,10 +235,8 @@ def _opening_form(directory, journal, revision, snapshot, book, row, key):
             fields['costs'] = tuple(active_components(row))
         event = SecurityEvent(_record_id(key+str(revision), fields), **fields)
         candidate = append_evidence(book, (event,))
-        if st.button('Save starting balance', key=key+'evidence'):
-            save_history(directory, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision)
-            st.session_state[_key(directory, row.position_id)+'screen'] = 'list'
-            st.rerun()
+        st.button('Save starting balance', key=key+'evidence', on_click=_save_evidence,
+            args=(directory, candidate, revision, snapshot.revision), kwargs={'screen':'list'})
     except (DataError, ValueError) as exc:
         st.caption(str(exc))
 
@@ -325,9 +352,8 @@ def _fix_history(directory, journal, revision, snapshot, book, row, key):
             if bool(record.get('Use')):
                 selected.append(candidate.id)
         candidate = append_evidence(book, additions)
-        if st.button('Save evidence', key=key+'save_evidence'):
-            save_history(directory, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision)
-            st.rerun()
+        st.button('Save evidence', key=key+'save_evidence', on_click=_save_evidence,
+            args=(directory, candidate, revision, snapshot.revision))
         candidate = replace(candidate, active_ids=tuple(selected))
         if selected:
             _activation(directory, journal, revision, snapshot, candidate, row, key+'fix_', resolution='accept')
@@ -519,10 +545,8 @@ def _add_transaction(directory, journal, revision, snapshot, book, key):
             other_position_id=destination, value_date=settlement.isoformat() if settlement else '')
         event = SecurityEvent(_record_id(key+str(revision), fields), **fields)
         candidate = append_evidence(book, (event,))
-        if st.button('Save transaction', key=key+'evidence', type='primary'):
-            save_history(directory, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision)
-            st.session_state[_key(directory, book.position_id)+'screen'] = 'list'
-            st.rerun()
+        st.button('Save transaction', key=key+'evidence', type='primary', on_click=_save_evidence,
+            args=(directory, candidate, revision, snapshot.revision), kwargs={'screen':'list'})
     except (DataError, ValueError) as exc:
         st.caption(str(exc))
 
@@ -586,11 +610,10 @@ def _edit_transaction(directory, journal, revision, snapshot, book, key):
             price=price, amount=gross, currency=currency, charges=updated_fees, charges_known=known,
             value_date=settlement.isoformat() if settlement else '', note=note)
         with st.container(horizontal=True):
-            if st.button('Save changes', type='primary', key=key+'save'):
-                if candidate != book:
-                    save_history(directory, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision)
-                st.session_state[_key(directory, book.position_id)+'screen'] = 'list'
-                st.rerun()
+            st.button('Save changes', type='primary', key=key+'save',
+                on_click=_save_evidence if candidate != book else _history_action,
+                args=(directory, candidate, revision, snapshot.revision) if candidate != book else (_key(directory, book.position_id), 'list'),
+                kwargs={'screen':'list'} if candidate != book else {})
             st.button('Cancel', key=key+'cancel', on_click=_history_action, args=(_key(directory, book.position_id),'list'))
         st.caption('Full precision is preserved. Changes affect your holding only after Review against portfolio.')
     except (DataError, ValueError) as exc:
@@ -617,7 +640,6 @@ def _replace_balance(directory, journal, revision, snapshot, book, row, key):
 def prepare_portfolio_history(directory, holdings, *, config, bucket='', displayed=None, current_valued=None):
     """Read once before choosing the initial Overview tab; no UI side effects."""
     from portfolio_app.currency_display import reporting_currency
-    from portfolio_app.history_view import history_view
     journal, _ = load_journal(directory)
     from portfolio_app.history_scope import category_history_scope
     scope = category_history_scope(journal, holdings, config, bucket, displayed=displayed)
@@ -637,7 +659,7 @@ def prepare_portfolio_history(directory, holdings, *, config, bucket='', display
     key = _key(directory, scope.key)
     observations, revision = load_observations(directory)
     period = st.session_state.get(key+'period') or '1Y'
-    view = history_view(journal,scope,observations,period,target=reporting_currency())
+    view = prepared_history_view(directory,journal,scope,observations,revision,period,target=reporting_currency())
     from portfolio_app.gain_accounting import current_component_values, summarize_known_gain
     current = None
     if current_valued is not None:
@@ -652,13 +674,12 @@ def render_portfolio_history(directory, prepared, *, label='Portfolio value', pe
         label=label, prepared=prepared, percent=percent, on_toggle_gain=on_toggle_gain, automatic=automatic)
 
 
-def render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False):
-    options = dict(key=key, label=label, percent=percent, on_toggle_gain=on_toggle_gain)
+def render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False, show_summary=True):
+    options = dict(key=key, label=label, percent=percent, on_toggle_gain=on_toggle_gain, show_summary=show_summary)
     if not automatic:
         _render_history_results(directory, journal, scope, prepared=prepared, **options)
         return
     from portfolio_app.currency_display import reporting_currency
-    from portfolio_app.history_view import history_view
     from portfolio_app.personal_history_refresh import refresher
     target = reporting_currency()
     refresh = refresher.request(directory, journal, scope, target)
@@ -669,7 +690,9 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
             options['percent'] = not options['percent']
         options['on_toggle_gain'] = toggle
 
+    from portfolio_app.dialog_runtime import local_dialog_updates
     @st.fragment(run_every=2 if refresh.pending else None)
+    @local_dialog_updates()
     def history_region():
         nonlocal cached, signature, refresh, waiting
         if waiting and not refresher.pending(directory):
@@ -682,7 +705,7 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
         current = revision, period, date.today()
         if current != signature:
             cached = dict(prepared or {}, observations=observations, revision=revision,
-                view=history_view(journal, scope, observations, period, target=target))
+                view=prepared_history_view(directory, journal, scope, observations, revision, period, target=target))
             if cached.get('current_valued') is not None:
                 from portfolio_app.gain_accounting import summarize_known_gain, current_component_values
                 valued = cached['current_valued']
@@ -698,9 +721,9 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
         cached['view'], target, key)
 
 
-def _render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False, refresh=None, include_inputs=True):
+def _render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False, refresh=None, include_inputs=True, show_summary=True):
     from portfolio_app.currency_display import reporting_currency, money
-    from portfolio_app.history_view import history_view, PERIODS
+    from portfolio_app.history_view import PERIODS
     from portfolio_app.presentation import return_percent
     target = reporting_currency()
     observations, revision = (prepared['observations'],prepared['revision']) if prepared else load_observations(directory)
@@ -708,7 +731,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     summary = st.container()
     period = st.segmented_control('Period', PERIODS, default=st.session_state.get(key+'period') or '1Y',
         required=True, key=key+'period', label_visibility='collapsed') or '1Y'
-    view = prepared['view'] if prepared else history_view(journal,scope,observations,period,today=date.today(),target=target)
+    view = prepared['view'] if prepared else prepared_history_view(directory,journal,scope,observations,revision,period,target=target)
     start,end,result = view.start,view.end,view.result
     full = view.all_result
     known = (prepared.get('current_gain') if prepared else None) or view.all_known
@@ -734,7 +757,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     gain_text = return_percent(displayed_gain) if percent else (money(gain,signed=True) if gain is not None else '—')
     gain_tooltip = ('TWR · ' if percent else 'Gain · ') + ('All history' if view.covers_full_history else period) + (' · Click for amount' if percent else ' · Click for TWR')
     with summary:
-        if total_value is not None or full.ending_value is not None:
+        if show_summary and (total_value is not None or full.ending_value is not None):
             cols = st.columns([2,1,1])
             with cols[0].container(key=value_key):
                 st.metric(label, money(total_value), delta=gain_text,
@@ -771,8 +794,16 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
                 dict(key=value_key, trace='Value', label=label, summary=money(total_value),
                     gainSummary=gain_text, gainAmount=float(displayed_gain) if displayed_gain is not None else None,
                     gainPercent=percent, gainTooltip=gain_tooltip),
-                dict(key=key+'hover_capital', trace='Invested capital', label='Invested capital', summary=money(capital))])))
-        st.plotly_chart(chart_hover(money_history_axes(figure, target)), key=key+'chart', width='stretch', config=chart_config())
+                dict(key=key+'hover_capital', trace='Invested capital', label='Invested capital', summary=money(capital))] if show_summary else [])))
+        figure = chart_hover(money_history_axes(figure, target))
+        if not show_summary:
+            # Keep dated personal figures in the tooltip; position headlines stay
+            # on their current/all-history basis in both Price and Holdings.
+            trace = next(t for t in figure.data if t.name == 'Value')
+            trace.text = [f'Total gain: {money(p["Total gain"], signed=True)}<br>TWR: '
+                          + return_percent(None if p['TWR'] is None else 100*p['TWR']) for p in points]
+            trace.hovertemplate = trace.hovertemplate.replace('<extra>', '<br>%{text}<extra>')
+        st.plotly_chart(figure, key=key+'chart', width='stretch', config=chart_config())
     elif view.useful:
         st.caption('Not enough valuations in this period. Choose a longer period to see history.')
     else:

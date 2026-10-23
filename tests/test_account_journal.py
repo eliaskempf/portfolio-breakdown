@@ -315,3 +315,49 @@ def test_convenience_additions_preserve_identity():
     assert add_position(journal, journal.positions[0]) == journal
     with pytest.raises(DataError, match='different facts'):
         add_account(journal, Account('broker', 'Different name'))
+
+
+def test_parsed_journal_cache_tracks_exact_content_and_keeps_callers_isolated(tmp_path, monkeypatch):
+    import portfolio_app.account_journal as module
+    original = module.journal_from_dict
+    calls = []
+    def counted(raw):
+        calls.append(True)
+        return original(raw)
+    module._journal_from_bytes.cache_clear()
+    monkeypatch.setattr(module, 'journal_from_dict', counted)
+    j = invented()
+    revision = save_journal(tmp_path, j, None)
+    first, revision = load_journal(tmp_path)
+    count = len(calls)
+    second, same_revision = load_journal(tmp_path)
+    assert len(calls) == count
+    assert first == second == j and first is not second
+    assert first.accounts[0] is not second.accounts[0]
+    assert same_revision == revision
+    changed = append_event(j, event('cash', 'cash_open', account_id='bank', currency='EUR', amount=42))
+    save_journal(tmp_path, changed, revision)
+    assert load_journal(tmp_path)[0] == changed
+    assert load_journal(tmp_path)[1] != revision
+    path = tmp_path / module.FILE
+    valid = path.read_bytes()
+    path.write_text('{invalid')
+    with pytest.raises(DataError, match='Invalid account journal'):
+        load_journal(tmp_path)
+    path.write_bytes(valid)
+    assert load_journal(tmp_path)[0] == changed
+
+
+def test_journal_cache_does_not_share_mutable_nested_costs(tmp_path):
+    from portfolio_app.cost_basis import component
+    from portfolio_app.security_history import SecurityBook, SecurityEvent
+    opening = SecurityEvent('open', 'opening', '2024-01-01', quantity=D(2),
+        costs=(component(2, 20, 'EUR'),))
+    j = Journal(version=2, securities=(SecurityBook('holding', 'invented', ('2', '10', 'EUR'),
+        records=(opening,), active_ids=('open',)),))
+    save_journal(tmp_path, j, None)
+    caller, revision = load_journal(tmp_path)
+    caller.securities[0].records[0].costs[0]['amount'] = '999'
+    latest, same_revision = load_journal(tmp_path)
+    assert latest.securities[0].records[0].costs[0]['amount'] == '20'
+    assert same_revision == revision

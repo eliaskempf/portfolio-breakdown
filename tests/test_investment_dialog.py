@@ -49,7 +49,9 @@ def test_popup_matches_normal_details_and_exposure_stays_in_details(tmp_path):
     assert by_label(app.metric,'Capital value').value=='€19,992.00'
     assert by_label(app.metric,'Market exposure').value=='€20,000.00'
     assert by_label(app.get('button_group'),'Futures position view').value=='Chart'
-    by_label(app.button,'Close').click().run()
+    # Native close is exercised in the browser lifecycle suite.
+    app.session_state['position_edit_dialog'] = False
+    app.run()
     assert not app.session_state['position_edit_dialog']
     open_investment(app,tmp_path,editing=True)
     assert by_label(app.text_input,'Investment name')

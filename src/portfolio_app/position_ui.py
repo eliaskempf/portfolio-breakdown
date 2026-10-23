@@ -37,12 +37,15 @@ def _clear_editor() -> None:
     st.session_state.pop('strategic_last_position', None)
 
 
-def request_position(position_id, *, editing=False):
+def request_position(position_id, *, editing=False, local=True):
     if st.session_state.get('position_edit_selected') != position_id:
         _clear_editor()
     st.session_state['position_edit_detail_requested'] = True
     st.session_state.update(position_edit_selected=position_id,
         position_edit_action='Edit position' if editing else 'Details', position_edit_dialog=True)
+    from portfolio_app.dialog_runtime import route_position_callback
+    if local:
+        route_position_callback()
 
 
 def _consume_position_event(path, snapshot):
@@ -142,13 +145,94 @@ def _dismiss():
     st.session_state['position_edit_dialog'] = False
 
 
-def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None, valued=None):
+def _dismiss_dialog():
+    _dismiss()
+    from portfolio_app.dialog_runtime import route_position_callback
+    route_position_callback()
+
+
+def _dialog_sources(directory):
+    from portfolio_app.input_cache import file_stamp
+    return tuple(file_stamp(directory/name) for name in
+        ('holdings.csv', 'account-journal.json', 'history-observations.json', 'allocation.yaml', 'portfolio.yaml'))
+
+
+def _reload_dialog_values(directory, *, demo, prices=None, inputs=None):
+    """Use the normal valuation pipeline after a child workflow changes facts."""
+    from portfolio_app.input_cache import load_inputs
+    from portfolio_app.application import prepare_application, select_price_service, historical_for
+    from portfolio_app.history_observations import ObservationFX, load_observations
+    from portfolio_app.account_journal import load_journal
+    inputs = inputs or load_inputs(directory)
+    prices = select_price_service(directory, offline_demo=demo, supplied=prices)
+    historical = ObservationFX(load_observations(directory)[0], historical_for(directory, demo=demo))
+    valued = prepare_application(inputs, prices, reporting_currency=reporting_currency(), historical=historical).valued
+    journal, _ = load_journal(directory)
+    if journal.accounts:
+        from portfolio_app.actual_portfolio import journal_positions
+        from portfolio_app.futures_valuation import load_valuations
+        valuations, rates = load_valuations(directory, journal)
+        valued = journal_positions(valued, journal, prices, reporting_currency=reporting_currency(),
+                                  valuations=valuations, fx_rates=rates)
+    return inputs.snapshot, inputs.allocation, valued
+
+
+def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None, valued=None, prices=None):
+    from portfolio_app.dialog_runtime import HOST
+    baseline = _dialog_sources(path.parent)
+    current_values = [baseline, snapshot, allocation, valued]
+    from portfolio_app.account_journal import load_journal
+    from portfolio_app.security_history import selected_events
+    from dataclasses import replace
+
+    def valuation_facts(journal):
+        # Pending evidence and review receipts do not change prices, costs or cash.
+        active = tuple((b.position_id, b.account_id, b.cash_from, selected_events(b))
+                       for b in journal.securities if b.active)
+        return replace(journal, securities=()), active
+
+    last_facts = valuation_facts(load_journal(path.parent)[0])
+
+    def values():
+        nonlocal last_facts
+        signature = _dialog_sources(path.parent)
+        if signature != current_values[0]:
+            from portfolio_app.input_cache import load_inputs
+            inputs = load_inputs(path.parent)
+            facts = valuation_facts(load_journal(path.parent)[0])
+            before = current_values[1].holdings.drop(columns=['position_key'], errors='ignore')
+            after = inputs.snapshot.holdings.drop(columns=['position_key'], errors='ignore')
+            same_valuation = (before.equals(after) and facts == last_facts
+                              and signature[2:] == current_values[0][2:])
+            refreshed = ((inputs.snapshot, inputs.allocation, current_values[3]) if same_valuation else
+                         _reload_dialog_values(path.parent, demo=demo, prices=prices, inputs=inputs))
+            current_values[:] = [signature, *refreshed]
+            last_facts = facts
+        return current_values[1:]
+
+    @st.fragment(key=HOST)
+    def host():
+        st.session_state['position_dialog_host_ready'] = True
+        if not st.session_state.get('position_edit_dialog') and not st.session_state.get('position_edit_open_request'):
+            # Read-only open/close never rebuilds the portfolio. Persisted changes
+            # get one parent refresh once the dialog has actually closed.
+            if _dialog_sources(path.parent) != baseline:
+                st.rerun()
+            return
+        _render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=valued, values=values)
+    host()
+
+
+def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, values):
+    from portfolio_app.dialog_runtime import local_dialog_updates, close_position_button
     _consume_position_event(path, snapshot)
     if not st.session_state.get('position_edit_dialog'):
+        if st.session_state.get('positions_workflow_request'):
+            st.rerun()
         return
 
     from portfolio_app.account_journal import load_journal
-    dialog_journal, dialog_revision = load_journal(path.parent)
+    dialog_journal, _ = load_journal(path.parent)
     future_ids = {p.id for p in dialog_journal.positions} | {item.id for item in dialog_journal.investments}
     actual_future = st.session_state.get('position_edit_selected') in future_ids
     title = st.session_state.get('position_edit_action', 'Details')
@@ -157,13 +241,14 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
         selected_title = snapshot.holdings.loc[snapshot.holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
         if not selected_title.empty:
             title = instrument_name(selected_title.iloc[0])
-    @st.dialog(title, width='large', on_dismiss=_dismiss)
+    @st.dialog(title, width='large', on_dismiss=_dismiss_dialog)
     def dialog():
         # Button callbacks run before the dialog body. Never execute its data
         # loaders again when the user has already requested dismissal.
         if not st.session_state.get('position_edit_dialog'):
             st.rerun()
-        with st.container(key='position_dialog_'+str(st.session_state.get('position_edit_selected', 'new'))+'_'+st.session_state.get('position_edit_action', 'Details')):
+        with local_dialog_updates(), st.container(key='position_dialog_'+str(st.session_state.get('position_edit_selected', 'new'))+'_'+st.session_state.get('position_edit_action', 'Details')):
+            snapshot, allocation, valued = values()
             current = read_snapshot(path)
             for key, value in st.session_state.get('position_draft', {}).items():
                 if key not in st.session_state:
@@ -171,19 +256,24 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
             action = st.session_state.get('position_edit_action', 'Details')
             if actual_future:
                 journal, revision = load_journal(path.parent)
-                if revision != dialog_revision:
-                    st.rerun(scope='app')
                 from portfolio_app.investment_detail_ui import render_investment_detail
                 render_investment_detail(path.parent, journal, revision, valued,
                     st.session_state.get('position_edit_selected'), allocation=allocation, editing=action == 'Edit position')
-                st.button('Close', help='Close this detail view and return to the portfolio.', on_click=_dismiss)
+                close_position_button()
             elif action == 'Details':
-                selected = current.holdings.loc[current.holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
+                from portfolio_app.security_history import effective_holdings
+                current_holdings = effective_holdings(current.holdings, load_journal(path.parent)[0].securities)
+                selected = current_holdings.loc[current_holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
                 if selected.empty:
                     st.warning('This position no longer exists.')
                 else:
                     row = selected.iloc[0]
-                    if valued is not None and current.revision == snapshot.revision:
+                    previous = snapshot.holdings.loc[snapshot.holdings.position_id.eq(row.position_id)]
+                    # The first evidence save may add stable position keys. Keep
+                    # the valuation when the effective holding itself is unchanged.
+                    unchanged = (not previous.empty and row.drop(labels=['position_key'], errors='ignore').equals(
+                        previous.iloc[0].drop(labels=['position_key'], errors='ignore')))
+                    if valued is not None and unchanged:
                         matches = valued.loc[valued.position_id.eq(row.position_id)]
                         if not matches.empty:
                             row = matches.iloc[0]
@@ -191,7 +281,7 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
                         st.session_state['position_edit_action'] = 'Edit position'
                     from portfolio_app.position_detail import render_position_detail
                     render_position_detail(row, path.parent, demo=demo, allocation=allocation, on_edit=edit_position)
-                st.button('Close', help='Close this detail view and return to the portfolio.', on_click=_dismiss)
+                close_position_button()
             else:
                 rendered = render_position_form(path, current, funds, demo=demo, allocation=allocation, action=action, valued=valued)
                 _remember_draft()

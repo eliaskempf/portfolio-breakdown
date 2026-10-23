@@ -218,7 +218,9 @@ def selected_events(book):
     replaced = {e.replaces for e in records if e.replaces}
     if replaced.intersection(selected):
         raise DataError('Select a correction or its original, not both.')
-    return tuple(sorted((e for e in records if e.kind != 'void'), key=lambda e: (e.date, e.sequence, book.records.index(e))))
+    # Python's stable sort retains the original record order for ties. Looking
+    # each event up in the full tuple made every historical replay quadratic.
+    return tuple(sorted((e for e in records if e.kind != 'void'), key=lambda e: (e.date, e.sequence)))
 
 
 def append_evidence(book, records):

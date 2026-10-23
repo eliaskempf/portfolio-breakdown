@@ -50,6 +50,46 @@ class PersonalPerformance:
     capital_reasons: tuple[str, ...] = ()
 
 
+class HistoryCalculation:
+    """Reusable facts for one journal/observation snapshot, never a global cache.
+
+    A chart asks for many overlapping intervals. Reuse dated ledger states and
+    opening evidence while each interval keeps its own coverage and return gates.
+    """
+
+    def __init__(self, journal, observations):
+        self.journal, self.observations = journal, observations
+        self.fingerprint = history_fingerprint(journal)
+        self._facts = {}
+
+    def _get(self, key, load):
+        if key not in self._facts:
+            self._facts[key] = load()
+        return self._facts[key]
+
+    def securities(self, stamp=None):
+        return self._get(('securities', stamp), lambda: replay_securities(self.journal.securities, as_of=stamp))
+
+    def accounts(self, stamp):
+        return self._get(('accounts', stamp), lambda: replay(self.journal, as_of=stamp))
+
+    def value(self, scope, stamp, target):
+        return self._get(('value', scope, stamp, target), lambda: value_at(
+            self.journal, scope, self.observations, stamp, target, calculation=self))
+
+    def opening(self, scope, stamp, target):
+        return self._get(('opening', scope, stamp, target), lambda: opening_value_at(
+            self.journal, scope, self.observations, stamp, target, calculation=self))
+
+    def capital(self, scope, stamp, target):
+        return self._get(('capital', scope, stamp, target), lambda: capital_at_start(
+            self.journal, scope, self.observations, stamp, target, calculation=self))
+
+    def flows(self, scope, start, end, target):
+        return self._get(('flows', scope, start, end, target), lambda: external_flows(
+            self.journal, scope, self.observations, start, end, target, security_cash=self.securities().cash))
+
+
 def convert(amount, source, target, stamp, observations):
     if amount is None:
         return None
@@ -73,18 +113,21 @@ def account_starts_on(journal, account, stamp):
     return bool(openings and all(e.date == stamp for e in openings) and not any(e.date < stamp for e in events))
 
 
-def opening_value_at(journal, scope, observations, stamp, target):
+def opening_value_at(journal, scope, observations, stamp, target, *, calculation=None):
     """Account cash openings precede same-day account trades/fees/flows.
 
     Security openings remain end-of-day snapshots. Their derived cash postings
     already omit payments covered by a same-day account cash opening. Do not
     apply that omission to separately recorded account fees or external funding.
     """
+    def value_for(members):
+        return (calculation.value(members, stamp, target) if calculation else
+                value_at(journal, members, observations, stamp, target))
     if not any(account_starts_on(journal, a, stamp) for a in scope.accounts):
-        return value_at(journal, scope, observations, stamp, target)
+        return value_for(scope)
     total, reasons = ZERO, list(scope.unresolved)
     if scope.positions:
-        value = value_at(journal, HistoryScope(scope.positions), observations, stamp, target)
+        value = value_for(HistoryScope(scope.positions))
         reasons.extend(value.reasons)
         if value.amount is not None:
             total += value.amount
@@ -99,14 +142,14 @@ def opening_value_at(journal, scope, observations, stamp, target):
                 else:
                     total += value
         else:
-            value = value_at(journal, HistoryScope(accounts=(account,)), observations, stamp, target)
+            value = value_for(HistoryScope(accounts=(account,)))
             reasons.extend(value.reasons)
             if value.amount is not None:
                 total += value.amount
     return AmountResult(None if reasons else total, tuple(dict.fromkeys(reasons)))
 
 
-def capital_at_start(journal, scope, observations, stamp, target):
+def capital_at_start(journal, scope, observations, stamp, target, *, calculation=None):
     """Snapshot cost seeds known gain; it is never a return-opening valuation.
 
     Account equity already includes cash, debt and claims. Only securities whose
@@ -116,7 +159,7 @@ def capital_at_start(journal, scope, observations, stamp, target):
     from portfolio_app.cost_basis import resolve_cost
     from portfolio_app.history_observations import ObservationFX
     total, reasons = ZERO, list(scope.unresolved)
-    states = replay_securities(journal.securities, as_of=stamp).positions
+    states = (calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)).positions
     books = {b.position_id: b for b in journal.securities}
     for identity in scope.positions:
         book, state = books.get(identity), states.get(identity)
@@ -134,27 +177,31 @@ def capital_at_start(journal, scope, observations, stamp, target):
             else:
                 total += cost.exact_amount
         else:
-            value = value_at(journal, HistoryScope((identity,)), observations, stamp, target)
+            members = HistoryScope((identity,))
+            value = (calculation.value(members, stamp, target) if calculation else
+                     value_at(journal, members, observations, stamp, target))
             reasons.extend(value.reasons)
             if value.amount is not None:
                 total += value.amount
     if scope.accounts:
-        value = opening_value_at(journal, HistoryScope(accounts=scope.accounts), observations, stamp, target)
+        members = HistoryScope(accounts=scope.accounts)
+        value = (calculation.opening(members, stamp, target) if calculation else
+                 opening_value_at(journal, members, observations, stamp, target))
         reasons.extend(value.reasons)
         if value.amount is not None:
             total += value.amount
     return AmountResult(None if reasons else total, tuple(dict.fromkeys(reasons)))
 
 
-def value_at(journal, scope, observations, stamp, target):
+def value_at(journal, scope, observations, stamp, target, *, calculation=None):
     """Exact dated equity: securities + cash - loans + futures/other claims."""
     if scope.unresolved:
         return AmountResult(None, scope.unresolved)
     supplied = lookup(observations, 'value', scope.key, stamp, currency=target)
     if supplied:
         return AmountResult(supplied.amount)
-    securities = replay_securities(journal.securities, as_of=stamp)
-    accounts = replay(journal, as_of=stamp)
+    securities = calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)
+    accounts = (calculation.accounts(stamp) if calculation else replay(journal, as_of=stamp)) if scope.accounts else None
     books = {b.position_id: b for b in journal.securities}
     total, reasons = ZERO, []
 
@@ -209,11 +256,11 @@ def value_at(journal, scope, observations, stamp, target):
     return AmountResult(None if reasons else total, tuple(reasons))
 
 
-def coverage_reasons(journal, scope, observations, start, end):
+def coverage_reasons(journal, scope, observations, start, end, *, fingerprint=None):
     """A quantity match cannot certify omitted offsetting events or income."""
     reasons = list(scope.unresolved)
     books = {b.position_id: b for b in journal.securities}
-    fingerprint = history_fingerprint(journal)
+    fingerprint = fingerprint or history_fingerprint(journal)
     reviewed = any(set(scope.positions) <= set(r.scope.positions) and set(scope.accounts) <= set(r.scope.accounts)
                    and not r.scope.unresolved and r.start <= start and r.end >= end
                    and r.journal_fingerprint == fingerprint for r in observations.reviews)
@@ -251,7 +298,7 @@ def coverage_reasons(journal, scope, observations, start, end):
     return tuple(dict.fromkeys(reasons))
 
 
-def external_flows(journal, scope, observations, start, end, target):
+def external_flows(journal, scope, observations, start, end, target, *, security_cash=None):
     flows, reasons = [], []
     members, accounts = set(scope.positions), set(scope.accounts)
 
@@ -264,7 +311,7 @@ def external_flows(journal, scope, observations, start, end, target):
         if reason:
             reasons.append(reason)
 
-    for c in replay_securities(journal.securities).cash:
+    for c in replay_securities(journal.securities).cash if security_cash is None else security_cash:
         asset_inside = c.position_id in members
         cash_inside = c.account_id in accounts and not c.external
         if asset_inside == cash_inside:
@@ -404,17 +451,18 @@ def known_negative_equity_dates(journal, scope, observations, start, end, target
     return tuple(sorted(negative))
 
 
-def calculate_history(journal, scope, observations, start, end, target='EUR', *, returns=True, negative_dates=None):
+def calculate_history(journal, scope, observations, start, end, target='EUR', *, returns=True, negative_dates=None, calculation=None):
     days = (date.fromisoformat(end)-date.fromisoformat(start)).days
     if days < 0:
         from portfolio_app.holdings import DataError
         raise DataError('History end must not precede its start.')
-    opening, ending = opening_value_at(journal, scope, observations, start, target), value_at(journal, scope, observations, end, target)
-    coverage = coverage_reasons(journal, scope, observations, start, end)
-    flows, missing_flows = external_flows(journal, scope, observations, start, end, target)
+    calculation = calculation or HistoryCalculation(journal, observations)
+    opening, ending = calculation.opening(scope, start, target), calculation.value(scope, end, target)
+    coverage = coverage_reasons(journal, scope, observations, start, end, fingerprint=calculation.fingerprint)
+    flows, missing_flows = calculation.flows(scope, start, end, target)
     flow_reasons = tuple(dict.fromkeys((*coverage, *missing_flows)))
     net = sum((f.amount for f in flows), ZERO) if not flow_reasons else None
-    capital = capital_at_start(journal, scope, observations, start, target)
+    capital = calculation.capital(scope, start, target)
     invested = capital.amount + net if capital.amount is not None and net is not None else None
     gain = ending.amount - opening.amount - net if ending.amount is not None and opening.amount is not None and net is not None else None
     total_gain = ending.amount - invested if ending.amount is not None and invested is not None else None

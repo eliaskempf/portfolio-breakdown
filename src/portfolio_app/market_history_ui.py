@@ -15,7 +15,7 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
                           heading='Market-price history', index_points=False,
                           expected_currency=None, native_currency=None, service=None, compact=False,
                           caption='Instrument closing prices in {currency} · Excludes dividend reinvestment · Not your personal return history'):
-    if not compact:
+    if not compact and heading:
         st.markdown(f'**{heading}**')
     if service is None:
         service = HistoryService(DemoHistoryProvider(), data_dir / '.cache' / 'history') if demo else history_for(data_dir)
@@ -50,7 +50,9 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
     pending = not demo and any(service.pending(symbol, period) for symbol in requested)
     completed = not pending
 
+    from portfolio_app.dialog_runtime import local_dialog_updates
     @st.fragment(run_every=2 if pending else None)
+    @local_dialog_updates()
     def progress():
         nonlocal result, requested, completed
         if not completed and not any(service.pending(symbol, period) for symbol in requested):

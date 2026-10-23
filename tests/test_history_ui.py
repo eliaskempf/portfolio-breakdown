@@ -65,6 +65,25 @@ def test_snapshot_only_history_has_no_empty_chart(tmp_path):
     assert not app.toggle
 
 
+def test_save_rejects_concurrent_history_change_and_retains_draft(tmp_path):
+    from portfolio_app.account_journal import load_journal
+    fixture(tmp_path)
+    app = launch(tmp_path)
+    label(app.button, 'Add buy').click().run()
+    label(app.text_input, 'Quantity').set_value('3').run()
+    label(app.text_input, 'Unit price').set_value('12').run()
+    journal, revision = load_journal(tmp_path)
+    other = E('concurrent-buy', 'buy', '2024-02-01', quantity=D(1), price=D(11), currency='EUR')
+    changed = replace(journal, securities=(replace(journal.securities[0], records=(*journal.securities[0].records, other)),))
+    save_journal(tmp_path, changed, revision)
+    label(app.button, 'Save transaction').click().run()
+    assert not app.exception
+    assert any('History or holdings changed' in error.value for error in app.error)
+    assert label(app.text_input, 'Quantity').value == '3'
+    assert label(app.text_input, 'Unit price').value == '12'
+    assert load_journal(tmp_path)[0] == changed
+
+
 def test_opening_form_saves_evidence_without_changing_balances(tmp_path):
     (tmp_path/'holdings.csv').write_text('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,10,EUR\n')
     app=launch(tmp_path)
@@ -311,3 +330,34 @@ def test_transfer_entry_uses_holding_names_and_preserves_destination_identity(tm
     from portfolio_app.account_journal import load_journal
     event = load_journal(tmp_path)[0].securities[0].records[-1]
     assert event.kind == 'transfer' and event.other_position_id == 'position-1'
+
+
+def test_prepared_history_reuses_results_and_invalidates_financial_inputs(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from test_history_view import fixture as chart_fixture
+    import portfolio_app.history_view as charts
+    import portfolio_app.input_cache as cache
+    from portfolio_app.history_ui import prepared_history_view
+    monkeypatch.setattr(cache.st, 'session_state', {})
+    journal, scope, store = chart_fixture()
+    calls = []
+    calculate = charts.history_view
+    def counted(*args, **kwargs):
+        calls.append(True)
+        return calculate(*args, **kwargs)
+    monkeypatch.setattr(charts, 'history_view', counted)
+    def view(journal=journal, scope=scope, store=store, revision='first', **kw):
+        return prepared_history_view(tmp_path, journal, scope, store, revision, 'All', **kw)
+    first = view()
+    assert view() == first and len(calls) == 1
+    first.points[-1]['Value'] = -1
+    assert view().points[-1]['Value'] != -1  # Caller cannot mutate the cached chart.
+    corrected = replace(store, observations=(*store.observations[:-1], replace(store.observations[-1], amount=D(20))))
+    assert view(store=corrected, revision='corrected').result.ending_value == 200
+    unreviewed = replace(corrected, reviews=())
+    assert view(store=unreviewed, revision='unreviewed').result.money_weighted is None
+    book = replace(journal.securities[0], active_ids=())
+    changed = replace(journal, securities=(book,))
+    assert view(journal=changed).result.ending_value != view().result.ending_value
+    assert view(target='USD').result.ending_value is None
+    assert view(scope=HistoryScope(('missing',))).result.ending_value is None

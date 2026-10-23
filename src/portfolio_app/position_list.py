@@ -150,6 +150,9 @@ def _render_table(rows, columns, *, context, revision, on_open, interactive=True
     action = []
     def open_row(event):
         on_open(event)
+        if st.session_state.get('position_edit_open_request') or st.session_state.get('position_edit_dialog'):
+            from portfolio_app.dialog_runtime import route_position_callback
+            route_position_callback()
         action.append(True)
     def render(current):
         if action:

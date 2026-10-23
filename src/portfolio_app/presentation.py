@@ -42,17 +42,17 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 [data-testid="stMetric"] {border:1px solid color-mix(in srgb,currentColor 14%,transparent);border-radius:6px;padding:16px 18px;}
 [data-testid="stMetricValue"] {font-size:1.7rem;font-weight:600;font-variant-numeric:tabular-nums;}
 [data-testid="stMetricLabel"] {font-size:.8rem;opacity:.75;}
-:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetric"] > div {display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:16px;align-items:center;}
-:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetricLabel"] {grid-column:1 / -1;}
-:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetricValue"] {grid-column:1;grid-row:2;}
-:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetric"] > div > div:has(> [data-testid="stMetricDelta"]) {grid-column:2;grid-row:2;margin-top:0;flex-wrap:wrap;}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetric"] > div {display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:16px;align-items:center;}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetricLabel"] {grid-column:1 / -1;}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetricValue"] {grid-column:1;grid-row:2;}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetric"] > div > div:has(> [data-testid="stMetricDelta"]) {grid-column:2;grid-row:2;margin-top:0;flex-wrap:wrap;}
 .st-key-overview_allocation {container-type:inline-size;}
 /* A non-wrapping Streamlit row defaults to overflow:auto. This is a heading,
    not a scroll viewport; allow help and focus outlines beyond its line box. */
 .st-key-overview_allocation .st-key-overview_allocation_heading {overflow:visible;}
-:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"], .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"] {cursor:pointer;}
-:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"]:hover, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:hover {filter:brightness(.85);}
-:is(.st-key-overview_value,.st-key-exposure_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"]:focus-visible, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"], .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"] {cursor:pointer;}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"]:hover, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:hover {filter:brightness(.85);}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"]:focus-visible, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
 .st-key-exposure_theme_results {container-type:inline-size;}
 .st-key-exposure_toolbar [data-testid="stColumn"] {min-width:0;}
 @container(max-width:860px) {

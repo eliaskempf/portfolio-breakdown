@@ -67,7 +67,7 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             dialog.get_by_test_id('stPlotlyChart').wait_for()
             dialog.get_by_test_id('stPlotlyChart').evaluate('el=>window.originalChart=el')
             page.wait_for_timeout(2500)
-            assert page.locator('#page-runs').inner_text()=='2'
+            assert page.locator('#page-runs').inner_text()=='1'
             assert dialog.evaluate('el=>el===window.originalDialog')
             assert dialog.get_by_test_id('stPlotlyChart').evaluate('el=>el===window.originalChart')
             assert dialog.get_by_test_id('stPlotlyChart').count()==1

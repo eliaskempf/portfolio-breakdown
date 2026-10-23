@@ -81,7 +81,7 @@ def navigate(destination, directory):
     elif destination.kind in {'pricing', 'costs'}:
         st.session_state.update(main_tabs='Positions', positions_workflow_request='Update balances')
         if destination.identity:
-            request_position(destination.identity, editing=True)
+            request_position(destination.identity, editing=True, local=False)
     elif destination.kind in {'settlements', 'account'}:
         st.session_state.update(main_tabs='Futures', **{_key(directory)+'view':'Settlement history' if destination.kind == 'settlements' else 'Collateral'})
     else:

@@ -10,6 +10,8 @@ postings use Decimal cents, while prices and lot bases retain full precision.
 Corrections append a replacement event or a void; original facts remain saved.
 """
 from dataclasses import asdict, dataclass, replace
+from copy import deepcopy
+from functools import lru_cache
 from datetime import date
 from decimal import Decimal
 from hashlib import sha256
@@ -701,13 +703,19 @@ def journal_from_dict(raw):
     return result
 
 
+@lru_cache(maxsize=8)
+def _journal_from_bytes(content):
+    """Validate each exact file version once; never expose the cached object."""
+    return journal_from_dict(json.loads(content))
+
+
 def load_journal(directory: Path):
     path = Path(directory)/FILE
     if not path.exists():
         return Journal(), None
     try:
         content = path.read_bytes()
-        result = journal_from_dict(json.loads(content))
+        result = deepcopy(_journal_from_bytes(content))
         return result, sha256(content).hexdigest()
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         raise DataError(f'Invalid account journal; existing file retained: {exc}') from exc

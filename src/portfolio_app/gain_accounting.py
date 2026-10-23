@@ -12,7 +12,7 @@ import math
 
 from portfolio_app.account_journal import effective_events
 from portfolio_app.history_observations import HistoryScope
-from portfolio_app.personal_performance import calculate_history, external_flows, value_at
+from portfolio_app.personal_performance import HistoryCalculation, calculate_history
 from portfolio_app.security_history import replay_securities, selected_events
 
 ZERO = Decimal(0)
@@ -100,13 +100,14 @@ def current_component_values(valued, journal):
     return result
 
 
-def summarize_known_gain(journal, scope, observations, end, target='EUR', *, current_values=None, summary_rows=None):
+def summarize_known_gain(journal, scope, observations, end, target='EUR', *, current_values=None, summary_rows=None, calculation=None):
     """Sum supported components; missing evidence never becomes a zero gain.
 
     Current summary rows supply only unrealized gain, with an explicit limitation.
     A complete history replaces that fallback, including when quantity is zero.
     Historical callers never project current quantities or costs backwards.
     """
+    calculation = calculation or HistoryCalculation(journal, observations)
     books = {b.position_id: b for b in journal.securities}
     rows = {} if summary_rows is None else summary_rows.set_index('position_id').to_dict('index')
     parts = [(identity, HistoryScope((identity,))) for identity in scope.positions
@@ -116,19 +117,19 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     for identity, member in parts:
         dates = scope_dates(journal, member)
         value = (current_values.get(identity) if current_values is not None else
-                 value_at(journal, member, observations, end, target).amount)
+                 calculation.value(member, end, target).amount)
         values.append(value)
         gain = capital = None
         book = books.get(identity)
         if dates and dates[0] <= end:
-            result = calculate_history(journal, member, observations, dates[0], end, target, returns=False)
+            result = calculate_history(journal, member, observations, dates[0], end, target, returns=False, calculation=calculation)
             capital = result.invested_capital
             # A missing completeness attestation is different from an explicitly
             # unknown amount. Retain the subtotal of recorded facts, clearly
             # partial; never enable a percentage return through this fallback.
             review_only = result.flow_reasons and all(r.startswith('Review complete scope') for r in result.flow_reasons)
             if capital is None and result.opening_capital is not None and review_only:
-                flows, missing = external_flows(journal, member, observations, dates[0], end, target)
+                flows, missing = calculation.flows(member, dates[0], end, target)
                 if not missing:
                     capital = result.opening_capital + sum((f.amount for f in flows), ZERO)
                     reasons.extend(result.flow_reasons)

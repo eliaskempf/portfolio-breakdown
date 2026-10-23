@@ -31,6 +31,7 @@ from portfolio_app.application import (historical_for, load_leverage_context, pr
 
 
 def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None, intro: bool = False, ignore_selection: bool = False) -> None:
+    st.session_state['position_dialog_host_ready'] = False
     from portfolio_app.settings import icon_path
     from portfolio_app.workspace_ui import app_header, workspace_info
     persistent_data_dir = data_dir
@@ -404,7 +405,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         render_market_status(market_workspace, market_revision, show_caption=False)
     if not tour_active():
         render_alert_dialog(data_dir)
-    render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued)
+    render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued, prices=price_service)
     render_tour(empty=holdings.empty)
     finish_view_inputs()
     mark_view_ready()

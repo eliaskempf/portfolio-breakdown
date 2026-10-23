@@ -48,7 +48,7 @@ def test_filters_category_and_planning_inputs_survive_unmount(tmp_path):
     assert by_label(app.number_input, 'Allowed deviation (pp)').value == 2.
 
 
-def test_close_callback_skips_history_loader(tmp_path):
+def test_closed_dialog_skips_history_loader(tmp_path):
     create_demo_data(tmp_path)
     app = app_for(tmp_path)
     for key, value in dict(position_edit_selected='position-0', position_edit_action='Details', position_edit_dialog=True).items():
@@ -57,7 +57,9 @@ def test_close_callback_skips_history_loader(tmp_path):
         app.run()
         assert detail.call_count == 1
         detail.reset_mock()
-        by_label(app.button, 'Close').click().run()
+        # Native dismissal is exercised by browser tests; AppTest does not run JS.
+        app.session_state['position_edit_dialog'] = False
+        app.run()
         assert not app.exception and not detail.called
         assert not app.session_state['position_edit_dialog']
 

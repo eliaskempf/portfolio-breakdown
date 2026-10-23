@@ -97,7 +97,7 @@ See [Investment capital and contract history](futures.md#investment-capital-and-
 
 ## Market-price history {#history}
 
-Position details provide 1M, 6M, 1Y, 5Y and Max views of closing prices in the
+In position details, **History → Price** provides 1M, 6M, 1Y, 5Y and Max views of closing prices in the
 portfolio reporting currency, without dividend reinvestment. When the instrument's
 quote currency differs, the currency selector beside the period offers both
 currency codes (for example, EUR and USD). This is instrument history,
@@ -111,11 +111,21 @@ history; explicit offline demo history is invented. The separate
 
 ## Personal history {#personal-history}
 
-The **History** position tab and **Overview → Performance** show personal
+The **History → Holdings** position view and **Overview → Performance** show personal
 history separately from market-price charts and current unrealized gains.
 History is optional; charts stay hidden until at least two supported values exist.
-When useful history exists, positions open on **History** and Overview defaults
-to **Performance**. A single summary row sits below the view tabs and above the
+Positions open on **History**, with **Holdings** selected when useful transaction
+history exists and **Price** otherwise. Positions without recorded history evidence
+show the price chart directly, without the selector. The Holdings / Price selector
+remembers your explicit choice for each position during the session. Without applied history,
+Holdings offers a route to add and review transactions. The other position tabs
+stay in the same order. Overview defaults to **Performance** when useful history
+exists. Position details share one row above the chart selector: **Position value** with
+personal gain, **Invested capital**, and **Annualized return**. Switching chart type,
+range or hover does not change these headlines. Dated figures stay in the chart
+tooltip. **Details** contains return on cost and unrealized gain. Without applied
+history, capital is the recorded acquisition cost, gain is unrealized only, and
+annualized return is unavailable. Overview keeps its own history summary above the
 chart. The category comparison stays visible below history, without repeating the
 category or position tables. Choosing another view retains its usual current-portfolio summary. Use **1M, 3M, 6M, YTD, 1Y, 3Y, 5Y or All** to look back from today.
 The chart axis ends today; period gain uses the first and latest supported
