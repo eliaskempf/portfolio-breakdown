@@ -1,7 +1,7 @@
 """Approximate asset-level performance, independent of custody and FIFO.
 
-Closing units anchor a conditional reconstruction of the supplied movements;
-they do not certify complete history. Internal principal movements cancel.
+An explicit opening starts forward replay; ending observations never determine
+earlier units. Internal principal movements cancel.
 Daily Dietz uses an explicit midpoint convention for external flows.
 No missing market prices or financial facts are filled in.
 """
@@ -68,8 +68,8 @@ def project_asset_movements(rows, owned_accounts, *, assets=None):
             issues.append('Invalid or undated movements require review: '+ '; '.join(row.issues))
             continue
         if kind in ('opening', 'checkpoint'):
-            # A custody balance is not a new portfolio contribution. The
-            # explicitly selected aggregate balance supplies the anchor.
+            # Balances are boundaries, never economic movements. A custody
+            # opening cannot establish inventory across all owned locations.
             continue
         q = Decimal(f['quantity'])
         gross = Decimal(f['gross_amount']) if f['gross_amount'] else None
@@ -127,45 +127,40 @@ class AssetHistory:
     opening_quantity: Decimal
 
 
-def asset_history(projection, asset, anchor_date, anchor_quantity, prices, *,
+def asset_history(projection, asset, opening_date, opening_quantity, prices, *,
                   currency='EUR', start=None, end=None):
     """Daily closes plus midpoint-weighted external flows; no FIFO necessary.
 
-    An unclassified movement is neutralized at its supplied/daily value when
-    reporting *known* gain. It is neither asserted to be funding nor income;
-    the result stays partial. Missing prices/amounts break cumulative results.
+    Unclassified movements retain known units but invalidate dependent gains
+    and returns. Missing prices/amounts break cumulative results.
     Reward value is a gain breakdown only, never added twice to total gain.
     """
     with localcontext() as context:
         context.prec = 60
-        return _asset_history(projection, asset, anchor_date, Decimal(anchor_quantity),
+        return _asset_history(projection, asset, opening_date, Decimal(opening_quantity),
                               prices, currency=currency, start=start, end=end)
 
 
-def _asset_history(projection, asset, anchor_date, anchor_quantity, prices, *, currency, start, end):
-    anchor = date.fromisoformat(anchor_date)
-    if not anchor_quantity.is_finite() or anchor_quantity < 0:
-        raise DataError('Supply a nonnegative ending quantity.')
+def _asset_history(projection, asset, opening_date, opening, prices, *, currency, start, end):
+    beginning = date.fromisoformat(opening_date)
+    if not opening.is_finite() or opening < 0:
+        raise DataError('Supply a nonnegative independently established opening quantity.')
     movements = [m for m in projection.movements if m.asset == asset]
     for p in prices.values():
         if not p.is_finite() or p <= 0:
             raise DataError('Daily prices must be finite and positive.')
-    earliest = min((date.fromisoformat(m.date) for m in movements), default=anchor)
-    beginning = min(earliest-timedelta(days=1), anchor)
+    if any(m.date <= opening_date for m in movements):
+        raise DataError('Movements must follow the opening boundary; retain earlier evidence separately.')
     start = date.fromisoformat(start) if start else beginning
-    end = date.fromisoformat(end) if end else anchor
+    end = date.fromisoformat(end) if end else max([beginning, *(date.fromisoformat(d) for d in prices), *(date.fromisoformat(m.date) for m in movements)])
     if start < beginning or end < start:
         raise DataError('Invalid asset history period.')
-    opening = anchor_quantity - sum((m.quantity for m in movements if m.date <= anchor_date), ZERO)
     by_day = defaultdict(list)
     for movement in movements:
         by_day[movement.date].append(movement)
     quantity = opening + sum((m.quantity for m in movements if m.date <= start.isoformat()), ZERO)
     reasons = list(projection.issues)
     partial = bool(reasons)
-    if opening < 0:
-        reasons.append('Supplied closing balance and movements imply negative starting units')
-        partial = True
     cash, rewards, factor = ZERO, ZERO, Decimal(1)
     capital = None
     previous_value = None
@@ -188,7 +183,11 @@ def _asset_history(projection, asset, anchor_date, anchor_quantity, prices, *, c
                     if m.kind in ('flow', 'unresolved'):
                         day_ok = False
                     reasons.append('A movement needs dated currency conversion')
-                if m.kind in ('flow', 'unresolved'):
+                if m.kind == 'unresolved':
+                    day_ok = False
+                    partial = True
+                    reasons.append('Inventory origin remains unresolved; dependent gains and returns unavailable')
+                if m.kind == 'flow':
                     if amount is None:
                         if m.note.endswith('missing') or m.currency:
                             day_ok = False
@@ -200,9 +199,6 @@ def _asset_history(projection, asset, anchor_date, anchor_quantity, prices, *, c
                             reasons.append('A movement needs its dated market price')
                     if amount is not None:
                         flow += amount
-                    if m.kind == 'unresolved':
-                        partial = True
-                        reasons.append('Unclassified movements excluded from gain at market value; their origin remains unresolved')
                 elif m.kind == 'reward':
                     if amount is None:
                         amount = m.quantity * price if price is not None and not m.currency else None
@@ -244,6 +240,73 @@ def _asset_history(projection, asset, anchor_date, anchor_quantity, prices, *, c
         day += timedelta(days=1)
     if any(p['value'] is None for p in points):
         reasons.append('Daily market prices missing; no interpolation or forward filling used')
-    reasons.insert(0, 'Approximate: quantities reconstructed from the supplied ending balance and listed movements; daily closing prices and midpoint flow timing')
+    reasons.insert(0, 'Approximate: forward units from an explicit opening; daily closing prices and midpoint flow timing')
     return AssetHistory(tuple(points), tuple(dict.fromkeys(reasons)),
                         partial or not complete_gain or not complete_return or not reward_complete, opening)
+
+
+def journal_asset_history(journal, position_id, prices, observations, *, currency='EUR', start=None, end=None):
+    """Approximate prices/flow timing over the existing authoritative forward book.
+
+    Reuse securities replay and scope-aware external flows, including manual
+    follow-up events. Retained-only revisions never replace activated history.
+    Checkpoints inside the measured interval break gains rather than become flow.
+    """
+    from dataclasses import replace
+    from portfolio_app.history_observations import HistoryScope, Observation, lookup
+    from portfolio_app.personal_performance import convert, external_flows
+    from portfolio_app.security_history import replay_securities, selected_events, affected_positions
+    books = journal.securities
+    events = [(b, e) for b in books for e in selected_events(b)
+              if position_id in affected_positions(b, e)]
+    boundaries = [e.date for b, e in events if b.position_id == position_id and e.kind in ('opening', 'checkpoint')]
+    if not boundaries:
+        raise DataError('Opening inventory unknown. Review recorded net changes before activating forward history.')
+    start = max(start or min(boundaries), min(boundaries))
+    end = end or max(prices, default=start)
+    if end < start:
+        raise DataError('No supported forward history in this period.')
+    # Daily prices may approximate a transfer value; they are not saved as exact
+    # intraday observations and do not affect the existing TWR calculation.
+    extra = tuple(Observation('approx:'+position_id+':'+d, 'price', position_id, d, p, currency,
+                              source='approximate_daily_close') for d, p in prices.items()
+                  if not lookup(observations, 'price', position_id, d))
+    observations = replace(observations, observations=(*observations.observations, *extra))
+    flows, issues = external_flows(journal, HistoryScope((position_id,)), observations, start, end, currency)
+    movements = [AssetMovement(f.id, position_id, f.date, ZERO, 'flow', f.amount, currency,
+                               'Recorded flow amount missing' if f.amount is None else '') for f in flows]
+    issues = list(issues)
+    initial = replay_securities(books, as_of=start).positions[position_id].quantity
+    previous = initial
+    with localcontext() as context:
+        context.prec = 60
+        for stamp in sorted({e.date for _, e in events if start < e.date <= end}):
+            quantity = replay_securities(books, as_of=stamp).positions[position_id].quantity
+            movements.append(AssetMovement('units:'+stamp, position_id, stamp, quantity-previous, 'units'))
+            previous = quantity
+    for book, event in events:
+        if book.position_id != position_id or not start < event.date <= end:
+            continue
+        if event.kind in ('opening', 'checkpoint'):
+            issues.append('A balance boundary interrupts this interval; its difference is not gain or funding')
+        if event.kind in ('reward', 'distribution'):
+            amount = event.valuation_amount if event.kind == 'reward' else event.amount
+            denomination = event.valuation_currency if event.kind == 'reward' else event.currency
+            value = convert(amount, denomination, currency, event.date, observations)
+            movements.append(AssetMovement(event.id+':income', position_id, event.date, ZERO,
+                                           'reward', value, currency))
+        if event.kind == 'note':
+            issues.append('Unresolved historical evidence affects this interval')
+        if not event.charges_known and event.kind in ('buy', 'sell', 'distribution', 'reward', 'swap', 'asset_fee', 'transfer'):
+            issues.append('Charges are incomplete; dependent gains and returns unavailable')
+    result = asset_history(AssetProjection(tuple(movements), tuple(dict.fromkeys(issues)), 0),
+                           position_id, start, initial, prices, currency=currency, start=start, end=end)
+    # Unit reconciliation, dated values and cost/completeness attestations are
+    # independent. Retain useful measured results with their qualifications.
+    from portfolio_app.personal_performance import coverage_reasons
+    qualifications = coverage_reasons(journal, HistoryScope((position_id,)), observations, start, end)
+    if any(e.valuation_quality == 'estimated' or any(p.get('quality') == 'estimated' for p in e.costs)
+           for _, e in events if e.date <= end):
+        qualifications = (*qualifications, 'Supplied monetary estimates retained with source provenance')
+    return replace(result, partial=result.partial or bool(qualifications),
+                   reasons=tuple(dict.fromkeys((*result.reasons, *qualifications))))

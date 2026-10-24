@@ -54,13 +54,24 @@ def _rows(journal):
 
 
 def _mapping(directory,snapshot,journal,rows,token):
+    review_token=token
     pairs=sorted({pair for row in rows if not row.issues for pair in row.pairs})
     assets=sorted({asset for _,asset in pairs})
     holdings=snapshot.holdings
     instruments={r.id:(r['name'],r.get('instrument_type','unknown')) for _,r in holdings.iterrows()}
     retained={(a,asset):pos for r in journal.transaction_imports if r.facts['source_id']==rows[0].facts['source_id'] for a,asset,pos in r.positions}
+    existing_books=[b for b in journal.securities if b.position_id in set(retained.values()) and b.custody_id]
+    default_mode='By location' if existing_books and not all(b.custody_id.startswith('aggregate:') for b in existing_books) else 'By asset'
+    if all(r.facts['event_type'] in ('opening', 'checkpoint') for r in rows):
+        default_mode='By location'
+    mode=control(st.radio,'Import scope',['By asset','By location'],index=0 if default_mode=='By asset' else 1,horizontal=True,key=token+'scope')
+    aggregate=mode=='By asset'
+    accounts=tuple(sorted({a for a,_ in pairs} | {a for a,_ in retained})) if aggregate else ()
+    token=token+('aggregate_' if aggregate else 'custody_')
     mapping={}; additions=[]; selected_instruments={}
     with st.expander('Map instruments and custody',expanded=True):
+        if aggregate:
+            st.caption('One reporting position per asset across all reviewed owned locations. Internal principal cancels; fees remain. Existing constituent balances must be resolved before applying.')
         for asset in assets:
             prior=next((pos for (a,symbol),pos in retained.items() if symbol==asset and pos in set(holdings.position_id)),None)
             inferred=holdings.loc[holdings.position_id.eq(prior),'id'].iloc[0] if prior else None
@@ -74,12 +85,14 @@ def _mapping(directory,snapshot,journal,rows,token):
                 kind=control(st.selectbox,f'Type for {asset}',['unknown','crypto','equity','etf','etc'],key=token+'type_'+digest(asset)[:12])
                 identity='csv-asset-'+digest((rows[0].facts['source_id'],asset))[:24]
                 selected_instruments[asset]=(identity,name,kind)
-        for account,asset in pairs:
+        mapped_pairs=[('Combined owned locations',asset) for asset in assets] if aggregate else pairs
+        for account,asset in mapped_pairs:
             instrument,name,kind=selected_instruments[asset]
             candidates=holdings.loc[holdings.id.eq(instrument)]
             labels={r.position_id:f"{r['name']} · {r.account or 'No account'}" for _,r in candidates.iterrows()}
-            new_id='csv-position-'+digest((rows[0].facts['source_id'],account,asset))[:24]
-            default=retained.get((account,asset)) or (new_id if new_id in labels else '')
+            new_id='csv-position-'+digest((rows[0].facts['source_id'],accounts if aggregate else account,asset))[:24]
+            prior_positions={p for (a,s),p in retained.items() if s==asset} if aggregate else {retained.get((account,asset))}
+            default=(next(iter(prior_positions)) if len(prior_positions)==1 else None) or (new_id if new_id in labels else '')
             options=['',*labels]
             key=token+'position_'+digest((account,asset))[:12]
             # A previously prepared identity is now a selectable persisted row.
@@ -92,9 +105,11 @@ def _mapping(directory,snapshot,journal,rows,token):
             else:
                 mapping[account,asset]=new_id
                 additions.append(dict(position_key=new_id,id=instrument,name=name,account=account,instrument_type=kind))
+        if aggregate:
+            mapping={(a,s):mapping['Combined owned locations',s] for a,s in pairs}
         cash={}
         names={'':'Outside tracked cash',**{a.id:a.name for a in journal.accounts}}
-        for account in sorted({a for a,_ in pairs}):
+        for account in (() if aggregate else sorted({a for a,_ in pairs})):
             prior_books=[b for b in journal.securities if b.position_id in {mapping[a,s] for a,s in pairs if a==account}]
             previous=next((b.account_id for b in prior_books if b.active),'')
             cash[account]=control(st.selectbox,f'Fiat payments for {account}',list(names),index=list(names).index(previous),
@@ -104,9 +119,9 @@ def _mapping(directory,snapshot,journal,rows,token):
             st.caption(f'{len(additions)} empty positions to prepare. This records identities, not opening inventory.')
             if st.button('Create missing positions',disabled=not confirmed,key='import_tx_prepare'):
                 prepare_positions(directory,additions,expected_holdings_revision=snapshot.revision)
-                st.session_state.pop('import_tx_baseline_'+token,None)
+                st.session_state.pop('import_tx_baseline_'+review_token,None)
                 st.rerun()
-    return mapping,cash,confirmed,not additions
+    return mapping,cash,confirmed,not additions,accounts
 
 
 def render_transaction_import(directory):
@@ -157,6 +172,8 @@ def render_transaction_import(directory):
         st.dataframe(pd.DataFrame(entries),hide_index=True,width='stretch')
         with st.expander('Recorded unit movements'):
             from portfolio_app.transaction_evidence import movement_totals
+            from portfolio_app.asset_history_ui import render_net_changes
+            render_net_changes(rows)
             st.caption('Signed changes only, not balances from an assumed zero. Opening balances and checkpoints '
                 'are excluded. Known undated quantities remain undated; unknown asset charges keep the totals incomplete.')
             st.dataframe(pd.DataFrame(movement_totals(rows)).rename(columns={
@@ -198,7 +215,21 @@ def render_transaction_import(directory):
             if members:
                 render_coverage_review(directory,journal,HistoryScope(tuple(members)),key='import_tx_coverage_')
             return
-        mapping,cash,mapping_confirmed,prepared=_mapping(directory,snapshot,journal,rows,token)
+        mapping,cash,mapping_confirmed,prepared,aggregate_accounts=_mapping(directory,snapshot,journal,rows,token)
+        if aggregate_accounts and prepared:
+            from portfolio_app.transaction_evidence import compare_asset_changes
+            from portfolio_app.security_history import effective_holdings
+            current = effective_holdings(snapshot.holdings, journal.securities).set_index('position_id')
+            references = {asset: dict(quantity=str(current.loc[pos, 'shares']),
+                                     scope=str(current.loc[pos, 'account']), date='')
+                          for (_,asset),pos in mapping.items() if pos in current.index}
+            with st.expander('Compare recorded net changes'):
+                st.dataframe(pd.DataFrame(compare_asset_changes(rows, references, aggregate_accounts)).rename(columns={
+                    'asset':'Asset', 'known_unit_change':'Recorded net change', 'reference_quantity':'Recorded holding',
+                    'reference_minus_net':'Holding minus net changes', 'reference_date':'Holding observation date',
+                    'reference_scope':'Holding scope', 'unknown_asset_charges':'Unknown asset charges'}), hide_index=True, width='stretch')
+                st.caption('Arithmetic only: starting inventory, observation date and matching scope are not established. '
+                           'A difference is not an opening balance or balancing transaction.')
         eligible={r.identity:r for r in rows if not r.issues}
         default=[i for i,r in eligible.items() if not r.incomplete and r.facts['event_type'] != 'checkpoint']
         selected=control(st.multiselect,'Movements to apply',list(eligible),default=default,
@@ -214,7 +245,7 @@ def render_transaction_import(directory):
             st.caption('Map positions and select reviewed movements to compare balances.')
             return
         options=dict(cash_accounts=cash,selected_ids=selected,starts_at_zero=zero,allow_incomplete=partial,
-                     correction_ids=correction_ids,accept_duplicates=distinct)
+                     correction_ids=correction_ids,accept_duplicates=distinct,aggregate_accounts=aggregate_accounts)
         from portfolio_app.history_observations import ObservationFX,load_observations
         from portfolio_app.portfolio_settings import load_settings
         preview=prepare_import(journal,snapshot.holdings,rows,mapping,

@@ -426,6 +426,10 @@ def replay_securities(books, *, as_of=None, sequence=None):
                 if not e.charges_known:
                     costs.append(component(0, None, e.currency, e.date))
                 lots = (*lots, SecurityLot(e.id, e.quantity, tuple(costs), True, e.date, e.sequence))
+            elif e.kind == 'transfer' and e.other_position_id == book.position_id and book.custody_id.startswith('aggregate:'):
+                # Explicit aggregate scope: owned principal never leaves this
+                # asset's inventory. Asset/fiat charges still apply once.
+                pass
             elif e.kind in ('sell', 'transfer', 'transfer_out', 'inventory_out', 'swap', 'asset_fee'):
                 lots, moved = _consume(lots, e.quantity)
                 disposals.append(SecurityDisposal(e.id, book.position_id, e.date, e.kind, moved))

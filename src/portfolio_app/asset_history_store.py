@@ -21,14 +21,16 @@ class AssetHistorySettings:
     currency: str = 'EUR'
     note: str = ''
     scope_label: str = 'Selected owned locations'
+    legacy: bool = False
 
 
 def parse_settings(raw):
     try:
-        if raw['version'] != 1 or raw['method'] != 'closing-balance-daily-dietz-v1':
+        legacy = raw['version'] == 1 and raw['method'] == 'closing-balance-daily-dietz-v1'
+        if not legacy and (raw['version'] != 2 or raw['method'] != 'forward-daily-dietz-v1'):
             raise ValueError
-        stamp = date.fromisoformat(raw['anchor_date'])
-        if stamp > date.today():
+        stamp = date.fromisoformat(raw['anchor_date']) if legacy else None
+        if stamp and stamp > date.today():
             raise ValueError
         for key in ('source_id', 'currency'):
             if not isinstance(raw[key], str) or not raw[key]:
@@ -42,17 +44,22 @@ def parse_settings(raw):
         if not isinstance(anchors, dict) or not anchors:
             raise ValueError
         for position, item in anchors.items():
-            if not isinstance(item['quantity'], str):
+            if legacy:
+                if not isinstance(item['quantity'], str):
+                    raise ValueError
+                q = Decimal(item['quantity'])
+                if not q.is_finite() or q < 0:
+                    raise ValueError
+            elif set(item) != {'asset', 'ticker'}:
                 raise ValueError
-            q = Decimal(item['quantity'])
-            if not position or not q.is_finite() or q < 0 or any(not isinstance(item[k], str) or not item[k] for k in ('asset', 'ticker')):
+            if not position or not isinstance(item['asset'], str) or not item['asset'] or not isinstance(item['ticker'], str):
                 raise ValueError
         if len({a['asset'] for a in anchors.values()}) != len(anchors):
             raise ValueError
-        return AssetHistorySettings(raw['source_id'], tuple(accounts), stamp.isoformat(), anchors,
-                                    raw['currency'], str(raw.get('note', '')), str(raw.get('scope_label', 'Selected owned locations')))
+        return AssetHistorySettings(raw['source_id'], tuple(accounts), stamp.isoformat() if stamp else '', anchors,
+                                    raw['currency'], str(raw.get('note', '')), str(raw.get('scope_label', 'Selected owned locations')), legacy)
     except (ValueError, KeyError, TypeError, InvalidOperation):
-        raise DataError('Invalid asset performance settings; keep the original evidence and review the selected locations and ending balances.') from None
+        raise DataError('Invalid asset performance settings; keep the original evidence and review the mapped assets and owned locations.') from None
 
 
 def load_settings(directory):
@@ -77,7 +84,7 @@ def evidence_rows(journal, settings):
 
 def settings_for_scope(directory, scope):
     settings, _ = load_settings(directory)
-    if (settings and scope.positions and not scope.accounts and not scope.unresolved
+    if (settings and not settings.legacy and scope.positions and not scope.accounts and not scope.unresolved
             and set(scope.positions) <= settings.anchors.keys()):
         return settings
     return None
@@ -89,12 +96,14 @@ def save_settings(directory, raw, *, expected_revision, expected_journal_revisio
     from portfolio_app.storage import save_document
     from portfolio_app.workspace_lock import workspace_lock
     settings = parse_settings(raw)
+    if settings.legacy:
+        raise DataError('Ending-balance reconstruction is retired. Review asset mapping for forward history instead.')
     directory = Path(directory)
     with workspace_lock(directory):
         journal, revision = load_journal(directory)
         snapshot = read_snapshot(directory/'holdings.csv')
         if revision != expected_journal_revision or snapshot.revision != expected_holdings_revision:
-            raise DataError('Evidence or holdings changed. Review the ending balances again.')
+            raise DataError('Evidence or holdings changed. Review the asset mapping again.')
         if not settings.anchors.keys() <= set(snapshot.holdings.position_id):
             raise DataError('An asset history position is missing.')
         if not evidence_rows(journal, settings):

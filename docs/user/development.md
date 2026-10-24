@@ -117,22 +117,32 @@ synthetic directory; it reuses the normal alert explanation and acknowledgment U
 
 ### Calculation contracts
 
-`asset_history.py` supplies optional approximate asset-level history independently
-of FIFO. Explicit owned-location membership collapses internal principal but
-retains fees and income. `asset-performance.json` version 1 stores the selected
-source namespace, asset/position mapping, ending-balance anchors, reporting
-currency and method `closing-balance-daily-dietz-v1`. The source events remain
-immutable journal receipts; reviewed latest revisions are projected once.
-Configuration saves use workspace locking and journal/holdings/config revision
-checks, and workspace backup validation includes the configuration.
+`asset_history.py` calculates approximate daily performance over the existing
+forward securities replay and scope-aware external flows. Its calculation takes
+an explicit opening, never an ending quantity. Selected-period capital starts at
+market value. Daily Dietz uses midpoint flows and does not alter exact-return
+coverage. Inventory with unresolved flow classification or a balance reset within
+the interval leaves dependent gains and returns unavailable.
 
-Closing anchors condition the backwards unit reconstruction; they never assert
-complete history or a confirmed zero opening. Selected-period capital starts at
-market value. Reward valuation is a gain breakdown, not a cash contribution.
-Daily Dietz uses midpoint flows and is never labelled exact TWR.
-Price gaps are not filled. Unclassified movements remain unresolved and are
-neutralized only for visibly partial known gain. This analytical projection does
-not activate or alter the custody journal, its FIFO lots, or exact-return coverage.
+`transaction_evidence.py` provides signed per-location and per-asset diagnostics
+independent of activation, plus arithmetic reference comparisons. Holdings are not
+inputs to movement normalization. Openings, checkpoints and unknown charges remain
+separate. Explicit source/event deduction links preserve raw evidence and ordinary
+correction lineage; the linked inventory record owns the known quantity without
+asserting it is a fee. Do not infer such links from matching amounts or dates.
+
+Aggregate import maps reviewed locations to one position per asset before normal
+forward replay. The book's `custody_id` records a stable `aggregate:` scope digest.
+Transfers within that position preserve lots and principal; charges still apply.
+Existing custody books, cash binding and ordering checks remain supported. Active
+constituents cannot coexist with the new authoritative aggregate holding.
+
+`asset-performance.json` version 2 uses `forward-daily-dietz-v1`, source namespace,
+owned locations and asset/position/listing mapping; it stores no opening or ending
+quantities. Version 1 remains readable for backup/inspection but cannot route a
+chart or be newly saved. Explicit mapping review replaces it under normal document
+backup, locking and revision checks. Applied history uses active journal events;
+retained-only revisions affect evidence diagnostics until separately activated.
 
 Generic transaction CSV v2 adds inventory receipts/removals, balance checkpoints
 and sourced monetary estimates to the v1 contract. Journal v4 persists these

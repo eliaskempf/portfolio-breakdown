@@ -78,7 +78,7 @@ def event_for(row, mapping, *, replaces=''):
 
 def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, selected_ids=(),
                    starts_at_zero=False, allow_incomplete=False, correction_ids=(), accept_duplicates=False,
-                   target='EUR', historical=None):
+                   target='EUR', historical=None, aggregate_accounts=()):
     """Retain every row; only selected, explicitly interpretable rows become active.
 
     A correction replaces the whole economic event. Existing history outside the
@@ -89,6 +89,30 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
     cash_accounts = cash_accounts or {}
     selected_ids, correction_ids = set(selected_ids), set(correction_ids)
     rows = tuple(rows)
+    aggregate_accounts = tuple(sorted(set(aggregate_accounts)))
+    aggregate_id = 'aggregate:'+digest(aggregate_accounts) if aggregate_accounts else ''
+    if aggregate_accounts:
+        if any(cash_accounts.values()):
+            raise DataError('Aggregate asset imports use outside tracked cash; keep linked cash in custody imports.')
+        if any(a not in aggregate_accounts for r in rows for a, _ in r.pairs):
+            raise DataError('Review every source location in the aggregate scope; do not exclude earlier activity.')
+        by_asset = {}
+        for (account, asset), pos in mapping.items():
+            if by_asset.setdefault(asset, pos) != pos:
+                raise DataError('An aggregate asset must map to one reporting position across owned locations.')
+        if len(set(by_asset.values())) != len(by_asset):
+            raise DataError('Different source assets require different aggregate reporting positions.')
+        # Existing constituent balances must be resolved separately, not hidden
+        # or silently combined with a second authoritative aggregate balance.
+        aggregate_positions = set(mapping.values())
+        current_rows = effective_holdings(holdings, journal.securities)
+        for pos in aggregate_positions:
+            instrument = current_rows.loc[current_rows.position_id.eq(pos), 'id']
+            if instrument.empty:
+                raise DataError('A mapped holding is missing.')
+            others = current_rows.loc[current_rows.id.eq(instrument.iloc[0]) & ~current_rows.position_id.isin(aggregate_positions)]
+            if any(Decimal(str(q)) != 0 for q in others.shares) or any(b.active and b.position_id in set(others.position_id) for b in journal.securities):
+                raise DataError('Resolve active constituent positions before applying an aggregate holding.')
     if selected_ids - {r.identity for r in rows}:
         raise DataError('Selected evidence no longer matches this preview.')
     input_keys = {}
@@ -141,6 +165,8 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
             continue
         if row.issues:
             raise DataError('; '.join(row.issues))
+        if aggregate_accounts and row.facts['event_type'] in ('opening', 'checkpoint'):
+            raise DataError('A custody balance cannot establish aggregate inventory. Record the aggregate boundary in History or import it separately.')
         if row.incomplete and not allow_incomplete:
             raise DataError('Review missing monetary evidence before applying known movements.')
         if existing and latest[row.key].id != existing.id:
@@ -157,12 +183,15 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
             if pos not in books:
                 books[pos] = book_for(journal, indexed.loc[pos].to_dict())
             book = books[pos]
+            if aggregate_accounts and book.account_id:
+                raise DataError('Aggregate asset imports cannot adopt an existing linked cash book.')
             cash = cash_accounts.get(account, book.account_id)
             if book.active and book.account_id != cash:
                 raise DataError('An active cash binding cannot change during import.')
-            if book.custody_id and book.custody_id != account:
+            custody = aggregate_id or account
+            if book.custody_id and book.custody_id != custody:
                 raise DataError('Different custody accounts cannot be mapped onto the same holding.')
-            books[pos] = replace(book, account_id=cash, custody_id=account)
+            books[pos] = replace(book, account_id=cash, custody_id=custody)
         previous = known[row.identity].replaces
         previous_owner = next((b for b in books.values() if any(e.id == previous for e in b.records)), None) if previous else None
         while previous and previous_owner is None:
@@ -218,6 +247,10 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
     order = {}
     dated_events = {}
     boundaries = set()
+    def internal_principal(book, event):
+        return (book.custody_id.startswith('aggregate:') and event.kind == 'transfer'
+                and event.other_position_id == book.position_id and event.charges_known
+                and not event.asset_charges and not event.charges)
     for book in books.values():
         for e in selected_events(book):
             if e.kind in ('opening', 'checkpoint'):
@@ -226,6 +259,8 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
                     raise DataError('Balances on the same day need distinct explicit sequence values.')
                 boundaries.add(key)
                 continue
+            if internal_principal(book, e):
+                continue  # No inventory/cost/cash effect and no ordering to infer.
             key = e.date, e.sequence
             affected = affected_positions(book, e)
             for prior_affected, prior in dated_events.get(e.date, ()):
@@ -236,7 +271,8 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
                 if affected & other_positions and (e.source.startswith('transaction_csv_v') or other.source.startswith('transaction_csv_v')):
                     raise DataError('Simultaneous dependent events need distinct explicit sequence values.')
             order.setdefault(key, []).append((affected, e))
-        if duplicate_candidates(book) and book.position_id in touched and not accept_duplicates:
+        economic_book = replace(book, active_ids=tuple(e.id for e in selected_events(book) if not internal_principal(book, e)))
+        if duplicate_candidates(economic_book) and book.position_id in touched and not accept_duplicates:
             raise DataError('Matching economic transactions require review as distinct executions.')
     version = max(journal.version, 4 if any(r.facts.get('schema_version') == '2' for r in receipts) else 3)
     proposed = replace(journal, version=version, securities=tuple(books.values()), transaction_imports=tuple(receipts))

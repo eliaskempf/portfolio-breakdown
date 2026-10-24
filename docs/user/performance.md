@@ -115,38 +115,38 @@ history; explicit offline demo history is invented. The separate
 
 ## Personal history {#personal-history}
 
-An optional **approximate asset history** view combines selected owned locations
-into one series per asset. Enable it in the transaction importer after saving
-the evidence and reviewing ending balances. It provides Value, Gain, Return and
-Units charts without requiring custody-level FIFO reconstruction.
+The optional **Asset history** view shows recorded net changes before activation.
+Absolute units and values require a reviewed opening or accepted reporting
+boundary and use the existing forward journal. Ending observations are comparison
+inputs only; they never backfill earlier quantities. No global zero opening is
+inferred from a ledger, current holding or matching final quantity.
 
-Period gain is ending value minus opening market value and net external additions.
-Staking rewards increase units and income without increasing contributed capital;
-their receipt value is shown as a breakdown of gain, never added to gain twice.
-Subsequent reward-unit price changes remain part of performance. Staking principal
-and internal wallet transfers do not change performance; fees reduce it once.
-Remaining acquisition cost is not the denominator for historical performance.
+An aggregate import can combine owned exchanges, wallets and staking locations
+without reconstructing each location's FIFO inventory. Internal principal does
+not change aggregate ownership. Fees remain expenses and rewards remain income.
+Unknown quantities still block exact activation; unknown monetary amounts do not
+necessarily prevent unit reconstruction. Unsupported ordering can leave useful
+net totals available even when journal activation needs more evidence.
 
-The percentage is **linked daily Dietz**, with external flows assumed
-at the midpoint of each day. Daily closing prices estimate transfer/gift values.
-It is explicitly approximate, not exact TWR or annualized return. Missing prices
-are not interpolated; missing flow amounts or negative reconstructed quantities
-leave affected results unavailable. Unknown inventory movements are neutralized
-at their supplied/market value for a *partial known gain*, while their original
-classification remains unresolved. Review these exclusions under **Calculation
-and evidence**. Selecting a shorter period recalculates its market-value opening.
+Approximate period gain is ending market value minus starting market value and
+net external additions. Reward units affect gain once; supplied receipt valuations
+are shown separately as income. Remaining acquisition cost is neither inferred
+from market prices nor used as the denominator for historical returns.
 
-The daily formula is `(ending value − opening value − net flows) /
-(opening value + 0.5 × net flows)`, with daily factors compounded across the
-selected period. This is the midpoint-flow Dietz convention described in the
-[GIPS calculation-methodology handbook](https://www.gipsstandards.org/standards/gips-standards-for-firms/gips-standards-handbook-for-firms/);
-the approximation does not claim exact intraday valuations or GIPS compliance.
+**Approx. return** uses linked daily Dietz: daily gain divided by opening value
+plus half of net flows, with daily factors compounded. This assumes midpoint flow
+timing; it is not exact TWR or annualized return. Daily transfer values may use
+daily prices. Unknown trade consideration and unresolved inventory classification
+are not filled using market values. Missing prices remain gaps, and balance resets
+inside the interval interrupt dependent gains and returns. Choosing a supported
+interval after a boundary measures only that later interval.
 
-This view is conditional on the supplied ending balance and listed movements.
-Its visible location scope matters: transfers to/from excluded locations are
-external flows, so wallet-only performance is not necessarily lifetime performance
-since the original exchange purchase. Unknown balance observation dates and
-supplied reward/date estimates remain visible in the evidence notes.
+Unit completeness, acquisition-cost coverage, dated valuation coverage and history
+review remain distinct. Supplied estimates retain their quality and provenance;
+partial results and unavailable metrics have explanations under **Calculation and
+evidence**. An undated ending reference does not acquire the export date or today's
+date. Older ending-balance reconstruction settings are retained for review but
+cannot activate that retired calculation.
 
 The **History** position tab and **Overview → Performance** show personal
 history separately from market-price charts and current unrealized gains.

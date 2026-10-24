@@ -23,7 +23,7 @@ def projection(*rows):
 
 
 def history(p, quantity, **kwargs):
-    return asset_history(p, 'AUR', '2024-01-03', D(quantity),
+    return asset_history(p, 'AUR', '2024-01-01', D(quantity),
         {'2024-01-01':D(10), '2024-01-02':D(10), '2024-01-03':D(10)}, **kwargs)
 
 
@@ -34,7 +34,7 @@ def test_internal_stake_unstake_transfers_cancel_but_fees_remain():
     p = projection(*rows)
     assert p.ignored_internal == 3 and not p.issues
     assert [(m.quantity,m.kind) for m in p.movements] == [(D(-1),'expense')]
-    result = history(p,'9')
+    result = history(p,'10')
     assert result.opening_quantity == 10
     assert result.points[-1]['gain'] == -10
     assert result.points[-1]['return_pct'] == -10
@@ -43,7 +43,7 @@ def test_internal_stake_unstake_transfers_cancel_but_fees_remain():
 def test_rewards_are_income_and_gain_once_not_contributions():
     reward = row('income','reward',account_id='Stake',valuation_amount='20',valuation_currency='EUR',
                  valuation_quality='estimated',valuation_source='Invented receipt estimate')
-    result = history(projection(reward),'12')
+    result = history(projection(reward),'10')
     point = result.points[-1]
     assert result.opening_quantity == 10
     assert point['income'] == 20 and point['gain'] == 20
@@ -54,7 +54,7 @@ def test_rewards_are_income_and_gain_once_not_contributions():
 def test_reward_price_change_is_included_without_readding_receipt_value():
     p = projection(row('income','reward',valuation_amount='20',valuation_currency='EUR',
         valuation_quality='estimated',valuation_source='Invented receipt estimate'))
-    result = asset_history(p,'AUR','2024-01-03',D(12),
+    result = asset_history(p,'AUR','2024-01-01',D(10),
         {'2024-01-01':D(10),'2024-01-02':D(10),'2024-01-03':D(15)})
     point=result.points[-1]
     assert point['income']==20 and point['gain']==80 and point['return_pct']==80
@@ -64,7 +64,7 @@ def test_external_deposit_is_not_gain_and_outside_fee_not_paid_twice():
     p = projection(row('receipt','transfer',account_id='Exchange',counter_account_id='Wallet',
         fee_amount='',fee_asset_id='AUR'))
     assert not p.issues
-    point = history(p,'12').points[-1]
+    point = history(p,'10').points[-1]
     assert point['capital'] == 120 and point['gain'] == 0 and point['return_pct'] == 0
 
 
@@ -98,19 +98,19 @@ def test_missing_owned_fee_never_becomes_zero():
 
 def test_same_time_order_is_irrelevant_to_daily_asset_history():
     rows=[row('a','reward'),row('b','fee',quantity='1'),row('c','stake',counter_account_id='Stake',quantity='9')]
-    assert history(projection(*rows),'11')==history(projection(*reversed(rows)),'11')
+    assert history(projection(*rows),'10')==history(projection(*reversed(rows)),'10')
 
 
 def test_unclassified_units_remain_partial_not_invented_income():
     p=projection(row('dust','inventory_in',flow_classification='unresolved'))
-    result=history(p,'12')
-    assert result.partial and result.points[-1]['gain']==0 and result.points[-1]['income']==0
+    result=history(p,'10')
+    assert result.partial and result.points[-1]['gain'] is None and result.points[-1]['income']==0
     assert any('origin remains unresolved' in r for r in result.reasons)
 
 
 def test_missing_prices_break_return_without_filling():
     p=projection(row('income','reward'))
-    result=asset_history(p,'AUR','2024-01-03',D(12),{'2024-01-01':D(10),'2024-01-03':D(10)})
+    result=asset_history(p,'AUR','2024-01-01',D(10),{'2024-01-01':D(10),'2024-01-03':D(10)})
     assert result.points[1]['value'] is None
     assert result.points[-1]['return_pct'] is None
     assert result.points[-1]['income'] is None
@@ -118,23 +118,24 @@ def test_missing_prices_break_return_without_filling():
 
 
 def test_unknown_trade_amount_not_replaced_by_market_value():
-    result=history(projection(row('buy','buy',currency='EUR')),'12')
+    result=history(projection(row('buy','buy',currency='EUR')),'10')
     assert result.points[-1]['gain'] is None
 
 
-def test_negative_reconstructed_opening_invalidates_gain():
-    result=history(projection(row('buy','buy',quantity='20',gross_amount='200',currency='EUR')),'10')
-    assert result.opening_quantity==-10
+def test_negative_forward_units_invalidates_gain():
+    result=history(projection(row('sell','sell',quantity='20',gross_amount='200',currency='EUR')),'10')
+    assert result.opening_quantity==10
+    assert result.points[-1]['quantity']==-10
     assert result.points[-1]['gain'] is None
 
 
 def test_period_selection_uses_market_opening_not_remaining_purchase_cost():
     p=projection(row('income','reward'))
-    result=asset_history(p,'AUR','2024-01-03',D(12),{'2024-01-02':D(10),'2024-01-03':D(15)},start='2024-01-02')
+    result=asset_history(p,'AUR','2024-01-01',D(10),{'2024-01-02':D(10),'2024-01-03':D(15)},start='2024-01-02')
     assert result.points[-1]['gain']==60 and result.points[-1]['income']==0
 
 
-def test_incremental_movements_after_anchor_roll_forward():
+def test_incremental_movements_after_opening_roll_forward():
     p=projection(row('income','reward',timestamp_utc='2024-01-04T12:00:00Z'))
     result=asset_history(p,'AUR','2024-01-03',D(10),{'2024-01-03':D(10),'2024-01-04':D(10)},end='2024-01-04')
     assert result.points[0]['quantity']==10 and result.points[-1]['quantity']==12
@@ -148,11 +149,11 @@ def test_invalid_prices_are_rejected():
 def test_reward_currency_gap_only_blocks_income_breakdown_not_total_gain():
     p=projection(row('income','reward',valuation_amount='22',valuation_currency='USD',
         valuation_quality='estimated',valuation_source='Invented USD estimate'))
-    point=history(p,'12').points[-1]
+    point=history(p,'10').points[-1]
     assert point['gain']==20 and point['return_pct']==20 and point['income'] is None
 
 
 def test_unknown_fee_in_another_asset_does_not_block_this_assets_gain():
     p=projection(row('income','reward',fee_amount='',fee_asset_id='LUM'))
     assert not p.issues
-    assert history(p,'12').points[-1]['gain']==20
+    assert history(p,'10').points[-1]['gain']==20

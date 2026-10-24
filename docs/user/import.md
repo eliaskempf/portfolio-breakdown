@@ -63,7 +63,8 @@ with a broker or wallet.
    are assets. Reuse that source name on subsequent imports.
 2. **Save evidence only** retains the rows privately without changing balances.
    Incomplete rows remain available under **Saved evidence** after restarting.
-3. Map each instrument and custody location explicitly. Symbols and names do not
+3. Choose **By asset** or **By location**, then map instruments and reviewed owned
+   locations explicitly. Symbols and names do not
    automatically merge instruments. **Create missing positions** creates empty
    identity records, not purchases or opening inventory.
 4. Choose whether fiat payments cross the portfolio boundary or update an
@@ -93,30 +94,41 @@ is cancelled. Current financial balances are unchanged until the journal save
 succeeds. Uploads and review drafts clear on cancellation, completion or workspace
 switching; saved evidence remains in the private account journal and backups.
 
-### Approximate history by asset
+### Asset history and recorded net changes
 
-After saving transaction evidence and importing the ending holdings, expand
-**Approximate asset history**. Select the owned locations to combine, map each
-asset to its position, and review the ending-balance reference date. Enabling
-this view is separate from activating the custody/FIFO journal. It uses retained
-Generic v1/v2 or normalized Crypto evidence rows; source-specific companion
-inventory must first be mapped to Generic v2.
+**Recorded unit movements** includes an asset total across all ledger locations.
+Internal transfer and staking principal cancel; rewards, swaps and fees remain.
+Openings and checkpoints are displayed separately. Known undated quantities enter
+the totals without acquiring invented dates. These are signed changes, not
+absolute holdings from an assumed zero.
 
-The view reconstructs units backwards from the selected ending balance and the
-listed movements. This is a conditional reconstruction, not confirmation of an
-empty opening balance or complete history. A reference date must describe the
-selected balance or an explicitly identified reconstruction boundary; an export
-date is not automatically a wallet observation date. Later imported movements
-roll forward from that boundary. Preserve stable source and event IDs: repeated
-imports do not add movements again and reviewed corrections replace earlier facts.
+Choose **By asset** to map every reviewed owned location to one reporting position
+per asset. Earlier exchange purchases remain included. **By location** retains the
+custody workflow, including linked cash. Aggregate imports use outside tracked
+cash. Resolve any active constituent positions before applying an aggregate;
+the app will not count both. A location-specific opening cannot establish global
+inventory: record a reviewed aggregate boundary in History or explicitly confirm
+zero only when supported. Ordering that matters to activation still needs evidence.
 
-Internal transfers, staking and unstaking principal cancel across selected
-locations. Fees remain, and reward units count as income rather than deposits.
-Transfers involving excluded locations are external flows at daily market value.
-For example, wallet-only performance begins at entry into the wallet; it does
-not include earlier price changes while the asset was held on an excluded exchange.
-Unknown movements are retained and the affected gain stays partial. This feature
-does not certify tax lots or change account-journal balances.
+**Compare recorded net changes** displays recorded holdings beside the net totals,
+with their scope and unknown observation date. The subtraction is arithmetic only;
+it does not establish an opening or successful reconciliation. Different scopes,
+missing starting inventory and unresolved movements remain visible for later review.
+The normal forward comparison and **Apply reviewed transactions** remain separate.
+
+After saving evidence, **Asset history** maps assets and owned locations for the
+History view. Before activation it shows net changes. Once a matching forward
+book is activated, Value, Gain, Return and Units use that book's opening and
+transactions. Ending holdings never determine earlier quantities. Evidence-only
+corrections remain separate from activated events until explicitly applied.
+Legacy ending-balance settings are retained but no longer route to backwards
+history; review their mapping in this panel to enable the forward view.
+
+A separately evidenced deduction may be linked explicitly to its transfer using
+source provenance during normalization. The deduction remains an unresolved
+inventory removal when its purpose is unknown. It is counted once; the normalized
+principal event has no additional charge, while its raw fee evidence is retained.
+This linkage is not inferred from similar amounts, timestamps or group IDs.
 
 ### Generic CSV v1
 
