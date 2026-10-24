@@ -12,26 +12,26 @@ from portfolio_app.security_history import SecurityEvent
 from test_history_ui import fixture, launch, label
 
 
-def test_review_confirms_history_without_changing_portfolio_or_transactions(tmp_path):
+def test_apply_and_confirm_records_completeness_in_the_same_journal_write(tmp_path):
+    from portfolio_app.personal_performance import coverage_reasons
     fixture(tmp_path)
-    before, revision = load_journal(tmp_path)
-    holdings = (tmp_path/'holdings.csv').read_bytes()
+    before, _ = load_journal(tmp_path)
     app = launch(tmp_path)
     label(app.button, 'Review against portfolio').click().run()
-    assert not app.exception
-    assert not app.checkbox
+    assert not app.exception and not app.checkbox
     assert any('2024' in c.value for c in app.caption)
-    label(app.button, 'Confirm complete history').click().run()
+    label(app.button, 'Apply and confirm history').click().run()
     assert not app.exception
-    assert any(c.value.startswith('History confirmed') for c in app.caption)
-    assert load_journal(tmp_path) == (before, revision)
-    assert (tmp_path/'holdings.csv').read_bytes() == holdings
-    review = load_observations(tmp_path)[0].reviews[-1]
-    assert review.start == '2024-01-01' and review.end == date.today().isoformat()
-    assert review.scope == HistoryScope(('position-0',))
+    after, _ = load_journal(tmp_path)
+    assert after.securities[0].records == before.securities[0].records
+    review = after.securities[0].reviews[-1]
+    assert review.complete_from == '2024-01-01' and review.complete_through == date.today().isoformat()
+    assert not coverage_reasons(after, HistoryScope(('position-0',)), load_observations(tmp_path)[0],
+                                review.complete_from, review.complete_through)
 
 
-def test_pending_changes_must_be_applied_before_completeness_confirmation(tmp_path):
+def test_incomplete_apply_remains_available_without_attesting_history(tmp_path):
+    from portfolio_app.personal_performance import coverage_reasons
     fixture(tmp_path)
     journal, revision = load_journal(tmp_path)
     book = journal.securities[0]
@@ -40,8 +40,13 @@ def test_pending_changes_must_be_applied_before_completeness_confirmation(tmp_pa
     app = launch(tmp_path)
     label(app.button, 'Review against portfolio').click().run()
     assert not app.exception
-    assert not any(b.label == 'Confirm complete history' for b in app.button)
-    assert any('Apply the selected transactions first' in c.value for c in app.caption)
+    label(app.button, 'Apply incomplete history').click().run()
+    assert not app.exception
+    after, _ = load_journal(tmp_path)
+    assert pending.id in after.securities[0].active_ids
+    assert not after.securities[0].reviews[-1].complete_from
+    assert any(reason.startswith('Review complete scope') for reason in coverage_reasons(
+        after, HistoryScope(('position-0',)), load_observations(tmp_path)[0], '2024-01-01', date.today().isoformat()))
 
 
 def test_stale_review_cannot_certify_changed_history_or_observations(tmp_path):

@@ -110,9 +110,14 @@ manual repair forms should preselect the position, date and currencies when know
 Internal identities and fingerprints are storage details, not user-facing labels.
 Show overwrite confirmation only when a value will actually be replaced.
 
-Confirm transaction completeness alongside reconciliation, using a plainly named
-action and a visible interval. Reconciliation and completeness are distinct;
-matching today's holding must never silently certify omitted sales or income.
+Offer **Apply and confirm history** as the normal reconciliation action, with a
+visible interval and an **Apply incomplete history** alternative. Reconciliation
+and completeness remain distinct facts; the combined action explicitly records
+both in one journal write. Matching today's holding must never silently certify
+omitted sales or income. Existing applied histories can be selected for explicit
+bulk confirmation without balance changes. Position attestations bind retained
+facts and transfer-connected holdings, so unrelated position edits do not undo
+review. Legacy whole-journal attestations keep their original validation rules.
 Manual market-data correction is separate from this review. Broader changes to
 established interfaces require discussion rather than opportunistic redesign.
 

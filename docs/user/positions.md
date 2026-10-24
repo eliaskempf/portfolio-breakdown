@@ -265,8 +265,10 @@ an end-of-day boundary; its acquisition cost is separate from the market value
 used to start performance measurement. Earlier transactions are not inferred.
 
 The review compares shares, remaining acquisition cost and average buy-in with
-the current portfolio, and checks linked cash where applicable. **Apply history to portfolio** is the explicit action that accepts the displayed
-holding and any linked cash changes; no separate acceptance checkbox is needed. Backfilled shares are not added to the
+the current portfolio, and checks linked cash where applicable. **Apply and confirm history** accepts the displayed
+holding and any linked cash changes, and confirms transaction completeness for the
+shown interval. **Apply incomplete history** applies balances without that declaration.
+No separate acceptance checkbox is needed. Backfilled shares are not added to the
 current holding a second time. Resolve discrepancies by correcting records or
 explicitly accepting the reconstructed balance; **Keep portfolio unchanged**
 leaves saved transactions available for later review. **Replace balance** starts
@@ -302,14 +304,27 @@ Personal value uses the shares held on each date and prices in that date's trade
 share units; split-normalized asset-chart prices cannot be reused blindly.
 Offline synthetic demos do not start automatic market requests.
 
-Applying balances does not confirm performance coverage. Review income, fees,
-taxes, offsetting trades, transfers and corporate actions in **Transactions → Review
-against portfolio**. After applying the selected history, **Confirm complete history**
-records this separate declaration for the displayed interval. **History not confirmed** means the
-recorded gain is calculable but this completeness check is still outstanding;
+In **Transactions → Review against portfolio**, check income, fees, taxes,
+offsetting trades, transfers and corporate actions before choosing **Apply and
+confirm history**. The interval starts at the selected starting boundary and ends
+today. A starting snapshot does not confirm transactions before that boundary.
+Matching shares and cost alone does not establish completeness. Use **Apply
+incomplete history** while still backfilling. Confirmation does not supply missing
+prices, FX or amounts, or override return eligibility requirements.
+
+For histories applied previously, **Positions → Confirm existing histories** lets
+you select completed position histories and confirm them together. It shows each
+interval and transaction count, leaves balances unchanged, and excludes histories
+with pending transaction edits or unresolved transaction checks. No history is
+confirmed automatically. A position's confirmation survives unrelated position
+changes; changes to its own evidence or linked transfers require another review.
+Confirmation covers the shown dates, not future transactions. Account and
+whole-portfolio scope reviews retain their separate membership requirements.
+
+**History not confirmed** means the completeness declaration is outstanding.
 **Incomplete gain history** identifies other missing evidence or limited coverage,
-with a short explanation in its tooltip. No component count is shown: a calculable
-gain contribution does not establish complete history.
+with a short explanation in its tooltip. A calculable gain contribution does not
+establish complete history.
 
 Transaction entry offers **Unit price**, **Trade value (excluding fees)** and
 **Total paid (including fees)** for purchases or **Total received (after fees)**

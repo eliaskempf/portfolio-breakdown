@@ -41,7 +41,7 @@ def test_bulk_pdf_save_review_and_apply_keep_position_dialog(transaction_page):
     assert effective_holdings(read_snapshot(root/'holdings.csv').holdings,current.securities).iloc[0].shares==2
     assert page.evaluate('window.missingDialogFrames')==0
     assert dialog.evaluate('e=>e===window.originalDialog')
-    dialog.get_by_role('button',name='Apply history to portfolio',exact=True).click(); settle(page)
+    dialog.get_by_role('button',name='Apply and confirm history',exact=True).click(); settle(page)
     applied,_=load_journal(root)
     assert applied.securities[0].active
     assert effective_holdings(read_snapshot(root/'holdings.csv').holdings,applied.securities).iloc[0].shares==2
@@ -61,9 +61,9 @@ def test_review_replaces_list_actions_after_history_is_active(transaction_page):
     dialog=page.get_by_role('dialog')
     dialog.get_by_role('radio',name='Transactions',exact=True).click();settle(page)
     dialog.get_by_role('button',name='Review against portfolio',exact=True).click();settle(page)
-    dialog.get_by_role('button',name='Apply history to portfolio',exact=True).click();settle(page)
+    dialog.get_by_role('button',name='Apply and confirm history',exact=True).click();settle(page)
     dialog.get_by_role('button',name='Review against portfolio',exact=True).click();settle(page)
-    assert dialog.get_by_role('button',name='Apply history to portfolio',exact=True).count()==1
+    assert dialog.get_by_role('button',name='Apply and confirm history',exact=True).count()==1
     assert dialog.get_by_role('button',name='Review against portfolio',exact=True).count()==0
     assert dialog.get_by_role('button',name='Replace balance',exact=True).count()==0
     assert not page.get_by_test_id('stException').count()
@@ -368,8 +368,8 @@ def test_pdf_partial_sale_of_three_units_reviews_and_applies(transaction_page):
     confirm_identity(page,dialog)
     dialog.get_by_role('button',name='Save transactions and review',exact=True).click();settle(page)
     assert dialog.get_by_text('Shares and acquisition cost match.',exact=True).count()==1
-    assert dialog.get_by_role('button',name='Apply history to portfolio',exact=True).is_enabled()
-    dialog.get_by_role('button',name='Apply history to portfolio',exact=True).click();settle(page)
+    assert dialog.get_by_role('button',name='Apply and confirm history',exact=True).is_enabled()
+    dialog.get_by_role('button',name='Apply and confirm history',exact=True).click();settle(page)
     journal,_=load_journal(root)
     state=replay_securities(journal.securities).positions['position-0']
     assert state.quantity==2

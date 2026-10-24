@@ -85,8 +85,8 @@ def save_history(directory, book, *, expected_journal_revision, expected_holding
             state = replay_securities((*[b for b in journal.securities if b.position_id != book.position_id], candidate)).positions[book.position_id]
             if complete_from and (complete_from < state.boundary or complete_through < complete_from):
                 raise DataError('Confirm completeness only from the latest opening boundary.')
-            from portfolio_app.security_history import accounting_fingerprint
-            facts = accounting_fingerprint(replace_book(journal, candidate))
+            from portfolio_app.security_history import security_history_fingerprint
+            facts = security_history_fingerprint(replace_book(journal, candidate), candidate.position_id)
             review = HistoryReview(uuid4().hex, candidate.active_ids, date.today().isoformat(), resolution,
                                    complete_from, complete_through, facts)
             book = replace(candidate, reviews=(*candidate.reviews, review))

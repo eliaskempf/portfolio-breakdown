@@ -4,7 +4,7 @@ Records are retained once. Only explicitly selected records affect balances;
 review receipts retain previous selections. An opening is a boundary, not a buy.
 """
 from copy import deepcopy
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date
 from decimal import Decimal, localcontext
 from hashlib import sha256
@@ -614,3 +614,29 @@ def accounting_fingerprint(journal):
     for book in raw.get('securities', ()):
         book.pop('reviews', None)
     return sha256(json.dumps(raw, default=str, sort_keys=True).encode()).hexdigest()
+
+
+def security_history_fingerprint(journal, position_id):
+    """Bind a position review to its facts and transitive transfer dependencies.
+
+    Retained/pending evidence participates, so an unapplied correction still
+    requires review. Unrelated positions and review receipts do not invalidate it.
+    """
+    members = {position_id}
+    while True:
+        previous = set(members)
+        for book in journal.securities:
+            for event in book.records:
+                if event.kind == 'transfer' and event.other_position_id and (
+                        book.position_id in members or event.other_position_id in members):
+                    members.update((book.position_id, event.other_position_id))
+        if members == previous:
+            break
+    facts = []
+    for book in sorted(journal.securities, key=lambda b: b.position_id):
+        if book.position_id in members:
+            raw = asdict(book)
+            raw.pop('reviews', None)
+            facts.append(raw)
+    return sha256(json.dumps({'security_scope_v1': position_id, 'books': facts},
+                             default=str, sort_keys=True).encode()).hexdigest()

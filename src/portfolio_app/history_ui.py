@@ -234,9 +234,6 @@ def _review_history(directory, journal, revision, snapshot, book, row, key):
             try:
                 candidate = reconstruction_candidate(book, chosen, starts_at_zero=not openings)
                 _activation(directory, journal, revision, snapshot, candidate, row, key+'fix_', resolution='accept', show_review=True)
-                from portfolio_app.history_coverage_ui import render_coverage_review
-                render_coverage_review(directory, journal, HistoryScope((book.position_id,)), key=key,
-                    can_confirm=book.active and set(candidate.active_ids) == set(book.active_ids))
             except (DataError, ValueError) as exc:
                 st.warning(str(exc))
                 st.button('Keep portfolio unchanged', key=key+'keep', on_click=_history_action, args=(key,'list'))
@@ -434,7 +431,7 @@ def _legacy_evidence(directory, journal, revision, snapshot, book, row, key):
         st.rerun()
 
 
-def _activation(directory, journal, revision, snapshot, candidate, row, key, *, resolution, review_container=None, show_review=False, action_label='Apply history to portfolio'):
+def _activation(directory, journal, revision, snapshot, candidate, row, key, *, resolution, review_container=None, show_review=False, action_label=None):
     from portfolio_app.currency_display import reporting_currency
     from portfolio_app.history_observations import ObservationFX
     historical = ObservationFX(load_observations(directory)[0])
@@ -482,18 +479,31 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
         st.warning('Some transactions have matching dates and amounts. Check that they are separate trades before applying.')
         duplicate_accept = st.radio('Matching transactions', ['I need to check them', 'They are separate trades'],
             horizontal=True, key=key+'duplicates') == 'They are separate trades'
-    # Applying balances is not a declaration of complete performance coverage.
-    # The separate performance workflow owns that interval-specific review.
+    complete_from = complete_through = ''
+    if action_label is None:
+        from portfolio_app.history_confirmation import confirmation_interval
+        complete_from, complete_through = confirmation_interval(candidate)
+        interval = f'{date.fromisoformat(complete_from):%d %b %Y} – {date.fromisoformat(complete_through):%d %b %Y}'
+        st.caption('Confirm complete history · '+interval)
+        st.caption('All purchases, sales, income, fees, taxes and transfers in this interval are recorded. '
+                   'Still backfilling? Choose Apply incomplete history.')
     blocked = comparison.reconstructed_cost is None or any(c['After'] is None for c in changed_cash) or bool(duplicates and not duplicate_accept)
+    def apply(*, complete):
+        save_history(directory, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision,
+            activate=True, resolution=resolution, accept_balance_change=True, accept_cash_change=True,
+            accept_duplicates=duplicate_accept, complete_from=complete_from if complete else '',
+            complete_through=complete_through if complete else '')
+        st.session_state.pop(key+'reviewed', None)
+        st.session_state[_key(directory, candidate.position_id)+'screen'] = 'list'
+        st.rerun()
     with st.container(horizontal=True):
-        if st.button(action_label, key=key+'save', disabled=blocked, type='primary',
-                     help='Use the displayed shares, acquisition cost and linked cash changes. Saved transactions are not added to your holding twice.'):
-            save_history(directory, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision,
-                activate=True, resolution=resolution, accept_balance_change=True, accept_cash_change=True,
-                accept_duplicates=duplicate_accept)
-            st.session_state.pop(key+'reviewed', None)
-            st.session_state[_key(directory, candidate.position_id)+'screen'] = 'list'
-            st.rerun()
+        if st.button(action_label or 'Apply and confirm history', key=key+'save', disabled=blocked, type='primary',
+                     help='Use the displayed balances and confirm the shown history interval. Missing market data still limits returns.'
+                     if action_label is None else 'Apply the displayed transaction and balance changes.'):
+            apply(complete=action_label is None)
+        if action_label is None and st.button('Apply incomplete history', key=key+'save_incomplete', disabled=blocked,
+                                              type='tertiary', help='Update balances without declaring this history complete.'):
+            apply(complete=False)
         st.button('Keep portfolio unchanged', key=key+'keep', on_click=_history_action,
             args=(_key(directory, candidate.position_id),'list'))
     if blocked and not duplicates:
