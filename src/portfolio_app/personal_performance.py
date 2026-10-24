@@ -426,34 +426,10 @@ def external_flows(journal, scope, observations, start, end, target, *, security
 
 
 def xirr(opening, ending, flows, start, end):
-    """Unique conventional-flow XIRR; do not select an arbitrary multiple root."""
-    from scipy.optimize import brentq
-    days = (date.fromisoformat(end)-date.fromisoformat(start)).days
-    if days <= 0 or opening < 0 or ending < 0:
-        return None, Issue('Annualization needs positive duration and nonnegative endpoint equity', 'duration')
-    amounts = {start: -opening}
-    for flow in flows:
-        amounts[flow.date] = amounts.get(flow.date, ZERO) - flow.amount
-    amounts[end] = amounts.get(end, ZERO) + ending
-    values = [(stamp, float(value)) for stamp, value in sorted(amounts.items()) if value]
-    signs = [1 if amount > 0 else -1 for _, amount in values]
-    if not signs or signs[0] != -1 or signs[-1] != 1 or sum(a != b for a, b in zip(signs, signs[1:])) != 1:
-        return None, Issue('A unique XIRR cannot be established for these cash flows', 'irr_unresolved')
-    times = [(date.fromisoformat(stamp)-date.fromisoformat(start)).days/365 for stamp, _ in values]
-    amounts = [amount for _, amount in values]
-    scale = max(abs(a) for a in amounts)
-    def residual(log_rate):
-        exponents = [-t*log_rate for t in times]
-        shift = max(exponents)
-        return math.fsum((a/scale)*math.exp(exponent-shift) for a, exponent in zip(amounts, exponents))
-    try:
-        root = brentq(residual, -500, 500, xtol=1e-13)
-        result = math.expm1(root)
-        if not math.isfinite(result) or result <= -1 or abs(residual(root)) > 1e-8:
-            raise ValueError
-        return result, ''
-    except (ValueError, OverflowError):
-        return None, Issue('No numerically verified XIRR solution in the supported range', 'irr_unresolved')
+    """Compatibility interface for structured, globally isolated XIRR results."""
+    from portfolio_app.history_irr import solve_xirr
+    result = solve_xirr(opening, ending, flows, start, end)
+    return result.value, result.reason
 
 
 def execution_boundary(journal, scope, flow, observations, target):
