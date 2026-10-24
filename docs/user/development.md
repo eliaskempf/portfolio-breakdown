@@ -48,7 +48,7 @@ uses the shared total known gain calculation, just like All. Personal and price
 histories use currency symbols consistently in summaries, axes and tooltips.
 Leaving restores the latest value and period gain. Clicking the gain badge toggles between amount and cumulative TWR; its metric name and period
 appear only in a concise tooltip. Return percentages use ↑/↓; monetary gains
-keep +/− signs. Zero and unavailable returns have no direction arrow. TWR requires exact boundaries; no remaining-cost denominator is substituted.
+keep +/− signs. Zero and unavailable returns have no direction arrow. TWR defaults to the documented daily flow convention; no remaining-cost denominator is substituted. Exact event TWR remains explicit.
 Annualized money-weighted return always uses full recorded history, independently
 of the chart range or pointer. Keep one summary row below the view tabs.
 The allocation measure switch belongs above the allocation table, aligned with
@@ -544,7 +544,7 @@ remains exact, including when a derived lot is reloaded at another Decimal preci
 
 `history_observations.py` stores dated observations and scope-specific coverage
 reviews. `personal_performance.py` computes equity, external flows, money-weighted
-returns and exact time-weighted returns without Streamlit or network calls.
+returns and daily/exact time-weighted returns without Streamlit or network calls.
 `personal_market.py` supplies provider observations with explicit adjustment
 semantics. `history_ui.py` renders the optional workflows. Keep source-position
 history separate from present-day ETF constituent expansion and hypothetical risk
@@ -579,6 +579,5 @@ opens portfolio **Performance** by default. Both views use periods ending today.
 
 The demo includes exact flow-boundary observations for the portfolio and the
 fee-free money-market holding. The equity holding has a money-weighted return;
-its exact time-weighted return remains unavailable because separate same-day fee
-timing and flow-boundary values are not supplied. Editing financial history
+daily TWR includes its recorded fees; exact event TWR additionally needs supported event boundaries. Editing financial history
 invalidates the prior coverage confirmation, as it does for any workspace.

@@ -39,7 +39,7 @@ uses the same monetary calculation. ETF look-through does not redefine costs.
 
 The Overview percentage is cumulative **time-weighted return (TWR)** over the
 supported recorded interval. It neutralizes external contributions and withdrawals
-and requires exact flow-boundary values. It is not gain divided by remaining cost
+using daily valuations and the daily cash-flow convention described below. It is not gain divided by remaining cost
 or net capital. **Annualized return** is separately money-weighted
 (XIRR), reflecting contribution amounts and timing. Neither percentage is inferred
 from a partial monetary subtotal. Position details retain separately labelled
@@ -129,7 +129,7 @@ annualized return is unavailable. Overview keeps its own history summary above t
 chart. The category comparison stays visible below history, without repeating the
 category or position tables. Choosing another view retains its usual current-portfolio summary. Use **1M, 3M, 6M, YTD, 1Y, 3Y, 5Y or All** to look back from today.
 The chart axis ends today; period gain uses the first and latest supported
-valuations in the selected window. Annualized return uses the full recorded interval. Weekend or holiday endpoints are not assigned invented prices.
+valuations in the selected window. Annualized return uses the full recorded interval. Verified closed-market endpoints can use the last eligible closing quote, retaining its actual as-of date.
 The latest valuation date remains visible. Lines connect neighboring known values
 across missing observations; this does not supply prices for calculation purposes.
 
@@ -190,8 +190,7 @@ settlement marks. It does not create
 trades, distributions or splits. Downloaded closes are converted back to the
 units traded on each date using the provider's split evidence, without dividend
 reinvestment or automatic price repair. Manual observations take precedence.
-Prices and FX must cover the requested dates; gaps are not interpolated or filled
-with current quotes. Missing data can be entered manually. Corrections retain
+Prices must cover required valuation boundaries; only verified closed sessions can use the preceding eligible close. FX remains exact-date evidence. Gaps are not interpolated or filled with current quotes. Missing data can be entered manually. Corrections retain
 original observations.
 
 **Confirm complete history**, beside the position's transaction reconciliation,
@@ -218,7 +217,7 @@ Same-day flow order must be explicit for exact TWR.
 | Total known gain | Ending value minus capital, including known opening gains; partial components stay labelled |
 | Period gain | Ending value minus opening market value minus net external contributions |
 | Annualized money-weighted return | Endpoint values and complete dated external flows with a numerically verified unique XIRR |
-| Time-weighted return | Funded intervals and reconciled exact before/after valuations at every external flow |
+| Time-weighted return | Supported daily flow boundaries and complete dated external flows; exact event valuations when explicitly requesting the exact method |
 
 Purchases paid from included cash, transfers between included accounts, borrowing
 with its matching debt, and futures settlement are internal movements. Crossing
@@ -237,9 +236,29 @@ withdrawals, do not themselves make portfolio equity negative. Missing valuation
 remain unknown; intraday losses without recorded valuation evidence are not inferred. Empty inception and terminal liquidation are supported when
 dated flows establish a unique result. TWR can link explicitly valued funded
 intervals separated by an empty period; money appearing without funding is invalid.
-Nonconventional cash flows are conservatively withheld when
-uniqueness cannot be established. Exact time-weighted returns remain unavailable
-without reconciled boundary valuations; no end-of-day timing assumption is made.
+Mixed-sign cash flows are eligible only when the solver establishes a unique,
+numerically verified XIRR. Multiple roots, no solution and uncertain numerical
+conditioning are different from missing transactions.
+
+Ordinary TWR uses a daily convention: incoming capital is available at the start
+of the day and outgoing capital leaves at its end. Chain daily factors
+`(ending equity + withdrawals) / (beginning equity + contributions)` and subtract
+one. This convention does not reconstruct intraday prices. Flow-free intervals
+can telescope without inventing intermediate observations; required flow
+boundaries must still be supported. Negative equity remains unsupported.
+
+Same-date charges belong to their economic transaction: purchase fees increase
+contributions, while sale/distribution charges reduce proceeds. Separately dated
+charges keep their dates. Recorded fees and taxes reduce returns once. Included
+cash and securities trade internally; external fee funding enters once. Scope
+membership determines which payments cross the boundary. Embedded fund expenses
+are already in market prices and are not deducted again.
+
+Exact event TWR remains an explicit calculation option. It requires genuine
+ordering and supported before/after event valuations, and includes the event's
+fees and income. Execution prices may support standalone security boundaries,
+but do not value other assets in a portfolio. Neither method changes saved trade
+dates or confirms history completeness.
 Historical value points and monetary gains can remain useful when returns cannot
 be calculated. The affected metric’s help explains its own missing requirements;
 other metrics do not inherit that restriction.
