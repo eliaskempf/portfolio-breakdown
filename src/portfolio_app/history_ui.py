@@ -93,10 +93,50 @@ def _save_evidence(directory, candidate, journal_revision, holdings_revision, *,
         _history_action(key, screen)
 
 
+def _capture_submit_revision(key, journal_revision, holdings_revision):
+    # Preserve the version the user saw, while fields come from the submission.
+    st.session_state[key+'submitted_revision'] = (journal_revision, holdings_revision)
+
+
 def _visible_records(book):
-    replaced = {e.replaces for e in book.records if e.replaces}
-    return [e for e in book.records if e.id not in replaced
-            and e.source != 'confirmed_zero_start' and e.kind != 'void']
+    from portfolio_app.security_history import current_records
+    return list(current_records(book))
+
+
+def _transaction_table(records, book):
+    columns = ['Date', 'Transaction', 'Shares', 'Trade value', 'Fees', 'Status']
+    entries = []
+    for event in records:
+        charges = ' + '.join(_money(c.amount, c.currency) for c in event.charges)
+        entries.append(dict(zip(columns, [event.date or 'Unknown', _KIND_LABELS.get(event.kind,event.kind.title()),
+            str(event.quantity) if event.quantity else '—', _money(event.gross, event.currency),
+            charges or (_money(Decimal(0), event.currency) if event.charges_known else 'Unknown' if event.kind in ('buy','sell','distribution') else '—'),
+            'Applied' if event.id in book.active_ids else 'Changes saved; not applied' if event.replaces else 'Saved; not applied'])))
+    return pd.DataFrame(entries, columns=columns)
+
+
+def _request_removal(key, identities, revision):
+    st.session_state[key+'removal'] = (tuple(identities), revision)
+    _history_action(key, 'remove')
+
+
+def _remove_transactions(directory, journal, revision, snapshot, book, row, key):
+    from portfolio_app.history_commands import remove_transactions
+    identities, selected_revision = st.session_state.get(key+'removal', ((), None))
+    if selected_revision != revision:
+        st.warning('History changed. Return to the list and select the transactions again.')
+        return
+    selected = [event for event in _visible_records(book) if event.id in identities]
+    st.markdown(f'**Remove {len(selected)} '+('transaction?' if len(selected) == 1 else 'transactions?')+'**')
+    st.dataframe(_transaction_table(selected, book), hide_index=True, width='stretch')
+    candidate = remove_transactions(book, identities)
+    if candidate.active_ids != book.active_ids:
+        _activation(directory, journal, revision, snapshot, candidate, row, key+'remove_',
+                    resolution='accept', show_review=True, action_label='Remove transactions')
+    else:
+        st.caption('These entries are not applied. Your portfolio balances stay unchanged.')
+        st.button('Remove transactions', type='primary', key=key+'confirm_remove', on_click=_save_evidence,
+                  args=(directory, candidate, revision, snapshot.revision), kwargs={'screen': 'list'})
 
 
 def render_position_history(directory, row):
@@ -130,6 +170,8 @@ def render_position_history(directory, row):
                 render_pdf_import(directory, row, book, journal, revision, snapshot, key)
             elif screen == 'edit':
                 _edit_transaction(directory, journal, revision, snapshot, book, key)
+            elif screen == 'remove':
+                _remove_transactions(directory, journal, revision, snapshot, book, row, key)
             elif screen == 'replace':
                 _replace_balance(directory, journal, revision, snapshot, book, row, key)
             elif screen in ('fix', 'review'):
@@ -141,17 +183,12 @@ def render_position_history(directory, row):
                     st.button('Add sell', icon=':material/remove:', key=key+'sell', on_click=_history_action, args=(key,'sell'))
                     st.button('Import PDFs', key=key+'import_pdf', on_click=_history_action, args=(key,'import_pdf'))
                     st.button('Other transaction', key=key+'add', on_click=_history_action, args=(key,'add'))
-                    st.button('Edit transaction', icon=':material/edit:', disabled=not records, key=key+'edit',
-                        on_click=_history_action, args=(key,'edit'))
-                columns = ['Date', 'Transaction', 'Shares', 'Trade value', 'Fees', 'Status']
-                entries = []
-                for e in records:
-                    charges = ' + '.join(_money(c.amount, c.currency) for c in e.charges)
-                    entries.append(dict(zip(columns, [e.date or 'Unknown', _KIND_LABELS.get(e.kind,e.kind.title()),
-                        str(e.quantity) if e.quantity else '—', _money(e.gross, e.currency),
-                        charges or (_money(Decimal(0), e.currency) if e.charges_known else 'Unknown' if e.kind in ('buy','sell','distribution') else '—'),
-                        'Applied' if e.id in book.active_ids else 'Changes saved; not applied' if e.replaces else 'Saved; not applied'])))
-                st.dataframe(pd.DataFrame(entries, columns=columns), hide_index=True, width='stretch')
+                from portfolio_app.transaction_list_ui import render_transaction_list
+                def edit(identity):
+                    st.session_state[key+'edit_record'] = identity
+                    _history_action(key, 'edit')
+                render_transaction_list(records, _transaction_table(records, book), key=key+'transactions_'+str(revision),
+                    revision=revision, on_edit=edit, on_remove=lambda ids: _request_removal(key, ids, revision))
                 if not records:
                     st.caption('No transactions yet. Add buys and sells, then review them against your portfolio.')
                 elif any(e.id not in book.active_ids for e in records):
@@ -252,7 +289,7 @@ def _event_rows(book):
     replaced = {e.replaces for e in book.records if e.replaces}
     result = []
     for e in book.records:
-        if e.id in replaced and e.id not in book.active_ids:
+        if e.kind == 'void' or (e.id in replaced and e.id not in book.active_ids):
             continue
         result.append(dict(record=e.id, Use=e.id in book.active_ids, Kind=e.kind, Date=e.date,
             Order=e.sequence, Quantity=str(e.quantity), Price='' if e.price is None else str(e.price),
@@ -395,7 +432,7 @@ def _legacy_evidence(directory, journal, revision, snapshot, book, row, key):
         st.rerun()
 
 
-def _activation(directory, journal, revision, snapshot, candidate, row, key, *, resolution, review_container=None, show_review=False):
+def _activation(directory, journal, revision, snapshot, candidate, row, key, *, resolution, review_container=None, show_review=False, action_label='Apply history to portfolio'):
     from portfolio_app.currency_display import reporting_currency
     from portfolio_app.history_observations import ObservationFX
     historical = ObservationFX(load_observations(directory)[0])
@@ -447,7 +484,7 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
     # The separate performance workflow owns that interval-specific review.
     blocked = comparison.reconstructed_cost is None or any(c['After'] is None for c in changed_cash) or bool(duplicates and not duplicate_accept)
     with st.container(horizontal=True):
-        if st.button('Apply history to portfolio', key=key+'save', disabled=blocked, type='primary',
+        if st.button(action_label, key=key+'save', disabled=blocked, type='primary',
                      help='Use the displayed shares, acquisition cost and linked cash changes. Saved transactions are not added to your holding twice.'):
             save_history(directory, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision,
                 activate=True, resolution=resolution, accept_balance_change=True, accept_cash_change=True,
@@ -552,8 +589,11 @@ def _add_transaction(directory, journal, revision, snapshot, book, key):
             other_position_id=destination, value_date=settlement.isoformat() if settlement else '')
         event = SecurityEvent(_record_id(key+str(revision), fields), **fields)
         candidate = append_evidence(book, (event,))
-        st.button('Save transaction', key=key+'evidence', type='primary', on_click=_save_evidence,
-            args=(directory, candidate, revision, snapshot.revision), kwargs={'screen':'list'})
+        if st.button('Save transaction', key=key+'evidence', type='primary',
+                     on_click=_capture_submit_revision, args=(key, revision, snapshot.revision)):
+            expected = st.session_state.pop(key+'submitted_revision')
+            _save_evidence(directory, candidate, *expected, screen='list')
+            st.rerun()
     except (DataError, ValueError) as exc:
         st.caption(str(exc))
 
@@ -566,9 +606,12 @@ def _edit_transaction(directory, journal, revision, snapshot, book, key):
         return
     st.markdown('**Edit transaction**')
     by_id = {e.id:e for e in records}
-    identity = st.selectbox('Transaction to edit', list(by_id), index=next((i for i,e in enumerate(records) if e.kind != 'opening'),0),
-        format_func=lambda i: _event_label(by_id[i])+' · '+_money(by_id[i].gross, by_id[i].currency), key=key+'edit_record')
+    identity = st.session_state.get(key+'edit_record')
+    if identity not in by_id:
+        st.caption('Return to transactions and choose the entry to edit.')
+        return
     event = by_id[identity]
+    st.caption(_event_label(event))
     key += 'edit_'+identity+'_'
     left, right = st.columns(2)
     stamp = left.date_input('Transaction date', value=date.fromisoformat(event.date) if event.date else None,
@@ -617,10 +660,16 @@ def _edit_transaction(directory, journal, revision, snapshot, book, key):
             price=price, amount=gross, currency=currency, charges=updated_fees, charges_known=known,
             value_date=settlement.isoformat() if settlement else '', note=note)
         with st.container(horizontal=True):
-            st.button('Save changes', type='primary', key=key+'save',
-                on_click=_save_evidence if candidate != book else _history_action,
-                args=(directory, candidate, revision, snapshot.revision) if candidate != book else (_key(directory, book.position_id), 'list'),
-                kwargs={'screen':'list'} if candidate != book else {})
+            if st.button('Save changes', type='primary', key=key+'save',
+                         on_click=_capture_submit_revision, args=(key, revision, snapshot.revision)):
+                # Build from this submission's widget values. A callback argument
+                # prepared on the previous render can silently save stale input.
+                expected = st.session_state.pop(key+'submitted_revision')
+                if candidate != book or expected != (revision, snapshot.revision):
+                    _save_evidence(directory, candidate, *expected, screen='list')
+                else:
+                    _history_action(_key(directory, book.position_id), 'list')
+                st.rerun()
             st.button('Cancel', key=key+'cancel', on_click=_history_action, args=(_key(directory, book.position_id),'list'))
         st.caption('Full precision is preserved. Changes affect your holding only after Review against portfolio.')
     except (DataError, ValueError) as exc:

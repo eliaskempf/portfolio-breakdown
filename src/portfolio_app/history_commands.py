@@ -153,3 +153,34 @@ def correct_transaction(book, event_id, **changes):
     if balance_changed and original.costs:
         candidate = replace(candidate, costs=())
     return append_evidence(book, (replace(candidate, id=uuid4().hex, replaces=original.id),))
+
+
+def remove_transactions(book, event_ids):
+    """Prepare explicit removals; retain evidence and unrelated pending changes.
+
+    Removing a pending correction also removes its applied ancestor. The caller
+    must review and activate any resulting balance changes through save_history.
+    """
+    from portfolio_app.security_history import SecurityEvent, append_evidence, current_records
+    chosen = set(event_ids)
+    available = {event.id: event for event in current_records(book)}
+    if not chosen or not chosen <= available.keys():
+        raise DataError('Choose current transactions to remove. Reload if the list changed.')
+    if any(available[identity].kind == 'opening' for identity in chosen):
+        raise DataError('Edit the starting balance separately; select only transactions to remove.')
+    known = {event.id: event for event in book.records}
+    removed = set(chosen)
+    additions = []
+    for event in current_records(book):
+        if event.id not in chosen:
+            continue
+        additions.append(SecurityEvent(uuid4().hex, 'void', event.date, replaces=event.id,
+                                       note='Removed by user. Original evidence retained.'))
+        ancestor = event.replaces
+        while ancestor:
+            removed.add(ancestor)
+            ancestor = known[ancestor].replaces
+    if any(known[identity].kind == 'transfer' for identity in removed.intersection(book.active_ids)):
+        raise DataError('Applied transfers affect another holding. Review both histories before changing the transfer.')
+    candidate = append_evidence(book, additions)
+    return replace(candidate, active_ids=tuple(identity for identity in book.active_ids if identity not in removed))

@@ -228,6 +228,13 @@ def event_from_dict(raw):
     return SecurityEvent(**fields)
 
 
+def current_records(book):
+    """Latest retained versions, excluding removed entries and internal boundaries."""
+    replaced = {event.replaces for event in book.records if event.replaces}
+    return tuple(event for event in book.records if event.id not in replaced
+                 and event.kind != 'void' and event.source != 'confirmed_zero_start')
+
+
 def selected_events(book):
     selected = set(book.active_ids)
     records = [e for e in book.records if e.id in selected]

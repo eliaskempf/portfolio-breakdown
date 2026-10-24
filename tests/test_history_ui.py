@@ -36,6 +36,28 @@ def label(elements,value):
     return next(e for e in elements if e.label==value)
 
 
+def transaction_rows(directory):
+    from portfolio_app.account_journal import load_journal
+    from portfolio_app.history_ui import _transaction_table, _visible_records
+    journal, _ = load_journal(directory)
+    if not journal.securities:
+        return _transaction_table([], None)
+    book = journal.securities[0]
+    return _transaction_table(_visible_records(book), book)
+
+
+def open_transaction_editor(app, directory):
+    from portfolio_app.account_journal import load_journal
+    from portfolio_app.history_ui import _key, _visible_records
+    book = load_journal(directory)[0].securities[0]
+    records = _visible_records(book)
+    event = next((e for e in records if e.kind != 'opening'), records[0])
+    key = _key(directory, book.position_id)
+    app.session_state[key+'edit_record'] = event.id
+    app.session_state[key+'screen'] = 'edit'
+    app.run()
+
+
 def test_history_views_and_incomplete_new_transaction_render(tmp_path):
     fixture(tmp_path)
     app=launch(tmp_path)
@@ -107,7 +129,7 @@ def test_buys_and_sells_save_before_starting_balance_and_review_from_zero(tmp_pa
     from portfolio_app.security_history import effective_holdings
     (tmp_path/'holdings.csv').write_text('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,15.5,EUR\n')
     app=launch(tmp_path)
-    assert app.dataframe[0].value.empty
+    assert transaction_rows(tmp_path).empty
     assert not app.checkbox and not app.date_input
     for kind,quantity,price,fee,stamp in [('buy','10','10','10',date(2024,1,2)),
                                         ('buy','5','20','',date(2024,2,1)),
@@ -149,7 +171,7 @@ def test_review_can_leave_portfolio_unchanged(tmp_path):
     label(app.button,'Review against portfolio').click().run()
     label(app.button,'Keep portfolio unchanged').click().run()
     assert not app.exception
-    assert app.dataframe[0].value.Status.tolist()==['Applied']
+    assert transaction_rows(tmp_path).Status.tolist()==['Applied']
 
 
 def test_fee_confirmation_repairs_old_draft_without_changing_holding(tmp_path):
@@ -271,7 +293,7 @@ def test_internal_boundary_is_not_a_selectable_transaction(tmp_path):
     book=reconstruction_candidate(book,('a','b'),starts_at_zero=True)
     save_journal(tmp_path,Journal(version=2,securities=(book,)),None)
     app=launch(tmp_path)
-    assert len(app.dataframe[0].value)==2
+    assert len(transaction_rows(tmp_path))==2
     label(app.button,'Review against portfolio').click().run()
     assert label(app.multiselect,'Included transactions').value==['a','b']
     assert len(label(app.multiselect,'Included transactions').options)==2
@@ -288,24 +310,24 @@ def test_direct_editor_preserves_precision_and_retains_original(tmp_path):
     book=SecurityBook('position-0','invented',('10','10','EUR'),records=(trade,))
     save_journal(tmp_path,Journal(version=2,securities=(book,)),None)
     app=launch(tmp_path)
-    assert app.dataframe[0].value['Trade value'].tolist()==['1327.00 EUR']
-    assert app.dataframe[0].value.Fees.tolist()==['1.00 EUR']
-    label(app.button,'Edit transaction').click().run()
+    assert transaction_rows(tmp_path)['Trade value'].tolist()==['1327.00 EUR']
+    assert transaction_rows(tmp_path).Fees.tolist()==['1.00 EUR']
+    open_transaction_editor(app, tmp_path)
     assert not app.exception
     assert label(app.text_input,'Trade value (excluding fees)').value=='1326.999906'
     before=load_journal(tmp_path)[1]
     label(app.button,'Save changes').click().run()
     assert load_journal(tmp_path)[1]==before
-    label(app.button,'Edit transaction').click().run()
+    open_transaction_editor(app, tmp_path)
     label(app.text_input,'Trade value (excluding fees)').set_value('1426.999906').run()
     label(app.button,'Save changes').click().run()
     assert not app.exception
     saved=load_journal(tmp_path)[0].securities[0]
     assert saved.records[0]==trade and saved.records[-1].amount==D('1426.999906')
     assert not saved.active
-    assert len(app.dataframe[0].value)==1
-    assert app.dataframe[0].value['Trade value'].tolist()==['1427.00 EUR']
-    label(app.button,'Edit transaction').click().run()
+    assert len(transaction_rows(tmp_path))==1
+    assert transaction_rows(tmp_path)['Trade value'].tolist()==['1427.00 EUR']
+    open_transaction_editor(app, tmp_path)
     assert label(app.text_input,'Trade value (excluding fees)').value=='1426.999906'
     label(app.text_input,'Trade value (excluding fees)').set_value('42').run()
     label(app.button,'Cancel').click().run()
@@ -373,3 +395,20 @@ def test_summary_cache_does_not_replace_chart_cache(tmp_path, monkeypatch):
     summary = prepared_history_view(tmp_path, journal, scope, store, 'synthetic', include_points=False)
     assert summary == replace(chart, points=())
     assert prepared_history_view(tmp_path, journal, scope, store, 'synthetic') == chart
+
+
+def test_direct_editor_keeps_concurrent_revision_guard(tmp_path):
+    from portfolio_app.account_journal import load_journal
+    fixture(tmp_path)
+    app = launch(tmp_path)
+    open_transaction_editor(app, tmp_path)
+    label(app.text_input, 'Quantity').set_value('11').run()
+    journal, revision = load_journal(tmp_path)
+    other = E('other', 'buy', '2024-02-01', quantity=1, price=10, currency='EUR')
+    changed = replace(journal, securities=(replace(journal.securities[0], records=(*journal.securities[0].records, other)),))
+    save_journal(tmp_path, changed, revision)
+    label(app.button, 'Save changes').click().run()
+    assert not app.exception
+    assert any('History or holdings changed' in error.value for error in app.error)
+    assert label(app.text_input, 'Quantity').value == '11'
+    assert load_journal(tmp_path)[0] == changed

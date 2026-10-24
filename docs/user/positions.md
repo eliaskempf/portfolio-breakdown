@@ -272,6 +272,17 @@ a new interval for an already active history. Advanced record, lot and fee
 editing is available under **Edit transactions, starting lots and fees**;
 earlier records and corrections remain in its **Retained evidence** view.
 
+Double-click a transaction to edit it directly, or use its **Edit** button.
+The list opens newest first; click **Date** to reverse the order.
+
+To remove transactions, select rows in the **Transactions** table and choose
+**Remove selected**. The header checkbox selects all rows; starting balances are
+kept and edited separately. Confirm the selected entries before removal. Applied
+transactions also show the resulting holding and linked cash changes; invalid
+remaining histories cannot be applied. Unapplied entries leave portfolio balances
+unchanged. Original evidence is retained internally, and a removed PDF can be
+imported again. Re-uploading a PDF that is still present does not overwrite it.
+
 The quantity comparison uses the smaller of one billionth of a unit and one
 billionth of the recorded quantity. Comparable costs use a one-cent tolerance.
 These tolerances label differences; they never manufacture an adjustment.

@@ -330,7 +330,7 @@ def test_excluding_one_statement_survives_selecting_another_row(transaction_page
     # must not re-include it or change what the save action writes.
     table=dialog.get_by_test_id('stDataFrame').first
     # Glide's accessible text cells are off-screen; use its visible row selectors.
-    canvas=table.locator('canvas').first
+    canvas=table.get_by_test_id('data-grid-canvas').first
     canvas.scroll_into_view_if_needed();bounds=canvas.bounding_box()
     page.mouse.click(bounds['x']+16,bounds['y']+90);settle(page)
     assert dialog.get_by_test_id('stText').filter(has_text='ready.pdf').count()==1
@@ -373,4 +373,106 @@ def test_pdf_partial_sale_of_three_units_reviews_and_applies(transaction_page):
     state=replay_securities(journal.securities).positions['position-0']
     assert state.quantity==2
     assert sum(Decimal(p['amount']) for p in state.costs)==20
+    assert not page.get_by_test_id('stException').count()
+
+
+@pytest.mark.parametrize('applied', [False, True])
+def test_bulk_removal_select_all_previews_and_preserves_originals(transaction_page, applied):
+    from dataclasses import replace
+    from decimal import Decimal
+    from portfolio_app.account_journal import save_journal
+    from portfolio_app.history_commands import reconstruction_candidate
+    from portfolio_app.security_history import SecurityEvent, current_records
+    page, root = transaction_page
+    journal, revision = load_journal(root)
+    book = journal.securities[0]
+    extra = SecurityEvent('extra', 'buy', '2024-02-01', quantity=Decimal(1), price=Decimal(10),
+                          currency='EUR', charges_known=True)
+    book = replace(book, records=(*book.records, extra))
+    if applied:
+        book = reconstruction_candidate(book, ['buy', 'extra'], starts_at_zero=True)
+    save_journal(root, replace(journal, securities=(book,)), revision)
+    page.reload(); settle(page)
+    page.get_by_role('button', name='Open position', exact=True).click(); settle(page)
+    dialog = page.get_by_role('dialog')
+    dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+    dialog.get_by_role('checkbox', name='Select all transactions', exact=True).check()
+    dialog.get_by_role('button', name='Remove selected (2)', exact=True).click(); settle(page)
+    before = load_journal(root)[1]
+    if applied:
+        assert dialog.get_by_text('The balances differ. Applying history replaces the current holding with the figures above.', exact=True).count() == 1
+    else:
+        assert dialog.get_by_text('These entries are not applied. Your portfolio balances stay unchanged.', exact=True).count() == 1
+    # Cancelling is read-only; choosing again then confirms the same two entries.
+    dialog.get_by_role('button', name='Back to transactions', exact=False).click(); settle(page)
+    assert load_journal(root)[1] == before
+    dialog.get_by_role('checkbox', name='Select all transactions', exact=True).check()
+    dialog.get_by_role('button', name='Remove selected (2)', exact=True).click(); settle(page)
+    dialog.get_by_role('button', name='Remove transactions', exact=True).click(); settle(page)
+    saved, _ = load_journal(root)
+    assert not current_records(saved.securities[0])
+    assert saved.securities[0].records[:len(book.records)] == book.records
+    actual = effective_holdings(read_snapshot(root/'holdings.csv').holdings, saved.securities).iloc[0]
+    assert actual.shares == (0 if applied else 2)
+    assert not page.get_by_test_id('stException').count()
+
+
+def test_double_click_edits_selected_transaction_after_sorting_without_dropdown(transaction_page):
+    from dataclasses import replace
+    from portfolio_app.account_journal import save_journal
+    from portfolio_app.security_history import SecurityEvent
+    page, root = transaction_page
+    journal, revision = load_journal(root)
+    book = journal.securities[0]
+    extra = SecurityEvent('newer', 'buy', '2024-02-01', quantity=1, amount='1326.999906', currency='EUR', charges_known=True)
+    save_journal(root, replace(journal, securities=(replace(book, records=(*book.records, extra)),)), revision)
+    page.reload(); settle(page)
+    page.get_by_role('button', name='Open position', exact=True).click(); settle(page)
+    dialog = page.get_by_role('dialog')
+    dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+    table = dialog.get_by_role('table', name='Transactions', exact=True)
+    assert table.locator('tbody tr').first.get_attribute('data-transaction-id') == 'newer'
+    assert '1327.00 EUR' in table.locator('tbody tr').first.inner_text()
+    table.get_by_role('button', name='Date ↓', exact=True).click()
+    assert table.locator('tbody tr').first.get_attribute('data-transaction-id') == 'buy'
+    table.locator('tr[data-transaction-id="newer"] td').nth(2).dblclick(); settle(page)
+    assert not dialog.get_by_role('combobox', name='Transaction to edit', exact=True).count()
+    amount = dialog.get_by_role('textbox', name='Trade value (excluding fees)', exact=True)
+    from playwright.sync_api import expect
+    expect(amount).to_have_value('1326.999906')
+    amount.fill('1426.999906')
+    dialog.get_by_role('button', name='Save changes', exact=True).click(); settle(page)
+    saved, _ = load_journal(root)
+    assert saved.securities[0].records[-1].replaces == 'newer'
+    assert str(saved.securities[0].records[-1].amount) == '1426.999906'
+    assert not saved.securities[0].active
+    table = dialog.get_by_role('table', name='Transactions', exact=True)
+    # The visible edit button remains available for keyboard/touch access.
+    table.locator('tr[data-transaction-id="buy"]').get_by_role('button').click(); settle(page)
+    expect(dialog.get_by_role('textbox', name='Unit price', exact=True)).to_have_value('10')
+    assert not page.get_by_test_id('stException').count()
+
+
+def test_bulk_selection_includes_offscreen_transactions(transaction_page):
+    from dataclasses import replace
+    from portfolio_app.account_journal import save_journal
+    from portfolio_app.security_history import SecurityEvent, current_records
+    page, root = transaction_page
+    journal, revision = load_journal(root)
+    book = journal.securities[0]
+    events = tuple(SecurityEvent(f'buy-{i}', 'buy', f'2024-02-{1+i%28:02}', sequence=i,
+        quantity=1, price=10+i, currency='EUR', charges_known=True) for i in range(65))
+    save_journal(root, replace(journal, securities=(replace(book, records=events),)), revision)
+    page.reload(); settle(page)
+    page.get_by_role('button', name='Open position', exact=True).click(); settle(page)
+    dialog = page.get_by_role('dialog')
+    dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+    table = dialog.get_by_role('table', name='Transactions', exact=True)
+    assert table.locator('tbody tr').count() == 65
+    dialog.get_by_role('checkbox', name='Select all transactions', exact=True).check()
+    dialog.get_by_role('button', name='Remove selected (65)', exact=True).click(); settle(page)
+    dialog.get_by_role('button', name='Remove transactions', exact=True).click(); settle(page)
+    saved, _ = load_journal(root)
+    assert not current_records(saved.securities[0])
+    assert len(saved.securities[0].records) == 130
     assert not page.get_by_test_id('stException').count()

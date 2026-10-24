@@ -75,7 +75,8 @@ def render_pdf_import(directory, row, book, journal, revision, snapshot, key):
     decisions = st.session_state.get(review_key+'decisions', {})
     choices = st.session_state.get(review_key+'include_choices', {})
     problems, similar, included = {}, set(), []
-    known = list(book.records)
+    from portfolio_app.transaction_imports import existing_transactions
+    known = list(existing_transactions(book))
     for i, draft in enumerate(drafts):
         problems[i] = draft_problems(draft, row, journal)
         if not problems[i]:

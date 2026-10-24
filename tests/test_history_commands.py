@@ -163,3 +163,107 @@ def test_correction_preserves_authority_precision_and_other_fees(tmp_path):
     assert correct_transaction(book,original.id,amount=original.amount)==book
     with pytest.raises(DataError,match='latest version'):
         correct_transaction(edited,original.id,note='An obsolete edit')
+
+
+def test_bulk_removal_retains_evidence_and_does_not_apply_pending_entries(tmp_path):
+    from portfolio_app.history_commands import remove_transactions
+    from portfolio_app.security_history import current_records
+    path, snapshot, book = setup(tmp_path)
+    journal = save_history(tmp_path, book, expected_journal_revision=None,
+        expected_holdings_revision=snapshot.revision)
+    pending = journal.securities[0]
+    candidate = remove_transactions(pending, ['buy'])
+    assert candidate.records[:len(pending.records)] == pending.records
+    _, revision = load_journal(tmp_path)
+    snapshot = read_snapshot(path)
+    saved = save_history(tmp_path, candidate, expected_journal_revision=revision,
+        expected_holdings_revision=snapshot.revision)
+    assert [e.id for e in current_records(saved.securities[0])] == ['open']
+    assert effective_holdings(snapshot.holdings, saved.securities).iloc[0].shares == 12
+    with pytest.raises(DataError, match='current transactions'):
+        remove_transactions(saved.securities[0], ['buy'])
+    with pytest.raises(DataError, match='starting balance'):
+        remove_transactions(saved.securities[0], ['open'])
+
+
+def test_removing_pending_correction_reviews_applied_ancestor_and_keeps_other_pending(tmp_path):
+    from portfolio_app.history_commands import correct_transaction, remove_transactions
+    from portfolio_app.security_history import current_records
+    path, snapshot, book = setup(tmp_path)
+    save_history(tmp_path, book, expected_journal_revision=None,
+        expected_holdings_revision=snapshot.revision, activate=True)
+    journal, revision = load_journal(tmp_path)
+    snapshot = read_snapshot(path)
+    candidate = correct_transaction(journal.securities[0], 'buy', quantity=D(3))
+    correction = candidate.records[-1]
+    candidate = append_evidence(candidate, (E('pending', 'buy', '2024-04-01', quantity=5, price=10, currency='EUR'),))
+    save_history(tmp_path, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision)
+    journal, revision = load_journal(tmp_path)
+    candidate = remove_transactions(journal.securities[0], [correction.id])
+    assert candidate.active_ids == ('open',)
+    with pytest.raises(DataError, match='Resolve'):
+        save_history(tmp_path, candidate, expected_journal_revision=revision,
+            expected_holdings_revision=snapshot.revision, activate=True)
+    assert load_journal(tmp_path)[1] == revision
+    saved = save_history(tmp_path, candidate, expected_journal_revision=revision,
+        expected_holdings_revision=snapshot.revision, activate=True, accept_balance_change=True)
+    assert effective_holdings(snapshot.holdings, saved.securities).iloc[0].shares == 10
+    assert [e.id for e in current_records(saved.securities[0])] == ['open', 'pending']
+    assert 'pending' not in saved.securities[0].active_ids
+
+
+def test_bulk_removing_all_trades_keeps_zero_boundary_and_invalid_subset_is_rejected(tmp_path):
+    from portfolio_app.history_commands import reconstruction_candidate, remove_transactions
+    path, snapshot, book = setup(tmp_path)
+    events = (E('b', 'buy', '2024-02-01', quantity=3, price=10, currency='EUR', charges_known=True),
+              E('s', 'sell', '2024-03-01', quantity=1, price=12, currency='EUR', charges_known=True))
+    book = replace(book, records=events, active_ids=())
+    candidate = reconstruction_candidate(book, ['b', 's'], starts_at_zero=True)
+    save_history(tmp_path, candidate, expected_journal_revision=None,
+        expected_holdings_revision=snapshot.revision, activate=True, accept_balance_change=True)
+    journal, revision = load_journal(tmp_path)
+    snapshot = read_snapshot(path)
+    candidate = remove_transactions(journal.securities[0], ['b'])
+    with pytest.raises(DataError):
+        save_history(tmp_path, candidate, expected_journal_revision=revision,
+            expected_holdings_revision=snapshot.revision, activate=True, accept_balance_change=True)
+    assert load_journal(tmp_path)[1] == revision
+    candidate = remove_transactions(journal.securities[0], ['b', 's'])
+    saved = save_history(tmp_path, candidate, expected_journal_revision=revision,
+        expected_holdings_revision=snapshot.revision, activate=True, accept_balance_change=True)
+    assert saved.securities[0].active
+    assert effective_holdings(snapshot.holdings, saved.securities).iloc[0].shares == 0
+
+
+def test_removal_requires_accepting_linked_cash_changes(tmp_path):
+    from portfolio_app.account_journal import Account, Event, Journal, save_journal, replay
+    from portfolio_app.history_commands import remove_transactions
+    path, snapshot, book = setup(tmp_path)
+    journal = Journal(version=2, accounts=(Account('a', 'Invented account'),),
+        events=(Event('cash', '2024-01-01', 'cash_open', 'a', 'EUR', D(100)),))
+    save_journal(tmp_path, journal, None)
+    _, revision = load_journal(tmp_path)
+    book = replace(book, account_id='a')
+    save_history(tmp_path, book, expected_journal_revision=revision,
+        expected_holdings_revision=snapshot.revision, activate=True, accept_cash_change=True)
+    journal, revision = load_journal(tmp_path)
+    snapshot = read_snapshot(path)
+    assert replay(journal).cash[('a', 'EUR')] == 80
+    candidate = remove_transactions(journal.securities[0], ['buy'])
+    with pytest.raises(DataError, match='linked cash'):
+        save_history(tmp_path, candidate, expected_journal_revision=revision,
+            expected_holdings_revision=snapshot.revision, activate=True, accept_balance_change=True)
+    assert load_journal(tmp_path)[1] == revision
+    saved = save_history(tmp_path, candidate, expected_journal_revision=revision,
+        expected_holdings_revision=snapshot.revision, activate=True,
+        accept_balance_change=True, accept_cash_change=True)
+    assert replay(saved).cash[('a', 'EUR')] == 100
+
+
+def test_removal_does_not_silently_change_other_holding():
+    from portfolio_app.history_commands import remove_transactions
+    from portfolio_app.security_history import SecurityBook
+    event = E('transfer', 'transfer', '2024-01-02', quantity=1, other_position_id='other')
+    book = SecurityBook('source', 'invented', ('1', '10', 'EUR'), records=(event,), active_ids=('transfer',))
+    with pytest.raises(DataError, match='another holding'):
+        remove_transactions(book, ['transfer'])

@@ -1,10 +1,11 @@
 """Consorsbank drafts -> existing retained history, with revision/dedup guards."""
 from dataclasses import replace
 from datetime import date
+from uuid import uuid4
 
 from portfolio_app.history_commands import save_history, book_for
 from portfolio_app.holdings import DataError
-from portfolio_app.security_history import Charge, SecurityEvent, append_evidence
+from portfolio_app.security_history import Charge, SecurityEvent, append_evidence, current_records
 
 REVIEW_CHARGES = 'Confirm fees and taxes are complete before importing.'
 
@@ -18,11 +19,17 @@ def _text(row, field):
     return '' if value.lower() in ('nan', 'none', '<na>') else value
 
 
+def existing_transactions(book):
+    """Keep pending corrections and their still-applied originals in duplicate checks."""
+    identities = {event.id for event in current_records(book)} | set(book.active_ids)
+    return tuple(event for event in book.records if event.id in identities)
+
+
 def draft_problems(draft, row, journal):
     problems = [p for p in draft.issues if p != REVIEW_CHARGES]
     if draft.duplicate_of is not None:
         problems.append('Duplicate file in this batch.')
-    if any(event.source == source_id(draft) for book in journal.securities for event in book.records):
+    if any(event.source == source_id(draft) for book in journal.securities for event in existing_transactions(book)):
         problems.append('Already imported.')
     if row.get('instrument_type') in ('cash', 'future'):
         problems.append('Choose a stock or ETF position.')
@@ -81,7 +88,7 @@ def save_pdf_drafts(directory, row, journal, revision, snapshot, drafts, *,
         raise DataError('Select transactions to import.')
     # Revalidate all selected rows at the write boundary, not only in the UI.
     book = book_for(journal, row)
-    known = list(book.records)
+    known = list(existing_transactions(book))
     sources = set()
     events = []
     for draft in drafts:
@@ -106,6 +113,8 @@ def save_pdf_drafts(directory, row, journal, revision, snapshot, drafts, *,
             sequence += 1
         event = as_event(draft, sequence=sequence,
                          charges_known=charges_known or draft.fingerprint in confirmed_charge_ids)
+        if any(old.id == event.id for old in book.records):
+            event = replace(event, id=uuid4().hex)
         known.append(event); events.append(event); sources.add(source_id(draft))
     candidate = append_evidence(book, events)
     save_history(directory, candidate, expected_journal_revision=revision,

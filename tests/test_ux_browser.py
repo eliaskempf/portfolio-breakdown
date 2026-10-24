@@ -404,7 +404,7 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     journal, _ = load_journal(directory)
     row = effective_holdings(read_snapshot(directory/'holdings.csv').holdings, journal.securities).set_index('position_id').loc['fund-a']
     assert row.shares == 2 and row.acquisition_price == 80
-    dialog.get_by_role('button', name='Edit transaction', exact=False).click()
+    dialog.get_by_role('table', name='Transactions', exact=True).get_by_role('button', name=re.compile('^Edit ')).first.click()
     expect_price = dialog.get_by_role('textbox', name='Unit price', exact=True)
     playwright.expect(expect_price).to_have_value('80')
     expect_price.fill('81.125')

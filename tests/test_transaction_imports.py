@@ -117,3 +117,39 @@ def test_zero_statement_charges_are_saved_automatically_in_a_mixed_batch(tmp_pat
     assert 'Zero statement charges' in book.records[0].note
     assert book.records[1].charges_known
     assert sum(c.amount for c in book.records[1].charges) == D(7)
+
+
+def test_removed_pdf_can_be_imported_again_without_reviving_deleted_record(tmp_path):
+    from portfolio_app.history_commands import remove_transactions
+    from portfolio_app.security_history import current_records
+    snapshot, journal, revision = setup(tmp_path)
+    draft = parse_consors_pdf(statement())
+    save_pdf_drafts(tmp_path, snapshot.holdings.iloc[0], journal, revision, snapshot, [draft])
+    journal, revision = load_journal(tmp_path)
+    snapshot = read_snapshot(tmp_path/'holdings.csv')
+    original = journal.securities[0].records[0]
+    candidate = remove_transactions(journal.securities[0], [original.id])
+    save_history(tmp_path, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision)
+    journal, revision = load_journal(tmp_path)
+    assert 'Already imported.' not in draft_problems(draft, snapshot.holdings.iloc[0], journal)
+    save_pdf_drafts(tmp_path, snapshot.holdings.iloc[0], journal, revision, snapshot, [draft])
+    journal, revision = load_journal(tmp_path)
+    current = current_records(journal.securities[0])
+    assert len(current) == 1 and current[0].id != original.id
+    assert current[0].source == original.source
+    assert journal.securities[0].records[0] == original
+    assert not journal.securities[0].active
+    with pytest.raises(DataError, match='Already imported'):
+        save_pdf_drafts(tmp_path, snapshot.holdings.iloc[0], journal, revision, snapshot, [draft])
+
+
+def test_duplicate_check_keeps_applied_original_while_correction_is_pending():
+    from portfolio_app.history_commands import correct_transaction
+    from portfolio_app.security_history import SecurityBook
+    from portfolio_app.transaction_imports import as_event, existing_transactions, possible_duplicate
+    draft = parse_consors_pdf(statement())
+    original = as_event(draft)
+    book = SecurityBook('invented', 'invented', ('2', '50', 'EUR'),
+                        records=(original,), active_ids=(original.id,))
+    corrected = correct_transaction(book, original.id, amount=D(110))
+    assert possible_duplicate(draft, existing_transactions(corrected))
