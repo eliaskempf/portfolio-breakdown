@@ -18,7 +18,7 @@ dependencies = [
   "scipy>=1.14,<2",
   "streamlit>=1.63,<2",
   "yfinance>=0.2.65,<2",
-  "websockets>=15,<17",
+  "websockets>=15,<18",
   "platformdirs>=4,<5",
   "pywebview==6.2.1; sys_platform == 'win32'",
 ]
