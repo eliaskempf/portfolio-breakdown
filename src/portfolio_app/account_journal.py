@@ -384,7 +384,7 @@ def effective_events(journal):
     return tuple(event for _, event in sorted(active, key=lambda item: (item[1].date, item[1].sequence, item[0])))
 
 
-def replay(journal: Journal, *, as_of: str | None = None) -> JournalState:
+def replay(journal: Journal, *, as_of: str | None = None, _security_postings=None) -> JournalState:
     """Pure replay. Pending receipts require an explicit receive event.
 
     `as_of` is economic history with currently known corrections, not a view of
@@ -400,7 +400,8 @@ def replay(journal: Journal, *, as_of: str | None = None) -> JournalState:
     cash, loans, pending, reservations, movements = {}, {}, {}, {}, []
     opened_cash, started_positions, settled_dates = set(), set(), set()
     from portfolio_app.security_history import cash_postings
-    postings = cash_postings(journal)
+    # History calculations reuse canonical postings from this exact journal.
+    postings = cash_postings(journal) if _security_postings is None else _security_postings
     if len({e.id for e in postings}) != len(postings) or {e.id for e in postings}.intersection(e.id for e in journal.events):
         raise DataError('Account event ID collides with a securities posting.')
     events = tuple(sorted((*effective_events(journal), *postings), key=lambda e: (e.date, e.sequence)))

@@ -533,7 +533,7 @@ def history_fingerprint(journal):
     return sha256(json.dumps(journal_to_dict(journal), default=str, sort_keys=True).encode()).hexdigest()
 
 
-def cash_postings(journal):
+def cash_postings(journal, *, security_cash=None):
     """Derived postings are never persisted as duplicate transactions.
 
     An existing cash opening already contains earlier payments. Its end-of-day
@@ -547,10 +547,16 @@ def cash_postings(journal):
         for event in book.records:
             roots[event.id] = roots.get(event.replaces, event.id)
     def posting_id(identity):
-        matches = [key for key in roots if identity == key or identity.startswith(key+':')]
-        key = max(matches, key=len) if matches else identity
+        # Find the longest event-ID prefix without scanning every retained record.
+        # IDs may themselves contain colons (including imported statement IDs).
+        key = identity
+        while key not in roots and ':' in key:
+            key = key.rsplit(':', 1)[0]
+        key = key if key in roots else identity
         return 'security:'+roots.get(key, key)+identity[len(key):]
-    for c in replay_securities(journal.securities).cash:
+    if security_cash is None:
+        security_cash = replay_securities(journal.securities).cash
+    for c in security_cash:
         if not c.account_id or c.external:
             continue
         opening = openings.get((c.account_id, c.currency))

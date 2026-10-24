@@ -183,22 +183,24 @@ def render_position_history(directory, row):
                     st.button('Add sell', icon=':material/remove:', key=key+'sell', on_click=_history_action, args=(key,'sell'))
                     st.button('Import PDFs', key=key+'import_pdf', on_click=_history_action, args=(key,'import_pdf'))
                     st.button('Other transaction', key=key+'add', on_click=_history_action, args=(key,'add'))
-                from portfolio_app.transaction_list_ui import render_transaction_list
-                def edit(identity):
-                    st.session_state[key+'edit_record'] = identity
-                    _history_action(key, 'edit')
-                render_transaction_list(records, _transaction_table(records, book), key=key+'transactions_'+str(revision),
-                    revision=revision, on_edit=edit, on_remove=lambda ids: _request_removal(key, ids, revision))
+                if records:
+                    from portfolio_app.transaction_list_ui import render_transaction_list
+                    def edit(identity):
+                        st.session_state[key+'edit_record'] = identity
+                        _history_action(key, 'edit')
+                    render_transaction_list(records, _transaction_table(records, book), key=key+'transactions_'+str(revision),
+                        revision=revision, on_edit=edit, on_remove=lambda ids: _request_removal(key, ids, revision))
                 if not records:
                     st.caption('No transactions yet. Add buys and sells, then review them against your portfolio.')
                 elif any(e.id not in book.active_ids for e in records):
                     st.caption('Saved transactions do not change your holding until you review and apply them.')
                 with st.container(horizontal=True):
-                    st.button('Review against portfolio', type='primary', disabled=not records,
-                        key=key+'review_list', on_click=_history_action, args=(key,'review'))
+                    if records:
+                        st.button('Review against portfolio', type='primary',
+                            key=key+'review_list', on_click=_history_action, args=(key,'review'))
                     st.button('Add starting balance', type='tertiary', key=key+'starting',
                         help='Optional: the holding before the transactions you have records for.', on_click=_history_action, args=(key,'opening'))
-                    if book.active:
+                    if book.active and records:
                         st.button('Replace balance', type='tertiary', key=key+'replace', on_click=_history_action, args=(key,'replace'))
     except (DataError, ValueError, OSError) as exc:
         _show_error(exc)

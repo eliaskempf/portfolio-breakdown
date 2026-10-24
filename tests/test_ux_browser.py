@@ -462,16 +462,20 @@ def test_personal_history_is_visible_with_periods_ending_today(ux_page):
     assert not page.get_by_label('History through',exact=True).count()
     full_return=metric.get_by_test_id('stMetricValue').inner_text()
     page.get_by_text('1M',exact=True).click()
+    from browser_support import settle
+    from portfolio_app.history_view import period_start
+    settle(page)
     playwright.expect(metric.get_by_test_id('stMetricValue')).to_have_text(full_return)
     chart=page.get_by_test_id('stPlotlyChart').first.locator('.js-plotly-plot')
-    page.wait_for_function('(stamp)=>document.querySelector(".js-plotly-plot")?.layout?.xaxis?.range?.[1]===stamp',arg=today.isoformat())
+    # The old chart ends today too; wait for the selected range before inspecting
+    # Plotly data, which is briefly cleared during the replacement.
+    page.wait_for_function('([first,last])=>{const p=document.querySelector(".js-plotly-plot");return p?.layout?.xaxis?.range?.[0]===first && p?.layout?.xaxis?.range?.[1]===last && p?.data?.[1]?.name==="Invested capital"}',
+        arg=[period_start('1M',today,start).isoformat(),today.isoformat()])
     assert chart.evaluate('el=>el.layout.xaxis.range[1]')==today.isoformat()
     assert not page.get_by_role('button',name='Scope',exact=True).count()
     assert chart.evaluate('el=>el.data[1].name') == 'Invested capital'
     assert chart.evaluate('el=>el.data[1].line.dash') == 'dash'
     assert chart.evaluate('el=>el.data.every(t=>t.connectgaps)')
-    from portfolio_app.history_view import period_start
-    page.wait_for_function('(stamp)=>document.querySelector(".js-plotly-plot")?.layout?.xaxis?.range?.[0]===stamp',arg=period_start('1M',today,start).isoformat())
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     chart.scroll_into_view_if_needed()
     history_value=page.get_by_test_id('stMetric').filter(has_text='Portfolio value')

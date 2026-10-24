@@ -138,9 +138,11 @@ history you can reconstruct.
 **Import PDFs** accepts a batch of Consorsbank stock/ETF buy and sale statements
 for the selected position and account (up to 100 PDFs / 100 MB per batch,
 20 MB per file). Files are read locally; original PDFs are not stored in history
-or sent to a service. The table lists statements by date, newest first, with
-ready, review and excluded counts. Select a table row to inspect its amounts or change **Include this
-transaction**. Identical imports and invalid statements cannot be included.
+or sent to a service. Ready statements are hidden by default; **Show ready
+statements** reveals them. Problems and statements needing review come first,
+with newest dates first within each group. Ready, review and excluded counts
+always describe the whole batch; hiding a ready statement does not exclude it.
+Select a table row to inspect its amounts or change **Include this transaction**. Identical imports and invalid statements cannot be included.
 Similar trades start excluded; **Import as a separate trade** confirms only that
 statement, not the rest of the batch.
 Statement details include the identifier, taxes and settlement amount. If the
@@ -282,6 +284,7 @@ transactions also show the resulting holding and linked cash changes; invalid
 remaining histories cannot be applied. Unapplied entries leave portfolio balances
 unchanged. Original evidence is retained internally, and a removed PDF can be
 imported again. Re-uploading a PDF that is still present does not overwrite it.
+Removing the last transaction restores the empty entry view without an empty table.
 
 The quantity comparison uses the smaller of one billionth of a unit and one
 billionth of the recorded quantity. Comparable costs use a one-cent tolerance.

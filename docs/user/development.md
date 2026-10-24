@@ -66,7 +66,10 @@ calculate a complete history merely to
 choose an already-selected tab, or repeat calculations during the same render.
 Reuse chart results only while journal facts, observation revisions, scope, currency,
 period and calendar date remain unchanged. Within each chart, share dated ledger
-states across overlapping intervals without relaxing coverage checks.
+states across overlapping intervals without relaxing coverage checks. Account
+history derives securities cash postings once per journal snapshot and reuses
+account states between cash/account event dates. A settlement value date alone
+does not release a pending receipt; explicit receipt events remain authoritative.
 Background data refreshes must remain local to the affected result. Verify actual
 transitions with delayed synthetic data: settled screenshots alone miss old
 controls and charts briefly appearing during a switch.

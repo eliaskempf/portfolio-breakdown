@@ -11,7 +11,7 @@ import math
 
 from portfolio_app.account_journal import effective_events, replay
 from portfolio_app.history_observations import HistoryScope, index_observations, lookup, rate
-from portfolio_app.security_history import history_fingerprint, replay_securities, selected_events
+from portfolio_app.security_history import cash_postings, history_fingerprint, replay_securities, selected_events
 
 ZERO = Decimal(0)
 
@@ -77,7 +77,18 @@ class HistoryCalculation:
         return self._get(('securities', interval), lambda: replay_securities(self.journal.securities, as_of=stamp))
 
     def accounts(self, stamp):
-        return self._get(('accounts', stamp), lambda: replay(self.journal, as_of=stamp))
+        from portfolio_app.derivative_types import iso_date
+        if stamp is not None:
+            iso_date(stamp)
+        # Cash postings are derived once from the same immutable journal snapshot.
+        # Pending receipts still require explicit receive events: value_date alone
+        # does not change account balances and must not advance this timeline.
+        postings = self._get(('account_postings',), lambda: cash_postings(
+            self.journal, security_cash=self.securities().cash))
+        dates = self._get(('account_dates',), lambda: sorted(
+            {event.date for event in effective_events(self.journal)} | {event.date for event in postings}))
+        interval = bisect_right(dates, stamp) if stamp is not None else None
+        return self._get(('accounts', interval), lambda: replay(self.journal, as_of=stamp, _security_postings=postings))
 
     def value(self, scope, stamp, target):
         return self._get(('value', scope, stamp, target), lambda: value_at(

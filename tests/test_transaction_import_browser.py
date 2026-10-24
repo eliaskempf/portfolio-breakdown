@@ -326,6 +326,7 @@ def test_excluding_one_statement_survives_selecting_another_row(transaction_page
     confirm_identity(page,dialog)
     dialog.get_by_text('Include this transaction',exact=True).click();settle(page)
     assert dialog.get_by_role('button',name='Save transactions and review',exact=True).is_enabled()
+    dialog.get_by_text('Show ready statements (1)', exact=True).click();settle(page)
     # Select the ready row, then return to the excluded statement. Selection
     # must not re-include it or change what the save action writes.
     table=dialog.get_by_test_id('stDataFrame').first
@@ -414,6 +415,13 @@ def test_bulk_removal_select_all_previews_and_preserves_originals(transaction_pa
     assert saved.securities[0].records[:len(book.records)] == book.records
     actual = effective_holdings(read_snapshot(root/'holdings.csv').holdings, saved.securities).iloc[0]
     assert actual.shares == (0 if applied else 2)
+    assert dialog.get_by_role('table', name='Transactions', exact=True).count() == 0
+    assert dialog.get_by_role('checkbox', name='Select all transactions', exact=True).count() == 0
+    assert dialog.get_by_role('button', name='Review against portfolio', exact=True).count() == 0
+    assert dialog.get_by_role('button', name='Replace balance', exact=True).count() == 0
+    from playwright.sync_api import expect
+    expect(dialog.get_by_text('No transactions yet. Add buys and sells, then review them against your portfolio.', exact=True)).to_be_visible()
+    assert dialog.get_by_role('button', name='Import PDFs', exact=True).is_enabled()
     assert not page.get_by_test_id('stException').count()
 
 
@@ -475,4 +483,68 @@ def test_bulk_selection_includes_offscreen_transactions(transaction_page):
     saved, _ = load_journal(root)
     assert not current_records(saved.securities[0])
     assert len(saved.securities[0].records) == 130
+    assert not page.get_by_test_id('stException').count()
+
+
+def test_ready_pdfs_hide_by_default_and_checks_remain_visible(transaction_page):
+    from consors_audit_fixtures import BUY, LOSS_SALE, SUPPLEMENTARY_DETAILS, text_pdf
+    from playwright.sync_api import expect
+    page, root = transaction_page
+    dialog = page.get_by_role('dialog')
+    dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+    dialog.get_by_role('button', name='Import PDFs', exact=True).click(); settle(page)
+    ready, review = root/'ready-invented.pdf', root/'review-invented.pdf'
+    ready.write_bytes(text_pdf(BUY))
+    review.write_bytes(text_pdf(LOSS_SALE, SUPPLEMENTARY_DETAILS))
+    dialog.locator('input[type=file]').set_input_files([ready, review]); settle(page)
+    confirm_identity(page, dialog)
+    table = dialog.locator('[data-testid="stDataFrame"]:visible').first
+    assert table.get_by_text('ready-invented.pdf', exact=True).count() == 0
+    expect(table.get_by_text('review-invented.pdf', exact=True)).to_have_count(1)
+    assert dialog.get_by_test_id('stText').filter(has_text='review-invented.pdf').count() == 1
+    save = dialog.get_by_role('button', name='Save transactions and review', exact=True)
+    assert save.is_disabled()
+    dialog.get_by_role('button', name='Confirm statement charges', exact=True).click(); settle(page)
+    assert dialog.locator('[data-testid="stDataFrame"]:visible').count() == 0
+    assert dialog.get_by_text('All selected statements are ready.', exact=True).count() == 1
+    assert save.is_enabled()
+    dialog.get_by_text('Show ready statements (2)', exact=True).click(); settle(page)
+    table = dialog.locator('[data-testid="stDataFrame"]:visible').first
+    expect(table.get_by_text('ready-invented.pdf', exact=True)).to_have_count(1)
+    expect(table.get_by_text('review-invented.pdf', exact=True)).to_have_count(1)
+    before = load_journal(root)[0]
+    save.click(); settle(page)
+    saved = load_journal(root)[0].securities[0]
+    assert len(saved.records) == len(before.securities[0].records)+2
+    assert all(e.charges_known for e in saved.records[-2:])
+    assert not saved.active
+
+
+def test_closing_after_bulk_import_refreshes_parent_once(transaction_page):
+    from datetime import date, timedelta
+    from consors_audit_fixtures import BUY, text_pdf
+    from playwright.sync_api import expect
+    page, root = transaction_page
+    dialog = page.get_by_role('dialog')
+    dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+    dialog.get_by_role('button', name='Import PDFs', exact=True).click(); settle(page)
+    files = []
+    for index in range(40):
+        stamp = (date(2025, 1, 1)+timedelta(days=index)).strftime('%d.%m.%Y')
+        source = root/f'invented-monthly-{index}.pdf'
+        source.write_bytes(text_pdf(tuple(row.replace('13.03.2025', stamp).replace('17.03.2025', stamp) for row in BUY)))
+        files.append(source)
+    before, _ = load_journal(root)
+    dialog.locator('input[type=file]').set_input_files(files); settle(page)
+    confirm_identity(page, dialog)
+    expect(dialog.get_by_text('Show ready statements (40)', exact=True)).to_be_visible()
+    dialog.get_by_role('button', name='Save transactions and review', exact=True).click(); settle(page)
+    saved, _ = load_journal(root)
+    assert len(saved.securities[0].records) == len(before.securities[0].records)+40
+    assert not saved.securities[0].active
+    assert effective_holdings(read_snapshot(root/'holdings.csv').holdings, saved.securities).iloc[0].shares == 2
+    assert page.locator('#page-runs').inner_text() == '1'
+    dialog.get_by_role('button', name='Close', exact=True).first.click(); settle(page)
+    expect(dialog).to_have_count(0)
+    expect(page.locator('#page-runs')).to_have_text('2')
     assert not page.get_by_test_id('stException').count()

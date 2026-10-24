@@ -30,6 +30,8 @@ def _decide(key, identity, decision):
     decisions = dict(st.session_state.get(key+'decisions', {}))
     decisions[identity] = decision
     st.session_state[key+'decisions'] = decisions
+    st.session_state.pop(key+'focus', None)
+    st.session_state[key+'table_revision'] = st.session_state.get(key+'table_revision', 0)+1
 
 
 def _focus(key, index):
@@ -108,37 +110,46 @@ def render_pdf_import(directory, row, book, journal, revision, snapshot, key):
     pending = [i for i in included if needs_review(i)]
     ready = [i for i in included if not needs_review(i)]
     st.caption(f'{len(ready)} ready · {len(pending)} to check · {len(files)-len(included)} excluded')
-    # Dates remain ISO strings, so header sorting is chronological too. Stable
-    # source indices keep table ordering separate from within-day event order.
-    ordered = sorted(range(len(drafts)), key=lambda i: (drafts[i].trade_date or '', drafts[i].trade_time or ''), reverse=True)
-    entries = [{'File': files[i].name, 'Date': drafts[i].trade_date or 'Unknown',
-        'Type': (drafts[i].kind or 'Unknown').title(),
-        'Shares': str(drafts[i].quantity) if drafts[i].quantity is not None else 'Unknown',
-        'Trade value': _money(drafts[i].gross), 'Fees': _charges(drafts[i].fees, drafts[i].gross, complete(i)),
-        'Taxes': _charges(drafts[i].taxes, drafts[i].gross, complete(i)),
-        'Settlement': _money(drafts[i].settlement), 'Status': status(i)} for i in ordered]
-    selected = st.dataframe(pd.DataFrame(entries), hide_index=True, width='stretch',
-        on_select='rerun', selection_mode='single-row',
-        key=review_key+'table_'+str(st.session_state.get(review_key+'table_revision', 0)),
-        column_config={'File':st.column_config.TextColumn('Statement', help='Select a row to inspect or exclude that statement.')})
-    selected_rows = selected.selection.rows
-    focus = ordered[selected_rows[0]] if selected_rows else st.session_state.get(review_key+'focus', pending[0] if pending else ordered[0])
-    draft = drafts[focus]
-    st.markdown('**'+('Check statement' if focus in pending else 'Statement')+'**')
-    st.text(files[focus].name)
-    with st.container(horizontal=True):
-        st.checkbox('Include this transaction', key=review_key+str(focus)+'_include', disabled=bool(problems[focus]),
-                    on_change=_include, args=(review_key,focus))
-        others = [i for i in pending if i != focus]
-        if others:
-            st.button('Next statement to check', on_click=_focus, args=(review_key, others[0]))
-    if problems[focus]:
-        for problem in problems[focus]:
-            st.error(problem)
-        st.caption('Use Add buy / Add sell for unsupported statements. No transaction will be saved from this file.')
-    else:
-        _review_statement(files[focus], draft, focus, review_key, complete(focus), decisions,
-                          similar=focus in similar, distinct=draft.fingerprint in distinct)
+    passed = [i for i in included if status(i) == 'Ready']
+    show_ready = st.checkbox(f'Show ready statements ({len(passed)})', key=review_key+'show_ready') if passed else False
+    # Keep the displayed-row mapping independent of upload order. Changing this
+    # mapping resets the table selection, so a decision never targets another PDF.
+    ordered = sorted((i for i in range(len(drafts)) if show_ready or i not in passed),
+        key=lambda i: (drafts[i].trade_date or '', drafts[i].trade_time or ''), reverse=True)
+    ordered.sort(key=lambda i: (0 if i in pending or problems[i] or i in similar else 1 if i not in passed else 2))
+    if ordered:
+        entries = [{'File': files[i].name, 'Date': drafts[i].trade_date or 'Unknown',
+            'Type': (drafts[i].kind or 'Unknown').title(),
+            'Shares': str(drafts[i].quantity) if drafts[i].quantity is not None else 'Unknown',
+            'Trade value': _money(drafts[i].gross), 'Fees': _charges(drafts[i].fees, drafts[i].gross, complete(i)),
+            'Taxes': _charges(drafts[i].taxes, drafts[i].gross, complete(i)),
+            'Settlement': _money(drafts[i].settlement), 'Status': status(i)} for i in ordered]
+        selected = st.dataframe(pd.DataFrame(entries), hide_index=True, width='stretch',
+            on_select='rerun', selection_mode='single-row',
+            key=review_key+'table_'+str(st.session_state.get(review_key+'table_revision', 0))+'_'+sha256(repr(ordered).encode()).hexdigest()[:12],
+            column_config={'File':st.column_config.TextColumn('Statement', help='Select a row to inspect or exclude that statement.')})
+        selected_rows = selected.selection.rows
+        previous = st.session_state.get(review_key+'focus')
+        default = next((i for i in pending if i in ordered), ordered[0])
+        focus = ordered[selected_rows[0]] if selected_rows and selected_rows[0] < len(ordered) else previous if previous in ordered else default
+        draft = drafts[focus]
+        st.markdown('**'+('Check statement' if focus in pending else 'Statement')+'**')
+        st.text(files[focus].name)
+        with st.container(horizontal=True):
+            st.checkbox('Include this transaction', key=review_key+str(focus)+'_include', disabled=bool(problems[focus]),
+                        on_change=_include, args=(review_key,focus))
+            others = [i for i in pending if i != focus]
+            if others:
+                st.button('Next statement to check', on_click=_focus, args=(review_key, others[0]))
+        if problems[focus]:
+            for problem in problems[focus]:
+                st.error(problem)
+            st.caption('Use Add buy / Add sell for unsupported statements. No transaction will be saved from this file.')
+        else:
+            _review_statement(files[focus], draft, focus, review_key, complete(focus), decisions,
+                              similar=focus in similar, distinct=draft.fingerprint in distinct)
+    elif passed:
+        st.caption('All selected statements are ready.')
     _statement_details(files, drafts, review_key)
     if not any(not p for p in problems.values()):
         st.info('No importable transactions. Use Add buy / Add sell for unsupported statements or missing fields.')
