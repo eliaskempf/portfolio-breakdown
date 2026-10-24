@@ -100,6 +100,7 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
         points.append({'Date':stamp, 'Value':float(values[stamp]) if values[stamp] is not None else None,
             'Invested capital':float(invested) if invested is not None else None,
             'Total gain':float(gain) if gain is not None else None,
+            'Price as of': ', '.join(sorted({e.as_of for e in valuations[stamp].evidence if e.as_of != stamp})),
             'TWR':inspected.time_weighted})
     # Rendering may join neighbors; missing observations stay missing in math.
     gaps = tuple((stamp,valuations[stamp].reasons) for stamp in stamps if start <= stamp <= end and values[stamp] is None)

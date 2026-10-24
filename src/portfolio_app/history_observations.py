@@ -45,11 +45,16 @@ class Observation:
     source: str = 'manual'
     basis: str = 'as_traded'
     replaces: str = ''
+    listing: str = ''
+    calendar: str = ''
+    exchange_timezone: str = ''
 
     def __post_init__(self):
         identifier(self.id); identifier(self.subject); identifier(self.source); day(self.date)
         denomination(self.currency)
         object.__setattr__(self, 'amount', decimal(self.amount, 'Observation'))
+        if any(not isinstance(value, str) for value in (self.listing, self.calendar, self.exchange_timezone)):
+            raise DataError('Invalid listing provenance.')
         if self.kind not in ('price', 'fx', 'value') or self.side not in ('close', 'before', 'after'):
             raise DataError('Invalid historical observation kind or boundary.')
         if self.kind in ('price', 'fx') and self.amount <= 0:
@@ -130,12 +135,18 @@ class _ObservationIndex:
         self.observations, self.reviews, self.classifications = store.observations, store.reviews, store.classifications
         self.active = active_observations(store)
         self.values, self.fx = {}, {}
+        prices = {}
         for observation in self.active:
             key = observation.kind, observation.subject, observation.date, observation.side, observation.boundary
             self.values.setdefault(key, []).append(observation)
+            if observation.kind == 'price' and observation.side == 'close':
+                prices.setdefault(observation.subject, {}).setdefault(observation.date, []).append(observation)
             if observation.kind == 'fx':
                 self.fx.setdefault(observation.date, []).append(observation)
 
+        self.price_dates = {subject: tuple(sorted(series)) for subject, series in prices.items()}
+        self.price_series = {subject: tuple(series[stamp] for stamp in self.price_dates[subject])
+                             for subject, series in prices.items()}
 
 def index_observations(store):
     return store if isinstance(store, _ObservationIndex) else _ObservationIndex(store)

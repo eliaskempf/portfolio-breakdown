@@ -38,9 +38,22 @@ def fetch_security_prices(ticker, position_id, start, end, *, factory=None):
     frame = instrument.history(start=start, end=(date.today()+timedelta(days=1)).isoformat(),
         auto_adjust=False, back_adjust=False, actions=True, repair=False, timeout=10, raise_errors=True)
     from portfolio_app.currencies import quote_unit
-    currency, multiplier = quote_unit(instrument.history_metadata.get('currency', ''))
+    metadata = instrument.history_metadata
+    currency, multiplier = quote_unit(metadata.get('currency', ''))
+    from portfolio_app.history_valuation import listing_calendar, exchange_calendar
+    from datetime import datetime, timezone
+    calendar, zone = listing_calendar(metadata)
+    now = datetime.now(timezone.utc)
+    def completed(stamp):
+        if stamp < now.date().isoformat():
+            return True
+        if not calendar:
+            return False
+        exchange = exchange_calendar(calendar, now.year)
+        return exchange.is_session(stamp) and exchange.session_close(stamp).to_pydatetime() <= now
     return tuple(Observation(uuid4().hex, 'price', position_id, stamp, amount*Decimal(str(multiplier)), currency,
-        source='Yahoo Close, split normalization reversed') for stamp, amount in as_traded_prices(frame) if stamp <= end)
+        source='Yahoo Close, split normalization reversed', listing=ticker, calendar=calendar, exchange_timezone=zone)
+        for stamp, amount in as_traded_prices(frame) if stamp <= end and completed(stamp))
 
 
 def fetch_fx(source, target, start, end, *, factory=None):
@@ -65,7 +78,8 @@ def merge_download(store, observations):
     from dataclasses import replace
     for observation in observations:
         previous = active.get(observation.key)
-        if previous and (previous.source == 'manual' or previous.amount == observation.amount):
+        if previous and (previous.source == 'manual' or (previous.amount == observation.amount and previous.listing == observation.listing
+                and previous.calendar == observation.calendar and previous.exchange_timezone == observation.exchange_timezone)):
             continue
         if previous:
             observation = replace(observation, replaces=previous.id)

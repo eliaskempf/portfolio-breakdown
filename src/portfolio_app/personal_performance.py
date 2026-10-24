@@ -14,6 +14,7 @@ from portfolio_app.history_observations import HistoryScope, index_observations,
 from portfolio_app.security_history import cash_postings, history_fingerprint, replay_securities, selected_events
 
 from portfolio_app.history_diagnostics import HistoryIssue as Issue
+from portfolio_app.history_valuation import price_at, provenance, ValuationEvidence
 
 ZERO = Decimal(0)
 
@@ -22,6 +23,7 @@ ZERO = Decimal(0)
 class AmountResult:
     amount: Decimal | None
     reasons: tuple[str, ...] = ()
+    evidence: tuple[ValuationEvidence, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,8 @@ class PersonalPerformance:
     opening_known_gain: Decimal | None = None
     total_gain: Decimal | None = None
     capital_reasons: tuple[str, ...] = ()
+    valuation_evidence: tuple[ValuationEvidence, ...] = ()
+    time_weighted_method: str = 'exact'
 
 
 class HistoryCalculation:
@@ -227,11 +231,11 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
         return AmountResult(None, scope.unresolved)
     supplied = lookup(observations, 'value', scope.key, stamp, currency=target)
     if supplied:
-        return AmountResult(supplied.amount)
+        return AmountResult(supplied.amount, evidence=(provenance(supplied, stamp),))
     securities = calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)
     accounts = (calculation.accounts(stamp) if calculation else replay(journal, as_of=stamp)) if scope.accounts else None
     books = {b.position_id: b for b in journal.securities}
-    total, reasons = ZERO, []
+    total, reasons, evidence = ZERO, [], []
 
     def add(amount, denomination, identity):
         nonlocal total
@@ -254,10 +258,11 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
             continue
         if not state.quantity:
             continue
-        price = lookup(observations, 'price', identity, stamp) or lookup(observations, 'price', book.instrument_id, stamp)
+        price = price_at(observations, (identity, book.instrument_id), stamp, events=selected_events(book))
         if price is None:
             reasons.append(Issue(f'{identity}: missing price on {stamp}', 'price'))
         else:
+            evidence.append(provenance(price, stamp))
             add(state.quantity * price.amount, price.currency, identity)
     events = effective_events(journal)
     for account in scope.accounts:
@@ -273,15 +278,16 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
         for identity, balance in accounts.positions.items():
             if balance.spec.account_id != account or not balance.quantity:
                 continue
-            price = lookup(observations, 'price', identity, stamp) or lookup(observations, 'price', balance.contract.id, stamp)
+            price = price_at(observations, (identity, balance.contract.id), stamp)
             if price is None or price.currency != balance.contract.currency:
                 reasons.append(Issue(f'{identity}: missing exact-contract mark on {stamp}', 'price'))
             else:
+                evidence.append(provenance(price, stamp))
                 add(balance.unsettled_pnl(price.amount), balance.contract.currency, identity)
         for identity, claim in accounts.pending.items():
             if claim.account_id == account:
                 add(claim.amount, claim.currency, identity)
-    return AmountResult(None if reasons else total, tuple(reasons))
+    return AmountResult(None if reasons else total, tuple(reasons), tuple(evidence))
 
 
 def coverage_reasons(journal, scope, observations, start, end, *, fingerprint=None, security_fingerprints=None):
@@ -363,7 +369,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
     for book in journal.securities:
         for e in selected_events(book):
             if e.kind in ('transfer_in', 'transfer_out') and book.position_id in members and start < e.date <= end:
-                price = lookup(observations, 'price', book.position_id, e.date) or lookup(observations, 'price', book.instrument_id, e.date)
+                price = price_at(observations, (book.position_id, book.instrument_id), e.date, events=selected_events(book))
                 amount = e.amount if e.amount is not None else e.quantity*price.amount if price else None
                 denomination = e.currency if e.amount is not None else price.currency if price else e.currency
                 add(e.id, e.date, e.sequence, None if amount is None else amount*(1 if e.kind == 'transfer_in' else -1), denomination)
@@ -372,7 +378,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
             source_inside, dest_inside = book.position_id in members, e.other_position_id in members
             if source_inside == dest_inside:
                 continue
-            price = lookup(observations, 'price', book.position_id, e.date) or lookup(observations, 'price', book.instrument_id, e.date)
+            price = price_at(observations, (book.position_id, book.instrument_id), e.date, events=selected_events(book))
             if price is None:
                 reasons.append(Issue(f'{e.id}: supply transfer-date market value', 'transaction'))
                 flows.append(ExternalFlow(e.id, e.date, e.sequence, None))
@@ -529,4 +535,4 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
             twr_reasons = (reason,) if reason else ()
     return PersonalPerformance(opening.amount, ending.amount, net, invested, gain, mwr, twr, days,
         tuple(dict.fromkeys((*opening.reasons, *ending.reasons))), flow_reasons, mwr_reasons, twr_reasons,
-        capital.amount, opening_gain, total_gain, capital.reasons)
+        capital.amount, opening_gain, total_gain, capital.reasons, ending.evidence)
