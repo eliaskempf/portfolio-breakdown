@@ -1,9 +1,9 @@
-"""Read-only Consorsbank buy/sale drafts; no portfolio writes or completeness claims.
+"""Read-only Consorsbank buy/sale drafts; no portfolio writes or history coverage claims.
 
-Narrow text-layout support. All drafts require review before a future history
+Narrow text-layout support. Drafts are retained for local review before history
 import. Original files and extracted values must stay local; diagnostics contain
-fixed messages only. Absent charges remain unconfirmed unless the complete
-execution meets the strict, exact-balance automatic-zero rule.
+fixed messages only. Statement charges become known only after a complete
+execution passes strict row validation and exact settlement reconciliation.
 """
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -189,7 +189,7 @@ class StatementDraft:
     settlement: Money | None = None
     fees: tuple[Money, ...] = ()
     taxes: tuple[Money, ...] = ()
-    # Missing components are not filled with zero; review is always required.
+    # Unknown components are not filled with zero; evidence gates follow below.
     issues: tuple[str, ...] = ()
     duplicate_of: int | None = None
     trade_time: str | None = None
@@ -197,6 +197,8 @@ class StatementDraft:
     zero_statement_charges: bool = False
     provenance: tuple[FieldReference, ...] = ()
     review_notes: tuple[str, ...] = ()
+    statement_charges_known: bool = False
+    charge_review_reasons: tuple[str, ...] = ()
 
 
 def _number(value):
@@ -494,7 +496,49 @@ def _parse_rows(rows, fingerprint):
                           settlement_date=settlement_date, provenance=tuple(provenance),
                           review_notes=('Supplementary rows were excluded from transaction values; review their source locations.',
                                         ) if supplementary else ())
-    return replace(draft, zero_statement_charges=_zero_statement_charges(draft, rows))
+    reasons = statement_charge_review_reasons(draft, rows)
+    return replace(draft, zero_statement_charges=_zero_statement_charges(draft, rows),
+                   statement_charges_known=not reasons, charge_review_reasons=reasons)
+
+
+def statement_charge_review_reasons(draft, rows):
+    """Require a fully explained execution, not merely a balancing subtotal.
+
+    Applies equally to explicit fees/taxes and their absence, for buys and sells.
+    This says nothing about costs billed separately from the statement.
+    """
+    reasons = []
+    if draft.review_notes:
+        reasons.append('Check the additional rows below for fees, taxes or refunds not included in the totals.')
+    if (draft.kind not in ('buy', 'sell') or not draft.gross or not draft.settlement
+            or not draft.unit_price or draft.unit_price.amount <= 0 or draft.gross.amount <= 0
+            or draft.issues != ('Confirm fees and taxes are complete before importing.',)):
+        reasons.append('Resolve the missing, invalid or unexplained transaction fields.')
+    difference = settlement_difference(draft.kind, draft.gross, draft.settlement, draft.fees, draft.taxes)
+    if difference is None or difference != 0:
+        reasons.append('The settlement does not exactly equal the trade value and listed charges.')
+    counts = {}
+    supplementary = supplementary_rows(rows)
+    direction = r'(?:zulasten|zu lasten)' if draft.kind == 'buy' else r'(?:zugunsten|zu gunsten)'
+    for source in normalized_rows(rows):
+        field, normalized = monetary_field(source.text)
+        if field:
+            counts[field] = counts.get(field, 0) + 1
+            if field == 'Settlement amount' and not re.match(r'^(?:Netto\s+)?'+direction+r'\b', source.text, re.I):
+                reasons.append('Check whether the settlement is a debit or a credit.')
+        elif (source.page, source.row) not in supplementary and unclassified_money(normalized):
+            reasons.append('Unexplained monetary rows remain.')
+    if any(counts.get(field) != 1 for field in ('Unit price', 'Gross amount', 'Settlement amount')):
+        reasons.append('Price, trade value or settlement rows are missing or repeated.')
+    return tuple(dict.fromkeys(reasons))
+
+
+def local_review_rows(source, draft):
+    """Transient local display only; raw text must never enter saved history/reports."""
+    references = {(ref.page, ref.row): ref.field for ref in draft.provenance
+                  if ref.field.startswith('Supplementary')}
+    return tuple((row.page, row.row, references[row.page, row.row], row.text)
+                 for row in _rows(source) if (row.page, row.row) in references)
 
 
 

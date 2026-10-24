@@ -96,7 +96,9 @@ def _reconciliation_report(rows):
     result.extend('Issue: '+issue for issue in draft.issues
                   if issue != 'Confirm fees and taxes are complete before importing.')
     result.extend('Review: '+note for note in draft.review_notes)
-    if draft.kind == 'buy':
+    result.append('Statement charges: '+('reconciled exactly.' if draft.statement_charges_known else 'review required.'))
+    result.extend(draft.charge_review_reasons)
+    if draft.kind == 'buy' and not any(value.amount for value in (*draft.fees, *draft.taxes)):
         reasons = zero_charge_review_reasons(draft, rows)
         result.append('Automatic zero fees: '+('review required.' if reasons else 'eligible.'))
         result.extend(reasons)

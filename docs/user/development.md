@@ -27,6 +27,10 @@ without introductory paragraphs or repeated explanations.
   aligned with the section they affect and use space to communicate hierarchy.
 - Preserve established styling and shared components. Improve density, placement
   and consistency before adding decorative elements, new panels or new navigation.
+- Import review must identify the affected statement, show the specific unresolved
+  source rows locally, and offer a decision for that statement. Do not ask users
+  to certify a batch with a blanket checkbox or infer a problem from an absent
+  tax/fee row. Routine fully reconciled statements should not need manual approval.
 - Keep help and status details accessible by keyboard and touch, with meaningful
   labels. Color and hover alone must not carry essential information.
 

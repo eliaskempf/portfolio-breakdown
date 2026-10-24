@@ -59,7 +59,7 @@ def test_similar_files_require_explicit_resolution(tmp_path):
     assert not load_journal(tmp_path)[0].securities
     save_pdf_drafts(tmp_path,snapshot.holdings.iloc[0],journal,revision,snapshot,drafts,allow_similar=True)
     events=load_journal(tmp_path)[0].securities[0].records
-    assert len(events)==2 and all(not e.charges_known for e in events)
+    assert len(events)==2 and all(e.charges_known for e in events)
 
 
 def test_wrong_instrument_and_inconsistent_statement_rejected(tmp_path):
@@ -99,7 +99,7 @@ def test_fee_free_purchase_remains_unknown_until_confirmed(tmp_path, confirmed):
     # Within the existing cent tolerance, but not exact enough for autozero.
     draft = parse_consors_pdf(statement(fees=False, net='100,01'))
     display = _charges(draft.fees, draft.gross, confirmed)
-    assert display == (format_money(0, 'EUR') if confirmed else 'Unconfirmed')
+    assert display == (format_money(0, 'EUR') if confirmed else 'Not listed')
     book = save_pdf_drafts(tmp_path, snapshot.holdings.iloc[0], journal, revision,
                           snapshot, [draft], charges_known=confirmed)
     assert book.records[-1].amount == D(100)
@@ -115,5 +115,5 @@ def test_zero_statement_charges_are_saved_automatically_in_a_mixed_batch(tmp_pat
                           snapshot, [free, charged])
     assert book.records[0].charges_known and not book.records[0].charges
     assert 'Zero statement charges' in book.records[0].note
-    assert not book.records[1].charges_known
+    assert book.records[1].charges_known
     assert sum(c.amount for c in book.records[1].charges) == D(7)

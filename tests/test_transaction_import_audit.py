@@ -125,7 +125,7 @@ def test_mixed_selected_batch_only_autoconfirms_eligible_rows(workspace):
     invalid = text_pdf((*FREE, 'Devisenkurs'))
     drafts = parse_consors_batch([text_pdf(FREE), text_pdf(SALE, TAX_PAGE), invalid])
     book = save(workspace, drafts[:2])
-    assert [e.charges_known for e in book.records] == [True, False]
+    assert [e.charges_known for e in book.records] == [True, True]
     assert book.records[0].charges == ()
     assert book.records[1].amount == 90
     assert len(load_journal(workspace)[0].securities[0].records) == 2
@@ -208,10 +208,10 @@ row=snapshot.holdings.iloc[0]
 render_pdf_import(root,row,book_for(journal,row),journal,revision,snapshot,'synthetic')
 ''').run()
     assert not app.exception
-    details = app.dataframe[1].value
+    details = next(d.value for d in app.dataframe if 'Document' in d.value.columns)
     assert list(zip(details.Document, details.File)) == [
         (1,'synthetic-z.pdf'),(2,'synthetic-broken.pdf'),(3,'synthetic-a.pdf')]
-    assert app.dataframe[0].value['Listed fees'][0] == '€0.00'
+    assert app.dataframe[0].value['Fees'][0] == '€0.00'
     report = download['data']()
     assert all(f'Document {n}' in report for n in (1,2,3))
     assert 'Document 2\nPDF could not be read.' in report

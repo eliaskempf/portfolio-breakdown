@@ -138,7 +138,11 @@ history you can reconstruct.
 **Import PDFs** accepts a batch of Consorsbank stock/ETF buy and sale statements
 for the selected position and account (up to 100 PDFs / 100 MB per batch,
 20 MB per file). Files are read locally; original PDFs are not stored in history
-or sent to a service. Review the extracted table and select transactions to save.
+or sent to a service. The table lists statements by date, newest first, with
+ready, review and excluded counts. Select a table row to inspect its amounts or change **Include this
+transaction**. Identical imports and invalid statements cannot be included.
+Similar trades start excluded; **Import as a separate trade** confirms only that
+statement, not the rest of the batch.
 Statement details include the identifier, taxes and settlement amount. If the
 position has no stored ISIN/WKN, check the document identifier yourself before
 saving; a filename or instrument name alone does not establish a match.
@@ -186,9 +190,10 @@ account numbers; other account layouts require manual entry. Separate
 tax-calculation bases are not tax charges; explicitly listed joint-account tax
 charges are each retained, even when their amounts agree.
 After settlement, unfamiliar single amounts inside a recognized tax-detail section
-and separately labelled `ST` quantities are supplementary context. They retain
-source locations and show **Review supplementary details**, without supplying
-execution quantities, fees or taxes. This allows new explanatory labels without
+and separately labelled `ST` quantities are supplementary context. **Check
+statement** shows their actual extracted text and page/row locations locally,
+beside the trade value, fees, taxes and settlement. They do not supply execution
+quantities, fees or taxes. This allows new explanatory labels without
 adding a parser rule for each one. Sections end at page boundaries, new trade
 headings or footer headings; arbitrary amounts elsewhere remain blocking.
 Explicit charges, corrections, malformed known fields and extra amounts remain
@@ -197,19 +202,34 @@ subject to validation even inside supplementary sections.
 Reconciliation checks gross plus charges against a purchase debit, or gross minus
 charges against sale proceeds. It never fills a difference with an invented fee or
 tax. Matching totals cannot establish what an unfamiliar row means. Supplementary
-rows therefore prevent automatic charge confirmation: review their source
-locations and confirm completeness, or save with charges still unconfirmed.
+rows therefore prevent automatic charge confirmation: review the displayed rows
+and confirm that statement, or explicitly keep its charges unchecked.
 
-Listed fees/taxes are retained separately. Straightforward purchases automatically
-show and save zero statement charges when the fully parsed trade value exactly
-matches the debit in the same currency, no nonzero fees/taxes are listed and no
-unexplained monetary rows remain. This includes eligible savings-plan executions;
-the savings-plan label alone does not establish zero. Separate billing documents
-still need their own expense records. Other statements retain optional fee/tax
-completeness confirmation; leaving it unchecked preserves unconfirmed charges.
-An absent fee row alone does not establish zero. Statement amounts require
-recognized ISO currency codes; custody references and bank/page identifiers are
-not amounts. Unsupported historical currency codes require manual entry.
+Listed fees/taxes are retained separately. A complete, unambiguous buy or sale
+with explicit debit/credit direction and an exactly reconciled settlement
+establishes the statement charges automatically. This includes fee-free savings
+plans, purchases with commissions, and sales with listed tax deductions. It
+requires fully parsed financial rows and no unresolved supplementary amounts;
+matching totals alone are insufficient. A buy is not assumed tax-free merely
+because it is a purchase. Separately billed costs need their own expense records.
+
+When a statement needs review, inspect the displayed additional rows. Tax bases,
+allowances and explanatory quantities are not additional payments. If all actual
+charges are included, choose **Confirm statement charges**. To retain uncertain
+history, choose **Keep charges unchecked**, or exclude the transaction. Decisions
+apply only to that statement; the save summary identifies any unchecked charges.
+**Not listed** means no amount was extracted, not that another tax is expected.
+An absent charge on an automatically reconciled or explicitly confirmed statement
+is shown as zero. No generic batch confirmation certifies other statements.
+Unsupported signs, refunds, fields and settlement discrepancies remain blocking
+where required by parser validation; confirmation never bypasses them.
+
+The original PDFs and additional-row text remain transient local review inputs.
+Saved history retains parsed transaction amounts and source locations, not raw
+rows or PDFs. **Statement details** contains document identifiers and the optional
+masked troubleshooting report. Statement amounts require recognized ISO currency
+codes; custody references and bank/page identifiers are not amounts. Unsupported
+historical currency codes require manual entry.
 
 **Save transactions and review** retains the batch atomically and opens the usual
 reconciliation below. It does not add shares to the current holding or activate

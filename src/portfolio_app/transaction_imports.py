@@ -51,12 +51,14 @@ def as_event(draft, *, sequence=0, charges_known=False):
     # unit price from a rounded quote, or count fees inside gross a second time.
     return SecurityEvent(source_id(draft), draft.kind, draft.trade_date, sequence=sequence,
         quantity=draft.quantity, amount=draft.gross.amount, currency=draft.gross.currency,
-        charges=charges, charges_known=charges_known or draft.zero_statement_charges, source=source_id(draft),
+        charges=charges, charges_known=charges_known or draft.statement_charges_known or draft.zero_statement_charges, source=source_id(draft),
         value_date=draft.settlement_date or '',
         note='Consorsbank PDF. Settlement: '+(
             f'{draft.settlement.amount} {draft.settlement.currency}' if draft.settlement else 'unknown')+
             '. Quoted unit price: '+(f'{draft.unit_price.amount} {draft.unit_price.currency}' if draft.unit_price else 'unknown')+
             ('. Zero statement charges: trade value equals debit; no unexplained monetary rows.' if draft.zero_statement_charges else '')+
+            ('. Statement charges verified: all financial rows parsed and settlement reconciles exactly.'
+             if draft.statement_charges_known and not draft.zero_statement_charges else '')+
             ('. Supplementary statement rows excluded from transaction values.' if draft.review_notes else '')+
             ('. Trade time: '+draft.trade_time if draft.trade_time else '')+
             ('. Sources: '+'; '.join(f'{ref.field}: page {ref.page}, row {ref.row}' for ref in draft.provenance)
@@ -73,7 +75,8 @@ def possible_duplicate(draft, events):
 
 
 def save_pdf_drafts(directory, row, journal, revision, snapshot, drafts, *,
-                    charges_known=False, allow_similar=False, identity_confirmed=False):
+                    charges_known=False, allow_similar=False, identity_confirmed=False,
+                    confirmed_charge_ids=(), confirmed_similar_ids=()):
     if not drafts:
         raise DataError('Select transactions to import.')
     # Revalidate all selected rows at the write boundary, not only in the UI.
@@ -89,7 +92,7 @@ def save_pdf_drafts(directory, row, journal, revision, snapshot, drafts, *,
             raise DataError('Check the statement instrument identifiers before importing.')
         if source_id(draft) in sources:
             raise DataError('Duplicate file in this batch.')
-        if possible_duplicate(draft, known) and not allow_similar:
+        if possible_duplicate(draft, known) and not (allow_similar or draft.fingerprint in confirmed_similar_ids):
             raise DataError('Similar transactions already exist. Confirm they are distinct trades.')
         # Use the statement's time to order trades within the same day. When
         # absent, retain explicit upload order for later review, never infer it.
@@ -101,7 +104,8 @@ def save_pdf_drafts(directory, row, journal, revision, snapshot, drafts, *,
             sequence = max(used, default=-1)+1
         while sequence in used:
             sequence += 1
-        event = as_event(draft, sequence=sequence, charges_known=charges_known)
+        event = as_event(draft, sequence=sequence,
+                         charges_known=charges_known or draft.fingerprint in confirmed_charge_ids)
         known.append(event); events.append(event); sources.add(source_id(draft))
     candidate = append_evidence(book, events)
     save_history(directory, candidate, expected_journal_revision=revision,
