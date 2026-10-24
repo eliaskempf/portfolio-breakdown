@@ -343,3 +343,34 @@ def test_excluding_one_statement_survives_selecting_another_row(transaction_page
     added=load_journal(root)[0].securities[0].records[len(before.securities[0].records):]
     assert len(added)==1 and added[0].kind=='buy' and added[0].charges_known
     assert not page.get_by_test_id('stException').count()
+
+
+def test_pdf_partial_sale_of_three_units_reviews_and_applies(transaction_page):
+    from consors_audit_fixtures import text_pdf
+    from portfolio_app.account_journal import Journal,save_journal
+    from portfolio_app.security_history import replay_securities
+    from decimal import Decimal
+    page,root=transaction_page
+    # Remove the fixture's invented pending trade, so this tests only the two
+    # PDFs below. The user's portfolio is never read by this fixture.
+    _,revision=load_journal(root)
+    save_journal(root,Journal(version=2),revision)
+    dialog=page.get_by_role('dialog')
+    dialog.get_by_role('radio',name='Transactions',exact=True).click();settle(page)
+    dialog.get_by_role('button',name='Import PDFs',exact=True).click();settle(page)
+    buy,sale=root/'invented-three.pdf',root/'invented-one.pdf'
+    buy.write_bytes(text_pdf(('Kauf AM 10.02.2025', 'INVENTED SYN777 XX0000000777','ST 3,00000',
+        'Preis pro Anteil 10,000000 EUR','Kurswert 30,00 EUR','Zulasten 30,00 EUR')))
+    sale.write_bytes(text_pdf(('Verkauf AM 11.02.2025','INVENTED SYN777 XX0000000777','ST 1,00000',
+        'Preis pro Anteil 12,000000 EUR','Kurswert 12,00 EUR','Zugunsten 12,00 EUR')))
+    dialog.locator('input[type=file]').set_input_files([buy,sale]);settle(page)
+    confirm_identity(page,dialog)
+    dialog.get_by_role('button',name='Save transactions and review',exact=True).click();settle(page)
+    assert dialog.get_by_text('Shares and acquisition cost match.',exact=True).count()==1
+    assert dialog.get_by_role('button',name='Apply history to portfolio',exact=True).is_enabled()
+    dialog.get_by_role('button',name='Apply history to portfolio',exact=True).click();settle(page)
+    journal,_=load_journal(root)
+    state=replay_securities(journal.securities).positions['position-0']
+    assert state.quantity==2
+    assert sum(Decimal(p['amount']) for p in state.costs)==20
+    assert not page.get_by_test_id('stException').count()

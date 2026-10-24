@@ -523,6 +523,11 @@ updated. Securities cash postings are generated into account replay and are neve
 stored as duplicate account events. Futures arithmetic remains in its existing
 replay branches. Incomplete cash amounts carry an explicit unknown-balance mask.
 
+FIFO lot partitions must conserve component shares, original costs and supplied
+converted costs. Calculate the disposed portion once and derive its remainder;
+do not independently scale both sides with a rounded ratio. Quantity validation
+remains exact, including when a derived lot is reloaded at another Decimal precision.
+
 `history_observations.py` stores dated observations and scope-specific coverage
 reviews. `personal_performance.py` computes equity, external flows, money-weighted
 returns and exact time-weighted returns without Streamlit or network calls.

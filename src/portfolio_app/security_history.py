@@ -17,6 +17,22 @@ ZERO = Decimal(0)
 KINDS = {'opening', 'buy', 'sell', 'distribution', 'split', 'transfer', 'fee', 'tax', 'cost', 'note', 'void', 'transfer_in', 'transfer_out'}
 
 
+def _exact_sum(values):
+    """Sum finite recorded decimals without rounding a quantity/remainder."""
+    values = tuple(values)
+    if not values:
+        return ZERO
+    with localcontext() as context:
+        context.prec = max(context.prec,
+            max(value.adjusted() for value in values)
+            - min(value.as_tuple().exponent for value in values) + len(str(len(values))) + 2)
+        return sum(values, ZERO)
+
+
+def _difference(total, part):
+    return _exact_sum((total, part.copy_negate()))
+
+
 def number(value, label, *, optional=False, positive=False):
     if value is None and optional:
         return None
@@ -71,8 +87,8 @@ class SecurityLot:
         object.__setattr__(self, 'costs', tuple(deepcopy(self.costs)))
         if self.costs:
             validate_components(list(self.costs))
-            if sum((Decimal(p['shares']) for p in self.costs), ZERO) != self.quantity:
-                raise DataError('Lot cost quantities must equal its units.')
+            if _exact_sum(Decimal(p['shares']) for p in self.costs) != self.quantity:
+                raise DataError('Purchase cost quantities do not match the recorded shares.')
         day(self.date, optional=True)
         if type(self.exact) is not bool:
             raise DataError('Invalid lot certainty.')
@@ -277,20 +293,47 @@ class SecurityDisposal:
     lots: tuple[SecurityLot, ...]
 
 
-def _scaled(lot, quantity, *, disposal=False):
-    costs = deepcopy(lot.costs)
-    ratio = quantity / lot.quantity
-    for part in costs:
-        part['shares'] = str(Decimal(part['shares']) * ratio)
-        if disposal and not lot.exact:
-            part['amount'] = ''
-            part['conversions'] = {}
-        else:
-            if part['amount'] != '':
-                part['amount'] = str(Decimal(part['amount']) * ratio)
-            for value in part.get('conversions', {}).values():
-                value['amount'] = str(Decimal(value['amount']) * ratio)
-    return replace(lot, quantity=quantity, costs=costs)
+def _proportion(amount, quantity, total):
+    # Multiply exactly before dividing. Computing quantity / total first loses
+    # exact results such as 30 * (1 / 3). Only a nonterminating quotient rounds.
+    with localcontext() as context:
+        context.prec = max(context.prec, len(amount.as_tuple().digits) + len(quantity.as_tuple().digits))
+        product = amount * quantity
+    return product / total
+
+
+def _partition_lot(lot, quantity):
+    """Split once; derive the remainder instead of independently scaling it."""
+    if quantity == lot.quantity:
+        return lot, None
+    taken, remaining = deepcopy(lot.costs), deepcopy(lot.costs)
+    positive = [i for i, part in enumerate(lot.costs) if Decimal(part['shares'])]
+    assigned = ZERO
+    for i, (source, used, rest) in enumerate(zip(lot.costs, taken, remaining)):
+        units = Decimal(source['shares'])
+        # Fees carry zero shares. Give the last quantity-bearing component the
+        # exact remainder so component shares total the requested disposal.
+        used_units = (_difference(quantity, assigned) if i == positive[-1]
+                      else _proportion(units, quantity, lot.quantity)) if units else ZERO
+        assigned = _exact_sum((assigned, used_units))
+        used['shares'], rest['shares'] = str(used_units), str(_difference(units, used_units))
+        if not lot.exact:
+            # A partial sale of an aggregate opening still cannot invent FIFO
+            # costs or converted costs that were never supplied per lot.
+            used['amount'] = rest['amount'] = ''
+            used['conversions'], rest['conversions'] = {}, {}
+            continue
+        if source['amount'] != '':
+            amount = Decimal(source['amount'])
+            part = _proportion(amount, quantity, lot.quantity)
+            used['amount'], rest['amount'] = str(part), str(_difference(amount, part))
+        for currency, conversion in source.get('conversions', {}).items():
+            amount = Decimal(conversion['amount'])
+            part = _proportion(amount, quantity, lot.quantity)
+            used['conversions'][currency]['amount'] = str(part)
+            rest['conversions'][currency]['amount'] = str(_difference(amount, part))
+    return (replace(lot, quantity=quantity, costs=taken),
+            replace(lot, quantity=_difference(lot.quantity, quantity), costs=remaining))
 
 
 def _consume(lots, quantity):
@@ -300,9 +343,10 @@ def _consume(lots, quantity):
             raise DataError('Sale or transfer exceeds the recorded quantity. Supply missing history.')
         lot = remaining.pop(0)
         take = min(quantity, lot.quantity)
-        moved.append(_scaled(lot, take, disposal=take != lot.quantity))
-        if take < lot.quantity:
-            remaining.insert(0, _scaled(lot, lot.quantity-take, disposal=True))
+        used, rest = _partition_lot(lot, take)
+        moved.append(used)
+        if rest is not None:
+            remaining.insert(0, rest)
         quantity -= take
     return tuple(remaining), tuple(moved)
 
