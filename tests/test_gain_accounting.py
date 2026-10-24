@@ -403,3 +403,28 @@ def test_negative_cash_covered_by_assets_is_not_negative_portfolio_equity():
     assert r.total_gain == -50 and r.ending_value == 250
     assert r.time_weighted == pytest.approx(250/300-1)
     assert r.money_weighted == pytest.approx((250/300)**(365/366)-1)
+
+
+@pytest.mark.parametrize('with_price', [False, True])
+def test_partial_gain_reuses_dated_ledger_without_changing_supported_components(monkeypatch, with_price):
+    from portfolio_app.personal_performance import HistoryCalculation
+    import portfolio_app.gain_components as components
+    # Missing opening cost forces the component fallback, including before the
+    # income event. Query out of order so cached future cash cannot leak back.
+    journal = Journal(version=2, securities=(book(
+        E('o', 'opening', START, quantity=10, currency='EUR'),
+        E('d', 'distribution', '2024-07-01', amount=5, currency='EUR', charges_known=True)),))
+    scope = HistoryScope(('stock',))
+    obs = observations(journal, scope, [('stock', END, 12)] if with_price else [])
+    dates = (END, '2024-06-01', '2024-07-01')
+    expected = {stamp: security_gain_components(journal, 'stock', obs, stamp) for stamp in dates}
+    calculation = HistoryCalculation(journal, obs)
+    def unexpected_replay(*args, **kwargs):
+        pytest.fail('Component fallback must reuse the calculation ledger')
+    monkeypatch.setattr(components, 'replay_securities', unexpected_replay)
+    for stamp in dates:
+        assert security_gain_components(journal, 'stock', obs, stamp, calculation=calculation) == expected[stamp]
+        gain = summarize_known_gain(journal, scope, obs, stamp, calculation=calculation)
+        assert gain.amount == (5 if stamp >= '2024-07-01' else None)
+        assert gain.capital is None and gain.partial
+    assert summarize_known_gain(journal, scope, obs, END, calculation=calculation).value == (120 if with_price else None)

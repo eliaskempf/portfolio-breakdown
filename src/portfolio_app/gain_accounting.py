@@ -155,7 +155,8 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
                 reasons.append(f'{identity}: unrealized gain uses an estimated cost conversion')
             if book and book.active:
                 from portfolio_app.gain_components import security_gain_components
-                components = security_gain_components(journal, identity, observations, end, target, current_value=value)
+                components = security_gain_components(journal, identity, observations, end, target,
+                                                     current_value=value, calculation=calculation)
                 events = [e for e in selected_events(book) if e.date <= end]
                 kinds = {e.kind for e in events}
                 known_parts = [gain if gain is not None else components.unrealized]

@@ -28,8 +28,8 @@ class SecurityGainComponents:
     reasons: tuple[str, ...]
 
 
-def security_gain_components(journal, identity, observations, end, target='EUR', *, current_value=None):
-    state = replay_securities(journal.securities, as_of=end)
+def security_gain_components(journal, identity, observations, end, target='EUR', *, current_value=None, calculation=None):
+    state = calculation.securities(end) if calculation else replay_securities(journal.securities, as_of=end)
     book = next(b for b in journal.securities if b.position_id == identity)
     balance = state.positions.get(identity)
     if balance is None or not balance.boundary:
@@ -76,7 +76,10 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
         if event.kind in ('transfer', 'transfer_in', 'transfer_out'):
             reasons.append('Transfers retain lot costs; scope returns use transfer-date market values')
     remaining = cost(balance.costs)
-    value = current_value if current_value is not None else value_at(journal,HistoryScope((identity,)),observations,end,target).amount
+    scope = HistoryScope((identity,))
+    value = current_value if current_value is not None else (
+        calculation.value(scope, end, target) if calculation else
+        value_at(journal, scope, observations, end, target)).amount
     unrealized = value-remaining if value is not None and remaining is not None else None
     return SecurityGainComponents(remaining,unrealized,total(realized),total(income),total(expenses),total(buys),total(sales),
                                   tuple(dict.fromkeys(reasons)))
