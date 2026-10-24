@@ -128,6 +128,14 @@ with the portfolio and applies to its date pickers without changing recorded dat
 
 ## Optional transaction history {#transaction-history}
 
+To find gaps across current positions, open **Positions → History**. It shows
+positions needing attention by default; clear that filter to see every position.
+The list separates absent or unapplied transactions, completeness confirmation,
+and missing market inputs. Select a row to open its transaction review, holdings
+history or account journal. Checks use saved evidence and the recorded interval;
+matching balances alone cannot prove that no transactions are missing. Ordinary
+interior price gaps do not themselves make a position incomplete.
+
 Total quantity and average buy-in remain sufficient for current portfolio analysis.
 Open a position's **Transactions** view to start an empty list with **Add buy**
 or **Add sell**. **Other transaction** supports distributions, splits, transfers

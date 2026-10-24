@@ -56,7 +56,12 @@ def _consume_position_event(path, snapshot):
         actual = identity in {p.id for p in journal.positions} | {investment.id for investment in journal.investments} | {link.position_id for link in journal.cash_links} or (journal.accounts and str(identity).startswith('account-'))
         current = event.get('context') == list_context(path) and event.get('revision') == snapshot.revision
         future_position = identity in {p.id for p in journal.positions} | {investment.id for investment in journal.investments}
-        if current and future_position:
+        if current and event.get('history_target') == 'accounts':
+            st.session_state['positions_workflow_request'] = 'Accounts & futures'
+            if actual:
+                st.session_state['accounts_requested_position'] = identity
+            st.session_state['position_edit_dialog'] = False
+        elif current and future_position:
             request_position(identity, editing=event.get('action', 'edit') == 'edit')
         elif current and actual:
             st.session_state['positions_workflow_request'] = 'Accounts & futures'
@@ -64,6 +69,15 @@ def _consume_position_event(path, snapshot):
             st.session_state['position_edit_dialog'] = False
         elif current and identity in set(snapshot.holdings.position_id):
             request_position(identity, editing=event.get('action', 'edit') == 'edit')
+            if event.get('history_target') == 'transactions':
+                from portfolio_app.history_ui import _key
+                st.session_state[f'position_edit_detail_view_{identity}'] = 'Transactions'
+                st.session_state[_key(path.parent, identity)+'screen'] = event.get('history_screen', 'list')
+            elif event.get('history_target') == 'holdings':
+                st.session_state[f'position_edit_detail_view_{identity}'] = 'History'
+                st.session_state[f'position_edit_history_mode_{identity}'] = 'Holdings'
+                preferences = dict(st.session_state.get('position_history_preferences', {}))
+                st.session_state['position_history_preferences'] = {**preferences, identity: 'Holdings'}
         else:
             st.warning('The position list changed. Open the position again from the refreshed list.')
 

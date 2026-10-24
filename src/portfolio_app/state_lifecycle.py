@@ -127,7 +127,7 @@ FEATURES = (
     FeatureState('position history preferences', Keys(names=('position_history_preferences',)),
         tour_objects=Keys(names=('position_history_preferences',))),
     FeatureState('position dialog host', Keys(names=('position_dialog_host_ready',))),
-    FeatureState('positions', Keys(prefixes=('positions_',)), inputs=Keys(names=('positions_workflow',)),
+    FeatureState('positions', Keys(prefixes=('positions_',)), inputs=Keys(names=('positions_workflow', 'positions_history_only_issues')),
         mounted=tab('Positions'), tour=Keys(names=('positions_workflow',))),
     FeatureState('balances', Keys(prefixes=('balance_buy_in_mode_',)),
         inputs=Keys(prefixes=('balance_buy_in_mode_',)), mounted=tab('Positions'), workspace=False,

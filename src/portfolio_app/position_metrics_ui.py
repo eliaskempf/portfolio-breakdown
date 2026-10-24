@@ -29,9 +29,9 @@ def position_metric_toolbar(holdings, data_dir, *, demo=False, account_valued=No
     key = context_key(data_dir, demo) + '_positions'
     toolbar, settings = st.columns([5, 1], vertical_alignment='center')
     with toolbar:
-        view = st.segmented_control('Position view', ['Holdings', *PRESETS], help='Switch the position list between holdings, performance, fundamentals and risk views.', default='Holdings',
+        view = st.segmented_control('Position view', ['Holdings', 'History', *PRESETS], help='Switch the position list between holdings, history coverage, fundamentals and risk views.', default='Holdings',
                                     key=key + '_view', label_visibility='collapsed') or 'Holdings'
-    if view == 'Holdings':
+    if view in {'Holdings', 'History'}:
         return view, [], {}, None
     with settings, st.popover('Options', help='Choose visible columns and market-data options for this position view.', icon=':material/tune:', width='stretch'):
         choices = list(PRESETS[view])
