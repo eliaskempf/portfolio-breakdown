@@ -80,18 +80,6 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
     if action.button('Add position', help='Create a holding in the active portfolio; nothing is saved until you choose Save position.', type='primary', icon=':material/add:', key='tour_add_position'):
         _clear_editor()
         st.session_state.update(position_edit_action='Add position', position_edit_dialog=True)
-    history_journal = None
-    if st.session_state.get('positions_workflow', 'Positions') == 'Positions':
-        from portfolio_app.account_journal import load_journal
-        history_journal, _ = load_journal(path.parent)
-        if any(book.active for book in history_journal.securities):
-            if secondary.button('Confirm existing histories', type='tertiary',
-                                help='Confirm completed transaction histories together without changing balances.'):
-                @st.dialog('Confirm existing histories', width='large')
-                def confirm_histories():
-                    from portfolio_app.history_coverage_ui import render_existing_history_confirmation
-                    render_existing_history_confirmation(path.parent, snapshot.holdings)
-                confirm_histories()
     if st.session_state.get('position_draft') or st.session_state.get('position_edit_action') in {'Edit position', 'Add position'}:
         if secondary.button('Resume unsaved edit', help='Reopen the position draft kept in this session.'):
             # Reattach detached widget values even when their state keys remain.
@@ -137,8 +125,7 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
     if workflow == 'Positions':
         from portfolio_app.account_journal import load_journal
         from portfolio_app.accounts_ui import render_actual_positions
-        render_actual_positions(path.parent, history_journal if history_journal is not None else load_journal(path.parent)[0],
-                                valued=account_valued)
+        render_actual_positions(path.parent, load_journal(path.parent)[0], valued=account_valued)
     if not defer_dialog:
         render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=account_valued)
 

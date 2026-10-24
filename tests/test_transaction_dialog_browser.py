@@ -169,6 +169,7 @@ def test_first_history_preserves_tabs_selection_and_valuation(ux_page):
     assert tabs.get_by_role('radio').all_text_contents() == before
     playwright.expect(tabs.get_by_role('radio', name='Transactions', exact=True)).to_be_checked()
     dialog.get_by_role('button', name='Close', exact=True).last.click(); settle(page)
+    assert not page.get_by_role('button', name='Confirm existing histories', exact=True).count()
     # Visiting another position resets the selection so each history-dependent
     # default is checked independently of the retained navigation preference.
     table.locator('tr[data-position-id="stock-c"] td').first.click(); settle(page)
@@ -264,45 +265,3 @@ def test_review_repairs_and_apply_share_dialog_refresh_boundary(transaction_page
     dialog.get_by_role('button', name='Close', exact=True).first.click(); settle(page)
     playwright.expect(dialog).to_have_count(0)
     assert page.locator('#page-runs').inner_text() == '2'
-
-
-def test_bulk_confirmation_selects_existing_histories_without_applying_balances(ux_page):
-    from dataclasses import replace
-    from browser_support import select_tab
-    from portfolio_app.positions import read_snapshot
-    from portfolio_app.history_observations import load_observations
-    from portfolio_app.history_confirmation import confirmation_candidates
-    page, root = ux_page
-    holdings = read_snapshot(root/'holdings.csv').holdings
-    books = []
-    for index, row in enumerate(holdings.itertuples()):
-        opening = SecurityEvent(f'open-{index}', 'opening', '2024-01-01',
-            quantity=Decimal(str(row.shares)), amount=Decimal(str(row.shares))*Decimal(str(row.acquisition_price)), currency='EUR')
-        book = SecurityBook(row.position_id, row.id, (str(row.shares), str(row.acquisition_price), 'EUR'),
-            records=(opening,), active_ids=(opening.id,))
-        if index == 2:
-            book = replace(book, records=(*book.records, SecurityEvent('pending', 'note', '2024-02-01')))
-        books.append(book)
-    save_journal(root, Journal(version=2, securities=tuple(books)), None)
-    journal_before = load_journal(root)
-    holdings_before = (root/'holdings.csv').read_bytes()
-    page.reload(); settle(page)
-    select_tab(page, 'Positions'); settle(page)
-    page.get_by_role('button', name='Confirm existing histories', exact=True).click()
-    dialog = page.get_by_role('dialog')
-    button = dialog.get_by_role('button', name='Confirm selected histories', exact=True)
-    playwright.expect(button).to_be_disabled()
-    playwright.expect(dialog.get_by_text('Needs transaction review first:', exact=False)).to_be_visible()
-    canvas = dialog.get_by_test_id('stDataFrame').locator('canvas').first
-    canvas.scroll_into_view_if_needed()
-    bounds = canvas.bounding_box()
-    # Header checkbox selects both eligible rows; pending histories are not rows.
-    page.mouse.click(bounds['x']+15, bounds['y']+16)
-    playwright.expect(button).to_be_enabled()
-    button.click(); settle(page)
-    playwright.expect(page.get_by_text('Confirmed 2 histories.', exact=True)).to_be_visible()
-    assert load_journal(root) == journal_before
-    assert (root/'holdings.csv').read_bytes() == holdings_before
-    statuses = [item.status for item in confirmation_candidates(journal_before[0], load_observations(root)[0])]
-    assert statuses == ['Confirmed', 'Confirmed', 'Needs transaction review']
-    assert not page.get_by_test_id('stException').count()

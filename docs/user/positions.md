@@ -312,11 +312,9 @@ Matching shares and cost alone does not establish completeness. Use **Apply
 incomplete history** while still backfilling. Confirmation does not supply missing
 prices, FX or amounts, or override return eligibility requirements.
 
-For histories applied previously, **Positions → Confirm existing histories** lets
-you select completed position histories and confirm them together. It shows each
-interval and transaction count, leaves balances unchanged, and excludes histories
-with pending transaction edits or unresolved transaction checks. No history is
-confirmed automatically. A position's confirmation survives unrelated position
+Previously applied histories can be confirmed through the same **Review against
+portfolio → Apply and confirm history** action. Applied shares are not added again.
+A position's confirmation survives unrelated position
 changes; changes to its own evidence or linked transfers require another review.
 Confirmation covers the shown dates, not future transactions. Account and
 whole-portfolio scope reviews retain their separate membership requirements.

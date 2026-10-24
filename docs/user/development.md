@@ -114,8 +114,8 @@ Offer **Apply and confirm history** as the normal reconciliation action, with a
 visible interval and an **Apply incomplete history** alternative. Reconciliation
 and completeness remain distinct facts; the combined action explicitly records
 both in one journal write. Matching today's holding must never silently certify
-omitted sales or income. Existing applied histories can be selected for explicit
-bulk confirmation without balance changes. Position attestations bind retained
+omitted sales or income. Keep confirmation inside the existing history review;
+do not add a separate toolbar shortcut for this catch-up workflow. Position attestations bind retained
 facts and transfer-connected holdings, so unrelated position edits do not undo
 review. Legacy whole-journal attestations keep their original validation rules.
 Manual market-data correction is separate from this review. Broader changes to
