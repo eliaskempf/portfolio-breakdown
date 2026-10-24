@@ -282,6 +282,7 @@ class SecurityCash:
     kind: str
     value_date: str = ''
     external: bool = False
+    event_id: str = ''
 
 
 @dataclass(frozen=True)
@@ -436,14 +437,14 @@ def replay_securities(books, *, as_of=None, sequence=None):
                 gross = e.gross if e.kind in ('buy', 'sell') else e.amount
                 sign = -1 if e.kind in ('buy', 'fee', 'tax') else 1
                 cash.append(SecurityCash(e.id, book.position_id, book.account_id, e.date, e.sequence,
-                    e.currency, None if gross is None else sign*gross, e.kind, e.value_date))
+                    e.currency, None if gross is None else sign*gross, e.kind, e.value_date, event_id=e.id))
             for i, c in enumerate(e.charges):
                 cash.append(SecurityCash(f'{e.id}:charge:{i}', book.position_id, book.account_id,
                     c.date or e.date, e.sequence, c.currency, None if c.amount is None else -c.amount,
-                    c.kind, external=c.external))
+                    c.kind, external=c.external, event_id=e.id))
             if e.kind in ('buy', 'sell', 'distribution') and not e.charges_known:
                 cash.append(SecurityCash(f'{e.id}:unknown-charges', book.position_id, book.account_id,
-                    e.date, e.sequence, e.currency, None, 'fee'))
+                    e.date, e.sequence, e.currency, None, 'fee', event_id=e.id))
     if as_of:
         cash = [c for c in cash if c.date <= as_of]
     return SecuritiesState(states, tuple(cash), tuple(disposals))

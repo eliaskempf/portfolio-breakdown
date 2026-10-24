@@ -4,7 +4,7 @@ All observations are supplied explicitly. No current prices, current ETF weights
 latest FX or interpolation enter this module.
 """
 from bisect import bisect_right
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 import math
@@ -33,6 +33,10 @@ class ExternalFlow:
     sequence: int
     amount: Decimal | None
     reason: str = ''
+    event_id: str = ''
+    expense: Decimal = ZERO
+    income: Decimal = ZERO
+    postings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -54,7 +58,7 @@ class PersonalPerformance:
     total_gain: Decimal | None = None
     capital_reasons: tuple[str, ...] = ()
     valuation_evidence: tuple[ValuationEvidence, ...] = ()
-    time_weighted_method: str = 'exact'
+    time_weighted_method: str = 'daily'
 
 
 class HistoryCalculation:
@@ -349,12 +353,14 @@ def external_flows(journal, scope, observations, start, end, target, *, security
     flows, reasons = [], []
     members, accounts = set(scope.positions), set(scope.accounts)
 
-    def add(identity, stamp, sequence, amount, currency, *, include_start=False):
+    def add(identity, stamp, sequence, amount, currency, *, include_start=False, event_id='', expense=ZERO, income=ZERO):
         if not (start < stamp <= end or (include_start and start == stamp)):
             return
         value = convert(amount, currency, target, stamp, observations)
         reason = '' if value is not None else Issue(f'{identity}: missing cash amount or dated FX', 'transaction' if amount is None else 'fx')
-        flows.append(ExternalFlow(identity, stamp, sequence, value, reason))
+        flows.append(ExternalFlow(identity, stamp, sequence, value, reason, event_id,
+            convert(expense, currency, target, stamp, observations) or ZERO,
+            convert(income, currency, target, stamp, observations) or ZERO, (identity,)))
         if reason:
             reasons.append(reason)
 
@@ -365,7 +371,9 @@ def external_flows(journal, scope, observations, start, end, target, *, security
             continue
         # Asset-only purchases are contributions; account-only payments out are withdrawals.
         amount = None if c.amount is None else -c.amount if asset_inside else c.amount
-        add('security:'+c.id, c.date, c.sequence, amount, c.currency)
+        add('security:'+c.id, c.date, c.sequence, amount, c.currency, event_id='security:'+(c.event_id or c.id),
+            expense=-c.amount if asset_inside and c.kind in ('fee', 'tax') and c.amount is not None else ZERO,
+            income=c.amount if asset_inside and c.kind == 'distribution' and c.amount is not None else ZERO)
     for book in journal.securities:
         for e in selected_events(book):
             if e.kind in ('transfer_in', 'transfer_out') and book.position_id in members and start < e.date <= end:
@@ -403,7 +411,18 @@ def external_flows(journal, scope, observations, start, end, target, *, security
             elif other:
                 add(e.id, e.date, e.sequence, e.other_amount if e.kind == 'fx' else e.amount,
                     e.other_currency if e.kind == 'fx' else e.currency, include_start=initial)
-    return tuple(sorted(flows, key=lambda f: (f.date, f.sequence, f.id))), tuple(dict.fromkeys(reasons))
+    grouped = {}
+    for flow in flows:
+        key = (flow.event_id or flow.id, flow.date)
+        if key not in grouped:
+            grouped[key] = replace(flow, id=key[0])
+        else:
+            previous = grouped[key]
+            grouped[key] = replace(previous,
+                amount=previous.amount+flow.amount if previous.amount is not None and flow.amount is not None else None,
+                expense=previous.expense+flow.expense, income=previous.income+flow.income,
+                reason=previous.reason or flow.reason, postings=(*previous.postings, *flow.postings))
+    return tuple(sorted(grouped.values(), key=lambda f: (f.date, f.sequence, f.id))), tuple(dict.fromkeys(reasons))
 
 
 def xirr(opening, ending, flows, start, end):
@@ -437,8 +456,34 @@ def xirr(opening, ending, flows, start, end):
         return None, Issue('No numerically verified XIRR solution in the supported range', 'irr_unresolved')
 
 
-def time_weighted(opening, ending, flows, observations, scope, target):
-    ordered = [(flow.date, flow.sequence) for flow in flows if flow.amount]
+def execution_boundary(journal, scope, flow, observations, target):
+    """Standalone trade-time quantity × execution price, never a daily close."""
+    if scope.accounts or len(scope.positions) != 1 or scope.unresolved:
+        return None
+    book = next((b for b in journal.securities if b.position_id == scope.positions[0]), None)
+    if book is None:
+        return None
+    events = selected_events(book)
+    event = next((e for e in events if 'security:'+e.id == flow.event_id and e.date == flow.date), None)
+    if event is None or event.kind not in ('buy', 'sell') or not event.charges_known or event.gross is None:
+        return None
+    if sum((e.date, e.sequence) == (event.date, event.sequence) and e.kind != 'opening' for e in events) != 1:
+        return None
+    earlier = tuple(e.id for e in events if (e.date, e.sequence) < (event.date, event.sequence)
+                    or e.kind == 'opening' and e.date <= event.date)
+    state = replay_securities((replace(book, active_ids=earlier),)).positions.get(book.position_id)
+    if state is None or not state.boundary or state.issues:
+        return None
+    price = convert(event.gross/event.quantity, event.currency, target, event.date, observations)
+    if price is None:
+        return None
+    before = state.quantity*price
+    after = (state.quantity + event.quantity*(1 if event.kind == 'buy' else -1))*price
+    return AmountResult(before), AmountResult(after)
+
+
+def time_weighted(opening, ending, flows, observations, scope, target, *, journal=None):
+    ordered = [(flow.date, flow.sequence) for flow in flows if flow.amount or flow.expense or flow.income]
     if len(ordered) != len(set(ordered)):
         return None, Issue('Assign distinct ordering to same-day external flows before calculating exact time-weighted returns', 'ordering')
     previous, factor = opening, Decimal(1)
@@ -446,18 +491,29 @@ def time_weighted(opening, ending, flows, observations, scope, target):
     if previous < 0 or ending < 0:
         return None, 'Time-weighted return is unavailable across negative equity'
     for flow in flows:
-        if flow.amount == 0:
+        if flow.amount == 0 and not flow.expense and not flow.income:
             continue
         before = lookup(observations, 'value', scope.key, flow.date, side='before', boundary=flow.id, currency=target)
         after = lookup(observations, 'value', scope.key, flow.date, side='after', boundary=flow.id, currency=target)
+        if (before is None or after is None) and journal is not None:
+            derived = execution_boundary(journal, scope, flow, observations, target)
+            if derived is not None:
+                before, after = before or derived[0], after or derived[1]
         if before is None or after is None:
             return None, Issue(f'{flow.id}: supply exact before/after flow valuations', 'boundary')
-        if before.amount < 0 or after.amount < 0 or abs(after.amount-before.amount-flow.amount) > Decimal('.01'):
+        if before.amount < 0 or after.amount < 0 or abs(after.amount-before.amount-flow.amount+flow.expense-flow.income) > Decimal('.01'):
             return None, Issue(f'{flow.id}: flow valuations do not reconcile with nonnegative equity', 'boundary')
         if previous:
             factor *= before.amount/previous
         elif before.amount:
             return None, f'{flow.id}: value appeared without recorded funding'
+        denominator = before.amount + max(flow.amount, ZERO)
+        numerator = after.amount + max(-flow.amount, ZERO)
+        if denominator:
+            factor *= numerator/denominator
+        elif numerator:
+            return None, Issue('Event has income without a supported funded interval', 'funding')
+        invested |= denominator > 0
         previous = after.amount
         invested |= previous > 0
     if not invested or (not previous and ending):
@@ -498,7 +554,9 @@ def known_negative_equity_dates(journal, scope, observations, start, end, target
     return tuple(sorted(negative))
 
 
-def calculate_history(journal, scope, observations, start, end, target='EUR', *, returns=True, annualized=True, negative_dates=None, calculation=None):
+def calculate_history(journal, scope, observations, start, end, target='EUR', *, returns=True, annualized=True, negative_dates=None, calculation=None, method='daily'):
+    if method not in ('daily', 'exact'):
+        raise ValueError('Unknown time-weighted return method')
     days = (date.fromisoformat(end)-date.fromisoformat(start)).days
     if days < 0:
         from portfolio_app.holdings import DataError
@@ -531,8 +589,12 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
             if annualized:
                 mwr, reason = xirr(opening.amount, ending.amount, flows, start, end)
                 mwr_reasons = (reason,) if reason else ()
-            twr, reason = time_weighted(opening.amount, ending.amount, flows, observations, scope, target)
+            if method == 'exact':
+                twr, reason = time_weighted(opening.amount, ending.amount, flows, observations, scope, target, journal=journal)
+            else:
+                from portfolio_app.history_twr import daily_time_weighted
+                twr, reason = daily_time_weighted(calculation, scope, start, end, target, opening.amount, ending.amount, flows)
             twr_reasons = (reason,) if reason else ()
     return PersonalPerformance(opening.amount, ending.amount, net, invested, gain, mwr, twr, days,
         tuple(dict.fromkeys((*opening.reasons, *ending.reasons))), flow_reasons, mwr_reasons, twr_reasons,
-        capital.amount, opening_gain, total_gain, capital.reasons, ending.evidence)
+        capital.amount, opening_gain, total_gain, capital.reasons, ending.evidence, method)

@@ -835,7 +835,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
         interaction_key = value_key
     displayed_gain = (100*twr if twr is not None else None) if percent else gain
     gain_text = return_percent(displayed_gain) if percent else (money(gain,signed=True) if gain is not None else '—')
-    gain_tooltip = ('TWR · ' if percent else 'Gain · ') + ('All history' if view.covers_full_history else period) + (' · Click for amount' if percent else ' · Click for TWR')
+    gain_tooltip = ('Daily TWR · ' if percent else 'Gain · ') + ('All history' if view.covers_full_history else period) + (' · Click for amount' if percent else ' · Click for TWR')
     with summary:
         if show_summary and (total_value is not None or full.ending_value is not None):
             cols = st.columns([2,1,1])
@@ -843,6 +843,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
                 st.metric(label, money(total_value), delta=gain_text,
                     delta_color=('inverse' if percent and displayed_gain < 0 else 'normal') if displayed_gain else 'off', delta_arrow='off',
                     help=f"{'TWR' if percent else 'Gain'}: {'all history' if view.covers_full_history else period}. Chart hover: total to date. "
+                        + ('Daily convention: inflows at day start, outflows at day end; fees included. ' if percent else '')
                         + explanation((full if view.covers_full_history else result).time_weighted_reasons if percent else known.reasons))
                 if known.partial:
                     st.caption(known.coverage_note, help=known.coverage_help)
