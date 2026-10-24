@@ -8,7 +8,7 @@ from portfolio_app.history_observations import HistoryScope
 from portfolio_app.history_scope import category_history_scope
 from portfolio_app.history_view import history_view
 from portfolio_app.strategic import strategic_performance
-from portfolio_app.security_history import replay_securities
+from portfolio_app.personal_performance import HistoryCalculation
 
 
 def known_category_performance(displayed, holdings, config, journal, observations, current_valued,
@@ -21,7 +21,9 @@ def known_category_performance(displayed, holdings, config, journal, observation
     # Include them in comparison membership without restoring an allocation row
     # or inferring a past category. A retained current assignment still applies.
     assignments = holdings.set_index('position_id').get('bucket_id', {})
-    balances = replay_securities(journal.securities).positions
+    calculation = HistoryCalculation(journal, observations)
+    observations = calculation.observations
+    balances = calculation.securities().positions
     closed = [dict(position_id=b.position_id, name=b.instrument_id, shares=0,
                    bucket_id=assignments.get(b.position_id, ''), current_value_reporting=0,
                    unrealized_gain_reporting=None)
@@ -46,8 +48,9 @@ def known_category_performance(displayed, holdings, config, journal, observation
             else:
                 scope = HistoryScope(identities)
         gain = summarize_known_gain(journal, scope, observations, today.isoformat(), target,
-                                    current_values=values, summary_rows=current_valued)
-        view = history_view(journal, scope, observations, 'All', today=today, target=target)
+                                    current_values=values, summary_rows=current_valued, calculation=calculation)
+        view = history_view(journal, scope, observations, 'All', today=today, target=target,
+                            include_points=False, calculation=calculation)
         return gain, view.all_result.time_weighted
 
     return strategic_performance(comparison, config, bucket, evaluate=evaluate)

@@ -198,7 +198,7 @@ def lookup(store, kind, subject, stamp, *, side='close', boundary='', currency=N
 class ObservationFX:
     """Adapt explicit dated FX to the existing acquisition-cost interface."""
     def __init__(self, store, fallback=None):
-        self.store, self.fallback = store, fallback
+        self.store, self.fallback = index_observations(store), fallback
 
     def get(self, source, target, stamp):
         from portfolio_app.fx import DatedRate

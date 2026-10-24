@@ -183,3 +183,54 @@ def test_chart_reuses_ledger_states_without_changing_dated_results(monkeypatch, 
         assert point['Invested capital'] == known.capital
         assert point['TWR'] == independent.time_weighted
     assert view.result == performance.calculate_history(journal, scope, store, view.start, view.end)
+
+
+@pytest.mark.parametrize('reviewed', [True, False])
+def test_summary_omits_only_chart_points(reviewed):
+    journal, scope, store = fixture()
+    if not reviewed:
+        store = replace(store, reviews=())
+    full = history_view(journal, scope, store, '1M', today=date(2024, 6, 16))
+    summary = history_view(journal, scope, store, '1M', today=date(2024, 6, 16), include_points=False)
+    assert summary == replace(full, points=())
+
+
+def test_chart_computes_annualized_return_only_for_headline_intervals(monkeypatch):
+    import portfolio_app.personal_performance as performance
+    journal, scope, store = fixture()
+    calls = []
+    original = performance.xirr
+    def counted(*args, **kwargs):
+        calls.append(True)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(performance, 'xirr', counted)
+    view = history_view(journal, scope, store, 'All', today=date(2024, 6, 16))
+    assert len(calls) == 1
+    assert view.all_result.money_weighted is not None
+    assert view.points[-1]['TWR'] == pytest.approx(.3)
+
+
+def test_replay_reuses_price_only_dates_but_preserves_separate_fee_dates(monkeypatch):
+    import portfolio_app.personal_performance as performance
+    from portfolio_app.security_history import Charge, replay_securities
+    events = (SecurityEvent('open', 'opening', '2024-01-01'),
+        SecurityEvent('buy', 'buy', '2024-01-03', quantity=3, price=10, currency='EUR',
+                      charges=(Charge(D(2), 'EUR', '2024-01-06'),), charges_known=True),
+        SecurityEvent('sell', 'sell', '2024-01-09', quantity=1, price=12, currency='EUR', charges_known=True))
+    book = SecurityBook('holding', 'invented', ('0', '', ''), records=events, active_ids=tuple(e.id for e in events))
+    journal = Journal(version=2, securities=(book,))
+    calculation = performance.HistoryCalculation(journal, ObservationStore())
+    calls = []
+    def counted(*args, **kwargs):
+        calls.append(kwargs.get('as_of'))
+        return replay_securities(*args, **kwargs)
+    monkeypatch.setattr(performance, 'replay_securities', counted)
+    # Deliberately ask out of order to catch future data leaking into earlier days.
+    for day in (10, 8, 2, 5, 9, 4, 1, 7, 3, 6):
+        stamp = f'2024-01-{day:02}'
+        assert calculation.securities(stamp) == replay_securities(journal.securities, as_of=stamp)
+    assert len(calls) == 4
+    assert calculation.securities('2024-01-05').positions['holding'].quantity == 3
+    assert len(calculation.securities('2024-01-05').cash) == 1
+    assert len(calculation.securities('2024-01-06').cash) == 2
+    assert calculation.securities('2024-01-09').positions['holding'].quantity == 2

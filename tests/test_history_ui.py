@@ -361,3 +361,15 @@ def test_prepared_history_reuses_results_and_invalidates_financial_inputs(tmp_pa
     assert view(journal=changed).result.ending_value != view().result.ending_value
     assert view(target='USD').result.ending_value is None
     assert view(scope=HistoryScope(('missing',))).result.ending_value is None
+
+
+def test_summary_cache_does_not_replace_chart_cache(tmp_path, monkeypatch):
+    from portfolio_app import input_cache
+    from portfolio_app.history_ui import prepared_history_view
+    from test_history_view import fixture
+    monkeypatch.setattr(input_cache.st, 'session_state', {})
+    journal, scope, store = fixture()
+    chart = prepared_history_view(tmp_path, journal, scope, store, 'synthetic')
+    summary = prepared_history_view(tmp_path, journal, scope, store, 'synthetic', include_points=False)
+    assert summary == replace(chart, points=())
+    assert prepared_history_view(tmp_path, journal, scope, store, 'synthetic') == chart

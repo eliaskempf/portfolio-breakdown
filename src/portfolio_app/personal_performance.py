@@ -3,13 +3,14 @@
 All observations are supplied explicitly. No current prices, current ETF weights,
 latest FX or interpolation enter this module.
 """
+from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 import math
 
 from portfolio_app.account_journal import effective_events, replay
-from portfolio_app.history_observations import HistoryScope, lookup, rate
+from portfolio_app.history_observations import HistoryScope, index_observations, lookup, rate
 from portfolio_app.security_history import history_fingerprint, replay_securities, selected_events
 
 ZERO = Decimal(0)
@@ -58,7 +59,11 @@ class HistoryCalculation:
     """
 
     def __init__(self, journal, observations):
-        self.journal, self.observations = journal, observations
+        self.journal, self.observations = journal, index_observations(observations)
+        events = [event for book in journal.securities for event in selected_events(book)]
+        # Holdings change on event dates; separately dated charges also change cash.
+        self._security_dates = sorted({event.date for event in events} |
+            {charge.date for event in events for charge in event.charges if charge.date})
         self.fingerprint = history_fingerprint(journal)
         self._facts = {}
 
@@ -68,7 +73,8 @@ class HistoryCalculation:
         return self._facts[key]
 
     def securities(self, stamp=None):
-        return self._get(('securities', stamp), lambda: replay_securities(self.journal.securities, as_of=stamp))
+        interval = bisect_right(self._security_dates, stamp) if stamp is not None else None
+        return self._get(('securities', interval), lambda: replay_securities(self.journal.securities, as_of=stamp))
 
     def accounts(self, stamp):
         return self._get(('accounts', stamp), lambda: replay(self.journal, as_of=stamp))
@@ -451,12 +457,13 @@ def known_negative_equity_dates(journal, scope, observations, start, end, target
     return tuple(sorted(negative))
 
 
-def calculate_history(journal, scope, observations, start, end, target='EUR', *, returns=True, negative_dates=None, calculation=None):
+def calculate_history(journal, scope, observations, start, end, target='EUR', *, returns=True, annualized=True, negative_dates=None, calculation=None):
     days = (date.fromisoformat(end)-date.fromisoformat(start)).days
     if days < 0:
         from portfolio_app.holdings import DataError
         raise DataError('History end must not precede its start.')
     calculation = calculation or HistoryCalculation(journal, observations)
+    observations = calculation.observations
     opening, ending = calculation.opening(scope, start, target), calculation.value(scope, end, target)
     coverage = coverage_reasons(journal, scope, observations, start, end, fingerprint=calculation.fingerprint)
     flows, missing_flows = calculation.flows(scope, start, end, target)
@@ -479,8 +486,9 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
         if negative or opening.amount < 0 or ending.amount < 0:
             mwr_reasons = twr_reasons = ('Percentage return is unavailable across negative equity',)
         else:
-            mwr, reason = xirr(opening.amount, ending.amount, flows, start, end)
-            mwr_reasons = (reason,) if reason else ()
+            if annualized:
+                mwr, reason = xirr(opening.amount, ending.amount, flows, start, end)
+                mwr_reasons = (reason,) if reason else ()
             twr, reason = time_weighted(opening.amount, ending.amount, flows, observations, scope, target)
             twr_reasons = (reason,) if reason else ()
     return PersonalPerformance(opening.amount, ending.amount, net, invested, gain, mwr, twr, days,

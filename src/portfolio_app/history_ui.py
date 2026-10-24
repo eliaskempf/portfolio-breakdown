@@ -47,7 +47,7 @@ def _key(directory, identity):
     return 'personal_history_' + sha256((str(directory.resolve())+identity).encode()).hexdigest()[:12] + '_'
 
 
-def prepared_history_view(directory, journal, scope, observations, revision, period='1Y', *, target=None):
+def prepared_history_view(directory, journal, scope, observations, revision, period='1Y', *, target=None, include_points=True):
     """Reuse a chart across dialog interactions until its actual inputs change."""
     from portfolio_app.currency_display import reporting_currency
     from portfolio_app.history_view import history_view
@@ -55,9 +55,9 @@ def prepared_history_view(directory, journal, scope, observations, revision, per
     from portfolio_app.security_history import history_fingerprint
     target = target or reporting_currency()
     stamp = date.today()
-    signature = str(directory.resolve()), history_fingerprint(journal), revision, scope, period, target, stamp
-    return cached_input('history_view_'+scope.key, signature,
-        lambda: history_view(journal, scope, observations, period, today=stamp, target=target))
+    signature = str(directory.resolve()), history_fingerprint(journal), revision, scope, period, target, stamp, include_points
+    return cached_input('history_view_'+scope.key+('_chart' if include_points else '_summary'), signature,
+        lambda: history_view(journal, scope, observations, period, today=stamp, target=target, include_points=include_points))
 
 
 def _record_id(key, record):
@@ -644,7 +644,7 @@ def _replace_balance(directory, journal, revision, snapshot, book, row, key):
         st.caption(str(exc))
 
 
-def prepare_portfolio_history(directory, holdings, *, config, bucket='', displayed=None, current_valued=None):
+def prepare_portfolio_history(directory, holdings, *, config, bucket='', displayed=None, current_valued=None, include_points=True):
     """Read once before choosing the initial Overview tab; no UI side effects."""
     from portfolio_app.currency_display import reporting_currency
     journal, _ = load_journal(directory)
@@ -666,7 +666,7 @@ def prepare_portfolio_history(directory, holdings, *, config, bucket='', display
     key = _key(directory, scope.key)
     observations, revision = load_observations(directory)
     period = st.session_state.get(key+'period') or '1Y'
-    view = prepared_history_view(directory,journal,scope,observations,revision,period,target=reporting_currency())
+    view = prepared_history_view(directory,journal,scope,observations,revision,period,target=reporting_currency(),include_points=include_points)
     from portfolio_app.gain_accounting import current_component_values, summarize_known_gain
     current = None
     if current_valued is not None:

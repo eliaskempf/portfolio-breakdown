@@ -43,8 +43,9 @@ class HistoryView:
         return self.requested_start <= self.all_start
 
 
-def history_view(journal, scope, observations, period='1Y', *, today=None, target='EUR'):
-    observations = index_observations(observations)
+def history_view(journal, scope, observations, period='1Y', *, today=None, target='EUR', include_points=True, calculation=None):
+    calculation = calculation or HistoryCalculation(journal, index_observations(observations))
+    observations = calculation.observations
     today = today or date.today()
     dates = scope_dates(journal, scope)
     earliest = date.fromisoformat(min(dates)) if dates else today
@@ -57,7 +58,6 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
         (o.kind == 'price' and o.subject in subjects) or o.kind == 'fx'
         or (o.kind == 'value' and o.subject == scope.key and o.side == 'close')]
     beginning = earliest.isoformat()
-    calculation = HistoryCalculation(journal, observations)
     flows, _ = calculation.flows(scope, beginning, last, target)
     stamps = sorted({o.date for o in relevant if beginning <= o.date <= last} | {f.date for f in flows}
                     | {d for d in dates if beginning <= d <= last} | {beginning,first,last})
@@ -85,7 +85,7 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     # a neighboring day's capital from a hovered value at a missing observation.
     flows, missing = calculation.flows(scope,all_start,all_end,target)
     points = []
-    for stamp in stamps:
+    for stamp in stamps if include_points else ():
         if not first <= stamp <= all_end:
             continue
         invested = (all_result.opening_capital + sum(f.amount for f in flows if f.date <= stamp)
@@ -95,7 +95,7 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
         if invested is None:
             known = summarize_known_gain(journal,scope,observations,stamp,target,calculation=calculation)
             invested, gain = known.capital, known.amount
-        inspected = calculate_history(journal,scope,observations,all_start,stamp,target,negative_dates=negative_dates,calculation=calculation)
+        inspected = calculate_history(journal,scope,observations,all_start,stamp,target,annualized=False,negative_dates=negative_dates,calculation=calculation)
         points.append({'Date':stamp, 'Value':float(values[stamp]) if values[stamp] is not None else None,
             'Invested capital':float(invested) if invested is not None else None,
             'Total gain':float(gain) if gain is not None else None,

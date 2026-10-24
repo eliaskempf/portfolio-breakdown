@@ -73,7 +73,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         from portfolio_app.holdings import DataError
         try:
             history = prepare_portfolio_history(data_dir,read_snapshot(data_dir / 'holdings.csv').holdings,
-                config=config,bucket=bucket,displayed=valued, current_valued=current_valued if current_valued is not None else valued)
+                config=config,bucket=bucket,displayed=valued, current_valued=current_valued if current_valued is not None else valued,
+                include_points=st.session_state.get('strategic_view', 'Performance') == 'Performance')
         except (DataError,ValueError,OSError) as exc:
             st.caption(str(exc))
     from portfolio_app.history_scope import can_start_history_chart
