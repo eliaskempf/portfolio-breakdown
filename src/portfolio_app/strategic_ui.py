@@ -118,7 +118,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 from portfolio_app.currency_display import reporting_currency
                 table = known_category_performance(valued, read_snapshot(data_dir / 'holdings.csv').holdings,
                     config, history['journal'], history['observations'],
-                    current_valued if current_valued is not None else valued, bucket, target=reporting_currency())
+                    current_valued if current_valued is not None else valued, bucket, target=reporting_currency(),
+                    calculation=history['calculation'], current_values=history['current_values'])
             st.markdown('**Category comparison**', help='Total known gain includes retained closed holdings and recorded income. Return is full recorded-history time-weighted return (TWR), not gain divided by remaining cost. Current category membership does not reconstruct past assignments; unsupported account splits remain unavailable.')
             measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'], help='Cumulative TWR requires exact cash-flow boundary valuations. Gain shows supported monetary subtotals, with coverage.',
                 default='Gain', key='strategic_performance_measure') or 'Gain'

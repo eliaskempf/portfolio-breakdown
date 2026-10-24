@@ -412,3 +412,49 @@ def test_direct_editor_keeps_concurrent_revision_guard(tmp_path):
     assert any('History or holdings changed' in error.value for error in app.error)
     assert label(app.text_input, 'Quantity').value == '11'
     assert load_journal(tmp_path)[0] == changed
+
+
+def test_automatic_history_consumes_prepared_summary_and_rebuilds_on_new_evidence(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import portfolio_app.history_ui as ui
+    import portfolio_app.gain_accounting as gains
+    import portfolio_app.personal_history_refresh as refresh
+    fixture(tmp_path)
+    calls, rendered = [], []
+    original = gains.summarize_known_gain
+    def counted(*args, **kwargs):
+        if kwargs.get('current_values') is not None:
+            calls.append(True)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(gains, 'summarize_known_gain', counted)
+    monkeypatch.setattr(refresh.refresher, 'request', lambda *args: SimpleNamespace(pending=False))
+    monkeypatch.setattr(ui, '_render_history_results', lambda *args, **kwargs: rendered.append(kwargs['prepared']))
+    monkeypatch.setattr(ui, '_history_inputs', lambda *args: None)
+    app = AppTest.from_string(f'''
+from pathlib import Path
+from dataclasses import replace
+import pandas as pd
+import streamlit as st
+from portfolio_app.allocation import Allocation, Bucket
+from portfolio_app.positions import read_snapshot
+from portfolio_app.history_ui import prepare_portfolio_history, render_portfolio_history
+from portfolio_app.history_observations import save_observations
+root = Path({str(tmp_path)!r})
+holdings = read_snapshot(root / 'holdings.csv').holdings.assign(bucket_id='core')
+current = holdings.assign(current_value_reporting=120, unrealized_gain_reporting=20)
+prepared = prepare_portfolio_history(root, holdings, config=Allocation((Bucket('core', 'Core'),)),
+    displayed=current, current_valued=current)
+render_portfolio_history(root, prepared, automatic=True)
+# Simulate an actual revision arriving from the background worker between
+# page preparation and fragment rendering; old facts must not survive it.
+store = prepared['observations']
+changed = replace(store, observations=(*store.observations[:-1], replace(store.observations[-1], amount=15)))
+save_observations(root, changed, prepared['revision'])
+render_portfolio_history(root, prepared, automatic=True)
+''').run()
+    assert not app.exception
+    assert len(calls) == 2  # One initial summary; one after the observation revision.
+    assert len(rendered) == 2
+    assert rendered[0]['view'].all_known.value == 120
+    assert rendered[1]['view'].all_known.value == 150
+    assert rendered[0]['calculation'] is not rendered[1]['calculation']

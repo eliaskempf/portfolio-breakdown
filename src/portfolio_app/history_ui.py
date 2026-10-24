@@ -47,7 +47,7 @@ def _key(directory, identity):
     return 'personal_history_' + sha256((str(directory.resolve())+identity).encode()).hexdigest()[:12] + '_'
 
 
-def prepared_history_view(directory, journal, scope, observations, revision, period='1Y', *, target=None, include_points=True):
+def prepared_history_view(directory, journal, scope, observations, revision, period='1Y', *, target=None, include_points=True, calculation=None):
     """Reuse a chart across dialog interactions until its actual inputs change."""
     from portfolio_app.currency_display import reporting_currency
     from portfolio_app.history_view import history_view
@@ -57,7 +57,7 @@ def prepared_history_view(directory, journal, scope, observations, revision, per
     stamp = date.today()
     signature = str(directory.resolve()), history_fingerprint(journal), revision, scope, period, target, stamp, include_points
     return cached_input('history_view_'+scope.key+('_chart' if include_points else '_summary'), signature,
-        lambda: history_view(journal, scope, observations, period, today=stamp, target=target, include_points=include_points))
+        lambda: history_view(journal, scope, observations, period, today=stamp, target=target, include_points=include_points, calculation=calculation))
 
 
 def _record_id(key, record):
@@ -717,14 +717,19 @@ def prepare_portfolio_history(directory, holdings, *, config, bucket='', display
     key = _key(directory, scope.key)
     observations, revision = load_observations(directory)
     period = st.session_state.get(key+'period') or '1Y'
-    view = prepared_history_view(directory,journal,scope,observations,revision,period,target=reporting_currency(),include_points=include_points)
+    from portfolio_app.personal_performance import HistoryCalculation
+    calculation = HistoryCalculation(journal, observations)
+    view = prepared_history_view(directory,journal,scope,observations,revision,period,target=reporting_currency(),
+                                 include_points=include_points,calculation=calculation)
     from portfolio_app.gain_accounting import current_component_values, summarize_known_gain
-    current = None
+    current = current_values = None
     if current_valued is not None:
+        current_values = current_component_values(current_valued, journal, calculation=calculation)
         current = summarize_known_gain(journal, scope, observations, date.today().isoformat(), reporting_currency(),
-            current_values=current_component_values(current_valued, journal), summary_rows=current_valued)
+            current_values=current_values, summary_rows=current_valued, calculation=calculation)
     return dict(journal=journal, scope=scope, key=key, observations=observations, revision=revision, view=view,
-                current_gain=current, current_valued=current_valued)
+                current_gain=current, current_valued=current_valued, calculation=calculation, current_values=current_values,
+                history_signature=(revision, period, date.today()))
 
 
 def render_portfolio_history(directory, prepared, *, label='Portfolio value', percent=False, on_toggle_gain=None, automatic=False):
@@ -741,7 +746,9 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
     from portfolio_app.personal_history_refresh import refresher
     target = reporting_currency()
     refresh = refresher.request(directory, journal, scope, target)
-    cached, signature, waiting = prepared, None, refresh.pending
+    cached = prepared
+    signature = prepared.get('history_signature') if prepared else None
+    waiting = refresh.pending
     if on_toggle_gain is not None:
         def toggle():
             on_toggle_gain()
@@ -762,13 +769,18 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
         period = st.session_state.get(key+'period') or '1Y'
         current = revision, period, date.today()
         if current != signature:
+            from portfolio_app.personal_performance import HistoryCalculation
+            calculation = HistoryCalculation(journal, observations)
             cached = dict(prepared or {}, observations=observations, revision=revision,
-                view=prepared_history_view(directory, journal, scope, observations, revision, period, target=target))
+                calculation=calculation, history_signature=current,
+                view=prepared_history_view(directory, journal, scope, observations, revision, period, target=target,
+                                           calculation=calculation))
             if cached.get('current_valued') is not None:
                 from portfolio_app.gain_accounting import summarize_known_gain, current_component_values
                 valued = cached['current_valued']
+                cached['current_values'] = current_component_values(valued, journal, calculation=calculation)
                 cached['current_gain'] = summarize_known_gain(journal, scope, observations, date.today().isoformat(), target,
-                    current_values=current_component_values(valued, journal), summary_rows=valued)
+                    current_values=cached['current_values'], summary_rows=valued, calculation=calculation)
             signature = current
         _render_history_results(directory, journal, scope, prepared=cached,
             refresh=refresh, automatic=True, include_inputs=False, **options)

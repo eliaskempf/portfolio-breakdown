@@ -80,7 +80,7 @@ def scope_dates(journal, scope):
     return sorted(set(dates))
 
 
-def current_component_values(valued, journal):
+def current_component_values(valued, journal, *, calculation=None):
     """Consume the raw valuation projection, retaining its quote/FX provenance.
 
     These values are current inputs, not newly saved historical observations.
@@ -88,7 +88,8 @@ def current_component_values(valued, journal):
     """
     securities = {b.position_id for b in journal.securities}
     result = {row.position_id: amount(row.current_value_reporting) for row in valued.itertuples()}
-    for identity, state in replay_securities(journal.securities).positions.items():
+    states = calculation.securities() if calculation else replay_securities(journal.securities)
+    for identity, state in states.positions.items():
         if not state.quantity:
             result.setdefault(identity, ZERO)
     for account in journal.accounts:

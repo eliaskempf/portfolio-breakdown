@@ -5,7 +5,7 @@ Other expenses (including purchase taxes) are deducted separately. Transfers kee
 lot cost but cross a performance scope at market value, so their allocation is
 not inferred from this acquisition-cost breakdown.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from portfolio_app.cost_basis import resolve_cost
@@ -29,8 +29,24 @@ class SecurityGainComponents:
 
 
 def security_gain_components(journal, identity, observations, end, target='EUR', *, current_value=None, calculation=None):
-    state = calculation.securities(end) if calculation else replay_securities(journal.securities, as_of=end)
-    book = next(b for b in journal.securities if b.position_id == identity)
+    if calculation is not None:
+        recorded = calculation.security_gains(identity, end, target)
+    else:
+        state = replay_securities(journal.securities, as_of=end)
+        book = next(b for b in journal.securities if b.position_id == identity)
+        recorded = recorded_security_gains(book, state, observations, end, target)
+    if recorded.remaining_cost is None:
+        return recorded
+    scope = HistoryScope((identity,))
+    value = current_value if current_value is not None else (
+        calculation.value(scope, end, target) if calculation else
+        value_at(journal, scope, observations, end, target)).amount
+    return replace(recorded, unrealized=value-recorded.remaining_cost if value is not None else None)
+
+
+def recorded_security_gains(book, state, observations, end, target):
+    """Cost and cash facts change on ledger dates, independently of end-date prices."""
+    identity = book.position_id
     balance = state.positions.get(identity)
     if balance is None or not balance.boundary:
         return SecurityGainComponents(*(None for _ in range(7)), ('No activated opening quantity',))
@@ -57,10 +73,21 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
     events = [e for e in selected_events(book) if e.date <= end]
     disposed = {d.event_id:cost(tuple(p for lot in d.lots for p in lot.costs))
                 for d in state.disposals if d.position_id == identity and d.kind == 'sell'}
+    # Preserve every matching event prefix, including IDs containing colons.
+    # Group once rather than scanning all cash entries for each transaction.
+    postings_by_event = {e.id: [] for e in events}
+    for posting in cash:
+        if posting.id in postings_by_event:
+            postings_by_event[posting.id].append(posting)
+        prefix = posting.id
+        while ':' in prefix:
+            prefix = prefix.rsplit(':', 1)[0]
+            suffix = posting.id[len(prefix):]
+            if prefix in postings_by_event and (suffix.startswith(':charge:') or suffix == ':unknown-charges'):
+                postings_by_event[prefix].append(posting)
     buys, sales, realized, income, expenses = [], [], [], [], []
     for event in events:
-        postings = [c for c in cash if c.id == event.id or c.id.startswith(event.id+':charge:')
-                    or c.id == event.id+':unknown-charges']
+        postings = postings_by_event[event.id]
         net = total([converted[c.id] for c in postings])
         if event.kind == 'buy':
             buys.append(-net if net is not None else None)
@@ -76,10 +103,5 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
         if event.kind in ('transfer', 'transfer_in', 'transfer_out'):
             reasons.append('Transfers retain lot costs; scope returns use transfer-date market values')
     remaining = cost(balance.costs)
-    scope = HistoryScope((identity,))
-    value = current_value if current_value is not None else (
-        calculation.value(scope, end, target) if calculation else
-        value_at(journal, scope, observations, end, target)).amount
-    unrealized = value-remaining if value is not None and remaining is not None else None
-    return SecurityGainComponents(remaining,unrealized,total(realized),total(income),total(expenses),total(buys),total(sales),
+    return SecurityGainComponents(remaining,None,total(realized),total(income),total(expenses),total(buys),total(sales),
                                   tuple(dict.fromkeys(reasons)))

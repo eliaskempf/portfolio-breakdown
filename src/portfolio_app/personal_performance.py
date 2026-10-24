@@ -76,6 +76,14 @@ class HistoryCalculation:
         interval = bisect_right(self._security_dates, stamp) if stamp is not None else None
         return self._get(('securities', interval), lambda: replay_securities(self.journal.securities, as_of=stamp))
 
+    def security_gains(self, identity, stamp, target):
+        from portfolio_app.gain_components import recorded_security_gains
+        interval = bisect_right(self._security_dates, stamp)
+        def load():
+            book = next(b for b in self.journal.securities if b.position_id == identity)
+            return recorded_security_gains(book, self.securities(stamp), self.observations, stamp, target)
+        return self._get(('security_gains', identity, interval, target), load)
+
     def accounts(self, stamp):
         from portfolio_app.derivative_types import iso_date
         if stamp is not None:

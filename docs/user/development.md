@@ -66,7 +66,13 @@ calculate a complete history merely to
 choose an already-selected tab, or repeat calculations during the same render.
 Reuse chart results only while journal facts, observation revisions, scope, currency,
 period and calendar date remain unchanged. Within each chart, share dated ledger
-states across overlapping intervals without relaxing coverage checks. Account
+states across overlapping intervals without relaxing coverage checks. The Overview
+history chart, current-gain summary and category comparison share one calculation
+context for the same journal and observation snapshot. Current quotes remain
+separate from dated historical valuations. Recorded cost and cash components may
+be reused between transaction/fee dates; daily prices and reporting FX still
+resolve at the requested date. A new observation revision creates a new context,
+including when it arrives in a background fragment. Account
 history derives securities cash postings once per journal snapshot and reuses
 account states between cash/account event dates. A settlement value date alone
 does not release a pending receipt; explicit receipt events remain authoritative.

@@ -12,16 +12,17 @@ from portfolio_app.personal_performance import HistoryCalculation
 
 
 def known_category_performance(displayed, holdings, config, journal, observations, current_valued,
-                               bucket='', *, target='EUR', today=None):
+                               bucket='', *, target='EUR', today=None, calculation=None, current_values=None):
     today = today or date.today()
-    values = current_component_values(current_valued, journal)
+    calculation = calculation or HistoryCalculation(journal, observations)
+    values = (current_values if current_values is not None else
+              current_component_values(current_valued, journal, calculation=calculation))
     linked_cash = {link.position_id: link.account_id for link in journal.cash_links}
     accounts = {a.id for a in journal.accounts}
     # Removed closed holdings have no present value, but retain realized gain.
     # Include them in comparison membership without restoring an allocation row
     # or inferring a past category. A retained current assignment still applies.
     assignments = holdings.set_index('position_id').get('bucket_id', {})
-    calculation = HistoryCalculation(journal, observations)
     observations = calculation.observations
     balances = calculation.securities().positions
     closed = [dict(position_id=b.position_id, name=b.instrument_id, shares=0,
