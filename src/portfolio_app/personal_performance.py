@@ -13,6 +13,8 @@ from portfolio_app.account_journal import effective_events, replay
 from portfolio_app.history_observations import HistoryScope, index_observations, lookup, rate
 from portfolio_app.security_history import cash_postings, history_fingerprint, replay_securities, selected_events
 
+from portfolio_app.history_diagnostics import HistoryIssue as Issue
+
 ZERO = Decimal(0)
 
 
@@ -164,7 +166,7 @@ def opening_value_at(journal, scope, observations, stamp, target, *, calculation
                     continue
                 value = convert(event.amount * (-1 if event.kind == 'debt_open' else 1), event.currency, target, stamp, observations)
                 if value is None:
-                    reasons.append(f'{account}: missing opening {event.currency}/{target} FX on {stamp}')
+                    reasons.append(Issue(f'{account}: missing opening {event.currency}/{target} FX on {stamp}', 'fx'))
                 else:
                     total += value
         else:
@@ -195,11 +197,11 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
             if not state.quantity:
                 continue
             if any(c.get('conversions', {}).get(target, {}).get('method') == 'estimate' for c in state.costs):
-                reasons.append(f'{identity}: estimated FX is not historical acquisition evidence')
+                reasons.append(Issue(f'{identity}: estimated FX is not historical acquisition evidence', 'fx'))
                 continue
             cost = resolve_cost(list(state.costs), target, ObservationFX(observations))
             if cost.amount is None:
-                reasons.append(f'{identity}: {cost.note}')
+                reasons.append(Issue(f'{identity}: {cost.note}', 'transaction'))
             else:
                 total += cost.exact_amount
         else:
@@ -235,7 +237,7 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
         nonlocal total
         value = convert(amount, denomination, target, stamp, observations)
         if value is None:
-            reasons.append(f'{identity}: missing value or {denomination}/{target} FX on {stamp}')
+            reasons.append(Issue(f'{identity}: missing value or {denomination}/{target} FX on {stamp}', 'fx'))
         else:
             total += value
 
@@ -245,23 +247,23 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
         if book and confirmed_empty_before(book, stamp):
             continue
         if book is None or state is None or not state.boundary:
-            reasons.append(f'{identity}: no opening quantity on {stamp}')
+            reasons.append(Issue(f'{identity}: no opening quantity on {stamp}', 'transaction'))
             continue
         if state.issues:
-            reasons.append(f'{identity}: resolve historical events before valuing the reconstructed holding')
+            reasons.append(Issue(f'{identity}: resolve historical events before valuing the reconstructed holding', 'transaction'))
             continue
         if not state.quantity:
             continue
         price = lookup(observations, 'price', identity, stamp) or lookup(observations, 'price', book.instrument_id, stamp)
         if price is None:
-            reasons.append(f'{identity}: missing price on {stamp}')
+            reasons.append(Issue(f'{identity}: missing price on {stamp}', 'price'))
         else:
             add(state.quantity * price.amount, price.currency, identity)
     events = effective_events(journal)
     for account in scope.accounts:
         openings = [e for e in events if e.account_id == account and e.kind == 'cash_open']
         if not openings or any(e.date > stamp for e in openings):
-            reasons.append(f'{account}: missing opening cash coverage on {stamp}')
+            reasons.append(Issue(f'{account}: missing opening cash coverage on {stamp}', 'transaction'))
         for (owner, currency), amount in accounts.cash.items():
             if owner == account:
                 add(None if (owner, currency) in accounts.unknown_cash else amount, currency, account)
@@ -273,7 +275,7 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
                 continue
             price = lookup(observations, 'price', identity, stamp) or lookup(observations, 'price', balance.contract.id, stamp)
             if price is None or price.currency != balance.contract.currency:
-                reasons.append(f'{identity}: missing exact-contract mark on {stamp}')
+                reasons.append(Issue(f'{identity}: missing exact-contract mark on {stamp}', 'price'))
             else:
                 add(balance.unsettled_pnl(price.amount), balance.contract.currency, identity)
         for identity, claim in accounts.pending.items():
@@ -311,29 +313,29 @@ def coverage_reasons(journal, scope, observations, start, end, *, fingerprint=No
                         and (review.facts_fingerprint == position_fingerprint(book.position_id)
                              or review.facts_fingerprint == accounting_fingerprint(journal)))
     if not reviewed:
-        reasons.append('Review complete scope membership, transactions, income and charges for this interval')
+        reasons.append(Issue('Review complete scope membership, transactions, income and charges for this interval', 'coverage'))
     for identity in scope.positions:
         book = books.get(identity)
         if book is None or not book.active:
-            reasons.append(f'{identity}: history is not activated')
+            reasons.append(Issue(f'{identity}: history is not activated', 'transaction'))
             continue
         events = selected_events(book)
         if not any(e.kind == 'opening' and e.date <= start for e in events) and not confirmed_empty_before(book, start):
-            reasons.append(f'{identity}: missing opening snapshot')
+            reasons.append(Issue(f'{identity}: missing opening snapshot', 'transaction'))
         if any(e.kind in ('opening', 'note', 'cost') and start < e.date <= end
                and not (e.kind == 'opening' and not e.quantity and e.source == 'confirmed_zero_start') for e in events):
-            reasons.append(f'{identity}: unresolved event or replacement boundary in interval')
+            reasons.append(Issue(f'{identity}: unresolved event or replacement boundary in interval', 'transaction'))
         if any(e.kind in ('buy', 'sell', 'distribution') and start < e.date <= end and not e.charges_known for e in events):
-            reasons.append(f'{identity}: charges have not been confirmed')
+            reasons.append(Issue(f'{identity}: charges have not been confirmed', 'transaction'))
     classes = dict(observations.classifications)
     for e in effective_events(journal):
         if e.account_id not in scope.accounts:
             continue
         if start < e.date <= end or (e.date == start and account_starts_on(journal, e.account_id, start)):
             if e.kind in ('cash_open', 'debt_open', 'snapshot') and e.date > start:
-                reasons.append(f'{e.id}: account opening boundary inside interval')
+                reasons.append(Issue(f'{e.id}: account opening boundary inside interval', 'transaction'))
             if e.kind == 'cash_adjust' and classes.get(e.id, 'boundary') == 'boundary':
-                reasons.append(f'{e.id}: classify or resolve the cash adjustment')
+                reasons.append(Issue(f'{e.id}: classify or resolve the cash adjustment', 'transaction'))
     return tuple(dict.fromkeys(reasons))
 
 
@@ -345,7 +347,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
         if not (start < stamp <= end or (include_start and start == stamp)):
             return
         value = convert(amount, currency, target, stamp, observations)
-        reason = '' if value is not None else f'{identity}: missing cash amount or dated FX'
+        reason = '' if value is not None else Issue(f'{identity}: missing cash amount or dated FX', 'transaction' if amount is None else 'fx')
         flows.append(ExternalFlow(identity, stamp, sequence, value, reason))
         if reason:
             reasons.append(reason)
@@ -372,7 +374,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
                 continue
             price = lookup(observations, 'price', book.position_id, e.date) or lookup(observations, 'price', book.instrument_id, e.date)
             if price is None:
-                reasons.append(f'{e.id}: supply transfer-date market value')
+                reasons.append(Issue(f'{e.id}: supply transfer-date market value', 'transaction'))
                 flows.append(ExternalFlow(e.id, e.date, e.sequence, None))
             else:
                 add(e.id, e.date, e.sequence, e.quantity * price.amount * (-1 if source_inside else 1), price.currency)
@@ -388,7 +390,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
             if classification == 'external':
                 add(e.id, e.date, e.sequence, e.amount, e.currency, include_start=initial)
             elif (start < e.date <= end or initial and e.date == start) and (classification == 'boundary' or classification == 'income' and e.amount < 0 or classification == 'expense' and e.amount > 0):
-                reasons.append(f'{e.id}: unresolved cash adjustment')
+                reasons.append(Issue(f'{e.id}: unresolved cash adjustment', 'transaction'))
         elif e.kind in ('transfer', 'fx') and inside != (other or (e.kind == 'fx' and not e.other_account_id and inside)):
             if inside:
                 add(e.id, e.date, e.sequence, -e.amount, e.currency, include_start=initial)
@@ -403,7 +405,7 @@ def xirr(opening, ending, flows, start, end):
     from scipy.optimize import brentq
     days = (date.fromisoformat(end)-date.fromisoformat(start)).days
     if days <= 0 or opening < 0 or ending < 0:
-        return None, 'Annualization needs positive duration and nonnegative endpoint equity'
+        return None, Issue('Annualization needs positive duration and nonnegative endpoint equity', 'duration')
     amounts = {start: -opening}
     for flow in flows:
         amounts[flow.date] = amounts.get(flow.date, ZERO) - flow.amount
@@ -411,7 +413,7 @@ def xirr(opening, ending, flows, start, end):
     values = [(stamp, float(value)) for stamp, value in sorted(amounts.items()) if value]
     signs = [1 if amount > 0 else -1 for _, amount in values]
     if not signs or signs[0] != -1 or signs[-1] != 1 or sum(a != b for a, b in zip(signs, signs[1:])) != 1:
-        return None, 'A unique XIRR cannot be established for these cash flows'
+        return None, Issue('A unique XIRR cannot be established for these cash flows', 'irr_unresolved')
     times = [(date.fromisoformat(stamp)-date.fromisoformat(start)).days/365 for stamp, _ in values]
     amounts = [amount for _, amount in values]
     scale = max(abs(a) for a in amounts)
@@ -426,13 +428,13 @@ def xirr(opening, ending, flows, start, end):
             raise ValueError
         return result, ''
     except (ValueError, OverflowError):
-        return None, 'No numerically verified XIRR solution in the supported range'
+        return None, Issue('No numerically verified XIRR solution in the supported range', 'irr_unresolved')
 
 
 def time_weighted(opening, ending, flows, observations, scope, target):
     ordered = [(flow.date, flow.sequence) for flow in flows if flow.amount]
     if len(ordered) != len(set(ordered)):
-        return None, 'Assign distinct ordering to same-day external flows before calculating exact time-weighted returns'
+        return None, Issue('Assign distinct ordering to same-day external flows before calculating exact time-weighted returns', 'ordering')
     previous, factor = opening, Decimal(1)
     invested = opening > 0
     if previous < 0 or ending < 0:
@@ -443,9 +445,9 @@ def time_weighted(opening, ending, flows, observations, scope, target):
         before = lookup(observations, 'value', scope.key, flow.date, side='before', boundary=flow.id, currency=target)
         after = lookup(observations, 'value', scope.key, flow.date, side='after', boundary=flow.id, currency=target)
         if before is None or after is None:
-            return None, f'{flow.id}: supply exact before/after flow valuations'
+            return None, Issue(f'{flow.id}: supply exact before/after flow valuations', 'boundary')
         if before.amount < 0 or after.amount < 0 or abs(after.amount-before.amount-flow.amount) > Decimal('.01'):
-            return None, f'{flow.id}: flow valuations do not reconcile with nonnegative equity'
+            return None, Issue(f'{flow.id}: flow valuations do not reconcile with nonnegative equity', 'boundary')
         if previous:
             factor *= before.amount/previous
         elif before.amount:
@@ -518,7 +520,7 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
             negative_dates = known_negative_equity_dates(journal, scope, observations, start, end, target)
         negative = any(start <= stamp <= end for stamp in negative_dates)
         if negative or opening.amount < 0 or ending.amount < 0:
-            mwr_reasons = twr_reasons = ('Percentage return is unavailable across negative equity',)
+            mwr_reasons = twr_reasons = (Issue('Percentage return is unavailable across negative equity', 'negative_equity'),)
         else:
             if annualized:
                 mwr, reason = xirr(opening.amount, ending.amount, flows, start, end)

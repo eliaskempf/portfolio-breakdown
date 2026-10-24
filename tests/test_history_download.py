@@ -86,7 +86,7 @@ def test_partial_download_keeps_prices_and_exposes_missing_fx(tmp_path, monkeypa
     monkeypatch.setattr(market, 'fetch_fx', unavailable)
     updated, errors = download_scope_observations(tmp_path, journal, scope, ObservationStore(), '2024-01-01', '2024-02-01', 'EUR')
     assert updated.observations == (price,) and not updated.reviews
-    assert len(errors) == 2 and all('supply observations manually' in error for error in errors)
+    assert len(errors) == 2 and all('retry historical FX' in error for error in errors)
     assert not history_view(journal, scope, updated, today=date(2024, 2, 1)).useful
 
 

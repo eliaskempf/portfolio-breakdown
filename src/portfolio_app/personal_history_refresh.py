@@ -12,6 +12,7 @@ from portfolio_app.market_data import coordinator
 from portfolio_app.personal_market import merge_download
 from portfolio_app.positions import read_snapshot
 from portfolio_app.security_history import history_fingerprint
+from portfolio_app.settlement_archive import SettlementArchive
 from portfolio_app.workspace_lock import workspace_lock
 
 
@@ -39,7 +40,9 @@ class HistoryRefresher:
             return RefreshStatus()
         start, end = dates[0], (today or date.today()).isoformat()
         snapshot = read_snapshot(directory/'holdings.csv')
-        signature = sha256(repr((scope, history_fingerprint(journal), snapshot.revision, start, end, target)).encode()).hexdigest()
+        from portfolio_app.account_journal import load_journal
+        _, journal_revision = load_journal(directory)
+        signature = sha256(repr((scope, history_fingerprint(journal), snapshot.revision, SettlementArchive(directory).revision(), start, end, target)).encode()).hexdigest()
         identity = str(directory), signature
         with self._lock:
             if self.pending(directory):
@@ -51,10 +54,10 @@ class HistoryRefresher:
                 if timedelta() <= self.now()-stamp < cooldown:
                     return RefreshStatus(errors=errors)
             started = self.jobs.request(directory, 'personal-history',
-                lambda: self._run(directory, journal, scope, start, end, target, snapshot.revision, identity))
+                lambda: self._run(directory, journal, scope, start, end, target, snapshot.revision, identity, journal_revision))
             return RefreshStatus(pending=started, errors=() if started else ('Market-data queue is busy. Try again shortly.',))
 
-    def _run(self, directory, journal, scope, start, end, target, holdings_revision, identity):
+    def _run(self, directory, journal, scope, start, end, target, holdings_revision, identity, journal_revision):
         try:
             with write_lock(directory/'.personal-history-refresh.lock', blocking=False):
                 from portfolio_app.personal_market import download_scope_observations
@@ -64,8 +67,11 @@ class HistoryRefresher:
                 original_ids = {o.id for o in before.observations}
                 incoming = tuple(replace(o, replaces='') for o in active_observations(updated) if o.id not in original_ids)
                 with workspace_lock(directory):
-                    if read_snapshot(directory/'holdings.csv').revision != holdings_revision:
-                        errors = ('Positions changed during loading. Refresh history again.',)
+                    from portfolio_app.account_journal import load_journal
+                    _, current_revision = load_journal(directory)
+                    if (read_snapshot(directory/'holdings.csv').revision != holdings_revision
+                            or current_revision != journal_revision):
+                        errors = ('Positions or journal changed during loading. Refresh history again.',)
                     elif incoming:
                         # Reload under the lock: manual edits and other scopes made
                         # during the network request must survive the merge.

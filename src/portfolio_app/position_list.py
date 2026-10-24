@@ -61,7 +61,7 @@ def render_position_list(path, snapshot, allocation=None, *, valued=None, accoun
     view, metric_columns, metrics, detail = position_metric_toolbar(holdings, path.parent, demo=demo, account_valued=account_valued)
     if view == 'History':
         from portfolio_app.history_status_ui import render_history_status_list
-        render_history_status_list(path, snapshot, holdings)
+        render_history_status_list(path, snapshot, holdings, demo=demo)
         return
     rows = position_rows(holdings, allocation, percent=percent)
     instruments = holdings.set_index('position_id').id.to_dict()

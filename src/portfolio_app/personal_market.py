@@ -95,7 +95,7 @@ def download_scope_observations(directory, journal, scope, store, start, end, ta
                 raise DataError('No historical prices returned.')
             updated = merge_download(updated, prices)
         except Exception as exc:
-            errors.append(f'{identity}: {type(exc).__name__}; supply observations manually')
+            errors.append(f'{identity}: {type(exc).__name__}; retry historical prices')
     subjects = set(scope.positions)
     for book in journal.securities:
         if book.position_id in scope.positions or book.account_id in scope.accounts:
@@ -126,5 +126,5 @@ def download_scope_observations(directory, journal, scope, store, start, end, ta
                 raise DataError('No historical FX returned.')
             updated = merge_download(updated, rates)
         except Exception as exc:
-            errors.append(f'{currency}/{target}: {type(exc).__name__}; supply observations manually')
+            errors.append(f'{currency}/{target}: {type(exc).__name__}; retry historical FX')
     return updated, errors
