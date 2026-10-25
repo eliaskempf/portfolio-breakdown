@@ -130,6 +130,12 @@ chart. The category comparison stays visible below history, without repeating th
 category or position tables. Choosing another view retains its usual current-portfolio summary. Use **1M, 3M, 6M, YTD, 1Y, 3Y, 5Y or All** to look back from today.
 The chart axis ends today; period gain uses the first and latest supported
 valuations in the selected window. Annualized return uses the full recorded interval. Verified closed-market endpoints can use the last eligible closing quote, retaining its actual as-of date.
+Stuttgart listings are recognized from the provider's exchange and timezone
+metadata and use the Stuttgart calendar, including its
+[published trading holidays](https://www.boerse-stuttgart.de/en/investing/market-hours/).
+A metadata refresh updates previously downloaded evidence without inventing
+weekend quotes. A missing price on a scheduled trading day still blocks the
+affected valuation.
 The latest valuation date remains visible. Lines connect neighboring known values
 across missing observations; this does not supply prices for calculation purposes.
 

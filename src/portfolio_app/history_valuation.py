@@ -16,6 +16,7 @@ VENUES = {
     'ASE': ('XNYS', 'America/New_York'),
     'GER': ('XETR', 'Europe/Berlin'),
     'FRA': ('XFRA', 'Europe/Berlin'),
+    'STU': ('XSTU', 'Europe/Berlin'),
     'LSE': ('XLON', 'Europe/London'),
     'PAR': ('XPAR', 'Europe/Paris'),
     'AMS': ('XAMS', 'Europe/Amsterdam'),

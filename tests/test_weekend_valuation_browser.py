@@ -4,6 +4,7 @@ import socket
 import subprocess
 import sys
 import time
+from dataclasses import replace
 from urllib.request import urlopen
 
 import pytest
@@ -16,8 +17,13 @@ from test_weekend_valuation_fx import example
 playwright = pytest.importorskip('playwright.sync_api')
 
 
-def test_friday_fx_provenance_and_monday_return_render(tmp_path):
+@pytest.mark.parametrize('venue,timezone', [('NYQ', 'America/New_York'), ('STU', 'Europe/Berlin')])
+def test_friday_fx_provenance_and_monday_return_render(tmp_path, venue, timezone):
     journal, scope, store = example()
+    from portfolio_app.history_valuation import listing_calendar
+    calendar, zone = listing_calendar({'exchangeName': venue, 'exchangeTimezoneName': timezone})
+    store = replace(store, observations=tuple(replace(o, calendar=calendar, exchange_timezone=zone)
+        if o.kind == 'price' else o for o in store.observations))
     save_journal(tmp_path, journal, None)
     save_observations(tmp_path, store, None)
     (tmp_path/'holdings.csv').write_text('position_key,id,name,shares,acquisition_price,acquisition_currency\n'
