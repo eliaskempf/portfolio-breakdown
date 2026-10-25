@@ -1,5 +1,6 @@
 """Period selection and observed history series, independent of Streamlit."""
 from calendar import monthrange
+from portfolio_app.history_diagnostics import HistoryIssue
 from dataclasses import dataclass
 from datetime import date
 
@@ -70,7 +71,7 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     # A later transaction cannot disappear merely because its valuation is absent.
     if dates and dates[-1] > all_end:
         from dataclasses import replace
-        reason = ('The latest recorded event has no supported ending valuation',)
+        reason = (HistoryIssue('The latest recorded event has no supported ending valuation', 'endpoint'),)
         all_result = replace(all_result, money_weighted=None, time_weighted=None,
                              money_weighted_reasons=reason, time_weighted_reasons=reason)
     all_known = summarize_known_gain(journal,scope,observations,all_end,target,calculation=calculation)
@@ -99,6 +100,7 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
         points.append({'Date':stamp, 'Value':float(values[stamp]) if values[stamp] is not None else None,
             'Invested capital':float(invested) if invested is not None else None,
             'Total gain':float(gain) if gain is not None else None,
+            'Price as of': ', '.join(sorted({e.as_of for e in valuations[stamp].evidence if e.as_of != stamp})),
             'TWR':inspected.time_weighted})
     # Rendering may join neighbors; missing observations stay missing in math.
     gaps = tuple((stamp,valuations[stamp].reasons) for stamp in stamps if start <= stamp <= end and values[stamp] is None)

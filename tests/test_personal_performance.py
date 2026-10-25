@@ -76,7 +76,7 @@ def test_exact_twr_requires_reconciling_before_after_flow_values():
     store = observed(j, scope)
     for side, value in [('before',120),('after',180)]:
         store = add_observation(store, Observation(side,'value',scope.key,'2024-07-01',D(value),'EUR',side=side,boundary='security:buy'))
-    result = calculate_history(j, scope, store, '2024-01-01','2025-01-01')
+    result = calculate_history(j, scope, store, '2024-01-01','2025-01-01', method='exact')
     assert result.time_weighted == pytest.approx(.5)
 
 

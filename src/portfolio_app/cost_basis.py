@@ -174,6 +174,7 @@ class ResolvedCost:
     estimated: bool = False
     note: str = ''
     exact_amount: Decimal | None = None
+    reason_kind: str = 'transaction'
 
 
 def resolve_cost(parts, target, historical=None):
@@ -198,7 +199,7 @@ def resolve_cost(parts, target, historical=None):
         elif part['date'] and historical is not None:
             conversion = historical.get(part['currency'], target, part['date'])
             if conversion.rate is None:
-                return ResolvedCost(None, note=conversion.note + ' Excluded from gains.')
+                return ResolvedCost(None, note=conversion.note + ' Excluded from gains.', reason_kind='fx')
             total += amount * Decimal(str(conversion.rate))
             notes.append(f'Historical market FX ({conversion.observed_on})')
         else:

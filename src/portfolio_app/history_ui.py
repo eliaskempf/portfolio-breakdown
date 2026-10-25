@@ -108,7 +108,7 @@ def _transaction_table(records, book):
     entries = []
     for e in records:
         charges = ' + '.join(_money(c.amount, c.currency) for c in e.charges)
-        asset_fees = ' + '.join(f'{c.quantity} {"asset units"}' for c in e.asset_charges)
+        asset_fees = ' + '.join(f'{c.quantity} asset units' for c in e.asset_charges)
         charges = ' + '.join(v for v in (charges,asset_fees) if v)
         entries.append(dict(zip(columns, [e.date or 'Unknown', _KIND_LABELS.get(e.kind,e.kind.title()),
             str(e.quantity) if e.quantity or e.kind in ('opening','checkpoint') else '—', '—' if e.kind in ('swap','reward','asset_fee','checkpoint','inventory_in','inventory_out') else _money(e.gross, e.currency),
@@ -118,7 +118,7 @@ def _transaction_table(records, book):
             entries[-1]['Monetary valuation'] = _money(e.valuation_amount,e.valuation_currency)
             if e.valuation_quality == 'estimated':
                 entries[-1]['Monetary valuation'] += ' · estimated'
-        if e.kind in ('opening','checkpoint','inventory_in','inventory_out'):
+        if e.kind in ('checkpoint','inventory_in','inventory_out') or (e.kind == 'opening' and e.source.startswith('transaction_csv_v')):
             entries[-1]['Evidence'] = (
                 ('Observed '+e.observed_at if e.observed_at else 'Observation date unknown') +
                 ' · reporting boundary '+e.date if e.kind in ('opening','checkpoint') else
@@ -136,6 +136,8 @@ def _related_transactions(journal, book):
         if owner.position_id == book.position_id:
             continue
         for event in selected_events(owner):
+            if not event.source.startswith('transaction_csv_v'):
+                continue
             if event.other_position_id == book.position_id:
                 rows.append({'Date': event.date, 'Transaction': 'Swap received' if event.kind == 'swap' else 'Transfer received',
                              'Shares': str(event.received_quantity if event.kind == 'swap' else event.quantity),
@@ -801,7 +803,7 @@ def render_portfolio_history(directory, prepared, *, label='Portfolio value', pe
         label=label, prepared=prepared, percent=percent, on_toggle_gain=on_toggle_gain, automatic=automatic)
 
 
-def render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False, show_summary=True):
+def render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False, show_summary=True, is_active=None):
     options = dict(key=key, label=label, percent=percent, on_toggle_gain=on_toggle_gain, show_summary=show_summary)
     if not automatic:
         _render_history_results(directory, journal, scope, prepared=prepared, **options)
@@ -824,6 +826,8 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
     @local_dialog_updates()
     def history_region():
         nonlocal cached, signature, refresh, waiting
+        if is_active is not None and not is_active():
+            return
         if waiting and not refresher.pending(directory):
             # A different scope may have occupied the workspace's single job.
             # Ensure this scope once, then stop scheduling on timer ticks.
@@ -889,7 +893,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
         interaction_key = value_key
     displayed_gain = (100*twr if twr is not None else None) if percent else gain
     gain_text = return_percent(displayed_gain) if percent else (money(gain,signed=True) if gain is not None else '—')
-    gain_tooltip = ('TWR · ' if percent else 'Gain · ') + ('All history' if view.covers_full_history else period) + (' · Click for amount' if percent else ' · Click for TWR')
+    gain_tooltip = ('Daily TWR · ' if percent else 'Gain · ') + ('All history' if view.covers_full_history else period) + (' · Click for amount' if percent else ' · Click for TWR')
     with summary:
         if show_summary and (total_value is not None or full.ending_value is not None):
             cols = st.columns([2,1,1])
@@ -897,6 +901,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
                 st.metric(label, money(total_value), delta=gain_text,
                     delta_color=('inverse' if percent and displayed_gain < 0 else 'normal') if displayed_gain else 'off', delta_arrow='off',
                     help=f"{'TWR' if percent else 'Gain'}: {'all history' if view.covers_full_history else period}. Chart hover: total to date. "
+                        + ('Daily convention: inflows at day start, outflows at day end; fees included. ' if percent else '')
                         + explanation((full if view.covers_full_history else result).time_weighted_reasons if percent else known.reasons))
                 if known.partial:
                     st.caption(known.coverage_note, help=known.coverage_help)
@@ -937,6 +942,13 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
             trace.text = [f'Total gain: {money(p["Total gain"], signed=True)}<br>TWR: '
                           + return_percent(None if p['TWR'] is None else 100*p['TWR']) for p in points]
             trace.hovertemplate = trace.hovertemplate.replace('<extra>', '<br>%{text}<extra>')
+        if any(p.get('Price as of') for p in points):
+            trace = next(t for t in figure.data if t.name == 'Value')
+            previous_text = list(trace.text) if trace.text is not None else [''] * len(points)
+            trace.text = [text + ('<br>Quote as of: '+p['Price as of'] if p.get('Price as of') else '')
+                          for text, p in zip(previous_text, points)]
+            if show_summary:
+                trace.hovertemplate = trace.hovertemplate.replace('<extra>', '<br>%{text}<extra>')
         st.plotly_chart(figure, key=key+'chart', width='stretch', config=chart_config())
     elif view.useful:
         st.caption('Not enough valuations in this period. Choose a longer period to see history.')
@@ -950,6 +962,9 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     notes = []
     if view.all_end != view.today:
         notes.append(f'Latest valuation: {view.all_end}')
+    carried = sorted({e.as_of for e in full.valuation_evidence if e.as_of != e.requested_date})
+    if carried:
+        notes.append('Market closed · Quotes as of '+', '.join(carried))
     if view.missing:
         notes.append('Some valuations missing · lines connect available values')
     if notes:

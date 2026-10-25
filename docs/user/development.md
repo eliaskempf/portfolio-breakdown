@@ -48,7 +48,7 @@ uses the shared total known gain calculation, just like All. Personal and price
 histories use currency symbols consistently in summaries, axes and tooltips.
 Leaving restores the latest value and period gain. Clicking the gain badge toggles between amount and cumulative TWR; its metric name and period
 appear only in a concise tooltip. Return percentages use ↑/↓; monetary gains
-keep +/− signs. Zero and unavailable returns have no direction arrow. TWR requires exact boundaries; no remaining-cost denominator is substituted.
+keep +/− signs. Zero and unavailable returns have no direction arrow. TWR defaults to the documented daily flow convention; no remaining-cost denominator is substituted. Exact event TWR remains explicit.
 Annualized money-weighted return always uses full recorded history, independently
 of the chart range or pointer. Keep one summary row below the view tabs.
 The allocation measure switch belongs above the allocation table, aligned with
@@ -76,11 +76,15 @@ including when it arrives in a background fragment. Account
 history derives securities cash postings once per journal snapshot and reuses
 account states between cash/account event dates. A settlement value date alone
 does not release a pending receipt; explicit receipt events remain authoritative.
-Background data refreshes must remain local to the affected result. Verify actual
+Background data refreshes must remain local to the affected result. Dialog polling
+fragments must stop writing when their captured position or view is no longer
+selected; a stale timer must not draw into a replacement view. Verify actual
 transitions with delayed synthetic data: settled screenshots alone miss old
 controls and charts briefly appearing during a switch.
 
-Position opening and clean dismissal rerun only the dialog host. Child workflows
+Position opening and clean dismissal rerun only the dialog host. Creating or
+discarding an unsaved editor draft refreshes the parent toolbar once so its
+resume action matches the retained draft. Child workflows
 share a local refresh boundary, including evidence saves, reconciliation, market
 evidence repairs and completeness review. Persisted changes refresh current
 position values locally and refresh the parent page once after dismissal. Pending
@@ -161,11 +165,17 @@ synthetic directory; it reuses the normal alert explanation and acknowledgment U
 
 ### Calculation contracts
 
+`csv_transaction_imports.py` reconstructs generic CSV evidence; the existing
+`transaction_imports.py` retains PDF normalization and review. Both publish to the
+same journal. CSV activation can record the displayed per-position completeness
+intervals atomically with its application reviews, or explicitly apply incomplete
+history. Reconciliation never implicitly certifies completeness.
+
 `asset_history.py` calculates approximate daily performance over the existing
 forward securities replay and scope-aware external flows. Its calculation takes
 an explicit opening, never an ending quantity. Selected-period capital starts at
-market value. Daily Dietz uses midpoint flows and does not alter exact-return
-coverage. Inventory with unresolved flow classification or a balance reset within
+market value. Its optional import-review diagnostic uses midpoint daily Dietz
+and does not replace standard history, daily TWR, XIRR or their coverage gates. Inventory with unresolved flow classification or a balance reset within
 the interval leaves dependent gains and returns unavailable.
 
 `transaction_evidence.py` provides signed per-location and per-asset diagnostics
@@ -188,8 +198,9 @@ chart or be newly saved. Explicit mapping review replaces it under normal docume
 backup, locking and revision checks. Applied history uses active journal events;
 retained-only revisions affect evidence diagnostics until separately activated.
 
-Generic transaction CSV v2 adds inventory receipts/removals, balance checkpoints
-and sourced monetary estimates to the v1 contract. Journal v4 persists these
+The public Transaction CSV template uses `schema_version=2`, including inventory
+receipts/removals, balance checkpoints and sourced monetary estimates. Legacy
+receipt decoding remains internal compatibility, without a public format selector. Journal v4 persists these
 facts; serializers retain v1–v3 wire shapes and receipt identities. A checkpoint
 is an end-of-day reporting boundary with a separate optional observation
 timestamp. It resets authoritative units/cost without synthesizing cash,
@@ -588,7 +599,7 @@ remains exact, including when a derived lot is reloaded at another Decimal preci
 
 `history_observations.py` stores dated observations and scope-specific coverage
 reviews. `personal_performance.py` computes equity, external flows, money-weighted
-returns and exact time-weighted returns without Streamlit or network calls.
+returns and daily/exact time-weighted returns without Streamlit or network calls.
 `personal_market.py` supplies provider observations with explicit adjustment
 semantics. `history_ui.py` renders the optional workflows. Keep source-position
 history separate from present-day ETF constituent expansion and hypothetical risk
@@ -623,8 +634,7 @@ opens portfolio **Performance** by default. Both views use periods ending today.
 
 The demo includes exact flow-boundary observations for the portfolio and the
 fee-free money-market holding. The equity holding has a money-weighted return;
-its exact time-weighted return remains unavailable because separate same-day fee
-timing and flow-boundary values are not supplied. Editing financial history
+daily TWR includes its recorded fees; exact event TWR additionally needs supported event boundaries. Editing financial history
 invalidates the prior coverage confirmation, as it does for any workspace.
 
 ### Transaction CSV boundary

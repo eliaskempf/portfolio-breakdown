@@ -72,6 +72,15 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
                 st.html(f'<span hidden data-position-view-ready="{view}"></span>')
 
 
+def _position_view_guard(position_id):
+    """A polling fragment must not write into a later dialog view's DOM path."""
+    keys = ('position_edit_selected', f'position_edit_detail_view_{position_id}',
+            f'position_edit_history_mode_{position_id}')
+    expected = {key: st.session_state.get(key) for key in keys}
+    return lambda: (st.session_state.get('position_edit_dialog', True)
+                    and all(st.session_state.get(key) == value for key, value in expected.items()))
+
+
 def _render_position_view(view, row, data_dir, journal, has_history, *, demo, allocation):
     if view == 'History':
         _render_history_view(row, data_dir, journal, has_history, demo=demo, allocation=allocation)
@@ -88,7 +97,8 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
             return
         from portfolio_app.history_ui import render_history_results, _key
         from portfolio_app.history_observations import HistoryScope
-        render_history_results(data_dir,journal,HistoryScope((row.position_id,)),key=_key(data_dir,row.position_id)+'result_',label='Position value',automatic=not demo,show_summary=False)
+        render_history_results(data_dir,journal,HistoryScope((row.position_id,)),key=_key(data_dir,row.position_id)+'result_',label='Position value',automatic=not demo,show_summary=False,
+                               is_active=_position_view_guard(row.position_id))
         return
     if view == 'Transactions':
         from portfolio_app.history_ui import render_position_history
@@ -107,7 +117,8 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
         service = HistoryService(DemoHistoryProvider(), data_dir / '.cache' / 'history') if synthetic_prices else history_for(data_dir)
         render_market_history(row.ticker, data_dir, key=f'position_edit_history_{row.position_id}_',
             demo=synthetic_prices, manual=pd.notna(row.get('manual_price', float('nan'))), service=service,
-            native_currency=row.get('quote_currency'), heading='')
+            native_currency=row.get('quote_currency'), heading='',
+            is_active=_position_view_guard(row.position_id))
         return
     names = {b.id: b.name for b in allocation.buckets} if allocation else {}
     details = {'Quantity': f"{row.shares:g} {row.get('quantity_unit') or 'units'}", 'Account': row.get('account') or '—',
@@ -189,10 +200,16 @@ def _render_history_view(row, data_dir, journal, has_history, *, demo, allocatio
         selector = (f'[role="dialog"]:has([aria-label="History type"] [role="radio"]:nth-of-type({index})[aria-checked="true"]) '
                     f'.st-key-position_history_body:not(:has([data-position-history-ready="{name}"]))')
         rules.append(selector+', '+selector+' * {visibility:hidden!important;}')
+        other = 'Price' if name == 'Holdings' else 'Holdings'
+        rules.append(f'[role="dialog"]:has([aria-label="History type"] [role="radio"]:nth-of-type({index})[aria-checked="true"]) '
+                     f'.st-key-position_history_{other} {{display:none!important;}}')
     st.html('<style>'+''.join(rules)+'</style>')
     with st.container(key='position_history_body'):
-        body = st.empty()
-        with body.container():
-            with st.container(key='position_history_'+mode):
-                _render_position_view(mode, row, data_dir, journal, has_history, demo=demo, allocation=allocation)
-                st.html(f'<span hidden data-position-history-ready="{mode}"></span>')
+        # Timed fragments address numeric DOM paths, not container keys. Keep
+        # separate fixed slots so an in-flight Holdings update cannot land in
+        # the new Price controls while the server processes a view switch.
+        for name in ('Holdings', 'Price'):
+            with st.container(key='position_history_'+name):
+                if mode == name:
+                    _render_position_view(mode, row, data_dir, journal, has_history, demo=demo, allocation=allocation)
+                    st.html(f'<span hidden data-position-history-ready="{mode}"></span>')

@@ -104,8 +104,8 @@ def create_history_demo(directory: Path, *, end: date | None = None, market_pric
     scopes.extend(HistoryScope((b.position_id,)) for b in books)
     store = ObservationStore(tuple(observations), tuple(CoverageReview(f'demo-review-{i}',scope,stamp(0),stamp(730),history_fingerprint(journal)) for i,scope in enumerate(scopes)))
     # Exact demo boundaries for portfolio deposits/withdrawals and the fee-free
-    # cash-fund purchase. Equity MWR is available; exact equity TWR is deliberately
-    # unavailable without separate same-day fee timing/valuations.
+    # cash-fund purchase. Daily returns use the generated daily prices. Exact
+    # equity returns additionally require distribution-time boundary values.
     for scope in (scopes[0], scopes[2]):
         flows, reasons = external_flows(journal,scope,store,stamp(0),stamp(730),'EUR')
         assert not reasons

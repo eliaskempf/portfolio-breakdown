@@ -1,5 +1,6 @@
 """Per-position history diagnostics using the existing coverage and metric rules."""
 from dataclasses import dataclass
+from portfolio_app.history_diagnostics import issue_kind, issue_tree
 from datetime import date
 
 from portfolio_app.gain_accounting import scope_dates
@@ -22,6 +23,9 @@ class HistoryStatus:
     needs_attention: bool = True
     start: str = ''
     end: str = ''
+    money_weighted: str = '—'
+    time_weighted: str = '—'
+    freshness: str = ''
 
 
 def position_history_statuses(holdings, journal, observations, *, target='EUR', today=None):
@@ -90,19 +94,21 @@ def position_history_statuses(holdings, journal, observations, *, target='EUR', 
                 reasons.extend(calculation.value(scope, latest, target).reasons)
             summaries[scope] = view, coverage, tuple(dict.fromkeys(reasons)), latest
         view, coverage, reasons, latest = summaries[scope]
-        unconfirmed = any(reason.startswith('Review complete scope') for reason in coverage)
-        transaction_issues = [reason for reason in coverage if not reason.startswith('Review complete scope')]
-        cost_issues = [reason for reason in view.all_result.capital_reasons if 'FX' not in reason]
+        unconfirmed = any(issue_kind(reason) == 'coverage' for reason in coverage)
+        transaction_issues = [reason for reason in coverage if issue_kind(reason) != 'coverage']
+        cost_issues = [reason for reason in view.all_result.capital_reasons if issue_kind(reason) == 'transaction']
         transaction_issues.extend(cost_issues)
         transactions = ('Unapplied changes' if pending else 'Needs transaction details' if transaction_issues else
                         'Not confirmed' if unconfirmed else 'Confirmed')
-        missing_prices = any('missing price' in reason or 'missing exact-contract mark' in reason for reason in reasons)
-        missing_fx = any(' FX' in reason or 'dated FX' in reason for reason in reasons)
-        flow_values = any('before/after flow valuations' in reason or 'flow valuations do not reconcile' in reason for reason in reasons)
+        evidence_reasons = tuple(issue_tree(reasons))
+        missing_prices = any(issue_kind(reason) == 'price' for reason in evidence_reasons)
+        missing_fx = any(issue_kind(reason) == 'fx' for reason in evidence_reasons)
         market = ('Prices and FX missing' if missing_prices and missing_fx else 'Prices missing' if missing_prices else
-                  'FX / cash inputs missing' if missing_fx else 'Return valuations missing' if flow_values else
-                  'Available' if view.useful else 'Starting value only')
-        market_issue = missing_prices or missing_fx or flow_values
+                  'FX / cash inputs missing' if missing_fx else 'Available' if view.useful else 'Starting value only')
+        market_issue = missing_prices or missing_fx
+        mwr = 'Available' if view.all_result.money_weighted is not None else 'Unavailable' if view.useful else '—'
+        twr = 'Available' if view.all_result.time_weighted is not None else 'Unavailable' if view.useful else '—'
+        method_issue = view.useful and (mwr == 'Unavailable' or twr == 'Unavailable')
         if pending or transaction_issues or unconfirmed:
             action, screen = ('Review transactions' if pending or transaction_issues else 'Confirm history'), 'review'
         elif market_issue:
@@ -113,6 +119,11 @@ def position_history_statuses(holdings, journal, observations, *, target='EUR', 
             route = 'accounts' if account_managed else 'holdings'
         if account_managed:
             action = 'Open account journal'
+        current = calculation.value(scope, end, target)
+        carried = sorted({item.as_of for item in current.evidence if item.as_of != end})
+        freshness = ('Market closed · '+', '.join(carried) if current.amount is not None and carried else
+                     'Current' if current.amount is not None else f'Valued {view.all_end}')
         results.append(HistoryStatus(identity, transactions, market, action, route, screen, scope, reasons,
-                                     bool(pending or transaction_issues or unconfirmed or market_issue), view.all_start, latest))
+                                     bool(pending or transaction_issues or unconfirmed or market_issue or method_issue), view.all_start, latest, mwr, twr,
+                                     freshness))
     return tuple(results)

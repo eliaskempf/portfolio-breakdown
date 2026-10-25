@@ -15,8 +15,9 @@ from browser_support import settle
 playwright = pytest.importorskip('playwright.sync_api')
 
 
+@pytest.mark.parametrize('pending_refresh', [False, True])
 @pytest.mark.parametrize('viewport', [{'width':1440, 'height':1100}, {'width':1280, 'height':720}])
-def test_position_view_switches_clear_old_content_and_keep_card_geometry(tmp_path, viewport):
+def test_position_view_switches_clear_old_content_and_keep_card_geometry(tmp_path, viewport, pending_refresh):
     from datetime import date, timedelta
     journal, _ = setup(tmp_path)
     save_journal(tmp_path, journal, None)
@@ -53,6 +54,8 @@ apply_style()
 st.button('Open position',on_click=request_position,args=('position-0',))
 render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{},demo=False)
 ''')
+    script.write_text(script.read_text().replace('refresher.request=lambda *a,**k:RefreshStatus()',
+        f'refresher.request=lambda *a,**k:RefreshStatus(pending={pending_refresh})\nrefresher.pending=lambda _: {pending_refresh}'))
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
     process = subprocess.Popen([sys.executable, '-m', 'streamlit', 'run', str(script),
@@ -101,6 +104,9 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             page.mouse.move(0, 0)
             history_sizes = metrics.evaluate_all('es=>es.map(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height}))')
             dialog.get_by_role('radio', name='Price', exact=True).click(); settle(page)
+            if pending_refresh:
+                page.wait_for_timeout(2300); settle(page)
+            playwright.expect(dialog.locator('.js-plotly-plot')).to_have_count(1)
             playwright.expect(metrics).to_have_count(3)
             dialog.locator('.js-plotly-plot').wait_for(); settle(page)
             assert metrics.all_text_contents() == expected_summary
@@ -120,12 +126,14 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             assert not dialog.get_by_text('Required inputs', exact=True).count()
             assert not dialog.get_by_text('History inputs', exact=True).count()
             dialog.get_by_role('button', name='Review transactions', exact=True).click(); settle(page)
-            assert dialog.get_by_role('button', name='Confirm complete history', exact=True).count() == 1
+            assert dialog.get_by_role('button', name='Apply and confirm history', exact=True).count() == 1
             assert not dialog.get_by_role('checkbox').count()
             assert not page.get_by_test_id('stException').count()
             # A long review remains scrollable without growing the outer window.
-            assert dialog.evaluate('e=>{const s=e.lastElementChild; return s.scrollHeight>s.clientHeight && getComputedStyle(s).overflowY==="auto";}')
-            dialog.get_by_role('button', name='Confirm complete history', exact=True).scroll_into_view_if_needed()
+            assert dialog.evaluate('e=>{const s=e.lastElementChild; return s.scrollHeight>=s.clientHeight && getComputedStyle(s).overflowY==="auto";}')
+            if viewport['height'] == 720:
+                assert dialog.evaluate('e=>e.lastElementChild.scrollHeight>e.lastElementChild.clientHeight')
+            dialog.get_by_role('button', name='Apply and confirm history', exact=True).scroll_into_view_if_needed()
             bounds = page.evaluate('cancelAnimationFrame(window.dialogFrame); window.dialogBounds')
             assert max(b['height'] for b in bounds)-min(b['height'] for b in bounds) <= 1
             assert max(b['top'] for b in bounds)-min(b['top'] for b in bounds) <= 1

@@ -24,7 +24,7 @@ def test_demo_has_reconciled_holdings_and_independent_portfolio_return(tmp_path)
     expected_cash=D(10000+5000+120-1000)-20*buy.price-5+10*sale.price-3-40*fund_buy.price
     assert replay(journal).cash['demo-brokerage','EUR']==expected_cash.quantize(D('.01'))
     scope=HistoryScope(tuple(b.position_id for b in journal.securities),('demo-brokerage',))
-    result=calculate_history(journal,scope,observations,start.isoformat(),end.isoformat())
+    result=calculate_history(journal,scope,observations,start.isoformat(),end.isoformat(),method='exact')
     expected_end=110*D(140)+140*D(52)+expected_cash.quantize(D('.01'))
     assert result.opening_value==25000 and result.ending_value==expected_end
     assert result.net_contributions==4000
@@ -44,6 +44,12 @@ def test_demo_has_reconciled_holdings_and_independent_portfolio_return(tmp_path)
     before_withdrawal=110*prices['demo-world',withdrawal]+140*prices['demo-cash-fund',withdrawal]+expected_cash.quantize(D('.01'))+1000
     expected_twr=before_deposit/D(25000)*before_withdrawal/(before_deposit+5000)*expected_end/(before_withdrawal-1000)-1
     assert result.time_weighted==pytest.approx(float(expected_twr))
+    daily=calculate_history(journal,scope,observations,start.isoformat(),end.isoformat())
+    prior=(start+timedelta(days=179)).isoformat()
+    daily_before=100*prices['demo-world',prior]+100*prices['demo-cash-fund',prior]+10000
+    daily_expected=daily_before/D(25000)*before_withdrawal/(daily_before+5000)*expected_end/(before_withdrawal-1000)-1
+    assert daily.time_weighted==pytest.approx(float(daily_expected))
+    assert daily.money_weighted==result.money_weighted
     # Independently discount the explicitly invented deposit, withdrawal and
     # endpoint to verify XIRR's equation, rather than reusing the flow transform.
     r=result.money_weighted
@@ -70,5 +76,5 @@ def test_injected_market_series_is_used_without_filling_missing_dates(tmp_path):
     assert (root/'.market-history-demo').exists()
     journal,_=load_journal(root)
     scope=HistoryScope(tuple(b.position_id for b in journal.securities),('demo-brokerage',))
-    result=calculate_history(journal,scope,store,min(o.date for o in actual),max(o.date for o in actual))
+    result=calculate_history(journal,scope,store,min(o.date for o in actual),max(o.date for o in actual),method='exact')
     assert result.money_weighted is not None and result.time_weighted is not None

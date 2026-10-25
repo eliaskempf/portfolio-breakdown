@@ -22,6 +22,7 @@ dependencies = [
   "websockets>=15,<17",
   "platformdirs>=4,<5",
   "pywebview==6.2.1; sys_platform == 'win32'",
+  "exchange-calendars>=4.11,<5",
 ]
 
 [project.optional-dependencies]

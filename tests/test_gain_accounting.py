@@ -53,7 +53,7 @@ def test_zero_inception_includes_first_payment_and_fee_and_xirr_residual():
     r=calculate_history(j,scope,obs,'2023-12-31',END)
     assert (r.opening_value,r.net_contributions,r.invested_capital,r.total_gain)==(0,102,102,18)
     assert -102+120/(1+r.money_weighted)**(366/365)==pytest.approx(0,abs=1e-10)
-    assert r.time_weighted is None  # Price closes do not establish flow boundaries.
+    assert r.time_weighted == pytest.approx(120/102-1)  # Daily return includes the purchase fee.
     flat=replace(obs,observations=(*obs.observations[:1],replace(obs.observations[1],amount=D(10))))
     assert calculate_history(j,scope,flat,'2023-12-31',END).total_gain == -2
 

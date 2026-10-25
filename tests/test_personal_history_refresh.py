@@ -109,3 +109,67 @@ def test_only_reconstructed_scopes_default_to_loading_chart(tmp_path, jobs):
     draft = replace(journal, securities=(replace(journal.securities[0], active_ids=()),))
     refresh = HistoryRefresher(jobs, download=lambda *a: pytest.fail('Inactive history must not fetch'))
     assert not refresh.request(tmp_path, draft, scope, 'EUR').pending
+
+
+def test_archive_revision_bypasses_success_cooldown(tmp_path, jobs, monkeypatch):
+    from portfolio_app.settlement_archive import SettlementArchive
+    journal, scope = setup(tmp_path)
+    revision = ['first']
+    monkeypatch.setattr(SettlementArchive, 'revision', lambda self: revision[0])
+    calls = []
+    def download(*args):
+        calls.append(revision[0])
+        return ObservationStore((observation(12 if revision[0] == 'first' else 13, revision[0]),)), []
+    refresh = HistoryRefresher(jobs, download=download)
+    refresh.request(tmp_path, journal, scope, 'EUR'); finish(jobs, tmp_path)
+    assert not refresh.request(tmp_path, journal, scope, 'EUR').pending
+    revision[0] = 'corrected'
+    assert refresh.request(tmp_path, journal, scope, 'EUR').pending
+    finish(jobs, tmp_path)
+    from portfolio_app.history_observations import active_observations
+    store, _ = load_observations(tmp_path)
+    assert calls == ['first', 'corrected']
+    assert len(store.observations) == 2 and active_observations(store)[0].amount == 13
+    assert not store.reviews
+
+
+def test_journal_change_during_download_is_not_merged(tmp_path, jobs):
+    journal, scope = setup(tmp_path)
+    save_journal(tmp_path, journal, None)
+    started, release = Event(), Event()
+    def download(*args):
+        started.set()
+        assert release.wait(3)
+        return ObservationStore((observation(),)), []
+    refresh = HistoryRefresher(jobs, download=download)
+    try:
+        refresh.request(tmp_path, journal, scope, 'EUR')
+        assert started.wait(1)
+        _, revision = load_journal(tmp_path)
+        save_journal(tmp_path, replace(journal, securities=()), revision)
+    finally:
+        release.set()
+    finish(jobs, tmp_path)
+    assert not load_observations(tmp_path)[0].observations
+
+
+def test_completed_checklist_request_covers_position_subset(tmp_path,jobs):
+    from portfolio_app.account_journal import Account,Event
+    journal,scope=setup(tmp_path)
+    journal=replace(journal,accounts=(Account('cash','Invented cash'),),
+        events=(Event('opening','2023-12-31','cash_open','cash','EUR',D(100)),))
+    save_journal(tmp_path,journal,None)
+    combined=replace(scope,accounts=('cash',))
+    calls=[]
+    def download(*args):
+        calls.append(args[2])
+        return ObservationStore((observation(),)),[]
+    refresh=HistoryRefresher(jobs,download=download)
+    assert refresh.request(tmp_path,journal,combined,'EUR').pending
+    finish(jobs,tmp_path)
+    assert not refresh.request(tmp_path,journal,scope,'EUR').pending
+    assert calls==[combined]
+    # An explicit retry still bypasses reuse.
+    assert refresh.request(tmp_path,journal,scope,'EUR',force=True).pending
+    finish(jobs,tmp_path)
+    assert calls==[combined,scope]

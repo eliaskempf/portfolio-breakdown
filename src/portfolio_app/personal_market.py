@@ -4,7 +4,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from portfolio_app.holdings import DataError
-from portfolio_app.history_observations import Observation, active_observations, add_observation
+from portfolio_app.history_observations import Observation, active_observations
 
 
 def as_traded_prices(frame):
@@ -38,9 +38,22 @@ def fetch_security_prices(ticker, position_id, start, end, *, factory=None):
     frame = instrument.history(start=start, end=(date.today()+timedelta(days=1)).isoformat(),
         auto_adjust=False, back_adjust=False, actions=True, repair=False, timeout=10, raise_errors=True)
     from portfolio_app.currencies import quote_unit
-    currency, multiplier = quote_unit(instrument.history_metadata.get('currency', ''))
+    metadata = instrument.history_metadata
+    currency, multiplier = quote_unit(metadata.get('currency', ''))
+    from portfolio_app.history_valuation import listing_calendar, exchange_calendar
+    from datetime import datetime, timezone
+    calendar, zone = listing_calendar(metadata)
+    now = datetime.now(timezone.utc)
+    def completed(stamp):
+        if stamp < now.date().isoformat():
+            return True
+        if not calendar:
+            return False
+        exchange = exchange_calendar(calendar, now.year)
+        return exchange.is_session(stamp) and exchange.session_close(stamp).to_pydatetime() <= now
     return tuple(Observation(uuid4().hex, 'price', position_id, stamp, amount*Decimal(str(multiplier)), currency,
-        source='Yahoo Close, split normalization reversed') for stamp, amount in as_traded_prices(frame) if stamp <= end)
+        source='Yahoo Close, split normalization reversed', listing=ticker, calendar=calendar, exchange_timezone=zone)
+        for stamp, amount in as_traded_prices(frame) if stamp <= end and completed(stamp))
 
 
 def fetch_fx(source, target, start, end, *, factory=None):
@@ -63,15 +76,25 @@ def fetch_fx(source, target, start, end, *, factory=None):
 def merge_download(store, observations):
     active = {o.key: o for o in active_observations(store)}
     from dataclasses import replace
+    records = list(store.observations)
+    identities = {o.id: o for o in records}
     for observation in observations:
         previous = active.get(observation.key)
-        if previous and (previous.source == 'manual' or previous.amount == observation.amount):
+        if previous and (previous.source == 'manual' or (previous.amount == observation.amount and previous.listing == observation.listing
+                and previous.calendar == observation.calendar and previous.exchange_timezone == observation.exchange_timezone)):
             continue
         if previous:
             observation = replace(observation, replaces=previous.id)
-        store = add_observation(store, observation)
+        if observation.id in identities:
+            if identities[observation.id] != observation:
+                raise DataError('Observation ID already has different evidence.')
+            continue
+        records.append(observation)
+        identities[observation.id] = observation
         active[observation.key] = observation
-    return store
+    # Validate one append-only batch, rather than rebuilding the full correction
+    # graph after every downloaded daily close (quadratic in history length).
+    return replace(store, observations=tuple(records)) if len(records) != len(store.observations) else store
 
 
 def download_scope_observations(directory, journal, scope, store, start, end, target):
@@ -95,7 +118,7 @@ def download_scope_observations(directory, journal, scope, store, start, end, ta
                 raise DataError('No historical prices returned.')
             updated = merge_download(updated, prices)
         except Exception as exc:
-            errors.append(f'{identity}: {type(exc).__name__}; supply observations manually')
+            errors.append(f'{identity}: {type(exc).__name__}; retry historical prices')
     subjects = set(scope.positions)
     for book in journal.securities:
         if book.position_id in scope.positions or book.account_id in scope.accounts:
@@ -130,5 +153,5 @@ def download_scope_observations(directory, journal, scope, store, start, end, ta
                 raise DataError('No historical FX returned.')
             updated = merge_download(updated, rates)
         except Exception as exc:
-            errors.append(f'{currency}/{target}: {type(exc).__name__}; supply observations manually')
+            errors.append(f'{currency}/{target}: {type(exc).__name__}; retry historical FX')
     return updated, errors
