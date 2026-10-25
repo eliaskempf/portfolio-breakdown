@@ -71,10 +71,29 @@ def amount(value):
 
 
 def scope_dates(journal, scope):
+    """Every effective balance/cash date, including linked securities and fees."""
     owners = {p.id: p.account_id for p in journal.positions}
-    dates = [e.date for b in journal.securities if b.position_id in scope.positions
-             for e in selected_events(b) if e.date]
-    dates += [e.date for e in effective_events(journal)
+    account_events = effective_events(journal)
+    openings = {(e.account_id, e.currency): e.date for e in account_events if e.kind == 'cash_open'}
+    def affects_cash(account, currency, stamp, value_date=''):
+        opening = openings.get((account, currency))
+        # Match derived postings: the opening includes earlier settled payments.
+        return not opening or stamp > opening or bool(value_date and value_date != stamp)
+    dates = []
+    for book in journal.securities:
+        asset_inside = book.position_id in scope.positions
+        cash_inside = book.account_id in scope.accounts
+        for event in selected_events(book):
+            incoming = event.kind == 'transfer' and event.other_position_id in scope.positions
+            cash_event = (cash_inside and event.kind in {'buy', 'sell', 'distribution', 'fee', 'tax'}
+                and affects_cash(book.account_id, event.currency, event.date, event.value_date))
+            if event.date and (asset_inside or incoming or cash_event):
+                dates.append(event.date)
+            if event.kind != 'opening':
+                dates.extend(charge.date or event.date for charge in event.charges
+                    if asset_inside or (cash_inside and not charge.external
+                        and affects_cash(book.account_id, charge.currency, charge.date or event.date)))
+    dates += [e.date for e in account_events
               if e.account_id in scope.accounts or e.other_account_id in scope.accounts
               or owners.get(e.position_id) in scope.accounts]
     return sorted(set(dates))

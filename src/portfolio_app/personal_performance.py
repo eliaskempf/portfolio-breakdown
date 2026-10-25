@@ -512,14 +512,11 @@ def known_negative_equity_dates(journal, scope, observations, start, end, target
     from portfolio_app.history_observations import active_observations, index_observations
     observations = index_observations(observations)
     active = active_observations(observations)
-    owners = {p.id: p.account_id for p in journal.positions}
+    from portfolio_app.gain_accounting import scope_dates
     subjects = set(scope.positions) | {b.instrument_id for b in journal.securities if b.position_id in scope.positions}
     subjects |= {p.id for p in journal.positions if p.account_id in scope.accounts}
     subjects |= {p.contract_id for p in journal.positions if p.account_id in scope.accounts}
-    dates = {e.date for b in journal.securities if b.position_id in scope.positions for e in selected_events(b)}
-    dates |= {e.date for e in effective_events(journal)
-              if e.account_id in scope.accounts or e.other_account_id in scope.accounts
-              or owners.get(e.position_id) in scope.accounts}
+    dates = set(scope_dates(journal, scope))
     dates |= {o.date for o in active if o.kind == 'fx' or o.kind == 'price' and o.subject in subjects
               or o.kind == 'value' and o.subject == scope.key}
     negative = {o.date for o in active if o.kind == 'value' and o.subject == scope.key

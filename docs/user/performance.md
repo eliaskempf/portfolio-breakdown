@@ -185,6 +185,11 @@ the calculation dates. Missing opening data or incomplete full-history coverage
 withholds this return rather than substituting a shorter interval. A quiet note below
 the chart indicates missing valuations; no values are interpolated for the boxes
 or returns. A missing daily value need not prevent endpoint-based returns.
+Returns for both **All** and a selected period remain unavailable if a later
+recorded event lacks an ending valuation. The timeline includes linked-security
+cash movements, incoming transfers and separately dated fees. Those fee dates
+also count when checking for known negative equity, even if the balance later
+recovers.
 
 **Correct market data** provides focused forms for missing or incorrect dated
 prices and exchange rates. Known dates, holdings and currencies are preselected;

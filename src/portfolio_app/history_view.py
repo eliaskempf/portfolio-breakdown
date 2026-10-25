@@ -81,6 +81,11 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
         start, end = all_start, all_end
     result = (all_result if (start,end) == (all_start,all_end) else
               calculate_history(journal,scope,observations,start,end,target,negative_dates=negative_dates,calculation=calculation))
+    if dates and dates[-1] > end and result is not all_result:
+        from dataclasses import replace
+        reason = (HistoryIssue('The latest recorded event has no supported ending valuation', 'endpoint'),)
+        result = replace(result, money_weighted=None, time_weighted=None,
+                         money_weighted_reasons=reason, time_weighted_reasons=reason)
     # Capital and hover gains keep the same full-history basis as the user zooms.
     # Period gain remains a separate endpoint/flow calculation. Never subtract
     # a neighboring day's capital from a hovered value at a missing observation.
