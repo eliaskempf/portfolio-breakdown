@@ -90,6 +90,21 @@ already includes earlier settlements; performance before the snapshot stays
 unknown. EUR, USD and GBP amounts are converted at current reporting FX. These
 investment gains do not reconstruct historical FX gains on allocated capital.
 
+## Confirm account history
+
+Open a futures position's **Contract history → Review account history completeness**,
+or **Futures → Positions & transactions → Review account history completeness**.
+In the account workspace, select **Account to confirm**. Check the named account
+and displayed interval, then choose **Confirm complete history**.
+
+This confirms opening balances and positions plus all subsequent contracts,
+including closed ones, trades, rolls, cash movements, income, fees and taxes for
+that account. It includes other futures investments in the same account. Earlier
+contracts before a valid opening snapshot need not be reconstructed. Downloaded
+settlement prices are checked separately; confirmation does not fill missing
+prices, settle cash, or change transactions. Other accounts and standalone
+securities remain unconfirmed. Journal changes require a new review.
+
 ## Roll from position details
 
 Open a futures investment and click **Roll contracts**. Select the current

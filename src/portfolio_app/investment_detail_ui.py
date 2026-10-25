@@ -218,6 +218,9 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
         st.dataframe(history[columns],hide_index=True,width='stretch')
         with st.expander('Contract accounting and price sources'):
             st.dataframe(history.drop(columns=['Contracts', 'Status']),hide_index=True,width='stretch')
+        from portfolio_app.history_coverage_ui import render_account_coverage_review
+        render_account_coverage_review(directory, journal, key=key+'coverage_',
+            account_id=balances[0].spec.account_id)
     with st.expander('Position details'):
         st.caption(f'{category} · {balances[0].contract.currency} settlement')
         if row is not None:

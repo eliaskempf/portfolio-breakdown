@@ -217,6 +217,10 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
     names = {a.id: a.name for a in journal.accounts}
     requested = st.session_state.pop('accounts_requested_position', None)
     if requested is not None:
+        owners = {p.id: p.account_id for p in (*journal.positions, *journal.investments)}
+        owners.update({link.position_id: link.account_id for link in journal.cash_links})
+        if requested in owners:
+            st.session_state[key+'coverage_account'] = owners[requested]
         from portfolio_app.investment_ui import route_investment_request
         if route_investment_request(journal, requested, key):
             st.session_state[key+'view'] = 'Positions & transactions'
@@ -268,6 +272,8 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
         render_transaction(directory, journal, revision)
     from portfolio_app.account_activity_ui import render_activity
     render_activity(directory, journal, revision, key=key+'journal_')
+    from portfolio_app.history_coverage_ui import render_account_coverage_review
+    render_account_coverage_review(directory, journal, key=key+'coverage_')
 
 
 def render_transaction(directory, journal, revision, *, position_ids=None, key_prefix=None):

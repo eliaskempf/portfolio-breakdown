@@ -50,10 +50,36 @@ def render_coverage_review(directory, journal, scope, *, key, can_confirm=True):
         st.caption('History confirmed · '+interval)
         return
     st.caption(interval)
-    st.caption('Confirm that all purchases, sales, dividends, fees, taxes and transfers in this interval are recorded. Matching today’s holding alone does not prove completeness.')
+    if scope.accounts and not scope.positions:
+        st.caption('Confirm that the opening balances and positions are correct, and all contracts (including closed ones), '
+            'trades, rolls, cash movements, income, fees and taxes since then are recorded.')
+        st.caption('Earlier contracts before an opening snapshot are not required. This does not certify downloaded '
+            'settlement prices; missing market data and transaction details are checked separately.')
+    else:
+        st.caption('Confirm that all purchases, sales, dividends, fees, taxes and transfers in this interval are recorded. Matching today’s holding alone does not prove completeness.')
     if st.button('Confirm complete history', key=key+'complete', disabled=bool(scope.unresolved)):
         try:
             confirm_complete_history(directory, journal, scope, start, end, revision)
             st.rerun()
         except (DataError, ValueError, OSError) as exc:
             st.error(str(exc))
+
+
+def render_account_coverage_review(directory, journal, *, key, account_id=None):
+    """Explicitly review one whole account, including its closed contracts."""
+    from portfolio_app.history_observations import HistoryScope
+    accounts = {a.id: a.name for a in journal.accounts}
+    if not accounts or (account_id is not None and account_id not in accounts):
+        return
+    with st.expander('Review account history completeness'):
+        if account_id is None:
+            account_id = st.selectbox('Account to confirm', list(accounts), format_func=accounts.get,
+                key=key+'account')
+        else:
+            st.caption('Account: '+accounts[account_id])
+        st.caption('Covers this account’s cash and all its futures investments, including closed contracts.')
+        scope = HistoryScope(accounts=(account_id,))
+        if not scope_dates(journal, scope):
+            st.caption('Record an opening balance or transaction before confirming this account.')
+            return
+        render_coverage_review(directory, journal, scope, key=key+account_id+'_')
