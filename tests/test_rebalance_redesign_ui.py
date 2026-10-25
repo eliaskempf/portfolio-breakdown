@@ -153,8 +153,12 @@ def test_stale_target_save_keeps_external_update_and_draft(workspace, monkeypatc
     assert not app.exception
     assert app.error
     assert path.read_text() == external
-    rows = next(item.value for item in app.dataframe if 'within_bucket_target' in item.value)
+    # AppTest exposes the editor's fixed baseline, not its browser-applied edits.
+    # Check the retained result and widget delta after the rejected save.
+    key = editor_key(app, 'targets_positions_')
+    rows = app.session_state['view_editor_drafts'][key]
     assert rows.within_bucket_target.iloc[0] == 75.
+    assert app.session_state[key]['edited_rows'][0]['within_bucket_target'] == 75.
 
 
 def test_category_plan_respects_ancestor_protection_with_unrelated_missing_prices(workspace):
