@@ -139,6 +139,9 @@ def test_alerts_arrive_on_every_tab_without_global_status_or_banners(monitoring_
     dialog=page.get_by_role('dialog',name='Monitoring alert')
     dialog.get_by_role('button',name='Acknowledge alert',exact=True).click()
     playwright.expect(dialog).to_have_count(0)
+    # Let acknowledgment finish before injecting the next external alert;
+    # otherwise its rerun can legitimately open that alert over the next click.
+    settle(page)
     rule=rule_from_dict(load_monitoring(root)[0]['rules'][0])
     for tab in ['Monitoring','Exposure','Positions','Rebalance','Futures','Overview']:
         record_evaluations(root,rule,[Evaluation('2026-10-13',10.,condition='normal'),Evaluation('2026-10-13',70.,condition='triggered')])
@@ -155,6 +158,7 @@ def test_alerts_arrive_on_every_tab_without_global_status_or_banners(monitoring_
         assert abs(a['y']-b['y'])<3
         dialog.get_by_role('button',name='Acknowledge alert',exact=True).click()
         playwright.expect(dialog).to_have_count(0)
+        settle(page)
         if tab!='Monitoring':
             playwright.expect(page.get_by_role('button',name='Check all rules now',exact=True)).to_have_count(0)
             playwright.expect(page.get_by_role('button',name='View rule',exact=True)).to_have_count(0)
