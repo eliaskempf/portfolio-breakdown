@@ -151,3 +151,25 @@ def test_journal_change_during_download_is_not_merged(tmp_path, jobs):
         release.set()
     finish(jobs, tmp_path)
     assert not load_observations(tmp_path)[0].observations
+
+
+def test_completed_checklist_request_covers_position_subset(tmp_path,jobs):
+    from portfolio_app.account_journal import Account,Event
+    journal,scope=setup(tmp_path)
+    journal=replace(journal,accounts=(Account('cash','Invented cash'),),
+        events=(Event('opening','2023-12-31','cash_open','cash','EUR',D(100)),))
+    save_journal(tmp_path,journal,None)
+    combined=replace(scope,accounts=('cash',))
+    calls=[]
+    def download(*args):
+        calls.append(args[2])
+        return ObservationStore((observation(),)),[]
+    refresh=HistoryRefresher(jobs,download=download)
+    assert refresh.request(tmp_path,journal,combined,'EUR').pending
+    finish(jobs,tmp_path)
+    assert not refresh.request(tmp_path,journal,scope,'EUR').pending
+    assert calls==[combined]
+    # An explicit retry still bypasses reuse.
+    assert refresh.request(tmp_path,journal,scope,'EUR',force=True).pending
+    finish(jobs,tmp_path)
+    assert calls==[combined,scope]

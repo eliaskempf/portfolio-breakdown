@@ -27,6 +27,7 @@ class HistoryRefresher:
         self.jobs, self.download = jobs, download
         self.now = now or (lambda: datetime.now(timezone.utc))
         self._lock, self._results = RLock(), {}
+        self._requests = {}
 
     def pending(self, directory):
         return self.jobs.pending(Path(directory).resolve(), 'personal-history')
@@ -42,7 +43,8 @@ class HistoryRefresher:
         snapshot = read_snapshot(directory/'holdings.csv')
         from portfolio_app.account_journal import load_journal
         _, journal_revision = load_journal(directory)
-        signature = sha256(repr((scope, history_fingerprint(journal), snapshot.revision, SettlementArchive(directory).revision(), start, end, target)).encode()).hexdigest()
+        facts = history_fingerprint(journal), snapshot.revision, SettlementArchive(directory).revision(), end, target
+        signature = sha256(repr((scope, start, facts)).encode()).hexdigest()
         identity = str(directory), signature
         with self._lock:
             if self.pending(directory):
@@ -53,8 +55,20 @@ class HistoryRefresher:
                 cooldown = timedelta(minutes=5) if errors else timedelta(hours=1)
                 if timedelta() <= self.now()-stamp < cooldown:
                     return RefreshStatus(errors=errors)
+            if not force:
+                for key, (finished, errors) in self._results.items():
+                    request = self._requests.get(key)
+                    if (key[0] == str(directory) and not errors and request is not None
+                            and timedelta() <= self.now()-finished < timedelta(hours=1)):
+                        covered, since, saved_facts = request
+                        if (saved_facts == facts and since <= start
+                                and set(scope.positions) <= set(covered.positions)
+                                and set(scope.accounts) <= set(covered.accounts)):
+                            return RefreshStatus()
             started = self.jobs.request(directory, 'personal-history',
                 lambda: self._run(directory, journal, scope, start, end, target, snapshot.revision, identity, journal_revision))
+            if started:
+                self._requests[identity] = scope, start, facts
             return RefreshStatus(pending=started, errors=() if started else ('Market-data queue is busy. Try again shortly.',))
 
     def _run(self, directory, journal, scope, start, end, target, holdings_revision, identity, journal_revision):
