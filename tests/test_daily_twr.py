@@ -113,3 +113,13 @@ def test_liquidation_reentry_and_negative_equity_gate():
     args=example(events,prices=((END,60),))
     assert calculate_history(*args,START,END).time_weighted==pytest.approx(1.1*1.2-1)
     assert calculate_history(*args,START,END,negative_dates=('2024-01-03',)).time_weighted is None
+
+
+def test_missing_daily_boundary_offers_the_original_dated_price_correction():
+    from portfolio_app.history_view import history_view
+    from portfolio_app.history_data_ui import missing_inputs
+    from datetime import date
+    j,scope,store=example((trade('buy','buy','2024-01-03',100),),quantity=1,prices=((START,100),(END,110)))
+    view=history_view(j,scope,store,'All',today=date.fromisoformat(END))
+    missing=missing_inputs(view,j,scope,store,'EUR')
+    assert any(m.kind=='price' and m.date=='2024-01-02' and m.subject=='invented' for m in missing)

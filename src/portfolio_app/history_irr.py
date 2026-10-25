@@ -55,16 +55,36 @@ def _bracket(terms, low, high):
     if not right: return high
     if (left>0) == (right>0):
         raise UncertainRoot('Root bracket does not change sign')
-    # Decimal bisection refines even where double precision cannot separate roots.
-    for _ in range(256):
+    # A fast double-precision seed is safe *inside this isolated bracket*;
+    # high-precision safeguarded Newton then verifies/refines it. This is not a
+    # Newton guess used to establish root count or uniqueness.
+    from scipy.optimize import brentq
+    scale=max(abs(a) for _,a in terms)
+    floating=tuple((n,float(a/scale)) for n,a in terms)
+    def residual(z):
+        shift=max(n*z for n,_ in floating)
+        return math.fsum(a*math.exp(n*z-shift) for n,a in floating)
+    try:
+        middle=Decimal(str(brentq(residual,float(low),float(high),xtol=1e-15)))
+    except (ValueError,OverflowError):
         middle=(low+high)/2
-        value, _ = _value(terms,middle)
-        if not value or high-low <= Decimal('1e-45')*max(Decimal(1),abs(middle)):
+    for _ in range(256):
+        value,_=_value(terms,middle)
+        if not value:
             return middle
         if (left>0) == (value>0):
             low,left=middle,value
         else:
             high=middle
+        shift=max(n*middle for n,_ in terms)
+        slope=sum(((a/scale)*n*(n*middle-shift).exp() for n,a in terms),Decimal(0))
+        step=value/slope if slope else None
+        if step is not None and abs(step)<=Decimal('1e-45')*max(Decimal(1),abs(middle)):
+            return middle
+        candidate=middle-step if step is not None else low
+        middle=candidate if low<candidate<high else (low+high)/2
+        if high-low<=Decimal('1e-45')*max(Decimal(1),abs(middle)):
+            return middle
     raise UncertainRoot('Root interval did not converge')
 
 

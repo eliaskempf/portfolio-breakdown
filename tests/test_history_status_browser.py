@@ -54,3 +54,78 @@ def test_history_filter_and_review_navigation(ux_page):
     playwright.expect(dialog.get_by_role('button', name='Apply and confirm history', exact=True)).to_be_visible()
     assert load_journal(root)[0] == journal  # Navigation never confirms or applies data.
     assert page.get_by_test_id('stException').count() == 0
+
+
+def test_checklist_loads_prices_without_opening_each_position(tmp_path):
+    """One scoped background request, with invented prices and FX only."""
+    import os
+    import socket
+    import subprocess
+    import sys
+    import time
+    from urllib.request import urlopen
+    from test_history_download import setup
+    from portfolio_app.account_journal import save_journal, load_journal
+    from portfolio_app.history_observations import ObservationStore, CoverageReview, save_observations, load_observations
+    from portfolio_app.security_history import history_fingerprint
+    from browser_support import settle
+    journal,scope=setup(tmp_path)
+    save_journal(tmp_path,journal,None)
+    save_observations(tmp_path,ObservationStore(reviews=(CoverageReview('review',scope,'2024-01-01',
+        date.today().isoformat(),history_fingerprint(journal)),)),None)
+    script=tmp_path/'checklist.py'
+    script.write_text('''
+from pathlib import Path
+from decimal import Decimal
+import time
+from portfolio_app.positions import read_snapshot
+from portfolio_app.history_status_ui import render_history_status_list
+from portfolio_app.history_observations import Observation
+import portfolio_app.personal_market as market
+root=Path(__file__).parent
+if not hasattr(market,'_invented_checklist'):
+    def prices(ticker,identity,start,end):
+        time.sleep(2)
+        with (root/'requests.txt').open('a') as f: f.write('request\\n')
+        return (Observation('price','price',identity,end,Decimal(12),'EUR',source='Invented feed'),)
+    market.fetch_security_prices=prices
+    market.fetch_fx=lambda source,target,start,end: (Observation('fx','fx',source+'/'+target,'2024-01-02',Decimal(1),source,target=target,source='Invented FX'),)
+    market._invented_checklist=True
+snapshot=read_snapshot(root/'holdings.csv')
+render_history_status_list(root/'holdings.csv',snapshot,snapshot.holdings)
+''')
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
+    process=subprocess.Popen([sys.executable,'-m','streamlit','run',str(script),'--server.address=127.0.0.1',
+        f'--server.port={port}','--server.headless=true','--server.fileWatcherType=none','--browser.gatherUsageStats=false'],
+        stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    try:
+        for _ in range(100):
+            assert process.poll() is None
+            try:
+                urlopen(f'http://127.0.0.1:{port}/_stcore/health',timeout=1);break
+            except OSError: time.sleep(.1)
+        with playwright.sync_playwright() as runner:
+            browser=runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),args=['--no-sandbox'])
+            page=browser.new_page(viewport={'width':1440,'height':1000})
+            page.goto(f'http://127.0.0.1:{port}')
+            checkbox=page.get_by_role('checkbox',name='Only show positions needing attention')
+            playwright.expect(checkbox).to_be_visible()
+            if checkbox.is_checked():
+                checkbox.press('Space')
+            table=page.get_by_role('table',name='History status',exact=True)
+            playwright.expect(table.get_by_text('Available',exact=True)).to_have_count(3,timeout=20000)
+            playwright.expect(table.get_by_text('Confirmed',exact=True)).to_be_visible()
+            playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+            assert load_journal(tmp_path)[0]==journal
+            assert len(load_observations(tmp_path)[0].reviews)==1
+            assert (tmp_path/'requests.txt').read_text().count('request')==1
+            page.reload();settle(page)
+            checkbox=page.get_by_role('checkbox',name='Only show positions needing attention')
+            if checkbox.is_checked():
+                checkbox.press('Space')
+            playwright.expect(table.get_by_text('Available',exact=True)).to_have_count(3)
+            assert (tmp_path/'requests.txt').read_text().count('request')==1
+            browser.close()
+    finally:
+        process.terminate();process.wait(timeout=10)

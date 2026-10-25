@@ -209,7 +209,7 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
                 continue
             cost = resolve_cost(list(state.costs), target, ObservationFX(observations))
             if cost.amount is None:
-                reasons.append(Issue(f'{identity}: {cost.note}', 'transaction'))
+                reasons.append(Issue(f'{identity}: {cost.note}', cost.reason_kind))
             else:
                 total += cost.exact_amount
         else:

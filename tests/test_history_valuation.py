@@ -67,3 +67,30 @@ def test_metadata_refresh_is_a_revision_and_manual_observations_win():
     assert len(updated.observations) == 2 and updated.observations[-1].replaces == old.id
     manual = ObservationStore((replace(old, source='manual'),))
     assert merge_download(manual, (replace(quote(), id='new'),)) == manual
+
+
+def test_every_supported_venue_has_a_calendar():
+    import exchange_calendars
+    from portfolio_app.history_valuation import VENUES
+    assert all(calendar in exchange_calendars.get_calendar_names() for calendar, _ in VENUES.values())
+
+
+def test_bulk_download_validates_one_batch_and_retains_every_correction(monkeypatch):
+    from datetime import timedelta
+    import portfolio_app.history_observations as module
+    from portfolio_app.personal_market import merge_download
+    original=tuple(replace(quote(),id=f'old-{i}',date=(date(2024,1,1)+timedelta(days=i)).isoformat(),source='Invented feed') for i in range(1000))
+    incoming=tuple(replace(o,id=f'new-{i}',amount=D(120)) for i,o in enumerate(original))
+    store=ObservationStore(original)
+    calls=[]
+    validate=module.active_observations
+    def counted(store):
+        calls.append(True)
+        return validate(store)
+    monkeypatch.setattr(module,'active_observations',counted)
+    result=merge_download(store,incoming)
+    assert len(calls)==1  # Exactly one new-store graph validation.
+    assert result.observations[:1000]==original
+    assert all(o.replaces==previous.id for o,previous in zip(result.observations[1000:],original))
+    assert len(validate(result))==1000
+    assert merge_download(result,incoming) is result

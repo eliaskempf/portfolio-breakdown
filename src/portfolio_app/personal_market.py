@@ -4,7 +4,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from portfolio_app.holdings import DataError
-from portfolio_app.history_observations import Observation, active_observations, add_observation
+from portfolio_app.history_observations import Observation, active_observations
 
 
 def as_traded_prices(frame):
@@ -76,6 +76,8 @@ def fetch_fx(source, target, start, end, *, factory=None):
 def merge_download(store, observations):
     active = {o.key: o for o in active_observations(store)}
     from dataclasses import replace
+    records = list(store.observations)
+    identities = {o.id: o for o in records}
     for observation in observations:
         previous = active.get(observation.key)
         if previous and (previous.source == 'manual' or (previous.amount == observation.amount and previous.listing == observation.listing
@@ -83,9 +85,16 @@ def merge_download(store, observations):
             continue
         if previous:
             observation = replace(observation, replaces=previous.id)
-        store = add_observation(store, observation)
+        if observation.id in identities:
+            if identities[observation.id] != observation:
+                raise DataError('Observation ID already has different evidence.')
+            continue
+        records.append(observation)
+        identities[observation.id] = observation
         active[observation.key] = observation
-    return store
+    # Validate one append-only batch, rather than rebuilding the full correction
+    # graph after every downloaded daily close (quadratic in history length).
+    return replace(store, observations=tuple(records)) if len(records) != len(store.observations) else store
 
 
 def download_scope_observations(directory, journal, scope, store, start, end, target):

@@ -106,3 +106,34 @@ def test_receiving_account_download_includes_currency_from_fx_leg(tmp_path, monk
         ObservationStore(), '2024-01-01', '2024-02-01', 'EUR')
     assert not errors and len(updated.observations) == 2
     assert calls == ['GBP', 'USD']
+
+
+def test_accepted_futures_archive_marks_correct_values_without_cash_events(tmp_path,monkeypatch):
+    from portfolio_app.account_journal import save_journal,load_journal
+    from portfolio_app.derivative_types import PriceObservation
+    from portfolio_app.settlement_archive import SettlementArchive
+    from portfolio_app.personal_performance import calculate_history
+    from test_account_journal import invented,event,trade
+    journal=replace(invented(),events=(event('opening','cash_open',account_id='broker',currency='EUR',amount=1000),
+        trade('buy',1,100),event('settled','settlement',date='2026-01-06',position_id='future',price=110)))
+    (tmp_path/'holdings.csv').write_text('id,name,ticker,shares\ninvented,Invented,,0\n')
+    save_journal(tmp_path,journal,None)
+    scope=HistoryScope(accounts=('broker',));contract=journal.contracts[0]
+    archive=SettlementArchive(tmp_path)
+    for stamp,price in [('2026-01-05',100),('2026-01-06',110),('2026-01-07',112)]:
+        archive.record(contract,PriceObservation(contract.id,stamp,D(price),source='Invented archive'))
+    import portfolio_app.personal_market as market
+    monkeypatch.setattr(market,'fetch_security_prices',lambda *a: (_ for _ in ()).throw(AssertionError('No security download needed')))
+    store,errors=download_scope_observations(tmp_path,journal,scope,ObservationStore(),'2026-01-05','2026-01-07','EUR')
+    result=calculate_history(journal,scope,store,'2026-01-05','2026-01-07')
+    assert not errors and result.opening_value==1000 and result.ending_value==1120
+    assert result.money_weighted is None and result.flow_reasons[0].kind=='coverage'
+    # The original 100 of settled gain already resides in cash, plus 20 unsettled.
+    archive.record(contract,PriceObservation(contract.id,'2026-01-07',D(113),source='Invented correction'))
+    pending,_=download_scope_observations(tmp_path,journal,scope,store,'2026-01-05','2026-01-07','EUR')
+    assert pending==store
+    archive.accept_latest(contract,'2026-01-07',D(113))
+    corrected,_=download_scope_observations(tmp_path,journal,scope,store,'2026-01-05','2026-01-07','EUR')
+    assert calculate_history(journal,scope,corrected,'2026-01-05','2026-01-07').ending_value==1130
+    assert len(corrected.observations)==len(store.observations)+1
+    assert not corrected.reviews and load_journal(tmp_path)[0]==journal

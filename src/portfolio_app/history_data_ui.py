@@ -13,6 +13,7 @@ from portfolio_app.history_observations import (
     Observation, active_observations, add_observation, lookup, rate, save_observations,
 )
 from portfolio_app.holdings import DataError
+from portfolio_app.history_diagnostics import issue_tree
 from portfolio_app.money import format_money
 from portfolio_app.personal_performance import external_flows
 from portfolio_app.positions import read_snapshot
@@ -112,7 +113,7 @@ def missing_inputs(view, journal, scope, observations, target):
             reasons.extend(getattr(result, field))
     subjects = _subjects(journal, scope)
     missing = set()
-    for reason in reasons:
+    for reason in issue_tree(reasons):
         identity, separator, detail = reason.partition(': ')
         if not separator:
             continue

@@ -124,6 +124,21 @@ def test_method_restriction_is_separate_from_confirmed_transactions_and_prices()
     observations = replace(observations, reviews=(CoverageReview('new-review', HistoryScope(('ready',)),
         '2024-01-01', '2025-01-03', history_fingerprint(journal)),))
     row = next(s for s in position_history_statuses(holdings, journal, observations, today=TODAY) if s.position_id == 'ready')
-    assert row.transactions == 'Confirmed' and row.market == 'Available'
+    assert row.transactions == 'Confirmed' and row.market == 'Prices missing'
+    assert row.action == 'Review market data'
     assert row.money_weighted == 'Available' and row.time_weighted == 'Unavailable'
     assert row.needs_attention
+
+
+def test_missing_snapshot_cost_fx_does_not_unconfirm_transactions():
+    from portfolio_app.cost_basis import component
+    holdings,journal,store=fixture()
+    book=next(b for b in journal.securities if b.position_id=='ready')
+    opening=replace(book.records[0],costs=(component(2,20,'USD','2024-01-01'),))
+    book=replace(book,records=(opening,))
+    journal=replace(journal,securities=tuple(book if b.position_id=='ready' else b for b in journal.securities))
+    store=replace(store,reviews=(CoverageReview('review',HistoryScope(('ready',)),'2024-01-01','2025-01-03',history_fingerprint(journal)),))
+    row=next(s for s in position_history_statuses(holdings,journal,store,today=TODAY) if s.position_id=='ready')
+    assert row.transactions=='Confirmed'
+    assert row.market=='FX / cash inputs missing'
+    assert row.money_weighted==row.time_weighted=='Available'

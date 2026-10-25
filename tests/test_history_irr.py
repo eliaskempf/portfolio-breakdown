@@ -60,3 +60,11 @@ def test_zero_rate_extreme_rates_and_all_zero_schedule():
     assert solve([-1,1000000])[0]==pytest.approx(999999)
     assert solve([0,0])[0] is None
     assert solve([-100,100],[0,0])[0] is None
+
+
+@pytest.mark.parametrize('positive',[D('.25'),D('1.2'),D('3')])
+def test_unique_positive_root_with_complex_pair_has_known_independent_answer(positive):
+    # (x-p)*(x²-0.6x+4.09); quadratic roots are 0.3 ± 2i.
+    coefficients=[-positive*D('4.09'),D('4.09')+positive*D('.6'),-positive-D('.6'),D(1)]
+    result,reason=solve(coefficients)
+    assert not reason and result==pytest.approx(float(1/positive-1),abs=1e-12)

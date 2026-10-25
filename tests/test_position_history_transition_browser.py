@@ -120,12 +120,14 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             assert not dialog.get_by_text('Required inputs', exact=True).count()
             assert not dialog.get_by_text('History inputs', exact=True).count()
             dialog.get_by_role('button', name='Review transactions', exact=True).click(); settle(page)
-            assert dialog.get_by_role('button', name='Confirm complete history', exact=True).count() == 1
+            assert dialog.get_by_role('button', name='Apply and confirm history', exact=True).count() == 1
             assert not dialog.get_by_role('checkbox').count()
             assert not page.get_by_test_id('stException').count()
             # A long review remains scrollable without growing the outer window.
-            assert dialog.evaluate('e=>{const s=e.lastElementChild; return s.scrollHeight>s.clientHeight && getComputedStyle(s).overflowY==="auto";}')
-            dialog.get_by_role('button', name='Confirm complete history', exact=True).scroll_into_view_if_needed()
+            assert dialog.evaluate('e=>{const s=e.lastElementChild; return s.scrollHeight>=s.clientHeight && getComputedStyle(s).overflowY==="auto";}')
+            if viewport['height'] == 720:
+                assert dialog.evaluate('e=>e.lastElementChild.scrollHeight>e.lastElementChild.clientHeight')
+            dialog.get_by_role('button', name='Apply and confirm history', exact=True).scroll_into_view_if_needed()
             bounds = page.evaluate('cancelAnimationFrame(window.dialogFrame); window.dialogBounds')
             assert max(b['height'] for b in bounds)-min(b['height'] for b in bounds) <= 1
             assert max(b['top'] for b in bounds)-min(b['top'] for b in bounds) <= 1

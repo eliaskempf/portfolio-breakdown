@@ -238,7 +238,10 @@ dated flows establish a unique result. TWR can link explicitly valued funded
 intervals separated by an empty period; money appearing without funding is invalid.
 Mixed-sign cash flows are eligible only when the solver establishes a unique,
 numerically verified XIRR. Multiple roots, no solution and uncertain numerical
-conditioning are different from missing transactions.
+conditioning are different from missing transactions. Mixed-sign root isolation
+supports up to 128 nonzero net cash-flow dates; larger mixed-sign schedules stay
+unavailable rather than selecting an arbitrary root. Conventional schedules use
+a separate fast path.
 
 Ordinary TWR uses a daily convention: incoming capital is available at the start
 of the day and outgoing capital leaves at its end. Chain daily factors

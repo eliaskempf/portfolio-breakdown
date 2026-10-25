@@ -39,7 +39,7 @@ def daily_time_weighted(calculation, scope, start, end, target, opening, ending,
                 before = opening if stamp == start else value.amount
                 if before is None:
                     reason = Issue(f'{previous_day}: daily TWR needs a supported opening valuation. '
-                                   + ' '.join(value.reasons), 'boundary')
+                                   + ' '.join(value.reasons), 'boundary', value.reasons)
                 elif before < 0:
                     reason = Issue('Time-weighted return is unavailable across negative equity', 'negative_equity')
                 elif base:
@@ -54,7 +54,7 @@ def daily_time_weighted(calculation, scope, start, end, target, opening, ending,
                 after = ending if stamp == end else value.amount
                 if after is None:
                     reason = Issue(f'{stamp}: daily TWR needs a supported closing valuation. '
-                                   + ' '.join(value.reasons), 'boundary')
+                                   + ' '.join(value.reasons), 'boundary', value.reasons)
                 elif after < 0:
                     reason = Issue('Time-weighted return is unavailable across negative equity', 'negative_equity')
                 elif not base:
