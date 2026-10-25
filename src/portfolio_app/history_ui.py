@@ -155,9 +155,10 @@ def render_position_history(directory, row):
         if error := st.session_state.pop(key+'save_error', None):
             st.error(error)
         screen = st.session_state.get(key+'screen', 'list')
-        # Separate subviews must replace their whole DOM subtree. Reusing
-        # unkeyed horizontal blocks can briefly mix list and review actions.
-        with st.container(key=key+'screen_'+screen):
+        # Clear the outgoing subtree before rendering another screen, including
+        # after a save interrupts the review halfway through a dialog rerun.
+        # The editor path also needs this boundary (not just position details).
+        with st.empty().container(key=key+'screen_'+screen):
             if screen != 'list':
                 st.button('Back to transactions', icon=':material/arrow_back:', key=key+'back',
                     on_click=_history_action, args=(key, 'list'))
@@ -496,13 +497,13 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
         st.session_state.pop(key+'reviewed', None)
         st.session_state[_key(directory, candidate.position_id)+'screen'] = 'list'
         st.rerun()
-    with st.container(horizontal=True):
+    with st.container(horizontal=True, key=key+'actions'):
         if st.button(action_label or 'Apply and confirm history', key=key+'save', disabled=blocked, type='primary',
                      help='Use the displayed balances and confirm the shown history interval. Missing market data still limits returns.'
                      if action_label is None else 'Apply the displayed transaction and balance changes.'):
             apply(complete=action_label is None)
         if action_label is None and st.button('Apply incomplete history', key=key+'save_incomplete', disabled=blocked,
-                                              type='tertiary', help='Update balances without declaring this history complete.'):
+                                              type='secondary', help='Update balances without declaring this history complete.'):
             apply(complete=False)
         st.button('Keep portfolio unchanged', key=key+'keep', on_click=_history_action,
             args=(_key(directory, candidate.position_id),'list'))

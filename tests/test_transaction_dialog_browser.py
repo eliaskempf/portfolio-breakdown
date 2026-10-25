@@ -102,6 +102,61 @@ def watch_dialog(page):
     }''')
 
 
+@pytest.mark.parametrize('width', [1280, 760])
+@pytest.mark.parametrize('entry', ['details', 'editor'])
+def test_edit_and_reconfirm_replaces_review_with_transaction_list(transaction_page, width, entry):
+    page, root = transaction_page
+    page.set_viewport_size({'width': width, 'height': 900})
+    dialog = page.get_by_role('dialog')
+    dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+    watch_dialog(page)
+    dialog.evaluate('''e => {
+        window.mixedHistoryFrames=0;
+        const visible=el=>el && el.getBoundingClientRect().height && getComputedStyle(el).visibility!=="hidden";
+        const sample=()=>{
+            if(!e.isConnected)return;
+            const list=e.querySelector('table[aria-label="Transactions"]');
+            const apply=[...e.querySelectorAll('button')].find(b=>b.textContent.trim()==='Apply and confirm history');
+            if(visible(list) && visible(apply)) window.mixedHistoryFrames++;
+            window.historyFrame=requestAnimationFrame(sample);
+        };
+        sample();
+    }''')
+    for iteration in range(2):
+        if iteration:
+            if entry == 'editor':
+                dialog.get_by_role('button', name='Edit position', exact=False).click(); settle(page)
+            table = dialog.get_by_role('table', name='Transactions', exact=True)
+            table.locator('tr[data-transaction-id="buy"]').get_by_role('button').click(); settle(page)
+            price = dialog.get_by_role('textbox', name='Unit price', exact=True)
+            price.fill('11'); price.press('Tab'); settle(page)
+            dialog.get_by_role('button', name='Save changes', exact=True).click(); settle(page)
+        dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
+        dialog.get_by_role('button', name='Apply and confirm history', exact=True).click(); settle(page)
+        playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_have_count(1)
+        playwright.expect(dialog.get_by_role('button', name='Review against portfolio', exact=True)).to_have_count(1)
+        for label in ('Apply and confirm history', 'Apply incomplete history', 'Keep portfolio unchanged', 'Back to transactions'):
+            playwright.expect(dialog.get_by_role('button', name=label, exact=True)).to_have_count(0)
+        playwright.expect(dialog.get_by_text('Review options', exact=True)).to_have_count(0)
+        playwright.expect(dialog.get_by_text('Confirm complete history', exact=False)).to_have_count(0)
+        assert load_journal(root)[0].securities[0].reviews[-1].complete_through
+    assert page.evaluate('window.missingDialogFrames') == 0
+    assert dialog.evaluate('e=>e===window.originalDialog')
+    page.evaluate('cancelAnimationFrame(window.dialogFrame)')
+    page.evaluate('cancelAnimationFrame(window.historyFrame)')
+    assert page.evaluate('window.mixedHistoryFrames') == 0
+    assert page.locator('#page-runs').inner_text() == '1'
+    dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
+    incomplete = dialog.get_by_role('button', name='Apply incomplete history', exact=True)
+    playwright.expect(incomplete).to_have_attribute('data-testid', 'stBaseButton-secondary')
+    actions = [dialog.get_by_role('button', name=label, exact=True) for label in
+               ('Apply and confirm history', 'Apply incomplete history', 'Keep portfolio unchanged')]
+    boxes = [button.bounding_box() for button in actions]
+    assert all(box['x'] >= 0 and box['x']+box['width'] <= width for box in boxes)
+    if width == 1280:
+        assert max(box['y'] for box in boxes)-min(box['y'] for box in boxes) <= 1
+
+
 @pytest.mark.parametrize('action', ['save', 'review'])
 def test_save_and_review_keep_dialog_visible(transaction_page, action):
     page, root = transaction_page
