@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from functools import lru_cache
 
-from portfolio_app.history_observations import index_observations, lookup
+from portfolio_app.history_observations import index_observations, lookup, rate
 
 # Provider venue codes, not ticker suffixes or an instrument's domicile.
 VENUES = {
@@ -21,6 +21,25 @@ VENUES = {
     'AMS': ('XAMS', 'Europe/Amsterdam'),
     'EBS': ('XSWX', 'Europe/Zurich'),
 }
+
+# Public historical FX session facts, not equity/bank holiday rules. Late
+# reopenings at/after 17:00 New York begin the next daily closing session.
+# Sources: OANDA holiday-trading-hours and QuantConnect/Lean
+# Data/market-hours/market-hours-database.json, Forex-oanda-[*].
+# Keep dates explicit: an undocumented future holiday must not mask a gap.
+FX_DAILY_CLOSURES = frozenset({
+    '2016-01-01', '2016-12-25', '2017-01-01', '2018-12-25',
+    '2019-01-01', '2019-12-25', '2020-01-01', '2020-12-25',
+    '2021-01-01', '2022-12-25', '2022-12-26', '2023-01-01',
+    '2023-01-02', '2023-12-24', '2023-12-25', '2023-12-31',
+    '2024-01-01', '2024-12-25', '2025-01-01', '2025-12-25', '2026-01-01',
+})
+FX_HOLIDAY_CURRENCIES = frozenset({'EUR', 'USD', 'GBP', 'CHF', 'JPY', 'CAD', 'AUD', 'NZD'})
+
+
+def fx_closed_day(day, source, target):
+    return day.weekday() >= 5 or (day.isoformat() in FX_DAILY_CLOSURES
+        and {source, target} <= FX_HOLIDAY_CURRENCIES)
 
 
 def listing_calendar(metadata):
@@ -56,6 +75,33 @@ class ValuationEvidence:
     as_of: str
     source: str
     method: str = 'close'
+    kind: str = 'price'
+
+
+def valuation_fx(observations, source, target, stamp):
+    """Dated closing FX, or the prior close across documented closed sessions.
+
+    This is a daily valuation convention, not transaction conversion evidence.
+    Never look past a missing scheduled close or borrow a later rate.
+    """
+    observations = index_observations(observations)
+    requested = date.fromisoformat(stamp)
+    dates = [stamp]
+    if fx_closed_day(requested, source, target):
+        previous = requested-timedelta(days=1)
+        for _ in range(7):
+            if not fx_closed_day(previous, source, target):
+                dates.append(previous.isoformat())
+                break
+            previous -= timedelta(days=1)
+    for as_of in dates:
+        value = rate(observations, source, target, as_of, side='close')
+        if value is not None:
+            evidence = tuple(provenance(o, stamp) for o in observations.fx.get(as_of, ())
+                if o.side == 'close' and ((o.currency, o.target) == (source, target)
+                                         or (o.currency, o.target) == (target, source)))
+            return value, evidence
+    return None, ()
 
 
 def price_at(observations, subjects, stamp, *, events=()):
@@ -90,4 +136,5 @@ def price_at(observations, subjects, stamp, *, events=()):
 
 def provenance(observation, stamp):
     return ValuationEvidence(observation.subject, stamp, observation.date, observation.source,
-                             'closed_market' if observation.date != stamp else 'close')
+                             ('closed_fx_session' if observation.kind == 'fx' else 'closed_market')
+                             if observation.date != stamp else 'close', observation.kind)

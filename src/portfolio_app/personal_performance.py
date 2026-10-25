@@ -14,7 +14,7 @@ from portfolio_app.history_observations import HistoryScope, index_observations,
 from portfolio_app.security_history import cash_postings, history_fingerprint, replay_securities, selected_events
 
 from portfolio_app.history_diagnostics import HistoryIssue as Issue
-from portfolio_app.history_valuation import price_at, provenance, ValuationEvidence
+from portfolio_app.history_valuation import price_at, provenance, valuation_fx, ValuationEvidence
 
 ZERO = Decimal(0)
 
@@ -230,7 +230,7 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
 
 
 def value_at(journal, scope, observations, stamp, target, *, calculation=None):
-    """Exact dated equity: securities + cash - loans + futures/other claims."""
+    """Dated equity with supported closing-price and FX closure conventions."""
     if scope.unresolved:
         return AmountResult(None, scope.unresolved)
     supplied = lookup(observations, 'value', scope.key, stamp, currency=target)
@@ -243,11 +243,15 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
 
     def add(amount, denomination, identity):
         nonlocal total
-        value = convert(amount, denomination, target, stamp, observations)
+        if amount == 0:
+            return
+        fx, fx_evidence = valuation_fx(observations, denomination, target, stamp)
+        value = amount*fx if amount is not None and fx is not None else None
         if value is None:
             reasons.append(Issue(f'{identity}: missing value or {denomination}/{target} FX on {stamp}', 'fx'))
         else:
             total += value
+            evidence.extend(fx_evidence)
 
     for identity in scope.positions:
         book = books.get(identity)

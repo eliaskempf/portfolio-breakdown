@@ -185,11 +185,13 @@ def add_observation(store, observation):
     return replace(store, observations=(*store.observations, observation))
 
 
-def rate(store, source, target, stamp):
+def rate(store, source, target, stamp, *, side=None):
     if source == target:
         return Decimal(1)
     values = (store.fx.get(stamp, ()) if isinstance(store, _ObservationIndex) else
               [o for o in active_observations(store) if o.kind == 'fx' and o.date == stamp])
+    if side is not None:
+        values = [o for o in values if o.side == side]
     direct = [o for o in values if o.currency == source and o.target == target]
     inverse = [o for o in values if o.currency == target and o.target == source]
     if direct and inverse and abs(direct[0].amount*inverse[0].amount-1) > Decimal('1e-8'):

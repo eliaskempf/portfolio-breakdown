@@ -190,7 +190,20 @@ settlement marks. It does not create
 trades, distributions or splits. Downloaded closes are converted back to the
 units traded on each date using the provider's split evidence, without dividend
 reinvestment or automatic price repair. Manual observations take precedence.
-Prices must cover required valuation boundaries; only verified closed sessions can use the preceding eligible close. FX remains exact-date evidence. Gaps are not interpolated or filled with current quotes. Missing data can be entered manually. Corrections retain
+Prices must cover required valuation boundaries; only verified closed sessions can use the preceding eligible close.
+For Saturday/Sunday valuations, an absent closing FX rate uses the immediately preceding Friday's closing rate,
+or the prior scheduled close when Friday itself is a documented FX holiday.
+Thus a Monday contribution can use Friday's supported closing price and FX for its opening valuation,
+without inventing Sunday observations. The same rule covers explicitly documented FX closing-session holidays
+for EUR, USD, GBP, CHF, JPY, CAD, AUD and NZD pairs, including New Year's Day 2025.
+The historical date list uses [OANDA's holiday schedule](https://www.oanda.com/us-en/trading/holiday-trading-hours/)
+and [LEAN's Forex-oanda calendar](https://github.com/QuantConnect/Lean/blob/master/Data/market-hours/market-hours-database.json).
+Evening holiday reopenings start the next closing session. Other bank/equity holidays and undocumented future
+holidays do not establish an FX closure; maintainers must verify additional dates before adding them.
+Actual dated closing FX takes precedence. Missing scheduled closes are not filled from older or later rates.
+Quote and FX as-of dates remain visible.
+Transaction payments, fees and acquisition-cost conversions still require their own dated conversion evidence.
+Gaps are not interpolated or filled with current quotes. Missing data can be entered manually. Corrections retain
 original observations.
 
 **Confirm complete history**, beside the position's transaction reconciliation,

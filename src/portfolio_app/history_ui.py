@@ -889,10 +889,11 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
             trace.text = [f'Total gain: {money(p["Total gain"], signed=True)}<br>TWR: '
                           + return_percent(None if p['TWR'] is None else 100*p['TWR']) for p in points]
             trace.hovertemplate = trace.hovertemplate.replace('<extra>', '<br>%{text}<extra>')
-        if any(p.get('Price as of') for p in points):
+        if any(p.get('Price as of') or p.get('FX as of') for p in points):
             trace = next(t for t in figure.data if t.name == 'Value')
             previous_text = list(trace.text) if trace.text is not None else [''] * len(points)
             trace.text = [text + ('<br>Quote as of: '+p['Price as of'] if p.get('Price as of') else '')
+                          + ('<br>FX as of: '+p['FX as of'] if p.get('FX as of') else '')
                           for text, p in zip(previous_text, points)]
             if show_summary:
                 trace.hovertemplate = trace.hovertemplate.replace('<extra>', '<br>%{text}<extra>')
@@ -909,9 +910,12 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     notes = []
     if view.all_end != view.today:
         notes.append(f'Latest valuation: {view.all_end}')
-    carried = sorted({e.as_of for e in full.valuation_evidence if e.as_of != e.requested_date})
+    carried = sorted({e.as_of for e in full.valuation_evidence if e.kind == 'price' and e.as_of != e.requested_date})
     if carried:
         notes.append('Market closed · Quotes as of '+', '.join(carried))
+    carried_fx = sorted({e.as_of for e in full.valuation_evidence if e.kind == 'fx' and e.as_of != e.requested_date})
+    if carried_fx:
+        notes.append('Prior close · FX as of '+', '.join(carried_fx))
     if view.missing:
         notes.append('Some valuations missing · lines connect available values')
     if notes:

@@ -121,7 +121,8 @@ def position_history_statuses(holdings, journal, observations, *, target='EUR', 
             action = 'Open account journal'
         current = calculation.value(scope, end, target)
         carried = sorted({item.as_of for item in current.evidence if item.as_of != end})
-        freshness = ('Market closed · '+', '.join(carried) if current.amount is not None and carried else
+        carry_label = 'Market closed' if any(item.kind == 'price' and item.as_of != end for item in current.evidence) else 'Prior FX close'
+        freshness = (carry_label+' · '+', '.join(carried) if current.amount is not None and carried else
                      'Current' if current.amount is not None else f'Valued {view.all_end}')
         results.append(HistoryStatus(identity, transactions, market, action, route, screen, scope, reasons,
                                      bool(pending or transaction_issues or unconfirmed or market_issue or method_issue), view.all_start, latest, mwr, twr,
