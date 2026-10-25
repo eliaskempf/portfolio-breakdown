@@ -69,6 +69,10 @@ need no purchase date or conversion.
 
 A position with incomplete costs has no complete cost-based gain, while its
 available current value still counts toward portfolio value and allocation.
+Transaction CSV can retain supplied acquisition-cost and monetary-valuation
+estimates, with their sources. Affected gains show an approximate status.
+Costed units can contribute a partial unrealized gain while other units retain
+unknown cost; the unknown units are never treated as free.
 Independently supported recorded income or realized gains can still contribute
 to an explicitly partial monetary subtotal. **Complete**,
 **Partial** and **Unavailable** describe coverage. A partial return is not the
@@ -110,6 +114,42 @@ history; explicit offline demo history is invented. The separate
 [risk calculation](analytics.md#risk) uses adjusted prices and historical FX.
 
 ## Personal history {#personal-history}
+
+Transaction import review shows recorded net changes before activation. Its
+optional **Asset history diagnostic** is separate from standard position history.
+Absolute units and values require a reviewed opening or accepted reporting
+boundary and use the existing forward journal. Ending observations are comparison
+inputs only; they never backfill earlier quantities. No global zero opening is
+inferred from a ledger, current holding or matching final quantity.
+
+An aggregate import can combine owned exchanges, wallets and staking locations
+without reconstructing each location's FIFO inventory. Internal principal does
+not change aggregate ownership. Fees remain expenses and rewards remain income.
+Unknown quantities still block exact activation; unknown monetary amounts do not
+necessarily prevent unit reconstruction. Unsupported ordering can leave useful
+net totals available even when journal activation needs more evidence.
+
+Approximate period gain is ending market value minus starting market value and
+net external additions. Reward units affect gain once; supplied receipt valuations
+are shown separately as income. Remaining acquisition cost is neither inferred
+from market prices nor used as the denominator for historical returns.
+
+**Approx. return — daily Dietz** in the import diagnostic uses linked daily Dietz: daily gain divided by opening value
+plus half of net flows, with daily factors compounded. This assumes midpoint flow
+timing; it is neither the standard daily TWR nor annualized XIRR. Extinguishing
+residual dust after a position has effectively closed can produce −100%; CSV
+integration does not remove this approximation limitation. Daily transfer values may use
+daily prices. Unknown trade consideration and unresolved inventory classification
+are not filled using market values. Missing prices remain gaps, and balance resets
+inside the interval interrupt dependent gains and returns. Choosing a supported
+interval after a boundary measures only that later interval.
+
+Unit completeness, acquisition-cost coverage, dated valuation coverage and history
+review remain distinct. Supplied estimates retain their quality and provenance;
+partial results and unavailable metrics have explanations under **Calculation and
+evidence**. An undated ending reference does not acquire the export date or today's
+date. Older ending-balance reconstruction settings are retained for review but
+cannot activate that retired calculation.
 
 The **History → Holdings** position view and **Overview → Performance** show personal
 history separately from market-price charts and current unrealized gains.
@@ -258,3 +298,16 @@ charges reduce their proceeds, and other expenses are deducted separately. These
 components reconcile to total gain for an ordinary complete trade history.
 Transfers preserve lot costs but cross performance scopes at market value, so
 their acquisition-cost breakdown and scope gain have different boundaries.
+
+Imported swaps and rewards distinguish recorded asset units from supplied monetary
+valuations. A swap's analytical proceeds and incoming basis do not imply a cash
+payment. In-kind rewards add income and basis when their value is supplied, without
+an external contribution. Own-custody transfers preserve original lots; staking
+and unstaking do not recognize the same reward twice.
+
+Asset fees remove units once and expense FIFO carrying cost under the import's
+versioned portfolio policy. That expense is not an inferred market sale. Internal
+transfers and swaps cancel before valuing whole-portfolio flows. A selected subset
+may still need a transfer-date price or swap valuation. Thus portfolio gain can
+be supported while a particular lot cost, gain component or subset return remains
+unknown. See [transaction import](import.md#transactions) for evidence and review.

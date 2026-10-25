@@ -106,13 +106,44 @@ def _visible_records(book):
 def _transaction_table(records, book):
     columns = ['Date', 'Transaction', 'Shares', 'Trade value', 'Fees', 'Status']
     entries = []
-    for event in records:
-        charges = ' + '.join(_money(c.amount, c.currency) for c in event.charges)
-        entries.append(dict(zip(columns, [event.date or 'Unknown', _KIND_LABELS.get(event.kind,event.kind.title()),
-            str(event.quantity) if event.quantity else '—', _money(event.gross, event.currency),
-            charges or (_money(Decimal(0), event.currency) if event.charges_known else 'Unknown' if event.kind in ('buy','sell','distribution') else '—'),
-            'Applied' if event.id in book.active_ids else 'Changes saved; not applied' if event.replaces else 'Saved; not applied'])))
-    return pd.DataFrame(entries, columns=columns)
+    for e in records:
+        charges = ' + '.join(_money(c.amount, c.currency) for c in e.charges)
+        asset_fees = ' + '.join(f'{c.quantity} {"asset units"}' for c in e.asset_charges)
+        charges = ' + '.join(v for v in (charges,asset_fees) if v)
+        entries.append(dict(zip(columns, [e.date or 'Unknown', _KIND_LABELS.get(e.kind,e.kind.title()),
+            str(e.quantity) if e.quantity or e.kind in ('opening','checkpoint') else '—', '—' if e.kind in ('swap','reward','asset_fee','checkpoint','inventory_in','inventory_out') else _money(e.gross, e.currency),
+            charges or (_money(Decimal(0), e.currency) if e.charges_known else 'Unknown' if e.kind in ('buy','sell','distribution') else '—'),
+            'Applied' if e.id in book.active_ids else 'Changes saved; not applied' if e.replaces else 'Saved; not applied'])))
+        if e.kind in ('swap','reward'):
+            entries[-1]['Monetary valuation'] = _money(e.valuation_amount,e.valuation_currency)
+            if e.valuation_quality == 'estimated':
+                entries[-1]['Monetary valuation'] += ' · estimated'
+        if e.kind in ('opening','checkpoint','inventory_in','inventory_out'):
+            entries[-1]['Evidence'] = (
+                ('Observed '+e.observed_at if e.observed_at else 'Observation date unknown') +
+                ' · reporting boundary '+e.date if e.kind in ('opening','checkpoint') else
+                ('Origin/purpose unresolved' if e.flow_classification == 'unresolved' else 'External inventory'))
+            if e.costs:
+                entries[-1]['Acquisition cost'] = ' + '.join(
+                    _money(Decimal(p['amount']) if p['amount'] else None,p['currency'])+
+                    (' · estimated' if p.get('quality') == 'estimated' else '') for p in e.costs)
+    return pd.DataFrame(entries).fillna('—') if entries else pd.DataFrame(columns=columns)
+
+
+def _related_transactions(journal, book):
+    rows = []
+    for owner in journal.securities:
+        if owner.position_id == book.position_id:
+            continue
+        for event in selected_events(owner):
+            if event.other_position_id == book.position_id:
+                rows.append({'Date': event.date, 'Transaction': 'Swap received' if event.kind == 'swap' else 'Transfer received',
+                             'Shares': str(event.received_quantity if event.kind == 'swap' else event.quantity),
+                             'Monetary valuation': _money(event.valuation_amount, event.valuation_currency) if event.kind == 'swap' else '—'})
+            for charge in event.asset_charges:
+                if charge.position_id == book.position_id:
+                    rows.append({'Date': event.date, 'Transaction': 'Asset fee', 'Shares': str(charge.quantity), 'Monetary valuation': '—'})
+    return pd.DataFrame(rows)
 
 
 def _request_removal(key, identities, revision):
@@ -190,7 +221,18 @@ def render_position_history(directory, row):
                         _history_action(key, 'edit')
                     render_transaction_list(records, _transaction_table(records, book), key=key+'transactions_'+str(revision),
                         revision=revision, on_edit=edit, on_remove=lambda ids: _request_removal(key, ids, revision))
-                if not records:
+                related = _related_transactions(journal, book)
+                if not related.empty:
+                    st.dataframe(related, hide_index=True, width='stretch')
+                sourced = [e for e in records if e.source.startswith('transaction_csv_v')]
+                if sourced or not related.empty:
+                    st.caption('Review or correct imported movements in Import portfolio → Transactions.')
+                if sourced:
+                    with st.expander('Inventory and estimate evidence'):
+                        st.dataframe(pd.DataFrame([dict(Date=e.date, Note=e.note,
+                            Cost_source='; '.join(dict.fromkeys(p.get('source','') for p in e.costs)),
+                            Valuation_source=e.valuation_source) for e in sourced]), hide_index=True, width='stretch')
+                if not records and related.empty:
                     st.caption('No transactions yet. Add buys and sells, then review them against your portfolio.')
                 elif any(e.id not in book.active_ids for e in records):
                     st.caption('Saved transactions do not change your holding until you review and apply them.')
@@ -208,13 +250,22 @@ def render_position_history(directory, row):
 
 def _review_history(directory, journal, revision, snapshot, book, row, key):
     st.markdown('**Review against portfolio**')
+    imported = any(e.source.startswith('transaction_csv_v') and (b.position_id == book.position_id or e.other_position_id == book.position_id or any(c.position_id == book.position_id for c in e.asset_charges)) for b in journal.securities for e in b.records)
     records = _visible_records(book)
+    if imported:
+        st.caption('Correct imported movements together in Positions → Import portfolio → Transactions. Applied imports stay selected while you review manual entries.')
+        if not any(not e.source.startswith('transaction_csv_v') for e in records):
+            from portfolio_app.history_coverage_ui import render_coverage_review
+            render_coverage_review(directory, journal, HistoryScope((book.position_id,)), key=key, can_confirm=book.active)
+            return
     by_id = {e.id:e for e in records}
     superseded = {e.replaces for e in records if e.replaces}
     review = st.container()
     with st.expander('Review options'):
-        chosen = st.multiselect('Included transactions', list(by_id), default=[i for i in by_id if i not in superseded],
-            format_func=lambda i: _event_label(by_id[i]), key=key+'included_'+str(revision))
+        selectable = [i for i,e in by_id.items() if not e.source.startswith('transaction_csv_v')]
+        fixed = [i for i,e in by_id.items() if e.source.startswith('transaction_csv_v') and i in book.active_ids]
+        chosen = st.multiselect('Included transactions', selectable, default=[i for i in selectable if i not in superseded],
+            format_func=lambda i: _event_label(by_id[i]), key=key+'included_'+str(revision)) + fixed
         st.button('Add starting balance', type='tertiary', key=key+'review_start',
             help='Use this if you already held shares before your first recorded transaction.',
             on_click=_history_action, args=(key,'opening'))
@@ -239,6 +290,8 @@ def _review_history(directory, journal, revision, snapshot, book, row, key):
                 st.button('Keep portfolio unchanged', key=key+'keep', on_click=_history_action, args=(key,'list'))
         else:
             st.caption('Select transactions in Review options to compare them with your portfolio.')
+    if imported:
+        return
     panel = st.expander('Edit transactions, starting lots and fees', key=key+'advanced', on_change='rerun')
     if panel.open:
         with panel:
@@ -246,8 +299,9 @@ def _review_history(directory, journal, revision, snapshot, book, row, key):
 
 
 _KIND_LABELS = {'opening':'Starting balance', 'buy':'Buy', 'sell':'Sell', 'distribution':'Distribution',
-    'fee':'Fee', 'tax':'Tax', 'split':'Share split', 'transfer':'Transfer between holdings',
+    'swap':'Swap sent', 'reward':'In-kind income', 'asset_fee':'Asset fee', 'fee':'Fee', 'tax':'Tax', 'split':'Share split', 'transfer':'Transfer between holdings',
     'transfer_in':'Transfer in', 'transfer_out':'Transfer out', 'cost':'Remaining acquisition cost', 'note':'Unresolved event'}
+_KIND_LABELS.update(checkpoint='Balance checkpoint', inventory_in='Inventory received', inventory_out='Inventory removed')
 
 
 def _event_label(event):
@@ -612,7 +666,7 @@ def _add_transaction(directory, journal, revision, snapshot, book, key):
 
 def _edit_transaction(directory, journal, revision, snapshot, book, key):
     from portfolio_app.history_commands import correct_transaction
-    records = _visible_records(book)
+    records = [e for e in _visible_records(book) if not e.source.startswith('transaction_csv_v')]
     if not records:
         st.caption('No transactions to edit.')
         return

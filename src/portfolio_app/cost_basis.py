@@ -59,6 +59,12 @@ def validate_components(parts):
     for part in parts:
         if not isinstance(part, dict) or decimal(part.get('shares')) is None:
             raise DataError('Invalid cost quantity.')
+        if part.get('quality', 'recorded') not in {'recorded', 'estimated'}:
+            raise DataError('Invalid acquisition-cost quality.')
+        if 'source' in part and not isinstance(part['source'], str):
+            raise DataError('Acquisition-cost source must be text.')
+        if part.get('quality') == 'estimated' and (not part.get('source') or part.get('amount') == ''):
+            raise DataError('Estimated acquisition cost requires an amount and source.')
         if part.get('amount') != '' and decimal(part.get('amount')) is None:
             raise DataError('Invalid original cost.')
         if part.get('currency') and not valid_currency(part['currency']):
@@ -173,6 +179,9 @@ class ResolvedCost:
 def resolve_cost(parts, target, historical=None):
     total, estimated, notes = Decimal(0), False, []
     for part in parts:
+        if part.get('quality') == 'estimated':
+            estimated = True
+            notes.append('Estimated acquisition cost: '+part['source'])
         amount = decimal(part['amount'])
         saved = part.get('conversions', {}).get(target)
         if saved:

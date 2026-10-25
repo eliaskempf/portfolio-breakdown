@@ -65,6 +65,10 @@ def validate_workspace(directory: Path, *, allow_empty: bool = False) -> None:
     from portfolio_app.security_history import effective_holdings
     effective_holdings(snapshot.holdings, load_journal(directory)[0].securities)
     load_history_observations(directory)
+    from portfolio_app.asset_history_store import load_settings as load_asset_history
+    asset_history, _ = load_asset_history(directory)
+    if asset_history and not asset_history.anchors.keys() <= set(snapshot.holdings.position_id):
+        raise DataError('Asset performance refers to a missing position.')
     from portfolio_app.futures_quotes import read_quotes
     read_quotes(directory)
     from portfolio_app.generalized_studies_ui import load_study_settings

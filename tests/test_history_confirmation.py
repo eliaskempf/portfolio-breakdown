@@ -144,3 +144,14 @@ def test_combined_action_attestation_survives_unrelated_position_changes(tmp_pat
     first = replace(first, records=(*first.records, E('own-evidence', 'note', '2024-02-01')))
     assert coverage_reasons(replace(journal, securities=(first, other)), HistoryScope((first.position_id,)),
                             ObservationStore(), '2024-01-01', TODAY.isoformat())
+
+
+def test_existing_manual_review_hash_survives_csv_schema_extension():
+    from portfolio_app.account_journal import Journal
+    from portfolio_app.security_history import SecurityBook, SecurityEvent, security_history_fingerprint
+    book = SecurityBook('invented-position', 'invented-asset', ('0', '', ''),
+                        records=(SecurityEvent('invented-opening', 'opening', '2024-01-01'),),
+                        active_ids=('invented-opening',))
+    # Recorded on the history branch before the CSV schema extension.
+    assert security_history_fingerprint(Journal(version=2, securities=(book,)), book.position_id) == (
+        'a73230959aaada846fd5b90bda8d3791680a08c5ebf5f2faa8ed447b06cfb8c5')

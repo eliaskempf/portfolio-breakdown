@@ -22,7 +22,7 @@ export default function({parentElement, data, setTriggerValue}) {
   const removable=data.rows.filter(r=>r.removable);
   const remove=root.querySelector('.remove');
   const send=(action,ids)=>setTriggerValue('action',{action,ids,revision:data.revision});
-  const open=row=>send('edit',[row.id]);
+  const open=row=>{if(row.editable)send('edit',[row.id]);};
   const update=()=>{
     remove.textContent=`Remove selected (${state.selected.size})`;
     remove.disabled=!state.selected.size;
@@ -53,7 +53,7 @@ export default function({parentElement, data, setTriggerValue}) {
     });
     rows.forEach(row=>{
       const tr=document.createElement('tr');tr.dataset.transactionId=row.id;tr.tabIndex=0;
-      tr.title='Double-click to edit';
+      tr.title=row.editable?'Double-click to edit':'Review in transaction import';
       tr.ondblclick=e=>{if(!e.target.closest('input,button'))open(row);};
       tr.onkeydown=e=>{if(e.key==='Enter' && e.target===tr){e.preventDefault();open(row);}};
       const cell=document.createElement('td');
@@ -67,7 +67,7 @@ export default function({parentElement, data, setTriggerValue}) {
       row.cells.forEach((text,index)=>{const td=document.createElement('td');td.textContent=text;
         if([2,3,4].includes(index))td.className='number';tr.append(td);});
       const action=document.createElement('td'),edit=document.createElement('button');edit.textContent='Edit';
-      edit.setAttribute('aria-label','Edit '+row.label);edit.onclick=()=>open(row);action.append(edit);tr.append(action);
+      edit.disabled=!row.editable;edit.setAttribute('aria-label','Edit '+row.label);edit.onclick=()=>open(row);action.append(edit);tr.append(action);
       body.append(tr);
     });
     update();
@@ -80,7 +80,8 @@ export default function({parentElement, data, setTriggerValue}) {
 
 def render_transaction_list(records, frame, *, key, revision, on_edit, on_remove):
     rows = [dict(id=event.id, date=event.date, sequence=event.sequence, order=index,
-                 removable=event.kind != 'opening',
+                 removable=event.kind != 'opening' and not event.source.startswith('transaction_csv_v'),
+                 editable=not event.source.startswith('transaction_csv_v'),
                  label=f'{event.date or "Undated"} {frame.iloc[index]["Transaction"]} · {event.quantity:g} units',
                  cells=[str(value) for value in frame.iloc[index]]) for index, event in enumerate(records)]
     def act():
@@ -91,9 +92,10 @@ def render_transaction_list(records, frame, *, key, revision, on_edit, on_remove
         if event.get('revision') != revision or not identities or not set(identities) <= {row['id'] for row in rows}:
             st.warning('History changed. Select the transactions again.')
             return
-        if event.get('action') == 'edit' and len(identities) == 1:
+        chosen = [row for row in rows if row['id'] in identities]
+        if event.get('action') == 'edit' and len(identities) == 1 and all(row['editable'] for row in chosen):
             on_edit(identities[0])
-        elif event.get('action') == 'remove':
+        elif event.get('action') == 'remove' and all(row['removable'] for row in chosen):
             on_remove(identities)
     component = st.components.v2.component('portfolio_transaction_list', html=HTML, css=CSS, js=JS)
     component(key=key, data=dict(rows=rows, columns=list(frame.columns), revision=revision), on_action_change=act)

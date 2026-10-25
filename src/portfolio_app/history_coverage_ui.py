@@ -28,6 +28,10 @@ def confirm_complete_history(directory, journal, scope, start, end, revision):
         active = {b.position_id for b in latest.securities if b.active}
         if not set(scope.positions) <= active:
             raise DataError('Apply the selected transactions before confirming complete history.')
+        blockers = [reason for reason in coverage_reasons(latest, scope, store, start, end)
+                    if reason == 'Unapplied transaction evidence requires review']
+        if blockers:
+            raise DataError('Review unapplied transaction evidence before confirming complete history.')
         fingerprint = (security_history_fingerprint(latest, scope.positions[0])
                        if len(scope.positions) == 1 and not scope.accounts else history_fingerprint(latest))
         review = CoverageReview(uuid4().hex, scope, start, end, fingerprint)
