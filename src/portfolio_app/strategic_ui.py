@@ -121,7 +121,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     current_valued if current_valued is not None else valued, bucket, target=reporting_currency(),
                     calculation=history['calculation'], current_values=history['current_values'])
             st.markdown('**Category comparison**', help='Total known gain includes retained closed holdings and recorded income. Return is full recorded-history time-weighted return (TWR), not gain divided by remaining cost. Current category membership does not reconstruct past assignments; unsupported account splits remain unavailable.')
-            measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'], help='Cumulative TWR requires exact cash-flow boundary valuations. Gain shows supported monetary subtotals, with coverage.',
+            measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'], help='Cumulative TWR uses daily valuations and recorded cash flows. Gain shows supported monetary subtotals, with coverage.',
                 default='Gain', key='strategic_performance_measure') or 'Gain'
             chart_percent = measure == 'Return (%)'
             available = table.dropna(subset=[measure]).sort_values(measure)

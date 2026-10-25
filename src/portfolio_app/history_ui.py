@@ -764,6 +764,7 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
     cached = prepared
     signature = prepared.get('history_signature') if prepared else None
     waiting = refresh.pending
+    observation_stamp, observation_snapshot = None, None
     if on_toggle_gain is not None:
         def toggle():
             on_toggle_gain()
@@ -774,13 +775,18 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
     @st.fragment(run_every=2 if refresh.pending else None)
     @local_dialog_updates()
     def history_region():
-        nonlocal cached, signature, refresh, waiting
+        nonlocal cached, signature, refresh, waiting, observation_stamp, observation_snapshot
         if waiting and not refresher.pending(directory):
             # A different scope may have occupied the workspace's single job.
             # Ensure this scope once, then stop scheduling on timer ticks.
             refresh = refresher.request(directory, journal, scope, target)
             waiting = refresh.pending
-        observations, revision = load_observations(directory)
+        from portfolio_app.input_cache import file_stamp
+        current_stamp = file_stamp(directory/'history-observations.json')
+        if current_stamp != observation_stamp:
+            observation_snapshot = load_observations(directory)
+            observation_stamp = current_stamp
+        observations, revision = observation_snapshot
         period = st.session_state.get(key+'period') or '1Y'
         current = revision, period, date.today()
         if current != signature:

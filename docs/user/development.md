@@ -79,6 +79,10 @@ does not release a pending receipt; explicit receipt events remain authoritative
 Background data refreshes must remain local to the affected result. Verify actual
 transitions with delayed synthetic data: settled screenshots alone miss old
 controls and charts briefly appearing during a switch.
+An explicit retry rebuilds the owning dialog's download state and polling timer;
+successful completion must update the chart without changing its period or
+leaving the view. Idle polling checks the observation-file identity before
+parsing it again, while externally saved corrections still invalidate results.
 
 Position opening and clean dismissal rerun only the dialog host. Child workflows
 share a local refresh boundary, including evidence saves, reconciliation, market

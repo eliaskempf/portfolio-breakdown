@@ -1,4 +1,4 @@
-"""Category comparison uses the same monetary ledger and exact TWR contract."""
+"""Category comparison uses the same monetary ledger and daily TWR contract."""
 from datetime import date
 
 import pandas as pd

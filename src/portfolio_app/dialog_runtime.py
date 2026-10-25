@@ -21,9 +21,16 @@ def route_position_callback():
         st.rerun(HOST)
 
 
-@contextmanager
 def local_dialog_updates():
+    # Capture the owner when the context/decorator is declared. A nested polling
+    # fragment must rebuild that owner on an explicit retry so its timer and
+    # closed-over download state are initialized again.
     fragment = ThreadState.get().fragment_id
+    return _local_dialog_updates(fragment)
+
+
+@contextmanager
+def _local_dialog_updates(fragment):
     try:
         yield
     except RerunException as exc:

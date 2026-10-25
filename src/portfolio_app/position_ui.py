@@ -161,6 +161,10 @@ def _dismiss():
 
 def _dismiss_dialog():
     _dismiss()
+    if st.session_state.get('position_draft'):
+        # The resume action lives on the parent page. A saved session draft
+        # needs that page refreshed; read-only dismissal still stays local.
+        st.rerun()
     from portfolio_app.dialog_runtime import route_position_callback
     route_position_callback()
 
