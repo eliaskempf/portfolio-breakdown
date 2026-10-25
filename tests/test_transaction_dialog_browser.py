@@ -155,6 +155,14 @@ def test_edit_and_reconfirm_replaces_review_with_transaction_list(transaction_pa
     assert all(box['x'] >= 0 and box['x']+box['width'] <= width for box in boxes)
     if width == 1280:
         assert max(box['y'] for box in boxes)-min(box['y'] for box in boxes) <= 1
+    incomplete.click(); settle(page)
+    assert not load_journal(root)[0].securities[0].reviews[-1].complete_through
+    playwright.expect(dialog.get_by_role('button', name='Apply incomplete history', exact=True)).to_have_count(0)
+    dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
+    dialog.get_by_role('button', name='Keep portfolio unchanged', exact=True).click(); settle(page)
+    playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_have_count(1)
+    playwright.expect(dialog.get_by_role('button', name='Apply and confirm history', exact=True)).to_have_count(0)
+    playwright.expect(dialog.get_by_text('Review options', exact=True)).to_have_count(0)
 
 
 @pytest.mark.parametrize('action', ['save', 'review'])

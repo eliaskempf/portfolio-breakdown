@@ -155,10 +155,14 @@ def render_position_history(directory, row):
         if error := st.session_state.pop(key+'save_error', None):
             st.error(error)
         screen = st.session_state.get(key+'screen', 'list')
-        # Clear the outgoing subtree before rendering another screen, including
-        # after a save interrupts the review halfway through a dialog rerun.
-        # The editor path also needs this boundary (not just position details).
-        with st.empty().container(key=key+'screen_'+screen):
+        # Give each screen a fixed slot. Clearing and immediately repopulating
+        # one placeholder can be coalesced into a block update by Streamlit,
+        # retaining review children inside the shorter transaction-list layout.
+        # Inactive slots stay empty for this entire render, so their old blocks
+        # are replaced rather than reused by a different screen.
+        slots = {name: st.empty() for name in
+                 ('list', 'opening', 'add', 'import_pdf', 'edit', 'remove', 'replace', 'fix', 'review')}
+        with slots.get(screen, slots['list']).container(key=key+'screen_'+screen):
             if screen != 'list':
                 st.button('Back to transactions', icon=':material/arrow_back:', key=key+'back',
                     on_click=_history_action, args=(key, 'list'))
