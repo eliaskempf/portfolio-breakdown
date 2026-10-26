@@ -41,7 +41,9 @@ def settlement_notices(directory, journal):
 
 def _signature(directory):
     from portfolio_app.account_observations import FILE as observations
-    return tuple((directory/name).stat().st_mtime_ns if (directory/name).exists() else 0
+    from portfolio_app.input_cache import file_stamp
+    # Atomic replacements can share a timestamp, especially on Windows.
+    return tuple(file_stamp(directory/name)
                  for name in ('settlement-archive.json','settlement-collection.json','futures-quotes.json',ledger.FILE,observations))+(collector.error(directory),)
 
 
