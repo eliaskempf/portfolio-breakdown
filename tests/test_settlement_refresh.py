@@ -1,6 +1,7 @@
 """Polling schedules work; only new financial inputs request a global render."""
 from dataclasses import replace
 from datetime import timedelta
+import os
 
 import pytest
 
@@ -10,10 +11,16 @@ from portfolio_app.futures_quotes import record_result, collector as quotes
 from test_futures_freshness import setup, quote, NOW
 
 
-def test_watcher_ignores_ticks_starts_retrievals_and_notices_but_defers_new_prices(tmp_path, monkeypatch):
+@pytest.mark.parametrize('shared_mtime', [False, True])
+def test_watcher_ignores_ticks_starts_retrievals_and_notices_but_defers_new_prices(tmp_path, monkeypatch, shared_mtime):
     _, journal, contract = setup(tmp_path)
+    def record(observation, error='', *, now=NOW):
+        record_result(tmp_path, contract, observation, error, attempted_at=now, now=now)
+        if shared_mtime:
+            # Rapid atomic replacements may share a filesystem timestamp.
+            os.utime(tmp_path / 'futures-quotes.json', (NOW.timestamp(), NOW.timestamp()))
     observed = quote(contract)
-    record_result(tmp_path, contract, observed, '', attempted_at=NOW, now=NOW)
+    record(observed)
     clock = [NOW]; allowed = [True]; callbacks = []; reruns = []; scheduled = []
     import portfolio_app.futures_valuation as valuation
     monkeypatch.setattr(valuation, 'utc_now', lambda: clock[0])
@@ -34,16 +41,15 @@ def test_watcher_ignores_ticks_starts_retrievals_and_notices_but_defers_new_pric
     tick()
     assert not reruns and len(scheduled) == 6
     # A later download time cannot make the same source observation fresh.
-    record_result(tmp_path, contract, replace(observed, observed_at=clock[0].isoformat()),
-                  '', attempted_at=clock[0], now=clock[0])
+    record(replace(observed, observed_at=clock[0].isoformat()), now=clock[0])
     tick(); assert not reruns
-    record_result(tmp_path, contract, None, 'Invented outage', attempted_at=clock[0], now=clock[0])
+    record(None, 'Invented outage', now=clock[0])
     tick(); assert not reruns
     assert 'Futures quote refresh unavailable' in ui.settlement_notices(tmp_path, journal)[0][-1]
     # New quotes can be newer than the clock at the last full render.
     newer = replace(observed, price=observed.price+1, quote_at=clock[0].isoformat())
     allowed[0] = False
-    record_result(tmp_path, contract, newer, '', attempted_at=clock[0], now=clock[0])
+    record(newer, now=clock[0])
     tick(); tick(); assert not reruns
     allowed[0] = True
     tick(); assert reruns == [True]

@@ -49,6 +49,7 @@ def funding_page(tmp_path):
 def fill_number(page, label, value):
     item = page.get_by_role('spinbutton', name=label, exact=True)
     item.fill(str(value)); item.press('Enter')
+    settle(page)
 
 
 def test_funding_stress_outcomes_and_shocks_render(funding_page):
@@ -58,6 +59,10 @@ def test_funding_stress_outcomes_and_shocks_render(funding_page):
     fill_number(page, 'Baseline cash target or loss buffer (€)', 700)
     targets = page.get_by_role('textbox', name='Candidate broker targets (€; comma-separated)', exact=True)
     targets.fill('400, 600'); targets.press('Enter')
+    settle(page)
+    playwright.expect(page.get_by_role('spinbutton', name='Total study reserve (€)', exact=True)).to_have_value('1000.00')
+    playwright.expect(page.get_by_role('spinbutton', name='Baseline cash target or loss buffer (€)', exact=True)).to_have_value('700.00')
+    playwright.expect(targets).to_have_value('400, 600')
     page.get_by_role('button', name='Run funding study', exact=True).click()
     playwright.expect(page.locator('.js-plotly-plot')).to_have_count(3)
     assert page.locator('[data-testid="stException"]').count() == 0

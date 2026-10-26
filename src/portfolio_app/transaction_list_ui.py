@@ -53,7 +53,7 @@ export default function({parentElement, data, setTriggerValue}) {
     });
     rows.forEach(row=>{
       const tr=document.createElement('tr');tr.dataset.transactionId=row.id;tr.tabIndex=0;
-      tr.title=row.editable?'Double-click to edit':'Review in transaction import';
+      tr.title='Double-click to edit';
       tr.ondblclick=e=>{if(!e.target.closest('input,button'))open(row);};
       tr.onkeydown=e=>{if(e.key==='Enter' && e.target===tr){e.preventDefault();open(row);}};
       const cell=document.createElement('td');
@@ -80,8 +80,8 @@ export default function({parentElement, data, setTriggerValue}) {
 
 def render_transaction_list(records, frame, *, key, revision, on_edit, on_remove):
     rows = [dict(id=event.id, date=event.date, sequence=event.sequence, order=index,
-                 removable=event.kind != 'opening' and not event.source.startswith('transaction_csv_v'),
-                 editable=not event.source.startswith('transaction_csv_v'),
+                 removable=event.kind not in ('opening', 'checkpoint'),
+                 editable=True,
                  label=f'{event.date or "Undated"} {frame.iloc[index]["Transaction"]} · {event.quantity:g} units',
                  cells=[str(value) for value in frame.iloc[index]]) for index, event in enumerate(records)]
     def act():

@@ -49,7 +49,7 @@ class GainSummary:
         if self.review_required_only:
             return 'History not confirmed'
         if any('Estimated acquisition cost' in r or 'Estimated monetary valuation' in r for r in self.reasons):
-            return 'Approximate gain · history may be incomplete'
+            return 'Estimated gain' + (' · history not confirmed' if any(r.startswith('Review complete scope') for r in self.reasons) else '')
         return 'Incomplete gain history' if self.partial else 'Complete gain history'
 
     @property
@@ -132,14 +132,14 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     calculation = calculation or HistoryCalculation(journal, observations)
     estimate_notes = []
     for book in journal.securities:
-        if book.position_id not in scope.positions:
-            continue
         for event in selected_events(book):
+            if not affected_positions(book, event).intersection(scope.positions) and book.account_id not in scope.accounts:
+                continue
             if event.date > end:
                 continue
             if any(p.get('quality') == 'estimated' for p in event.costs):
                 estimate_notes.append('Estimated acquisition cost retained from supplied evidence')
-            if event.valuation_quality == 'estimated':
+            if event.valuation_quality == 'estimated' or event.estimated:
                 estimate_notes.append('Estimated monetary valuation retained from supplied evidence')
     if any(p.get('quality') == 'estimated' or e.valuation_quality == 'estimated'
            for b in journal.securities for e in selected_events(b) for p in (e.costs or ({},))):
@@ -147,10 +147,10 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
         if any(p.get('quality') == 'estimated' for identity in scope.positions
                if identity in states for p in states[identity].costs):
             estimate_notes.append('Estimated acquisition cost retained from supplied evidence')
-    # When an imported movement connects positions, value the selected boundary
+    # When a movement connects positions, value the selected boundary
     # as a whole before component fallbacks. Missing internal transfer marks must
     # not prevent cancellation or make a known portfolio gain partial.
-    if journal.transaction_imports and len(scope.positions) > 1 and not scope.unresolved:
+    if len(scope.positions) > 1 and not scope.unresolved:
         dates = scope_dates(journal, scope)
         if dates and dates[0] <= end:
             result = calculate_history(journal, scope, observations, dates[0], end, target, returns=False, calculation=calculation)

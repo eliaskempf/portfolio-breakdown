@@ -206,11 +206,15 @@ class Journal:
     transaction_imports: tuple[ImportReceipt, ...] = ()
 
     def __post_init__(self):
-        if type(self.version) is not int or self.version not in (1, 2, 3, 4):
+        if type(self.version) is not int or self.version not in (1, 2, 3, 4, 5):
             raise DataError('Unsupported account journal version.')
         object.__setattr__(self, 'transaction_imports', tuple(self.transaction_imports))
         if self.transaction_imports and self.version < 3:
             raise DataError('Transaction imports require journal version 3.')
+        if self.version < 5 and any(e.estimated for b in self.securities for e in b.records):
+            raise DataError('Transaction estimates require journal version 5.')
+        if self.version < 5 and any(r.facts.get('schema_version') == '3' for r in self.transaction_imports):
+            raise DataError('Simple transactions require journal version 5.')
         seen_imports = set()
         for item in self.transaction_imports:
             if not isinstance(item, ImportReceipt) or item.id in seen_imports or (item.replaces and item.replaces not in seen_imports):
@@ -231,14 +235,26 @@ class Journal:
             raise DataError('Securities history requires journal version 2.')
         if self.version < 3 and any(b.custody_id or any(e.kind in ('swap','reward','asset_fee') or e.asset_charges or e.timestamp_utc or e.valuation_currency or e.received_quantity for e in b.records) for b in self.securities):
             raise DataError('Non-cash transaction movements require journal version 3.')
-        if self.version < 4 and (any(r.facts.get('schema_version') == '2' for r in self.transaction_imports)
+        if self.version < 4 and (any(r.facts.get('schema_version') in ('2', '3') for r in self.transaction_imports)
                 or any(e.kind in ('checkpoint','inventory_in','inventory_out') or e.observed_at
                        or e.flow_classification or e.valuation_quality != 'recorded' or e.valuation_source
                        or any(p.get('quality') == 'estimated' for p in e.costs)
                        for b in self.securities for e in b.records)):
             raise DataError('Inventory and estimated import evidence require journal version 4.')
-        if any(e.source.startswith('transaction_csv_v') and e.id not in seen_imports for b in self.securities for e in b.records):
-            raise DataError('An imported transaction requires retained source evidence.')
+        # Import identity belongs to immutable evidence; corrections have their
+        # own identities and retain provenance through the replacement chain.
+        for book in self.securities:
+            by_id = {e.id: e for e in book.records}
+            for event in book.records:
+                if not event.source.startswith('transaction_csv_v'):
+                    continue
+                origin = event
+                while origin.replaces and origin.id not in seen_imports:
+                    origin = by_id[origin.replaces]
+                if origin.id not in seen_imports:
+                    raise DataError('An imported transaction requires retained source evidence.')
+                if event.id not in seen_imports and self.version < 5:
+                    raise DataError('Edited imported transactions require journal version 5.')
         if any(e.kind in ('security_cash', 'security_unknown') for e in self.events):
             raise DataError('Security cash postings are derived; do not save duplicate account events.')
         adopted = tuple(self.adopted_liability_ids)
@@ -702,6 +718,14 @@ def roll(journal, *, close: Event, opening: Event, charges: Iterable[Event] = ()
 
 def journal_to_dict(journal):
     result = asdict(journal)
+    if journal.version < 5:
+        for book in result['securities']:
+            for event in book['records']:
+                event.pop('estimated')
+    else:
+        for receipt in result['transaction_imports']:
+            if receipt['facts'].get('schema_version') == '3':
+                receipt['facts'] = {k: v for k, v in receipt['facts'].items() if v != ''}
     if journal.version < 4:
         for book in result['securities']:
             for event in book['records']:
@@ -732,7 +756,13 @@ def journal_from_dict(raw):
         fields[name] = tuple(cls(**item) for item in fields.get(name, ()))
     from portfolio_app.security_history import book_from_dict
     fields['securities'] = tuple(book_from_dict(item) for item in fields.get('securities', ()))
-    fields['transaction_imports'] = tuple(ImportReceipt(**item) for item in fields.get('transaction_imports', ()))
+    from portfolio_app.transaction_csv import FIELDS_V3
+    receipts = []
+    for item in fields.get('transaction_imports', ()):
+        if item['facts'].get('schema_version') == '3':
+            item = {**item, 'facts': {**dict.fromkeys(FIELDS_V3, ''), **item['facts']}}
+        receipts.append(ImportReceipt(**item))
+    fields['transaction_imports'] = tuple(receipts)
     fields['capital_history'] = tuple(CapitalAllocation(**item) for item in fields.get('capital_history', ()))
     result = Journal(**fields)
     replay(result)
@@ -746,6 +776,10 @@ def _journal_from_bytes(content):
 
 
 def load_journal(directory: Path):
+    if (Path(directory)/'.history-publication.json').exists():
+        from portfolio_app.workspace_lock import workspace_lock
+        with workspace_lock(Path(directory)):
+            pass
     path = Path(directory)/FILE
     if not path.exists():
         return Journal(), None

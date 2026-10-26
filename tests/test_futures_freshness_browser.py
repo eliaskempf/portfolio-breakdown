@@ -162,7 +162,9 @@ def test_closed_market_settlement_has_compact_accessible_details(futures_page):
     page, root, journal, contract = futures_page
     row = page.locator('tr[data-position-id="investment:synthetic"]')
     row.wait_for(); settle(page)
-    (root/'clock.txt').write_text('2026-01-10T12:00:00+00:00')
+    # Polling reads this clock concurrently; never expose a truncated file.
+    (root/'clock.next').write_text('2026-01-10T12:00:00+00:00')
+    (root/'clock.next').replace(root/'clock.txt')
     SettlementArchive(root).record(contract, PriceObservation(contract.id, '2026-01-09', 1020,
         source='Invented settlement'))
     page.get_by_role('button', name='Refresh prices').click(); settle(page)

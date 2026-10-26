@@ -87,7 +87,7 @@ def test_manual_followup_preserves_imported_movements(tmp_path):
     candidate=replace(append_evidence(book,(event,)),active_ids=(*book.active_ids,event.id))
     result=save_history(tmp_path,candidate,expected_journal_revision=revision,
         expected_holdings_revision=read_snapshot(tmp_path/'holdings.csv').revision,activate=True,accept_balance_change=True)
-    assert result.version==3 and result.transaction_imports==journal.transaction_imports
+    assert result.version==5 and result.transaction_imports==journal.transaction_imports
     assert replay_securities(result.securities).positions['desk'].quantity==3
 
 
@@ -121,11 +121,12 @@ def test_incomplete_application_does_not_confirm_and_stale_intervals_do_not_writ
     assert all(not b.reviews[-1].complete_from for b in result.journal.securities)
 
 
-def test_imported_economic_event_cannot_be_removed_one_leg_at_a_time(tmp_path):
+def test_imported_economic_event_removal_includes_every_leg(tmp_path):
     from portfolio_app.history_commands import remove_transactions
     snapshot = setup(tmp_path)
     result = save(tmp_path, snapshot)
     book = next(b for b in result.journal.securities if b.position_id == 'vault')
     swap = next(e for e in book.records if e.kind == 'swap')
-    with pytest.raises(DataError, match='all movements remain together'):
-        remove_transactions(book, [swap.id])
+    from portfolio_app.history_commands import changed_positions
+    candidate = remove_transactions(book, [swap.id])
+    assert changed_positions(result.journal, (candidate,)) == {'vault', 'orb'}

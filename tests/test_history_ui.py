@@ -185,7 +185,7 @@ def test_fee_confirmation_repairs_old_draft_without_changing_holding(tmp_path):
     label(app.button,'Review against portfolio').click().run()
     assert not app.exception
     assert app.table[0].value['From history'].tolist()==['10','Unknown','Unknown']
-    assert label(app.button,'Apply and confirm history').disabled
+    assert not label(app.button,'Apply and confirm history').disabled
     assert any('Purchase fees are unconfirmed' in e.value for e in app.info)
     assert label(app.text_input,'Fees (EUR)').value=='5'
     label(app.button,'Save fees').click().run()
@@ -236,7 +236,7 @@ def test_unknown_fees_stay_unknown_until_explicit_zero(tmp_path):
     label(app.button,'Save transaction').click().run()
     assert not load_journal(tmp_path)[0].securities[0].records[0].charges_known
     label(app.button,'Review against portfolio').click().run()
-    assert label(app.button,'Apply and confirm history').disabled
+    assert not label(app.button,'Apply and confirm history').disabled
     assert label(app.button,'Save fees').disabled
     label(app.text_input,'Fees (EUR)').set_value('0').run()
     label(app.button,'Save fees').click().run()
@@ -273,7 +273,7 @@ def test_review_can_supply_missing_historical_fx_before_activation(tmp_path):
     save_journal(tmp_path,Journal(version=2,securities=(book,)),None)
     app=launch(tmp_path)
     label(app.button,'Review against portfolio').click().run()
-    assert label(app.button,'Apply and confirm history').disabled
+    assert not label(app.button,'Apply and confirm history').disabled
     assert app.table[0].value['From history'].tolist()==['10','Unknown','Unknown']
     label(app.text_input,'2024-01-02 · EUR per 1 USD').set_value('0.9').run()
     label(app.button,'Save exchange rate').click().run()
@@ -337,16 +337,16 @@ def test_direct_editor_preserves_precision_and_retains_original(tmp_path):
 def test_transfer_entry_uses_holding_names_and_preserves_destination_identity(tmp_path):
     fixture(tmp_path)
     with (tmp_path/'holdings.csv').open('a') as handle:
-        handle.write('invented-destination,Invented destination,0,0,EUR\n')
+        handle.write('invented,Invented,0,0,EUR\n')
     app = launch(tmp_path)
     label(app.button, 'Other transaction').click().run()
     label(app.selectbox, 'Transaction').set_value('transfer').run()
-    destination = label(app.selectbox, 'Destination holding')
-    assert destination.options == ['Choose a holding', '2. Invented destination']
+    destination = label(app.selectbox, 'Receiving holding')
+    assert len(destination.options) == 1 and 'Invented' in destination.options[0]
     assert not any('position ID' in field.label for field in app.text_input)
     destination.set_value('position-1').run()
     label(app.text_input, 'Quantity').set_value('1').run()
-    label(app.text_input, 'Fees').set_value('0').run()
+    label(app.text_input, 'Fee').set_value('0').run()
     label(app.button, 'Save transaction').click().run()
     assert not app.exception
     from portfolio_app.account_journal import load_journal

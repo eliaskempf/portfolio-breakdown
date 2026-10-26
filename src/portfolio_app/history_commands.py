@@ -1,6 +1,7 @@
 """Reviewed history saves with one journal commit and existing workspace guards."""
 from dataclasses import replace
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -19,7 +20,7 @@ def replace_book(journal, book):
     books = tuple(book if b.position_id == book.position_id else b for b in journal.securities)
     if book.position_id not in {b.position_id for b in books}:
         books = (*books, book)
-    return replace(journal, version=max(2, journal.version), securities=books)
+    return replace(journal, version=max(5, journal.version), securities=books)
 
 
 def book_for(journal, row):
@@ -29,11 +30,11 @@ def book_for(journal, row):
     return SecurityBook(row['position_id'], row['id'], tuple(fingerprint(row)))
 
 
-def preview_activation(journal, book, selected_ids, row, *, target='EUR', historical=None):
+def preview_activation(journal, book, selected_ids, row, *, target='EUR', historical=None, other_changes=()):
     candidate = replace(book, active_ids=tuple(selected_ids))
-    others = tuple(b for b in journal.securities if b.position_id != book.position_id)
+    proposed = proposed_journal(journal, (candidate, *other_changes))
+    others = tuple(b for b in proposed.securities if b.position_id != book.position_id)
     comparison = reconcile(candidate, row, other_books=others, target=target, historical=historical)
-    proposed = replace_book(journal, candidate)
     before, after = replay(journal), replay(proposed)
     keys = sorted(set(before.cash) | set(after.cash) | set(before.unknown_cash) | set(after.unknown_cash))
     cash = [{'Account': account, 'Currency': currency,
@@ -43,61 +44,120 @@ def preview_activation(journal, book, selected_ids, row, *, target='EUR', histor
     return candidate, comparison, cash
 
 
+def changed_positions(journal, books):
+    """All legs of changed economic events, including removed/replaced legs."""
+    from portfolio_app.security_history import affected_positions
+    old = {b.position_id: b for b in journal.securities}
+    touched = set()
+    for book in books:
+        previous = old.get(book.position_id)
+        before = {e.id for e in previous.records if e.id in previous.active_ids and e.kind != 'void'} if previous else set()
+        after = {e.id for e in book.records if e.id in book.active_ids and e.kind != 'void'}
+        changed = before.symmetric_difference(after)
+        if changed:
+            touched.add(book.position_id)
+        for owner in (previous, book):
+            if owner:
+                for event in owner.records:
+                    if event.id in changed:
+                        touched.update(affected_positions(owner, event))
+    return touched
+
+
+def proposed_journal(journal, books):
+    replacements = {b.position_id: b for b in books}
+    merged = {b.position_id: b for b in journal.securities}
+    merged.update(replacements)
+    return replace(journal, version=max(5, journal.version), securities=tuple(merged.values()))
+
+
+def history_comparisons(journal, proposed, holdings, positions, *, target='EUR', historical=None):
+    from portfolio_app.cost_basis import active_components, resolve_cost
+    current = effective_holdings(holdings, journal.securities).set_index('position_id')
+    states = replay_securities(proposed.securities).positions
+    comparisons = []
+    for identity in sorted(positions):
+        if identity not in current.index or identity not in states:
+            raise DataError('Every affected holding needs an explicit starting balance before applying.')
+        row, state = current.loc[identity], states[identity]
+        old = resolve_cost(active_components(row), target, historical).exact_amount
+        new = resolve_cost(list(state.costs), target, historical).exact_amount if state.costs else 0
+        comparisons.append(dict(position_id=identity, name=row['name'], account=row['account'],
+            before_quantity=str(row.shares), after_quantity=str(state.quantity),
+            before_cost=old, after_cost=new, currency=target))
+    return tuple(comparisons)
+
+
+def record_reviews(proposed, positions, comparison_date, intervals=None, *, resolution='accept'):
+    """Shared evidence of an explicit reconciliation and optional completeness."""
+    from portfolio_app.security_history import security_history_fingerprint
+    books = []
+    for book in proposed.securities:
+        if book.position_id in positions:
+            start, end = (intervals or {}).get(book.position_id, ('', ''))
+            review = HistoryReview(uuid4().hex, book.active_ids, comparison_date, resolution,
+                start, end, security_history_fingerprint(proposed, book.position_id))
+            book = replace(book, reviews=(*book.reviews, review))
+        books.append(book)
+    return replace(proposed, securities=tuple(books))
+
+
 def save_history(directory, book, *, expected_journal_revision, expected_holdings_revision,
                  activate=False, resolution='accept', complete_from='', complete_through='',
-                 accept_balance_change=False, accept_cash_change=False, accept_duplicates=False):
-    """Evidence can be incomplete; activation requires explicit resolution.
-
-    Identity freezing changes no balances. Financial facts and their selected
-    authority are committed together in one atomic journal replacement.
-    """
+                 accept_balance_change=False, accept_cash_change=False, accept_duplicates=False,
+                 other_changes=()):
+    """Publish all legs together; provenance never changes transaction permissions."""
     directory = Path(directory)
     with workspace_lock(directory):
         journal, revision = load_journal(directory)
-        snapshot = read_snapshot(directory / 'holdings.csv')
+        snapshot = read_snapshot(directory/'holdings.csv')
         if revision != expected_journal_revision or snapshot.revision != expected_holdings_revision:
             raise DataError('History or holdings changed. Reload and review again.')
-        holdings = effective_holdings(snapshot.holdings, journal.securities)
-        rows = holdings.loc[holdings.position_id == book.position_id]
-        if len(rows) != 1:
-            raise DataError('The selected holding no longer exists.')
-        previous = next((b for b in journal.securities if b.position_id == book.position_id), None)
-        if previous:
-            if book.records[:len(previous.records)] != previous.records:
-                raise DataError('Retain original evidence; append corrections instead of overwriting records.')
-            if previous.active and (book.source_summary, book.instrument_id) != (previous.source_summary, previous.instrument_id):
-                raise DataError('History identity cannot change.')
-            if previous.active and book.account_id != previous.account_id:
-                raise DataError('Use an explicit transfer to change an active holding account.')
-        if previous:
-            imported = {e.id for e in previous.records if e.source.startswith('transaction_csv_v')}
-            if any(e.replaces in imported for e in book.records[len(previous.records):]) or (activate and imported.intersection(book.active_ids) != imported.intersection(previous.active_ids)):
-                raise DataError('Review imported events in Import transactions so all movements stay together.')
+        old = {b.position_id: b for b in journal.securities}
+        books = []
+        for candidate in (book, *other_changes):
+            if snapshot.holdings.position_id.eq(candidate.position_id).sum() != 1:
+                raise DataError('The selected holding no longer exists.')
+            previous = old.get(candidate.position_id)
+            if previous:
+                if candidate.records[:len(previous.records)] != previous.records:
+                    raise DataError('Retain original evidence; append corrections instead of overwriting records.')
+                if previous.active and (candidate.source_summary, candidate.instrument_id, candidate.account_id) != (previous.source_summary, previous.instrument_id, previous.account_id):
+                    raise DataError('History identity and active cash binding cannot change.')
+            if not activate:
+                candidate = replace(candidate, active_ids=previous.active_ids if previous else (),
+                                    reviews=previous.reviews if previous else ())
+            books.append(candidate)
+        proposed = proposed_journal(journal, books)
         if activate:
             from portfolio_app.security_history import duplicate_candidates
-            if duplicate_candidates(book) and not accept_duplicates:
+            if any(duplicate_candidates(b) for b in books) and not accept_duplicates:
                 raise DataError('Matching transactions require acknowledgment that they are distinct events.')
             from portfolio_app.history_observations import ObservationFX, load_observations
             from portfolio_app.portfolio_settings import load_settings
             target = load_settings(directory).reporting_currency
-            candidate, comparison, cash = preview_activation(journal, book, book.active_ids, rows.iloc[0],
+            touched = changed_positions(journal, books) | {b.position_id for b in books if b.active}
+            comparisons = history_comparisons(journal, proposed, snapshot.holdings, touched,
                 target=target, historical=ObservationFX(load_observations(directory)[0]))
-            if (not comparison.quantity_matches or comparison.cost_matches is False) and not accept_balance_change:
+            if not accept_balance_change and any(
+                    abs(Decimal(c['before_quantity'])-Decimal(c['after_quantity'])) > Decimal('1e-9') or
+                    c['before_cost'] is not None and c['after_cost'] is not None and abs(c['before_cost']-c['after_cost']) > Decimal('.01')
+                    for c in comparisons):
                 raise DataError('Resolve the quantity or cost discrepancy explicitly before activation.')
-            if any(c['Before'] != c['After'] for c in cash) and not accept_cash_change:
+            before, after = replay(journal), replay(proposed)
+            if (before.cash, before.unknown_cash) != (after.cash, after.unknown_cash) and not accept_cash_change:
                 raise DataError('Review and accept the linked cash changes before activation.')
-            state = replay_securities((*[b for b in journal.securities if b.position_id != book.position_id], candidate)).positions[book.position_id]
-            if complete_from and (complete_from < state.boundary or complete_through < complete_from):
-                raise DataError('Confirm completeness only from the latest opening boundary.')
-            from portfolio_app.security_history import security_history_fingerprint
-            facts = security_history_fingerprint(replace_book(journal, candidate), candidate.position_id)
-            review = HistoryReview(uuid4().hex, candidate.active_ids, date.today().isoformat(), resolution,
-                                   complete_from, complete_through, facts)
-            book = replace(candidate, reviews=(*candidate.reviews, review))
-        else:
-            book = replace(book, active_ids=previous.active_ids if previous else (), reviews=previous.reviews if previous else ())
+            intervals = None
+            if complete_from:
+                from portfolio_app.history_confirmation import confirmation_intervals
+                intervals = confirmation_intervals(proposed, touched)
+                if complete_from < intervals[book.position_id][0] or not complete_from <= complete_through <= date.today().isoformat():
+                    raise DataError('Confirm completeness only within the supported history interval.')
+                intervals = {p: (max(start, complete_from), complete_through) for p, (start, _) in intervals.items()}
+                if any(start > end for start, end in intervals.values()):
+                    raise DataError('An affected holding starts after the reviewed interval.')
+            proposed = record_reviews(proposed, touched, date.today().isoformat(), intervals, resolution=resolution)
         snapshot = freeze_position_keys(directory, snapshot.revision)
-        proposed = replace_book(journal, book)
         effective_holdings(snapshot.holdings, proposed.securities)
         save_journal(directory, proposed, revision)
         return proposed
@@ -113,13 +173,14 @@ def reconstruction_candidate(book, selected_ids, *, starts_at_zero=False):
     from datetime import timedelta
     from uuid import NAMESPACE_URL, uuid5
     from portfolio_app.security_history import SecurityEvent, append_evidence, selected_events
-    candidate = replace(book, active_ids=tuple(selected_ids))
+    removed = tuple(e.id for e in book.records if e.kind == 'void' and e.id in book.active_ids)
+    candidate = replace(book, active_ids=tuple(dict.fromkeys((*selected_ids, *removed))))
     events = selected_events(candidate)
     if not events:
         raise DataError('Add or select transactions to review.')
     if any(not event.date for event in events):
         raise DataError('Supply dates for the selected records before reviewing the holding.')
-    if any(event.kind == 'opening' for event in events):
+    if any(event.kind in ('opening', 'checkpoint') for event in events):
         if starts_at_zero:
             raise DataError('Select either a starting balance or history from zero, not both.')
         return candidate
@@ -141,22 +202,24 @@ def correct_transaction(book, event_id, **changes):
     """Retain an editable correction; selected authority changes only on review."""
     from portfolio_app.security_history import append_evidence
     original = next((e for e in book.records if e.id == event_id), None)
-    if original is not None and original.source.startswith('transaction_csv_v'):
-        raise DataError('Correct an imported event in Import transactions so all movements stay together.')
     if original is None or original.source == 'confirmed_zero_start' or original.kind == 'void':
         raise DataError('Choose a saved transaction to edit.')
     if any(e.replaces == event_id for e in book.records):
         raise DataError('This transaction already has a correction. Edit the latest version.')
-    allowed = {'date', 'quantity', 'price', 'amount', 'currency', 'charges', 'charges_known', 'value_date', 'note'}
+    allowed = {'date', 'quantity', 'price', 'amount', 'currency', 'charges', 'charges_known', 'value_date', 'note', 'sequence', 'other_position_id', 'received_quantity',
+               'valuation_amount', 'valuation_currency', 'valuation_quality', 'valuation_source',
+               'asset_charges', 'costs', 'flow_classification', 'estimated'}
     if set(changes) - allowed:
         raise DataError('This transaction field cannot be changed in the editor.')
+    if changes.get('date', original.date) != original.date:
+        changes['timestamp_utc'] = ''
     candidate = replace(original, **changes)
     if candidate == original:
         return book
     balance_changed = (candidate.quantity, candidate.amount, candidate.currency) != (original.quantity, original.amount, original.currency)
     if balance_changed and original.lots:
         raise DataError('This starting balance has individual lots. Edit those lots in the advanced editor before changing its quantity or cost.')
-    if balance_changed and original.costs:
+    if balance_changed and original.costs and 'costs' not in changes:
         candidate = replace(candidate, costs=())
     return append_evidence(book, (replace(candidate, id=uuid4().hex, replaces=original.id),))
 
@@ -172,8 +235,6 @@ def remove_transactions(book, event_ids):
     available = {event.id: event for event in current_records(book)}
     if not chosen or not chosen <= available.keys():
         raise DataError('Choose current transactions to remove. Reload if the list changed.')
-    if any(available[identity].source.startswith('transaction_csv_v') for identity in chosen):
-        raise DataError('Correct imported events in transaction import so all movements remain together.')
     if any(available[identity].kind == 'opening' for identity in chosen):
         raise DataError('Edit the starting balance separately; select only transactions to remove.')
     known = {event.id: event for event in book.records}
@@ -188,7 +249,5 @@ def remove_transactions(book, event_ids):
         while ancestor:
             removed.add(ancestor)
             ancestor = known[ancestor].replaces
-    if any(known[identity].kind == 'transfer' for identity in removed.intersection(book.active_ids)):
-        raise DataError('Applied transfers affect another holding. Review both histories before changing the transfer.')
     candidate = append_evidence(book, additions)
-    return replace(candidate, active_ids=tuple(identity for identity in book.active_ids if identity not in removed))
+    return replace(candidate, active_ids=tuple(identity for identity in book.active_ids if identity not in removed) + tuple(e.id for e in additions))

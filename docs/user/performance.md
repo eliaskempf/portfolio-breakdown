@@ -115,41 +115,18 @@ history; explicit offline demo history is invented. The separate
 
 ## Personal history {#personal-history}
 
-Transaction import review shows recorded net changes before activation. Its
-optional **Asset history diagnostic** is separate from standard position history.
-Absolute units and values require a reviewed opening or accepted reporting
-boundary and use the existing forward journal. Ending observations are comparison
-inputs only; they never backfill earlier quantities. No global zero opening is
-inferred from a ledger, current holding or matching final quantity.
+CSV, PDF and manually entered transactions use the same history and controls.
+Source details are available with each transaction; they do not change its
+calculations or editability. Exchanges and transfers are single economic events
+whose connected holdings are reviewed together.
 
-An aggregate import can combine owned exchanges, wallets and staking locations
-without reconstructing each location's FIFO inventory. Internal principal does
-not change aggregate ownership. Fees remain expenses and rewards remain income.
-Unknown quantities still block exact activation; unknown monetary amounts do not
-necessarily prevent unit reconstruction. Unsupported ordering can leave useful
-net totals available even when journal activation needs more evidence.
-
-Approximate period gain is ending market value minus starting market value and
-net external additions. Reward units affect gain once; supplied receipt valuations
-are shown separately as income. Remaining acquisition cost is neither inferred
-from market prices nor used as the denominator for historical returns.
-
-**Approx. return — daily Dietz** in the import diagnostic uses linked daily Dietz: daily gain divided by opening value
-plus half of net flows, with daily factors compounded. This assumes midpoint flow
-timing; it is neither the standard daily TWR nor annualized XIRR. Extinguishing
-residual dust after a position has effectively closed can produce −100%; CSV
-integration does not remove this approximation limitation. Daily transfer values may use
-daily prices. Unknown trade consideration and unresolved inventory classification
-are not filled using market values. Missing prices remain gaps, and balance resets
-inside the interval interrupt dependent gains and returns. Choosing a supported
-interval after a boundary measures only that later interval.
-
-Unit completeness, acquisition-cost coverage, dated valuation coverage and history
-review remain distinct. Supplied estimates retain their quality and provenance;
-partial results and unavailable metrics have explanations under **Calculation and
-evidence**. An undated ending reference does not acquire the export date or today's
-date. Older ending-balance reconstruction settings are retained for review but
-cannot activate that retired calculation.
+Explicitly supplied estimates can support daily TWR and annualized XIRR. Affected
+results are labelled **Estimated**. This is separate from transaction completeness
+and missing market observations. An estimated acquisition cost does not by itself
+make a return estimated when that return uses independently known cash flows and
+market values. Unknown amounts stay unknown; a matching ending quantity does not
+certify complete history. The former separate daily-Dietz diagnostic is retired.
+Existing diagnostic settings are preserved but no longer affect the application.
 
 The **History → Holdings** position view and **Overview → Performance** show personal
 history separately from market-price charts and current unrealized gains.

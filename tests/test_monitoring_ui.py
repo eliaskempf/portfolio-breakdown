@@ -131,6 +131,10 @@ def test_first_visit_shows_plain_world_sma_until_a_threshold_is_entered(tmp_path
     import json
     app=launch(tmp_path,seed=None)
     assert not app.exception
+    view=by_label(app.get('button_group'),'Monitoring view')
+    assert view.value=='Browse'
+    # A late initial reset must not overwrite a user's next view selection.
+    assert not view.proto.set_value
     assert by_label(app.selectbox,'Market index').value=='990100'
     assert by_label(app.selectbox,'SMA preset').value=='200 sessions'
     threshold=by_label(app.number_input,'Distance from SMA trigger (%)')

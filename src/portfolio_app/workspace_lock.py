@@ -70,6 +70,8 @@ def workspace_lock(directory: Path, *, check_context=True):
                     raise DataError('The active portfolio changed. Reopen this view before saving.')
             _held.keys = held | {key}
             try:
+                from portfolio_app.history_publication import recover_publication
+                recover_publication(directory)
                 yield
             finally:
                 _held.keys = held

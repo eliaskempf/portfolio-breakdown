@@ -26,6 +26,10 @@ class HoldingsSnapshot:
 
 
 def read_snapshot(path: Path) -> HoldingsSnapshot:
+    if path.with_name('.history-publication.json').exists():
+        from portfolio_app.workspace_lock import workspace_lock
+        with workspace_lock(path.parent):
+            pass
     try:
         content = path.read_bytes() if path.exists() else None
         return HoldingsSnapshot(

@@ -19,14 +19,15 @@ def test_received_swap_income_fee_and_valuation_are_visible(tmp_path):
     journal, _ = load_journal(tmp_path)
     book = next(b for b in journal.securities if b.position_id == 'orb')
     table = _transaction_table([e for e in book.records if e.kind != 'opening'], book)
-    income = table[table.Transaction == 'In-kind income'].iloc[0]
+    income = table[table.Transaction == 'Income in units'].iloc[0]
     assert income['Trade value'] == '—' and '25' in income['Monetary valuation']
-    related = app.dataframe[0].value
-    assert set(related.Transaction) == {'Swap received'}
-    assert related.iloc[0]['Monetary valuation'] == '80.00 EUR'
+    owner = next(b for b in journal.securities if b.position_id == 'vault')
+    exchange = _transaction_table([e for e in owner.records if e.kind == 'swap'], owner)
+    assert exchange.iloc[0]['Transaction'] == 'Exchange'
+    assert exchange.iloc[0]['Monetary valuation'] == '80.00 EUR'
     next(b for b in app.button if b.label == 'Review against portfolio').click().run()
     assert not app.exception
-    assert any('import portfolio' in c.value.lower() for c in app.caption)
+    assert any(b.label == 'Apply incomplete history' for b in app.button)
 
 
 def test_checkpoint_history_shows_estimates_and_unknown_observation(tmp_path):
@@ -51,6 +52,55 @@ def test_checkpoint_history_shows_estimates_and_unknown_observation(tmp_path):
     table = _transaction_table(list(book.records), book)
     assert table.iloc[0]['Transaction']=='Balance checkpoint'
     assert table.iloc[0]['Trade value']=='—'
-    assert 'estimated' in table.iloc[0]['Acquisition cost']
-    assert 'Observation date unknown' in table.iloc[0]['Evidence']
-    assert any('imported movements' in c.value for c in app.caption)
+    details = app.dataframe[0].value
+    assert details.iloc[0]['Estimated']
+    assert details.iloc[0]['Observed'] == 'Unknown'
+    assert details.iloc[0]['Acquisition_cost'] == '80.00 EUR'
+    assert not any('imported movements' in c.value for c in app.caption)
+
+
+def test_legacy_timestamp_order_is_editable_without_rounding(tmp_path):
+    from portfolio_app.account_journal import load_journal
+    from portfolio_app.history_ui import _key
+    snapshot=setup(tmp_path);save(tmp_path,snapshot)
+    journal,_=load_journal(tmp_path)
+    book=next(b for b in journal.securities if b.position_id=='vault')
+    event=next(e for e in book.records if e.kind=='swap')
+    assert event.sequence>2**53
+    def script(directory,identity):
+        from pathlib import Path
+        import streamlit as st
+        from portfolio_app.history_ui import render_position_history,_key
+        from portfolio_app.positions import read_snapshot
+        root=Path(directory);key=_key(root,'vault')
+        st.session_state.setdefault(key+'screen','edit')
+        st.session_state.setdefault(key+'edit_record',identity)
+        render_position_history(root,read_snapshot(root/'holdings.csv').holdings.query("position_id == 'vault'").iloc[0])
+    app=AppTest.from_function(script,args=(str(tmp_path),event.id)).run()
+    assert not app.exception
+    order=next(t for t in app.text_input if t.label=='Order within date')
+    assert order.value==str(event.sequence)
+    next(t for t in app.text_input if t.label=='Received quantity').set_value('4').run()
+    next(b for b in app.button if b.label=='Save changes').click().run()
+    assert not app.exception
+    saved=next(b for b in load_journal(tmp_path)[0].securities if b.position_id=='vault')
+    assert saved.records[-1].sequence==event.sequence
+    assert saved.records[-1].replaces==event.id
+
+
+def test_mixed_starting_balance_and_new_exchange_destination_can_be_reviewed(tmp_path):
+    def script(directory):
+        from pathlib import Path
+        import streamlit as st
+        from portfolio_app.csv_transaction_import_ui import render_transaction_import
+        st.session_state['import_tx_content']=('invented.csv',
+            b'reference,date,type,asset,quantity,amount,currency,received_asset,received_quantity\n'
+            b'o,2024-01-01,opening,AUR,10,100,EUR,,\n'
+            b'x,2024-01-02,exchange,AUR,2,25,EUR,ORB,4\n')
+        render_transaction_import(Path(directory))
+    app=AppTest.from_function(script,args=(str(tmp_path),)).run()
+    assert not app.exception
+    next(c for c in app.checkbox if c.label=='Holdings were zero before these transactions').check().run()
+    assert not app.exception and not app.warning
+    assert any(b.label=='Apply and confirm history' for b in app.button)
+    assert not (tmp_path/'holdings.csv').exists()

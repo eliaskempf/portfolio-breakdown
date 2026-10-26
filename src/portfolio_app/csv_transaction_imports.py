@@ -31,8 +31,8 @@ def event_for(row, mapping, *, replaces=''):
     if not f['fee_amount'] and f['fee_asset_id']:
         raise DataError('Unknown asset fee quantity: retain evidence until the movement is known.')
     boundary = f['event_type'] in ('opening', 'checkpoint')
-    stamp = datetime.fromisoformat((f.get('effective_date')+'T00:00:00+00:00') if boundary else f['timestamp_utc'].replace('Z', '+00:00'))
-    # Stable ordering across reimports and incremental files; never use row number.
+    stamp = datetime.fromisoformat((f.get('effective_date')+'T00:00:00+00:00') if boundary or not f['timestamp_utc'] else f['timestamp_utc'].replace('Z', '+00:00'))
+    # Legacy timestamps retain their precision; date-only entries use the reviewed order.
     micros = ((stamp.hour*60+stamp.minute)*60+stamp.second)*1000000+stamp.microsecond
     sequence = (86400000000 if boundary else micros)*1000000+int(f['sequence'] or '0')
     def position(account, asset):
@@ -45,11 +45,11 @@ def event_for(row, mapping, *, replaces=''):
         asset_charges = (AssetCharge(position(f['account_id'], f['fee_asset_id']), Decimal(f['fee_amount'])),)
     elif f['fee_currency'] and f['fee_amount'] != '0':
         charges = (Charge(Decimal(f['fee_amount']) if f['fee_amount'] else None, f['fee_currency']),)
-    kind = {'stake': 'transfer', 'unstake': 'transfer', 'fee': 'asset_fee'}.get(f['event_type'], f['event_type'])
+    kind = {'stake': 'transfer', 'unstake': 'transfer', 'fee': 'asset_fee', 'cash_fee': 'fee'}.get(f['event_type'], f['event_type'])
     other = (position(f['counter_account_id'], f['asset_id']) if kind == 'transfer' else
              position(f['account_id'], f['received_asset_id']) if kind == 'swap' else '')
     costs = ()
-    if f.get('schema_version') == '2' and kind in ('opening', 'checkpoint', 'inventory_in'):
+    if f.get('schema_version') in ('2', '3') and kind in ('opening', 'checkpoint', 'inventory_in', 'transfer_in'):
         from portfolio_app.cost_basis import component
         cost_quantity = f.get('cost_quantity') or f['quantity']
         part = component(cost_quantity, Decimal(f['acquisition_cost']) if f['acquisition_cost'] else None, f['acquisition_currency'])
@@ -62,8 +62,8 @@ def event_for(row, mapping, *, replaces=''):
                 context.prec = 60
                 costs += (component(Decimal(f['quantity'])-Decimal(cost_quantity), None, f['acquisition_currency']),)
     return SecurityEvent(row.identity, kind, stamp.date().isoformat(), sequence,
-        quantity=Decimal(f['quantity']), amount=Decimal(f['gross_amount']) if f['gross_amount'] else None,
-        currency=f['currency'], charges=charges, charges_known=bool(f['fee_amount']),
+        quantity=Decimal(f['quantity']), amount=Decimal(f['gross_amount']) if f['gross_amount'] else (Decimal(f['valuation_amount']) if kind in ('transfer_in', 'transfer_out') and f['valuation_amount'] else None),
+        currency=f['currency'] or (f['valuation_currency'] if kind in ('transfer_in', 'transfer_out') else ''), charges=charges, charges_known=bool(f['fee_amount']),
         other_position_id=other, replaces=replaces, source='transaction_csv_v'+f['schema_version'],
         received_quantity=Decimal(f['received_quantity'] or '0'),
         valuation_amount=Decimal(f['valuation_amount']) if f['valuation_amount'] else None,
@@ -73,7 +73,25 @@ def event_for(row, mapping, *, replaces=''):
         observed_at=f['timestamp_utc'] if boundary else '',
         flow_classification=f.get('flow_classification',''),
         valuation_quality=f.get('valuation_quality') or 'recorded',
-        valuation_source=f.get('valuation_source',''))
+        valuation_source=f.get('valuation_source',''), estimated=f.get('estimated') == 'true')
+
+
+def _previous_event(receipt, receipts, books, primary):
+    """Resolve source revisions through pending and manually corrected events."""
+    previous = receipt.replaces
+    owner = None
+    while previous:
+        owner = next((b for b in books.values() if any(e.id == previous for e in b.records)), None)
+        if owner:
+            break
+        previous = receipts[previous].replaces
+    if owner and owner.position_id != primary:
+        raise DataError('Correction cannot change its source position. Retain it for separate reconciliation.')
+    if owner:
+        descendants = {e.replaces: e.id for e in owner.records if e.replaces and e.id != receipt.id}
+        while previous in descendants:
+            previous = descendants[previous]
+    return previous if owner else ''
 
 
 def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, selected_ids=(),
@@ -85,7 +103,6 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
     selected import remains authoritative. Source snapshots are never additive.
     """
     from portfolio_app.account_journal import replay
-    from portfolio_app.cost_basis import active_components, resolve_cost
     cash_accounts = cash_accounts or {}
     selected_ids, correction_ids = set(selected_ids), set(correction_ids)
     rows = tuple(rows)
@@ -124,7 +141,6 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
     latest = {(r.facts['source_id'], r.facts['event_id']): r for r in receipts}
     books = {b.position_id: b for b in journal.securities}
     indexed = holdings.set_index('position_id', drop=False)
-    current = effective_holdings(holdings, journal.securities).set_index('position_id')
     added = duplicates = applied = 0
     warnings, touched = [], set()
     instruments = {}
@@ -162,6 +178,16 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
             receipts.append(receipt); known[receipt.id] = receipt; latest[row.key] = receipt
             added += 1
         if not selected:
+            if not row.issues and len(resolved) == len(pairs) and pairs:
+                primary = resolved[row.facts['account_id'], row.facts['asset_id']]
+                book = books.get(primary) or book_for(journal, indexed.loc[primary].to_dict())
+                if not any(e.id == row.identity or e.replaces == row.identity for e in book.records):
+                    try:
+                        draft = event_for(row, resolved, replaces=_previous_event(known[row.identity], known, books, primary))
+                    except DataError:
+                        pass  # Retain unrepresentable source evidence for later correction.
+                    else:
+                        books[primary] = append_evidence(book, (draft,))
             continue
         if row.issues:
             raise DataError('; '.join(row.issues))
@@ -188,19 +214,11 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
             cash = cash_accounts.get(account, book.account_id)
             if book.active and book.account_id != cash:
                 raise DataError('An active cash binding cannot change during import.')
-            custody = aggregate_id or account
+            custody = book.custody_id or aggregate_id or account
             if book.custody_id and book.custody_id != custody:
                 raise DataError('Different custody accounts cannot be mapped onto the same holding.')
             books[pos] = replace(book, account_id=cash, custody_id=custody)
-        previous = known[row.identity].replaces
-        previous_owner = next((b for b in books.values() if any(e.id == previous for e in b.records)), None) if previous else None
-        while previous and previous_owner is None:
-            previous = known[previous].replaces
-            previous_owner = next((b for b in books.values() if any(e.id == previous for e in b.records)), None) if previous else None
-        if previous_owner and previous_owner.position_id != primary:
-            raise DataError('Correction cannot change its source position. Retain it for separate reconciliation.')
-        # Evidence-only revisions may have no corresponding SecurityEvent yet.
-        replaces = previous if previous_owner else ''
+        replaces = _previous_event(known[row.identity], known, books, primary)
         event = event_for(row, resolved, replaces=replaces)
         book = books[primary]
         if book.account_id:
@@ -208,10 +226,17 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
             posted = ([event.gross] if event.kind in ('buy','sell') else []) + [c.amount for c in event.charges]
             if any(value is not None and money(value) != value for value in posted):
                 raise DataError('Linked cash cannot post sub-cent evidence exactly. Supply the recorded settlement amount before activation.')
-        if event.id in book.active_ids:
-            continue
+        if event.id in book.active_ids or any(e.replaces == event.id for e in book.records):
+            continue  # An identical source never undoes a reviewed edit or removal.
         book = append_evidence(book, (event,))
-        book = replace(book, active_ids=tuple(i for i in book.active_ids if i != replaces) + (event.id,))
+        ancestors = set()
+        by_id = {e.id: e for e in book.records}
+        previous = replaces
+        while previous:
+            ancestors.add(previous)
+            touched.update(affected_positions(book, by_id[previous]))
+            previous = by_id[previous].replaces
+        book = replace(book, active_ids=tuple(i for i in book.active_ids if i not in ancestors) + (event.id,))
         books[primary] = book
         touched.update(affected_positions(book, event)); applied += 1
         warnings.extend(row.incomplete)
@@ -243,9 +268,8 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
             books[pos] = replace(book, active_ids=(opening.id, *book.active_ids))
         elif earliest <= min(e.date for e in openings):
             raise DataError('Imported history precedes its opening boundary. Review the starting inventory first.')
-    # Same-time ordering cannot depend on row order, import order or position IDs.
+    # Dependent events require an unambiguous order regardless of their source.
     order = {}
-    dated_events = {}
     boundaries = set()
     def internal_principal(book, event):
         return (book.custody_id.startswith('aggregate:') and event.kind == 'transfer'
@@ -253,6 +277,8 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
                 and not event.asset_charges and not event.charges)
     for book in books.values():
         for e in selected_events(book):
+            if not affected_positions(book, e).intersection(touched):
+                continue
             if e.kind in ('opening', 'checkpoint'):
                 key = book.position_id, e.date, e.sequence
                 if key in boundaries:
@@ -263,30 +289,20 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
                 continue  # No inventory/cost/cash effect and no ordering to infer.
             key = e.date, e.sequence
             affected = affected_positions(book, e)
-            for prior_affected, prior in dated_events.get(e.date, ()):
-                if affected & prior_affected and bool(e.timestamp_utc) != bool(prior.timestamp_utc):
-                    raise DataError('Same-day imported and manual movements need a shared explicit execution order. Retain evidence until timing is resolved.')
-            dated_events.setdefault(e.date, []).append((affected,e))
             for other_positions, other in order.get(key, ()):
-                if affected & other_positions and (e.source.startswith('transaction_csv_v') or other.source.startswith('transaction_csv_v')):
+                if affected & other_positions :
                     raise DataError('Simultaneous dependent events need distinct explicit sequence values.')
             order.setdefault(key, []).append((affected, e))
         economic_book = replace(book, active_ids=tuple(e.id for e in selected_events(book) if not internal_principal(book, e)))
         if duplicate_candidates(economic_book) and book.position_id in touched and not accept_duplicates:
             raise DataError('Matching economic transactions require review as distinct executions.')
-    version = max(journal.version, 4 if any(r.facts.get('schema_version') == '2' for r in receipts) else 3)
+    version = max(journal.version, 5 if any(r.facts.get('schema_version') == '3' for r in receipts) else 4 if any(r.facts.get('schema_version') == '2' for r in receipts) else 3)
     proposed = replace(journal, version=version, securities=tuple(books.values()), transaction_imports=tuple(receipts))
-    states = replay_securities(proposed.securities).positions
+    from portfolio_app.history_commands import history_comparisons
+    comparisons = [dict(c, before_cost=None if c['before_cost'] is None else str(c['before_cost']),
+                        after_cost=None if c['after_cost'] is None else str(c['after_cost']))
+        for c in history_comparisons(journal, proposed, holdings, touched, target=target, historical=historical)]
     before, after = replay(journal), replay(proposed)
-    comparisons = []
-    for pos in sorted(touched):
-        row, state = current.loc[pos], states[pos]
-        old_cost = resolve_cost(active_components(row), target, historical).exact_amount
-        new_cost = resolve_cost(list(state.costs), target, historical).exact_amount if state.costs else Decimal(0)
-        comparisons.append(dict(position_id=pos, name=row['name'], account=row['account'],
-            before_quantity=str(row['shares']), after_quantity=str(state.quantity),
-            before_cost=None if old_cost is None else str(old_cost),
-            after_cost=None if new_cost is None else str(new_cost), currency=target))
     keys = set(before.cash) | set(after.cash) | set(before.unknown_cash) | set(after.unknown_cash)
     cash_changes = []
     for account, currency in sorted(keys):

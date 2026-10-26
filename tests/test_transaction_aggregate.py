@@ -5,13 +5,23 @@ from decimal import Decimal as D
 import pytest
 
 from portfolio_app.account_journal import Journal, journal_from_dict, journal_to_dict
-from portfolio_app.asset_history import journal_asset_history
 from portfolio_app.history_observations import ObservationStore
 from portfolio_app.holdings import DataError, parse_holdings
 from portfolio_app.security_history import replay_securities, selected_events
 from portfolio_app.transaction_evidence import asset_movement_totals, compare_asset_changes, link_transfer_deductions, recorded_asset_changes
 from portfolio_app.csv_transaction_imports import prepare_import
-from test_asset_history import row
+from portfolio_app.transaction_csv import normalize
+
+
+def row(identity, kind, **kwargs):
+    fields = dict(schema_version='2', source_id='invented-asset-ledger', event_id=identity,
+        timestamp_utc='2024-01-02T12:00:00Z', event_type=kind, account_id='Wallet',
+        asset_id='AUR', quantity='2', fee_amount='0')
+    fields.update(kwargs)
+    result = normalize(fields)
+    assert not result.issues, result.issues
+    return result
+
 from test_csv_transaction_imports import scenario
 
 
@@ -70,16 +80,10 @@ def test_reference_changes_do_not_supply_opening_or_change_net_series():
 
 def test_forward_history_uses_active_books_and_not_evidence_only_corrections():
     preview=activate()
-    prices={f'2024-04-{i:02d}':D(20) for i in range(1,9)} | {'2024-03-31':D(20)}
-    result=journal_asset_history(preview.journal,'aur',prices,ObservationStore(),end='2024-04-08')
-    assert result.points[0]['quantity']==0 and result.points[-1]['quantity']==2
-    changed=replace(scenario()[0], raw={**scenario()[0].raw,'note':'evidence only'})
-    # Change economic facts through the supported correction normalizer.
-    from portfolio_app.transaction_csv import normalize
-    changed=normalize({**changed.facts,'quantity':'11'})
-    retained=prepare_import(preview.journal,holdings(),[changed],{},correction_ids=[changed.identity])
-    after=journal_asset_history(retained.journal,'aur',prices,ObservationStore(),end='2024-04-08')
-    assert [p['quantity'] for p in result.points]==[p['quantity'] for p in after.points]
+    before = replay_securities(preview.journal.securities).positions
+    changed = normalize({**scenario()[0].facts, 'quantity': '11'})
+    retained = prepare_import(preview.journal, holdings(), [changed], {}, correction_ids=[changed.identity])
+    assert replay_securities(retained.journal.securities).positions == before
 
 
 def test_aggregate_does_not_merge_active_constituents_or_assume_custody_openings():

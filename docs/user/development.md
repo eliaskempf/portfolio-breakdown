@@ -169,56 +169,33 @@ synthetic directory; it reuses the normal alert explanation and acknowledgment U
 
 ### Calculation contracts
 
-`csv_transaction_imports.py` reconstructs generic CSV evidence; the existing
-`transaction_imports.py` retains PDF normalization and review. Both publish to the
-same journal. CSV activation can record the displayed per-position completeness
-intervals atomically with its application reviews, or explicitly apply incomplete
-history. Reconciliation never implicitly certifies completeness.
+CSV and PDF readers normalize evidence into the ordinary securities history.
+Transaction commands, corrections, removals, reconciliation and calculation
+eligibility depend on economic facts, never the entry source. Linked exchanges,
+transfers and asset fees are reviewed and applied together. Source references
+and replacement chains remain immutable provenance; identical reimports cannot
+undo a later edit or removal. Similar cross-source trades require explicit review.
 
-`asset_history.py` calculates approximate daily performance over the existing
-forward securities replay and scope-aware external flows. Its calculation takes
-an explicit opening, never an ending quantity. Selected-period capital starts at
-market value. Its optional import-review diagnostic uses midpoint daily Dietz
-and does not replace standard history, daily TWR, XIRR or their coverage gates. Inventory with unresolved flow classification or a balance reset within
-the interval leaves dependent gains and returns unavailable.
+The small public CSV uses dates and stable references. File order supplies the
+initial same-day order, which can be overridden with `order` and edited in the
+normal transaction form. No execution timestamp is invented. Legacy CSV v1/v2
+receipts and journal v1–v4 remain readable. Journal v5 supports independently
+identified corrections of imported events and transaction estimate qualifiers;
+simple CSV receipts store sparse normalized facts. Loading older records does
+not rewrite them or invalidate existing review fingerprints.
 
-`transaction_evidence.py` provides signed per-location and per-asset diagnostics
-independent of activation, plus arithmetic reference comparisons. Holdings are not
-inputs to movement normalization. Openings, checkpoints and unknown charges remain
-separate. Explicit source/event deduction links preserve raw evidence and ordinary
-correction lineage; the linked inventory record owns the known quantity without
-asserting it is a fee. Do not infer such links from matching amounts or dates.
+New-position identities are staged until application. `history_publication.py`
+protects the holdings/journal pair with a durable private recovery intent and
+revision guards under the workspace lock. Interrupted publications roll back
+before the next workspace access; unexpected third-party edits stop recovery.
+Evidence-only saves leave portfolio balances unchanged.
 
-Aggregate import maps reviewed locations to one position per asset before normal
-forward replay. The book's `custody_id` records a stable `aggregate:` scope digest.
-Transfers within that position preserve lots and principal; charges still apply.
-Existing custody books, cash binding and ordering checks remain supported. Active
-constituents cannot coexist with the new authoritative aggregate holding.
-
-`asset-performance.json` version 2 uses `forward-daily-dietz-v1`, source namespace,
-owned locations and asset/position/listing mapping; it stores no opening or ending
-quantities. Version 1 remains readable for backup/inspection but cannot route a
-chart or be newly saved. Explicit mapping review replaces it under normal document
-backup, locking and revision checks. Applied history uses active journal events;
-retained-only revisions affect evidence diagnostics until separately activated.
-
-The public Transaction CSV template uses `schema_version=2`, including inventory
-receipts/removals, balance checkpoints and sourced monetary estimates. Legacy
-receipt decoding remains internal compatibility, without a public format selector. Journal v4 persists these
-facts; serializers retain v1–v3 wire shapes and receipt identities. A checkpoint
-is an end-of-day reporting boundary with a separate optional observation
-timestamp. It resets authoritative units/cost without synthesizing cash,
-income, an acquisition date or earlier holdings. The import command requires
-explicit checkpoint acceptance under the same revision/lock checks as ordinary
-activation. Prior records and corrections remain retained.
-
-Acquisition cost components may carry `quality` and `source`. Estimate flags
-survive FIFO consumption and custody transfers. `cost_quantity` partitions
-costed and unknown units instead of treating a known subtotal as full cost.
-`transaction_evidence.py` computes signed movement diagnostics independently
-of activated balances and monetary completeness. It must never project those
-changes as balances from an unconfirmed zero. Source-specific archive conversion
-does not belong in these modules.
+There is one history calculation path: forward holdings, daily TWR and annualized
+XIRR. Supplied estimates qualify dependent results rather than blocking them.
+Unknown amounts, missing prices/FX and incomplete transaction coverage remain
+separate limitations. Acquisition-cost estimates alone do not qualify percentage
+returns that do not depend on those costs. Legacy `asset-performance.json` files
+are preserved as inert private artifacts and do not control views or calculations.
 
 - `gain_accounting.py` supplies shared current and historical known-gain results.
   Security-only and account-only cash flows cancel across their common boundary;

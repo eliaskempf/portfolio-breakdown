@@ -22,10 +22,24 @@ class ConfirmationCandidate:
 
 def confirmation_interval(book, *, today=None):
     end = (today or date.today()).isoformat()
-    openings = [e.date for e in selected_events(book) if e.kind == 'opening' and e.date]
+    openings = [e.date for e in selected_events(book) if e.kind in ('opening', 'checkpoint') and e.date]
     if not openings or max(openings) > end:
         raise DataError('History needs an applied starting boundary on or before today.')
     return max(openings), end
+
+
+def confirmation_intervals(journal, positions, *, today=None):
+    """Explicit review intervals for the proposed, forward-applied books."""
+    from portfolio_app.security_history import replay_securities
+    end = (today or date.today()).isoformat()
+    states = replay_securities(journal.securities).positions
+    intervals = {}
+    for identity in sorted(positions):
+        state = states.get(identity)
+        if state is None or not state.boundary or state.boundary > end:
+            raise DataError('History needs an applied starting boundary on or before today.')
+        intervals[identity] = (state.boundary, end)
+    return intervals
 
 
 def confirmation_candidates(journal, observations, *, today=None):

@@ -29,6 +29,7 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
         gain = row.get('unrealized_gain_reporting')
         capital = row.get('cost_basis_reporting')
         annualized = None
+        estimated_return = False
         gain_note = 'Unrealized gain only'
         gain_help = 'Current value less recorded acquisition cost. Earlier realized gains, income and expenses are not reconstructed.'
         capital_help = 'Recorded acquisition cost of the current holding; earlier purchases and proceeds are not reconstructed.'
@@ -53,6 +54,7 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
                             'Includes sale proceeds, income and expenses; can be negative after withdrawals. '
                             'This is not remaining acquisition cost. Unchanged by chart type, range or hover.')
             full = view.all_result
+            estimated_return = full.estimated
             annualized = None if full.money_weighted is None else 100*full.money_weighted
             return_help = f'All history · {view.all_start} – {view.all_end}. Money-weighted; unchanged by chart type, range or hover.'
             if full.days < 365:
@@ -72,4 +74,6 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
             if not has_history and row.get('cost_estimated'):
                 second.caption('Estimated cost', help=row.get('cost_note') or 'Acquisition cost uses an estimated conversion.')
             third.metric('Annualized return', return_percent(annualized), help=return_help)
+            if estimated_return and annualized is not None:
+                third.caption('Estimated', help='Uses supplied estimates in the dated transaction inputs.')
     summary()

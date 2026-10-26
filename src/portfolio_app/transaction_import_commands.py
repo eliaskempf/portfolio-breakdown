@@ -3,7 +3,6 @@ from dataclasses import replace
 from datetime import date
 from io import StringIO
 from pathlib import Path
-from uuid import uuid4
 
 import pandas as pd
 
@@ -11,10 +10,11 @@ from portfolio_app.account_journal import load_journal, save_journal
 from portfolio_app.actual_portfolio import freeze_position_keys
 from portfolio_app.holdings import DataError, parse_holdings
 from portfolio_app.positions import EMPTY_CSV, read_snapshot
-from portfolio_app.security_history import HistoryReview, effective_holdings, selected_events, affected_positions
+from portfolio_app.security_history import effective_holdings, selected_events, affected_positions
 from portfolio_app.storage import save_document
 from portfolio_app.csv_transaction_imports import prepare_import
 from portfolio_app.workspace_lock import workspace_lock
+from portfolio_app.history_confirmation import confirmation_intervals as import_confirmation_intervals
 
 
 def prepare_positions(directory, additions, *, expected_holdings_revision):
@@ -29,52 +29,15 @@ def prepare_positions(directory, additions, *, expected_holdings_revision):
         snapshot = read_snapshot(path)
         if snapshot.revision != expected_holdings_revision:
             raise DataError('Holdings changed. Review the mappings again.')
-        raw = pd.read_csv(StringIO(path.read_text(encoding='utf-8-sig') if path.exists() else EMPTY_CSV), dtype=str, keep_default_na=False)
-        if 'position_key' not in raw:
-            raw['position_key'] = snapshot.holdings.position_id.tolist()
-        existing = set(raw.position_key)
-        for item in additions:
-            allowed = {'position_key','id','name','account','instrument_type'}
-            if set(item) - allowed or any(not item.get(k) for k in ('position_key','id','name','account')):
-                raise DataError('Supply an explicit instrument, custody account and stable position identity.')
-            if item['position_key'] in existing:
-                old = raw.loc[raw.position_key.eq(item['position_key'])].iloc[0]
-                if any(str(old.get(k,'')) != v for k,v in item.items()):
-                    raise DataError('Prepared identity already has different metadata.')
-                continue
-            if ((raw.id == item['id']) & (raw.account == item['account'])).any():
-                raise DataError('This custody position already exists. Map it instead of creating another.')
-            for key in item:
-                if key not in raw:
-                    raw[key] = ''
-            raw.loc[len(raw)] = {c: '' for c in raw.columns}
-            for k,v in {**item,'shares':'0'}.items():
-                raw.at[len(raw)-1,k] = v
-            existing.add(item['position_key'])
-        content = raw.to_csv(index=False)
-        parse_holdings(content)
+        content = positions_content(path.read_text(encoding='utf-8-sig') if path.exists() else '', snapshot, additions)
         save_document(path,content,snapshot.revision)
         return read_snapshot(path)
-
-
-def import_confirmation_intervals(journal, positions, *, today=None):
-    """Explicit review intervals for the proposed, forward-applied books."""
-    from portfolio_app.security_history import replay_securities
-    end = (today or date.today()).isoformat()
-    states = replay_securities(journal.securities).positions
-    intervals = {}
-    for identity in sorted(positions):
-        state = states.get(identity)
-        if state is None or not state.boundary or state.boundary > end:
-            raise DataError('History needs an applied starting boundary on or before today.')
-        intervals[identity] = (state.boundary, end)
-    return intervals
 
 
 def save_transaction_import(directory, rows, mapping, *, expected_journal_revision,
                             expected_holdings_revision, accept_reconciliation=False,
                             accept_checkpoints=False,
-                            comparison_date='', expected_observations_revision=...,
+                            comparison_date='', additions=(), expected_observations_revision=...,
                             expected_reporting_currency=None, complete_intervals=None, **options):
     """Recompute under the lock; evidence and all activated legs publish together."""
     directory = Path(directory)
@@ -105,7 +68,13 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
         if selected and ((expected_observations_revision is not ... and observation_revision != expected_observations_revision)
                          or (expected_reporting_currency is not None and expected_reporting_currency != target)):
             raise DataError('Valuation evidence or reporting currency changed. Review reconciliation again.')
-        preview = prepare_import(journal, snapshot.holdings, rows, mapping,
+        content = None
+        preview_holdings = snapshot.holdings
+        if selected and additions:
+            path = directory/'holdings.csv'
+            content = positions_content(path.read_text(encoding='utf-8-sig') if path.exists() else '', snapshot, additions)
+            preview_holdings = parse_holdings(content)
+        preview = prepare_import(journal, preview_holdings, rows, mapping,
             target=target, historical=ObservationFX(observations), **options)
         proposed = preview.journal
         if selected:
@@ -119,19 +88,43 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
                 raise DataError('History review intervals changed. Review the proposed history again.')
         if selected and preview.applied:
             touched = {c['position_id'] for c in preview.comparisons}
-            books = []
-            for book in proposed.securities:
-                if book.position_id in touched:
-                    from portfolio_app.security_history import security_history_fingerprint
-                    start, end = complete_intervals[book.position_id] if complete_intervals is not None else ('', '')
-                    receipt = HistoryReview(uuid4().hex, book.active_ids, comparison_date, 'accept',
-                                            start, end, security_history_fingerprint(proposed, book.position_id))
-                    book = replace(book,reviews=(*book.reviews,receipt))
-                books.append(book)
-            proposed = replace(proposed,securities=tuple(books))
+            from portfolio_app.history_commands import record_reviews
+            proposed = record_reviews(proposed, touched, comparison_date, complete_intervals)
         if proposed == journal:
             return replace(preview,journal=journal)
-        snapshot = freeze_position_keys(directory,snapshot.revision)
-        effective_holdings(snapshot.holdings,proposed.securities)
-        save_journal(directory,proposed,revision)
+        effective_holdings(preview_holdings, proposed.securities)
+        if content is not None:
+            from portfolio_app.history_publication import publish_positions_and_history
+            publish_positions_and_history(directory, content, proposed, snapshot.revision, revision)
+        else:
+            snapshot = freeze_position_keys(directory, snapshot.revision)
+            save_journal(directory, proposed, revision)
         return replace(preview,journal=proposed)
+
+
+def positions_content(content, snapshot, additions):
+    raw = pd.read_csv(StringIO(content or EMPTY_CSV), dtype=str, keep_default_na=False)
+    if 'position_key' not in raw:
+        raw['position_key'] = snapshot.holdings.position_id.tolist()
+    existing = set(raw.position_key)
+    for item in additions:
+        allowed = {'position_key','id','name','account','instrument_type','ticker'}
+        if set(item) - allowed or any(not item.get(k) for k in ('position_key','id','name','account')):
+            raise DataError('Supply an explicit instrument, custody account and stable position identity.')
+        if item['position_key'] in existing:
+            old = raw.loc[raw.position_key.eq(item['position_key'])].iloc[0]
+            if any(str(old.get(k,'')) != v for k,v in item.items()):
+                raise DataError('Prepared identity already has different metadata.')
+            continue
+        if ((raw.id == item['id']) & (raw.account == item['account'])).any():
+            raise DataError('This custody position already exists. Map it instead of creating another.')
+        for key in item:
+            if key not in raw:
+                raw[key] = ''
+        raw.loc[len(raw)] = {c: '' for c in raw.columns}
+        for k,v in {**item,'shares':'0'}.items():
+            raw.at[len(raw)-1,k] = v
+        existing.add(item['position_key'])
+    content = raw.to_csv(index=False)
+    parse_holdings(content)
+    return content

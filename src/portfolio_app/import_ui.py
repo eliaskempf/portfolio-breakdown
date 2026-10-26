@@ -171,12 +171,11 @@ def render_import(path, snapshot, funds):
 
 
 def render_import_next_steps():
-    if count := st.session_state.pop('import_tx_pending_complete', None):
+    if identity := st.session_state.pop('import_tx_pending_complete', None):
         clear_import()
-        st.session_state['positions_workflow_request'] = 'Import portfolio'
-        st.session_state['import_kind'] = 'Transactions'
-        st.session_state['import_tx_input'] = 'Saved evidence'
-        st.session_state['import_tx_notice'] = f'{count} movements applied. History completeness is reviewed separately.'
+        from portfolio_app.position_ui import request_position
+        request_position(identity, local=False)
+        st.session_state[f'position_edit_detail_view_{identity}'] = 'Transactions'
     if st.session_state.pop('import_pending_complete', False):
         clear_import()
         st.session_state['import_complete'] = True

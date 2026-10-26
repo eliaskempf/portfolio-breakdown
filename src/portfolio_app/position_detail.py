@@ -168,7 +168,10 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
 def _render_history_view(row, data_dir, journal, has_history, *, demo, allocation):
     from portfolio_app.history_ui import _visible_records
     book = next((b for b in journal.securities if b.position_id == row.position_id), None)
-    if book is None or not _visible_records(book):
+    from portfolio_app.security_history import affected_positions, current_records
+    related = any(affected_positions(owner, event).intersection({row.position_id})
+                  for owner in journal.securities for event in current_records(owner))
+    if book is None or not (_visible_records(book) or related):
         _render_position_view('Price', row, data_dir, journal, has_history, demo=demo, allocation=allocation)
         return
     key = f'position_edit_history_mode_{row.position_id}'

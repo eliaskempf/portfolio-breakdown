@@ -57,7 +57,7 @@ def test_checkpoint_unknown_observation_is_not_execution_or_acquisition_date():
     assert not replay(j).cash
     gain=summarize_known_gain(j,HistoryScope(('desk',)),ObservationStore(),'2024-04-02',current_values={'desk':D(120)})
     assert gain.amount==40 and gain.partial
-    assert 'Approximate' in gain.coverage_note
+    assert 'Estimated' in gain.coverage_note
 
 
 def test_checkpoint_difference_is_visible_without_fake_cash_or_gain():
@@ -198,15 +198,18 @@ def test_estimated_valuation_quality_propagates_into_reward_cost():
     j=activate([opening,reward]).journal
     assert replay_securities(j.securities).positions['desk'].costs[0]['quality']=='estimated'
     gain=summarize_known_gain(j,HistoryScope(('desk',)),ObservationStore(),'2024-04-02',current_values={'desk':D(20)})
-    assert gain.amount==20 and 'Approximate' in gain.coverage_note
+    assert gain.amount==20 and 'Estimated' in gain.coverage_note
 
 
-def test_imported_checkpoint_cannot_be_detached_from_receipt_by_manual_editor():
+def test_imported_checkpoint_correction_preserves_receipt():
     from portfolio_app.history_commands import correct_transaction
     j=activate([row('balance',**estimate())]).journal
     book=j.securities[0]
-    with pytest.raises(DataError,match='imported event'):
-        correct_transaction(book,book.active_ids[0],quantity=D(4))
+    corrected=correct_transaction(book,book.active_ids[0],quantity=D(4))
+    assert corrected.records[-1].replaces == book.active_ids[0]
+    from dataclasses import replace
+    j=replace(j,version=5,securities=(corrected,))
+    assert journal_from_dict(journal_to_dict(j)) == j
 
 
 def test_quantity_diagnostics_do_not_need_cost_or_invent_starting_inventory():
@@ -257,12 +260,12 @@ def test_checkpoint_backup_roundtrip_preserves_unknown_cost_and_estimate_source(
     assert load_journal(source)==load_journal(restored)
 
 
-def test_estimated_external_values_do_not_enable_exact_percentage_returns():
+def test_estimated_external_values_are_qualified_instead_of_blocked():
     opening=row('start','opening',quantity='0')
     incoming=row('receipt','inventory_in',flow_classification='external',valuation_amount='100',
         valuation_currency='EUR',valuation_quality='estimated',valuation_source='Invented prior valuation',**estimate())
     j=activate([opening,incoming]).journal
-    assert any('exact percentage returns' in r for r in coverage_reasons(j,HistoryScope(('desk',)),ObservationStore(),'2024-03-31','2024-04-02'))
+    assert not any('exact percentage returns' in r for r in coverage_reasons(j,HistoryScope(('desk',)),ObservationStore(),'2024-03-31','2024-04-02'))
 
 
 def test_checkpoint_model_rejects_cash_and_cost_on_zero_units():

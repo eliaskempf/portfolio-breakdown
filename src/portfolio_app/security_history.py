@@ -134,8 +134,11 @@ class SecurityEvent:
     flow_classification: str = ''
     valuation_quality: str = 'recorded'
     valuation_source: str = ''
+    estimated: bool = False
 
     def __post_init__(self):
+        if type(self.estimated) is not bool:
+            raise DataError('Invalid transaction estimate flag.')
         if self.kind == 'checkpoint' and (self.charges or self.asset_charges or self.price is not None or self.amount is not None):
             raise DataError('A checkpoint is a balance, not a cash transaction or fee.')
         if self.flow_classification not in ('', 'unresolved', 'external'):
@@ -256,7 +259,8 @@ class SecurityBook:
 
     @property
     def active(self):
-        return bool(self.active_ids)
+        selected = set(self.active_ids)
+        return any(e.id in selected and e.kind != 'void' for e in self.records)
 
     @property
     def interval(self):
@@ -688,7 +692,7 @@ def duplicate_candidates(book):
             continue
         facts = asdict(event)
         for key in ('id', 'sequence', 'source', 'replaces', 'note', 'timestamp_utc', 'group_id',
-                    'observed_at', 'valuation_quality', 'valuation_source'):
+                    'observed_at', 'valuation_quality', 'valuation_source', 'estimated'):
             facts.pop(key)
         for part in facts['costs']:
             part.pop('quality', None)
@@ -749,7 +753,7 @@ def security_history_fingerprint(journal, position_id):
                 raw.pop('custody_id')
             defaults = dict(received_quantity=ZERO, valuation_amount=None, valuation_currency='',
                             asset_charges=(), timestamp_utc='', group_id='', observed_at='',
-                            flow_classification='', valuation_quality='recorded', valuation_source='')
+                            flow_classification='', valuation_quality='recorded', valuation_source='', estimated=False)
             for event in raw['records']:
                 for field, default in defaults.items():
                     if event[field] == default:

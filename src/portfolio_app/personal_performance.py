@@ -59,6 +59,25 @@ class PersonalPerformance:
     capital_reasons: tuple[str, ...] = ()
     valuation_evidence: tuple[ValuationEvidence, ...] = ()
     time_weighted_method: str = 'daily'
+    estimated: bool = False
+
+
+def estimated_return_inputs(journal, scope, start, end):
+    """Cost-only estimates do not qualify returns; estimated flows do."""
+    for book in journal.securities:
+        for event in selected_events(book):
+            if not start < event.date <= end:
+                continue
+            inside = book.position_id in scope.positions
+            affected = bool(affected_positions(book, event).intersection(scope.positions)) or book.account_id in scope.accounts
+            if event.estimated and affected and (event.kind in ('buy', 'sell', 'distribution', 'fee', 'tax')
+                    or any(c.amount for c in event.charges)):
+                return True
+            crosses = (inside and event.kind in ('inventory_in', 'inventory_out', 'transfer_in', 'transfer_out')) or (
+                event.kind == 'swap' and inside != (event.other_position_id in scope.positions))
+            if crosses and event.valuation_amount is not None and (event.estimated or event.valuation_quality == 'estimated'):
+                return True
+    return False
 
 
 class HistoryCalculation:
@@ -344,16 +363,17 @@ def coverage_reasons(journal, scope, observations, start, end, *, fingerprint=No
             reasons.append(Issue(f'{identity}: inventory origin or purpose unresolved', 'transaction'))
         if any(e.kind == 'checkpoint' and e.date <= end and not e.observed_at for e in events):
             reasons.append(Issue(f'{identity}: checkpoint observation date unknown', 'transaction'))
-        if any(e.kind in ('buy', 'sell', 'distribution', 'swap', 'reward', 'asset_fee', 'transfer') and start < e.date <= end and not e.charges_known and (e.source.startswith('transaction_csv_v') or e.kind in ('buy', 'sell', 'distribution')) for e in events):
+        if any(e.kind in ('buy', 'sell', 'distribution', 'swap', 'reward') and start < e.date <= end and not e.charges_known for e in events):
             reasons.append(Issue(f'{identity}: charges have not been confirmed', 'transaction'))
-    for book in journal.securities:
-        for event in selected_events(book):
-            crosses = (event.kind in ('inventory_in','inventory_out') and event.flow_classification == 'external'
-                       and book.position_id in scope.positions) or (
-                       event.kind == 'swap' and (book.position_id in scope.positions) != (event.other_position_id in scope.positions))
-            if crosses and event.valuation_quality == 'estimated' and start < event.date <= end:
-                reasons.append(Issue('Estimated external-flow valuations do not establish exact percentage returns', 'transaction'))
     active_ids = {e.id for b in journal.securities for e in selected_events(b)}
+    for book in journal.securities:
+        by_id = {e.id: e for e in book.records}
+        for event in book.records:
+            if event.id in book.active_ids:
+                ancestor = event.replaces
+                while ancestor:
+                    active_ids.add(ancestor)
+                    ancestor = by_id[ancestor].replaces
     superseded = {r.replaces for r in journal.transaction_imports if r.replaces}
     receipts = {r.id: r for r in journal.transaction_imports}
     members = set(scope.positions) | {b.position_id for b in journal.securities if b.account_id in scope.accounts}
@@ -617,4 +637,4 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
             twr_reasons = (reason,) if reason else ()
     return PersonalPerformance(opening.amount, ending.amount, net, invested, gain, mwr, twr, days,
         tuple(dict.fromkeys((*opening.reasons, *ending.reasons))), flow_reasons, mwr_reasons, twr_reasons,
-        capital.amount, opening_gain, total_gain, capital.reasons, ending.evidence, method)
+        capital.amount, opening_gain, total_gain, capital.reasons, ending.evidence, method, estimated_return_inputs(journal, scope, start, end))

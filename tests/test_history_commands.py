@@ -200,7 +200,8 @@ def test_removing_pending_correction_reviews_applied_ancestor_and_keeps_other_pe
     save_history(tmp_path, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision)
     journal, revision = load_journal(tmp_path)
     candidate = remove_transactions(journal.securities[0], [correction.id])
-    assert candidate.active_ids == ('open',)
+    assert candidate.active_ids == ('open', candidate.records[-1].id)
+    assert candidate.records[-1].kind == 'void'
     with pytest.raises(DataError, match='Resolve'):
         save_history(tmp_path, candidate, expected_journal_revision=revision,
             expected_holdings_revision=snapshot.revision, activate=True)
@@ -261,9 +262,14 @@ def test_removal_requires_accepting_linked_cash_changes(tmp_path):
 
 
 def test_removal_does_not_silently_change_other_holding():
-    from portfolio_app.history_commands import remove_transactions
+    from portfolio_app.history_commands import remove_transactions, changed_positions
     from portfolio_app.security_history import SecurityBook
+    from portfolio_app.account_journal import Journal
+    opening = E('open', 'opening', '2024-01-01', quantity=1, amount=10, currency='EUR')
+    other_open = E('other-open', 'opening', '2024-01-01')
     event = E('transfer', 'transfer', '2024-01-02', quantity=1, other_position_id='other')
-    book = SecurityBook('source', 'invented', ('1', '10', 'EUR'), records=(event,), active_ids=('transfer',))
-    with pytest.raises(DataError, match='another holding'):
-        remove_transactions(book, ['transfer'])
+    book = SecurityBook('source', 'invented', ('1', '10', 'EUR'), records=(opening,event), active_ids=('open','transfer'))
+    destination = SecurityBook('other','invented',('0','',''),records=(other_open,),active_ids=('other-open',))
+    journal = Journal(version=2,securities=(book,destination))
+    candidate = remove_transactions(book, ['transfer'])
+    assert changed_positions(journal, (candidate,)) == {'source', 'other'}
