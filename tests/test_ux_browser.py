@@ -12,7 +12,7 @@ from urllib.request import urlopen
 import pytest
 import yaml
 
-from browser_support import select_tab
+from browser_support import select_tab, settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -387,11 +387,21 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     dialog = page.get_by_role('dialog')
     dialog.get_by_text('Transactions', exact=True).click()
     dialog.get_by_role('button', name='Add buy').click()
-    dialog.get_by_role('textbox', name='Quantity', exact=True).fill('2')
-    dialog.get_by_role('textbox', name='Unit price', exact=True).fill('80')
-    dialog.get_by_role('textbox', name='Fees', exact=True).fill('0')
+    # Each blur starts a rerender; finish it before editing the next field.
+    inputs = [('Quantity', '2'), ('Unit price', '80'), ('Fees', '0')]
+    for label, value in inputs:
+        field = dialog.get_by_role('textbox', name=label, exact=True)
+        field.fill(value)
+        field.press('Tab')
+        settle(page)
+    for label, value in inputs:
+        playwright.expect(dialog.get_by_role('textbox', name=label, exact=True)).to_have_value(value)
     assert not dialog.get_by_text('Charges complete (blank means no charge)', exact=True).count()
     dialog.get_by_role('button', name='Save transaction', exact=True).click()
+    settle(page)
+    buy = next(event for event in load_journal(directory)[0].securities[0].records if event.kind == 'buy')
+    assert buy.quantity == 2 and buy.price == 80
+    assert buy.charges_known and buy.charges[0].amount == 0
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click()
     apply = dialog.get_by_role('button', name='Apply and confirm history', exact=True)
     playwright.expect(apply).to_be_enabled()
@@ -408,6 +418,8 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     expect_price = dialog.get_by_role('textbox', name='Unit price', exact=True)
     playwright.expect(expect_price).to_have_value('80')
     expect_price.fill('81.125')
+    expect_price.press('Tab')
+    settle(page)
     dialog.get_by_role('button', name='Save changes', exact=True).click()
     dialog.get_by_role('button', name='Review against portfolio', exact=True).wait_for()
     journal, _ = load_journal(directory)
