@@ -436,8 +436,8 @@ def _history(doc, identity=None):
 
 def render_monitoring(directory, holdings, journal, *, demo=False):
     apply_monitoring_route()
-    st.session_state.setdefault('monitoring_view', 'Browse')
-    view = st.segmented_control('Monitoring view', ['Browse','Tracked rules','Account alerts','History'], key='monitoring_view') or 'Browse'
+    view = st.segmented_control('Monitoring view', ['Browse','Tracked rules','Account alerts','History'],
+                                default='Browse', key='monitoring_view') or 'Browse'
     try:
         if view == 'Tracked rules':
             service = monitoring_for(directory, demo=demo)

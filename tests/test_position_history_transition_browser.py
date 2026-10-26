@@ -112,7 +112,8 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             dialog.get_by_role('radio', name='Holdings', exact=True).click()
             page.wait_for_timeout(200)
             # Returning to cached holdings must remove or hide the old price chart.
-            assert dialog.locator('.js-plotly-plot').evaluate_all('es=>es.every(e=>e.data[0].name!=="Price" || getComputedStyle(e).visibility==="hidden")')
+            # Plotly can purge its data before React removes the chart element.
+            assert dialog.locator('.js-plotly-plot').evaluate_all('es=>es.every(e=>e.data?.[0]?.name!=="Price" || getComputedStyle(e).visibility==="hidden")')
             settle(page)
             assert dialog.evaluate('e=>e===window.originalDialog')
             assert (tmp_path/'calculations.txt').read_text().count('calculation') == 1
