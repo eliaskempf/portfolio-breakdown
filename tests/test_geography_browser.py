@@ -3,6 +3,7 @@ import json
 
 import yaml
 
+from browser_support import select_tab
 from test_ux_browser import ux_page as ux_page, playwright
 
 
@@ -24,7 +25,7 @@ def test_classification_and_geography_controls_render_and_drill(ux_page):
         prices['prices'][symbol] = dict(price=50, currency='EUR', observed_at='2026-09-01T12:00:00+00:00')
     path.write_text(json.dumps(prices))
     page.reload()
-    page.get_by_role('tab', name='Exposure', exact=True).click()
+    select_tab(page, 'Exposure')
     page.get_by_role('combobox', name='Asset classifications', exact=True).click()
     page.get_by_role('option', name='Sector', exact=True).click()
     table = page.get_by_role('table', name='Exposure assets', exact=True)
