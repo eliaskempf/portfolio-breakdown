@@ -12,7 +12,7 @@ from portfolio_app.market_data import history_for
 
 
 def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
-                          heading='Market-price history', index_points=False,
+                          heading='Market-price history', index_points=False, is_active=None,
                           expected_currency=None, native_currency=None, service=None, compact=False,
                           caption='Instrument closing prices in {currency} · Excludes dividend reinvestment · Not your personal return history'):
     if not compact and heading:
@@ -55,6 +55,8 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
     @local_dialog_updates()
     def progress():
         nonlocal result, requested, completed
+        if is_active is not None and not is_active():
+            return
         if not completed and not any(service.pending(symbol, period) for symbol in requested):
             result, requested = read()
             completed = not any(service.pending(symbol, period) for symbol in requested)

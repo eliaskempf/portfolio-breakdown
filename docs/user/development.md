@@ -76,7 +76,9 @@ including when it arrives in a background fragment. Account
 history derives securities cash postings once per journal snapshot and reuses
 account states between cash/account event dates. A settlement value date alone
 does not release a pending receipt; explicit receipt events remain authoritative.
-Background data refreshes must remain local to the affected result. Verify actual
+Background data refreshes must remain local to the affected result. Dialog polling
+fragments must stop writing when their captured position or view is no longer
+selected; a stale timer must not draw into a replacement view. Verify actual
 transitions with delayed synthetic data: settled screenshots alone miss old
 controls and charts briefly appearing during a switch.
 An explicit retry rebuilds the owning dialog's download state and polling timer;
@@ -84,7 +86,9 @@ successful completion must update the chart without changing its period or
 leaving the view. Idle polling checks the observation-file identity before
 parsing it again, while externally saved corrections still invalidate results.
 
-Position opening and clean dismissal rerun only the dialog host. Child workflows
+Position opening and clean dismissal rerun only the dialog host. Creating or
+discarding an unsaved editor draft refreshes the parent toolbar once so its
+resume action matches the retained draft. Child workflows
 share a local refresh boundary, including evidence saves, reconciliation, market
 evidence repairs and completeness review. Persisted changes refresh current
 position values locally and refresh the parent page once after dismissal. Pending
@@ -164,6 +168,57 @@ episodes under the workspace lock. Monitoring does not change holdings or orders
 synthetic directory; it reuses the normal alert explanation and acknowledgment UI.
 
 ### Calculation contracts
+
+`csv_transaction_imports.py` reconstructs generic CSV evidence; the existing
+`transaction_imports.py` retains PDF normalization and review. Both publish to the
+same journal. CSV activation can record the displayed per-position completeness
+intervals atomically with its application reviews, or explicitly apply incomplete
+history. Reconciliation never implicitly certifies completeness.
+
+`asset_history.py` calculates approximate daily performance over the existing
+forward securities replay and scope-aware external flows. Its calculation takes
+an explicit opening, never an ending quantity. Selected-period capital starts at
+market value. Its optional import-review diagnostic uses midpoint daily Dietz
+and does not replace standard history, daily TWR, XIRR or their coverage gates. Inventory with unresolved flow classification or a balance reset within
+the interval leaves dependent gains and returns unavailable.
+
+`transaction_evidence.py` provides signed per-location and per-asset diagnostics
+independent of activation, plus arithmetic reference comparisons. Holdings are not
+inputs to movement normalization. Openings, checkpoints and unknown charges remain
+separate. Explicit source/event deduction links preserve raw evidence and ordinary
+correction lineage; the linked inventory record owns the known quantity without
+asserting it is a fee. Do not infer such links from matching amounts or dates.
+
+Aggregate import maps reviewed locations to one position per asset before normal
+forward replay. The book's `custody_id` records a stable `aggregate:` scope digest.
+Transfers within that position preserve lots and principal; charges still apply.
+Existing custody books, cash binding and ordering checks remain supported. Active
+constituents cannot coexist with the new authoritative aggregate holding.
+
+`asset-performance.json` version 2 uses `forward-daily-dietz-v1`, source namespace,
+owned locations and asset/position/listing mapping; it stores no opening or ending
+quantities. Version 1 remains readable for backup/inspection but cannot route a
+chart or be newly saved. Explicit mapping review replaces it under normal document
+backup, locking and revision checks. Applied history uses active journal events;
+retained-only revisions affect evidence diagnostics until separately activated.
+
+The public Transaction CSV template uses `schema_version=2`, including inventory
+receipts/removals, balance checkpoints and sourced monetary estimates. Legacy
+receipt decoding remains internal compatibility, without a public format selector. Journal v4 persists these
+facts; serializers retain v1–v3 wire shapes and receipt identities. A checkpoint
+is an end-of-day reporting boundary with a separate optional observation
+timestamp. It resets authoritative units/cost without synthesizing cash,
+income, an acquisition date or earlier holdings. The import command requires
+explicit checkpoint acceptance under the same revision/lock checks as ordinary
+activation. Prior records and corrections remain retained.
+
+Acquisition cost components may carry `quality` and `source`. Estimate flags
+survive FIFO consumption and custody transfers. `cost_quantity` partitions
+costed and unknown units instead of treating a known subtotal as full cost.
+`transaction_evidence.py` computes signed movement diagnostics independently
+of activated balances and monetary completeness. It must never project those
+changes as balances from an unconfirmed zero. Source-specific archive conversion
+does not belong in these modules.
 
 - `gain_accounting.py` supplies shared current and historical known-gain results.
   Security-only and account-only cash flows cancel across their common boundary;
@@ -585,3 +640,25 @@ The demo includes exact flow-boundary observations for the portfolio and the
 fee-free money-market holding. The equity holding has a money-weighted return;
 daily TWR includes its recorded fees; exact event TWR additionally needs supported event boundaries. Editing financial history
 invalidates the prior coverage confirmation, as it does for any workspace.
+
+### Transaction CSV boundary
+
+`transaction_csv.py` parses textual CSV facts and retains original evidence without
+market access. `transaction_imports.py` prepares a pure batch reconstruction;
+`transaction_import_commands.py` revalidates revisions under the workspace lock
+and publishes all financial changes in one journal replacement. The interface
+renders the same preview that the save command recomputes.
+
+Journal version 3 retains import provenance and correction lineage. Versions 1
+and 2 retain their semantics and remain readable; mutation must not downgrade a
+version 3 journal. Position preparation writes only empty identity rows and is
+separate from financial activation. Failed publication may leave those identities,
+never partially applied swap or transfer legs. Derived cash postings remain
+unpersisted, and custody identity is separate from cash ownership.
+
+Security replay owns non-cash swaps, in-kind income and asset fees alongside
+existing FIFO history. Lot splits multiply before dividing to avoid avoidable
+intermediate rounding; imported lot ordering retains execution time and explicit
+ties. Monetary gain components distinguish analytical swap proceeds from purchase
+payments and sale cash receipts. Scope calculations cancel internal movements
+before requesting cross-boundary monetary evidence.

@@ -11,7 +11,7 @@ import math
 
 from portfolio_app.account_journal import effective_events, replay
 from portfolio_app.history_observations import HistoryScope, index_observations, lookup, rate
-from portfolio_app.security_history import cash_postings, history_fingerprint, replay_securities, selected_events
+from portfolio_app.security_history import cash_postings, history_fingerprint, replay_securities, selected_events, affected_positions
 
 from portfolio_app.history_diagnostics import HistoryIssue as Issue
 from portfolio_app.history_valuation import price_at, provenance, valuation_fx, ValuationEvidence
@@ -334,13 +334,43 @@ def coverage_reasons(journal, scope, observations, start, end, *, fingerprint=No
             reasons.append(Issue(f'{identity}: history is not activated', 'transaction'))
             continue
         events = selected_events(book)
-        if not any(e.kind == 'opening' and e.date <= start for e in events) and not confirmed_empty_before(book, start):
+        if not any(e.kind in ('opening', 'checkpoint') and e.date <= start for e in events) and not confirmed_empty_before(book, start):
             reasons.append(Issue(f'{identity}: missing opening snapshot', 'transaction'))
-        if any(e.kind in ('opening', 'note', 'cost') and start < e.date <= end
+        if any(e.kind in ('opening', 'checkpoint', 'note', 'cost') and start < e.date <= end
                and not (e.kind == 'opening' and not e.quantity and e.source == 'confirmed_zero_start') for e in events):
             reasons.append(Issue(f'{identity}: unresolved event or replacement boundary in interval', 'transaction'))
-        if any(e.kind in ('buy', 'sell', 'distribution') and start < e.date <= end and not e.charges_known for e in events):
+        if any(e.kind in ('inventory_in','inventory_out') and e.flow_classification == 'unresolved'
+               and start < e.date <= end for e in events):
+            reasons.append(Issue(f'{identity}: inventory origin or purpose unresolved', 'transaction'))
+        if any(e.kind == 'checkpoint' and e.date <= end and not e.observed_at for e in events):
+            reasons.append(Issue(f'{identity}: checkpoint observation date unknown', 'transaction'))
+        if any(e.kind in ('buy', 'sell', 'distribution', 'swap', 'reward', 'asset_fee', 'transfer') and start < e.date <= end and not e.charges_known and (e.source.startswith('transaction_csv_v') or e.kind in ('buy', 'sell', 'distribution')) for e in events):
             reasons.append(Issue(f'{identity}: charges have not been confirmed', 'transaction'))
+    for book in journal.securities:
+        for event in selected_events(book):
+            crosses = (event.kind in ('inventory_in','inventory_out') and event.flow_classification == 'external'
+                       and book.position_id in scope.positions) or (
+                       event.kind == 'swap' and (book.position_id in scope.positions) != (event.other_position_id in scope.positions))
+            if crosses and event.valuation_quality == 'estimated' and start < event.date <= end:
+                reasons.append(Issue('Estimated external-flow valuations do not establish exact percentage returns', 'transaction'))
+    active_ids = {e.id for b in journal.securities for e in selected_events(b)}
+    superseded = {r.replaces for r in journal.transaction_imports if r.replaces}
+    receipts = {r.id: r for r in journal.transaction_imports}
+    members = set(scope.positions) | {b.position_id for b in journal.securities if b.account_id in scope.accounts}
+    for receipt in journal.transaction_imports:
+        if receipt.id in superseded or receipt.id in active_ids:
+            continue
+        stamp = receipt.facts.get('effective_date') or receipt.facts.get('timestamp_utc', '')[:10]
+        affected = {p for _, _, p in receipt.positions}
+        ancestor = receipt.replaces
+        while ancestor:
+            previous = receipts[ancestor]
+            affected.update(p for _, _, p in previous.positions)
+            ancestor = previous.replaces
+        # Unmapped uploads have no authority over unrelated position histories.
+        # A malformed correction still retains its predecessor's reviewed scope.
+        if (not stamp or start <= stamp <= end) and affected.intersection(members):
+            reasons.append(Issue('Unapplied transaction evidence requires review', 'transaction'))
     classes = dict(observations.classifications)
     for e in effective_events(journal):
         if e.account_id not in scope.accounts:
@@ -380,11 +410,24 @@ def external_flows(journal, scope, observations, start, end, target, *, security
             income=c.amount if asset_inside and c.kind == 'distribution' and c.amount is not None else ZERO)
     for book in journal.securities:
         for e in selected_events(book):
+            if e.kind in ('inventory_in', 'inventory_out') and book.position_id in members and start < e.date <= end:
+                if e.flow_classification == 'external':
+                    add(e.id, e.date, e.sequence,
+                        None if e.valuation_amount is None else e.valuation_amount*(1 if e.kind == 'inventory_in' else -1),
+                        e.valuation_currency)
+                else:
+                    reasons.append(f'{e.id}: inventory origin or purpose unresolved')
             if e.kind in ('transfer_in', 'transfer_out') and book.position_id in members and start < e.date <= end:
                 price = price_at(observations, (book.position_id, book.instrument_id), e.date, events=selected_events(book))
                 amount = e.amount if e.amount is not None else e.quantity*price.amount if price else None
                 denomination = e.currency if e.amount is not None else price.currency if price else e.currency
                 add(e.id, e.date, e.sequence, None if amount is None else amount*(1 if e.kind == 'transfer_in' else -1), denomination)
+            if e.kind == 'swap' and start < e.date <= end:
+                source_inside, dest_inside = book.position_id in members, e.other_position_id in members
+                if source_inside != dest_inside:
+                    add(e.id, e.date, e.sequence,
+                        None if e.valuation_amount is None else e.valuation_amount*(-1 if source_inside else 1),
+                        e.valuation_currency)
             if e.kind != 'transfer' or not start < e.date <= end:
                 continue
             source_inside, dest_inside = book.position_id in members, e.other_position_id in members

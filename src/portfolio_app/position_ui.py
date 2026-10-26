@@ -82,6 +82,11 @@ def _consume_position_event(path, snapshot):
             st.warning('The position list changed. Open the position again from the refreshed list.')
 
 
+def _has_position_draft():
+    return bool(st.session_state.get('position_draft') or
+                st.session_state.get('position_edit_action') in {'Edit position', 'Add position'})
+
+
 def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False, allocation=None,
                            valued=None, account_valued=None, percent=False, defer_dialog=False):
     account_valued = account_valued if account_valued is not None else valued
@@ -94,7 +99,7 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
     if action.button('Add position', help='Create a holding in the active portfolio; nothing is saved until you choose Save position.', type='primary', icon=':material/add:', key='tour_add_position'):
         _clear_editor()
         st.session_state.update(position_edit_action='Add position', position_edit_dialog=True)
-    if st.session_state.get('position_draft') or st.session_state.get('position_edit_action') in {'Edit position', 'Add position'}:
+    if _has_position_draft():
         if secondary.button('Resume unsaved edit', help='Reopen the position draft kept in this session.'):
             # Reattach detached widget values even when their state keys remain.
             for key, value in st.session_state.get('position_draft', {}).items():
@@ -198,6 +203,7 @@ def _reload_dialog_values(directory, *, demo, prices=None, inputs=None):
 def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None, valued=None, prices=None):
     from portfolio_app.dialog_runtime import HOST
     baseline = _dialog_sources(path.parent)
+    draft_visible = _has_position_draft()
     current_values = [baseline, snapshot, allocation, valued]
     from portfolio_app.account_journal import load_journal
     from portfolio_app.security_history import selected_events
@@ -234,7 +240,9 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
         if not st.session_state.get('position_edit_dialog') and not st.session_state.get('position_edit_open_request'):
             # Read-only open/close never rebuilds the portfolio. Persisted changes
             # get one parent refresh once the dialog has actually closed.
-            if _dialog_sources(path.parent) != baseline:
+            # Refresh the parent toolbar when a draft is created or discarded,
+            # while keeping ordinary read-only dismissal local.
+            if _dialog_sources(path.parent) != baseline or _has_position_draft() != draft_visible:
                 st.rerun()
             return
         _render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=valued, values=values)

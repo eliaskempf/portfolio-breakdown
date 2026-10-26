@@ -87,7 +87,7 @@ def _edit_investment(directory, journal, revision, investment, key, *, show_togg
                                       [p.id for p in journal.positions if p.investment_id == investment.id])
         if capital != investment.allocated_capital:
             from portfolio_app.security_history import CapitalAllocation
-            candidate = replace(candidate, version=2, capital_history=(*candidate.capital_history,
+            candidate = replace(candidate, version=max(2, candidate.version), capital_history=(*candidate.capital_history,
                 CapitalAllocation('allocation:'+uuid5(NAMESPACE_URL,str(revision)+investment.id+allocation_date.isoformat()+str(capital)).hex, investment.id, allocation_date.isoformat(), capital)))
         _save_review(directory, journal, revision, candidate, edit_key,
                      review_label='Review investment changes', save_label='Save investment changes')
@@ -123,7 +123,7 @@ def _create_investment(directory, journal, revision, key):
         investment = InvestmentSpec(investment_id, name.strip(), position.account_id, contract.currency, capital, capital)
         candidate = assign_investment(journal, investment, identifiers)
         from portfolio_app.security_history import CapitalAllocation
-        candidate = replace(candidate, version=2, capital_history=(*candidate.capital_history,
+        candidate = replace(candidate, version=max(2, candidate.version), capital_history=(*candidate.capital_history,
             CapitalAllocation('allocation:'+investment_id, investment_id, allocation_date.isoformat(), capital)))
         _save_review(directory, journal, revision, candidate, create_key,
                      review_label='Review investment changes', save_label='Save investment changes')
