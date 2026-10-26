@@ -139,9 +139,14 @@ def render_notifications(directory, funds, revision, valued, status, *, demo=Fal
             action.clear()
             st.rerun(scope='app')
         messages, _ = settlement_notices(directory, journal)
-        for i, message in enumerate(messages):
-            _card(Notice('settlement_'+str(i), 'Futures data', message, 'warning',
-                Destination('settlements'), 'Review settlement history'), directory, on_navigate=follow_notice)
+        # An empty block alone can leave the previous cards in a popover.
+        # Emit an empty element when the final notice clears as well.
+        with st.container():
+            if not messages:
+                st.empty()
+            for i, message in enumerate(messages):
+                _card(Notice('settlement_'+str(i), 'Futures data', message, 'warning',
+                    Destination('settlements'), 'Review settlement history'), directory, on_navigate=follow_notice)
     settlement_cards()
     if prices_pending:
         st.caption('Updating market prices…')

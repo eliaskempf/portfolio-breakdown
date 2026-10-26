@@ -57,6 +57,16 @@ def test_idle_minutes_retrievals_and_failure_preserve_table_and_focus(futures_pa
     record_result(root, contract, old, '', attempted_at=NOW+timedelta(minutes=3), now=NOW+timedelta(minutes=3))
     playwright.expect(page.get_by_test_id('stPopoverBody').get_by_text('Futures quote refresh unavailable', exact=False)).to_have_count(0, timeout=10000)
     assert renders(root) == count
+    # Keep the panel open through another failure/recovery cycle. An empty
+    # refresh must replace the previous card without requiring a page rerun.
+    record_result(root, contract, None, 'Invented repeated outage',
+        attempted_at=NOW+timedelta(minutes=4), now=NOW+timedelta(minutes=4))
+    notice = page.get_by_test_id('stPopoverBody').get_by_text('Futures quote refresh unavailable', exact=False)
+    playwright.expect(notice).to_be_visible(timeout=10000)
+    record_result(root, contract, old, '',
+        attempted_at=NOW+timedelta(minutes=5), now=NOW+timedelta(minutes=5))
+    playwright.expect(notice).to_have_count(0, timeout=10000)
+    assert renders(root) == count
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
 

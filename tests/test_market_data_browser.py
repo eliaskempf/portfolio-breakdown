@@ -11,6 +11,7 @@ from urllib.request import urlopen
 import yaml
 
 from test_ux_browser import playwright, click_slice
+from browser_support import select_tab
 
 
 def test_navigation_close_and_save_do_not_wait_for_market_data(tmp_path):
@@ -125,7 +126,9 @@ render_app(directory)
             # A late history completion must not reopen a dismissed position.
             (tmp_path / 'release_history').touch()
             (tmp_path / 'release_prices').touch()
-            page.get_by_role('tab', name='Overview', exact=True).click()
+            # The file write precedes the save rerun's final render. Wait for
+            # that render before navigating so it cannot replace the click.
+            select_tab(page, 'Overview')
             playwright.expect(page.get_by_test_id('stMetricValue').first).to_contain_text('240.00', timeout=10000)
             playwright.expect(dialog).not_to_be_visible()
             playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
