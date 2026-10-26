@@ -1,6 +1,7 @@
 """Real backup upload/download, cancellation, activation and restart, offline."""
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -90,7 +91,7 @@ app.main()
 
 def settings(page, action):
     playwright.expect(page.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
-    page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+    page.get_by_role('button', name=re.compile(r'^(?:tune )?Portfolio settings$')).click()
     page.get_by_role('button', name=action, exact=True).click()
     return page.get_by_role('dialog', name=action, exact=True)
 
@@ -109,7 +110,7 @@ def test_archive_review_cancel_switch_restart_and_tabs(backup_app, tmp_path):
         stale.goto(url)
         stale.get_by_role('tab', name='Overview', exact=True).wait_for()
         playwright.expect(stale.get_by_test_id('stApp')).to_have_attribute('data-test-script-state', 'notRunning')
-        stale.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+        stale.get_by_role('button', name=re.compile(r'^(?:tune )?Portfolio settings$')).click()
         stale.get_by_role('combobox', name='Portfolio currency').click()
         stale.get_by_role('option', name='USD', exact=True).click()
         stale.get_by_role('button', name='Review currency change').click()
@@ -163,7 +164,7 @@ def test_archive_review_cancel_switch_restart_and_tabs(backup_app, tmp_path):
         stop()
         page.goto(start())
         page.get_by_role('tab', name='Overview', exact=True).wait_for()
-        page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+        page.get_by_role('button', name=re.compile(r'^(?:tune )?Portfolio settings$')).click()
         playwright.expect(page.get_by_role('combobox', name='Portfolio currency')).to_have_value('GBP')
         assert request_instance(original)['workspace']['directory'] == str(target)
         assert inventory(original) == before

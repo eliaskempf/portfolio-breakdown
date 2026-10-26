@@ -1,5 +1,6 @@
 """Real-browser position entry using only synthetic workspaces and offline search."""
 import json
+import re
 
 from test_ux_browser import playwright, ux_page  # noqa: F401
 from browser_support import select_tab, settle
@@ -7,7 +8,7 @@ from browser_support import select_tab, settle
 
 def add_manually(page):
     select_tab(page, 'Positions')
-    page.get_by_role('button', name='add Add position', exact=True).click()
+    page.get_by_role('button', name=re.compile(r'^(?:add )?Add position$')).click()
     dialog = page.get_by_role('dialog')
     dialog.get_by_role('button', name='Enter manually', exact=True).click()
     # The amount fields already exist in search mode. Wait for the manual
@@ -104,14 +105,14 @@ def test_search_selection_and_settings_help(ux_page):
     header.focus()
     playwright.expect(table.locator('.header-help').filter(has_text='Desired allocation')).to_be_visible()
     assert 'portfolio' in header.get_attribute('aria-description').lower()
-    page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+    page.get_by_role('button', name=re.compile(r'^(?:tune )?Portfolio settings$')).click()
     playwright.expect(page.get_by_text('Appearance: choose Light, Dark or System from the top-right app menu.', exact=True)).to_be_visible()
     page.keyboard.press('Escape')
     page.get_by_role('button', name='Main menu', exact=True).click()
     playwright.expect(page.get_by_text('Clear cache', exact=True)).to_have_count(0)
     page.keyboard.press('Escape')
     select_tab(page, 'Positions')
-    page.get_by_role('button', name='add Add position', exact=True).click()
+    page.get_by_role('button', name=re.compile(r'^(?:add )?Add position$')).click()
     dialog = page.get_by_role('dialog')
     for suggestion in ('VanEck', 'Semiconductors', 'NVIDIA'):
         playwright.expect(dialog.get_by_role('button', name=suggestion, exact=True)).to_have_count(0)

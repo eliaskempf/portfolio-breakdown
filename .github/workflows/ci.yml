@@ -56,6 +56,10 @@ jobs:
           path: dist/unit-results.xml
           retention-days: 14
   browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
     runs-on: ubuntu-22.04
     timeout-minutes: 25
     env:
@@ -70,11 +74,29 @@ jobs:
           python-version: '3.12'
       - run: uv sync --locked --group browser
       - run: uv run playwright install --with-deps chromium
-      - run: uv run pytest -q tests/*browser.py --junitxml=dist/browser-results.xml
+      - name: Browser tests
+        env:
+          BROWSER_SHARD: ${{ matrix.shard }}
+        run: |
+          uv run python - <<'PY'
+          import os
+          from pathlib import Path
+          import pytest
+
+          # Every browser file belongs to exactly one job, including new files.
+          files = sorted(Path('tests').glob('*browser.py'))
+          selected = files[int(os.environ['BROWSER_SHARD'])::3]
+          assert selected, 'Browser shard must not be empty'
+          raise SystemExit(pytest.main([
+              '-v', '--durations=20', *map(str, selected),
+              '--junitxml=dist/browser-results.xml',
+          ]))
+          PY
       - run: uv run python tools/package_smoke.py
+        if: matrix.shard == 0
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: browser-results
+          name: browser-results-${{ matrix.shard }}
           path: dist/browser-results.xml
           retention-days: 14

@@ -87,7 +87,7 @@ def open_settings(page):
     # not toggle that visible panel closed before checking its controls.
     panel = page.get_by_test_id('stPopoverBody')
     if not panel.is_visible():
-        page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+        page.get_by_role('button', name=re.compile(r'^(?:tune )?Portfolio settings$')).click()
     playwright.expect(panel).to_be_visible()
 
 

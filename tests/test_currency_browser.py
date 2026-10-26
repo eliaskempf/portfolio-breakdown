@@ -1,5 +1,6 @@
 """Reporting-currency settings and menu round trips in the real release UI."""
 import json
+import re
 import pytest
 from test_ux_browser import ux_page
 
@@ -12,7 +13,7 @@ def test_currency_review_estimates_and_all_main_tabs(ux_page):
     quotes['fx'] = {c: dict(price=r, currency='EUR', observed_at='2026-09-01T12:00:00+00:00') for c,r in [('USD', .8), ('GBP', 1.2)]}
     (directory / 'demo_prices.json').write_text(json.dumps(quotes))
     original = (directory / 'holdings.csv').read_bytes()
-    page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+    page.get_by_role('button', name=re.compile(r'^(?:tune )?Portfolio settings$')).click()
     settings = page.get_by_test_id('stPopoverBody')
     settings.get_by_role('combobox', name='Portfolio currency').click()
     page.get_by_role('option', name='USD', exact=True).click()
@@ -23,7 +24,7 @@ def test_currency_review_estimates_and_all_main_tabs(ux_page):
     playwright.expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('€330.00')
     assert (directory / 'holdings.csv').read_bytes() == original
     if not settings.is_visible():
-        page.get_by_role('button', name='tune Portfolio settings', exact=True).click()
+        page.get_by_role('button', name=re.compile(r'^(?:tune )?Portfolio settings$')).click()
     settings.get_by_role('combobox', name='Portfolio currency').click()
     page.get_by_role('option', name='USD', exact=True).click()
     settings.get_by_role('button', name='Review currency change', exact=True).click()
