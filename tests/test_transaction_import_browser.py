@@ -47,8 +47,9 @@ def test_bulk_pdf_save_review_and_apply_keep_position_dialog(transaction_page):
     assert effective_holdings(read_snapshot(root/'holdings.csv').holdings,applied.securities).iloc[0].shares==2
     assert not page.get_by_test_id('stException').count()
     # Re-uploading an already saved PDF never adds another record.
-    back=dialog.get_by_role('button',name='Back to transactions',exact=True)
-    if back.count(): back.click(); settle(page)
+    # Applying history returns to the list. Do not click an outgoing review
+    # button that can briefly remain while React replaces the review controls.
+    dialog.get_by_role('button', name='Import PDFs', exact=True).wait_for(state='visible')
     dialog.get_by_role('button',name='Import PDFs',exact=True).click(); settle(page)
     dialog.locator('input[type=file]').set_input_files([buy]); settle(page)
     assert dialog.get_by_role('button',name='Save transactions and review',exact=True).count()==0

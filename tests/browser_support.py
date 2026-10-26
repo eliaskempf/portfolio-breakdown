@@ -13,7 +13,9 @@ def settle(page):
         window.__testRenderObserver = new MutationObserver(() => {
             window.__testRenderChanged = performance.now();
         });
-        window.__testRenderObserver.observe(document.querySelector('[data-testid=stMain]'),
+        // Dialogs and popovers are portalled outside stMain. Include their
+        // replacement renders in the same quiet period as the page itself.
+        window.__testRenderObserver.observe(document.body,
             {subtree:true, childList:true, attributes:true, characterData:true});
     }""")
     try:
