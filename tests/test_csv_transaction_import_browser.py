@@ -20,8 +20,8 @@ def settle(page):
 
 
 def upload(page, content):
-    page.get_by_role('button', name='Import portfolio — experimental', exact=True).click()
-    page.get_by_text('Transactions', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Import transactions', exact=True).click()
+    settle(page)
     page.locator('input[type=file]').set_input_files({'name':'invented-transactions.csv', 'mimeType':'text/csv', 'buffer':content})
     settle(page)
 
@@ -109,3 +109,29 @@ def test_listing_suggestions_dropdown_and_live_search_survive_navigation(import_
     assert saved.ticker.tolist() == ['BTC-EUR']
     assert saved.instrument_type.tolist() == ['crypto']
     assert not page.get_by_test_id('stException').count()
+
+
+def test_existing_portfolio_opens_transaction_import_directly(import_page):
+    page, path = import_page
+    path.parent.mkdir(exist_ok=True)
+    path.write_text('id,name,ticker,instrument_type,shares,account,quantity_unit,manual_price,manual_price_currency,manual_price_date\n'
+                    'invented-btc,Bitcoin,BTC-EUR,crypto,2,Invented wallet,units,100,EUR,2024-01-01\n')
+    before = path.read_bytes()
+    page.reload()
+    page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
+    page.get_by_role('radio', name='Import', exact=True).click(); settle(page)
+    playwright.expect(page.get_by_role('radio', name='Transactions', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('button', name='Download CSV template', exact=True)).to_be_visible()
+    assert not page.get_by_text('empty portfolio', exact=False).count()
+    assert not page.get_by_text('experimental', exact=False).count()
+    page.locator('input[type=file]').set_input_files({'name':'invented-transactions.csv', 'mimeType':'text/csv',
+        'buffer': b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-02,buy,BTC,1,100,EUR\n'})
+    settle(page)
+    playwright.expect(page.get_by_role('combobox', name='Holding · BTC', exact=True)).to_have_value('Bitcoin · Invented wallet')
+    assert not page.get_by_test_id('stException').count()
+    assert path.read_bytes() == before
+    page.get_by_role('radio', name='Holdings snapshot', exact=True).click(); settle(page)
+    playwright.expect(page.get_by_text('Holdings snapshots initialize an empty portfolio.', exact=False)).to_be_visible()
+    page.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+    playwright.expect(page.get_by_role('combobox', name='Holding · BTC', exact=True)).to_have_value('Bitcoin · Invented wallet')
+    assert path.read_bytes() == before

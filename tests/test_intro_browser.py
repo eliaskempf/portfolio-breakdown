@@ -240,7 +240,7 @@ def test_intro_welcome_navigation_and_help(intro_page):
     dialog.get_by_role('button', name='Skip setup', exact=True).click()
     page.get_by_role('tab', name='Positions', exact=True).click()
     playwright.expect(dialog).to_have_count(0)
-    playwright.expect(page.get_by_role('button', name='Import portfolio — experimental', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_role('button', name='Import transactions', exact=True)).to_be_visible()
     page.get_by_role('button', name=re.compile('Add position$')).click()
     dialog.get_by_role('button', name='Enter manually', exact=True).click()
     playwright.expect(dialog.get_by_role('textbox', name='Instrument name', exact=True)).to_have_value('')

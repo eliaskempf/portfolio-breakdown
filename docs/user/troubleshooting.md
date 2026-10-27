@@ -12,7 +12,7 @@
 | Amundi overnight fund reports an unreliable listing | For ISIN LU1190417599, use **Positions → Connect live prices** to review CSH2.PA (Paris) or SMART.MI (Milan). The 0E2B.IL feed is excluded from live prices and history, including old cache entries. Existing quantities and manually supplied prices are retained. |
 | Demo cannot initialize | Normal demo needs public prices/FX. Retry, or choose **? → Take the tour** for an invented offline example. |
 | Large Other / whole ETF | Inspect [coverage, source date and support](exposure.md#other). A partial or absent breakdown is not a zero holding. |
-| Import is unavailable | It requires an empty portfolio. Use Update balances for existing holdings. |
+| Holdings snapshot import is unavailable | Only holdings snapshots require an empty portfolio. Choose Transactions to import trades into existing holdings, or Update balances to replace current quantities. |
 | Wrong imported decimals or rows | Recheck number format, header, worksheet, delimiter and mappings before accepting. |
 | Cost/return is blank | Check [buy-in currency and coverage](performance.md#performance); unknown is not zero. |
 | Risk cannot calculate | Check common history, benchmark, exclusions and the 52-week minimum in [Risk](analytics.md#risk). |

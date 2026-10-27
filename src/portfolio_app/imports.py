@@ -167,7 +167,7 @@ def save_import(path: Path, draft: ImportDraft, *, expected_revision: str | None
     if snapshot.revision != expected_revision:
         raise DataError('Holdings changed. Review the import again.')
     if not snapshot.holdings.empty:
-        raise DataError('Experimental import requires an empty portfolio. Existing positions were not changed.')
+        raise DataError('Holdings snapshot import requires an empty portfolio. Existing positions were not changed.')
     frame = draft.positions.drop(columns=['import_row'], errors='ignore')
     content = frame.to_csv(index=False)
     candidate = parse_holdings(content)

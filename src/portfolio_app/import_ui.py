@@ -56,15 +56,15 @@ def clear_import():
 
 
 def render_import(path, snapshot, funds, *, demo=False):
-    kind = review_control(st.segmented_control, 'Import type', ['Holdings snapshot', 'Transactions'], default='Holdings snapshot', key='import_kind')
+    kind = review_control(st.segmented_control, 'Import type', ['Transactions', 'Holdings snapshot'], default='Transactions', key='import_kind')
     if kind == 'Transactions':
         from portfolio_app.csv_transaction_import_ui import render_transaction_import
         render_transaction_import(path.parent, demo=demo)
         return
-    st.subheader('Import portfolio — experimental')
+    st.subheader('Import holdings snapshot')
     st.caption('Current holdings only. Import first; add allocation, targets and classifications later.')
     if not snapshot.holdings.empty:
-        st.info('Import currently requires an empty portfolio. Use Update balances for existing positions.')
+        st.info('Holdings snapshots initialize an empty portfolio. To import trades into this portfolio, choose Transactions above; to replace current quantities, use Update balances.')
         return
     st.button('Cancel import', help='Discard the staged import without changing saved holdings.', on_click=clear_import)
     st.info('FinanzManager column recognition is provisional. Export a current holdings report, not a transaction ledger. '

@@ -1,9 +1,12 @@
-# Import a holdings report {#import}
+# Import holdings and transactions {#import}
 
-Holdings snapshot import is experimental and requires an **empty portfolio**. It
-accepts current holdings reports. For transaction ledgers, use
-[Import transactions](#transactions); neither workflow performs ongoing synchronization.
-For existing positions use [Update balances](positions.md#balances).
+**Positions → Import** opens transaction import. Transactions can be imported into
+an existing or empty portfolio; review their mappings and reconstructed balances
+before applying. See [Import transactions](#transactions).
+
+Choose **Holdings snapshot** to initialize an **empty portfolio** from a current
+holdings report. For replacement balances in existing positions, use
+[Update balances](positions.md#balances). Neither import performs ongoing synchronization.
 
 ## Export and review {#review}
 
@@ -12,8 +15,8 @@ export/version has been verified. Look for a current depot/holdings report and
 **Bericht exportieren**. Available formats and columns depend on your version.
 Use CSV, delimited TXT/TSV or Excel XLS/XLSX. QIF and PDF are unsupported.
 
-1. In **Positions**, choose **Position tools → Import portfolio** (or the empty-list
-   **Import portfolio — experimental** button) and upload one or more files, for example separate depot reports.
+1. In **Positions**, choose **Import → Holdings snapshot** (or the empty-list
+   **Import holdings** button) and upload one or more files, for example separate depot reports.
 2. Check worksheet, header row, delimiter, encoding and German/English number
    formatting. Inspect the preview before trusting suggested mappings.
 3. Map instrument name and quantity. When both Bank and FinanzManager quantities
@@ -55,7 +58,7 @@ ETF discovery can separately use issuer-confirmed identity to install a
 
 ### Transaction CSV
 
-Choose **Positions → Import portfolio → Transactions**. Upload a CSV, map its
+Choose **Positions → Import**; **Transactions** is selected by default. Upload a CSV, map its
 assets to existing holdings or new positions, then review the transactions and
 forward-reconstructed balances. New positions are created only when you apply.
 An optional price listing connects normal current and historical market data.

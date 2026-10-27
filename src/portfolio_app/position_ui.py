@@ -109,13 +109,13 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
     # restore the import form after a successful save switches to Overview.
     if requested := st.session_state.pop('positions_workflow_request', None):
         st.session_state['positions_workflow'] = requested
-    workflow = st.segmented_control('Position tools', ['Positions', 'Bulk add purchases', 'Update balances', 'Import portfolio', 'Connect live prices', 'Accounts & futures'], help='Choose between individual holdings, purchase batches, balance replacement and imports.',
+    workflow = st.segmented_control('Position tools', ['Positions', 'Bulk add purchases', 'Update balances', 'Import', 'Connect live prices', 'Accounts & futures'], help='Choose between individual holdings, purchase batches, balance replacement and imports.',
                                     default=st.session_state.get('positions_workflow', 'Positions'),
                                     key='positions_workflow', on_change=_dismiss)
     if workflow == 'Accounts & futures':
         from portfolio_app.accounts_ui import render_accounts
         render_accounts(path.parent, snapshot, account_valued if account_valued is not None else snapshot.holdings, allocation=allocation)
-    elif workflow == 'Import portfolio':
+    elif workflow == 'Import':
         from portfolio_app.import_ui import render_import
         render_import(path, snapshot, funds, demo=demo)
     elif workflow == 'Connect live prices':
@@ -133,10 +133,14 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
             st.rerun()
     else:
         if snapshot.holdings.empty and (valued is None or valued.empty):
-            st.info('Add your first position or import a holdings file to see its value and allocation.')
-            def start_import():
-                st.session_state['positions_workflow'] = 'Import portfolio'
-            st.button('Import portfolio — experimental', help='Review a holdings file before saving its positions; supported formats are still experimental.', on_click=start_import)
+            st.info('Add a position or import transactions or a holdings snapshot.')
+            def start_import(kind):
+                st.session_state['positions_workflow'] = 'Import'
+                st.session_state['import_kind'] = kind
+            with st.container(horizontal=True):
+                st.button('Import transactions', on_click=start_import, args=('Transactions',))
+                st.button('Import holdings', help='Initialize an empty portfolio from a current holdings report.',
+                          on_click=start_import, args=('Holdings snapshot',))
         else:
             st.caption('Select a position for details and price history. Use the pencil to edit.')
             with st.container(key='tour_position_list'):
