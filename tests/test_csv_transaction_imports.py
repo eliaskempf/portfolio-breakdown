@@ -239,6 +239,17 @@ def test_group_ids_do_not_deduplicate_distinct_executions():
     assert again.applied==0
 
 
+def test_duplicate_review_identifies_pairs_and_does_not_repeat_for_unrelated_new_trade():
+    a = scenario()[0]
+    b = normalize({**a.raw, 'event_id':'another-execution', 'sequence':'1'})
+    reviewed = activated([a, b], accept_duplicates=True)
+    assert reviewed.matches == (('desk', a.identity, b.identity),)
+    c = scenario()[1]
+    preview = prepare_import(reviewed.journal, holdings(), [c], MAPPING,
+        selected_ids=[c.identity], starts_at_zero=True)
+    assert not preview.matches and preview.applied == 1
+
+
 def test_received_swap_and_income_are_useful_history_without_a_cash_buy():
     from portfolio_app.history_scope import can_start_history_chart
     j=activated().journal

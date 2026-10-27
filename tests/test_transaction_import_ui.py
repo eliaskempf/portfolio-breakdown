@@ -100,7 +100,7 @@ def test_mixed_starting_balance_and_new_exchange_destination_can_be_reviewed(tmp
         render_transaction_import(Path(directory), demo=True)
     app=AppTest.from_function(script,args=(str(tmp_path),)).run()
     assert not app.exception
-    next(c for c in app.checkbox if c.label=='Holdings were zero before these transactions').check().run()
+    assert not any(c.label == 'Holdings were zero before these transactions' for c in app.checkbox)
     assert not app.exception and not app.warning
     assert any(b.label=='Apply and confirm history' for b in app.button)
     assert not (tmp_path/'holdings.csv').exists()

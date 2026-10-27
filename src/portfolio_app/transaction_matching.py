@@ -2,6 +2,14 @@
 from portfolio_app.instruments import normalized_query, valid_isin
 
 
+def holding_label(row):
+    return ' · '.join(str(value).strip() for value in (row['name'], row['account']) if str(value).strip())
+
+
+def listing_label(listing):
+    return listing.ticker+' · '+instrument_fields(listing, listing.ticker)['name']
+
+
 def listing_currency(listing):
     if listing.currency:
         return listing.currency

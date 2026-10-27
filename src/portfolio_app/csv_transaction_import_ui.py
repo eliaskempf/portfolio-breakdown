@@ -1,7 +1,7 @@
 """CSV extraction and mapping feeding the ordinary transaction history."""
 from datetime import date
+from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pandas as pd
 import streamlit as st
@@ -89,11 +89,10 @@ def render_transaction_import(directory, *, demo=False):
                 valid.append((row, event_for(row, mapping)))
             except (DataError, ValueError) as exc:
                 errors.append({'Reference': row.facts['event_id'], 'Problem': str(exc)})
-        from portfolio_app.history_ui import _transaction_table
+        from portfolio_app.transaction_review_ui import render_transactions, review_matches, comparison_status
         active = {i for b in journal.securities for i in b.active_ids}
         if valid:
-            st.dataframe(_transaction_table([e for _, e in valid], SimpleNamespace(active_ids=active)),
-                         hide_index=True, width='stretch')
+            render_transactions(valid, active, retained, token)
         if errors:
             st.dataframe(pd.DataFrame(errors), hide_index=True, width='stretch')
         if st.button('Save evidence only', disabled=bool(conflicts and not corrections), key='import_tx_save_evidence'):
@@ -120,41 +119,60 @@ def render_transaction_import(directory, *, demo=False):
             if r.identity in selected and r.facts['event_type'] in ('opening', 'checkpoint')}
         needs_start = [p for p in sorted(positions) if p not in supplied_starts and
             (p not in books or not any(e.kind in ('opening', 'checkpoint') for e in selected_events(books[p])))]
+        zero = False
         if needs_start:
-            st.caption('Starting holdings · '+', '.join(holdings.set_index('position_id').loc[needs_start, 'name']))
-        zero = control(st.checkbox, 'Holdings were zero before these transactions', key=token+'zero') if needs_start else False
+            with st.expander('Starting balance'):
+                start = control(st.selectbox, 'Before the first transaction', ['Zero holdings', 'Earlier holdings'],
+                    key=token+'start', help='A history from the first acquisition starts at zero. A later export needs a recorded opening balance; current holdings are only the ending comparison.')
+                zero = start == 'Zero holdings'
         if needs_start and not zero:
-            st.caption('Confirm the starting holdings or include a starting balance. Evidence can be saved now.')
+            st.info('Include a starting balance in the CSV or record it in the holding’s History, then review again. You can save the transactions without applying them.')
             return
         # Collapse multiple owned locations only for genuinely unmapped legacy
         # files; existing bindings and linked cash keep their reviewed semantics.
         aggregate = tuple(sorted({a for a, _ in mapping})) if len({a for a, _ in mapping}) > 1 and not any(b.custody_id for b in books.values() if b.position_id in positions) else ()
         options = dict(selected_ids=selected, starts_at_zero=zero, allow_incomplete=True,
                        correction_ids=corrections, aggregate_accounts=aggregate)
-        try:
-            preview = prepare_import(journal, holdings, rows, mapping, target=target,
-                                     historical=ObservationFX(observations), **options)
-        except DataError as exc:
-            if 'Matching economic transactions' not in str(exc):
-                raise
-            distinct = control(st.checkbox, 'Matching transactions are separate executions', key=token+'distinct')
-            if not distinct:
-                st.warning(str(exc))
+        # Preview possible matches without accepting them. Saving remains blocked
+        # until each affected pair has a decision against this exact review.
+        preview = prepare_import(journal, holdings, rows, mapping, target=target,
+                                 historical=ObservationFX(observations), accept_duplicates=True, **options)
+        excluded, decisions = set(), {}
+        while fresh := tuple(match for match in preview.matches if match not in decisions):
+            removed, choices = review_matches(replace(preview, matches=fresh), set(selected)-active, holdings, token)
+            decisions.update(choices)
+            if not removed:
+                break
+            excluded.update(removed)
+            selected = [identity for identity in selected if identity not in removed]
+            options['selected_ids'] = selected
+            if not selected:
+                st.caption('No transactions selected for application.')
                 return
-            options['accept_duplicates'] = True
             preview = prepare_import(journal, holdings, rows, mapping, target=target,
-                                     historical=ObservationFX(observations), **options)
+                                     historical=ObservationFX(observations), accept_duplicates=True, **options)
+        if excluded:
+            st.caption(f'{len(excluded)} CSV rows excluded from application; their source evidence is retained.')
+        matches_resolved = all(decisions.get(match) == 'keep' for match in preview.matches)
+        if not matches_resolved:
+            st.caption('Resolve the possible duplicates before applying.')
+        options['accept_duplicates'] = matches_resolved
         if not preview.applied:
             st.caption('These transactions are already recorded. Use Transactions to edit or remove them.')
             return
         st.markdown('**Review against portfolio**')
-        st.dataframe(pd.DataFrame(preview.comparisons).drop(columns=['position_id']).rename(columns={
+        comparisons = pd.DataFrame(preview.comparisons)
+        comparisons['Comparison'] = [comparison_status(item) for item in preview.comparisons]
+        st.dataframe(comparisons.drop(columns=['position_id']).rename(columns={
             'name':'Position', 'account':'Account', 'before_quantity':'Current units', 'after_quantity':'From history',
             'before_cost':'Current cost', 'after_cost':'From history cost', 'currency':'Currency'}), hide_index=True, width='stretch')
         if preview.cash_changes:
             st.dataframe(pd.DataFrame(preview.cash_changes), hide_index=True, width='stretch')
         comparison = control(st.date_input, 'Balances compared as of', max_value=date.today(), key=token+'comparison')
-        accepted = control(st.checkbox, 'Accept the displayed balance changes', key=token+'accept')
+        if zero:
+            st.caption('Starting balance: zero before the first transaction for '+', '.join(holdings.set_index('position_id').loc[needs_start, 'name'])+'. Applying confirms this starting point.')
+        if any('differ' in value or 'becomes unknown' in value for value in comparisons.Comparison):
+            st.caption('Applying history replaces current holdings with the reconstructed units and costs shown above.')
         checkpoints = not preview.checkpoints or control(st.checkbox, 'Accept the displayed replacement balances', key=token+'checkpoints')
         if preview.checkpoints:
             st.dataframe(pd.DataFrame(preview.checkpoints), hide_index=True, width='stretch')
@@ -174,9 +192,10 @@ def render_transaction_import(directory, *, demo=False):
             st.session_state['import_tx_pending_complete'] = preview.comparisons[0]['position_id']
             st.rerun()
         with st.container(horizontal=True):
-            if st.button('Apply and confirm history', type='primary', disabled=not accepted or not checkpoints, key='import_tx_apply'):
+            if st.button('Apply and confirm history', type='primary', disabled=not matches_resolved or not checkpoints, key='import_tx_apply'):
                 apply(True)
-            if st.button('Apply incomplete history', disabled=not accepted or not checkpoints, key='import_tx_apply_incomplete'):
+            if st.button('Apply incomplete history', disabled=not matches_resolved or not checkpoints, key='import_tx_apply_incomplete',
+                         help='Apply the reviewed transactions and balances while leaving history completeness unconfirmed.'):
                 apply(False)
     except (DataError, ValueError, UnicodeError, OSError) as exc:
         st.warning(str(exc))

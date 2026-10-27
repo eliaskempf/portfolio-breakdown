@@ -68,6 +68,11 @@ New assets receive exact listing suggestions, preferring the reporting currency.
 Use the price-listing dropdown or its search button to find another listing with
 the same live search used when adding a position. Suggestions, names and types
 remain editable; listing changes are saved together with applied transactions.
+The listing label identifies the quote pair; its quote currency is not added to
+the holding name. New positions show their proposed name beneath the holding
+selector; use **Edit** to change it. **Show transactions for** filters the review
+table by asset, including received exchange legs and asset fees. It does not
+exclude transactions from the import.
 
 The template has seven columns:
 
@@ -98,9 +103,20 @@ execution order is known. Dates are not converted into invented execution times.
 
 Use **Save evidence only** to retain the upload without changing active balances.
 Mapped transactions appear in the usual Transactions view. Saved imports for new
-positions can be reopened from the import screen. Before applying, establish a
-starting balance or explicitly confirm zero holdings before the first movement.
+positions can be reopened from the import screen. The comparison opens automatically.
+For assets without a recorded starting balance, it previews zero holdings before
+the first movement and states that assumption beside the apply actions. Applying
+confirms that starting point. If the export begins after you already held assets,
+choose **Starting balance → Earlier holdings** and supply an opening balance in
+the CSV or the holding's History before applying.
 The ending reference is only a comparison; it never supplies a balancing opening.
+
+The comparison shows whether units and acquisition costs match current holdings.
+The final apply action accepts the displayed reconstruction; a matching balance
+does not itself prove completeness because missing movements can cancel out.
+Possible duplicates are shown as concrete pairs: keep both as separate executions
+or exclude a CSV row from application. Excluded source evidence remains saved.
+Already reviewed duplicates are not raised again for unrelated new transactions.
 
 **Apply and confirm history** explicitly confirms the displayed history interval;
 **Apply incomplete history** leaves completeness unconfirmed. Both use the same

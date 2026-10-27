@@ -32,14 +32,14 @@ def test_simple_upload_apply_edit_and_remove_in_normal_transactions(import_page)
                b'b,2024-01-02,buy,AUR,10,100,EUR,,\n'
                b'x,2024-01-03,exchange,AUR,2,25,EUR,ORB,4\n')
     upload(page, content)
+    page.get_by_role('combobox', name='Show transactions for', exact=True).click()
+    page.get_by_role('option', name='ORB', exact=True).click(); settle(page)
     assert not path.exists()
     page.get_by_role('button', name='Save evidence only', exact=True).click(); settle(page)
     assert len(load_journal(path.parent)[0].transaction_imports) == 2
     assert not path.exists()
     page.get_by_role('tab', name='Overview', exact=True).click(); settle(page)
     page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
-    page.get_by_text('Holdings were zero before these transactions', exact=True).click(); settle(page)
-    page.get_by_text('Accept the displayed balance changes', exact=True).click(); settle(page)
     page.get_by_role('button', name='Apply incomplete history', exact=True).click(); settle(page)
     table = page.get_by_role('table', name='Transactions', exact=True)
     playwright.expect(table).to_be_visible()
@@ -68,7 +68,6 @@ def test_estimated_checkpoint_requires_explicit_reconciliation(import_page):
     page, path = import_page
     stream=StringIO(); writer=csv.DictWriter(stream,fieldnames=FIELDS_V2); writer.writeheader(); writer.writerow(row('balance',**estimate()).facts)
     upload(page, stream.getvalue().encode())
-    page.get_by_text('Accept the displayed balance changes', exact=True).click(); settle(page)
     apply=page.get_by_role('button', name='Apply and confirm history', exact=True)
     playwright.expect(apply).to_be_disabled()
     page.get_by_text('Accept the displayed replacement balances', exact=True).click(); settle(page)
@@ -86,28 +85,31 @@ def test_listing_suggestions_dropdown_and_live_search_survive_navigation(import_
     page, path = import_page
     upload(page, b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-02,buy,BTC,1,100,EUR\n')
     listing = page.get_by_role('combobox', name='Price listing · BTC', exact=True)
-    playwright.expect(listing).to_have_value('BTC-EUR · Bitcoin EUR')
+    playwright.expect(listing).to_have_value('BTC-EUR · Bitcoin')
     listing.click()
-    page.get_by_role('option', name='BTC-USD · Bitcoin USD', exact=True).click(); settle(page)
+    page.get_by_role('option', name='BTC-USD · Bitcoin', exact=True).click(); settle(page)
     assert not path.exists()
     page.get_by_role('tab', name='Overview', exact=True).click(); settle(page)
     page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
-    playwright.expect(listing).to_have_value('BTC-USD · Bitcoin USD')
+    playwright.expect(listing).to_have_value('BTC-USD · Bitcoin')
     search = page.get_by_role('button', name='Search', exact=True).and_(page.get_by_test_id('stBaseButton-secondary'))
     playwright.expect(search).to_have_count(1)
     search.click(); settle(page)
     query = page.get_by_role('searchbox', name='Find an investment', exact=True)
     query.fill('Bitcoin')
     page.get_by_role('button', name='Select BTC-EUR on', exact=False).click(); settle(page)
-    playwright.expect(listing).to_have_value('BTC-EUR · Bitcoin EUR')
+    playwright.expect(listing).to_have_value('BTC-EUR · Bitcoin')
     assert not path.exists()
+    page.get_by_role('button', name='Edit', exact=True).click()
+    name = page.get_by_role('textbox', name='Name · BTC', exact=True)
+    name.fill('Invented Bitcoin holding'); name.press('Tab'); settle(page)
+    page.keyboard.press('Escape')
     page.screenshot(path=str(path.parent.parent / 'synthetic-import-mapping.png'))
-    page.get_by_text('Holdings were zero before these transactions', exact=True).click(); settle(page)
-    page.get_by_text('Accept the displayed balance changes', exact=True).click(); settle(page)
     page.get_by_role('button', name='Apply incomplete history', exact=True).click(); settle(page)
     saved = read_snapshot(path).holdings
     assert saved.ticker.tolist() == ['BTC-EUR']
     assert saved.instrument_type.tolist() == ['crypto']
+    assert saved.name.tolist() == ['Invented Bitcoin holding']
     assert not page.get_by_test_id('stException').count()
 
 

@@ -8,7 +8,7 @@ from portfolio_app.instruments import Instrument, InstrumentSearch, catalog_sear
 from portfolio_app.import_state import review_control
 from portfolio_app.search_widget import render_search_box
 from portfolio_app.transaction_csv import digest
-from portfolio_app.transaction_matching import holding_matches, suggested_listing, instrument_fields
+from portfolio_app.transaction_matching import holding_matches, suggested_listing, instrument_fields, holding_label, listing_label
 
 
 def _fetch(query, cache_dir, demo):
@@ -42,7 +42,7 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
     assets = sorted({asset for _, asset in pairs})
     source = rows[0].facts['source_id']
     holdings = snapshot.holdings
-    names = {r.position_id: f"{r['name']} · {r.account}" for _, r in holdings.iterrows()}
+    names = {r.position_id: holding_label(r) for _, r in holdings.iterrows()}
     by_position = holdings.set_index('position_id')
     retained = {(r.facts['source_id'], a, asset): pos for r in journal.transaction_imports for a, asset, pos in r.positions}
     matches = {a: holding_matches(a, holdings) for a in assets}
@@ -97,7 +97,7 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
             st.session_state.setdefault('import_controls', {})[ticker_key] = pending
         ticker = _control(listing_col.selectbox, 'Price listing · '+asset, ticker_options,
             index=ticker_options.index(default_ticker), label_visibility='collapsed', key=ticker_key,
-            format_func=lambda t: (t+' · '+by_ticker[t].name) if t else 'No price listing')
+            format_func=lambda t: listing_label(by_ticker[t]) if t else 'No price listing')
         listing = by_ticker.get(ticker)
         if listing:
             custom.setdefault(asset, {})[ticker] = listing
@@ -106,11 +106,13 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
             st.session_state[prefix+'search_asset'] = asset
         fields = instrument_fields(listing, asset)
         if existing is None:
-            with details_col.popover('', icon=':material/edit:', help='Edit details for '+asset):
+            with details_col.popover('Edit', help='Edit details for '+asset):
                 field_key = key+'details_'+ticker+'_'
                 fields['name'] = _control(st.text_input, 'Name · '+asset, value=fields['name'], key=field_key+'name')
                 kinds = ['crypto','equity','etf','etc','unknown']
                 fields['instrument_type'] = _control(st.selectbox, 'Type · '+asset, kinds, index=kinds.index(fields['instrument_type']), key=field_key+'kind')
+            _, name_col, _, _, _ = st.columns([1, 3, 3, 1, .5])
+            name_col.caption('Name: '+fields['name'])
             selected = 'csv-position-'+digest((source, asset))[:24]
             additions.append(dict(position_key=selected, id='csv-asset-'+digest((source,asset))[:24], account='Portfolio', **fields))
         elif listing and ticker != current:

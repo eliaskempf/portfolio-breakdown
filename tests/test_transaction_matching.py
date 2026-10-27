@@ -32,3 +32,12 @@ def test_ambiguous_equity_and_token_symbol_requires_selection():
                 Instrument('ABC-EUR', 'Invented token EUR', kind='CRYPTOCURRENCY')]
     assert suggested_listing('ABC', listings, 'EUR') is None
     assert suggested_listing('ABC', listings, 'EUR', kind='CRYPTOCURRENCY').ticker == 'ABC-EUR'
+
+
+def test_holding_and_listing_labels_do_not_add_empty_or_currency_suffixes():
+    from portfolio_app.transaction_matching import holding_label, listing_label
+    assert holding_label({'name':'Bitcoin', 'account':''}) == 'Bitcoin'
+    assert holding_label({'name':'Bitcoin', 'account':'Invented wallet'}) == 'Bitcoin · Invented wallet'
+    listing = Instrument('LTC-EUR', 'Litecoin EUR', kind='CRYPTOCURRENCY')
+    assert listing_label(listing) == 'LTC-EUR · Litecoin'
+    assert instrument_fields(listing, 'LTC')['name'] == 'Litecoin'

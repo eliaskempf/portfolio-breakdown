@@ -22,6 +22,7 @@ class ImportPreview:
     cash_changes: tuple[dict, ...]
     warnings: tuple[str, ...]
     checkpoints: tuple[dict, ...] = ()
+    matches: tuple[tuple[str, str, str], ...] = ()
 
 
 def event_for(row, mapping, *, replaces=''):
@@ -142,6 +143,7 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
     books = {b.position_id: b for b in journal.securities}
     indexed = holdings.set_index('position_id', drop=False)
     added = duplicates = applied = 0
+    applied_ids = set()
     warnings, touched = [], set()
     instruments = {}
     retained_mapping = {(r.facts['source_id'], a, asset): pos for r in receipts for a, asset, pos in r.positions}
@@ -239,6 +241,7 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
         book = replace(book, active_ids=tuple(i for i in book.active_ids if i not in ancestors) + (event.id,))
         books[primary] = book
         touched.update(affected_positions(book, event)); applied += 1
+        applied_ids.add(event.id)
         warnings.extend(row.incomplete)
         if row.facts.get('cost_quality') == 'estimated' or row.facts.get('valuation_quality') == 'estimated':
             warnings.append('Supplied estimates retained; affected gains are approximate')
@@ -275,6 +278,7 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
         return (book.custody_id.startswith('aggregate:') and event.kind == 'transfer'
                 and event.other_position_id == book.position_id and event.charges_known
                 and not event.asset_charges and not event.charges)
+    matches = []
     for book in books.values():
         for e in selected_events(book):
             if not affected_positions(book, e).intersection(touched):
@@ -294,8 +298,11 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
                     raise DataError('Simultaneous dependent events need distinct explicit sequence values.')
             order.setdefault(key, []).append((affected, e))
         economic_book = replace(book, active_ids=tuple(e.id for e in selected_events(book) if not internal_principal(book, e)))
-        if duplicate_candidates(economic_book) and book.position_id in touched and not accept_duplicates:
-            raise DataError('Matching economic transactions require review as distinct executions.')
+        if book.position_id in touched:
+            matches.extend((book.position_id, first, second) for first, second in duplicate_candidates(economic_book)
+                           if first in applied_ids or second in applied_ids)
+    if matches and not accept_duplicates:
+        raise DataError('Matching economic transactions require review as distinct executions.')
     version = max(journal.version, 5 if any(r.facts.get('schema_version') == '3' for r in receipts) else 4 if any(r.facts.get('schema_version') == '2' for r in receipts) else 3)
     proposed = replace(journal, version=version, securities=tuple(books.values()), transaction_imports=tuple(receipts))
     from portfolio_app.history_commands import history_comparisons
@@ -326,4 +333,4 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
                     checkpoint_units=str(event.quantity),
                     unresolved_difference=str(event.quantity-earlier.quantity) if known else None))
     return ImportPreview(proposed, added, duplicates, applied, tuple(comparisons), tuple(cash_changes),
-                         tuple(dict.fromkeys(warnings)), tuple(checkpoints))
+                         tuple(dict.fromkeys(warnings)), tuple(checkpoints), tuple(matches))
