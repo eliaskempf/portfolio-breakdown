@@ -117,7 +117,7 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
         render_accounts(path.parent, snapshot, account_valued if account_valued is not None else snapshot.holdings, allocation=allocation)
     elif workflow == 'Import portfolio':
         from portfolio_app.import_ui import render_import
-        render_import(path, snapshot, funds)
+        render_import(path, snapshot, funds, demo=demo)
     elif workflow == 'Connect live prices':
         from portfolio_app.import_ui import render_listing_link
         render_listing_link(path, snapshot, funds, demo=demo)

@@ -78,11 +78,11 @@ export default function(component) {
 }
 """
 
-def render_search_box(query: str, groups: list[dict], message: str, selected: str = "") -> dict | None:
+def render_search_box(query: str, groups: list[dict], message: str, selected: str = "", *, key: str = SEARCH_KEY) -> dict | None:
     # Registration is idempotent for identical definitions, and must happen in
     # the current runtime (AppTest and server restarts use separate registries).
     _search_box = st.components.v2.component("instrument_search", html=HTML, css=CSS, js=JS)
-    generation = st.session_state.setdefault("position_edit_search_generation", uuid4().hex)
-    result = _search_box(key=SEARCH_KEY, data={"query": query, "groups": groups, "message": message, "selected": selected, "context": generation},
-                         default={"query": ""}, on_query_change=lambda: None, on_selected_change=lambda: None)
+    generation = st.session_state.setdefault(key+"_generation", uuid4().hex)
+    result = _search_box(key=key, data={"query": query, "groups": groups, "message": message, "selected": selected, "context": generation},
+                         default={"query": query}, on_query_change=lambda: None, on_selected_change=lambda: None)
     return result.get("selected")

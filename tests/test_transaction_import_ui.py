@@ -97,10 +97,60 @@ def test_mixed_starting_balance_and_new_exchange_destination_can_be_reviewed(tmp
             b'reference,date,type,asset,quantity,amount,currency,received_asset,received_quantity\n'
             b'o,2024-01-01,opening,AUR,10,100,EUR,,\n'
             b'x,2024-01-02,exchange,AUR,2,25,EUR,ORB,4\n')
-        render_transaction_import(Path(directory))
+        render_transaction_import(Path(directory), demo=True)
     app=AppTest.from_function(script,args=(str(tmp_path),)).run()
     assert not app.exception
     next(c for c in app.checkbox if c.label=='Holdings were zero before these transactions').check().run()
     assert not app.exception and not app.warning
     assert any(b.label=='Apply and confirm history' for b in app.button)
     assert not (tmp_path/'holdings.csv').exists()
+
+
+def test_crypto_symbol_maps_to_existing_pair_without_creating_duplicate(tmp_path):
+    from portfolio_app.transaction_import_commands import prepare_positions
+    prepare_positions(tmp_path, [dict(position_key='invented-position', id='invented-bitcoin',
+        name='Bitcoin', account='Invented wallet', instrument_type='crypto', ticker='BTC-EUR')],
+        expected_holdings_revision=None)
+    original = (tmp_path/'holdings.csv').read_bytes()
+    def script(directory):
+        from pathlib import Path
+        import streamlit as st
+        from portfolio_app.csv_transaction_import_ui import render_transaction_import
+        st.session_state['import_tx_content'] = ('invented.csv',
+            b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-01,buy,BTC,1,100,EUR\n')
+        render_transaction_import(Path(directory), demo=True)
+    app = AppTest.from_function(script, args=(str(tmp_path),)).run()
+    assert not app.exception
+    assert next(c for c in app.selectbox if c.label == 'Holding · BTC').value == 'invented-position'
+    assert next(c for c in app.selectbox if c.label == 'Price listing · BTC').value == 'BTC-EUR'
+    assert (tmp_path/'holdings.csv').read_bytes() == original
+
+
+def test_new_crypto_uses_verified_live_pair_in_reporting_currency(tmp_path, monkeypatch):
+    from portfolio_app.instruments import Instrument
+    from portfolio_app.transaction_import_commands import prepare_positions
+    import portfolio_app.transaction_mapping_ui as mapping_ui
+    prepare_positions(tmp_path, [dict(position_key='invented-position', id='invented-bitcoin',
+        name='Bitcoin', account='Invented wallet', instrument_type='crypto', ticker='BTC-EUR')],
+        expected_holdings_revision=None)
+    before = (tmp_path/'holdings.csv').read_bytes()
+    queries = []
+    def fetch(query, cache_dir, demo):
+        queries.append(query)
+        ticker = 'XYZ-EUR' if query == 'XYZ-EUR' else 'XYZ-USD'
+        return [Instrument(ticker, 'Invented token '+ticker[-3:], kind='CRYPTOCURRENCY')], ''
+    monkeypatch.setattr(mapping_ui, '_fetch', fetch)
+    def script(directory):
+        from pathlib import Path
+        import streamlit as st
+        from portfolio_app.csv_transaction_import_ui import render_transaction_import
+        st.session_state['import_tx_content'] = ('invented.csv',
+            b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-01,buy,XYZ,1,100,EUR\n')
+        render_transaction_import(Path(directory))
+    app = AppTest.from_function(script, args=(str(tmp_path),)).run()
+    assert not app.exception
+    assert set(queries) == {'XYZ', 'XYZ-EUR'}
+    assert next(c for c in app.selectbox if c.label == 'Price listing · XYZ').value == 'XYZ-EUR'
+    assert next(c for c in app.selectbox if c.label == 'Type · XYZ').value == 'crypto'
+    assert next(c for c in app.text_input if c.label == 'Name · XYZ').value == 'Invented token'
+    assert (tmp_path/'holdings.csv').read_bytes() == before

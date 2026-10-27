@@ -621,16 +621,15 @@ invalidates the prior coverage confirmation, as it does for any workspace.
 ### Transaction CSV boundary
 
 `transaction_csv.py` parses textual CSV facts and retains original evidence without
-market access. `transaction_imports.py` prepares a pure batch reconstruction;
+market access. `csv_transaction_imports.py` prepares a pure batch reconstruction;
 `transaction_import_commands.py` revalidates revisions under the workspace lock
-and publishes all financial changes in one journal replacement. The interface
+and publishes positions and history together with recoverable publication. The interface
 renders the same preview that the save command recomputes.
 
-Journal version 3 retains import provenance and correction lineage. Versions 1
-and 2 retain their semantics and remain readable; mutation must not downgrade a
-version 3 journal. Position preparation writes only empty identity rows and is
-separate from financial activation. Failed publication may leave those identities,
-never partially applied swap or transfer legs. Derived cash postings remain
+Journal version 5 retains import provenance, correction lineage and void records.
+Older journals retain their semantics and remain readable. New position identities
+and listing connections remain staged until application; publication recovers as
+one holdings/history pair, never partially applied swap or transfer legs. Derived cash postings remain
 unpersisted, and custody identity is separate from cash ownership.
 
 Security replay owns non-cash swaps, in-kind income and asset fees alongside

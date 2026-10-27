@@ -59,6 +59,12 @@ Choose **Positions → Import portfolio → Transactions**. Upload a CSV, map it
 assets to existing holdings or new positions, then review the transactions and
 forward-reconstructed balances. New positions are created only when you apply.
 An optional price listing connects normal current and historical market data.
+Existing holdings are matched by identifier, name, ISIN or ticker; crypto symbols
+also match ticker pairs such as `BTC-EUR`. Ambiguous matches require a choice.
+New assets receive exact listing suggestions, preferring the reporting currency.
+Use the price-listing dropdown or its search button to find another listing with
+the same live search used when adding a position. Suggestions, names and types
+remain editable; listing changes are saved together with applied transactions.
 
 The template has seven columns:
 

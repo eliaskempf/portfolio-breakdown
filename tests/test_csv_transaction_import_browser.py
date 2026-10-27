@@ -79,3 +79,33 @@ def test_estimated_checkpoint_requires_explicit_reconciliation(import_page):
     assert sum(s.quantity for s in states.values()) == 10
     assert next(iter(states.values())).costs[0]['quality'] == 'estimated'
     assert not page.get_by_test_id('stException').count()
+
+
+def test_listing_suggestions_dropdown_and_live_search_survive_navigation(import_page):
+    from portfolio_app.positions import read_snapshot
+    page, path = import_page
+    upload(page, b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-02,buy,BTC,1,100,EUR\n')
+    listing = page.get_by_role('combobox', name='Price listing · BTC', exact=True)
+    playwright.expect(listing).to_have_value('BTC-EUR · Bitcoin EUR')
+    listing.click()
+    page.get_by_role('option', name='BTC-USD · Bitcoin USD', exact=True).click(); settle(page)
+    assert not path.exists()
+    page.get_by_role('tab', name='Overview', exact=True).click(); settle(page)
+    page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
+    playwright.expect(listing).to_have_value('BTC-USD · Bitcoin USD')
+    search = page.get_by_role('button', name='Search', exact=True).and_(page.get_by_test_id('stBaseButton-secondary'))
+    playwright.expect(search).to_have_count(1)
+    search.click(); settle(page)
+    query = page.get_by_role('searchbox', name='Find an investment', exact=True)
+    query.fill('Bitcoin')
+    page.get_by_role('button', name='Select BTC-EUR on', exact=False).click(); settle(page)
+    playwright.expect(listing).to_have_value('BTC-EUR · Bitcoin EUR')
+    assert not path.exists()
+    page.screenshot(path=str(path.parent.parent / 'synthetic-import-mapping.png'))
+    page.get_by_text('Holdings were zero before these transactions', exact=True).click(); settle(page)
+    page.get_by_text('Accept the displayed balance changes', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Apply incomplete history', exact=True).click(); settle(page)
+    saved = read_snapshot(path).holdings
+    assert saved.ticker.tolist() == ['BTC-EUR']
+    assert saved.instrument_type.tolist() == ['crypto']
+    assert not page.get_by_test_id('stException').count()

@@ -181,7 +181,16 @@ def link_listing(path: Path, asset_id: str, listing: Instrument, *, expected_rev
     snapshot = read_snapshot(path)
     if snapshot.revision != expected_revision:
         raise DataError('Holdings changed. Reload before linking a listing.')
-    current = snapshot.holdings
+    content = listing_content(path.read_text(encoding='utf-8-sig'), asset_id, listing, use_live_prices=use_live_prices)
+    candidate = parse_holdings(content)
+    if validate:
+        validate(candidate)
+    save_document(path, content, expected_revision)
+
+
+def listing_content(content: str, asset_id: str, listing: Instrument, *, use_live_prices=False) -> str:
+    """Validate and stage a listing without writing portfolio documents."""
+    current = parse_holdings(content)
     selected = current.loc[current.id.eq(asset_id)]
     if selected.empty or not listing.ticker:
         raise DataError('Select an existing instrument and a price listing.')
@@ -193,7 +202,7 @@ def link_listing(path: Path, asset_id: str, listing: Instrument, *, expected_rev
     others = current.loc[current.id.ne(asset_id)]
     if others.ticker.eq(listing.ticker).any():
         raise DataError('This listing belongs to another instrument already. Resolve the duplicate before linking.')
-    raw = pd.read_csv(StringIO(path.read_text(encoding='utf-8-sig')), dtype=str, keep_default_na=False)
+    raw = pd.read_csv(StringIO(content), dtype=str, keep_default_na=False)
     mask = raw.id.eq(asset_id)
     for column, value in {'ticker': listing.ticker, 'isin': listing.isin or known_isin,
                           'instrument_type': {'EQUITY': 'equity', 'ETF': 'etf', 'ETC': 'etc', 'CRYPTOCURRENCY': 'crypto'}.get(listing.kind, 'unknown')}.items():
@@ -204,8 +213,6 @@ def link_listing(path: Path, asset_id: str, listing: Instrument, *, expected_rev
         for column in ('manual_price', 'manual_price_currency', 'manual_price_date'):
             if column in raw:
                 raw.loc[mask, column] = ''
-    content = raw.to_csv(index=False)
-    candidate = parse_holdings(content)
-    if validate:
-        validate(candidate)
-    save_document(path, content, expected_revision)
+    result = raw.to_csv(index=False)
+    parse_holdings(result)
+    return result

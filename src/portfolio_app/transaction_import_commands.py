@@ -37,7 +37,7 @@ def prepare_positions(directory, additions, *, expected_holdings_revision):
 def save_transaction_import(directory, rows, mapping, *, expected_journal_revision,
                             expected_holdings_revision, accept_reconciliation=False,
                             accept_checkpoints=False,
-                            comparison_date='', additions=(), expected_observations_revision=...,
+                            comparison_date='', additions=(), listing_changes=None, expected_observations_revision=...,
                             expected_reporting_currency=None, complete_intervals=None, **options):
     """Recompute under the lock; evidence and all activated legs publish together."""
     directory = Path(directory)
@@ -70,9 +70,9 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
             raise DataError('Valuation evidence or reporting currency changed. Review reconciliation again.')
         content = None
         preview_holdings = snapshot.holdings
-        if selected and additions:
+        if selected and (additions or listing_changes):
             path = directory/'holdings.csv'
-            content = positions_content(path.read_text(encoding='utf-8-sig') if path.exists() else '', snapshot, additions)
+            content = positions_content(path.read_text(encoding='utf-8-sig') if path.exists() else '', snapshot, additions, listing_changes=listing_changes)
             preview_holdings = parse_holdings(content)
         preview = prepare_import(journal, preview_holdings, rows, mapping,
             target=target, historical=ObservationFX(observations), **options)
@@ -102,13 +102,13 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
         return replace(preview,journal=proposed)
 
 
-def positions_content(content, snapshot, additions):
+def positions_content(content, snapshot, additions, *, listing_changes=None):
     raw = pd.read_csv(StringIO(content or EMPTY_CSV), dtype=str, keep_default_na=False)
     if 'position_key' not in raw:
         raw['position_key'] = snapshot.holdings.position_id.tolist()
     existing = set(raw.position_key)
     for item in additions:
-        allowed = {'position_key','id','name','account','instrument_type','ticker'}
+        allowed = {'position_key','id','name','account','instrument_type','ticker','isin'}
         if set(item) - allowed or any(not item.get(k) for k in ('position_key','id','name','account')):
             raise DataError('Supply an explicit instrument, custody account and stable position identity.')
         if item['position_key'] in existing:
@@ -126,5 +126,8 @@ def positions_content(content, snapshot, additions):
             raw.at[len(raw)-1,k] = v
         existing.add(item['position_key'])
     content = raw.to_csv(index=False)
+    from portfolio_app.imports import listing_content
+    for instrument, listing in (listing_changes or {}).items():
+        content = listing_content(content, instrument, listing)
     parse_holdings(content)
     return content

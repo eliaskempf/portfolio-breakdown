@@ -55,11 +55,11 @@ def clear_import():
     st.session_state['positions_workflow_request'] = 'Positions'
 
 
-def render_import(path, snapshot, funds):
+def render_import(path, snapshot, funds, *, demo=False):
     kind = review_control(st.segmented_control, 'Import type', ['Holdings snapshot', 'Transactions'], default='Holdings snapshot', key='import_kind')
     if kind == 'Transactions':
         from portfolio_app.csv_transaction_import_ui import render_transaction_import
-        render_transaction_import(path.parent)
+        render_transaction_import(path.parent, demo=demo)
         return
     st.subheader('Import portfolio — experimental')
     st.caption('Current holdings only. Import first; add allocation, targets and classifications later.')

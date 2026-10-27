@@ -41,47 +41,7 @@ def _rows(journal):
     return ()
 
 
-def _mapping(snapshot, journal, rows, token):
-    pairs = sorted({pair for r in rows if not r.issues for pair in r.pairs})
-    assets = sorted({asset for _, asset in pairs})
-    retained = {(r.facts['source_id'], a, asset): pos for r in journal.transaction_imports
-                for a, asset, pos in r.positions}
-    source = rows[0].facts['source_id']
-    holdings = snapshot.holdings
-    names = {r.position_id: f"{r['name']} · {r.account}" for _, r in holdings.iterrows()}
-    mapping, additions = {}, []
-    with st.expander('Positions', expanded=True):
-        for asset in assets:
-            prior = {retained[source, a, asset] for a, symbol in pairs
-                     if symbol == asset and (source, a, asset) in retained}
-            # Preserve previously reviewed custody mappings without asking for a
-            # second aggregate setup or silently rebinding existing evidence.
-            if prior:
-                for a, symbol in pairs:
-                    if symbol == asset and (source, a, asset) in retained:
-                        mapping[a, asset] = retained[source, a, asset]
-                if all((a, asset) in mapping for a, symbol in pairs if symbol == asset):
-                    st.caption(asset+' → '+', '.join(names.get(p, p) for p in sorted(prior)))
-                    continue
-            matches = holdings.loc[holdings.id.str.casefold().eq(asset.casefold()), 'position_id'].tolist()
-            default = next(iter(prior)) if len(prior) == 1 else matches[0] if len(matches) == 1 else ''
-            options = ['', *names]
-            selected = control(st.selectbox, asset, options, index=options.index(default) if default in options else 0,
-                format_func=lambda p: names.get(p, 'New position'), key=token+'position_'+digest(asset)[:12])
-            if not selected:
-                name = control(st.text_input, 'Name · '+asset, value=asset, key=token+'name_'+digest(asset)[:12])
-                kind = control(st.selectbox, 'Type · '+asset, ['crypto', 'equity', 'etf', 'etc', 'unknown'], key=token+'type_'+digest(asset)[:12])
-                ticker = control(st.text_input, 'Price listing · '+asset, help='Optional. You can connect live prices from the position later.', key=token+'ticker_'+digest(asset)[:12])
-                selected = 'csv-position-'+digest((source, asset))[:24]
-                additions.append(dict(position_key=selected, id='csv-asset-'+digest((source,asset))[:24],
-                    name=name, account='Portfolio', instrument_type=kind, ticker=ticker))
-            for account, symbol in pairs:
-                if symbol == asset:
-                    mapping.setdefault((account, asset), selected)
-    return mapping, additions
-
-
-def render_transaction_import(directory):
+def render_transaction_import(directory, *, demo=False):
     directory = Path(directory)
     from portfolio_app.import_ui import clear_import
     st.subheader('Import transactions')
@@ -107,9 +67,11 @@ def render_transaction_import(directory):
                 st.session_state.pop(baseline_key, None)
                 st.rerun()
             return
-        mapping, additions = _mapping(snapshot, journal, rows, token)
+        from portfolio_app.transaction_mapping_ui import render_mapping
+        st.caption(f'{len(rows)} transactions · {len({asset for r in rows for _, asset in r.pairs})} assets')
+        mapping, additions, listing_changes = render_mapping(directory, snapshot, journal, rows, token, currency=target, demo=demo)
         content = positions_content((directory/'holdings.csv').read_text(encoding='utf-8-sig')
-                                    if (directory/'holdings.csv').exists() else '', snapshot, additions)
+                                    if (directory/'holdings.csv').exists() else '', snapshot, additions, listing_changes=listing_changes)
         holdings = parse_holdings(content)
         latest = {r.facts['source_id']: {} for r in journal.transaction_imports}
         for receipt in journal.transaction_imports:
@@ -205,7 +167,7 @@ def render_transaction_import(directory):
                     st.caption(warning)
         def apply(complete):
             save_transaction_import(directory, rows, mapping, expected_journal_revision=revision,
-                expected_holdings_revision=snapshot.revision, additions=additions, accept_reconciliation=True,
+                expected_holdings_revision=snapshot.revision, additions=additions, listing_changes=listing_changes, accept_reconciliation=True,
                 accept_checkpoints=bool(checkpoints), comparison_date=comparison.isoformat(),
                 complete_intervals=intervals if complete else None, expected_observations_revision=observation_revision,
                 expected_reporting_currency=target, **options)

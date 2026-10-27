@@ -130,3 +130,35 @@ def test_imported_economic_event_removal_includes_every_leg(tmp_path):
     from portfolio_app.history_commands import changed_positions
     candidate = remove_transactions(book, [swap.id])
     assert changed_positions(result.journal, (candidate,)) == {'vault', 'orb'}
+
+
+def test_listing_connection_is_staged_and_applies_with_history(tmp_path):
+    from portfolio_app.instruments import Instrument
+    from portfolio_app.transaction_import_commands import positions_content
+    snapshot = setup(tmp_path)
+    before = (tmp_path/'holdings.csv').read_bytes()
+    listing = Instrument('AUR-EUR', 'Invented Aurora', kind='CRYPTOCURRENCY', currency='EUR')
+    changes = {'aur': listing}
+    content = positions_content(before.decode(), snapshot, (), listing_changes=changes)
+    assert 'AUR-EUR' in content
+    assert (tmp_path/'holdings.csv').read_bytes() == before
+    save(tmp_path, snapshot, listing_changes=changes)
+    saved = read_snapshot(tmp_path/'holdings.csv').holdings
+    assert saved.loc[saved.id.eq('aur'), 'ticker'].eq('AUR-EUR').all()
+    assert load_journal(tmp_path)[0].securities
+
+
+def test_failed_history_publication_rolls_back_staged_listing(tmp_path, monkeypatch):
+    from portfolio_app.instruments import Instrument
+    snapshot = setup(tmp_path)
+    before = (tmp_path/'holdings.csv').read_bytes()
+    original = Path.replace
+    def fail(self, destination):
+        if Path(destination).name == 'account-journal.json':
+            raise OSError('Invented failure')
+        return original(self, destination)
+    monkeypatch.setattr(Path, 'replace', fail)
+    with pytest.raises(OSError, match='Invented'):
+        save(tmp_path, snapshot, listing_changes={'aur': Instrument('AUR-EUR', 'Invented Aurora', kind='CRYPTOCURRENCY')})
+    assert (tmp_path/'holdings.csv').read_bytes() == before
+    assert not load_journal(tmp_path)[0].securities
