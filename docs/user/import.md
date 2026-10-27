@@ -69,9 +69,10 @@ Use the price-listing dropdown or its search button to find another listing with
 the same live search used when adding a position. Suggestions, names and types
 remain editable; listing changes are saved together with applied transactions.
 The listing label identifies the quote pair; its quote currency is not added to
-the holding name. Each asset row has a **New / Existing** destination. New holdings
-have an editable name directly in the Holding column; existing holdings and price
-listings use selection-only dropdowns. Use **Search** for live listing search.
+the holding name. The **Holding** dropdown contains existing holdings and **New
+position**. Selecting **New position** splits that cell into the dropdown and an
+editable holding name beside it. Holding and price-listing dropdowns only select
+options; use **Search** for live listing search.
 Edited names survive listing changes and navigation. Automatically suggested types
 can be reviewed under **Asset types**. **Show transactions for** filters the review
 table by asset, including received exchange legs and asset fees. It does not
@@ -124,6 +125,8 @@ does not itself prove completeness because missing movements can cancel out.
 Possible duplicates are shown as concrete pairs: keep both as separate executions
 or exclude a CSV row from application. Excluded source evidence remains saved.
 Already reviewed duplicates are not raised again for unrelated new transactions.
+Different recorded execution times distinguish otherwise identical transactions.
+When either entry has only a date, matching economic details still require review.
 
 **Apply and confirm history** explicitly confirms the displayed history interval;
 **Apply incomplete history** leaves completeness unconfirmed. Both use the same

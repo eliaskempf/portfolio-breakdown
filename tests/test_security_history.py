@@ -17,6 +17,25 @@ def opening(quantity='10', cost='80'):
     return E('open', 'opening', '2024-01-01', quantity=D(quantity), amount=D(cost), currency='EUR')
 
 
+def test_duplicate_candidates_distinguish_recorded_execution_times():
+    from portfolio_app.security_history import duplicate_candidates
+    first = E('first', 'asset_fee', '2024-02-01', quantity=D('0.01'),
+              timestamp_utc='2024-02-01T08:00:00Z')
+    later = replace(first, id='later', sequence=1, timestamp_utc='2024-02-01T09:00:00Z')
+    repeated = replace(first, id='repeated', sequence=2)
+    assert duplicate_candidates(book(first, later)) == ()
+    assert duplicate_candidates(book(first, later, repeated)) == (('first', 'repeated'),)
+
+
+@pytest.mark.parametrize('timestamp_first', [False, True])
+def test_duplicate_candidates_still_match_date_only_and_timestamped_evidence(timestamp_first):
+    from portfolio_app.security_history import duplicate_candidates
+    manual = E('manual', 'buy', '2024-02-01', quantity=D(2), amount=D(20), currency='EUR')
+    imported = replace(manual, id='imported', timestamp_utc='2024-02-01T08:00:00Z')
+    events = (imported, manual) if timestamp_first else (manual, imported)
+    assert duplicate_candidates(book(*events)) == ((events[0].id, events[1].id),)
+
+
 def test_fifo_unknown_opening_partial_sale_does_not_invent_lots():
     b = book(opening(), E('buy', 'buy', '2024-02-01', quantity=D(5), price=D(20), currency='EUR', charges_known=True),
              E('sale', 'sell', '2024-03-01', quantity=D(4), price=D(30), currency='EUR', charges_known=True))

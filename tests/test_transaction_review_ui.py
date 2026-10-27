@@ -123,9 +123,15 @@ def test_name_edit_survives_listing_change_and_destination_switch(tmp_path):
     next(t for t in app.text_input if t.label == 'Name · ETH').set_value('Invented coin holding').run()
     next(s for s in app.selectbox if s.label == 'Price listing · ETH').set_value('ETH-USD').run()
     assert next(t for t in app.text_input if t.label == 'Name · ETH').value == 'Invented coin holding'
-    next(s for s in app.selectbox if s.label == 'Destination · ETH').set_value('existing').run()
+    holding = next(s for s in app.selectbox if s.label == 'Holding · ETH')
+    assert holding.options[0] == 'New position'
+    assert not any(s.label.startswith('Destination ·') for s in app.selectbox)
+    from portfolio_app.positions import read_snapshot
+    existing = read_snapshot(tmp_path/'holdings.csv').holdings.position_id.iloc[0]
+    holding.set_value(existing).run()
     assert not app.exception
-    next(s for s in app.selectbox if s.label == 'Destination · ETH').set_value('new').run()
+    assert not any(t.label == 'Name · ETH' for t in app.text_input)
+    next(s for s in app.selectbox if s.label == 'Holding · ETH').set_value('').run()
     assert not app.exception
     assert next(t for t in app.text_input if t.label == 'Name · ETH').value == 'Invented coin holding'
 

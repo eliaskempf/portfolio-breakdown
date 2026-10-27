@@ -86,6 +86,9 @@ def test_listing_suggestions_dropdown_and_live_search_survive_navigation(import_
     from portfolio_app.positions import read_snapshot
     page, path = import_page
     upload(page, b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-02,buy,BTC,1,100,EUR\n')
+    holding = page.get_by_role('combobox', name='Holding · BTC', exact=True)
+    playwright.expect(holding).to_have_value('New position')
+    assert not page.get_by_role('combobox', name='Destination ·', exact=False).count()
     listing = page.get_by_role('combobox', name='Price listing · BTC', exact=True)
     playwright.expect(listing).to_have_value('BTC-EUR · Bitcoin')
     playwright.expect(listing).to_have_attribute('inputmode', 'none')
@@ -93,6 +96,9 @@ def test_listing_suggestions_dropdown_and_live_search_survive_navigation(import_
     playwright.expect(listing).to_have_value('BTC-EUR · Bitcoin')
     listing.press('Escape')
     name = page.get_by_role('textbox', name='Name · BTC', exact=True)
+    choice_box, name_box = holding.bounding_box(), name.bounding_box()
+    assert name_box['x'] > choice_box['x'] + choice_box['width']
+    assert abs(choice_box['y'] - name_box['y']) < 5
     name.fill('Invented Bitcoin holding'); name.press('Tab'); settle(page)
     listing.click()
     page.get_by_role('option', name='BTC-USD · Bitcoin', exact=True).click(); settle(page)
@@ -142,6 +148,26 @@ def test_existing_portfolio_opens_transaction_import_directly(import_page):
     playwright.expect(holding).to_have_value('Bitcoin · Invented wallet')
     holding.press('Escape')
     assert not page.get_by_test_id('stException').count()
+    assert path.read_bytes() == before
+
+    full_width = holding.bounding_box()['width']
+    holding.click()
+    page.get_by_role('option', name='New position', exact=True).click(); settle(page)
+    name = page.get_by_role('textbox', name='Name · BTC', exact=True)
+    playwright.expect(name).to_be_visible()
+    assert holding.bounding_box()['width'] < full_width
+    assert name.bounding_box()['x'] > holding.bounding_box()['x']
+    assert abs(holding.bounding_box()['y'] - name.bounding_box()['y']) < 5
+    name.fill('Invented separate holding'); name.press('Tab'); settle(page)
+    holding.click()
+    page.get_by_role('option', name='Bitcoin · Invented wallet', exact=True).click(); settle(page)
+    playwright.expect(name).to_have_count(0)
+    assert holding.bounding_box()['width'] == full_width
+    holding.click()
+    page.get_by_role('option', name='New position', exact=True).click(); settle(page)
+    playwright.expect(name).to_have_value('Invented separate holding')
+    holding.click()
+    page.get_by_role('option', name='Bitcoin · Invented wallet', exact=True).click(); settle(page)
     assert path.read_bytes() == before
 
     page.get_by_role('radio', name='Holdings snapshot', exact=True).click(); settle(page)

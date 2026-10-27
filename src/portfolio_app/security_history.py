@@ -686,7 +686,7 @@ def allocated_capital_at(journal, investment_id, stamp):
 def duplicate_candidates(book):
     """Economic matches need acknowledgment, not automatic removal."""
     from dataclasses import asdict
-    seen, duplicates = {}, []
+    seen, latest, duplicates = {}, {}, []
     for event in selected_events(book):
         if event.kind not in ('buy', 'sell', 'distribution', 'fee', 'tax', 'transfer', 'transfer_in', 'transfer_out', 'inventory_in', 'inventory_out', 'swap', 'reward', 'asset_fee'):
             continue
@@ -710,9 +710,14 @@ def duplicate_candidates(book):
                 return text.rstrip('0').rstrip('.') if '.' in text else text
             return str(value)
         signature = json.dumps(facts, default=canonical, sort_keys=True)
-        if signature in seen:
-            duplicates.append((seen[signature], event.id))
-        seen[signature] = event.id
+        # Distinct recorded execution times distinguish otherwise equal fills.
+        # Date-only evidence can still match a timestamped CSV/PDF transaction.
+        executions = seen.setdefault(signature, {})
+        previous = (executions.get(event.timestamp_utc) or executions.get('')) if event.timestamp_utc else latest.get(signature)
+        if previous:
+            duplicates.append((previous, event.id))
+        executions[event.timestamp_utc] = event.id
+        latest[signature] = event.id
     return tuple(duplicates)
 
 

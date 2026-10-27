@@ -68,37 +68,31 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
     mapping, additions, listing_changes, selected_listings, new_details = {}, [], {}, {}, []
     prefix = 'import_tx_'+token
     st.markdown('**Assets**')
-    left, destination, middle, right, _ = st.columns([1, 1.4, 3, 3, 1])
-    left.caption('CSV asset'); destination.caption('Destination'); middle.caption('Holding'); right.caption('Price listing')
+    left, middle, right, _ = st.columns([1, 4.4, 3, 1])
+    left.caption('CSV asset'); middle.caption('Holding'); right.caption('Price listing')
     for asset in assets:
         key = prefix+digest(asset)[:12]+'_'
         asset_pairs = [(a, symbol) for a, symbol in pairs if symbol == asset]
         prior = {pair: retained[(source, *pair)] for pair in asset_pairs if (source, *pair) in retained}
         retained_positions = set(prior.values())
-        asset_col, mode_col, holding_col, listing_col, search_col = st.columns([1, 1.4, 3, 3, 1], vertical_alignment='center')
+        asset_col, holding_col, listing_col, search_col = st.columns([1, 4.4, 3, 1], vertical_alignment='center')
         asset_col.markdown('**'+asset+'**')
         if retained_positions - names.keys():
             holding_col.caption('A previously matched holding is missing. Review the saved import.')
             continue
         if len(prior) == len(asset_pairs) and len(retained_positions) > 1:
             mapping.update(prior)
-            mode_col.caption('Existing')
             holding_col.caption(', '.join(names[p] for p in sorted(retained_positions)))
             listing_col.caption('Existing listings')
             continue
         candidates = matches[asset]
-        default = next(iter(retained_positions)) if len(retained_positions) == 1 else candidates[0] if len(candidates) == 1 else None
-        modes = ['new', 'existing'] if names else ['new']
-        mode = _control(mode_col.selectbox, 'Destination · '+asset, modes,
-            index=modes.index('existing' if retained_positions or candidates else 'new'),
-            format_func=lambda value: 'New' if value == 'new' else 'Existing', filter_mode=None,
-            disabled=bool(retained_positions) or not names, label_visibility='collapsed', key=key+'destination')
-        selected = ''
-        if mode == 'existing':
-            options = [None, *names] if default is None else list(names)
-            selected = _control(holding_col.selectbox, 'Holding · '+asset, options,
-                index=options.index(default), format_func=lambda p: 'Choose a holding' if p is None else names[p],
-                filter_mode=None, disabled=bool(retained_positions), label_visibility='collapsed', key=key+'position')
+        default = next(iter(retained_positions)) if len(retained_positions) == 1 else candidates[0] if len(candidates) == 1 else None if candidates else ''
+        options = [None, '', *names] if default is None else ['', *names]
+        current_choice = st.session_state.get(key+'position', st.session_state.get('import_controls', {}).get(key+'position', default))
+        choice_col, name_col = holding_col.columns([1, 1.5]) if current_choice == '' else (holding_col, holding_col)
+        selected = _control(choice_col.selectbox, 'Holding · '+asset, options,
+            index=options.index(default), format_func=lambda p: 'Choose a holding' if p is None else 'New position' if p == '' else names[p],
+            filter_mode=None, disabled=bool(retained_positions), label_visibility='collapsed', key=key+'position')
         if selected is None:
             listing_col.caption('Multiple holdings match' if len(candidates) > 1 else 'Choose an existing holding')
             continue
@@ -129,7 +123,7 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
         fields = instrument_fields(listing, asset)
         if existing is None:
             _suggest_default(key+'name', fields['name'])
-            fields['name'] = _control(holding_col.text_input, 'Name · '+asset, value=fields['name'], key=key+'name',
+            fields['name'] = _control(name_col.text_input, 'Name · '+asset, value=fields['name'], key=key+'name',
                 label_visibility='collapsed', help='Name to save for this new holding. Editing it does not change the price listing.')
             selected = 'csv-position-'+digest((source, asset))[:24]
             addition = dict(position_key=selected, id='csv-asset-'+digest((source,asset))[:24], account='Portfolio', **fields)
