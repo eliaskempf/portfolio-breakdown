@@ -117,10 +117,10 @@ def parse_holdings(content: str) -> pd.DataFrame:
         for value in frame.cost_basis_details:
             if value:
                 read_details(value)
-    for asset_id, positions in frame.groupby("id", sort=False):
+    for _, positions in frame.groupby("id", sort=False):
         for column in ("name", "ticker", "isin", "short_name"):
             if positions[column].nunique() > 1:
-                raise DataError(f"Asset {asset_id!r} has inconsistent {column}; use distinct IDs for distinct instruments.")
+                raise DataError(f"Holdings for {positions.iloc[0]['name']!r} have inconsistent {column}; use separate instruments for different investments.")
     if "position_key" in frame:
         if frame.position_key.eq("").any() or frame.position_key.duplicated().any():
             raise DataError("Persistent position keys must be nonempty and unique.")

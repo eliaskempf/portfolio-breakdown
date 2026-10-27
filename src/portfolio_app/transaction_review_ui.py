@@ -16,8 +16,7 @@ def render_transactions(valid, active, retained, token):
         help='Filters this table only. Exchanges and asset fees also appear under the asset they affect.')
     visible = [(r, e) for r, e in valid if not asset or any(symbol == asset for _, symbol in r.pairs)]
     table = _transaction_table([e for _, e in visible], SimpleNamespace(active_ids=active))
-    table.insert(0, 'Reference', [r.facts['event_id'] for r, _ in visible])
-    table.insert(1, 'Asset', [r.facts['asset_id'] for r, _ in visible])
+    table.insert(0, 'Asset', [r.facts['asset_id'] for r, _ in visible])
     for index, (_, event) in enumerate(visible):
         if event.id not in retained:
             table.at[index, 'Status'] = 'Ready to import'
@@ -30,23 +29,23 @@ def review_matches(preview, selected, holdings, token):
     if not preview.matches:
         return set(), {}
     st.markdown('**Possible duplicate transactions**')
-    st.caption('These entries have matching economic details. Already-applied source references are skipped automatically.')
+    st.caption('These entries have matching economic details. Reimporting an already-applied transaction does not apply it twice.')
     books = {b.position_id: b for b in preview.journal.securities}
     names = holdings.set_index('position_id')['name'].to_dict()
-    references = {r.id: r.facts['event_id'] for r in preview.journal.transaction_imports}
     excluded, decisions = set(), {}
     for position, first, second in preview.matches:
         book = books[position]
         by_id = {e.id: e for e in book.records}
         pair = (first, second)
+        entry_labels = {first: 'first entry', second: 'second entry'}
         table = _transaction_table([by_id[i] for i in pair], SimpleNamespace(active_ids=()))
-        table.insert(0, 'Reference', [references.get(i, 'Recorded transaction') for i in pair])
+        table.insert(0, 'Entry', ['First entry', 'Second entry'])
         table['Status'] = ['In this import' if i in selected else 'Already recorded' for i in pair]
         st.dataframe(table, hide_index=True, width='stretch')
         choices = [None, 'keep', *(i for i in pair if i in selected)]
         decision = review_control(st.selectbox, 'Resolve match · '+names[position], choices,
-            format_func=lambda value: 'Choose how to handle these entries' if value is None else
-                'Keep both — separate transactions' if value == 'keep' else 'Exclude '+references.get(value, 'this CSV row'),
+            format_func=lambda value, entry_labels=entry_labels: 'Choose how to handle these entries' if value is None else
+                'Keep both — separate transactions' if value == 'keep' else 'Exclude '+entry_labels[value],
             key='import_tx_'+token+'match_'+digest(pair)[:16])
         if decision not in (None, 'keep'):
             excluded.add(decision)

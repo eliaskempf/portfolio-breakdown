@@ -232,7 +232,7 @@ def render_position_history(directory, row):
                         revision=revision, on_edit=edit, on_remove=lambda ids: _request_removal(key, ids, revision))
                 if records:
                     with st.expander('Transaction details'):
-                        st.dataframe(pd.DataFrame([dict(Date=e.date, Note=e.note, Source=e.source,
+                        st.dataframe(pd.DataFrame([dict(Date=e.date, Note=e.note, Source=_source_label(e.source),
                             Estimated=e.estimated or e.valuation_quality == 'estimated' or any(p.get('quality') == 'estimated' for p in e.costs),
                             Acquisition_cost=' + '.join(_money(_decimal(p.get('amount'), optional=True), p.get('currency', '')) for p in e.costs),
                             Observed=e.observed_at or ('Unknown' if e.kind == 'checkpoint' else '—'),
@@ -309,6 +309,16 @@ def _event_label(event):
     if event.source == 'confirmed_zero_start':
         return 'From first purchase (zero starting shares)'
     return f'{event.date or "Undated"} · {_KIND_LABELS.get(event.kind,event.kind.title())} · {event.quantity:g} units'
+
+
+def _source_label(source):
+    if source.startswith('consors_pdf:'):
+        return 'PDF import'
+    if source.startswith('transaction_csv_v'):
+        return 'CSV import'
+    if source.startswith('legacy:'):
+        return 'Imported purchase history'
+    return {'manual':'Manual entry', 'confirmed_zero_start':'Starting balance'}.get(source, 'Recorded history')
 
 
 def _opening_form(directory, journal, revision, snapshot, book, row, key):
@@ -459,7 +469,7 @@ def _fix_history(directory, journal, revision, snapshot, book, row, key):
             _activation(directory, journal, revision, snapshot, candidate, row, key+'fix_', resolution='accept')
         if book.records:
             with st.expander('Retained evidence'):
-                st.dataframe(pd.DataFrame([dict(Date=e.date, Kind=e.kind, Quantity=str(e.quantity), Source=e.source,
+                st.dataframe(pd.DataFrame([dict(Date=e.date, Kind=e.kind, Quantity=str(e.quantity), Source=_source_label(e.source),
                     Status='Active' if e.id in book.active_ids else 'Evidence', Note=e.note) for e in book.records]), hide_index=True)
         if row.get('purchase_history'):
             from portfolio_app.purchase_ui import render_purchase_history
@@ -555,7 +565,8 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
         st.caption('Confirm complete history · '+interval)
         if related:
             from portfolio_app.history_confirmation import confirmation_intervals
-            st.dataframe(pd.DataFrame([dict(Position=identity, From=a, Through=b) for identity, (a,b) in
+            names = snapshot.holdings.set_index('position_id')['name'].to_dict()
+            st.dataframe(pd.DataFrame([dict(Position=names.get(identity, 'Linked holding'), From=a, Through=b) for identity, (a,b) in
                 confirmation_intervals(proposed, touched).items()]), hide_index=True, width='stretch')
         st.caption('All purchases, sales, income, fees, taxes and transfers in this interval are recorded. '
                    'Still backfilling? Choose Apply incomplete history.')

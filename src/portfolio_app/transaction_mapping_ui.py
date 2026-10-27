@@ -37,6 +37,17 @@ def _control(widget, *args, key, **kwargs):
     return review_control(widget, *args, key=key, **kwargs)
 
 
+def _suggest_default(key, suggestion):
+    """Refresh an automatic suggestion without overwriting an edited value."""
+    controls = st.session_state.setdefault('import_controls', {})
+    previous = st.session_state.get(key+'_suggestion', suggestion)
+    value = st.session_state.get(key, controls.get(key, previous))
+    if suggestion != previous and value == previous:
+        st.session_state[key] = suggestion
+        controls[key] = suggestion
+    st.session_state[key+'_suggestion'] = suggestion
+
+
 def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR', demo=False):
     pairs = sorted({p for r in rows if not r.issues for p in r.pairs})
     assets = sorted({asset for _, asset in pairs})
@@ -54,31 +65,42 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
         preferred = [a+'-'+currency for a in lookup if crypto and not any(x.ticker == a.upper()+'-'+currency for x in initial[a][0])]
         extra = searches(preferred, directory, demo)
     custom = st.session_state.setdefault('import_tx_chosen_listings', {})
-    mapping, additions, listing_changes, selected_listings = {}, [], {}, {}
+    mapping, additions, listing_changes, selected_listings, new_details = {}, [], {}, {}, []
     prefix = 'import_tx_'+token
     st.markdown('**Assets**')
-    left, middle, right, _, _ = st.columns([1, 3, 3, 1, .5])
-    left.caption('CSV asset'); middle.caption('Holding'); right.caption('Price listing')
+    left, destination, middle, right, _ = st.columns([1, 1.4, 3, 3, 1])
+    left.caption('CSV asset'); destination.caption('Destination'); middle.caption('Holding'); right.caption('Price listing')
     for asset in assets:
         key = prefix+digest(asset)[:12]+'_'
         asset_pairs = [(a, symbol) for a, symbol in pairs if symbol == asset]
         prior = {pair: retained[(source, *pair)] for pair in asset_pairs if (source, *pair) in retained}
         retained_positions = set(prior.values())
-        asset_col, holding_col, listing_col, search_col, details_col = st.columns([1, 3, 3, 1, .5], vertical_alignment='center')
+        asset_col, mode_col, holding_col, listing_col, search_col = st.columns([1, 1.4, 3, 3, 1], vertical_alignment='center')
         asset_col.markdown('**'+asset+'**')
+        if retained_positions - names.keys():
+            holding_col.caption('A previously matched holding is missing. Review the saved import.')
+            continue
         if len(prior) == len(asset_pairs) and len(retained_positions) > 1:
             mapping.update(prior)
-            holding_col.caption(', '.join(names.get(p, p) for p in sorted(retained_positions)))
+            mode_col.caption('Existing')
+            holding_col.caption(', '.join(names[p] for p in sorted(retained_positions)))
             listing_col.caption('Existing listings')
             continue
         candidates = matches[asset]
-        default = next(iter(retained_positions)) if len(retained_positions) == 1 else candidates[0] if len(candidates) == 1 else None if candidates else ''
-        options = [None, '', *names] if default is None else ['', *names]
-        selected = _control(holding_col.selectbox, 'Holding · '+asset, options,
-            index=options.index(default), format_func=lambda p: 'Choose a holding' if p is None else names.get(p, 'New position'),
-            disabled=bool(retained_positions), label_visibility='collapsed', key=key+'position')
+        default = next(iter(retained_positions)) if len(retained_positions) == 1 else candidates[0] if len(candidates) == 1 else None
+        modes = ['new', 'existing'] if names else ['new']
+        mode = _control(mode_col.selectbox, 'Destination · '+asset, modes,
+            index=modes.index('existing' if retained_positions or candidates else 'new'),
+            format_func=lambda value: 'New' if value == 'new' else 'Existing', filter_mode=None,
+            disabled=bool(retained_positions) or not names, label_visibility='collapsed', key=key+'destination')
+        selected = ''
+        if mode == 'existing':
+            options = [None, *names] if default is None else list(names)
+            selected = _control(holding_col.selectbox, 'Holding · '+asset, options,
+                index=options.index(default), format_func=lambda p: 'Choose a holding' if p is None else names[p],
+                filter_mode=None, disabled=bool(retained_positions), label_visibility='collapsed', key=key+'position')
         if selected is None:
-            listing_col.caption('Multiple holdings match')
+            listing_col.caption('Multiple holdings match' if len(candidates) > 1 else 'Choose an existing holding')
             continue
         existing = by_position.loc[selected] if selected else None
         available = [*initial.get(asset, ([], ''))[0], *extra.get(asset+'-'+currency, ([], ''))[0], *custom.get(asset, {}).values()]
@@ -97,7 +119,7 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
             st.session_state.setdefault('import_controls', {})[ticker_key] = pending
         ticker = _control(listing_col.selectbox, 'Price listing · '+asset, ticker_options,
             index=ticker_options.index(default_ticker), label_visibility='collapsed', key=ticker_key,
-            format_func=lambda t: listing_label(by_ticker[t]) if t else 'No price listing')
+            filter_mode=None, format_func=lambda t, listings=by_ticker: listing_label(listings[t]) if t else 'No price listing')
         listing = by_ticker.get(ticker)
         if listing:
             custom.setdefault(asset, {})[ticker] = listing
@@ -106,19 +128,24 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
             st.session_state[prefix+'search_asset'] = asset
         fields = instrument_fields(listing, asset)
         if existing is None:
-            with details_col.popover('Edit', help='Edit details for '+asset):
-                field_key = key+'details_'+ticker+'_'
-                fields['name'] = _control(st.text_input, 'Name · '+asset, value=fields['name'], key=field_key+'name')
-                kinds = ['crypto','equity','etf','etc','unknown']
-                fields['instrument_type'] = _control(st.selectbox, 'Type · '+asset, kinds, index=kinds.index(fields['instrument_type']), key=field_key+'kind')
-            _, name_col, _, _, _ = st.columns([1, 3, 3, 1, .5])
-            name_col.caption('Name: '+fields['name'])
+            _suggest_default(key+'name', fields['name'])
+            fields['name'] = _control(holding_col.text_input, 'Name · '+asset, value=fields['name'], key=key+'name',
+                label_visibility='collapsed', help='Name to save for this new holding. Editing it does not change the price listing.')
             selected = 'csv-position-'+digest((source, asset))[:24]
-            additions.append(dict(position_key=selected, id='csv-asset-'+digest((source,asset))[:24], account='Portfolio', **fields))
+            addition = dict(position_key=selected, id='csv-asset-'+digest((source,asset))[:24], account='Portfolio', **fields)
+            additions.append(addition)
+            new_details.append((asset, key, addition))
         elif listing and ticker != current:
             listing_changes[existing.id] = listing
         for pair in asset_pairs:
             mapping[pair] = prior.get(pair, selected)
+    if new_details:
+        with st.expander('Asset types'):
+            for asset, key, addition in new_details:
+                kinds = ['crypto','equity','etf','etc','unknown']
+                _suggest_default(key+'kind', addition['instrument_type'])
+                addition['instrument_type'] = _control(st.selectbox, 'Type · '+asset, kinds,
+                    index=kinds.index(addition['instrument_type']), filter_mode=None, key=key+'kind')
     if asset := st.session_state.get(prefix+'search_asset'):
         key = prefix+digest(asset)[:12]+'_'
         with st.container(border=True):

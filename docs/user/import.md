@@ -69,10 +69,17 @@ Use the price-listing dropdown or its search button to find another listing with
 the same live search used when adding a position. Suggestions, names and types
 remain editable; listing changes are saved together with applied transactions.
 The listing label identifies the quote pair; its quote currency is not added to
-the holding name. New positions show their proposed name beneath the holding
-selector; use **Edit** to change it. **Show transactions for** filters the review
+the holding name. Each asset row has a **New / Existing** destination. New holdings
+have an editable name directly in the Holding column; existing holdings and price
+listings use selection-only dropdowns. Use **Search** for live listing search.
+Edited names survive listing changes and navigation. Automatically suggested types
+can be reviewed under **Asset types**. **Show transactions for** filters the review
 table by asset, including received exchange legs and asset fees. It does not
 exclude transactions from the import.
+
+Before upload, there is no review to cancel. After upload, **Discard review** clears
+the file and unsaved choices and returns to the uploader. Changing tabs retains
+the draft. Saved transactions are not deleted by discarding their review.
 
 The template has seven columns:
 

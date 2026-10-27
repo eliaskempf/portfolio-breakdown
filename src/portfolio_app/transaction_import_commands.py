@@ -106,6 +106,8 @@ def positions_content(content, snapshot, additions, *, listing_changes=None):
     raw = pd.read_csv(StringIO(content or EMPTY_CSV), dtype=str, keep_default_na=False)
     if 'position_key' not in raw:
         raw['position_key'] = snapshot.holdings.position_id.tolist()
+    if 'account' not in raw:
+        raw['account'] = snapshot.holdings.account.tolist()
     existing = set(raw.position_key)
     for item in additions:
         allowed = {'position_key','id','name','account','instrument_type','ticker','isin'}

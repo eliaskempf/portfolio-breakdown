@@ -7,6 +7,17 @@ Cancel, completion and workspace switching clear the import_ namespace.
 import streamlit as st
 
 
+def clear_transaction_draft():
+    """Discard only the transaction review, leaving navigation and saved history intact."""
+    for key in list(st.session_state):
+        if key.startswith('import_tx_'):
+            del st.session_state[key]
+    controls = st.session_state.get('import_controls', {})
+    for key in list(controls):
+        if key.startswith('import_tx_'):
+            del controls[key]
+
+
 def review_control(widget, *args, key, **kwargs):
     controls = st.session_state.setdefault('import_controls', {})
     if key not in st.session_state and key in controls:

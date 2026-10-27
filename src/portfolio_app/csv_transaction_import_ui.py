@@ -9,7 +9,7 @@ import streamlit as st
 from portfolio_app.account_journal import load_journal
 from portfolio_app.csv_transaction_imports import event_for, prepare_import
 from portfolio_app.holdings import DataError, parse_holdings
-from portfolio_app.import_state import review_control
+from portfolio_app.import_state import review_control, clear_transaction_draft
 from portfolio_app.positions import read_snapshot
 from portfolio_app.transaction_csv import SIMPLE_FIELDS, TransactionRow, digest, read_csv
 from portfolio_app.transaction_import_commands import positions_content, save_transaction_import, import_confirmation_intervals
@@ -23,8 +23,16 @@ def _rows(journal):
     mode = control(st.radio, 'Transactions', ['Upload CSV', 'Saved imports'], horizontal=True,
                    key='input') if journal.transaction_imports else 'Upload CSV'
     if mode == 'Saved imports':
-        sources = sorted({r.facts['source_id'] for r in journal.transaction_imports})
-        source = control(st.selectbox, 'Import', sources, key='saved_source')
+        sources = list(dict.fromkeys(r.facts['source_id'] for r in journal.transaction_imports))
+        labels = {}
+        for number, source in enumerate(sources, 1):
+            dates = sorted(r.facts.get('effective_date') or r.facts.get('timestamp_utc', '')[:10]
+                           for r in journal.transaction_imports if r.facts['source_id'] == source)
+            dates = [value for value in dates if value]
+            labels[source] = f'Saved transactions {number}' + (f' · {dates[0]} – {dates[-1]}' if dates else '')
+        source = control(st.selectbox, 'Import', sources, format_func=labels.get, filter_mode=None, key='saved_source')
+        st.button('Discard review', on_click=clear_transaction_draft, key='import_tx_discard',
+                  help='Clear this review and return to upload. Saved transactions are retained.')
         replaced = {r.replaces for r in journal.transaction_imports if r.replaces}
         return tuple(TransactionRow(r.raw, r.facts, r.issues) for r in journal.transaction_imports
                      if r.facts['source_id'] == source and r.id not in replaced)
@@ -34,6 +42,8 @@ def _rows(journal):
     content = st.session_state.get('import_tx_content')
     if content:
         st.caption(content[0])
+        st.button('Discard review', on_click=clear_transaction_draft, key='import_tx_discard',
+                  help='Clear the uploaded file and unsaved review choices. Changing tabs keeps the review.')
         return read_csv(content[1])
     st.download_button('Download CSV template', ','.join(SIMPLE_FIELDS)+'\n',
                        file_name='transactions.csv', mime='text/csv')
@@ -43,9 +53,7 @@ def _rows(journal):
 
 def render_transaction_import(directory, *, demo=False):
     directory = Path(directory)
-    from portfolio_app.import_ui import clear_import
     st.subheader('Import transactions')
-    st.button('Cancel transaction import', on_click=clear_import, key='import_tx_cancel')
     try:
         journal, revision = load_journal(directory)
         snapshot = read_snapshot(directory/'holdings.csv')
@@ -88,7 +96,8 @@ def render_transaction_import(directory, *, demo=False):
             try:
                 valid.append((row, event_for(row, mapping)))
             except (DataError, ValueError) as exc:
-                errors.append({'Reference': row.facts['event_id'], 'Problem': str(exc)})
+                problem = 'Choose a holding for every asset used by this transaction.' if str(exc).startswith('Map the custody position') else str(exc)
+                errors.append({'Date': row.date or 'Unknown', 'Asset': row.facts['asset_id'], 'Problem': problem})
         from portfolio_app.transaction_review_ui import render_transactions, review_matches, comparison_status
         active = {i for b in journal.securities for i in b.active_ids}
         if valid:
@@ -108,8 +117,11 @@ def render_transaction_import(directory, *, demo=False):
         # Keep the ordinary path short; row selection and ordering are exceptional.
         selected = [r.identity for r, _ in valid]
         with st.expander('Review options'):
+            from portfolio_app.history_ui import _event_label
+            labels = {r.identity: f'{number}. {r.facts["asset_id"]} · {_event_label(event)}'
+                      for number, (r, event) in enumerate(valid, 1)}
             selected = control(st.multiselect, 'Included transactions', selected, default=selected,
-                format_func=lambda i: next(r.facts['event_id'] for r, _ in valid if r.identity == i), key=token+'selected')
+                format_func=labels.get, key=token+'selected')
         if not selected or conflicts and not corrections:
             return
         positions = set(mapping.values())
@@ -167,7 +179,10 @@ def render_transaction_import(directory, *, demo=False):
             'name':'Position', 'account':'Account', 'before_quantity':'Current units', 'after_quantity':'From history',
             'before_cost':'Current cost', 'after_cost':'From history cost', 'currency':'Currency'}), hide_index=True, width='stretch')
         if preview.cash_changes:
-            st.dataframe(pd.DataFrame(preview.cash_changes), hide_index=True, width='stretch')
+            cash = pd.DataFrame(preview.cash_changes)
+            account_names = {a.id: a.name for a in journal.accounts}
+            cash['account'] = cash.account.map(lambda account: account_names.get(account, 'Cash account'))
+            st.dataframe(cash, hide_index=True, width='stretch')
         comparison = control(st.date_input, 'Balances compared as of', max_value=date.today(), key=token+'comparison')
         if zero:
             st.caption('Starting balance: zero before the first transaction for '+', '.join(holdings.set_index('position_id').loc[needs_start, 'name'])+'. Applying confirms this starting point.')
@@ -175,7 +190,10 @@ def render_transaction_import(directory, *, demo=False):
             st.caption('Applying history replaces current holdings with the reconstructed units and costs shown above.')
         checkpoints = not preview.checkpoints or control(st.checkbox, 'Accept the displayed replacement balances', key=token+'checkpoints')
         if preview.checkpoints:
-            st.dataframe(pd.DataFrame(preview.checkpoints), hide_index=True, width='stretch')
+            checkpoints_table = pd.DataFrame(preview.checkpoints)
+            names = holdings.set_index('position_id')['name'].to_dict()
+            checkpoints_table.insert(0, 'Position', checkpoints_table.position_id.map(names))
+            st.dataframe(checkpoints_table.drop(columns=['position_id']), hide_index=True, width='stretch')
         intervals = import_confirmation_intervals(preview.journal, {c['position_id'] for c in preview.comparisons})
         st.caption('Confirm complete history · '+min(a for a, _ in intervals.values())+' – '+max(b for _, b in intervals.values()))
         st.caption('Includes all purchases, sales, income, fees and transfers. Still backfilling? Apply incomplete history.')

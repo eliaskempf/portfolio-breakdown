@@ -116,6 +116,11 @@ action. Do not expose a combined list of every metric's requirements as mandator
 setup. Keep ordinary gaps subtle. Retrieve supported market data automatically;
 manual repair forms should preselect the position, date and currencies when known.
 Internal identities and fingerprints are storage details, not user-facing labels.
+Never display transaction references, transaction IDs or hash-based IDs in normal
+product UI: tables, selectors, labels, tooltips, notifications and errors must use
+readable names and transaction facts instead. If internal identifiers are needed
+for debugging, expose them only inside an explicitly opened internal diagnostics
+view, never in the normal import or transaction-review workflow.
 Show overwrite confirmation only when a value will actually be replaced.
 
 Offer **Apply and confirm history** as the normal reconciliation action, with a
