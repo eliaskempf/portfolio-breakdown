@@ -41,7 +41,7 @@ root=Path(__file__).parent
 if not hasattr(history, '_test_original'):
     history._test_original=history.history_view
     def delayed(*args, **kwargs):
-        with (root/'calculations.txt').open('a') as f: f.write('calculation\\n')
+        with (root/'calculations.txt').open('a') as f: f.write('chart\\n' if kwargs.get('include_points', True) else 'summary\\n')
         time.sleep(1)
         return history._test_original(*args, **kwargs)
     history.history_view=delayed
@@ -73,7 +73,7 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             page.goto(f'http://127.0.0.1:{port}')
             page.get_by_role('button', name='Open position', exact=True).click()
             dialog = page.get_by_role('dialog'); dialog.wait_for(); settle(page)
-            assert (tmp_path/'calculations.txt').read_text().count('calculation') == 1
+            assert (tmp_path/'calculations.txt').read_text().count('chart') == 1
             dialog.evaluate('e => window.originalDialog=e')
             metrics = dialog.get_by_test_id('stMetric')
             playwright.expect(metrics).to_have_count(3)
@@ -114,7 +114,7 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             for a, b in zip(history_sizes, price_sizes):
                 assert a['width'] == pytest.approx(b['width'], abs=2)
                 assert a['height'] == pytest.approx(b['height'], abs=2)
-            assert (tmp_path/'calculations.txt').read_text().count('calculation') == 1
+            assert (tmp_path/'calculations.txt').read_text().count('chart') == 1
             dialog.get_by_role('radio', name='Holdings', exact=True).click()
             page.wait_for_timeout(200)
             # Returning to cached holdings must remove or hide the old price chart.
@@ -122,7 +122,7 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             assert dialog.locator('.js-plotly-plot').evaluate_all('es=>es.every(e=>e.data?.[0]?.name!=="Price" || getComputedStyle(e).visibility==="hidden")')
             settle(page)
             assert dialog.evaluate('e=>e===window.originalDialog')
-            assert (tmp_path/'calculations.txt').read_text().count('calculation') == 1
+            assert (tmp_path/'calculations.txt').read_text().count('chart') == 1
             assert metrics.all_text_contents() == expected_summary
             assert not dialog.get_by_text('Required inputs', exact=True).count()
             assert not dialog.get_by_text('History inputs', exact=True).count()
@@ -155,7 +155,7 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             playwright.expect(annualized).not_to_have_text('—', timeout=10000)
             assert dialog.evaluate('e=>e===window.originalDialog')
             page.wait_for_timeout(2300)
-            assert (tmp_path/'calculations.txt').read_text().count('calculation') == 2
+            assert (tmp_path/'calculations.txt').read_text().count('summary') == 2
             dialog.get_by_role('button', name='Close', exact=True).first.click()
             playwright.expect(dialog).to_have_count(0)
             page.wait_for_timeout(2300)

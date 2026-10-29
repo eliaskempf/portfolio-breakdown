@@ -57,6 +57,9 @@ class GainSummary:
         if self.review_required_only:
             return ('Gain uses recorded transactions. Review the selected transactions and confirm history completeness; '
                     'applying transactions to the portfolio does not confirm completeness.')
+        if any('Estimated acquisition cost' in r or 'Estimated monetary valuation' in r for r in self.reasons):
+            return ('Gain includes imported estimates for acquisition costs or transaction valuations. '
+                    'Confirming history completeness does not make those inputs exact.')
         if self.amount is None:
             return 'Available values and costs are insufficient to calculate a gain.'
         return ('Gain uses available costs and recorded transactions. Missing history or inputs '

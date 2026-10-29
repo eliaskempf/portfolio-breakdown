@@ -458,3 +458,64 @@ render_portfolio_history(root, prepared, automatic=True)
     assert rendered[0]['view'].all_known.value == 120
     assert rendered[1]['view'].all_known.value == 150
     assert rendered[0]['calculation'] is not rendered[1]['calculation']
+
+
+def test_interval_switches_reuse_ledgers_and_previous_points(tmp_path, monkeypatch):
+    from datetime import date
+    from test_history_view import fixture as chart_fixture
+    import portfolio_app.history_ui as ui
+    import portfolio_app.history_view as charts
+    import portfolio_app.personal_performance as performance
+    import portfolio_app.input_cache as cache
+    monkeypatch.setattr(cache.st, 'session_state', {})
+    class FixedDate(date):
+        @classmethod
+        def today(cls): return cls(2024, 6, 16)
+    monkeypatch.setattr(ui, 'date', FixedDate)
+    journal, scope, store = chart_fixture()
+    calls, replays = [], []
+    calculate, replay = charts.calculate_history, performance.replay_securities
+    def counted(*args, **kwargs):
+        calls.append((args[3], args[4], kwargs.get('annualized', True)))
+        return calculate(*args, **kwargs)
+    def replayed(*args, **kwargs):
+        replays.append(kwargs.get('as_of'))
+        return replay(*args, **kwargs)
+    monkeypatch.setattr(charts, 'calculate_history', counted)
+    monkeypatch.setattr(performance, 'replay_securities', replayed)
+    def view(period): return ui.prepared_history_view(tmp_path, journal, scope, store, 'synthetic', period)
+    all_view = view('All')
+    before_replays, before_calls = len(replays), len(calls)
+    month = view('1M')
+    assert len(replays) == before_replays  # Range changes never reconstruct the same ledger state.
+    assert len(calls) == before_calls + 2  # New range result and new requested-start hover point.
+    assert view('All') == all_view
+    assert len(calls) == before_calls + 2
+    assert month == charts.history_view(journal, scope, store, '1M', today=FixedDate.today())
+
+
+def test_reused_context_expires_for_workspace_currency_date_and_evidence(tmp_path, monkeypatch):
+    from datetime import date
+    from test_history_view import fixture as chart_fixture
+    import portfolio_app.history_ui as ui
+    import portfolio_app.input_cache as cache
+    monkeypatch.setattr(cache.st, 'session_state', {})
+    journal, scope, store = chart_fixture()
+    def context(directory=tmp_path, journal=journal, revision='synthetic', target='EUR'):
+        return ui.prepared_history_calculation(directory, journal, store, revision, target=target)
+    first = context()
+    assert context() is first
+    assert context(directory=tmp_path/'other-workspace') is not first
+    first = context()
+    assert context(target='USD') is not first
+    first = context()
+    assert context(revision='changed-observations') is not first
+    first = context()
+    changed = replace(journal, securities=(replace(journal.securities[0], active_ids=()),))
+    assert context(journal=changed) is not first
+    first = context()
+    class Tomorrow(date):
+        @classmethod
+        def today(cls): return date.today().fromordinal(date.today().toordinal()+1)
+    monkeypatch.setattr(ui, 'date', Tomorrow)
+    assert context() is not first

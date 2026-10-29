@@ -69,8 +69,11 @@ the outgoing content before doing expensive work for the next view. Do not
 calculate a complete history merely to
 choose an already-selected tab, or repeat calculations during the same render.
 Reuse chart results only while journal facts, observation revisions, scope, currency,
-period and calendar date remain unchanged. Within each chart, share dated ledger
-states across overlapping intervals without relaxing coverage checks. The Overview
+period and calendar date remain unchanged. Within and across chart ranges, share dated ledger
+states and previously calculated hover results without relaxing coverage checks.
+Keep this context session-local and expire it when workspace, journal, observations,
+reporting currency or calendar date changes. Fixed position headlines request only
+full-history summary results; they do not generate chart points. The Overview
 history chart, current-gain summary and category comparison share one calculation
 context for the same journal and observation snapshot. Current quotes remain
 separate from dated historical valuations. Recorded cost and cash components may

@@ -47,17 +47,43 @@ def _key(directory, identity):
     return 'personal_history_' + sha256((str(directory.resolve())+identity).encode()).hexdigest()[:12] + '_'
 
 
+def prepared_history_calculation(directory, journal, observations, revision, *, target=None):
+    """One session-owned ledger context across scopes and range switches."""
+    from portfolio_app.currency_display import reporting_currency
+    from portfolio_app.personal_performance import HistoryCalculation
+    from portfolio_app.security_history import history_fingerprint
+    target = target or reporting_currency()
+    signature = str(directory.resolve()), history_fingerprint(journal), revision, target, date.today()
+    cache = st.session_state.setdefault('parsed_inputs', {})
+    previous = cache.get('history_calculation')
+    if previous is None or previous[0] != signature:
+        # Results and ledger facts must expire together, including confirmations.
+        for key in list(cache):
+            if key.startswith('history_view_'):
+                del cache[key]
+        previous = (signature, HistoryCalculation(journal, observations))
+        cache['history_calculation'] = previous
+    return previous[1]
+
+
 def prepared_history_view(directory, journal, scope, observations, revision, period='1Y', *, target=None, include_points=True, calculation=None):
     """Reuse a chart across dialog interactions until its actual inputs change."""
     from portfolio_app.currency_display import reporting_currency
     from portfolio_app.history_view import history_view
     from portfolio_app.input_cache import cached_input
-    from portfolio_app.security_history import history_fingerprint
     target = target or reporting_currency()
+    calculation = calculation or prepared_history_calculation(directory, journal, observations, revision, target=target)
     stamp = date.today()
-    signature = str(directory.resolve()), history_fingerprint(journal), revision, scope, period, target, stamp, include_points
-    return cached_input('history_view_'+scope.key+('_chart' if include_points else '_summary'), signature,
+    signature = str(directory.resolve()), calculation.fingerprint, revision, scope, period, target, stamp, include_points
+    key = 'history_view_'+scope.key+'_'+period+('_chart' if include_points else '_summary')
+    view = cached_input(key, signature,
         lambda: history_view(journal, scope, observations, period, today=stamp, target=target, include_points=include_points, calculation=calculation))
+    cache = st.session_state['parsed_inputs']
+    cache[key] = cache.pop(key)
+    entries = [name for name in cache if name.startswith('history_view_')]
+    for name in entries[:-32]:
+        del cache[name]
+    return view
 
 
 def _record_id(key, record):
@@ -799,8 +825,7 @@ def prepare_portfolio_history(directory, holdings, *, config, bucket='', display
     key = _key(directory, scope.key)
     observations, revision = load_observations(directory)
     period = st.session_state.get(key+'period') or '1Y'
-    from portfolio_app.personal_performance import HistoryCalculation
-    calculation = HistoryCalculation(journal, observations)
+    calculation = prepared_history_calculation(directory, journal, observations, revision)
     view = prepared_history_view(directory,journal,scope,observations,revision,period,target=reporting_currency(),
                                  include_points=include_points,calculation=calculation)
     from portfolio_app.gain_accounting import current_component_values, summarize_known_gain
@@ -859,8 +884,7 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
         period = st.session_state.get(key+'period') or '1Y'
         current = revision, period, date.today()
         if current != signature:
-            from portfolio_app.personal_performance import HistoryCalculation
-            calculation = HistoryCalculation(journal, observations)
+            calculation = prepared_history_calculation(directory, journal, observations, revision, target=target)
             cached = dict(prepared or {}, observations=observations, revision=revision,
                 calculation=calculation, history_signature=current,
                 view=prepared_history_view(directory, journal, scope, observations, revision, period, target=target,

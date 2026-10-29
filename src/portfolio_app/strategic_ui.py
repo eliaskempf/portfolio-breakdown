@@ -22,7 +22,7 @@ from portfolio_app.performance import position_performance, summarize_performanc
 from portfolio_app.strategic import bucket_paths, category_labels, bucket_positions, strategic_summary, strategic_tree, strategic_performance
 
 
-def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None, open_capital_targets=None, current_valued=None, automatic_history=False):
+def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None, open_capital_targets=None, current_valued=None, automatic_history=False, show_sold_positions=False):
     if 'unrealized_gain_reporting' not in valued:
         valued = position_performance(valued)
     from portfolio_app.futures import funded_strategy_positions
@@ -248,7 +248,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                             key='strategic_allocation_table', context=f'{position_context}_{bucket}_{measure}',
                             title=title, default_sort='% of exposure' if market else 'Value')
     st.subheader('Positions')
-    render_overview_positions(selected, config, context=f'overview_{position_context}_{bucket}', scope=scope,
+    visible = selected if show_sold_positions else selected.loc[selected.shares.ne(0)]
+    render_overview_positions(visible, config, context=f'overview_{position_context}_{bucket}', scope=scope,
                               open_position=open_position, edit_position=edit_position, future=scoped_future,
                               open_future=lambda: render_future_position(scoped_future, data_dir))
 

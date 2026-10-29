@@ -8,12 +8,11 @@ from portfolio_app.presentation import return_percent
 
 
 def render_position_summary(row, directory, journal, *, has_history, demo=False):
-    from portfolio_app.history_ui import _key, prepared_history_view
+    from portfolio_app.history_ui import prepared_history_view, prepared_history_calculation
     from portfolio_app.history_observations import HistoryScope, load_observations
     from portfolio_app.personal_history_refresh import refresher
     scope = HistoryScope((row.position_id,))
     target = reporting_currency()
-    key = _key(directory, row.position_id)+'result_'
     if has_history and not demo:
         refresher.request(directory, journal, scope, target)
     cached, signature = None, None
@@ -41,10 +40,11 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
             current = file_stamp(directory/'history-observations.json'), date.today()
             if current != signature:
                 observations, revision = load_observations(directory)
-                period = st.session_state.get(key+'period') or '1Y'
-                view = prepared_history_view(directory, journal, scope, observations, revision, period, target=target)
+                calculation = prepared_history_calculation(directory, journal, observations, revision, target=target)
+                view = prepared_history_view(directory, journal, scope, observations, revision, 'All',
+                    target=target, include_points=False, calculation=calculation)
                 known = summarize_known_gain(journal, scope, observations, date.today().isoformat(), target,
-                    current_values={row.position_id: amount(value)}, summary_rows=row.to_frame().T)
+                    current_values={row.position_id: amount(value)}, summary_rows=row.to_frame().T, calculation=calculation)
                 cached, signature = (view, known), current
             view, known = cached
             gain, capital = known.amount, known.capital
