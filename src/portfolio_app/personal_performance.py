@@ -336,15 +336,26 @@ def coverage_reasons(journal, scope, observations, start, end, *, fingerprint=No
     reviewed = any(set(scope.positions) <= set(r.scope.positions) and set(scope.accounts) <= set(r.scope.accounts)
                    and not r.scope.unresolved and r.start <= start and r.end >= end
                    and matches(r) for r in observations.reviews)
-    if not reviewed and not scope.accounts and len(scope.positions) == 1:
+    if not reviewed and not scope.accounts and scope.positions and not scope.unresolved:
         from portfolio_app.security_history import accounting_fingerprint
-        book = books.get(scope.positions[0])
-        if book and book.reviews:
+        def position_reviewed(identity):
+            book = books.get(identity)
+            if book is None or not book.active:
+                return False
+            # A reviewed inception at zero covers earlier empty time; a later
+            # nonzero snapshot does not attest anything about the missing period.
+            since = selected_events(book)[0].date if confirmed_empty_before(book, start) else start
+            if any(identity in r.scope.positions and not r.scope.unresolved
+                   and r.start <= since and r.end >= end and matches(r) for r in observations.reviews):
+                return True
+            if not book.reviews:
+                return False
             review = book.reviews[-1]
-            reviewed = (bool(review.complete_from) and review.complete_from <= start and review.complete_through >= end
+            return (bool(review.complete_from) and review.complete_from <= since and review.complete_through >= end
                         and review.active_ids == book.active_ids
                         and (review.facts_fingerprint == position_fingerprint(book.position_id)
                              or review.facts_fingerprint == accounting_fingerprint(journal)))
+        reviewed = all(position_reviewed(identity) for identity in scope.positions)
     if not reviewed:
         reasons.append(Issue('Review complete scope membership, transactions, income and charges for this interval', 'coverage'))
     for identity in scope.positions:

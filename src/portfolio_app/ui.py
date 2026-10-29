@@ -177,15 +177,15 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     def toggle_unit():
         st.session_state[unit_key] = currency_symbol() if st.session_state.get(unit_key) == '%' else '%'
         remember_unit()
-    percent, hide_empty = False, False
+    percent, hide_empty = False, not st.session_state.get('show_sold_positions', False)
     if display_settings is not None:
         with display_settings:
             st.markdown('**Display**')
             percent = st.segmented_control('Performance display', [currency_symbol(), '%'], help='Show unrealized performance as a currency amount or a percentage of known cost.',
                 default='%' if st.session_state.get('performance_preferences', {}).get(context_key) == '%' else currency_symbol(),
                 key=unit_key, on_change=remember_unit) == '%'
-            hide_empty = st.checkbox('Hide empty positions', key='hide_empty_positions',
-                help='Hide zero-quantity rows in Positions and Exposure. Saved targets and planning weights stay unchanged.')
+            hide_empty = not st.checkbox('Show sold positions', key='show_sold_positions',
+                help='Include zero-unit positions in Positions and Exposure. History, targets and planning weights are retained.')
     if holdings.empty and st.session_state.get('currency_change_requested'):
         if render_currency_dialog(data_dir, snapshot, currency_settings, price_service or prices_for(data_dir), historical):
             mark_view_ready()
@@ -291,7 +291,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if positions.open:
         with positions:
             render_position_editor(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, embedded=True,
-                                   allocation=allocation, valued=display_valued.loc[display_valued.shares.gt(0)].copy() if hide_empty else display_valued,
+                                   allocation=allocation, valued=display_valued.loc[display_valued.shares.ne(0)].copy() if hide_empty else display_valued,
                                    account_valued=valued, percent=percent, defer_dialog=True)
     def open_valued_position(position_id, *, editing=False):
         if actual_active and position_id in {p.id for p in journal.positions} | {investment.id for investment in journal.investments}:
@@ -350,7 +350,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if exposure.open and not unsupported_records:
         with exposure:
             if visible.empty and exposure_result is None:
-                st.info('No visible positions. Add a position or turn off Hide empty positions.')
+                st.info('No open positions', icon=':material/info:')
             else:
                 render_analysis(data_dir, holdings, classifications, funds, demo=offline_demo,
                     price_service=price_service, source_valued=visible, performance_percent=percent,

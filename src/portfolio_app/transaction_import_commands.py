@@ -84,7 +84,8 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
                 raise DataError('The comparison date must cover all active movements in these positions.')
         if complete_intervals is not None:
             touched = {c['position_id'] for c in preview.comparisons}
-            if not selected or not preview.applied or complete_intervals != import_confirmation_intervals(proposed, touched):
+            expected = import_confirmation_intervals(proposed, touched)
+            if not selected or not preview.applied or any(p not in expected or interval != expected[p] for p, interval in complete_intervals.items()):
                 raise DataError('History review intervals changed. Review the proposed history again.')
         if selected and preview.applied:
             touched = {c['position_id'] for c in preview.comparisons}

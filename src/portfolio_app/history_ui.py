@@ -537,10 +537,11 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
     def apply(excluded, complete):
         selected = chosen(excluded)
         intervals = build(excluded).intervals
-        start, end = intervals.get(candidate.position_id, ('', '')) if complete else ('', '')
+        start, end = intervals.get(candidate.position_id, ('', '')) if complete is True else ('', '')
         save_history(directory, selected[0], expected_journal_revision=revision, expected_holdings_revision=snapshot.revision,
             activate=True, resolution=resolution, accept_balance_change=True, accept_cash_change=True,
-            accept_duplicates=True, complete_from=start, complete_through=end, other_changes=selected[1:])
+            accept_duplicates=True, complete_from=start, complete_through=end, other_changes=selected[1:],
+            complete_intervals={p:intervals[p] for p in complete} if isinstance(complete, frozenset) else None)
         st.session_state.pop(key+'reviewed', None)
         st.session_state[(return_key or _key(directory, candidate.position_id))+'screen'] = 'list'
         st.rerun()

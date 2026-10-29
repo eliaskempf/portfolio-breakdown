@@ -171,11 +171,8 @@ def render_import(path, snapshot, funds, *, demo=False):
 
 
 def render_import_next_steps():
-    if identity := st.session_state.pop('import_tx_pending_complete', None):
+    if st.session_state.pop('import_tx_pending_complete', None):
         clear_import()
-        from portfolio_app.position_ui import request_position
-        request_position(identity, local=False)
-        st.session_state[f'position_edit_detail_view_{identity}'] = 'Transactions'
     if st.session_state.pop('import_pending_complete', False):
         clear_import()
         st.session_state['import_complete'] = True

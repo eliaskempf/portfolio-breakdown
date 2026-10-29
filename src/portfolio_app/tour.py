@@ -88,7 +88,7 @@ def _start() -> None:
     create_demo_data(Path(owner.name))
     clear_view()
     st.session_state.pop('tour_welcome', None)
-    st.session_state.update(active_portfolio='Demo portfolio', hide_empty_positions=False)
+    st.session_state.update(active_portfolio='Demo portfolio', show_sold_positions=False)
     _move(0)
 
 

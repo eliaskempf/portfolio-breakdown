@@ -155,3 +155,45 @@ def test_existing_manual_review_hash_survives_csv_schema_extension():
     # Recorded on the history branch before the CSV schema extension.
     assert security_history_fingerprint(Journal(version=2, securities=(book,)), book.position_id) == (
         'a73230959aaada846fd5b90bda8d3791680a08c5ebf5f2faa8ed447b06cfb8c5')
+
+
+@pytest.mark.parametrize('receipt_source', ['observation', 'journal'])
+@pytest.mark.parametrize('later_zero', [False, True])
+def test_combined_scope_accepts_individual_confirmations(tmp_path, receipt_source, later_zero):
+    from portfolio_app.history_commands import record_reviews
+    from portfolio_app.history_confirmation import confirmation_intervals
+    journal, revision = two_positions(tmp_path)
+    if later_zero:
+        other = journal.securities[1]
+        opening = replace(other.records[0], date='2024-06-30', quantity=0, amount=None, source='confirmed_zero_start')
+        other = replace(other, records=(opening,), active_ids=(opening.id,))
+        journal = replace(journal, securities=(journal.securities[0], other))
+        save_journal(tmp_path, journal, revision)
+    ids = tuple(b.position_id for b in journal.securities)
+    if receipt_source == 'observation':
+        confirm(tmp_path, ids)
+        observations = load_observations(tmp_path)[0]
+    else:
+        intervals = {p:(a,TODAY.isoformat()) for p,(a,_) in confirmation_intervals(journal, ids).items()}
+        journal = record_reviews(journal, ids, TODAY.isoformat(), intervals)
+        observations = ObservationStore()
+    scope = HistoryScope(ids)
+    assert not coverage_reasons(journal, scope, observations, '2024-01-01', TODAY.isoformat())
+    assert coverage_reasons(journal, scope, observations, '2024-01-01', '2026-10-25')
+    assert coverage_reasons(journal, HistoryScope(ids, ('invented-account',)), observations, '2024-01-01', TODAY.isoformat())
+    assert coverage_reasons(journal, HistoryScope(ids, unresolved=('missing-member',)), observations, '2024-01-01', TODAY.isoformat())
+    changed = replace(journal.securities[0], records=(*journal.securities[0].records, E('pending', 'note', '2024-02-01')))
+    assert coverage_reasons(replace(journal, securities=(changed, journal.securities[1])), scope, observations, '2024-01-01', TODAY.isoformat())
+
+
+def test_combined_scope_does_not_bridge_unconfirmed_or_nonzero_later_history(tmp_path):
+    journal, revision = two_positions(tmp_path)
+    confirm(tmp_path, ('position-0',))
+    scope = HistoryScope(tuple(b.position_id for b in journal.securities))
+    assert coverage_reasons(journal, scope, load_observations(tmp_path)[0], '2024-01-01', TODAY.isoformat())
+    other = journal.securities[1]
+    other = replace(other, records=(replace(other.records[0], date='2024-06-30'),))
+    journal = replace(journal, securities=(journal.securities[0], other))
+    save_journal(tmp_path, journal, revision)
+    confirm(tmp_path, ('other',))
+    assert coverage_reasons(journal, scope, load_observations(tmp_path)[0], '2024-01-01', TODAY.isoformat())

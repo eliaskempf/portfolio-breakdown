@@ -105,7 +105,7 @@ def record_reviews(proposed, positions, comparison_date, intervals=None, *, reso
 def save_history(directory, book, *, expected_journal_revision, expected_holdings_revision,
                  activate=False, resolution='accept', complete_from='', complete_through='',
                  accept_balance_change=False, accept_cash_change=False, accept_duplicates=False,
-                 other_changes=()):
+                 other_changes=(), complete_intervals=None):
     """Publish all legs together; provenance never changes transaction permissions."""
     directory = Path(directory)
     with workspace_lock(directory):
@@ -147,7 +147,12 @@ def save_history(directory, book, *, expected_journal_revision, expected_holding
             before, after = replay(journal), replay(proposed)
             if (before.cash, before.unknown_cash) != (after.cash, after.unknown_cash) and not accept_cash_change:
                 raise DataError('Review and accept the linked cash changes before activation.')
-            intervals = None
+            intervals = complete_intervals
+            if complete_intervals is not None:
+                from portfolio_app.history_confirmation import confirmation_intervals
+                expected = confirmation_intervals(proposed, touched)
+                if complete_from or complete_through or any(p not in expected or interval != expected[p] for p, interval in complete_intervals.items()):
+                    raise DataError('History review intervals changed. Review the proposed history again.')
             if complete_from:
                 from portfolio_app.history_confirmation import confirmation_intervals
                 intervals = confirmation_intervals(proposed, touched)

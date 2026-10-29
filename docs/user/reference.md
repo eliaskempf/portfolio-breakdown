@@ -75,7 +75,8 @@ investment. Its current value is zero without requiring a quote, and its target
 contributes to its labels immediately. Add classification labels for new assets
 in the private YAML file; otherwise they appear under Unclassified.
 
-The header’s **Portfolio settings → Hide empty positions** changes only visibility in Positions and Exposure.
+Zero-unit positions are hidden by default. The header’s **Portfolio settings → Show sold positions**
+reveals them in Positions and Exposure, including planned positions with no units. History and targets are retained.
 The separate Rebalance option **Exclude empty positions and redistribute targets**
 removes zero-share rows from the planning calculation. Their combined target is divided equally among
 remaining unique asset IDs within each category (or the whole legacy portfolio),

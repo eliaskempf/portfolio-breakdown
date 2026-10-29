@@ -26,6 +26,18 @@ def upload(page, content):
     settle(page)
 
 
+def apply_batch_incomplete(page):
+    for _ in range(2):
+        page.get_by_role('button', name='Mark incomplete', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Apply reviewed holdings', exact=True).click(); settle(page)
+
+
+def open_transactions(page, name):
+    assert not page.get_by_role('dialog').count()
+    page.get_by_role('table', name='Positions', exact=True).get_by_text(name, exact=True).click(); settle(page)
+    page.get_by_role('dialog').get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+
+
 def test_simple_upload_apply_edit_and_remove_in_normal_transactions(import_page):
     page, path = import_page
     content = (b'reference,date,type,asset,quantity,amount,currency,received_asset,received_quantity\n'
@@ -43,7 +55,8 @@ def test_simple_upload_apply_edit_and_remove_in_normal_transactions(import_page)
     page.get_by_role('tab', name='Overview', exact=True).click(); settle(page)
     page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
     page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
-    page.get_by_role('button', name='Apply incomplete history', exact=True).click(); settle(page)
+    apply_batch_incomplete(page)
+    open_transactions(page, 'Aur')
     table = page.get_by_role('table', name='Transactions', exact=True)
     playwright.expect(table).to_be_visible()
     journal, _ = load_journal(path.parent)
@@ -55,7 +68,7 @@ def test_simple_upload_apply_edit_and_remove_in_normal_transactions(import_page)
     page.get_by_role('button', name='Save changes', exact=True).click(); settle(page)
     assert sorted(s.quantity for s in replay_securities(load_journal(path.parent)[0].securities).positions.values()) == [4,8]
     page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
-    page.get_by_role('button', name='Apply incomplete history', exact=True).click(); settle(page)
+    apply_batch_incomplete(page)
     assert sorted(s.quantity for s in replay_securities(load_journal(path.parent)[0].securities).positions.values()) == [5,8]
     table = page.get_by_role('table', name='Transactions', exact=True)
     table.get_by_role('checkbox', name=re.compile('Select .*Exchange')).check()
@@ -77,7 +90,7 @@ def test_estimated_checkpoint_requires_explicit_reconciliation(import_page):
     page.get_by_text('Accept the displayed replacement balances', exact=True).click(); settle(page)
     playwright.expect(apply).to_be_enabled()
     apply.click(); settle(page)
-    playwright.expect(page.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
+    assert not page.get_by_role('dialog').count()
     states=replay_securities(load_journal(path.parent)[0].securities).positions
     assert sum(s.quantity for s in states.values()) == 10
     assert next(iter(states.values())).costs[0]['quality'] == 'estimated'
@@ -219,7 +232,12 @@ def test_partial_fills_share_one_optional_group_and_apply_together(import_page):
     page.screenshot(path=str(path.parent.parent / 'synthetic-partial-fills-review.png'))
     assert not path.exists()
     page.get_by_role('button', name='Apply incomplete history', exact=True).click(); settle(page)
-    playwright.expect(page.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
+    assert not page.get_by_role('dialog').count()
     journal, _ = load_journal(path.parent)
+    assert not page.get_by_role('table', name='Positions', exact=True).get_by_text('Aur', exact=True).count()
+    page.get_by_role('button', name='Portfolio settings', exact=True).click(); settle(page)
+    page.get_by_text('Show sold positions', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Portfolio settings', exact=True).click(); settle(page)
+    open_transactions(page, 'Aur')
     assert len(journal.transaction_imports) == 4
     assert next(iter(replay_securities(journal.securities).positions.values())).quantity == 0

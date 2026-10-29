@@ -127,8 +127,14 @@ for debugging, expose them only inside an explicitly opened internal diagnostics
 view, never in the normal import or transaction-review workflow.
 Show overwrite confirmation only when a value will actually be replaced.
 
-Offer **Apply and confirm history** as the normal reconciliation action, with a
-visible interval and an **Apply incomplete history** alternative. Reconciliation
+For a single holding, offer **Apply and confirm history** as the normal reconciliation action, with a
+visible interval and an **Apply incomplete history** alternative. For multiple holdings,
+review each holding with **Confirm this holding** or **Mark incomplete**, then
+**Apply reviewed holdings** in one atomic save. Only explicitly confirmed holdings
+receive completeness intervals. Changes to the reviewed facts reset these decisions.
+Return CSV imports to Positions after saving without opening an arbitrary holding.
+Valid per-holding confirmations also satisfy a combined securities-only scope;
+account coverage and unsupported earlier periods still require their own evidence. Reconciliation
 and completeness remain distinct facts; the combined action explicitly records
 both in one journal write. Matching today's holding must never silently certify
 omitted sales or income. Keep confirmation inside the existing history review;

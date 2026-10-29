@@ -200,9 +200,10 @@ def _review_import(directory, draft):
         save_transaction_import(directory, draft['rows'], draft['mapping'], expected_journal_revision=revision,
             expected_holdings_revision=snapshot.revision, additions=draft['additions'], listing_changes=draft['listing_changes'],
             accept_reconciliation=True, accept_checkpoints=True, comparison_date=date.today().isoformat(),
-            complete_intervals=preview.intervals if complete else None, expected_observations_revision=observation_revision,
+            complete_intervals=(preview.intervals if complete is True else
+                {p:preview.intervals[p] for p in complete} if isinstance(complete, frozenset) else None), expected_observations_revision=observation_revision,
             expected_reporting_currency=target, **options(excluded))
-        st.session_state['import_tx_pending_complete'] = preview.comparisons[0]['position_id']
+        st.session_state['import_tx_pending_complete'] = True
         _return_to_import()
         st.rerun()
     render_history_review(build, key='import_tx_'+draft['token']+'review_', apply=apply, keep=_return_to_import, keep_label='Back to import')

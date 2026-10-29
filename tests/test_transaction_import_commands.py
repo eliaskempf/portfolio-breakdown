@@ -162,3 +162,20 @@ def test_failed_history_publication_rolls_back_staged_listing(tmp_path, monkeypa
         save(tmp_path, snapshot, listing_changes={'aur': Instrument('AUR-EUR', 'Invented Aurora', kind='CRYPTOCURRENCY')})
     assert (tmp_path/'holdings.csv').read_bytes() == before
     assert not load_journal(tmp_path)[0].securities
+
+
+def test_partial_asset_confirmations_preserve_atomic_import(tmp_path):
+    from portfolio_app.transaction_import_commands import import_confirmation_intervals
+    from portfolio_app.csv_transaction_imports import prepare_import
+    snapshot = setup(tmp_path)
+    rows = scenario()
+    preview = prepare_import(load_journal(tmp_path)[0], snapshot.holdings, rows, MAPPING,
+                             selected_ids=[r.identity for r in rows], starts_at_zero=True)
+    intervals = import_confirmation_intervals(preview.journal, {c['position_id'] for c in preview.comparisons})
+    with pytest.raises(DataError, match='intervals changed'):
+        save(tmp_path, snapshot, complete_intervals={'unknown': next(iter(intervals.values()))})
+    assert not load_journal(tmp_path)[0].securities
+    result = save(tmp_path, snapshot, complete_intervals={'desk': intervals['desk']})
+    assert {b.position_id:bool(b.reviews[-1].complete_from) for b in result.journal.securities} == {
+        b.position_id:b.position_id == 'desk' for b in result.journal.securities}
+    assert replay_securities(result.journal.securities).positions == replay_securities(preview.journal.securities).positions

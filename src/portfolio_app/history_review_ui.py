@@ -86,9 +86,14 @@ def _balances(preview, key):
     items = {c['position_id']: c for c in preview.comparisons}
     position = next(iter(items))
     if len(items) > 1:
+        selection_key = key+'holding'
+        controls = st.session_state.setdefault('import_controls', {})
+        selected = st.session_state.get(selection_key, controls.get(selection_key))
+        if selected is not None and selected not in items:
+            st.session_state[selection_key] = position
+            controls[selection_key] = position
         position = review_control(st.selectbox, 'Holding to review', list(items),
             format_func=lambda p: items[p]['name'], filter_mode=None, key=key+'holding')
-        st.caption(f'{len(items)} holdings in this review')
     item = items[position]
     known = position in preview.known_positions
     if len(items) == 1:
@@ -132,6 +137,8 @@ def _balances(preview, key):
         st.table(pd.DataFrame([{'Account':names.get(c['account'], 'Linked account'), 'Currency':c['currency'],
             'Current balance':_money(c['before']), 'After applying':_money(c['after'])} for c in preview.cash]), hide_index=True, border='horizontal')
 
+    return position
+
 
 def render_history_review(build_preview, *, key, apply, keep, action_label=None, keep_label='Keep portfolio unchanged'):
     """Build from unchanged evidence, then recompute exclusions before final acceptance."""
@@ -151,7 +158,7 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
         st.button(keep_label, key=key+'keep', on_click=keep)
         return preview
     with balances:
-        _balances(preview, key)
+        position = _balances(preview, key)
     if preview.starting_note:
         st.caption(preview.starting_note)
     checkpoints = True
@@ -162,18 +169,44 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
         table.insert(0, 'Position', table.position_id.map(names))
         st.dataframe(table.drop(columns=['position_id']), hide_index=True, width='stretch')
     if action_label is None:
-        start = min(a for a, _ in preview.intervals.values())
-        end = max(b for _, b in preview.intervals.values())
+        start, end = preview.intervals[position]
         st.caption(f'Confirm complete history · {date.fromisoformat(start):%d %b %Y} – {date.fromisoformat(end):%d %b %Y}')
-        if len(set(preview.intervals.values())) > 1:
-            names = {c['position_id']:c['name'] for c in preview.comparisons}
-            with st.expander('History intervals'):
-                st.dataframe(pd.DataFrame([dict(Position=names[p], From=a, Through=b) for p,(a,b) in preview.intervals.items()]), hide_index=True)
     if preview.warnings:
         with st.expander('Transaction details'):
             for warning in preview.warnings:
                 st.caption(warning)
     blocked = not checkpoints or any(c['after'] is None for c in preview.cash)
+    multiple = len(preview.comparisons) > 1 and action_label is None
+    if multiple:
+        from portfolio_app.security_history import history_fingerprint
+        signature = digest([history_fingerprint(preview.journal), str(preview.comparisons),
+                            preview.intervals, sorted(excluded)])
+        state_key = key+'asset_reviews'
+        state = st.session_state.get(state_key, {})
+        if state.get('signature') != signature:
+            state = {'signature':signature, 'choices':{}}
+            st.session_state[state_key] = state
+        choices = state['choices']
+        identities = [c['position_id'] for c in preview.comparisons]
+        st.caption(f'Reviewed {len(choices)} / {len(identities)}')
+        if position in choices:
+            st.caption('Complete history' if choices[position] else 'Incomplete history')
+        def decide(complete):
+            choices[position] = complete
+            following = next((p for p in identities if p not in choices), position)
+            st.session_state[key+'holding'] = following
+            st.session_state.setdefault('import_controls', {})[key+'holding'] = following
+        with st.container(horizontal=True):
+            st.button('Confirm this holding', key=key+'confirm_asset', disabled=blocked,
+                      on_click=decide, args=(True,), type='primary')
+            st.button('Mark incomplete', key=key+'incomplete_asset', disabled=blocked,
+                      on_click=decide, args=(False,))
+        with st.container(horizontal=True, key=key+'actions'):
+            if st.button('Apply reviewed holdings', key=key+'save',
+                         disabled=blocked or any(p not in choices for p in identities)):
+                apply(excluded, frozenset(p for p in identities if choices[p]))
+            st.button(keep_label, key=key+'keep', on_click=keep)
+        return preview
     with st.container(horizontal=True, key=key+'actions'):
         if st.button(action_label or 'Apply and confirm history', key=key+'save', disabled=blocked, type='primary',
                      help='Apply the displayed balances and retain selected similar entries. Confirming history declares all transactions in the shown interval recorded.' if action_label is None else 'Apply the displayed balances and retain selected similar entries.'):

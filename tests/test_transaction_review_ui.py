@@ -83,8 +83,20 @@ def test_asset_filter_includes_received_leg_without_excluding_other_transactions
     assert not app.exception
     assert app.dataframe[0].value.Transaction.tolist() == ['Exchange']
     button(app, 'Review against portfolio').click().run()
-    button(app, 'Apply incomplete history').click().run()
     assert not app.exception
+    assert button(app, 'Apply reviewed holdings').disabled
+    first = next(s for s in app.selectbox if s.label == 'Holding to review').value
+    button(app, 'Confirm this holding').click().run()
+    assert not app.exception
+    assert button(app, 'Apply reviewed holdings').disabled
+    assert not load_journal(tmp_path)[0].securities
+    assert next(s for s in app.selectbox if s.label == 'Holding to review').value != first
+    button(app, 'Mark incomplete').click().run()
+    assert not app.exception
+    button(app, 'Apply reviewed holdings').click().run()
+    assert not app.exception
+    journal = load_journal(tmp_path)[0]
+    assert {b.position_id:bool(b.reviews[-1].complete_from) for b in journal.securities} == {b.position_id:b.position_id == first for b in journal.securities}
     positions = replay_securities(load_journal(tmp_path)[0].securities).positions
     assert sorted(s.quantity for s in positions.values()) == [4,8]
 
@@ -286,3 +298,19 @@ def test_invalid_reconstruction_can_return_to_import_without_writes(tmp_path):
     assert any(s.label == 'Holding · BTC' for s in app.selectbox)
     assert not (tmp_path/'holdings.csv').exists()
     assert not load_journal(tmp_path)[0].transaction_imports
+
+
+def test_changing_reviewed_entries_requires_fresh_asset_decisions(tmp_path):
+    app = launch(tmp_path, b'reference,date,type,asset,quantity,amount,currency\n'
+        b'a,2024-01-01,buy,AUR,1,10,EUR\nb,2024-01-01,buy,AUR,1,10,EUR\nc,2024-01-01,buy,ORB,1,10,EUR\n')
+    button(app, 'Review against portfolio').click().run()
+    button(app, 'Confirm this holding').click().run()
+    button(app, 'Confirm this holding').click().run()
+    assert not app.exception
+    assert not button(app, 'Apply reviewed holdings').disabled
+    choice = next(s for s in app.multiselect if s.label.startswith('Keep transactions'))
+    choice.set_value(choice.value[:1]).run()
+    assert not app.exception
+    assert button(app, 'Apply reviewed holdings').disabled
+    assert any(c.value == 'Reviewed 0 / 2' for c in app.caption)
+    assert not load_journal(tmp_path)[0].securities

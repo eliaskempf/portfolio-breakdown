@@ -273,3 +273,20 @@ def test_removal_does_not_silently_change_other_holding():
     journal = Journal(version=2,securities=(book,destination))
     candidate = remove_transactions(book, ['transfer'])
     assert changed_positions(journal, (candidate,)) == {'source', 'other'}
+
+
+def test_individual_confirmation_intervals_validate_before_publication(tmp_path):
+    from portfolio_app.history_confirmation import confirmation_intervals
+    from portfolio_app.history_commands import proposed_journal
+    from portfolio_app.account_journal import Journal
+    path, snapshot, book = setup(tmp_path)
+    intervals = confirmation_intervals(proposed_journal(Journal(), (book,)), (book.position_id,))
+    for invalid in ({'unknown':next(iter(intervals.values()))}, {book.position_id:('2020-01-01','2024-01-01')}):
+        with pytest.raises(DataError, match='intervals changed'):
+            save_history(tmp_path, book, expected_journal_revision=None, expected_holdings_revision=snapshot.revision,
+                activate=True, accept_balance_change=True, complete_intervals=invalid)
+        assert not load_journal(tmp_path)[0].securities
+    journal = save_history(tmp_path, book, expected_journal_revision=None, expected_holdings_revision=snapshot.revision,
+        activate=True, accept_balance_change=True, complete_intervals=intervals)
+    review = journal.securities[0].reviews[-1]
+    assert (review.complete_from, review.complete_through) == intervals[book.position_id]
