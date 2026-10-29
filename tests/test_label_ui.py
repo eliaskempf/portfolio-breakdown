@@ -21,11 +21,14 @@ def label_data(tmp_path, sample_data_dir):
     return tmp_path
 
 
-def launch(path):
+def launch(path, *, show_sold=False):
     app = AppTest.from_string(
         "from pathlib import Path\nfrom portfolio_app.ui import render_app\n"
         f"render_app(Path({str(path)!r}), demo=True)\n", default_timeout=15,
-    ).run()
+    )
+    if show_sold:
+        app.session_state['show_sold_positions'] = True
+    app.run()
 
     theme_view(app, 'selected_labels')
     return app
@@ -136,6 +139,9 @@ def test_derived_targets_zero_positions_filters_and_incomplete_targets(label_dat
     app = launch(label_data)
     assert not app.exception
     table = app.tabs[1].dataframe[-1].value
+    assert table["Known target portfolio %"].sum() == 20
+    by_label(app.checkbox, "Show sold positions").check().run()
+    table = app.tabs[1].dataframe[-1].value
     assert sorted(table["Known target portfolio %"].tolist()) == [0, 20, 30]
     assert table["Target portfolio %"].isna().sum() == 1
     assert missing_prices(app) == "0"
@@ -158,11 +164,11 @@ def test_derived_targets_zero_positions_filters_and_incomplete_targets(label_dat
 
 
 @pytest.mark.parametrize("shares", [0, 1])
-def test_targets_remain_visible_for_all_zero_or_unpriced_portfolios(label_data, shares):
+def test_targets_remain_visible_for_all_zero_or_unpriced_portfolios_when_shown(label_data, shares):
     (label_data / "holdings.csv").write_text(
         f"id,name,ticker,shares,target_allocation\na,Synthetic A,,{shares},0.2\nb,Synthetic B,,0,0.3\n"
     )
-    app = launch(label_data)
+    app = launch(label_data, show_sold=True)
     assert not app.exception
     assert app.tabs[1].dataframe[-1].value["Target portfolio %"].sum() == 50
     assert app.tabs[1].dataframe[-1].value["Gap (pp)"].isna().all()

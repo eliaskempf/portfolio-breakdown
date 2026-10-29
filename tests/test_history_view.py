@@ -229,7 +229,7 @@ def test_replay_reuses_price_only_dates_but_preserves_separate_fee_dates(monkeyp
     for day in (10, 8, 2, 5, 9, 4, 1, 7, 3, 6):
         stamp = f'2024-01-{day:02}'
         assert calculation.securities(stamp) == replay_securities(journal.securities, as_of=stamp)
-    assert len(calls) == 4
+    assert not calls  # Dated states advance one timeline, without full replays.
     assert calculation.securities('2024-01-05').positions['holding'].quantity == 3
     assert len(calculation.securities('2024-01-05').cash) == 1
     assert len(calculation.securities('2024-01-06').cash) == 2

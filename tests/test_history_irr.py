@@ -68,3 +68,23 @@ def test_unique_positive_root_with_complex_pair_has_known_independent_answer(pos
     coefficients=[-positive*D('4.09'),D('4.09')+positive*D('.6'),-positive-D('.6'),D(1)]
     result,reason=solve(coefficients)
     assert not reason and result==pytest.approx(float(1/positive-1),abs=1e-12)
+
+
+def test_long_schedule_uses_equivalent_reversed_polynomial(monkeypatch):
+    import portfolio_app.history_irr as module
+    # (x-p)*(x²-0.6x+4.09)*(1+x+...+x^90). The latter factors
+    # have no positive real roots, so the only admissible root is p.
+    p = D('1.2')
+    cubic = [-p*D('4.09'), D('4.09')+p*D('.6'), -p-D('.6'), D(1)]
+    coefficients = [D(0)]*94
+    for offset in range(91):
+        for index, amount in enumerate(cubic):
+            coefficients[offset+index] += amount
+    original, calls = module._roots, []
+    def counted(terms):
+        calls.append(len(terms))
+        return original(terms)
+    monkeypatch.setattr(module, '_roots', counted)
+    value, reason = solve(coefficients)
+    assert not reason and value == pytest.approx(float(1/p-1), abs=1e-12)
+    assert len(calls) < 10  # Preserve isolation without peeling ninety coefficients.

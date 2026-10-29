@@ -62,10 +62,10 @@ class PersonalPerformance:
     estimated: bool = False
 
 
-def estimated_return_inputs(journal, scope, start, end):
+def estimated_return_inputs(journal, scope, start, end, *, events_by_position=None):
     """Cost-only estimates do not qualify returns; estimated flows do."""
     for book in journal.securities:
-        for event in selected_events(book):
+        for event in (events_by_position[book.position_id] if events_by_position is not None else selected_events(book)):
             if not start < event.date <= end:
                 continue
             inside = book.position_id in scope.positions
@@ -89,10 +89,12 @@ class HistoryCalculation:
 
     def __init__(self, journal, observations):
         self.journal, self.observations = journal, index_observations(observations)
-        events = [event for book in journal.securities for event in selected_events(book)]
+        self._events = {book.position_id: selected_events(book) for book in journal.securities}
+        events = [event for selected in self._events.values() for event in selected]
         # Holdings change on event dates; separately dated charges also change cash.
         self._security_dates = sorted({event.date for event in events} |
             {charge.date for event in events for charge in event.charges if charge.date})
+        self._flow_dates = sorted(set(self._security_dates) | {e.date for e in effective_events(journal)})
         self.fingerprint = history_fingerprint(journal)
         self._facts = {}
         self._security_fingerprints = {}
@@ -103,8 +105,9 @@ class HistoryCalculation:
         return self._facts[key]
 
     def securities(self, stamp=None):
-        interval = bisect_right(self._security_dates, stamp) if stamp is not None else None
-        return self._get(('securities', interval), lambda: replay_securities(self.journal.securities, as_of=stamp))
+        from portfolio_app.security_history import SecurityTimeline
+        timeline = self._get(('security_timeline',), lambda: SecurityTimeline(self.journal.securities))
+        return timeline.at(stamp)
 
     def security_gains(self, identity, stamp, target):
         from portfolio_app.gain_components import recorded_security_gains
@@ -141,7 +144,10 @@ class HistoryCalculation:
             self.journal, scope, self.observations, stamp, target, calculation=self))
 
     def flows(self, scope, start, end, target):
-        return self._get(('flows', scope, start, end, target), lambda: external_flows(
+        # A flow and its FX/reason are dated at the event, never at the query end.
+        # Keep the exact start: account inception includes special opening-day flows.
+        interval = bisect_right(self._flow_dates, end)
+        return self._get(('flows', scope, start, interval, target), lambda: external_flows(
             self.journal, scope, self.observations, start, end, target, security_cash=self.securities().cash))
 
 
@@ -154,8 +160,8 @@ def convert(amount, source, target, stamp, observations):
     return amount*fx if fx is not None else None
 
 
-def confirmed_empty_before(book, stamp):
-    events = selected_events(book)
+def confirmed_empty_before(book, stamp, *, events=None):
+    events = selected_events(book) if events is None else events
     return bool(events and events[0].kind == 'opening' and not events[0].quantity
                 and events[0].source == 'confirmed_zero_start' and stamp < events[0].date)
 
@@ -218,7 +224,7 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
     books = {b.position_id: b for b in journal.securities}
     for identity in scope.positions:
         book, state = books.get(identity), states.get(identity)
-        if book and confirmed_empty_before(book, stamp):
+        if book and confirmed_empty_before(book, stamp, events=calculation._events[book.position_id] if calculation else None):
             continue
         if state and state.boundary == stamp:
             if not state.quantity:
@@ -275,7 +281,7 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
     for identity in scope.positions:
         book = books.get(identity)
         state = securities.positions.get(identity)
-        if book and confirmed_empty_before(book, stamp):
+        if book and confirmed_empty_before(book, stamp, events=calculation._events[book.position_id] if calculation else None):
             continue
         if book is None or state is None or not state.boundary:
             reasons.append(Issue(f'{identity}: no opening quantity on {stamp}', 'transaction'))
@@ -285,7 +291,8 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
             continue
         if not state.quantity:
             continue
-        price = price_at(observations, (identity, book.instrument_id), stamp, events=selected_events(book))
+        price = price_at(observations, (identity, book.instrument_id), stamp,
+                         events=calculation._events[identity] if calculation else selected_events(book))
         if price is None:
             reasons.append(Issue(f'{identity}: missing price on {stamp}', 'price'))
         else:
@@ -317,8 +324,10 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
     return AmountResult(None if reasons else total, tuple(reasons), tuple(evidence))
 
 
-def coverage_reasons(journal, scope, observations, start, end, *, fingerprint=None, security_fingerprints=None):
+def coverage_reasons(journal, scope, observations, start, end, *, fingerprint=None, security_fingerprints=None, events_by_position=None):
     """A quantity match cannot certify omitted offsetting events or income."""
+    def events_for(book):
+        return events_by_position[book.position_id] if events_by_position is not None else selected_events(book)
     reasons = list(scope.unresolved)
     books = {b.position_id: b for b in journal.securities}
     fingerprint = fingerprint or history_fingerprint(journal)
@@ -344,7 +353,7 @@ def coverage_reasons(journal, scope, observations, start, end, *, fingerprint=No
                 return False
             # A reviewed inception at zero covers earlier empty time; a later
             # nonzero snapshot does not attest anything about the missing period.
-            since = selected_events(book)[0].date if confirmed_empty_before(book, start) else start
+            since = events_for(book)[0].date if confirmed_empty_before(book, start, events=events_for(book)) else start
             if any(identity in r.scope.positions and not r.scope.unresolved
                    and r.start <= since and r.end >= end and matches(r) for r in observations.reviews):
                 return True
@@ -363,8 +372,8 @@ def coverage_reasons(journal, scope, observations, start, end, *, fingerprint=No
         if book is None or not book.active:
             reasons.append(Issue(f'{identity}: history is not activated', 'transaction'))
             continue
-        events = selected_events(book)
-        if not any(e.kind in ('opening', 'checkpoint') and e.date <= start for e in events) and not confirmed_empty_before(book, start):
+        events = events_for(book)
+        if not any(e.kind in ('opening', 'checkpoint') and e.date <= start for e in events) and not confirmed_empty_before(book, start, events=events):
             reasons.append(Issue(f'{identity}: missing opening snapshot', 'transaction'))
         if any(e.kind in ('opening', 'checkpoint', 'note', 'cost') and start < e.date <= end
                and not (e.kind == 'opening' and not e.quantity and e.source == 'confirmed_zero_start') for e in events):
@@ -376,7 +385,7 @@ def coverage_reasons(journal, scope, observations, start, end, *, fingerprint=No
             reasons.append(Issue(f'{identity}: checkpoint observation date unknown', 'transaction'))
         if any(e.kind in ('buy', 'sell', 'distribution', 'swap', 'reward') and start < e.date <= end and not e.charges_known for e in events):
             reasons.append(Issue(f'{identity}: charges have not been confirmed', 'transaction'))
-    active_ids = {e.id for b in journal.securities for e in selected_events(b)}
+    active_ids = {e.id for b in journal.securities for e in events_for(b)}
     for book in journal.securities:
         by_id = {e.id: e for e in book.records}
         for event in book.records:
@@ -616,7 +625,7 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
     observations = calculation.observations
     opening, ending = calculation.opening(scope, start, target), calculation.value(scope, end, target)
     coverage = coverage_reasons(journal, scope, observations, start, end, fingerprint=calculation.fingerprint,
-                                security_fingerprints=calculation._security_fingerprints)
+                                security_fingerprints=calculation._security_fingerprints, events_by_position=calculation._events)
     flows, missing_flows = calculation.flows(scope, start, end, target)
     flow_reasons = tuple(dict.fromkeys((*coverage, *missing_flows)))
     net = sum((f.amount for f in flows), ZERO) if not flow_reasons else None
@@ -648,4 +657,4 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
             twr_reasons = (reason,) if reason else ()
     return PersonalPerformance(opening.amount, ending.amount, net, invested, gain, mwr, twr, days,
         tuple(dict.fromkeys((*opening.reasons, *ending.reasons))), flow_reasons, mwr_reasons, twr_reasons,
-        capital.amount, opening_gain, total_gain, capital.reasons, ending.evidence, method, estimated_return_inputs(journal, scope, start, end))
+        capital.amount, opening_gain, total_gain, capital.reasons, ending.evidence, method, estimated_return_inputs(journal, scope, start, end, events_by_position=calculation._events))

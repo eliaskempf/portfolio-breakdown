@@ -2,6 +2,7 @@
 from dataclasses import asdict, dataclass, field, replace
 from decimal import Decimal
 from hashlib import sha256
+from functools import lru_cache
 import json
 from pathlib import Path
 
@@ -159,13 +160,19 @@ def from_dict(raw):
         tuple(raw.get('classifications', ())), raw['version'])
 
 
+@lru_cache(maxsize=2)
+def _observations_from_bytes(content):
+    """Exact-version parse reuse; all loaded fields are immutable value objects."""
+    return from_dict(json.loads(content))
+
+
 def load_observations(directory):
     path = Path(directory) / FILE
     if not path.exists():
         return ObservationStore(), None
     try:
         content = path.read_bytes()
-        return from_dict(json.loads(content)), sha256(content).hexdigest()
+        return _observations_from_bytes(content), sha256(content).hexdigest()
     except (ValueError, TypeError, KeyError, OSError) as exc:
         raise DataError(f'Invalid historical observations; file retained: {exc}') from exc
 

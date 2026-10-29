@@ -604,6 +604,24 @@ semantics. `history_ui.py` renders the optional workflows. Keep source-position
 history separate from present-day ETF constituent expansion and hypothetical risk
 backtests. New evidence must never silently certify historical completeness.
 
+History charts share a `HistoryCalculation` for one journal and observation
+revision. `SecurityTimeline` advances the canonical FIFO replay once and retains
+dated snapshots for out-of-order range queries. Separately dated charges must
+keep their own cash dates; failed advances must preserve earlier snapshots.
+Reuse selected events and cash flows across price-only dates, while retaining
+exact interval starts for account-opening flows. Immutable observation files are
+parsed once per exact byte version in a bounded cache. Financial evidence,
+coverage checks and unknown amounts must remain identical to fresh calculations.
+Category comparisons request TWR without computing unused annualized returns.
+XIRR may reverse its discount polynomial to shorten derivative isolation, but
+must still isolate all positive roots and verify the returned rate against the
+original cash-flow schedule.
+
+Performance checks must include a fresh browser session after a server restart,
+as well as interval switches. A warm session cache does not establish acceptable
+initial-load performance. Use synthetic ledgers for repeatable regression checks;
+read-only inspection of a running portfolio must emit only timing metadata.
+
 
 ## History playground
 

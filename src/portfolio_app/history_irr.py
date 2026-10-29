@@ -126,7 +126,19 @@ def solve_xirr(opening, ending, flows, start, end):
         if not terms:
             return IrrResult(None,Issue('A unique XIRR cannot be established for an empty net schedule','irr_unresolved'))
         try:
-            roots=_roots(terms)
+            # Differentiation removes the first coefficient each time. Reverse
+            # x -> 1/x when it reaches a one-sign-change derivative sooner.
+            # Multiplication by x**degree never changes positive-domain roots;
+            # the corresponding log roots are simply negated. Root isolation,
+            # uniqueness checks and verification still use the full schedule.
+            def isolation_depth(items):
+                changes=[i for i in range(1,len(items)) if (items[i-1][1]>0)!=(items[i][1]>0)]
+                return changes[-2] if len(changes)>1 else 0
+            reversed_terms=tuple((terms[-1][0]-n,a) for n,a in reversed(terms))
+            reverse=isolation_depth(reversed_terms)<isolation_depth(terms)
+            roots=_roots(reversed_terms if reverse else terms)
+            if reverse:
+                roots=sorted(-root for root in roots)
             if not roots:
                 return IrrResult(None,Issue('No admissible XIRR solution for these cash flows','irr_none'))
             if len(roots)>1:
