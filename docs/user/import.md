@@ -111,22 +111,29 @@ execution order is known. Dates are not converted into invented execution times.
 
 Use **Save evidence only** to retain the upload without changing active balances.
 Mapped transactions appear in the usual Transactions view. Saved imports for new
-positions can be reopened from the import screen. The comparison opens automatically.
+positions can be reopened from the import screen. **Review against portfolio**
+opens the same reconciliation screen used for manual and PDF transaction history.
+**Back to import** retains the mapping and name edits. Reviewing writes nothing;
+the apply action saves the reviewed holdings and history together.
 For assets without a recorded starting balance, it previews zero holdings before
 the first movement and states that assumption beside the apply actions. Applying
 confirms that starting point. If the export begins after you already held assets,
-choose **Starting balance → Earlier holdings** and supply an opening balance in
+choose **Import options → Before the first transaction → Earlier holdings** and supply an opening balance in
 the CSV or the holding's History before applying.
 The ending reference is only a comparison; it never supplies a balancing opening.
 
 The comparison shows whether units and acquisition costs match current holdings.
 The final apply action accepts the displayed reconstruction; a matching balance
 does not itself prove completeness because missing movements can cancel out.
-Possible duplicates are shown as concrete pairs: keep both as separate executions
-or exclude a CSV row from application. Excluded source evidence remains saved.
-Already reviewed duplicates are not raised again for unrelated new transactions.
+Similar transactions are shown once as a group, with all entries retained by
+default. Open the group to exclude pending entries; balances recompute from that
+selection. The final apply action accepts the selection, without separate pairwise
+acknowledgments. Excluded source evidence remains saved. The group shows whether
+all entries reconcile to an existing holding; a new holding's zero placeholder is
+never presented as an independently recorded ending balance.
 Different recorded execution times distinguish otherwise identical transactions.
-When either entry has only a date, matching economic details still require review.
+When either entry has only a date, matching economic details still appear in the
+similar-transactions group.
 
 **Apply and confirm history** explicitly confirms the displayed history interval;
 **Apply incomplete history** leaves completeness unconfirmed. Both use the same

@@ -42,6 +42,7 @@ def test_simple_upload_apply_edit_and_remove_in_normal_transactions(import_page)
     assert not path.exists()
     page.get_by_role('tab', name='Overview', exact=True).click(); settle(page)
     page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     page.get_by_role('button', name='Apply incomplete history', exact=True).click(); settle(page)
     table = page.get_by_role('table', name='Transactions', exact=True)
     playwright.expect(table).to_be_visible()
@@ -70,6 +71,7 @@ def test_estimated_checkpoint_requires_explicit_reconciliation(import_page):
     page, path = import_page
     stream=StringIO(); writer=csv.DictWriter(stream,fieldnames=FIELDS_V2); writer.writeheader(); writer.writerow(row('balance',**estimate()).facts)
     upload(page, stream.getvalue().encode())
+    page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     apply=page.get_by_role('button', name='Apply and confirm history', exact=True)
     playwright.expect(apply).to_be_disabled()
     page.get_by_text('Accept the displayed replacement balances', exact=True).click(); settle(page)
@@ -117,6 +119,9 @@ def test_listing_suggestions_dropdown_and_live_search_survive_navigation(import_
     assert not path.exists()
     playwright.expect(page.get_by_role('textbox', name='Name · BTC', exact=True)).to_have_value('Invented Bitcoin holding')
     page.screenshot(path=str(path.parent.parent / 'synthetic-import-mapping.png'))
+    page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
+    assert not page.get_by_role('combobox', name='Holding · BTC', exact=True).count()
+    page.screenshot(path=str(path.parent.parent / 'synthetic-shared-review.png'))
     page.get_by_role('button', name='Apply incomplete history', exact=True).click(); settle(page)
     saved = read_snapshot(path).holdings
     assert saved.ticker.tolist() == ['BTC-EUR']
@@ -196,3 +201,25 @@ def test_discard_exists_only_for_a_review_and_stays_in_import(import_page):
     playwright.expect(page.get_by_role('button', name='Download CSV template', exact=True)).to_be_visible()
     assert not page.get_by_role('button', name='Discard review', exact=True).count()
     assert not path.exists()
+
+
+def test_partial_fills_share_one_optional_group_and_apply_together(import_page):
+    page, path = import_page
+    upload(page, b'reference,date,type,asset,quantity,amount,currency\n'
+        b'b,2024-01-01,buy,AUR,6,60,EUR\n'
+        b's1,2024-01-02,sell,AUR,2,30,EUR\ns2,2024-01-02,sell,AUR,2,30,EUR\ns3,2024-01-02,sell,AUR,2,30,EUR\n')
+    assert not page.get_by_role('button', name='Apply and confirm history', exact=True).count()
+    page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
+    assert not page.get_by_role('combobox', name='Resolve match', exact=False).count()
+    assert not page.get_by_role('combobox', name='Holding · AUR', exact=True).count()
+    group = page.get_by_text('3 similar transactions · AUR', exact=True)
+    playwright.expect(group).to_be_visible()
+    playwright.expect(page.get_by_role('button', name='Apply and confirm history', exact=True)).to_be_enabled()
+    group.click(); settle(page)
+    page.screenshot(path=str(path.parent.parent / 'synthetic-partial-fills-review.png'))
+    assert not path.exists()
+    page.get_by_role('button', name='Apply incomplete history', exact=True).click(); settle(page)
+    playwright.expect(page.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
+    journal, _ = load_journal(path.parent)
+    assert len(journal.transaction_imports) == 4
+    assert next(iter(replay_securities(journal.securities).positions.values())).quantity == 0

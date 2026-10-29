@@ -102,6 +102,8 @@ def test_mixed_starting_balance_and_new_exchange_destination_can_be_reviewed(tmp
     assert not app.exception
     assert not any(c.label == 'Holdings were zero before these transactions' for c in app.checkbox)
     assert not app.exception and not app.warning
+    next(b for b in app.button if b.label == 'Review against portfolio').click().run()
+    assert not app.exception
     assert any(b.label=='Apply and confirm history' for b in app.button)
     assert not (tmp_path/'holdings.csv').exists()
 

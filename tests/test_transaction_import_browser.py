@@ -368,7 +368,7 @@ def test_pdf_partial_sale_of_three_units_reviews_and_applies(transaction_page):
     dialog.locator('input[type=file]').set_input_files([buy,sale]);settle(page)
     confirm_identity(page,dialog)
     dialog.get_by_role('button',name='Save transactions and review',exact=True).click();settle(page)
-    assert dialog.get_by_text('Shares and acquisition cost match.',exact=True).count()==1
+    assert dialog.get_by_text('Units and cost match',exact=True).count()==1
     assert dialog.get_by_role('button',name='Apply and confirm history',exact=True).is_enabled()
     dialog.get_by_role('button',name='Apply and confirm history',exact=True).click();settle(page)
     journal,_=load_journal(root)
@@ -402,7 +402,7 @@ def test_bulk_removal_select_all_previews_and_preserves_originals(transaction_pa
     dialog.get_by_role('button', name='Remove selected (2)', exact=True).click(); settle(page)
     before = load_journal(root)[1]
     if applied:
-        assert dialog.get_by_text('The balances differ. Applying history replaces the current holding with the figures above.', exact=True).count() == 1
+        assert dialog.get_by_text('Units differ', exact=True).count() == 1
     else:
         assert dialog.get_by_text('These entries are not applied. Your portfolio balances stay unchanged.', exact=True).count() == 1
     # Cancelling is read-only; choosing again then confirms the same two entries.

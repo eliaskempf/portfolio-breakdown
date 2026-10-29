@@ -267,8 +267,9 @@ def _review_history(directory, journal, revision, snapshot, book, row, key):
     superseded = {e.replaces for e in records if e.replaces}
     review = st.container()
     with st.expander('Review options'):
+        labels = {identity: f'{number}. {_event_label(event)}' for number, (identity, event) in enumerate(by_id.items(), 1)}
         chosen = st.multiselect('Included transactions', list(by_id), default=[i for i in by_id if i not in superseded],
-            format_func=lambda i: _event_label(by_id[i]), key=key+'included_'+str(revision))
+            format_func=labels.get, key=key+'included_'+str(revision))
         st.button('Add starting balance', type='tertiary', key=key+'review_start',
             help='Use this if you already held shares before your first recorded transaction.',
             on_click=_history_action, args=(key,'opening'))
@@ -281,7 +282,7 @@ def _review_history(directory, journal, revision, snapshot, book, row, key):
     with review:
         openings = [by_id[i] for i in chosen if by_id[i].kind in ('opening', 'checkpoint')]
         if not openings or all(e.source == 'confirmed_zero_start' for e in openings):
-            st.caption('From your first purchase · Starts with zero shares. Already owned shares? Add a starting balance in Review options.')
+            st.caption('Starts at zero', help='Already owned shares? Add a starting balance in Review options.')
         else:
             st.caption('Starting balance: '+_event_label(max(openings, key=lambda e: (e.date,e.sequence))))
         if chosen:
@@ -508,92 +509,56 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
     if st.session_state.get(key+'reviewed') != (signature, revision, snapshot.revision):
         return
     from portfolio_app.history_commands import changed_positions, proposed_journal, history_comparisons
-    candidate, comparison, cash = preview_activation(journal, candidate, candidate.active_ids, row,
-        target=reporting_currency(), historical=historical, other_changes=other_changes)
-    proposed = proposed_journal(journal, (candidate, *other_changes))
-    touched = changed_positions(journal, (candidate, *other_changes)) | {candidate.position_id}
-    related = history_comparisons(journal, proposed, snapshot.holdings, touched - {candidate.position_id},
-        target=reporting_currency(), historical=historical)
-    if related:
-        st.markdown('**Other affected holdings**')
-        st.dataframe(pd.DataFrame(related).drop(columns=['position_id']).rename(columns={
-            'name':'Position', 'before_quantity':'Current units', 'after_quantity':'From history',
-            'before_cost':'Current cost', 'after_cost':'From history cost'}), hide_index=True, width='stretch')
-    def number(value):
-        return 'Unknown' if value is None else format(value, '.10f').rstrip('0').rstrip('.') or '0'
-    old_average = comparison.recorded_cost/comparison.recorded_quantity if comparison.recorded_cost is not None and comparison.recorded_quantity else None
-    new_average = comparison.reconstructed_cost/comparison.reconstructed_quantity if comparison.reconstructed_cost is not None and comparison.reconstructed_quantity else None
-    st.table(pd.DataFrame([
-        {'Measure':'Shares', 'Current portfolio':number(comparison.recorded_quantity), 'From history':number(comparison.reconstructed_quantity)},
-        {'Measure':'Acquisition cost ('+comparison.currency+')', 'Current portfolio':_money(comparison.recorded_cost), 'From history':_money(comparison.reconstructed_cost)},
-        {'Measure':'Average buy-in ('+comparison.currency+')', 'Current portfolio':_money(old_average), 'From history':_money(new_average)},
-    ]), hide_index=True, border='horizontal')
-    if not comparison.quantity_matches or comparison.cost_matches is False:
-        st.caption('The balances differ. Applying history replaces the current holding with the figures above.')
-    elif comparison.cost_matches is None:
-        st.caption('Acquisition cost is not yet comparable.')
-    else:
-        st.caption('Shares and acquisition cost match.')
-    if comparison.reconstructed_cost is None:
-        from portfolio_app.security_history import replay_securities
-        from portfolio_app.cost_basis import resolve_cost
-        state = replay_securities((*[b for b in journal.securities if b.position_id != candidate.position_id], candidate)).positions[candidate.position_id]
-        remaining_lots = {lot.id for lot in state.lots}
-        missing_fees = any(e.id in remaining_lots and e.kind == 'buy' and not e.charges_known for e in selected_events(candidate))
-        reason = ('Purchase fees are unconfirmed. Complete them below; enter 0 if there were no fees.' if missing_fees
-                  else resolve_cost(list(state.costs), comparison.currency, historical).note)
-        st.info('Cost and average buy-in unavailable: '+reason)
-    changed_cash = [c for c in cash if c['Before'] != c['After'] or (c['Account'] == candidate.account_id and c['After'] is None)]
-    if changed_cash:
-        names = {a.id:a.name for a in journal.accounts}
-        st.markdown('**Cash balance changes**')
-        st.table(pd.DataFrame([{'Account':names.get(c['Account'], 'Linked account'), 'Currency':c['Currency'],
-            'Current balance':_money(c['Before']), 'After applying':_money(c['After'])} for c in changed_cash]), hide_index=True, border='horizontal')
-        st.caption('Applying history also updates these cash balances. Payments covered by the account’s starting balance are already included.')
+    from portfolio_app.history_confirmation import confirmation_intervals
+    from portfolio_app.history_review_ui import ReviewPreview, render_history_review
     from portfolio_app.security_history import duplicate_candidates
-    duplicates = duplicate_candidates(candidate)
-    duplicate_accept = False
-    if duplicates:
-        st.warning('Some transactions have matching dates and amounts. Check that they are separate trades before applying.')
-        duplicate_accept = st.radio('Matching transactions', ['I need to check them', 'They are separate trades'],
-            horizontal=True, key=key+'duplicates') == 'They are separate trades'
-    complete_from = complete_through = ''
-    if action_label is None:
-        from portfolio_app.history_confirmation import confirmation_interval
-        complete_from, complete_through = confirmation_interval(candidate)
-        interval = f'{date.fromisoformat(complete_from):%d %b %Y} – {date.fromisoformat(complete_through):%d %b %Y}'
-        st.caption('Confirm complete history · '+interval)
-        if related:
-            from portfolio_app.history_confirmation import confirmation_intervals
-            names = snapshot.holdings.set_index('position_id')['name'].to_dict()
-            st.dataframe(pd.DataFrame([dict(Position=names.get(identity, 'Linked holding'), From=a, Through=b) for identity, (a,b) in
-                confirmation_intervals(proposed, touched).items()]), hide_index=True, width='stretch')
-        st.caption('All purchases, sales, income, fees, taxes and transfers in this interval are recorded. '
-                   'Still backfilling? Choose Apply incomplete history.')
-    blocked = any(c['After'] is None for c in changed_cash) or bool(duplicates and not duplicate_accept)
-    def apply(*, complete):
-        save_history(directory, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision,
+    originals = (candidate, *other_changes)
+    active = {i for b in journal.securities for i in b.active_ids}
+    def chosen(excluded):
+        return tuple(replace(b, active_ids=tuple(i for i in b.active_ids if i not in excluded)) for b in originals)
+    def build(excluded):
+        selected = chosen(excluded)
+        primary, comparison, cash = preview_activation(journal, selected[0], selected[0].active_ids, row,
+            target=reporting_currency(), historical=historical, other_changes=selected[1:])
+        proposed = proposed_journal(journal, selected)
+        touched = changed_positions(journal, selected) | {candidate.position_id}
+        comparisons = history_comparisons(journal, proposed, snapshot.holdings, touched,
+            target=reporting_currency(), historical=historical)
+        comparisons = tuple(sorted(comparisons, key=lambda c: c['position_id'] != candidate.position_id))
+        changes = tuple(dict(account=c['Account'], currency=c['Currency'], before=c['Before'], after=c['After'])
+            for c in cash if c['Before'] != c['After'] or (c['Account'] == primary.account_id and c['After'] is None))
+        matches = tuple((b.position_id, a, z) for b in selected for a,z in duplicate_candidates(b) if b.position_id in touched)
+        return ReviewPreview(proposed, comparisons, cash=changes, matches=matches,
+            editable=frozenset(i for b in originals for i in b.active_ids)-active,
+            known_positions=frozenset(snapshot.holdings.position_id),
+            intervals=confirmation_intervals(proposed, touched) if action_label is None else {})
+    def keep():
+        _history_action(_key(directory, candidate.position_id), 'list')
+    def apply(excluded, complete):
+        selected = chosen(excluded)
+        intervals = build(excluded).intervals
+        start, end = intervals.get(candidate.position_id, ('', '')) if complete else ('', '')
+        save_history(directory, selected[0], expected_journal_revision=revision, expected_holdings_revision=snapshot.revision,
             activate=True, resolution=resolution, accept_balance_change=True, accept_cash_change=True,
-            accept_duplicates=duplicate_accept, complete_from=complete_from if complete else '',
-            complete_through=complete_through if complete else '', other_changes=other_changes)
+            accept_duplicates=True, complete_from=start, complete_through=end, other_changes=selected[1:])
         st.session_state.pop(key+'reviewed', None)
         st.session_state[(return_key or _key(directory, candidate.position_id))+'screen'] = 'list'
         st.rerun()
-    with st.container(horizontal=True, key=key+'actions'):
-        if st.button(action_label or 'Apply and confirm history', key=key+'save', disabled=blocked, type='primary',
-                     help='Use the displayed balances and confirm the shown history interval. Missing market data still limits returns.'
-                     if action_label is None else 'Apply the displayed transaction and balance changes.'):
-            apply(complete=action_label is None)
-        if action_label is None and st.button('Apply incomplete history', key=key+'save_incomplete', disabled=blocked,
-                                              type='secondary', help='Update balances without declaring this history complete.'):
-            apply(complete=False)
-        st.button('Keep portfolio unchanged', key=key+'keep', on_click=_history_action,
-            args=(_key(directory, candidate.position_id),'list'))
-    if blocked and not duplicates:
-        st.caption('Complete the missing inputs before applying. Your saved transactions and current portfolio are preserved.')
+    preview = render_history_review(build, key=key, apply=apply, keep=keep, action_label=action_label)
+    if preview is None:
+        return
+    candidate = next(b for b in preview.journal.securities if b.position_id == candidate.position_id)
     _complete_fees(directory, journal, revision, snapshot, candidate, key)
-    if comparison.reconstructed_cost is None:
-        _complete_cost_fx(directory, state.costs, comparison.currency, historical, key)
+    comparison = next(c for c in preview.comparisons if c['position_id'] == candidate.position_id)
+    if comparison['after_cost'] is None:
+        from portfolio_app.security_history import replay_securities
+        from portfolio_app.cost_basis import resolve_cost
+        state = replay_securities(preview.journal.securities).positions[candidate.position_id]
+        remaining_lots = {lot.id for lot in state.lots}
+        missing_fees = any(e.id in remaining_lots and e.kind == 'buy' and not e.charges_known for e in selected_events(candidate))
+        reason = ('Purchase fees unconfirmed' if missing_fees else resolve_cost(list(state.costs), comparison['currency'], historical).note)
+        st.caption('Cost unavailable', help=reason)
+        _complete_cost_fx(directory, state.costs, comparison['currency'], historical, key)
 
 
 def _complete_fees(directory, journal, revision, snapshot, candidate, key):
@@ -613,7 +578,6 @@ def _complete_fees(directory, journal, revision, snapshot, candidate, key):
         currency = previous.currency if previous else event.currency
         amount = st.text_input('Fees ('+currency+')', value=str(previous.amount) if previous and previous.amount is not None else '',
             placeholder='0 if none; blank if unknown', key=key+'fee_amount_'+event_id)
-        st.caption('Save the total fee for this transaction. Previously entered fees are shown for confirmation.')
         if st.button('Save fees', key=key+'save_fees', disabled=not amount.strip()):
             fee = replace(previous, amount=_decimal(amount)) if previous else Charge(_decimal(amount), currency)
             fields = dict(charges=(fee,), charges_known=True, replaces=event.id)
@@ -632,7 +596,6 @@ def _complete_cost_fx(directory, costs, target, historical, key):
     if not missing:
         return
     with st.expander('Complete exchange rates', expanded=True):
-        st.caption('Enter the actual historical rate for each date. No current rate is substituted.')
         for currency, stamp in missing:
             suffix = currency+stamp
             value = st.text_input(f'{stamp} · {target} per 1 {currency}', key=key+'fx_'+suffix)

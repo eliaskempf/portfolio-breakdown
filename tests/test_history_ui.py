@@ -186,7 +186,7 @@ def test_fee_confirmation_repairs_old_draft_without_changing_holding(tmp_path):
     assert not app.exception
     assert app.table[0].value['From history'].tolist()==['10','Unknown','Unknown']
     assert not label(app.button,'Apply and confirm history').disabled
-    assert any('Purchase fees are unconfirmed' in e.value for e in app.info)
+    assert any(e.value == 'Cost unavailable' for e in app.caption)
     assert label(app.text_input,'Fees (EUR)').value=='5'
     label(app.button,'Save fees').click().run()
     assert not app.exception

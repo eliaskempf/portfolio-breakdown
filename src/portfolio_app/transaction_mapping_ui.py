@@ -57,7 +57,7 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
     by_position = holdings.set_index('position_id')
     retained = {(r.facts['source_id'], a, asset): pos for r in journal.transaction_imports for a, asset, pos in r.positions}
     matches = {a: holding_matches(a, holdings) for a in assets}
-    crypto = not holdings.empty and holdings.instrument_type.eq('crypto').all()
+    crypto = not holdings.empty and 'instrument_type' in holdings and holdings.instrument_type.eq('crypto').all()
     kind = 'CRYPTOCURRENCY' if crypto else ''
     lookup = [a for a in assets if (not matches[a] or (len(matches[a]) == 1 and not by_position.loc[matches[a][0], 'ticker'])) and not any((source, account, a) in retained for account, symbol in pairs if symbol == a)]
     with st.spinner('Finding price listings…', show_time=False):
@@ -100,7 +100,7 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
         available = [*initial.get(asset, ([], ''))[0], *extra.get(asset+'-'+currency, ([], ''))[0], *custom.get(asset, {}).values()]
         current = str(existing.ticker) if existing is not None else ''
         if current:
-            available.append(Instrument(current, existing['name'], kind={'crypto':'CRYPTOCURRENCY','etf':'ETF','etc':'ETC'}.get(existing.instrument_type,'EQUITY'), isin=existing['isin']))
+            available.append(Instrument(current, existing['name'], kind={'crypto':'CRYPTOCURRENCY','etf':'ETF','etc':'ETC'}.get(existing.get('instrument_type'),'EQUITY'), isin=existing['isin']))
         by_ticker = {x.ticker: x for x in available}
         proposed = suggested_listing(asset, list(by_ticker.values()), currency, kind=kind)
         if existing is not None and existing['isin'] and proposed and proposed.isin != existing['isin']:

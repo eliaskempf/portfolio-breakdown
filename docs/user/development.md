@@ -13,6 +13,10 @@ without introductory paragraphs or repeated explanations.
 - Keep visible prose minimal. Prefer concise labels and short, contextual status
   text. Put definitions in tooltips or help popovers, and methodology, assumptions,
   provenance and extended explanations in expandable details or the user guide.
+  Treat prose as a removal signal during UI review: ordinary screens contain
+  results, controls, short labels and actionable errors, not explanatory sentences.
+  Put necessary explanations behind an explicit help action. Do not add paragraphs,
+  repeated instructions, workflow narration or reassurance below controls or tables.
 - Preserve essential meaning in the main view: selected scope, units, the metric's
   basis and whether a result is approximate, partial or unavailable. Explanations
   may be disclosed on demand; material limitations must remain discoverable from
