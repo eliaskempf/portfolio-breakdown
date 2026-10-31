@@ -92,8 +92,15 @@ jobs:
               '--junitxml=dist/browser-results.xml',
           ]))
           PY
-      - run: uv run python tools/package_smoke.py
+      - name: Smoke test the installed wheel
         if: matrix.shard == 0
+        run: |
+          uv build --wheel
+          uv venv "$RUNNER_TEMP/portfolio-smoke-installed"
+          uv pip install --python "$RUNNER_TEMP/portfolio-smoke-installed" --no-deps dist/*.whl
+          uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file "$RUNNER_TEMP/portfolio-smoke-runtime.txt"
+          uv pip install --python "$RUNNER_TEMP/portfolio-smoke-installed" --requirements "$RUNNER_TEMP/portfolio-smoke-runtime.txt"
+          uv run python tools/package_smoke.py "$RUNNER_TEMP/portfolio-smoke-installed/bin/portfolio-app"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

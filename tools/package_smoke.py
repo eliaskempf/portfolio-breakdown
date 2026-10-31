@@ -292,7 +292,8 @@ def smoke(command, evidence=None):
                     expect(page.get_by_role('textbox', name='Instrument name', exact=True)).to_have_value('')
                     page.get_by_role('button', name='Cancel', exact=True).click()
                     assert not (workspace / 'holdings.csv').exists()
-                    page.get_by_role('button', name='Import portfolio — experimental', exact=True).click()
+                    page.get_by_role('radio', name='Import', exact=True).click()
+                    page.get_by_role('radio', name='Holdings snapshot', exact=True).click()
                     page.locator('input[type=file]').set_input_files([
                         {'name': 'invented.csv', 'mimeType': 'text/csv',
                          'buffer': b'Name;Quantity\nSynthetic imported CSV;1,25\n'},

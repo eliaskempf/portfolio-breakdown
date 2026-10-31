@@ -405,7 +405,7 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click()
     apply = dialog.get_by_role('button', name='Apply history', exact=True)
     playwright.expect(apply).to_be_enabled()
-    playwright.expect(dialog.get_by_text('Shares and acquisition cost match.', exact=True)).to_be_visible()
+    playwright.expect(dialog.get_by_text('Units and cost match', exact=True)).to_be_visible()
     assert not dialog.get_by_role('checkbox').count()
     assert not dialog.get_by_role('combobox', name='Included transactions', exact=True).is_visible()
     assert not load_journal(directory)[0].securities[0].active
