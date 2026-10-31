@@ -230,6 +230,26 @@ Do not make live network access necessary for unit tests. Use fixtures or inject
 
 ---
 
+## Performance discipline
+
+Treat responsiveness as a standing product requirement in every implementation
+and review, not only when the user reports slowness. Actively look for and avoid
+unnecessary calculation, repeated parsing and validation, duplicate data loading,
+full ledger replays per chart point, and work for inactive views or unused metrics.
+
+- Compute only what the requested view or action needs. Share intermediate results
+  across charts, summaries and ranges when their inputs are unchanged.
+- Prefer one-pass or incremental processing over repeated scans and reconstruction.
+  Keep reuse bounded and invalidate it when relevant evidence or settings change.
+- Preserve calculation correctness, financial semantics, coverage checks and
+  unknown values. Faster execution must not silently weaken validation.
+- Measure cold starts and first visits as well as warm interactions. A fast cached
+  rerun does not excuse a slow initial load; profile the actual running app when
+  investigating delays, and verify improvements end to end in the browser.
+- For material performance changes, use synthetic regression cases that check
+  both results and unnecessary repeated work. Keep private runtime inspection
+  read-only and report timings without portfolio contents.
+
 ## Working style
 
 Before making a non-trivial change:
