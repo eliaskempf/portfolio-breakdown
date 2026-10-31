@@ -91,3 +91,56 @@ def test_recorded_gain_reuse_preserves_fee_dates_corrections_unknowns_and_daily_
     missing_fx = replace(obs, observations=tuple(o for o in obs.observations if o.kind != 'fx'))
     assert security_gain_components(journal, 'invented-stock', missing_fx, '2026-01-09', 'USD',
                                     calculation=HistoryCalculation(journal, missing_fx)).purchase_payments is None
+
+
+@pytest.mark.parametrize('target', ['EUR', 'USD'])
+@pytest.mark.parametrize('account_scope', [False, True])
+def test_flow_reuse_matches_fresh_intervals_with_opening_day_and_unknown_fx(target, account_scope):
+    from portfolio_app.account_journal import Event
+    from portfolio_app.personal_performance import external_flows
+    journal = mixed_journal()
+    journal = replace(journal, events=(*journal.events,
+        Event('initial-funding', '2026-01-01', 'cash_flow', 'broker', 'EUR', D(20)),
+        Event('later-funding', '2026-01-05', 'cash_flow', 'broker', 'EUR', D(30))))
+    scope = HistoryScope(accounts=('broker',)) if account_scope else HistoryScope(('invented-stock',))
+    observations = ObservationStore()
+    calculation = HistoryCalculation(journal, observations)
+    for start in ('2025-12-31', '2026-01-01', '2026-01-03', '2026-01-04'):
+        for day in (12, 6, 9, 5, 7, 4, 11, 8, 10):
+            end = f'2026-01-{day:02}'
+            assert calculation.flows(scope, start, end, target) == external_flows(
+                journal, scope, observations, start, end, target)
+
+
+def test_daily_price_changes_do_not_rebuild_unchanged_flows(monkeypatch):
+    import portfolio_app.personal_performance as module
+    journal = mixed_journal()
+    calculation = HistoryCalculation(journal, ObservationStore())
+    scope = HistoryScope(('invented-stock',))
+    original = module.external_flows
+    calls = []
+    def counted(*args, **kwargs):
+        calls.append(True)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(module, 'external_flows', counted)
+    for day in range(10, 29):
+        flows, reasons = calculation.flows(scope, '2026-01-01', f'2026-01-{day:02}', 'EUR')
+        assert flows and reasons  # The unknown charge remains unknown throughout.
+    assert len(calls) == 1
+
+
+def test_category_comparison_does_not_calculate_unused_annualized_returns(monkeypatch):
+    import portfolio_app.personal_performance as performance
+    journal = Journal(version=2, securities=(book(E('opening', 'opening', START,
+                                                        quantity=10, amount=100, currency='EUR')),))
+    scope = HistoryScope(('stock',))
+    obs = observations(journal, scope, [('stock', START, 10), ('stock', END, 12)])
+    rows = pd.DataFrame([dict(position_id='stock', name='Invented', bucket_id='a', shares=10,
+                             current_value_reporting=120, unrealized_gain_reporting=20)])
+    def unexpected(*args, **kwargs):
+        raise AssertionError('Category comparison only displays gain and TWR')
+    monkeypatch.setattr(performance, 'xirr', unexpected)
+    result = known_category_performance(rows, rows, Allocation((Bucket('a', 'A'),)), journal, obs,
+                                        rows, today=date(2025, 1, 1))
+    assert result.Gain.tolist() == [20]
+    assert result['Return (%)'].tolist() == pytest.approx([20])

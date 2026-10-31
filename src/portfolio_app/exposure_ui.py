@@ -136,6 +136,11 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             metadata = {}
             for dimension in dimensions:
                 choices = sorted(holdings[dimension].unique())
+                meta_key = f'filter_meta_{dimension}'
+                previous = st.session_state.get(meta_key+'_options')
+                if previous is not None and set(st.session_state.get(meta_key, previous)) == set(previous) and previous != choices:
+                    st.session_state[meta_key] = choices
+                st.session_state[meta_key+'_options'] = choices
                 metadata[dimension] = st.multiselect(
                     dimension.replace("_", " ").title(), choices, help='Filter contributing positions by this saved classification.', default=choices,
                     format_func=lambda value: value or "Unspecified", key=f"filter_meta_{dimension}",
@@ -148,7 +153,10 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             # A changed display mode needs a fresh widget while selections stay
             # tied to stable asset IDs, not the previous display strings.
             filter_key = "filter_holdings_" + sha256(repr(labels).encode()).hexdigest()[:16]
-            defaults = [asset for asset in st.session_state.get("filter_holdings_selection", ids) if asset in ids]
+            previous = st.session_state.get('filter_holdings_options', ids)
+            selected = st.session_state.get('filter_holdings_selection', previous)
+            defaults = ids if set(selected) == set(previous) else [asset for asset in selected if asset in ids]
+            st.session_state['filter_holdings_options'] = ids
             st.session_state["filter_holdings_widget"] = filter_key
             # Send the remembered selection as the widget default too, so a
             # remounted browser control cannot publish an unintended empty list.

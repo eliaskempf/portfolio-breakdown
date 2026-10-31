@@ -90,20 +90,13 @@ already includes earlier settlements; performance before the snapshot stays
 unknown. EUR, USD and GBP amounts are converted at current reporting FX. These
 investment gains do not reconstruct historical FX gains on allocated capital.
 
-## Confirm account history
+## Account history
 
-Open a futures position's **Contract history → Review account history completeness**,
-or **Futures → Positions & transactions → Review account history completeness**.
-In the account workspace, select **Account to confirm**. Check the named account
-and displayed interval, then choose **Confirm complete history**.
-
-This confirms opening balances and positions plus all subsequent contracts,
-including closed ones, trades, rolls, cash movements, income, fees and taxes for
-that account. It includes other futures investments in the same account. Earlier
-contracts before a valid opening snapshot need not be reconstructed. Downloaded
-settlement prices are checked separately; confirmation does not fill missing
-prices, settle cash, or change transactions. Other accounts and standalone
-securities remain unconfirmed. Journal changes require a new review.
+Recorded opening balances, contracts, trades, rolls, cash movements, income, fees
+and taxes determine account history, including closed contracts. There is no
+separate account-history confirmation. Earlier activity before an opening
+snapshot remains unknown. Missing settlement prices and transaction amounts are
+checked separately; downloading prices does not settle cash or change transactions.
 
 ## Roll from position details
 
@@ -273,8 +266,7 @@ inputs or a concurrently updated journal require another review. **Cancel
 correction** discards the draft. **Reverse only** explicitly removes an entry's
 effect without a replacement. Invalid dependent histories block saving and show
 later entries to review. Linked rolls and collateral entries direct you to their
-source workflows rather than allowing partial edits. These actions never confirm
-securities-history completeness.
+source workflows rather than allowing partial edits.
 
 For example, with invented values: €20,000 cash, two contracts at 1,000 points,
 €10 per point and €8 fees leave €19,992 cash. A mark of 1,010 creates €200

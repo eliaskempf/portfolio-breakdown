@@ -72,7 +72,7 @@ def test_history_views_and_incomplete_new_transaction_render(tmp_path):
     assert len(book.records)==2 and book.active_ids==('opening',)
     label(app.button,'Review against portfolio').click().run()
     assert not app.exception
-    assert any(e.label=='Apply and confirm history' for e in app.button)
+    assert any(e.label=='Apply history' for e in app.button)
 
 
 def test_snapshot_only_history_has_no_empty_chart(tmp_path):
@@ -117,7 +117,7 @@ def test_opening_form_saves_evidence_without_changing_balances(tmp_path):
     assert not book.active and book.records[0].quantity == 10
     label(app.button,'Review against portfolio').click().run()
     app.multiselect[0].set_value([book.records[0].id]).run()
-    label(app.button,'Apply and confirm history').click().run()
+    label(app.button,'Apply history').click().run()
     assert not app.exception
     assert load_journal(tmp_path)[0].securities[0].active
     assert read_snapshot(tmp_path/'holdings.csv').holdings.iloc[0].shares == 10
@@ -147,14 +147,14 @@ def test_buys_and_sells_save_before_starting_balance_and_review_from_zero(tmp_pa
     assert [e.kind for e in journal.securities[0].records] == ['buy','buy','sell']
     assert not journal.securities[0].active
     label(app.button,'Review against portfolio').click().run()
-    assert any(e.label=='Apply and confirm history' for e in app.button)
+    assert any(e.label=='Apply history' for e in app.button)
     assert load_journal(tmp_path)[1] == revision  # Merely reviewing writes nothing.
     assert not app.exception
     comparison=app.table[0].value
     assert comparison['Current portfolio'].tolist() == ['10','155.00','15.50']
     assert comparison['From history'].tolist() == ['10','155.00','15.50']
     assert load_journal(tmp_path)[1] == revision
-    label(app.button,'Apply and confirm history').click().run()
+    label(app.button,'Apply history').click().run()
     assert not app.exception
     journal,_=load_journal(tmp_path)
     current=effective_holdings(read_snapshot(tmp_path/'holdings.csv').holdings,journal.securities).iloc[0]
@@ -162,7 +162,7 @@ def test_buys_and_sells_save_before_starting_balance_and_review_from_zero(tmp_pa
     assert len(journal.securities[0].records) == 4  # Three trades plus the reviewed default zero boundary.
     label(app.button,'Review against portfolio').click().run()
     assert not any('zero shares beforehand' in e.label for e in app.checkbox)
-    assert any(e.label=='Apply and confirm history' for e in app.button)
+    assert any(e.label=='Apply history' for e in app.button)
 
 
 def test_review_can_leave_portfolio_unchanged(tmp_path):
@@ -185,8 +185,8 @@ def test_fee_confirmation_repairs_old_draft_without_changing_holding(tmp_path):
     label(app.button,'Review against portfolio').click().run()
     assert not app.exception
     assert app.table[0].value['From history'].tolist()==['10','Unknown','Unknown']
-    assert label(app.button,'Apply and confirm history').disabled
-    assert any('Purchase fees are unconfirmed' in e.value for e in app.info)
+    assert not label(app.button,'Apply history').disabled
+    assert any(e.value == 'Cost unavailable' for e in app.caption)
     assert label(app.text_input,'Fees (EUR)').value=='5'
     label(app.button,'Save fees').click().run()
     assert not app.exception
@@ -195,7 +195,7 @@ def test_fee_confirmation_repairs_old_draft_without_changing_holding(tmp_path):
     assert saved.securities[0].records[0]==event
     assert saved.securities[0].records[-1].replaces==event.id
     assert app.table[0].value['From history'].tolist()==['10','105.00','10.50']
-    label(app.button,'Apply and confirm history').click().run()
+    label(app.button,'Apply history').click().run()
     saved,_=load_journal(tmp_path)
     assert effective_holdings(read_snapshot(tmp_path/'holdings.csv').holdings,saved.securities).iloc[0].acquisition_price==10.5
 
@@ -218,11 +218,11 @@ def test_review_cash_names_and_one_explicit_apply_action(tmp_path):
     cash=app.table[1].value
     assert cash.Account.tolist()==['Invented brokerage']
     assert cash['After applying'].tolist()==['940.00']
-    label(app.button,'Apply and confirm history').click().run()
+    label(app.button,'Apply history').click().run()
     assert not app.exception
     saved,_=load_journal(tmp_path)
     assert replay(saved).cash[account,'EUR']==940
-    assert saved.securities[0].reviews[-1].complete_from  # Primary action also records explicit completeness.
+    assert not saved.securities[0].reviews[-1].complete_from  # Applying needs no completeness declaration.
     assert read_snapshot(tmp_path/'holdings.csv').holdings.iloc[0].shares==10
 
 
@@ -236,13 +236,13 @@ def test_unknown_fees_stay_unknown_until_explicit_zero(tmp_path):
     label(app.button,'Save transaction').click().run()
     assert not load_journal(tmp_path)[0].securities[0].records[0].charges_known
     label(app.button,'Review against portfolio').click().run()
-    assert label(app.button,'Apply and confirm history').disabled
+    assert not label(app.button,'Apply history').disabled
     assert label(app.button,'Save fees').disabled
     label(app.text_input,'Fees (EUR)').set_value('0').run()
     label(app.button,'Save fees').click().run()
     assert not app.exception
     assert app.table[0].value['From history'].tolist()==['1','10.00','10.00']
-    assert not label(app.button,'Apply and confirm history').disabled
+    assert not label(app.button,'Apply history').disabled
 
 
 def test_gross_and_cash_total_entry_do_not_double_count_fees(tmp_path):
@@ -273,14 +273,14 @@ def test_review_can_supply_missing_historical_fx_before_activation(tmp_path):
     save_journal(tmp_path,Journal(version=2,securities=(book,)),None)
     app=launch(tmp_path)
     label(app.button,'Review against portfolio').click().run()
-    assert label(app.button,'Apply and confirm history').disabled
+    assert not label(app.button,'Apply history').disabled
     assert app.table[0].value['From history'].tolist()==['10','Unknown','Unknown']
     label(app.text_input,'2024-01-02 · EUR per 1 USD').set_value('0.9').run()
     label(app.button,'Save exchange rate').click().run()
     assert not app.exception
     assert app.table[0].value['From history'].tolist()==['10','90.00','9.00']
     assert not load_journal(tmp_path)[0].securities[0].active
-    assert not label(app.button,'Apply and confirm history').disabled
+    assert not label(app.button,'Apply history').disabled
 
 
 def test_internal_boundary_is_not_a_selectable_transaction(tmp_path):
@@ -297,7 +297,7 @@ def test_internal_boundary_is_not_a_selectable_transaction(tmp_path):
     label(app.button,'Review against portfolio').click().run()
     assert label(app.multiselect,'Included transactions').value==['a','b']
     assert len(label(app.multiselect,'Included transactions').options)==2
-    label(app.button,'Apply and confirm history').click().run()
+    label(app.button,'Apply history').click().run()
     assert not app.exception
     assert len(load_journal(tmp_path)[0].securities[0].records)==3
 
@@ -337,16 +337,16 @@ def test_direct_editor_preserves_precision_and_retains_original(tmp_path):
 def test_transfer_entry_uses_holding_names_and_preserves_destination_identity(tmp_path):
     fixture(tmp_path)
     with (tmp_path/'holdings.csv').open('a') as handle:
-        handle.write('invented-destination,Invented destination,0,0,EUR\n')
+        handle.write('invented,Invented,0,0,EUR\n')
     app = launch(tmp_path)
     label(app.button, 'Other transaction').click().run()
     label(app.selectbox, 'Transaction').set_value('transfer').run()
-    destination = label(app.selectbox, 'Destination holding')
-    assert destination.options == ['Choose a holding', '2. Invented destination']
+    destination = label(app.selectbox, 'Receiving holding')
+    assert len(destination.options) == 1 and 'Invented' in destination.options[0]
     assert not any('position ID' in field.label for field in app.text_input)
     destination.set_value('position-1').run()
     label(app.text_input, 'Quantity').set_value('1').run()
-    label(app.text_input, 'Fees').set_value('0').run()
+    label(app.text_input, 'Fee').set_value('0').run()
     label(app.button, 'Save transaction').click().run()
     assert not app.exception
     from portfolio_app.account_journal import load_journal
@@ -377,7 +377,7 @@ def test_prepared_history_reuses_results_and_invalidates_financial_inputs(tmp_pa
     corrected = replace(store, observations=(*store.observations[:-1], replace(store.observations[-1], amount=D(20))))
     assert view(store=corrected, revision='corrected').result.ending_value == 200
     unreviewed = replace(corrected, reviews=())
-    assert view(store=unreviewed, revision='unreviewed').result.money_weighted is None
+    assert view(store=unreviewed, revision='unreviewed').result.money_weighted is not None
     book = replace(journal.securities[0], active_ids=())
     changed = replace(journal, securities=(book,))
     assert view(journal=changed).result.ending_value != view().result.ending_value
@@ -458,3 +458,64 @@ render_portfolio_history(root, prepared, automatic=True)
     assert rendered[0]['view'].all_known.value == 120
     assert rendered[1]['view'].all_known.value == 150
     assert rendered[0]['calculation'] is not rendered[1]['calculation']
+
+
+def test_interval_switches_reuse_ledgers_and_previous_points(tmp_path, monkeypatch):
+    from datetime import date
+    from test_history_view import fixture as chart_fixture
+    import portfolio_app.history_ui as ui
+    import portfolio_app.history_view as charts
+    import portfolio_app.personal_performance as performance
+    import portfolio_app.input_cache as cache
+    monkeypatch.setattr(cache.st, 'session_state', {})
+    class FixedDate(date):
+        @classmethod
+        def today(cls): return cls(2024, 6, 16)
+    monkeypatch.setattr(ui, 'date', FixedDate)
+    journal, scope, store = chart_fixture()
+    calls, replays = [], []
+    calculate, replay = charts.calculate_history, performance.replay_securities
+    def counted(*args, **kwargs):
+        calls.append((args[3], args[4], kwargs.get('annualized', True)))
+        return calculate(*args, **kwargs)
+    def replayed(*args, **kwargs):
+        replays.append(kwargs.get('as_of'))
+        return replay(*args, **kwargs)
+    monkeypatch.setattr(charts, 'calculate_history', counted)
+    monkeypatch.setattr(performance, 'replay_securities', replayed)
+    def view(period): return ui.prepared_history_view(tmp_path, journal, scope, store, 'synthetic', period)
+    all_view = view('All')
+    before_replays, before_calls = len(replays), len(calls)
+    month = view('1M')
+    assert len(replays) == before_replays  # Range changes never reconstruct the same ledger state.
+    assert len(calls) == before_calls + 2  # New range result and new requested-start hover point.
+    assert view('All') == all_view
+    assert len(calls) == before_calls + 2
+    assert month == charts.history_view(journal, scope, store, '1M', today=FixedDate.today())
+
+
+def test_reused_context_expires_for_workspace_currency_date_and_evidence(tmp_path, monkeypatch):
+    from datetime import date
+    from test_history_view import fixture as chart_fixture
+    import portfolio_app.history_ui as ui
+    import portfolio_app.input_cache as cache
+    monkeypatch.setattr(cache.st, 'session_state', {})
+    journal, scope, store = chart_fixture()
+    def context(directory=tmp_path, journal=journal, revision='synthetic', target='EUR'):
+        return ui.prepared_history_calculation(directory, journal, store, revision, target=target)
+    first = context()
+    assert context() is first
+    assert context(directory=tmp_path/'other-workspace') is not first
+    first = context()
+    assert context(target='USD') is not first
+    first = context()
+    assert context(revision='changed-observations') is not first
+    first = context()
+    changed = replace(journal, securities=(replace(journal.securities[0], active_ids=()),))
+    assert context(journal=changed) is not first
+    first = context()
+    class Tomorrow(date):
+        @classmethod
+        def today(cls): return date.today().fromordinal(date.today().toordinal()+1)
+    monkeypatch.setattr(ui, 'date', Tomorrow)
+    assert context() is not first

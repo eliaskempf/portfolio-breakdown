@@ -15,8 +15,9 @@ from browser_support import settle
 playwright = pytest.importorskip('playwright.sync_api')
 
 
+@pytest.mark.parametrize('pending_refresh', [False, True])
 @pytest.mark.parametrize('viewport', [{'width':1440, 'height':1100}, {'width':1280, 'height':720}])
-def test_position_view_switches_clear_old_content_and_keep_card_geometry(tmp_path, viewport):
+def test_position_view_switches_clear_old_content_and_keep_card_geometry(tmp_path, viewport, pending_refresh):
     from datetime import date, timedelta
     journal, _ = setup(tmp_path)
     save_journal(tmp_path, journal, None)
@@ -40,7 +41,7 @@ root=Path(__file__).parent
 if not hasattr(history, '_test_original'):
     history._test_original=history.history_view
     def delayed(*args, **kwargs):
-        with (root/'calculations.txt').open('a') as f: f.write('calculation\\n')
+        with (root/'calculations.txt').open('a') as f: f.write('chart\\n' if kwargs.get('include_points', True) else 'summary\\n')
         time.sleep(1)
         return history._test_original(*args, **kwargs)
     history.history_view=delayed
@@ -53,6 +54,8 @@ apply_style()
 st.button('Open position',on_click=request_position,args=('position-0',))
 render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{},demo=False)
 ''')
+    script.write_text(script.read_text().replace('refresher.request=lambda *a,**k:RefreshStatus()',
+        f'refresher.request=lambda *a,**k:RefreshStatus(pending={pending_refresh})\nrefresher.pending=lambda _: {pending_refresh}'))
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
     process = subprocess.Popen([sys.executable, '-m', 'streamlit', 'run', str(script),
@@ -70,7 +73,7 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             page.goto(f'http://127.0.0.1:{port}')
             page.get_by_role('button', name='Open position', exact=True).click()
             dialog = page.get_by_role('dialog'); dialog.wait_for(); settle(page)
-            assert (tmp_path/'calculations.txt').read_text().count('calculation') == 1
+            assert (tmp_path/'calculations.txt').read_text().count('chart') == 1
             dialog.evaluate('e => window.originalDialog=e')
             metrics = dialog.get_by_test_id('stMetric')
             playwright.expect(metrics).to_have_count(3)
@@ -101,14 +104,21 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             page.mouse.move(0, 0)
             history_sizes = metrics.evaluate_all('es=>es.map(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height}))')
             dialog.get_by_role('radio', name='Price', exact=True).click(); settle(page)
+            if pending_refresh:
+                page.wait_for_timeout(2300); settle(page)
+            # A queued timer may retain the outgoing chart in its hidden fixed slot.
+            # Only the selected Price chart may be visible to the user.
+            visible_chart = dialog.locator('.js-plotly-plot:visible')
+            playwright.expect(visible_chart).to_have_count(1)
             playwright.expect(metrics).to_have_count(3)
-            dialog.locator('.js-plotly-plot').wait_for(); settle(page)
+            visible_chart.wait_for(); settle(page)
+            assert visible_chart.evaluate('e=>e.data[0].name') == 'Price'
             assert metrics.all_text_contents() == expected_summary
             price_sizes = metrics.evaluate_all('es=>es.map(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height}))')
             for a, b in zip(history_sizes, price_sizes):
                 assert a['width'] == pytest.approx(b['width'], abs=2)
                 assert a['height'] == pytest.approx(b['height'], abs=2)
-            assert (tmp_path/'calculations.txt').read_text().count('calculation') == 1
+            assert (tmp_path/'calculations.txt').read_text().count('chart') == 1
             dialog.get_by_role('radio', name='Holdings', exact=True).click()
             page.wait_for_timeout(200)
             # Returning to cached holdings must remove or hide the old price chart.
@@ -116,19 +126,20 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             assert dialog.locator('.js-plotly-plot').evaluate_all('es=>es.every(e=>e.data?.[0]?.name!=="Price" || getComputedStyle(e).visibility==="hidden")')
             settle(page)
             assert dialog.evaluate('e=>e===window.originalDialog')
-            assert (tmp_path/'calculations.txt').read_text().count('calculation') == 1
+            assert (tmp_path/'calculations.txt').read_text().count('chart') == 1
             assert metrics.all_text_contents() == expected_summary
             assert not dialog.get_by_text('Required inputs', exact=True).count()
             assert not dialog.get_by_text('History inputs', exact=True).count()
-            dialog.get_by_role('button', name='Review transactions', exact=True).click(); settle(page)
-            assert dialog.get_by_role('button', name='Apply and confirm history', exact=True).count() == 1
+            dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+            dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
+            assert dialog.get_by_role('button', name='Apply history', exact=True).count() == 1
             assert not dialog.get_by_role('checkbox').count()
             assert not page.get_by_test_id('stException').count()
             # A long review remains scrollable without growing the outer window.
             assert dialog.evaluate('e=>{const s=e.lastElementChild; return s.scrollHeight>=s.clientHeight && getComputedStyle(s).overflowY==="auto";}')
             if viewport['height'] == 720:
                 assert dialog.evaluate('e=>e.lastElementChild.scrollHeight>e.lastElementChild.clientHeight')
-            dialog.get_by_role('button', name='Apply and confirm history', exact=True).scroll_into_view_if_needed()
+            dialog.get_by_role('button', name='Apply history', exact=True).scroll_into_view_if_needed()
             bounds = page.evaluate('cancelAnimationFrame(window.dialogFrame); window.dialogBounds')
             assert max(b['height'] for b in bounds)-min(b['height'] for b in bounds) <= 1
             assert max(b['top'] for b in bounds)-min(b['top'] for b in bounds) <= 1
@@ -136,20 +147,19 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             # Evidence arriving while Price is selected updates the shared row
             # without a chart switch or a whole-dialog remount.
             from dataclasses import replace
-            from portfolio_app.history_observations import load_observations, CoverageReview, HistoryScope
-            from portfolio_app.security_history import history_fingerprint
+            from portfolio_app.history_observations import load_observations
             dialog.get_by_role('radio', name='History', exact=True).click(); settle(page)
             dialog.get_by_role('radio', name='Price', exact=True).click(); settle(page)
             annualized = metrics.filter(has_text='Annualized return').get_by_test_id('stMetricValue')
-            playwright.expect(annualized).to_have_text('—')
+            playwright.expect(annualized).not_to_have_text('—')
+            previous_return = annualized.inner_text()
             store, revision = load_observations(tmp_path)
-            review = CoverageReview('synthetic-review', HistoryScope(('position-0',)),
-                '2024-01-01', date.today().isoformat(), history_fingerprint(journal))
-            save_observations(tmp_path, replace(store, reviews=(review,)), revision)
-            playwright.expect(annualized).not_to_have_text('—', timeout=10000)
+            correction = Observation('correction', 'price', 'position-0', date.today().isoformat(), 15, 'EUR', replaces='2')
+            save_observations(tmp_path, replace(store, observations=(*store.observations, correction)), revision)
+            playwright.expect(annualized).not_to_have_text(previous_return, timeout=10000)
             assert dialog.evaluate('e=>e===window.originalDialog')
             page.wait_for_timeout(2300)
-            assert (tmp_path/'calculations.txt').read_text().count('calculation') == 2
+            assert (tmp_path/'calculations.txt').read_text().count('summary') == 2
             dialog.get_by_role('button', name='Close', exact=True).first.click()
             playwright.expect(dialog).to_have_count(0)
             page.wait_for_timeout(2300)

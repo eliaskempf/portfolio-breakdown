@@ -47,17 +47,43 @@ def _key(directory, identity):
     return 'personal_history_' + sha256((str(directory.resolve())+identity).encode()).hexdigest()[:12] + '_'
 
 
+def prepared_history_calculation(directory, journal, observations, revision, *, target=None):
+    """One session-owned ledger context across scopes and range switches."""
+    from portfolio_app.currency_display import reporting_currency
+    from portfolio_app.personal_performance import HistoryCalculation
+    from portfolio_app.security_history import history_fingerprint
+    target = target or reporting_currency()
+    signature = str(directory.resolve()), history_fingerprint(journal), revision, target, date.today()
+    cache = st.session_state.setdefault('parsed_inputs', {})
+    previous = cache.get('history_calculation')
+    if previous is None or previous[0] != signature:
+        # Results and ledger facts must expire together when evidence changes.
+        for key in list(cache):
+            if key.startswith('history_view_'):
+                del cache[key]
+        previous = (signature, HistoryCalculation(journal, observations))
+        cache['history_calculation'] = previous
+    return previous[1]
+
+
 def prepared_history_view(directory, journal, scope, observations, revision, period='1Y', *, target=None, include_points=True, calculation=None):
     """Reuse a chart across dialog interactions until its actual inputs change."""
     from portfolio_app.currency_display import reporting_currency
     from portfolio_app.history_view import history_view
     from portfolio_app.input_cache import cached_input
-    from portfolio_app.security_history import history_fingerprint
     target = target or reporting_currency()
+    calculation = calculation or prepared_history_calculation(directory, journal, observations, revision, target=target)
     stamp = date.today()
-    signature = str(directory.resolve()), history_fingerprint(journal), revision, scope, period, target, stamp, include_points
-    return cached_input('history_view_'+scope.key+('_chart' if include_points else '_summary'), signature,
+    signature = str(directory.resolve()), calculation.fingerprint, revision, scope, period, target, stamp, include_points
+    key = 'history_view_'+scope.key+'_'+period+('_chart' if include_points else '_summary')
+    view = cached_input(key, signature,
         lambda: history_view(journal, scope, observations, period, today=stamp, target=target, include_points=include_points, calculation=calculation))
+    cache = st.session_state['parsed_inputs']
+    cache[key] = cache.pop(key)
+    entries = [name for name in cache if name.startswith('history_view_')]
+    for name in entries[:-32]:
+        del cache[name]
+    return view
 
 
 def _record_id(key, record):
@@ -106,13 +132,23 @@ def _visible_records(book):
 def _transaction_table(records, book):
     columns = ['Date', 'Transaction', 'Shares', 'Trade value', 'Fees', 'Status']
     entries = []
-    for event in records:
-        charges = ' + '.join(_money(c.amount, c.currency) for c in event.charges)
-        entries.append(dict(zip(columns, [event.date or 'Unknown', _KIND_LABELS.get(event.kind,event.kind.title()),
-            str(event.quantity) if event.quantity else '—', _money(event.gross, event.currency),
-            charges or (_money(Decimal(0), event.currency) if event.charges_known else 'Unknown' if event.kind in ('buy','sell','distribution') else '—'),
-            'Applied' if event.id in book.active_ids else 'Changes saved; not applied' if event.replaces else 'Saved; not applied'])))
-    return pd.DataFrame(entries, columns=columns)
+    for e in records:
+        charges = ' + '.join(_money(c.amount, c.currency) for c in e.charges)
+        asset_fees = ' + '.join(f'{c.quantity} asset units' for c in e.asset_charges)
+        charges = ' + '.join(v for v in (charges,asset_fees) if v)
+        entries.append(dict(zip(columns, [e.date or 'Unknown', _KIND_LABELS.get(e.kind,e.kind.title()),
+            f'{e.quantity} → {e.received_quantity}' if e.kind == 'swap' else str(e.quantity) if e.quantity or e.kind in ('opening','checkpoint') else '—', '—' if e.kind in ('swap','reward','asset_fee','checkpoint','inventory_in','inventory_out') else _money(e.gross, e.currency),
+            charges or (_money(Decimal(0), e.currency) if e.charges_known else 'Unknown' if e.kind in ('buy','sell','distribution') else '—'),
+            'Applied' if e.id in book.active_ids else 'Changes saved; not applied' if e.replaces else 'Saved; not applied'])))
+        if e.kind == 'opening':
+            entries[-1]['Fees'] = '—'
+            if e.costs:
+                entries[-1]['Trade value'] = ' + '.join(_money(_decimal(p['amount'], optional=True), p['currency']) for p in e.costs)
+        if e.kind in ('swap','reward'):
+            entries[-1]['Monetary valuation'] = _money(e.valuation_amount,e.valuation_currency)
+            if e.valuation_quality == 'estimated':
+                entries[-1]['Monetary valuation'] += ' · estimated'
+    return pd.DataFrame(entries).fillna('—') if entries else pd.DataFrame(columns=columns)
 
 
 def _request_removal(key, identities, revision):
@@ -126,17 +162,31 @@ def _remove_transactions(directory, journal, revision, snapshot, book, row, key)
     if selected_revision != revision:
         st.warning('History changed. Return to the list and select the transactions again.')
         return
-    selected = [event for event in _visible_records(book) if event.id in identities]
-    st.markdown(f'**Remove {len(selected)} '+('transaction?' if len(selected) == 1 else 'transactions?')+'**')
-    st.dataframe(_transaction_table(selected, book), hide_index=True, width='stretch')
-    candidate = remove_transactions(book, identities)
-    if candidate.active_ids != book.active_ids:
-        _activation(directory, journal, revision, snapshot, candidate, row, key+'remove_',
-                    resolution='accept', show_review=True, action_label='Remove transactions')
-    else:
+    from portfolio_app.security_history import current_records
+    candidates, frames = [], []
+    for owner in journal.securities:
+        records = [e for e in current_records(owner) if e.id in identities]
+        if records:
+            frames.append(_transaction_table(records, owner))
+            candidates.append(remove_transactions(owner, [e.id for e in records]))
+    if not candidates:
+        raise DataError('Choose current transactions to remove.')
+    st.markdown(f'**Remove {len(identities)} transactions?**')
+    st.dataframe(pd.concat(frames, ignore_index=True).fillna('—'), hide_index=True, width='stretch')
+    from portfolio_app.history_commands import changed_positions
+    if not changed_positions(journal, candidates):
         st.caption('These entries are not applied. Your portfolio balances stay unchanged.')
-        st.button('Remove transactions', type='primary', key=key+'confirm_remove', on_click=_save_evidence,
-                  args=(directory, candidate, revision, snapshot.revision), kwargs={'screen': 'list'})
+        if st.button('Remove transactions', type='primary', key=key+'remove_pending'):
+            save_history(directory, candidates[0], other_changes=tuple(candidates[1:]),
+                expected_journal_revision=revision, expected_holdings_revision=snapshot.revision, activate=True)
+            _history_action(key, 'list')
+            st.rerun()
+        return
+    owner = candidates[0]
+    source_row = snapshot.holdings.loc[snapshot.holdings.position_id.eq(owner.position_id)].iloc[0]
+    _activation(directory, journal, revision, snapshot, owner, source_row, key+'remove_',
+        resolution='accept', show_review=True, action_label='Remove transactions', other_changes=tuple(candidates[1:]),
+        return_key=key)
 
 
 def render_position_history(directory, row):
@@ -174,7 +224,8 @@ def render_position_history(directory, row):
                 from portfolio_app.transaction_import_ui import render_pdf_import
                 render_pdf_import(directory, row, book, journal, revision, snapshot, key)
             elif screen == 'edit':
-                _edit_transaction(directory, journal, revision, snapshot, book, key)
+                owner = next((b for b in journal.securities if b.position_id == st.session_state.get(key+'event_owner')), book)
+                _edit_transaction(directory, journal, revision, snapshot, owner, key)
             elif screen == 'remove':
                 _remove_transactions(directory, journal, revision, snapshot, book, row, key)
             elif screen == 'replace':
@@ -182,7 +233,10 @@ def render_position_history(directory, row):
             elif screen in ('fix', 'review'):
                 _review_history(directory, journal, revision, snapshot, book, row, key)
             else:
-                records = _visible_records(book)
+                from portfolio_app.security_history import current_records, affected_positions
+                owners = {e.id: owner for owner in journal.securities for e in current_records(owner)
+                          if row.position_id in affected_positions(owner, e)}
+                records = [e for owner in journal.securities for e in current_records(owner) if e.id in owners]
                 with st.container(horizontal=True):
                     st.button('Add buy', icon=':material/add:', key=key+'buy', on_click=_history_action, args=(key,'buy'))
                     st.button('Add sell', icon=':material/remove:', key=key+'sell', on_click=_history_action, args=(key,'sell'))
@@ -191,18 +245,39 @@ def render_position_history(directory, row):
                 if records:
                     from portfolio_app.transaction_list_ui import render_transaction_list
                     def edit(identity):
-                        st.session_state[key+'edit_record'] = identity
-                        _history_action(key, 'edit')
-                    render_transaction_list(records, _transaction_table(records, book), key=key+'transactions_'+str(revision),
+                        owner = owners[identity].position_id
+                        owner_key = _key(directory, owner)
+                        st.session_state[owner_key+'edit_record'] = identity
+                        _history_action(owner_key, 'edit')
+                        if owner != row.position_id:
+                            from portfolio_app.position_ui import request_position
+                            request_position(owner, local=False)
+                            st.session_state[f'position_edit_detail_view_{owner}'] = 'Transactions'
+                    frame = pd.concat([_transaction_table([e], owners[e.id]) for e in records], ignore_index=True).fillna('—')
+                    render_transaction_list(records, frame, key=key+'transactions_'+str(revision),
                         revision=revision, on_edit=edit, on_remove=lambda ids: _request_removal(key, ids, revision))
-                if not records:
+                if records:
+                    with st.expander('Transaction details'):
+                        st.dataframe(pd.DataFrame([dict(Date=e.date, Note=e.note, Source=_source_label(e.source),
+                            Estimated=e.estimated or e.valuation_quality == 'estimated' or any(p.get('quality') == 'estimated' for p in e.costs),
+                            Acquisition_cost=' + '.join(_money(_decimal(p.get('amount'), optional=True), p.get('currency', '')) for p in e.costs),
+                            Observed=e.observed_at or ('Unknown' if e.kind == 'checkpoint' else '—'),
+                            Cost_source='; '.join(dict.fromkeys(p.get('source', '') for p in e.costs)),
+                            Valuation_source=e.valuation_source) for e in records]), hide_index=True, width='stretch')
+                else:
                     st.caption('No transactions yet. Add buys and sells, then review them against your portfolio.')
-                elif any(e.id not in book.active_ids for e in records):
+                if any(e.id not in owners[e.id].active_ids for e in records):
                     st.caption('Saved transactions do not change your holding until you review and apply them.')
                 with st.container(horizontal=True):
                     if records:
-                        st.button('Review against portfolio', type='primary',
-                            key=key+'review_list', on_click=_history_action, args=(key,'review'))
+                        def review():
+                            owner = book.position_id if _visible_records(book) else owners[records[0].id].position_id
+                            _history_action(_key(directory, owner), 'review')
+                            if owner != row.position_id:
+                                from portfolio_app.position_ui import request_position
+                                request_position(owner, local=False)
+                                st.session_state[f'position_edit_detail_view_{owner}'] = 'Transactions'
+                        st.button('Review against portfolio', type='primary', key=key+'review_list', on_click=review)
                     st.button('Add starting balance', type='tertiary', key=key+'starting',
                         help='Optional: the holding before the transactions you have records for.', on_click=_history_action, args=(key,'opening'))
                     if book.active and records:
@@ -218,8 +293,9 @@ def _review_history(directory, journal, revision, snapshot, book, row, key):
     superseded = {e.replaces for e in records if e.replaces}
     review = st.container()
     with st.expander('Review options'):
+        labels = {identity: f'{number}. {_event_label(event)}' for number, (identity, event) in enumerate(by_id.items(), 1)}
         chosen = st.multiselect('Included transactions', list(by_id), default=[i for i in by_id if i not in superseded],
-            format_func=lambda i: _event_label(by_id[i]), key=key+'included_'+str(revision))
+            format_func=labels.get, key=key+'included_'+str(revision))
         st.button('Add starting balance', type='tertiary', key=key+'review_start',
             help='Use this if you already held shares before your first recorded transaction.',
             on_click=_history_action, args=(key,'opening'))
@@ -230,9 +306,9 @@ def _review_history(directory, journal, revision, snapshot, book, row, key):
                 help='Link only when these payments should update this account. Payments already covered by its starting balance are not posted again.')
             book = replace(book, account_id=account)
     with review:
-        openings = [by_id[i] for i in chosen if by_id[i].kind == 'opening']
+        openings = [by_id[i] for i in chosen if by_id[i].kind in ('opening', 'checkpoint')]
         if not openings or all(e.source == 'confirmed_zero_start' for e in openings):
-            st.caption('From your first purchase · Starts with zero shares. Already owned shares? Add a starting balance in Review options.')
+            st.caption('Starts at zero', help='Already owned shares? Add a starting balance in Review options.')
         else:
             st.caption('Starting balance: '+_event_label(max(openings, key=lambda e: (e.date,e.sequence))))
         if chosen:
@@ -251,14 +327,25 @@ def _review_history(directory, journal, revision, snapshot, book, row, key):
 
 
 _KIND_LABELS = {'opening':'Starting balance', 'buy':'Buy', 'sell':'Sell', 'distribution':'Distribution',
-    'fee':'Fee', 'tax':'Tax', 'split':'Share split', 'transfer':'Transfer between holdings',
+    'swap':'Exchange', 'reward':'Income in units', 'asset_fee':'Fee in units', 'fee':'Fee', 'tax':'Tax', 'split':'Share split', 'transfer':'Transfer between holdings',
     'transfer_in':'Transfer in', 'transfer_out':'Transfer out', 'cost':'Remaining acquisition cost', 'note':'Unresolved event'}
+_KIND_LABELS.update(checkpoint='Balance checkpoint', inventory_in='Inventory received', inventory_out='Inventory removed')
 
 
 def _event_label(event):
     if event.source == 'confirmed_zero_start':
         return 'From first purchase (zero starting shares)'
     return f'{event.date or "Undated"} · {_KIND_LABELS.get(event.kind,event.kind.title())} · {event.quantity:g} units'
+
+
+def _source_label(source):
+    if source.startswith('consors_pdf:'):
+        return 'PDF import'
+    if source.startswith('transaction_csv_v'):
+        return 'CSV import'
+    if source.startswith('legacy:'):
+        return 'Imported purchase history'
+    return {'manual':'Manual entry', 'confirmed_zero_start':'Starting balance'}.get(source, 'Recorded history')
 
 
 def _opening_form(directory, journal, revision, snapshot, book, row, key):
@@ -333,7 +420,7 @@ def _fix_history(directory, journal, revision, snapshot, book, row, key):
         entry['Destination'] = destinations.get(entry['Destination'], 'Choose a holding')
     edited = st.data_editor(pd.DataFrame(rows), num_rows='dynamic', hide_index=True,
         key=key+'evidence_'+str(revision), column_config={
-            'record': None, 'Kind': st.column_config.SelectboxColumn(options=['opening','buy','sell','distribution','split','transfer','transfer_in','transfer_out','fee','tax','cost','note']),
+            'record': None, 'Kind': st.column_config.SelectboxColumn(options=['opening','buy','sell','distribution','split','transfer','transfer_in','transfer_out','fee','tax','cost','note','swap','reward','asset_fee','inventory_in','inventory_out','checkpoint']),
             'Date': st.column_config.TextColumn(help='YYYY-MM-DD; blank evidence is retained but cannot be activated.'),
             'Gross': st.column_config.TextColumn(help='Opening/remaining total cost, or gross trade/income amount before fees.'),
             'Quantity': st.column_config.TextColumn(help='Units; for a split, new units per old unit.'),
@@ -392,7 +479,9 @@ def _fix_history(directory, journal, revision, snapshot, book, row, key):
                 fields['charges'] = tuple(Charge(_decimal(c['Amount'], optional=True), str(c['Currency']).upper(), str(c.get('Date') or ''),
                     str(c.get('Kind') or 'fee'), bool(c.get('External') or False)) for c in charge_table.to_dict('records') if c.get('Currency'))
             identity = old.id if old else _record_id(key+str(revision), fields)
-            candidate = SecurityEvent(identity, **fields, replaces=old.replaces if old else '')
+            candidate = replace(old, **fields) if old else SecurityEvent(identity, **fields)
+            if old and candidate.date != old.date:
+                candidate = replace(candidate, timestamp_utc='')
             if old and candidate != old:
                 candidate = replace(candidate, id=_record_id(key+str(revision), fields), replaces=old.id)
             if candidate != old:
@@ -402,12 +491,12 @@ def _fix_history(directory, journal, revision, snapshot, book, row, key):
         candidate = append_evidence(book, additions)
         st.button('Save evidence', key=key+'save_evidence', on_click=_save_evidence,
             args=(directory, candidate, revision, snapshot.revision))
-        candidate = replace(candidate, active_ids=tuple(selected))
+        candidate = replace(candidate, active_ids=tuple(selected) + tuple(e.id for e in book.records if e.kind == 'void' and e.id in book.active_ids))
         if selected:
             _activation(directory, journal, revision, snapshot, candidate, row, key+'fix_', resolution='accept')
         if book.records:
             with st.expander('Retained evidence'):
-                st.dataframe(pd.DataFrame([dict(Date=e.date, Kind=e.kind, Quantity=str(e.quantity), Source=e.source,
+                st.dataframe(pd.DataFrame([dict(Date=e.date, Kind=e.kind, Quantity=str(e.quantity), Source=_source_label(e.source),
                     Status='Active' if e.id in book.active_ids else 'Evidence', Note=e.note) for e in book.records]), hide_index=True)
         if row.get('purchase_history'):
             from portfolio_app.purchase_ui import render_purchase_history
@@ -436,86 +525,62 @@ def _legacy_evidence(directory, journal, revision, snapshot, book, row, key):
         st.rerun()
 
 
-def _activation(directory, journal, revision, snapshot, candidate, row, key, *, resolution, review_container=None, show_review=False, action_label=None):
+def _activation(directory, journal, revision, snapshot, candidate, row, key, *, resolution, review_container=None, show_review=False, action_label=None, other_changes=(), return_key=None):
     from portfolio_app.currency_display import reporting_currency
     from portfolio_app.history_observations import ObservationFX
     historical = ObservationFX(load_observations(directory)[0])
-    signature = sha256(json.dumps(asdict(candidate), default=str, sort_keys=True).encode()).hexdigest()
+    signature = sha256(json.dumps([asdict(candidate), *[asdict(b) for b in other_changes]], default=str, sort_keys=True).encode()).hexdigest()
     if show_review or (review_container or st).button('Review history', key=key+'review'):
         st.session_state[key+'reviewed'] = (signature, revision, snapshot.revision)
     if st.session_state.get(key+'reviewed') != (signature, revision, snapshot.revision):
         return
-    candidate, comparison, cash = preview_activation(journal, candidate, candidate.active_ids, row, target=reporting_currency(), historical=historical)
-    def number(value):
-        return 'Unknown' if value is None else format(value, '.10f').rstrip('0').rstrip('.') or '0'
-    old_average = comparison.recorded_cost/comparison.recorded_quantity if comparison.recorded_cost is not None and comparison.recorded_quantity else None
-    new_average = comparison.reconstructed_cost/comparison.reconstructed_quantity if comparison.reconstructed_cost is not None and comparison.reconstructed_quantity else None
-    st.table(pd.DataFrame([
-        {'Measure':'Shares', 'Current portfolio':number(comparison.recorded_quantity), 'From history':number(comparison.reconstructed_quantity)},
-        {'Measure':'Acquisition cost ('+comparison.currency+')', 'Current portfolio':_money(comparison.recorded_cost), 'From history':_money(comparison.reconstructed_cost)},
-        {'Measure':'Average buy-in ('+comparison.currency+')', 'Current portfolio':_money(old_average), 'From history':_money(new_average)},
-    ]), hide_index=True, border='horizontal')
-    if not comparison.quantity_matches or comparison.cost_matches is False:
-        st.caption('The balances differ. Applying history replaces the current holding with the figures above.')
-    elif comparison.cost_matches is None:
-        st.caption('Acquisition cost is not yet comparable.')
-    else:
-        st.caption('Shares and acquisition cost match.')
-    if comparison.reconstructed_cost is None:
+    from portfolio_app.history_commands import changed_positions, proposed_journal, history_comparisons
+    from portfolio_app.history_review_ui import ReviewPreview, render_history_review
+    from portfolio_app.security_history import duplicate_candidates
+    originals = (candidate, *other_changes)
+    active = {i for b in journal.securities for i in b.active_ids}
+    def chosen(excluded):
+        return tuple(replace(b, active_ids=tuple(i for i in b.active_ids if i not in excluded)) for b in originals)
+    def build(excluded):
+        selected = chosen(excluded)
+        primary, comparison, cash = preview_activation(journal, selected[0], selected[0].active_ids, row,
+            target=reporting_currency(), historical=historical, other_changes=selected[1:])
+        proposed = proposed_journal(journal, selected)
+        touched = changed_positions(journal, selected) | {candidate.position_id}
+        comparisons = history_comparisons(journal, proposed, snapshot.holdings, touched,
+            target=reporting_currency(), historical=historical)
+        comparisons = tuple(sorted(comparisons, key=lambda c: c['position_id'] != candidate.position_id))
+        changes = tuple(dict(account=c['Account'], currency=c['Currency'], before=c['Before'], after=c['After'])
+            for c in cash if c['Before'] != c['After'] or (c['Account'] == primary.account_id and c['After'] is None))
+        matches = tuple((b.position_id, a, z) for b in selected for a,z in duplicate_candidates(b) if b.position_id in touched)
+        return ReviewPreview(proposed, comparisons, cash=changes, matches=matches,
+            editable=frozenset(i for b in originals for i in b.active_ids)-active,
+            known_positions=frozenset(snapshot.holdings.position_id))
+    def keep():
+        _history_action(_key(directory, candidate.position_id), 'list')
+    def apply(excluded):
+        selected = chosen(excluded)
+        save_history(directory, selected[0], expected_journal_revision=revision, expected_holdings_revision=snapshot.revision,
+            activate=True, resolution=resolution, accept_balance_change=True, accept_cash_change=True,
+            accept_duplicates=True, other_changes=selected[1:])
+        st.session_state.pop(key+'reviewed', None)
+        st.session_state[(return_key or _key(directory, candidate.position_id))+'screen'] = 'list'
+        st.rerun()
+    preview = render_history_review(build, key=key, apply=apply, keep=keep, action_label=action_label)
+    if preview is None:
+        return
+    candidate = next(b for b in preview.journal.securities if b.position_id == candidate.position_id)
+    _complete_fees(directory, journal, revision, snapshot, candidate, key)
+    comparison = next(c for c in preview.comparisons if c['position_id'] == candidate.position_id)
+    if comparison['after_cost'] is None:
         from portfolio_app.security_history import replay_securities
         from portfolio_app.cost_basis import resolve_cost
-        state = replay_securities((*[b for b in journal.securities if b.position_id != candidate.position_id], candidate)).positions[candidate.position_id]
+        state = replay_securities(preview.journal.securities).positions[candidate.position_id]
         remaining_lots = {lot.id for lot in state.lots}
         missing_fees = any(e.id in remaining_lots and e.kind == 'buy' and not e.charges_known for e in selected_events(candidate))
-        reason = ('Purchase fees are unconfirmed. Complete them below; enter 0 if there were no fees.' if missing_fees
-                  else resolve_cost(list(state.costs), comparison.currency, historical).note)
-        st.info('Cost and average buy-in unavailable: '+reason)
-    changed_cash = [c for c in cash if c['Before'] != c['After'] or (c['Account'] == candidate.account_id and c['After'] is None)]
-    if changed_cash:
-        names = {a.id:a.name for a in journal.accounts}
-        st.markdown('**Cash balance changes**')
-        st.table(pd.DataFrame([{'Account':names.get(c['Account'], 'Linked account'), 'Currency':c['Currency'],
-            'Current balance':_money(c['Before']), 'After applying':_money(c['After'])} for c in changed_cash]), hide_index=True, border='horizontal')
-        st.caption('Applying history also updates these cash balances. Payments covered by the account’s starting balance are already included.')
-    from portfolio_app.security_history import duplicate_candidates
-    duplicates = duplicate_candidates(candidate)
-    duplicate_accept = False
-    if duplicates:
-        st.warning('Some transactions have matching dates and amounts. Check that they are separate trades before applying.')
-        duplicate_accept = st.radio('Matching transactions', ['I need to check them', 'They are separate trades'],
-            horizontal=True, key=key+'duplicates') == 'They are separate trades'
-    complete_from = complete_through = ''
-    if action_label is None:
-        from portfolio_app.history_confirmation import confirmation_interval
-        complete_from, complete_through = confirmation_interval(candidate)
-        interval = f'{date.fromisoformat(complete_from):%d %b %Y} – {date.fromisoformat(complete_through):%d %b %Y}'
-        st.caption('Confirm complete history · '+interval)
-        st.caption('All purchases, sales, income, fees, taxes and transfers in this interval are recorded. '
-                   'Still backfilling? Choose Apply incomplete history.')
-    blocked = comparison.reconstructed_cost is None or any(c['After'] is None for c in changed_cash) or bool(duplicates and not duplicate_accept)
-    def apply(*, complete):
-        save_history(directory, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision,
-            activate=True, resolution=resolution, accept_balance_change=True, accept_cash_change=True,
-            accept_duplicates=duplicate_accept, complete_from=complete_from if complete else '',
-            complete_through=complete_through if complete else '')
-        st.session_state.pop(key+'reviewed', None)
-        st.session_state[_key(directory, candidate.position_id)+'screen'] = 'list'
-        st.rerun()
-    with st.container(horizontal=True, key=key+'actions'):
-        if st.button(action_label or 'Apply and confirm history', key=key+'save', disabled=blocked, type='primary',
-                     help='Use the displayed balances and confirm the shown history interval. Missing market data still limits returns.'
-                     if action_label is None else 'Apply the displayed transaction and balance changes.'):
-            apply(complete=action_label is None)
-        if action_label is None and st.button('Apply incomplete history', key=key+'save_incomplete', disabled=blocked,
-                                              type='secondary', help='Update balances without declaring this history complete.'):
-            apply(complete=False)
-        st.button('Keep portfolio unchanged', key=key+'keep', on_click=_history_action,
-            args=(_key(directory, candidate.position_id),'list'))
-    if blocked and not duplicates:
-        st.caption('Complete the missing inputs before applying. Your saved transactions and current portfolio are preserved.')
-    _complete_fees(directory, journal, revision, snapshot, candidate, key)
-    if comparison.reconstructed_cost is None:
-        _complete_cost_fx(directory, state.costs, comparison.currency, historical, key)
+        reason = ('Purchase fees unconfirmed' if missing_fees else resolve_cost(list(state.costs), comparison['currency'], historical).note)
+        st.caption('Cost unavailable', help=reason)
+        _complete_cost_fx(directory, state.costs, comparison['currency'], historical, key)
 
 
 def _complete_fees(directory, journal, revision, snapshot, candidate, key):
@@ -535,7 +600,6 @@ def _complete_fees(directory, journal, revision, snapshot, candidate, key):
         currency = previous.currency if previous else event.currency
         amount = st.text_input('Fees ('+currency+')', value=str(previous.amount) if previous and previous.amount is not None else '',
             placeholder='0 if none; blank if unknown', key=key+'fee_amount_'+event_id)
-        st.caption('Save the total fee for this transaction. Previously entered fees are shown for confirmation.')
         if st.button('Save fees', key=key+'save_fees', disabled=not amount.strip()):
             fee = replace(previous, amount=_decimal(amount)) if previous else Charge(_decimal(amount), currency)
             fields = dict(charges=(fee,), charges_known=True, replaces=event.id)
@@ -554,7 +618,6 @@ def _complete_cost_fx(directory, costs, target, historical, key):
     if not missing:
         return
     with st.expander('Complete exchange rates', expanded=True):
-        st.caption('Enter the actual historical rate for each date. No current rate is substituted.')
         for currency, stamp in missing:
             suffix = currency+stamp
             value = st.text_input(f'{stamp} · {target} per 1 {currency}', key=key+'fx_'+suffix)
@@ -569,8 +632,15 @@ def _add_transaction(directory, journal, revision, snapshot, book, key):
     key += 'new_'
     st.markdown('**Add transaction**')
     left, right = st.columns(2)
-    kind = left.selectbox('Transaction', ['buy','sell','distribution','fee','tax','split','transfer','transfer_in','transfer_out'],
+    kind = left.selectbox('Transaction', ['buy','sell','distribution','fee','tax','split','transfer','transfer_in','transfer_out','swap','reward','asset_fee'],
         format_func=_KIND_LABELS.get, key=key+'kind')
+    from portfolio_app.transaction_fields_ui import KINDS as NONCASH_KINDS, render_noncash_form
+    if kind in NONCASH_KINDS:
+        event = SecurityEvent('draft', kind, date.today().isoformat(), charges_known=True,
+            sequence=max([e.sequence for b in journal.securities for e in b.records]+[0])+1)
+        render_noncash_form(directory, journal, revision, snapshot, book, event, key, editing=False,
+                            return_key=_key(directory, book.position_id))
+        return
     stamp = right.date_input('Transaction date', max_value=date.today(), key=key+'date')
     left, right = st.columns([3,1])
     quantity = left.text_input('Quantity' if kind != 'split' else 'New units per old unit',
@@ -589,6 +659,13 @@ def _add_transaction(directory, journal, revision, snapshot, book, key):
         external = st.checkbox('Fee paid outside the linked cash account', key=key+'external') if book.account_id else False
         deferred = st.checkbox('Cash settles later', key=key+'deferred') if book.account_id and kind in ('buy','sell') else False
         settlement = st.date_input('Cash settlement date', min_value=stamp, key=key+'settlement') if deferred else None
+    with st.expander('Fees paid in units'):
+        from portfolio_app.transaction_fields_ui import asset_fee_fields
+        asset_charges = asset_fee_fields(SecurityEvent('draft', kind, stamp.isoformat()), snapshot, key)
+    with st.expander('Transaction details'):
+        estimated = st.checkbox('Estimated amounts', key=key+'estimated')
+        from portfolio_app.transaction_fields_ui import order_input
+        sequence = order_input(max([e.sequence for b in journal.securities for e in b.records]+[0])+1, key+'sequence')
     destinations = _holding_choices(snapshot, book)
     destination = st.selectbox('Destination holding', list(destinations), format_func=destinations.get,
         key=key+'destination') if kind == 'transfer' else ''
@@ -600,7 +677,7 @@ def _add_transaction(directory, journal, revision, snapshot, book, key):
             if not known or fee_currency != currency or value is None:
                 raise DataError('Enter the fees (0 if none) in the transaction currency to use a total paid or received.')
             gross = value-(charge or 0) if kind == 'buy' else value+(charge or 0)
-        fields = dict(kind=kind, date=stamp.isoformat(), sequence=max([e.sequence for e in journal.events]+[e.sequence for b in journal.securities for e in b.records]+[0])+1,
+        fields = dict(kind=kind, date=stamp.isoformat(), sequence=sequence, estimated=estimated, asset_charges=asset_charges,
             quantity=qty, price=price, amount=gross, currency=currency,
             charges=(Charge(charge, fee_currency, fee_date.isoformat(), external=external),) if fee else (), charges_known=known,
             other_position_id=destination, value_date=settlement.isoformat() if settlement else '')
@@ -628,6 +705,11 @@ def _edit_transaction(directory, journal, revision, snapshot, book, key):
         st.caption('Return to transactions and choose the entry to edit.')
         return
     event = by_id[identity]
+    from portfolio_app.transaction_fields_ui import KINDS as NONCASH_KINDS, render_noncash_form
+    if event.kind in NONCASH_KINDS:
+        render_noncash_form(directory, journal, revision, snapshot, book, event, key+'edit_'+identity+'_',
+                            editing=True, return_key=key)
+        return
     st.caption(_event_label(event))
     key += 'edit_'+identity+'_'
     left, right = st.columns(2)
@@ -656,10 +738,16 @@ def _edit_transaction(directory, journal, revision, snapshot, book, key):
                 help='Leave empty to use the transaction date.')
             external = st.checkbox('Fee paid outside the linked cash account', value=charge.external, key=key+'external_'+suffix) if book.account_id or charge.external else False
         fees.append((charge, fee, fee_currency, fee_date, external))
+    with st.expander('Fees paid in units'):
+        from portfolio_app.transaction_fields_ui import asset_fee_fields
+        asset_charges = asset_fee_fields(event, snapshot, key)
     with st.expander('Settlement and note'):
         settlement = st.date_input('Cash settlement date', value=date.fromisoformat(event.value_date) if event.value_date else None,
             key=key+'settlement', help='Leave empty for settlement on the transaction date.')
         note = st.text_input('Note', value=event.note, key=key+'note')
+        estimated = st.checkbox('Estimated amounts', value=event.estimated, key=key+'estimated')
+        from portfolio_app.transaction_fields_ui import order_input
+        sequence = order_input(event.sequence, key+'sequence')
     try:
         updated_fees = tuple(replace(c, amount=_decimal(v, optional=True), currency=currency,
             date=stamp.isoformat() if stamp else '', external=external) for c,v,currency,stamp,external in fees)
@@ -674,8 +762,8 @@ def _edit_transaction(directory, journal, revision, snapshot, book, key):
         if mode == 'Unit price' and price == event.price and _decimal(quantity) == event.quantity:
             gross = event.amount
         candidate = correct_transaction(book, identity, date=stamp.isoformat() if stamp else '', quantity=_decimal(quantity),
-            price=price, amount=gross, currency=currency, charges=updated_fees, charges_known=known,
-            value_date=settlement.isoformat() if settlement else '', note=note)
+            price=price, amount=gross, currency=currency, charges=updated_fees, charges_known=known, asset_charges=asset_charges,
+            value_date=settlement.isoformat() if settlement else '', note=note, estimated=estimated, sequence=sequence)
         with st.container(horizontal=True):
             if st.button('Save changes', type='primary', key=key+'save',
                          on_click=_capture_submit_revision, args=(key, revision, snapshot.revision)):
@@ -732,8 +820,7 @@ def prepare_portfolio_history(directory, holdings, *, config, bucket='', display
     key = _key(directory, scope.key)
     observations, revision = load_observations(directory)
     period = st.session_state.get(key+'period') or '1Y'
-    from portfolio_app.personal_performance import HistoryCalculation
-    calculation = HistoryCalculation(journal, observations)
+    calculation = prepared_history_calculation(directory, journal, observations, revision)
     view = prepared_history_view(directory,journal,scope,observations,revision,period,target=reporting_currency(),
                                  include_points=include_points,calculation=calculation)
     from portfolio_app.gain_accounting import current_component_values, summarize_known_gain
@@ -752,7 +839,7 @@ def render_portfolio_history(directory, prepared, *, label='Portfolio value', pe
         label=label, prepared=prepared, percent=percent, on_toggle_gain=on_toggle_gain, automatic=automatic)
 
 
-def render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False, show_summary=True):
+def render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False, show_summary=True, is_active=None):
     options = dict(key=key, label=label, percent=percent, on_toggle_gain=on_toggle_gain, show_summary=show_summary)
     if not automatic:
         _render_history_results(directory, journal, scope, prepared=prepared, **options)
@@ -776,6 +863,8 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
     @local_dialog_updates()
     def history_region():
         nonlocal cached, signature, refresh, waiting, observation_stamp, observation_snapshot
+        if is_active is not None and not is_active():
+            return
         if waiting and not refresher.pending(directory):
             # A different scope may have occupied the workspace's single job.
             # Ensure this scope once, then stop scheduling on timer ticks.
@@ -790,8 +879,7 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
         period = st.session_state.get(key+'period') or '1Y'
         current = revision, period, date.today()
         if current != signature:
-            from portfolio_app.personal_performance import HistoryCalculation
-            calculation = HistoryCalculation(journal, observations)
+            calculation = prepared_history_calculation(directory, journal, observations, revision, target=target)
             cached = dict(prepared or {}, observations=observations, revision=revision,
                 calculation=calculation, history_signature=current,
                 view=prepared_history_view(directory, journal, scope, observations, revision, period, target=target,
@@ -867,6 +955,10 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
                 help=f'All history · {view.all_start} – {view.all_end}. Money-weighted; fixed across periods and hover.'
                     + (f' Annualized from a short interval of {full.days} days.' if full.days < 365 else '')
                     + (' '+explanation(full.money_weighted_reasons) if full.money_weighted is None else ''))
+    if percent and (full if view.covers_full_history else result).estimated:
+        st.caption('Estimated TWR', help='Uses supplied transaction estimates and the normal daily timing convention.')
+    if show_summary and full.estimated and full.money_weighted is not None:
+        st.caption('Estimated annualized return', help='Uses supplied estimates in dated flows.')
     points = view.points
     if sum(p['Value'] is not None for p in points) >= 2:
         import plotly.graph_objects as go
@@ -930,21 +1022,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
         _history_inputs(directory, journal, scope, observations, revision, view, target, key)
 
 
-def _open_transaction_review(directory, identity):
-    st.session_state[f'position_edit_detail_view_{identity}'] = 'Transactions'
-    st.session_state[_key(directory, identity)+'screen'] = 'review'
-
-
 def _history_inputs(directory, journal, scope, observations, revision, view, target, key):
-    needs_review = any(r.startswith('Review complete scope') for r in view.all_result.flow_reasons)
-    if needs_review:
-        if len(scope.positions) == 1 and not scope.accounts and st.session_state.get('position_edit_dialog'):
-            st.button('Review transactions', type='tertiary', key=key+'review_transactions',
-                on_click=_open_transaction_review, args=(directory, scope.positions[0]))
-        else:
-            with st.expander('Review history completeness'):
-                from portfolio_app.history_coverage_ui import render_coverage_review
-                render_coverage_review(directory, journal, scope, key=key)
     from portfolio_app.history_data_ui import render_history_data
     render_history_data(directory, journal, scope, observations, revision, view, target, key)
 
@@ -952,7 +1030,7 @@ def _history_inputs(directory, journal, scope, observations, revision, view, tar
 def _load_market_observations(directory, journal, scope, observations, revision, start, end, target, key):
     from portfolio_app.personal_market import download_scope_observations
     if st.button('Load prices and FX', key=key+'fetch_market',
-                 help='Load available dated market observations through today. Transactions and coverage reviews stay unchanged.'):
+                 help='Load available dated market observations through today. Transactions stay unchanged.'):
         try:
             with st.spinner('Loading historical prices and FX…'):
                 updated, errors = download_scope_observations(directory, journal, scope, observations, start, end, target)

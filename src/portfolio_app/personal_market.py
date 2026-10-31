@@ -104,7 +104,7 @@ def download_scope_observations(directory, journal, scope, store, start, end, ta
     Existing manual observations win; downloads do not certify history coverage.
     """
     from portfolio_app.positions import read_snapshot
-    from portfolio_app.security_history import selected_events
+    from portfolio_app.security_history import selected_events, affected_positions
     from portfolio_app.settlement_archive import SettlementArchive
     holdings = read_snapshot(directory / 'holdings.csv').holdings.set_index('position_id')
     updated, errors, currencies = store, [], set()
@@ -128,6 +128,10 @@ def download_scope_observations(directory, journal, scope, store, start, end, ta
                 currencies.update(c.currency for c in event.charges)
                 currencies.update(c['currency'] for c in event.costs)
                 currencies.update(c['currency'] for lot in event.lots for c in lot.costs)
+    for book in journal.securities:
+        for event in selected_events(book):
+            if affected_positions(book,event).intersection(identities):
+                currencies.add(event.valuation_currency)
     for event in journal.events:
         if event.account_id in scope.accounts or event.other_account_id in scope.accounts:
             currencies.update((event.currency, event.other_currency))

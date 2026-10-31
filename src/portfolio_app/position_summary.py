@@ -8,12 +8,11 @@ from portfolio_app.presentation import return_percent
 
 
 def render_position_summary(row, directory, journal, *, has_history, demo=False):
-    from portfolio_app.history_ui import _key, prepared_history_view
+    from portfolio_app.history_ui import prepared_history_view, prepared_history_calculation
     from portfolio_app.history_observations import HistoryScope, load_observations
     from portfolio_app.personal_history_refresh import refresher
     scope = HistoryScope((row.position_id,))
     target = reporting_currency()
-    key = _key(directory, row.position_id)+'result_'
     if has_history and not demo:
         refresher.request(directory, journal, scope, target)
     cached, signature = None, None
@@ -29,10 +28,11 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
         gain = row.get('unrealized_gain_reporting')
         capital = row.get('cost_basis_reporting')
         annualized = None
+        estimated_return = False
         gain_note = 'Unrealized gain only'
         gain_help = 'Current value less recorded acquisition cost. Earlier realized gains, income and expenses are not reconstructed.'
         capital_help = 'Recorded acquisition cost of the current holding; earlier purchases and proceeds are not reconstructed.'
-        return_help = 'Requires applied transaction history, dated valuations and confirmed completeness. Market-price returns are not personal returns.'
+        return_help = 'Requires applied transaction history and dated valuations. Market-price returns are not personal returns.'
         if has_history:
             from portfolio_app.gain_accounting import summarize_known_gain, amount
             from portfolio_app.history_data_ui import readable_reasons
@@ -40,10 +40,11 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
             current = file_stamp(directory/'history-observations.json'), date.today()
             if current != signature:
                 observations, revision = load_observations(directory)
-                period = st.session_state.get(key+'period') or '1Y'
-                view = prepared_history_view(directory, journal, scope, observations, revision, period, target=target)
+                calculation = prepared_history_calculation(directory, journal, observations, revision, target=target)
+                view = prepared_history_view(directory, journal, scope, observations, revision, 'All',
+                    target=target, include_points=False, calculation=calculation)
                 known = summarize_known_gain(journal, scope, observations, date.today().isoformat(), target,
-                    current_values={row.position_id: amount(value)}, summary_rows=row.to_frame().T)
+                    current_values={row.position_id: amount(value)}, summary_rows=row.to_frame().T, calculation=calculation)
                 cached, signature = (view, known), current
             view, known = cached
             gain, capital = known.amount, known.capital
@@ -53,6 +54,7 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
                             'Includes sale proceeds, income and expenses; can be negative after withdrawals. '
                             'This is not remaining acquisition cost. Unchanged by chart type, range or hover.')
             full = view.all_result
+            estimated_return = full.estimated
             annualized = None if full.money_weighted is None else 100*full.money_weighted
             return_help = f'All history · {view.all_start} – {view.all_end}. Money-weighted; unchanged by chart type, range or hover.'
             if full.days < 365:
@@ -72,4 +74,6 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
             if not has_history and row.get('cost_estimated'):
                 second.caption('Estimated cost', help=row.get('cost_note') or 'Acquisition cost uses an estimated conversion.')
             third.metric('Annualized return', return_percent(annualized), help=return_help)
+            if estimated_return and annualized is not None:
+                third.caption('Estimated', help='Uses supplied estimates in the dated transaction inputs.')
     summary()

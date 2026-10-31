@@ -51,7 +51,7 @@ STEPS = (
         'Add position creates a holding. Select a row to inspect a position and its price history; use its pencil to edit quantities, buy-ins, and other details.',
         ('.st-key-tour_add_position', '.st-key-tour_position_list')),
     TourStep('Positions', 'Keep your portfolio up to date',
-        'Use Bulk add purchases to record several purchases, Update balances to adjust holdings, or Import portfolio to bring in an existing portfolio.',
+        'Use Bulk add purchases to record several purchases, Update balances to adjust holdings, or Import to add transactions or initialize holdings from a report.',
         ('.st-key-positions_workflow',)),
     TourStep('Rebalance', 'Set category targets',
         'Category targets divide money between categories, relative to their parent. In this demo, Equities targets 60% of the whole portfolio. Subcategories use their parent category as the total.',

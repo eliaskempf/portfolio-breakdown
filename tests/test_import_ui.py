@@ -15,7 +15,7 @@ class Upload(BytesIO):
 def launch(tmp_path, monkeypatch, content=None, *, workspaces=False):
     if content is None:
         content = b'Name;Quantity;WKN;Kurs;Kursdatum;Waehrung\nInvented fund;2,5;000123;12,00;2026-01-02;EUR\n'
-    monkeypatch.setattr('portfolio_app.import_ui.st.file_uploader', lambda *args, **kwargs: [Upload(content)])
+    monkeypatch.setattr('portfolio_app.import_ui.st.file_uploader', lambda *args, **kwargs: [Upload(content)] if kwargs.get('accept_multiple_files') else None)
     directory = tmp_path / 'portfolio'
     suffix = ''
     if workspaces:
@@ -36,7 +36,7 @@ def launch(tmp_path, monkeypatch, content=None, *, workspaces=False):
         by_label(app.button, 'Skip setup').click().run()
         from test_ui import activate
         activate(app, 'Positions')
-    by_label(app.button, 'Import portfolio — experimental').click().run()
+    by_label(app.button, 'Import holdings').click().run()
     return app, directory / 'holdings.csv'
 
 
@@ -106,9 +106,10 @@ def test_optional_prices_and_costs_do_not_block_minimal_import(tmp_path, monkeyp
     assert stored.acquisition_price.isna().all()
     original = path.read_bytes()
     activate(app, 'Positions')
-    by_label(app.get('button_group'), 'Position tools').set_value('Import portfolio').run()
+    by_label(app.get('button_group'), 'Position tools').set_value('Import').run()
     assert not app.exception
-    assert any('empty portfolio' in item.value for item in app.info)
+    by_label(app.get('button_group'), 'Import type').set_value('Holdings snapshot').run()
+    assert any('Holdings snapshots initialize an empty portfolio' in item.value for item in app.info)
     assert original == path.read_bytes()
 
 
@@ -175,10 +176,10 @@ def test_import_completion_overrides_stale_workflow_on_remount(tmp_path, monkeyp
     assert app.session_state['main_tabs'] == 'Overview'
     saved = path.read_bytes()
     # Simulate the old browser selection arriving when the Positions tab mounts.
-    app.session_state['positions_workflow'] = 'Import portfolio'
+    app.session_state['positions_workflow'] = 'Import'
     activate(app, 'Positions')
     assert not app.exception
     assert app.session_state['positions_workflow'] == 'Positions'
-    assert not any('Import currently requires' in item.value for item in app.info)
+    assert not any('empty portfolio' in item.value for item in app.info)
     assert read_snapshot(path).holdings.shares.tolist() == [2.5]
     assert path.read_bytes() == saved

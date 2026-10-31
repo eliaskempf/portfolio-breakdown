@@ -50,6 +50,8 @@ def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(mul
     before = path.read_bytes()
     app = launch(multi_fund_workspace)
     assert not app.exception
+    assert not any('Unsupported Fund' in info.value for info in app.info)
+    by_label(app.checkbox, 'Show sold positions').check().run()
     assert by_label(app.toggle, 'Break down ETFs').value
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     assert not app.exception and not app.error
@@ -99,6 +101,7 @@ def test_proxy_status_and_newly_supported_funds_default_on(multi_fund_workspace)
     manifest['proxy_source'] = 'Invented same-index fund; approximate exposure'
     path.write_text(yaml.safe_dump(manifest))
     app = launch(multi_fund_workspace)
+    by_label(app.checkbox, 'Show sold positions').check().run()
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     assert by_label(app.toggle, 'Synthetic World (proxy)').value
     assert any('Proxy:' in item.value for item in app.info)

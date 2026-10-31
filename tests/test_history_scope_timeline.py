@@ -108,3 +108,25 @@ def test_selected_month_cannot_publish_a_return_before_a_later_missing_event():
     assert view.start == '2024-04-01' and view.end == '2024-04-02'
     assert view.result.time_weighted is None and view.result.money_weighted is None
     assert any('latest recorded event' in r for r in view.result.time_weighted_reasons)
+
+
+@pytest.mark.parametrize('movement', ['swap', 'asset_fee'])
+def test_csv_companion_position_dates_include_later_atomic_movements(movement):
+    from portfolio_app.security_history import AssetCharge
+    opening = SecurityEvent('source-open', 'opening', '2024-01-01', quantity=2, amount=20, currency='EUR')
+    event = (SecurityEvent('swap', 'swap', '2024-01-03', quantity=1,
+                          other_position_id='destination', received_quantity=1)
+             if movement == 'swap' else
+             SecurityEvent('buy', 'buy', '2024-01-03', quantity=1, amount=10, currency='EUR',
+                           charges_known=True, asset_charges=(AssetCharge('destination', 1),)))
+    source = SecurityBook('source', 'INVENTED', ('2', '20', 'EUR'), records=(opening, event),
+                          active_ids=(opening.id, event.id))
+    destination = SecurityBook('destination', 'OTHER', ('2', '20', 'EUR'),
+        records=(SecurityEvent('dest-open', 'opening', '2024-01-01', quantity=2, amount=20, currency='EUR'),),
+        active_ids=('dest-open',))
+    journal = Journal(version=4, securities=(source, destination))
+    scope = HistoryScope(('destination',))
+    assert scope_dates(journal, scope) == ['2024-01-01', '2024-01-03']
+    store = ObservationStore((Observation('price', 'price', 'destination', '2024-01-01', 10, 'EUR'),))
+    view = history_view(journal, scope, store, 'All', today=date(2024, 1, 3))
+    assert any('latest recorded event' in r for r in view.all_result.time_weighted_reasons)

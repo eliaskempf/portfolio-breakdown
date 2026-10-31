@@ -50,7 +50,8 @@ def test_period_shortens_window_and_incomplete_input_date_remains_gap():
     assert view.requested_start=='2024-05-16' and view.start=='2024-06-07'
     assert next(p for p in view.points if p['Date']=='2024-06-10')['Value'] is None
     assert view.missing == (('2024-06-10', ('other: missing price on 2024-06-10',)),)
-    assert view.result.money_weighted is None  # No complete coverage for the combined scope.
+    assert view.result.money_weighted is not None  # Endpoint evidence supports this period.
+    assert view.all_result.money_weighted is None  # The other opening price is still missing.
 
 
 def test_full_history_return_and_hover_basis_do_not_change_with_chart_period():
@@ -92,13 +93,13 @@ def test_snapshot_only_is_not_useful_history_and_no_prehistory_zero_is_invented(
     assert view.points[0]['Value'] == 100
 
 
-def test_shorter_coverage_review_cannot_enable_all_history_return():
+def test_legacy_coverage_review_does_not_restrict_applied_history():
     journal,scope,store=fixture()
     store=replace(store,reviews=(replace(store.reviews[0],start='2024-06-01'),))
     view=history_view(journal,scope,store,'1M',today=date(2024,6,16))
     assert view.result.money_weighted is not None
-    assert view.all_result.money_weighted is None
-    assert view.all_result.flow_reasons
+    assert view.all_result.money_weighted is not None
+    assert not view.all_result.flow_reasons
 
 
 def test_ranges_covering_entire_holding_preserve_full_history_boundaries():
@@ -153,10 +154,9 @@ _render_history_results(root, journal, scope, key='test_', include_inputs=False,
     for period in ('1Y', '5Y', 'All', '1M'):
         app.segmented_control[0].set_value(period).run()
         assert not app.exception
-        assert app.metric[0].delta == ('+€20.00' if period == '1M' and snapshot else '—' if period == '1M' else '+€50.00')
-        assert (app.metric[2].value != '—') == snapshot
-        if not snapshot:
-            assert any(c.value == 'History not confirmed' for c in app.caption)
+        assert app.metric[0].delta == ('+€20.00' if period == '1M' else '+€50.00')
+        assert app.metric[2].value != '—'
+        assert not any(c.value == 'History not confirmed' for c in app.caption)
 
 
 @pytest.mark.parametrize('reviewed', [True, False])
@@ -229,7 +229,7 @@ def test_replay_reuses_price_only_dates_but_preserves_separate_fee_dates(monkeyp
     for day in (10, 8, 2, 5, 9, 4, 1, 7, 3, 6):
         stamp = f'2024-01-{day:02}'
         assert calculation.securities(stamp) == replay_securities(journal.securities, as_of=stamp)
-    assert len(calls) == 4
+    assert not calls  # Dated states advance one timeline, without full replays.
     assert calculation.securities('2024-01-05').positions['holding'].quantity == 3
     assert len(calculation.securities('2024-01-05').cash) == 1
     assert len(calculation.securities('2024-01-06').cash) == 2

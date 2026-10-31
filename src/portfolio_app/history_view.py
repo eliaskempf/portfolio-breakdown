@@ -44,7 +44,7 @@ class HistoryView:
         return self.requested_start <= self.all_start
 
 
-def history_view(journal, scope, observations, period='1Y', *, today=None, target='EUR', include_points=True, calculation=None):
+def history_view(journal, scope, observations, period='1Y', *, today=None, target='EUR', include_points=True, calculation=None, annualized=True):
     calculation = calculation or HistoryCalculation(journal, index_observations(observations))
     observations = calculation.observations
     today = today or date.today()
@@ -67,7 +67,11 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     available = [stamp for stamp in stamps if values[stamp] is not None]
     all_start,all_end = beginning, (available[-1] if available else last)
     negative_dates = known_negative_equity_dates(journal,scope,observations,all_start,last,target,valuations=valuations)
-    all_result = calculate_history(journal,scope,observations,all_start,all_end,target,negative_dates=negative_dates,calculation=calculation)
+    def calculate(start, end, *, annualized=True):
+        return calculation._get(('history_result', scope, start, end, target, annualized, tuple(negative_dates)),
+            lambda: calculate_history(journal, scope, observations, start, end, target,
+                annualized=annualized, negative_dates=negative_dates, calculation=calculation))
+    all_result = calculate(all_start, all_end, annualized=annualized)
     # A later transaction cannot disappear merely because its valuation is absent.
     if dates and dates[-1] > all_end:
         from dataclasses import replace
@@ -80,7 +84,7 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     if first <= all_start:
         start, end = all_start, all_end
     result = (all_result if (start,end) == (all_start,all_end) else
-              calculate_history(journal,scope,observations,start,end,target,negative_dates=negative_dates,calculation=calculation))
+              calculate(start, end, annualized=annualized))
     if dates and dates[-1] > end and result is not all_result:
         from dataclasses import replace
         reason = (HistoryIssue('The latest recorded event has no supported ending valuation', 'endpoint'),)
@@ -101,7 +105,7 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
         if invested is None:
             known = summarize_known_gain(journal,scope,observations,stamp,target,calculation=calculation)
             invested, gain = known.capital, known.amount
-        inspected = calculate_history(journal,scope,observations,all_start,stamp,target,annualized=False,negative_dates=negative_dates,calculation=calculation)
+        inspected = calculate(all_start, stamp, annualized=False)
         points.append({'Date':stamp, 'Value':float(values[stamp]) if values[stamp] is not None else None,
             'Invested capital':float(invested) if invested is not None else None,
             'Total gain':float(gain) if gain is not None else None,

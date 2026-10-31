@@ -75,12 +75,17 @@ def test_empty_positions_hidden_targets_redistributed_editor_retains_original(re
     by_label(app.toggle, "Exclude empty positions and redistribute targets").set_value(True).run()
     assert not app.exception
     activate(app, "Exposure")
-    holdings = next(item.value for item in app.dataframe if "shares" in item.value)
+    holdings = next(item.value for item in app.tabs[1].dataframe if "shares" in item.value)
     activate(app, "Rebalance", "Plan")
-    assert len(holdings) == 4  # Planning controls do not filter Exposure.
+    assert len(holdings) == 3  # Zero-unit rows are hidden by default.
+    assert sorted(holdings.target_allocation) == [20, 30, 30]
+    by_label(app.checkbox, 'Show sold positions').check().run()
+    activate(app, 'Exposure')
+    holdings = next(item.value for item in app.tabs[1].dataframe if "shares" in item.value)
+    assert len(holdings) == 4  # Visibility does not change the planning universe.
     assert holdings.target_allocation.sum() == pytest.approx(100)
     assert sorted(holdings.target_allocation) == [20, 20, 30, 30]
-    by_label(app.checkbox, 'Hide empty positions').check().run()
+    by_label(app.checkbox, 'Show sold positions').uncheck().run()
     activate(app, 'Exposure')
     holdings = next(item.value for item in app.tabs[1].dataframe if 'shares' in item.value)
     assert len(holdings) == 3
@@ -93,7 +98,7 @@ def test_empty_positions_hidden_targets_redistributed_editor_retains_original(re
     assert not app.error
     by_label(app.toggle, "Exclude empty positions and redistribute targets").set_value(False).run()
     activate(app, "Exposure")
-    holdings = next(item.value for item in app.dataframe if "shares" in item.value)
+    holdings = next(item.value for item in app.tabs[1].dataframe if "shares" in item.value)
     activate(app, "Rebalance", "Plan")
     assert len(holdings) == 3  # Visibility is controlled separately.
     assert "Trades" not in metrics(app)

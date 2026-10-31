@@ -3,6 +3,7 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal as D
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 from portfolio_app.account_journal import Journal
@@ -127,7 +128,8 @@ def test_accepted_futures_archive_marks_correct_values_without_cash_events(tmp_p
     store,errors=download_scope_observations(tmp_path,journal,scope,ObservationStore(),'2026-01-05','2026-01-07','EUR')
     result=calculate_history(journal,scope,store,'2026-01-05','2026-01-07')
     assert not errors and result.opening_value==1000 and result.ending_value==1120
-    assert result.money_weighted is None and result.flow_reasons[0].kind=='coverage'
+    assert result.money_weighted is not None and not result.flow_reasons
+    assert result.gain == 120 and result.time_weighted == pytest.approx(.12)
     # The original 100 of settled gain already resides in cash, plus 20 unsettled.
     archive.record(contract,PriceObservation(contract.id,'2026-01-07',D(113),source='Invented correction'))
     pending,_=download_scope_observations(tmp_path,journal,scope,store,'2026-01-05','2026-01-07','EUR')

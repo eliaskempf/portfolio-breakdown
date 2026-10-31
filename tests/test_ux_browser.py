@@ -403,7 +403,7 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     assert buy.quantity == 2 and buy.price == 80
     assert buy.charges_known and buy.charges[0].amount == 0
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click()
-    apply = dialog.get_by_role('button', name='Apply and confirm history', exact=True)
+    apply = dialog.get_by_role('button', name='Apply history', exact=True)
     playwright.expect(apply).to_be_enabled()
     playwright.expect(dialog.get_by_text('Shares and acquisition cost match.', exact=True)).to_be_visible()
     assert not dialog.get_by_role('checkbox').count()
@@ -431,7 +431,7 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     # Only the latest transaction belongs in the picker, not its retained audit
     # version or the internal zero-share boundary.
     playwright.expect(dialog.get_by_test_id('stMultiSelect').get_by_role('button', name=re.compile('^Remove '))).to_have_count(1)
-    dialog.get_by_role('button', name='Apply and confirm history', exact=True).click()
+    dialog.get_by_role('button', name='Apply history', exact=True).click()
     dialog.get_by_role('button', name='Review against portfolio', exact=True).wait_for()
     journal, _ = load_journal(directory)
     current = effective_holdings(read_snapshot(directory/'holdings.csv').holdings, journal.securities).set_index('position_id').loc['fund-a']

@@ -13,6 +13,10 @@ without introductory paragraphs or repeated explanations.
 - Keep visible prose minimal. Prefer concise labels and short, contextual status
   text. Put definitions in tooltips or help popovers, and methodology, assumptions,
   provenance and extended explanations in expandable details or the user guide.
+  Treat prose as a removal signal during UI review: ordinary screens contain
+  results, controls, short labels and actionable errors, not explanatory sentences.
+  Put necessary explanations behind an explicit help action. Do not add paragraphs,
+  repeated instructions, workflow narration or reassurance below controls or tables.
 - Preserve essential meaning in the main view: selected scope, units, the metric's
   basis and whether a result is approximate, partial or unavailable. Explanations
   may be disclosed on demand; material limitations must remain discoverable from
@@ -65,8 +69,11 @@ the outgoing content before doing expensive work for the next view. Do not
 calculate a complete history merely to
 choose an already-selected tab, or repeat calculations during the same render.
 Reuse chart results only while journal facts, observation revisions, scope, currency,
-period and calendar date remain unchanged. Within each chart, share dated ledger
-states across overlapping intervals without relaxing coverage checks. The Overview
+period and calendar date remain unchanged. Within and across chart ranges, share dated ledger
+states and previously calculated hover results without relaxing coverage checks.
+Keep this context session-local and expire it when workspace, journal, observations,
+reporting currency or calendar date changes. Fixed position headlines request only
+full-history summary results; they do not generate chart points. The Overview
 history chart, current-gain summary and category comparison share one calculation
 context for the same journal and observation snapshot. Current quotes remain
 separate from dated historical valuations. Recorded cost and cash components may
@@ -76,7 +83,9 @@ including when it arrives in a background fragment. Account
 history derives securities cash postings once per journal snapshot and reuses
 account states between cash/account event dates. A settlement value date alone
 does not release a pending receipt; explicit receipt events remain authoritative.
-Background data refreshes must remain local to the affected result. Verify actual
+Background data refreshes must remain local to the affected result. Dialog polling
+fragments must stop writing when their captured position or view is no longer
+selected; a stale timer must not draw into a replacement view. Verify actual
 transitions with delayed synthetic data: settled screenshots alone miss old
 controls and charts briefly appearing during a switch.
 An explicit retry rebuilds the owning dialog's download state and polling timer;
@@ -84,9 +93,11 @@ successful completion must update the chart without changing its period or
 leaving the view. Idle polling checks the observation-file identity before
 parsing it again, while externally saved corrections still invalidate results.
 
-Position opening and clean dismissal rerun only the dialog host. Child workflows
+Position opening and clean dismissal rerun only the dialog host. Creating or
+discarding an unsaved editor draft refreshes the parent toolbar once so its
+resume action matches the retained draft. Child workflows
 share a local refresh boundary, including evidence saves, reconciliation, market
-evidence repairs and completeness review. Persisted changes refresh current
+evidence repairs and balance review. Persisted changes refresh current
 position values locally and refresh the parent page once after dismissal. Pending
 evidence alone does not repeat portfolio valuation. Streamlit 1.65 or newer is
 required for the keyed host callbacks; the runtime adapter is isolated in
@@ -112,18 +123,25 @@ action. Do not expose a combined list of every metric's requirements as mandator
 setup. Keep ordinary gaps subtle. Retrieve supported market data automatically;
 manual repair forms should preselect the position, date and currencies when known.
 Internal identities and fingerprints are storage details, not user-facing labels.
+Never display transaction references, transaction IDs or hash-based IDs in normal
+product UI: tables, selectors, labels, tooltips, notifications and errors must use
+readable names and transaction facts instead. If internal identifiers are needed
+for debugging, expose them only inside an explicitly opened internal diagnostics
+view, never in the normal import or transaction-review workflow.
 Show overwrite confirmation only when a value will actually be replaced.
 
-Offer **Apply and confirm history** as the normal reconciliation action, with a
-visible interval and an **Apply incomplete history** alternative. Reconciliation
-and completeness remain distinct facts; the combined action explicitly records
-both in one journal write. Matching today's holding must never silently certify
-omitted sales or income. Keep confirmation inside the existing history review;
-do not add a separate toolbar shortcut for this catch-up workflow. Position attestations bind retained
-facts and transfer-connected holdings, so unrelated position edits do not undo
-review. Legacy whole-journal attestations keep their original validation rules.
-Manual market-data correction is separate from this review. Broader changes to
-established interfaces require discussion rather than opportunistic redesign.
+For a single holding, use **Apply history** after reconciliation. For multiple
+holdings, review each with **Accept this holding**, then **Apply reviewed holdings**
+in one atomic save. Changes to reviewed facts reset these balance-review decisions.
+Applying makes the selected ledger authoritative for the resulting holdings,
+including when it replaces a different current balance. There is no separate
+history-completeness confirmation, expiry date, or incomplete-apply mode.
+Return CSV imports to Positions without opening an arbitrary holding.
+Missing amounts, prices, FX, starting balances and unresolved transactions remain
+metric-specific limitations. Do not infer evidence before a starting snapshot or
+claim that applied records prove the absence of omitted real-world transactions.
+Legacy completeness records remain readable but do not gate results. Market-data
+correction stays separate from transaction reconciliation.
 
 ## Architecture and verification
 
@@ -164,6 +182,34 @@ episodes under the workspace lock. Monitoring does not change holdings or orders
 synthetic directory; it reuses the normal alert explanation and acknowledgment UI.
 
 ### Calculation contracts
+
+CSV and PDF readers normalize evidence into the ordinary securities history.
+Transaction commands, corrections, removals, reconciliation and calculation
+eligibility depend on economic facts, never the entry source. Linked exchanges,
+transfers and asset fees are reviewed and applied together. Source references
+and replacement chains remain immutable provenance; identical reimports cannot
+undo a later edit or removal. Similar cross-source trades require explicit review.
+
+The small public CSV uses dates and stable references. File order supplies the
+initial same-day order, which can be overridden with `order` and edited in the
+normal transaction form. No execution timestamp is invented. Legacy CSV v1/v2
+receipts and journal v1–v4 remain readable. Journal v5 supports independently
+identified corrections of imported events and transaction estimate qualifiers;
+simple CSV receipts store sparse normalized facts. Loading older records does
+not rewrite them or invalidate existing review fingerprints.
+
+New-position identities are staged until application. `history_publication.py`
+protects the holdings/journal pair with a durable private recovery intent and
+revision guards under the workspace lock. Interrupted publications roll back
+before the next workspace access; unexpected third-party edits stop recovery.
+Evidence-only saves leave portfolio balances unchanged.
+
+There is one history calculation path: forward holdings, daily TWR and annualized
+XIRR. Supplied estimates qualify dependent results rather than blocking them.
+Unknown amounts, missing prices/FX and incomplete transaction coverage remain
+separate limitations. Acquisition-cost estimates alone do not qualify percentage
+returns that do not depend on those costs. Legacy `asset-performance.json` files
+are preserved as inert private artifacts and do not control views or calculations.
 
 - `gain_accounting.py` supplies shared current and historical known-gain results.
   Security-only and account-only cash flows cancel across their common boundary;
@@ -546,13 +592,31 @@ converted costs. Calculate the disposed portion once and derive its remainder;
 do not independently scale both sides with a rounded ratio. Quantity validation
 remains exact, including when a derived lot is reloaded at another Decimal precision.
 
-`history_observations.py` stores dated observations and scope-specific coverage
-reviews. `personal_performance.py` computes equity, external flows, money-weighted
+`history_observations.py` stores dated observations and retains legacy scope reviews. `personal_performance.py` computes equity, external flows, money-weighted
 returns and daily/exact time-weighted returns without Streamlit or network calls.
 `personal_market.py` supplies provider observations with explicit adjustment
 semantics. `history_ui.py` renders the optional workflows. Keep source-position
 history separate from present-day ETF constituent expansion and hypothetical risk
-backtests. New evidence must never silently certify historical completeness.
+backtests. Applying history establishes the ledger used for the resulting position;
+new market data never changes its transactions.
+
+History charts share a `HistoryCalculation` for one journal and observation
+revision. `SecurityTimeline` advances the canonical FIFO replay once and retains
+dated snapshots for out-of-order range queries. Separately dated charges must
+keep their own cash dates; failed advances must preserve earlier snapshots.
+Reuse selected events and cash flows across price-only dates, while retaining
+exact interval starts for account-opening flows. Immutable observation files are
+parsed once per exact byte version in a bounded cache. Financial evidence,
+coverage checks and unknown amounts must remain identical to fresh calculations.
+Category comparisons request TWR without computing unused annualized returns.
+XIRR may reverse its discount polynomial to shorten derivative isolation, but
+must still isolate all positive roots and verify the returned rate against the
+original cash-flow schedule.
+
+Performance checks must include a fresh browser session after a server restart,
+as well as interval switches. A warm session cache does not establish acceptable
+initial-load performance. Use synthetic ledgers for repeatable regression checks;
+read-only inspection of a running portfolio must emit only timing metadata.
 
 
 ## History playground
@@ -583,5 +647,26 @@ opens portfolio **Performance** by default. Both views use periods ending today.
 
 The demo includes exact flow-boundary observations for the portfolio and the
 fee-free money-market holding. The equity holding has a money-weighted return;
-daily TWR includes its recorded fees; exact event TWR additionally needs supported event boundaries. Editing financial history
-invalidates the prior coverage confirmation, as it does for any workspace.
+daily TWR includes its recorded fees; exact event TWR additionally needs supported
+event boundaries. Applying edited financial history recalculates affected results.
+
+### Transaction CSV boundary
+
+`transaction_csv.py` parses textual CSV facts and retains original evidence without
+market access. `csv_transaction_imports.py` prepares a pure batch reconstruction;
+`transaction_import_commands.py` revalidates revisions under the workspace lock
+and publishes positions and history together with recoverable publication. The interface
+renders the same preview that the save command recomputes.
+
+Journal version 5 retains import provenance, correction lineage and void records.
+Older journals retain their semantics and remain readable. New position identities
+and listing connections remain staged until application; publication recovers as
+one holdings/history pair, never partially applied swap or transfer legs. Derived cash postings remain
+unpersisted, and custody identity is separate from cash ownership.
+
+Security replay owns non-cash swaps, in-kind income and asset fees alongside
+existing FIFO history. Lot splits multiply before dividing to avoid avoidable
+intermediate rounding; imported lot ordering retains execution time and explicit
+ties. Monetary gain components distinguish analytical swap proceeds from purchase
+payments and sale cash receipts. Scope calculations cancel internal movements
+before requesting cross-boundary monetary evidence.

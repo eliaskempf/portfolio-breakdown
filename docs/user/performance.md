@@ -69,6 +69,12 @@ need no purchase date or conversion.
 
 A position with incomplete costs has no complete cost-based gain, while its
 available current value still counts toward portfolio value and allocation.
+Transaction CSV can retain supplied acquisition-cost and monetary-valuation
+estimates, with their sources. Affected gains show an approximate status.
+Confirming complete transaction history does not certify estimated amounts as exact;
+the label remains while the calculation depends on those estimates.
+Costed units can contribute a partial unrealized gain while other units retain
+unknown cost; the unknown units are never treated as free.
 Independently supported recorded income or realized gains can still contribute
 to an explicitly partial monetary subtotal. **Complete**,
 **Partial** and **Unavailable** describe coverage. A partial return is not the
@@ -110,6 +116,19 @@ history; explicit offline demo history is invented. The separate
 [risk calculation](analytics.md#risk) uses adjusted prices and historical FX.
 
 ## Personal history {#personal-history}
+
+CSV, PDF and manually entered transactions use the same history and controls.
+Source details are available with each transaction; they do not change its
+calculations or editability. Exchanges and transfers are single economic events
+whose connected holdings are reviewed together.
+
+Explicitly supplied estimates can support daily TWR and annualized XIRR. Affected
+results are labelled **Estimated**. Missing transaction details and market
+observations remain separate limitations. An estimated acquisition cost does not by itself
+make a return estimated when that return uses independently known cash flows and
+market values. Unknown amounts stay unknown; a matching ending quantity does not
+certify complete history. The former separate daily-Dietz diagnostic is retired.
+Existing diagnostic settings are preserved but no longer affect the application.
 
 The **History → Holdings** position view and **Overview → Performance** show personal
 history separately from market-price charts and current unrealized gains.
@@ -217,16 +236,17 @@ Transaction payments, fees and acquisition-cost conversions still require their 
 Gaps are not interpolated or filled with current quotes. Missing data can be entered manually. Corrections retain
 original observations.
 
-**Confirm complete history**, beside the position's transaction reconciliation,
-records your review of the opening inventory and all events within the displayed
-interval. Apply pending transaction changes before confirming. Portfolio history
-has a separate **Review history completeness** action for its combined scope. Journal changes invalidate that confirmation.
-Applying transaction history to current balances does not confirm performance
-coverage. A review covers its named members and their subsets for the reviewed
-dates; it does not cover new members or a changed journal.
-Replacement balances interrupt the interval; unresolved cash adjustments must be
-classified as external flows, income or expenses, or retained as boundaries.
-Coverage is specific to the selected members, dates and metric.
+Applied history is the authoritative ledger for the resulting holdings and
+accounts. **Apply history** accepts the balances shown in reconciliation; there
+is no separate completeness confirmation. Gains and returns remain available as
+new prices arrive, provided their required inputs are supported. A newer
+valuation date does not invalidate the applied ledger.
+
+Replacement balances interrupt an interval, and unresolved cash adjustments must
+be classified as external flows, income or expenses, or retained as boundaries.
+Unknown amounts, missing market data and unsupported earlier periods remain
+explicit limitations. Applying records does not prove that unrecorded real-world
+activity never occurred; calculations describe the records supplied.
 
 Account cash openings precede separately recorded same-day account trades, fees
 and external funding; these events must not disappear into the first closing
@@ -284,8 +304,7 @@ are already in market prices and are not deducted again.
 Exact event TWR remains an explicit calculation option. It requires genuine
 ordering and supported before/after event valuations, and includes the event's
 fees and income. Execution prices may support standalone security boundaries,
-but do not value other assets in a portfolio. Neither method changes saved trade
-dates or confirms history completeness.
+but do not value other assets in a portfolio. Neither method changes saved trade dates.
 Historical value points and monetary gains can remain useful when returns cannot
 be calculated. The affected metric’s help explains its own missing requirements;
 other metrics do not inherit that restriction.
@@ -304,3 +323,16 @@ charges reduce their proceeds, and other expenses are deducted separately. These
 components reconcile to total gain for an ordinary complete trade history.
 Transfers preserve lot costs but cross performance scopes at market value, so
 their acquisition-cost breakdown and scope gain have different boundaries.
+
+Imported swaps and rewards distinguish recorded asset units from supplied monetary
+valuations. A swap's analytical proceeds and incoming basis do not imply a cash
+payment. In-kind rewards add income and basis when their value is supplied, without
+an external contribution. Own-custody transfers preserve original lots; staking
+and unstaking do not recognize the same reward twice.
+
+Asset fees remove units once and expense FIFO carrying cost under the import's
+versioned portfolio policy. That expense is not an inferred market sale. Internal
+transfers and swaps cancel before valuing whole-portfolio flows. A selected subset
+may still need a transfer-date price or swap valuation. Thus portfolio gain can
+be supported while a particular lot cost, gain component or subset return remains
+unknown. See [transaction import](import.md#transactions) for evidence and review.

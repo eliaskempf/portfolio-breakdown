@@ -1,8 +1,12 @@
-# Import a holdings report {#import}
+# Import holdings and transactions {#import}
 
-The importer is experimental and requires an **empty portfolio**. It accepts
-current holdings reports, not transaction ledgers or ongoing synchronization.
-For existing positions use [Update balances](positions.md#balances).
+**Positions → Import** opens transaction import. Transactions can be imported into
+an existing or empty portfolio; review their mappings and reconstructed balances
+before applying. See [Import transactions](#transactions).
+
+Choose **Holdings snapshot** to initialize an **empty portfolio** from a current
+holdings report. For replacement balances in existing positions, use
+[Update balances](positions.md#balances). Neither import performs ongoing synchronization.
 
 ## Export and review {#review}
 
@@ -11,8 +15,8 @@ export/version has been verified. Look for a current depot/holdings report and
 **Bericht exportieren**. Available formats and columns depend on your version.
 Use CSV, delimited TXT/TSV or Excel XLS/XLSX. QIF and PDF are unsupported.
 
-1. In **Positions**, choose **Position tools → Import portfolio** (or the empty-list
-   **Import portfolio — experimental** button) and upload one or more files, for example separate depot reports.
+1. In **Positions**, choose **Import → Holdings snapshot** (or the empty-list
+   **Import holdings** button) and upload one or more files, for example separate depot reports.
 2. Check worksheet, header row, delimiter, encoding and German/English number
    formatting. Inspect the preview before trusting suggested mappings.
 3. Map instrument name and quantity. When both Bank and FinanzManager quantities
@@ -49,3 +53,106 @@ ticker is not a guarantee that quotes will be available.
 
 ETF discovery can separately use issuer-confirmed identity to install a
 [breakdown](exposure.md#sources); import review itself stays offline.
+
+## Import transactions {#transactions}
+
+### Transaction CSV
+
+Choose **Positions → Import**; **Transactions** is selected by default. Upload a CSV, map its
+assets to existing holdings or new positions, then review the transactions and
+forward-reconstructed balances. New positions are created only when you apply.
+An optional price listing connects normal current and historical market data.
+Existing holdings are matched by identifier, name, ISIN or ticker; crypto symbols
+also match ticker pairs such as `BTC-EUR`. Ambiguous matches require a choice.
+New assets receive exact listing suggestions, preferring the reporting currency.
+Use the price-listing dropdown or its search button to find another listing with
+the same live search used when adding a position. Suggestions, names and types
+remain editable; listing changes are saved together with applied transactions.
+The listing label identifies the quote pair; its quote currency is not added to
+the holding name. The **Holding** dropdown contains existing holdings and **New
+position**. Selecting **New position** splits that cell into the dropdown and an
+editable holding name beside it. Holding and price-listing dropdowns only select
+options; use **Search** for live listing search.
+Edited names survive listing changes and navigation. Automatically suggested types
+can be reviewed under **Asset types**. **Show transactions for** filters the review
+table by asset, including received exchange legs and asset fees. It does not
+exclude transactions from the import.
+
+Before upload, there is no review to cancel. After upload, **Discard review** clears
+the file and unsaved choices and returns to the uploader. Changing tabs retains
+the draft. Saved transactions are not deleted by discarding their review.
+
+The template has seven columns:
+
+| Column | Meaning |
+| --- | --- |
+| `reference` | Stable unique reference across your transaction files; retain it when correcting a row. |
+| `date` | Transaction date, `YYYY-MM-DD`. |
+| `type` | `buy`, `sell`, `income`, `fee`, `exchange`, `transfer_in`, `transfer_out`, or `opening`. |
+| `asset` | The asset to map to a holding. |
+| `quantity` | Positive units; zero for cash income/fees. |
+| `amount` | Trade consideration excluding fees, income value, external transfer value, or starting acquisition cost. Blank means unknown. |
+| `currency` | Currency of the amount. |
+
+Optional columns are `fee`, `fee_currency`, `fee_asset`, `received_asset`,
+`received_quantity`, `acquisition_cost`, `acquisition_currency`, `order`,
+`estimated` and `note`. Exchange rows need the received asset and quantity.
+In-kind income adds units; cash income has zero quantity. A fee with positive
+quantity is paid in that asset; a cash fee has zero quantity and a monetary amount.
+For a transfer in, `amount` is its boundary valuation and `acquisition_cost` is
+its carried basis. These values need not match. `opening` is a starting balance,
+not a purchase or contribution. Split and tax events are also supported.
+
+Omitting the optional fee column declares no additional fees. If included, blank
+fees remain unknown; enter zero when none were paid. `estimated=yes` marks supplied
+amounts as estimates. Do not use zero to represent an unknown value. File order is
+the initial order for same-day transactions; supply `order` when a different
+execution order is known. Dates are not converted into invented execution times.
+
+Use **Save evidence only** to retain the upload without changing active balances.
+Mapped transactions appear in the usual Transactions view. Saved imports for new
+positions can be reopened from the import screen. **Review against portfolio**
+opens the same reconciliation screen used for manual and PDF transaction history.
+**Back to import** retains the mapping and name edits. Reviewing writes nothing;
+the apply action saves the reviewed holdings and history together.
+For assets without a recorded starting balance, it previews zero holdings before
+the first movement and states that assumption beside the apply actions. Applying
+confirms that starting point. If the export begins after you already held assets,
+choose **Import options → Before the first transaction → Earlier holdings** and supply an opening balance in
+the CSV or the holding's History before applying.
+The ending reference is only a comparison; it never supplies a balancing opening.
+
+The comparison shows whether units and acquisition costs match current holdings.
+The final apply action accepts the displayed reconstruction; a matching balance
+does not itself prove completeness because missing movements can cancel out.
+Similar transactions are shown once as a group, with all entries retained by
+default. Open the group to exclude pending entries; balances recompute from that
+selection. The final apply action accepts the selection, without separate pairwise
+acknowledgments. Excluded source evidence remains saved. The group shows whether
+all entries reconcile to an existing holding; a new holding's zero placeholder is
+never presented as an independently recorded ending balance.
+Different recorded execution times distinguish otherwise identical transactions.
+When either entry has only a date, matching economic details still appear in the
+similar-transactions group.
+
+**Apply history** makes the reviewed ledger authoritative for the resulting
+holding. For multiple holdings, accept each displayed balance and choose
+**Apply reviewed holdings**. There is no separate completeness declaration.
+Estimates stay labelled, and missing prices or amounts still limit their dependent
+metrics. Application replaces the managed balance; it does not add the same
+trades to the existing snapshot again.
+
+After import, use the normal **Transactions** list to edit or remove entries,
+regardless of whether they came from CSV, PDF or manual entry. Exchanges, transfers
+and fees paid from another asset are reviewed with all affected holdings. Original
+evidence remains retained. Reimporting the same references does not duplicate
+transactions or undo later edits/removals; changed source rows require explicit
+correction review. Economically similar rows from different sources require a
+review rather than automatic deletion.
+
+Prepare wallet/staking movements and personal approximations before import when
+one asset-level history is sufficient. Preserve fees and income once, and retain
+unknown facts as unknown. The application does not infer economic meaning from
+export labels. Older transaction formats, checkpoints and unresolved inventory
+records remain readable for compatibility. The separate asset-history diagnostic
+is retired; all results use normal history, daily TWR and annualized XIRR.

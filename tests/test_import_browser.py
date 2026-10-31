@@ -46,7 +46,7 @@ render_app(Path(__file__).parent / 'synthetic-portfolio', demo=True,
             browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1440, 'height': 1000})
             page.goto(f'http://127.0.0.1:{port}')
-            page.get_by_role('button', name='Import portfolio — experimental', exact=True).wait_for()
+            page.get_by_role('button', name='Import holdings', exact=True).wait_for()
             yield page, tmp_path / 'synthetic-portfolio' / 'holdings.csv'
             browser.close()
     finally:
@@ -56,7 +56,7 @@ render_app(Path(__file__).parent / 'synthetic-portfolio', demo=True,
 
 def test_upload_review_chart_allocation_and_listing(import_page):
     page, path = import_page
-    page.get_by_role('button', name='Import portfolio — experimental', exact=True).click()
+    page.get_by_role('button', name='Import holdings', exact=True).click()
     page.locator('input[type=file]').set_input_files({
         'name': 'invented-holdings.csv', 'mimeType': 'text/csv',
         'buffer': ('Name;Stück/Nennwert Bank;Stück/Nennwert FinanzManager;ISIN;Kurs;Kursdatum;Währung\n'
@@ -73,7 +73,7 @@ def test_upload_review_chart_allocation_and_listing(import_page):
     playwright.expect(page.get_by_text('Open Positions and choose Add position to get started.', exact=True)).to_be_visible()
     page.get_by_role('tab', name='Positions', exact=True).click()
     playwright.expect(save).to_be_enabled()
-    playwright.expect(page.get_by_role('radio', name='Import portfolio', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('radio', name='Import', exact=True)).to_be_checked()
     playwright.expect(page.get_by_role('combobox', name='Quantity (required)', exact=True)).to_have_value('Stück/Nennwert Bank')
     save.click()
     page.locator('.js-plotly-plot').first.wait_for()
@@ -114,12 +114,12 @@ def test_upload_review_chart_allocation_and_listing(import_page):
 
 def test_cancel_upload_writes_nothing(import_page):
     page, path = import_page
-    page.get_by_role('button', name='Import portfolio — experimental', exact=True).click()
+    page.get_by_role('button', name='Import holdings', exact=True).click()
     page.locator('input[type=file]').set_input_files({
         'name': 'invented.csv', 'mimeType': 'text/csv', 'buffer': b'Name;Quantity\nInvented asset;2,5\n',
     })
     page.get_by_role('button', name='Import reviewed positions', exact=True).wait_for()
     page.get_by_role('button', name='Cancel import', exact=True).click()
-    page.get_by_role('button', name='Import portfolio — experimental', exact=True).wait_for()
+    page.get_by_role('button', name='Import holdings', exact=True).wait_for()
     assert not path.exists()
     assert page.locator('[data-testid="stException"]').count() == 0

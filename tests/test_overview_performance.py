@@ -55,3 +55,24 @@ def test_duplicate_category_labels_and_reserved_names_are_unambiguous():
     labels = category_labels(config)
     assert len(set(labels.values())) == 3
     assert not {'Portfolio', 'Unassigned'} & set(labels.values())
+
+
+def test_sold_positions_hidden_in_allocation_without_changing_gain(tmp_path):
+    from test_ui import launch, by_label, activate
+    from list_helpers import list_frame
+    (tmp_path/'holdings.csv').write_text('id,name,ticker,shares,quantity_unit,manual_price,manual_price_currency,manual_price_date,acquisition_price,acquisition_currency\n'
+        'open,Invented open,UNQUOTED,2,units,10,EUR,2026-01-01,5,EUR\n'
+        'closed,Invented closed,UNQUOTED,0,units,10,EUR,2026-01-01,5,EUR\n')
+    app = launch(tmp_path, tab='Overview')
+    assert not app.exception
+    assert list_frame(app, 'Positions').name.tolist() == ['Invented open']
+    before = [(m.label, m.value, m.delta) for m in app.metric]
+    by_label(app.checkbox, 'Show sold positions').check().run()
+    assert sorted(list_frame(app, 'Positions').name) == ['Invented closed', 'Invented open']
+    assert [(m.label, m.value, m.delta) for m in app.metric] == before
+    activate(app, 'Positions')
+    assert len(list_frame(app, 'Positions')) == 2
+    by_label(app.checkbox, 'Show sold positions').uncheck().run()
+    assert list_frame(app, 'Positions').name.tolist() == ['Invented open']
+    activate(app, 'Overview')
+    assert list_frame(app, 'Positions').name.tolist() == ['Invented open']

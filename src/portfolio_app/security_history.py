@@ -14,7 +14,7 @@ from portfolio_app.derivative_types import decimal, identifier, iso_date
 from portfolio_app.holdings import DataError
 
 ZERO = Decimal(0)
-KINDS = {'opening', 'buy', 'sell', 'distribution', 'split', 'transfer', 'fee', 'tax', 'cost', 'note', 'void', 'transfer_in', 'transfer_out'}
+KINDS = {'opening', 'checkpoint', 'inventory_in', 'inventory_out', 'buy', 'sell', 'distribution', 'split', 'transfer', 'fee', 'tax', 'cost', 'note', 'void', 'transfer_in', 'transfer_out', 'swap', 'reward', 'asset_fee'}
 
 
 def _exact_sum(values):
@@ -73,12 +73,23 @@ class Charge:
 
 
 @dataclass(frozen=True)
+class AssetCharge:
+    position_id: str
+    quantity: Decimal
+
+    def __post_init__(self):
+        identifier(self.position_id)
+        object.__setattr__(self, 'quantity', number(self.quantity, 'Asset fee quantity', positive=True))
+
+
+@dataclass(frozen=True)
 class SecurityLot:
     id: str
     quantity: Decimal
     costs: tuple[dict, ...] = ()
     exact: bool = True
     date: str = ''
+    sequence: int = 0
 
     def __post_init__(self):
         from portfolio_app.cost_basis import validate_components
@@ -113,8 +124,51 @@ class SecurityEvent:
     replaces: str = ''
     source: str = 'manual'
     note: str = ''
+    received_quantity: Decimal = ZERO
+    valuation_amount: Decimal | None = None
+    valuation_currency: str = ''
+    asset_charges: tuple[AssetCharge, ...] = ()
+    timestamp_utc: str = ''
+    group_id: str = ''
+    observed_at: str = ''
+    flow_classification: str = ''
+    valuation_quality: str = 'recorded'
+    valuation_source: str = ''
+    estimated: bool = False
 
     def __post_init__(self):
+        if type(self.estimated) is not bool:
+            raise DataError('Invalid transaction estimate flag.')
+        if self.kind == 'checkpoint' and (self.charges or self.asset_charges or self.price is not None or self.amount is not None):
+            raise DataError('A checkpoint is a balance, not a cash transaction or fee.')
+        if self.flow_classification not in ('', 'unresolved', 'external'):
+            raise DataError('Invalid inventory flow classification.')
+        if self.kind in ('inventory_in', 'inventory_out') and not self.flow_classification:
+            raise DataError('Inventory needs an explicit flow classification.')
+        if self.kind not in ('inventory_in', 'inventory_out') and self.flow_classification:
+            raise DataError('Only inventory movements have a flow classification.')
+        if self.valuation_quality not in ('recorded', 'estimated'):
+            raise DataError('Invalid valuation quality.')
+        if self.valuation_quality == 'estimated' and (self.valuation_amount is None or not self.valuation_source):
+            raise DataError('Estimated valuations require an amount and source.')
+        if self.observed_at:
+            from datetime import datetime
+            observed = datetime.fromisoformat(self.observed_at.replace('Z', '+00:00'))
+            if self.kind not in ('opening', 'checkpoint') or observed.tzinfo is None or observed.date().isoformat() > self.date:
+                raise DataError('Balance observation must precede its reporting boundary.')
+        object.__setattr__(self, 'received_quantity', number(self.received_quantity, 'Received quantity'))
+        object.__setattr__(self, 'valuation_amount', number(self.valuation_amount, 'Valuation', optional=True))
+        denomination(self.valuation_currency, optional=True)
+        if self.valuation_amount is not None and not self.valuation_currency:
+            raise DataError('A monetary valuation requires its currency.')
+        object.__setattr__(self, 'asset_charges', tuple(self.asset_charges))
+        if any(not isinstance(c, AssetCharge) for c in self.asset_charges):
+            raise DataError('Invalid asset fee.')
+        if self.timestamp_utc:
+            from datetime import datetime, timezone
+            stamp = datetime.fromisoformat(self.timestamp_utc.replace('Z', '+00:00'))
+            if stamp.tzinfo is None or stamp.astimezone(timezone.utc).date().isoformat() != self.date:
+                raise DataError('Execution timestamp must match the UTC accounting date.')
         identifier(self.id); day(self.date, optional=True); iso_date(self.value_date, optional=True)
         if self.kind not in KINDS or type(self.sequence) is not int or self.sequence < 0:
             raise DataError('Invalid security event kind or order.')
@@ -152,6 +206,7 @@ class HistoryReview:
     active_ids: tuple[str, ...]
     date: str
     resolution: str
+    # Legacy completeness metadata is preserved on reload, never used as a gate.
     complete_from: str = ''
     complete_through: str = ''
     facts_fingerprint: str = ''
@@ -176,6 +231,7 @@ class SecurityBook:
     active_ids: tuple[str, ...] = ()
     reviews: tuple[HistoryReview, ...] = ()
     cash_from: str = ''
+    custody_id: str = ''
 
     def __post_init__(self):
         identifier(self.position_id); identifier(self.instrument_id)
@@ -204,14 +260,9 @@ class SecurityBook:
 
     @property
     def active(self):
-        return bool(self.active_ids)
+        selected = set(self.active_ids)
+        return any(e.id in selected and e.kind != 'void' for e in self.records)
 
-    @property
-    def interval(self):
-        if self.reviews and self.reviews[-1].active_ids == self.active_ids:
-            r = self.reviews[-1]
-            return r.complete_from, r.complete_through
-        return '', ''
 
 
 def book_from_dict(raw):
@@ -225,6 +276,7 @@ def event_from_dict(raw):
     fields = dict(raw)
     fields['charges'] = tuple(Charge(**c) for c in raw.get('charges', ()))
     fields['lots'] = tuple(SecurityLot(**lot) for lot in raw.get('lots', ()))
+    fields['asset_charges'] = tuple(AssetCharge(**c) for c in raw.get('asset_charges', ()))
     return SecurityEvent(**fields)
 
 
@@ -359,95 +411,166 @@ def _consume(lots, quantity):
     return tuple(remaining), tuple(moved)
 
 
+class _SecurityReplay:
+    """Advance the canonical FIFO replay, committing only a successful batch."""
+
+    def __init__(self, books):
+        books = tuple(books)
+        self.owners = {b.position_id: b for b in books}
+        self.state = SecuritiesState({b.position_id: SecurityBalance() for b in books if b.active}, (), ())
+        self.events = [(b, e) for b in books for e in selected_events(b)]
+        self.events.sort(key=lambda pair: (pair[1].date, pair[1].sequence, pair[0].position_id))
+        self.offset = 0
+
+    def advance(self, as_of=None, sequence=None):
+        from portfolio_app.cost_basis import component
+        owners = self.owners
+        states = dict(self.state.positions)
+        cash, disposals = list(self.state.cash), list(self.state.disposals)
+        offset = self.offset
+        with localcontext() as context:
+            context.prec = 60
+            for index in range(self.offset, len(self.events)):
+                book, e = self.events[index]
+                if not e.date:
+                    raise DataError('An undated record can be saved as evidence but cannot be activated.')
+                if as_of and (e.date > as_of or (e.date == as_of and sequence is not None and e.sequence > sequence)):
+                    break
+                offset = index + 1
+                # Charges in units are consumed before the main movement, once.
+                for charge in e.asset_charges:
+                    payer = states.get(charge.position_id)
+                    if payer is None or not payer.boundary:
+                        raise DataError('An asset fee needs an activated paying position and opening inventory.')
+                    remaining, paid = _consume(payer.lots, charge.quantity)
+                    states[charge.position_id] = replace(payer, lots=remaining, quantity=payer.quantity-charge.quantity)
+                    disposals.append(SecurityDisposal(e.id, charge.position_id, e.date, 'asset_fee', paid))
+                state = states[book.position_id]
+                if e.kind not in ('opening', 'checkpoint') and not state.boundary:
+                    raise DataError('Start history with an explicit opening snapshot, including zero.')
+                lots, issues = state.lots, list(state.issues)
+                if e.kind in ('opening', 'checkpoint'):
+                    if not e.quantity and (e.amount or any(p['amount'] and Decimal(p['amount']) for p in e.costs)):
+                        raise DataError('Positive acquisition cost requires positive opening quantity.')
+                    if e.lots:
+                        if sum((lot.quantity for lot in e.lots), ZERO) != e.quantity:
+                            raise DataError('Opening lots must total the snapshot quantity.')
+                        if any(not lot.date or lot.date > e.date for lot in e.lots):
+                            raise DataError('Opening lots cannot be acquired after the snapshot.')
+                        lots = tuple(sorted(e.lots, key=lambda lot: (lot.date, lot.sequence)))
+                    else:
+                        costs = e.costs or (component(e.quantity, e.amount, e.currency),)
+                        # A supplied aggregate estimate may be apportioned, still
+                        # labelled estimated. It does not establish original lots.
+                        estimated = any(p.get('quality') == 'estimated' for p in costs)
+                        lots = (SecurityLot(e.id, e.quantity, costs, estimated),) if e.quantity else ()
+                    states[book.position_id] = SecurityBalance(e.quantity, lots, e.date)
+                    continue
+                if e.kind in ('buy', 'sell', 'split', 'transfer', 'transfer_in', 'transfer_out', 'inventory_in', 'inventory_out', 'swap', 'reward', 'asset_fee') and not e.quantity:
+                    raise DataError('Trade, split and transfer quantities must be positive.')
+                if e.kind in ('transfer_in', 'inventory_in'):
+                    if e.lots:
+                        if sum((lot.quantity for lot in e.lots), ZERO) != e.quantity:
+                            raise DataError('Transferred lots must equal transferred units.')
+                        incoming = e.lots
+                    else:
+                        costs = e.costs or (component(e.quantity, None, e.currency),)
+                        incoming = (SecurityLot(e.id, e.quantity, costs,
+                            any(p.get('quality') == 'estimated' for p in costs), e.date, e.sequence),)
+                    lots = tuple(sorted((*lots, *incoming), key=lambda lot: (lot.date, lot.sequence)))
+                elif e.kind == 'reward':
+                    costs = (component(e.quantity, e.valuation_amount, e.valuation_currency, e.date),)
+                    if e.valuation_quality == 'estimated':
+                        costs[0].update(quality='estimated', source=e.valuation_source)
+                    lots = (*lots, SecurityLot(e.id, e.quantity, costs, True, e.date, e.sequence))
+                elif e.kind == 'buy':
+                    costs = [component(e.quantity, e.gross, e.currency, e.date)]
+                    # Cost components partition quantity. Additional charges carry zero units.
+                    costs.extend(component(0, c.amount, c.currency, c.date or e.date) for c in e.charges if c.kind == 'fee')
+                    if not e.charges_known:
+                        costs.append(component(0, None, e.currency, e.date))
+                    lots = (*lots, SecurityLot(e.id, e.quantity, tuple(costs), True, e.date, e.sequence))
+                elif e.kind == 'transfer' and e.other_position_id == book.position_id and book.custody_id.startswith('aggregate:'):
+                    # Explicit aggregate scope: owned principal never leaves this
+                    # asset's inventory. Asset/fiat charges still apply once.
+                    pass
+                elif e.kind in ('sell', 'transfer', 'transfer_out', 'inventory_out', 'swap', 'asset_fee'):
+                    lots, moved = _consume(lots, e.quantity)
+                    disposals.append(SecurityDisposal(e.id, book.position_id, e.date, e.kind, moved))
+                    if e.kind == 'swap':
+                        destination = owners.get(e.other_position_id)
+                        other = states.get(e.other_position_id)
+                        if destination is None or other is None or not other.boundary or destination.instrument_id == book.instrument_id or not e.received_quantity:
+                            raise DataError('A swap needs another asset with an activated opening and received quantity.')
+                        costs = (component(e.received_quantity, e.valuation_amount, e.valuation_currency, e.date),)
+                        if e.valuation_quality == 'estimated':
+                            costs[0].update(quality='estimated', source=e.valuation_source)
+                        received = SecurityLot(e.id+':received', e.received_quantity, costs, True, e.date, e.sequence)
+                        states[destination.position_id] = replace(other, quantity=other.quantity+e.received_quantity,
+                            lots=tuple(sorted((*other.lots, received), key=lambda lot: (lot.date, lot.sequence))))
+                    if e.kind == 'transfer':
+                        destination = owners.get(e.other_position_id)
+                        other = states.get(e.other_position_id)
+                        if destination is None or other is None or not other.boundary or destination.instrument_id != book.instrument_id or destination == book:
+                            raise DataError('A transfer needs another activated holding of the same instrument with an opening snapshot.')
+                        states[destination.position_id] = replace(other, quantity=other.quantity+e.quantity,
+                            lots=tuple(sorted((*other.lots, *moved), key=lambda lot: (lot.date, lot.sequence))))
+                elif e.kind == 'split':
+                    lots = tuple(replace(lot, quantity=lot.quantity * e.quantity,
+                        costs=tuple({**deepcopy(p), 'shares': str(Decimal(p['shares']) * e.quantity)} for p in lot.costs)) for lot in lots)
+                elif e.kind == 'cost':
+                    if not state.quantity and e.amount:
+                        raise DataError('Positive remaining cost requires a positive holding.')
+                    costs = e.costs or (component(state.quantity, e.amount, e.currency),)
+                    lots = (SecurityLot(e.id, state.quantity, costs, False),) if state.quantity else ()
+                elif e.kind == 'note':
+                    issues.append(e.note or 'Unresolved historical event')
+                quantity = sum((lot.quantity for lot in lots), ZERO)
+                states[book.position_id] = replace(state, quantity=quantity, lots=tuple(lots), issues=tuple(issues))
+                if e.kind in ('buy', 'sell', 'distribution', 'fee', 'tax'):
+                    denomination(e.currency)
+                    gross = e.gross if e.kind in ('buy', 'sell') else e.amount
+                    sign = -1 if e.kind in ('buy', 'fee', 'tax') else 1
+                    cash.append(SecurityCash(e.id, book.position_id, book.account_id, e.date, e.sequence,
+                        e.currency, None if gross is None else sign*gross, e.kind, e.value_date, event_id=e.id))
+                for i, c in enumerate(e.charges):
+                    cash.append(SecurityCash(f'{e.id}:charge:{i}', book.position_id, book.account_id,
+                        c.date or e.date, e.sequence, c.currency, None if c.amount is None else -c.amount,
+                        c.kind, external=c.external, event_id=e.id))
+                if e.kind in ('buy', 'sell', 'distribution') and not e.charges_known:
+                    cash.append(SecurityCash(f'{e.id}:unknown-charges', book.position_id, book.account_id,
+                        e.date, e.sequence, e.currency, None, 'fee', event_id=e.id))
+        self.state = SecuritiesState(states, tuple(cash), tuple(disposals))
+        self.offset = offset
+        return SecuritiesState(dict(states), tuple(c for c in cash if not as_of or c.date <= as_of), tuple(disposals))
+
+
 def replay_securities(books, *, as_of=None, sequence=None):
     """Replay activated facts; unknown money never substitutes for zero."""
-    from portfolio_app.cost_basis import component
-    books = tuple(books)
-    owners = {b.position_id: b for b in books}
-    states = {b.position_id: SecurityBalance() for b in books if b.active}
-    events = [(b, e) for b in books for e in selected_events(b)]
-    events.sort(key=lambda pair: (pair[1].date, pair[1].sequence, pair[0].position_id))
-    cash, disposals = [], []
-    with localcontext() as context:
-        context.prec = 50
-        for book, e in events:
-            if not e.date:
-                raise DataError('An undated record can be saved as evidence but cannot be activated.')
-            if as_of and (e.date > as_of or (e.date == as_of and sequence is not None and e.sequence > sequence)):
-                continue
-            state = states[book.position_id]
-            if e.kind != 'opening' and not state.boundary:
-                raise DataError('Start history with an explicit opening snapshot, including zero.')
-            lots, issues = state.lots, list(state.issues)
-            if e.kind == 'opening':
-                if not e.quantity and e.amount:
-                    raise DataError('Positive acquisition cost requires positive opening quantity.')
-                if e.lots:
-                    if sum((lot.quantity for lot in e.lots), ZERO) != e.quantity:
-                        raise DataError('Opening lots must total the snapshot quantity.')
-                    if any(not lot.date or lot.date > e.date for lot in e.lots):
-                        raise DataError('Opening lots cannot be acquired after the snapshot.')
-                    lots = tuple(sorted(e.lots, key=lambda lot: lot.date))
-                else:
-                    costs = e.costs or (component(e.quantity, e.amount, e.currency),)
-                    lots = (SecurityLot(e.id, e.quantity, costs, False),) if e.quantity else ()
-                states[book.position_id] = SecurityBalance(e.quantity, lots, e.date)
-                continue
-            if e.kind in ('buy', 'sell', 'split', 'transfer', 'transfer_in', 'transfer_out') and not e.quantity:
-                raise DataError('Trade, split and transfer quantities must be positive.')
-            if e.kind == 'transfer_in':
-                if e.lots:
-                    if sum((lot.quantity for lot in e.lots), ZERO) != e.quantity:
-                        raise DataError('Transferred lots must equal transferred units.')
-                    incoming = e.lots
-                else:
-                    incoming = (SecurityLot(e.id, e.quantity, e.costs or (component(e.quantity, None, e.currency),), False),)
-                lots = tuple(sorted((*lots, *incoming), key=lambda lot: lot.date))
-            elif e.kind == 'buy':
-                costs = [component(e.quantity, e.gross, e.currency, e.date)]
-                # Cost components partition quantity. Additional charges carry zero units.
-                costs.extend(component(0, c.amount, c.currency, c.date or e.date) for c in e.charges if c.kind == 'fee')
-                if not e.charges_known:
-                    costs.append(component(0, None, e.currency, e.date))
-                lots = (*lots, SecurityLot(e.id, e.quantity, tuple(costs), True, e.date))
-            elif e.kind in ('sell', 'transfer', 'transfer_out'):
-                lots, moved = _consume(lots, e.quantity)
-                disposals.append(SecurityDisposal(e.id, book.position_id, e.date, e.kind, moved))
-                if e.kind == 'transfer':
-                    destination = owners.get(e.other_position_id)
-                    other = states.get(e.other_position_id)
-                    if destination is None or other is None or not other.boundary or destination.instrument_id != book.instrument_id or destination == book:
-                        raise DataError('A transfer needs another activated holding of the same instrument with an opening snapshot.')
-                    states[destination.position_id] = replace(other, quantity=other.quantity+e.quantity,
-                        lots=tuple(sorted((*other.lots, *moved), key=lambda lot: lot.date)))
-            elif e.kind == 'split':
-                lots = tuple(replace(lot, quantity=lot.quantity * e.quantity,
-                    costs=tuple({**deepcopy(p), 'shares': str(Decimal(p['shares']) * e.quantity)} for p in lot.costs)) for lot in lots)
-            elif e.kind == 'cost':
-                if not state.quantity and e.amount:
-                    raise DataError('Positive remaining cost requires a positive holding.')
-                costs = e.costs or (component(state.quantity, e.amount, e.currency),)
-                lots = (SecurityLot(e.id, state.quantity, costs, False),) if state.quantity else ()
-            elif e.kind == 'note':
-                issues.append(e.note or 'Unresolved historical event')
-            quantity = sum((lot.quantity for lot in lots), ZERO)
-            states[book.position_id] = replace(state, quantity=quantity, lots=tuple(lots), issues=tuple(issues))
-            if e.kind in ('buy', 'sell', 'distribution', 'fee', 'tax'):
-                denomination(e.currency)
-                gross = e.gross if e.kind in ('buy', 'sell') else e.amount
-                sign = -1 if e.kind in ('buy', 'fee', 'tax') else 1
-                cash.append(SecurityCash(e.id, book.position_id, book.account_id, e.date, e.sequence,
-                    e.currency, None if gross is None else sign*gross, e.kind, e.value_date, event_id=e.id))
-            for i, c in enumerate(e.charges):
-                cash.append(SecurityCash(f'{e.id}:charge:{i}', book.position_id, book.account_id,
-                    c.date or e.date, e.sequence, c.currency, None if c.amount is None else -c.amount,
-                    c.kind, external=c.external, event_id=e.id))
-            if e.kind in ('buy', 'sell', 'distribution') and not e.charges_known:
-                cash.append(SecurityCash(f'{e.id}:unknown-charges', book.position_id, book.account_id,
-                    e.date, e.sequence, e.currency, None, 'fee', event_id=e.id))
-    if as_of:
-        cash = [c for c in cash if c.date <= as_of]
-    return SecuritiesState(states, tuple(cash), tuple(disposals))
+    return _SecurityReplay(books).advance(as_of, sequence)
+
+
+class SecurityTimeline:
+    """Dated snapshots from one forward replay; historical queries can arrive in any order.
+
+    Charges can settle on another date, so snapshots filter cash by its own date
+    while the cursor retains future cash postings. Balances and lots are immutable;
+    each snapshot owns its positions mapping and never sees subsequent mutations.
+    """
+
+    def __init__(self, books):
+        self.replay = _SecurityReplay(books)
+        self.dates = sorted({e.date for _, e in self.replay.events} |
+                            {c.date for _, e in self.replay.events for c in e.charges if c.date})
+        self.snapshots = [self.replay.state]
+
+    def at(self, stamp=None):
+        from bisect import bisect_right
+        index = len(self.dates) if stamp is None else bisect_right(self.dates, stamp)
+        while len(self.snapshots) <= index:
+            day = self.dates[len(self.snapshots)-1]
+            self.snapshots.append(self.replay.advance(day))
+        return self.snapshots[index]
 
 
 @dataclass(frozen=True)
@@ -468,8 +591,8 @@ def reconcile(book, row, *, other_books=(), target='EUR', historical=None):
     tolerance = min(Decimal('1e-9'), abs(original)*Decimal('1e-9'))
     old = resolve_cost(active_components(row), target, historical)
     new = resolve_cost(list(state.costs), target, historical) if state.costs else None
-    old_cost = Decimal(str(old.amount)) if old.amount is not None else None
-    new_cost = Decimal(str(new.amount)) if new and new.amount is not None else ZERO if not state.quantity else None
+    old_cost = old.exact_amount
+    new_cost = new.exact_amount if new else ZERO if not state.quantity else None
     return Reconciliation(original, state.quantity, old_cost, new_cost, target,
         abs(state.quantity-original) <= tolerance,
         abs(old_cost-new_cost) <= Decimal('.01') if old_cost is not None and new_cost is not None else None)
@@ -492,6 +615,8 @@ def effective_holdings(holdings, books):
     """Materialize managed balances without writing competing CSV summaries."""
     from portfolio_app.cost_basis import fingerprint, same_summary, encode_components, component
     result = holdings.copy(deep=True)
+    if 'acquisition_currency' not in result:
+        result['acquisition_currency'] = ''
     states = replay_securities(books).positions
     for book in books:
         matches = result.index[result.position_id == book.position_id]
@@ -594,22 +719,43 @@ def allocated_capital_at(journal, investment_id, stamp):
 def duplicate_candidates(book):
     """Economic matches need acknowledgment, not automatic removal."""
     from dataclasses import asdict
-    seen, duplicates = {}, []
+    seen, latest, duplicates = {}, {}, []
     for event in selected_events(book):
-        if event.kind not in ('buy', 'sell', 'distribution', 'fee', 'tax', 'transfer', 'transfer_in', 'transfer_out'):
+        if event.kind not in ('buy', 'sell', 'distribution', 'fee', 'tax', 'transfer', 'transfer_in', 'transfer_out', 'inventory_in', 'inventory_out', 'swap', 'reward', 'asset_fee'):
             continue
         facts = asdict(event)
-        for key in ('id', 'sequence', 'source', 'replaces', 'note'):
+        for key in ('id', 'sequence', 'source', 'replaces', 'note', 'timestamp_utc', 'group_id',
+                    'observed_at', 'valuation_quality', 'valuation_source', 'estimated'):
             facts.pop(key)
-        signature = json.dumps(facts, default=str, sort_keys=True)
-        if signature in seen:
-            duplicates.append((seen[signature], event.id))
-        seen[signature] = event.id
+        for part in facts['costs']:
+            part.pop('quality', None)
+            part.pop('source', None)
+            for field in ('shares', 'amount'):
+                if part[field] != '':
+                    part[field] = Decimal(part[field])
+        if event.kind in ('buy','sell'):
+            facts.pop('price')
+            facts['amount'] = event.gross
+        facts['charges'] = [c for c in facts['charges'] if c['amount'] != ZERO]
+        def canonical(value):
+            if isinstance(value, Decimal):
+                text = format(value, 'f')
+                return text.rstrip('0').rstrip('.') if '.' in text else text
+            return str(value)
+        signature = json.dumps(facts, default=canonical, sort_keys=True)
+        # Distinct recorded execution times distinguish otherwise equal fills.
+        # Date-only evidence can still match a timestamped CSV/PDF transaction.
+        executions = seen.setdefault(signature, {})
+        previous = (executions.get(event.timestamp_utc) or executions.get('')) if event.timestamp_utc else latest.get(signature)
+        if previous:
+            duplicates.append((previous, event.id))
+        executions[event.timestamp_utc] = event.id
+        latest[signature] = event.id
     return tuple(duplicates)
 
 
 def accounting_fingerprint(journal):
-    """Bind completeness to facts, without making review receipts self-referential."""
+    """Fingerprint accounting facts without including review receipts."""
     from portfolio_app.account_journal import journal_to_dict
     raw = journal_to_dict(journal)
     for book in raw.get('securities', ()):
@@ -628,9 +774,9 @@ def security_history_fingerprint(journal, position_id):
         previous = set(members)
         for book in journal.securities:
             for event in book.records:
-                if event.kind == 'transfer' and event.other_position_id and (
-                        book.position_id in members or event.other_position_id in members):
-                    members.update((book.position_id, event.other_position_id))
+                affected = affected_positions(book, event)
+                if affected.intersection(members):
+                    members.update(affected)
         if members == previous:
             break
     facts = []
@@ -638,6 +784,29 @@ def security_history_fingerprint(journal, position_id):
         if book.position_id in members:
             raw = asdict(book)
             raw.pop('reviews', None)
+            # Keep existing PDF/manual review hashes stable when CSV-only fields
+            # have their backward-compatible defaults. Actual new evidence binds
+            # the review, including all connected swap and asset-charge legs.
+            if not raw['custody_id']:
+                raw.pop('custody_id')
+            defaults = dict(received_quantity=ZERO, valuation_amount=None, valuation_currency='',
+                            asset_charges=(), timestamp_utc='', group_id='', observed_at='',
+                            flow_classification='', valuation_quality='recorded', valuation_source='', estimated=False)
+            for event in raw['records']:
+                for field, default in defaults.items():
+                    if event[field] == default:
+                        event.pop(field)
+                for lot in event['lots']:
+                    if lot['sequence'] == 0:
+                        lot.pop('sequence')
             facts.append(raw)
     return sha256(json.dumps({'security_scope_v1': position_id, 'books': facts},
                              default=str, sort_keys=True).encode()).hexdigest()
+
+
+def affected_positions(book, event):
+    """All positions touched by one atomic economic event."""
+    result = {book.position_id, *(c.position_id for c in event.asset_charges)}
+    if event.kind in ('swap', 'transfer'):
+        result.add(event.other_position_id)
+    return result

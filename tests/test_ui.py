@@ -256,7 +256,7 @@ def test_empty_holdings(tmp_path):
     app = launch(tmp_path)
     assert not app.exception
     activate(app, 'Positions')
-    assert any('Add your first position' in item.value for item in app.info)
+    assert any('Add a position or import transactions' in item.value for item in app.info)
 
 
 def test_provider_failures_do_not_crash_app(sample_data_dir):
@@ -284,6 +284,8 @@ def test_zero_positions_and_missing_classifications(tmp_path, sample_data_dir):
     (tmp_path / "classifications.yaml").write_text("")
     app = launch(tmp_path)
     assert not app.exception
+    assert any(item.value == "No open positions" for item in app.info)
+    by_label(app.checkbox, "Show sold positions").check().run()
     assert selected_value(app) == "€0.00"
     assert len(app.tabs[1].get("plotly_chart")) == 0
 
