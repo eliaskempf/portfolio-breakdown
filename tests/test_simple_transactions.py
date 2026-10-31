@@ -107,6 +107,95 @@ def test_import_edit_remove_and_reimport_does_not_resurrect(tmp_path):
     assert journal.transaction_imports == saved.journal.transaction_imports
 
 
+@pytest.mark.parametrize('explicit_order', [False, True])
+def test_overlapping_export_preserves_edits_removals_and_stored_identities(tmp_path, explicit_order):
+    items = (rows('b,2024-01-02,buy,AUR,10,100,EUR,4\nr,2024-01-05,buy,AUR,5,60,EUR,5\n', ',order')
+             if explicit_order else rows('b,2024-01-02,buy,AUR,10,100,EUR\nr,2024-01-05,buy,AUR,5,60,EUR\n'))
+    save_transaction_import(tmp_path, items, MAPPING, expected_journal_revision=None, expected_holdings_revision=None,
+        additions=ADDITIONS, selected_ids=[r.identity for r in items], starts_at_zero=True,
+        accept_reconciliation=True, comparison_date='2024-01-10')
+    journal, revision = load_journal(tmp_path)
+    snapshot = read_snapshot(tmp_path/'holdings.csv')
+    candidate = correct_transaction(journal.securities[0], items[0].identity, quantity=D(11))
+    candidate = replace(candidate, active_ids=tuple(i for i in candidate.active_ids if i != items[0].identity)
+                        + (candidate.records[-1].id,))
+    candidate = remove_transactions(candidate, [items[1].identity])
+    save_history(tmp_path, candidate, expected_journal_revision=revision, expected_holdings_revision=snapshot.revision,
+                 activate=True, accept_balance_change=True)
+    journal, revision = load_journal(tmp_path)
+    original_receipts = journal.transaction_imports
+    original_records = journal.securities[0].records
+    changed = rows('new,2024-02-01,buy,AUR,1,12,EUR\nr,2024-01-05,buy,AUR,5,60,EUR\nb,2024-01-02,buy,AUR,10,100,EUR\n')
+    result = save_transaction_import(tmp_path, changed, MAPPING, expected_journal_revision=revision,
+        expected_holdings_revision=snapshot.revision, selected_ids=[r.identity for r in changed],
+        accept_reconciliation=True, comparison_date='2024-02-02')
+    assert result.added == result.applied == 1
+    saved, revision = load_journal(tmp_path)
+    assert saved.transaction_imports[:2] == original_receipts
+    assert saved.securities[0].records[:len(original_records)] == original_records
+    assert replay_securities(saved.securities).positions['aur'].quantity == 12
+    again = save_transaction_import(tmp_path, changed, MAPPING, expected_journal_revision=revision,
+        expected_holdings_revision=snapshot.revision, selected_ids=[r.identity for r in changed],
+        accept_reconciliation=True, comparison_date='2024-02-02')
+    assert again.journal == saved and load_journal(tmp_path)[1] == revision
+
+
+def test_reimport_matches_legacy_zero_fee_without_changing_receipt_identity():
+    from portfolio_app.transaction_csv import TransactionRow, retain_import_interpretations
+    original = rows('b,2024-01-02,buy,AUR,10,100,EUR,0.00\n', ',fee')[0]
+    legacy = TransactionRow(original.raw, {**original.facts, 'fee_currency': 'EUR'})
+    journal = applied([legacy])
+    incoming = rows('b,2024-01-02,buy,AUR,10,100,EUR,0\n', ',fee')
+    assert incoming[0].identity != legacy.identity
+    assert retain_import_interpretations(incoming, journal.transaction_imports)[0].identity == legacy.identity
+    result = prepare_import(journal, holdings(), incoming, MAPPING, selected_ids=[r.identity for r in incoming])
+    assert result.journal == journal and result.added == result.applied == 0
+    assert journal_from_dict(journal_to_dict(journal)) == journal
+
+
+def test_explicit_order_change_requires_correction_and_preserves_original_evidence():
+    original = rows('b,2024-01-02,buy,AUR,10,100,EUR,4\n', ',order')
+    journal = applied(original)
+    changed = rows('b,2024-01-02,buy,AUR,10,100,EUR,5\n', ',order')
+    with pytest.raises(DataError, match='different facts'):
+        prepare_import(journal, holdings(), changed, MAPPING, selected_ids=[changed[0].identity])
+    result = prepare_import(journal, holdings(), changed, MAPPING, selected_ids=[changed[0].identity],
+                            correction_ids=[changed[0].identity])
+    assert result.applied == 1 and result.journal.transaction_imports[0] == journal.transaction_imports[0]
+    assert result.journal.securities[0].records[-1].sequence == 5
+
+
+def test_changed_amount_keeps_accepted_implicit_order_and_requires_correction():
+    from portfolio_app.transaction_csv import retain_import_interpretations
+    original = rows('a,2024-01-02,buy,AUR,1,10,EUR\nb,2024-01-02,buy,AUR,2,20,EUR\n')
+    journal = applied(original)
+    changed = rows('b,2024-01-02,buy,AUR,2,21,EUR\n')
+    aligned = retain_import_interpretations(changed, journal.transaction_imports)
+    assert aligned[0].facts['sequence'] == '1'
+    with pytest.raises(DataError, match='different facts'):
+        prepare_import(journal, holdings(), changed, MAPPING, selected_ids=[changed[0].identity])
+    result = prepare_import(journal, holdings(), changed, MAPPING, selected_ids=[changed[0].identity],
+                            correction_ids=[changed[0].identity])
+    assert result.journal.securities[0].records[-1].sequence == 1
+    assert result.journal.securities[0].records[-1].amount == 21
+
+
+def test_excluded_csv_correction_preserves_the_applied_predecessor():
+    from portfolio_app.history_commands import exclude_transactions
+    from portfolio_app.security_history import current_records
+    items = rows('b,2024-01-02,buy,AUR,10,100,EUR\n')
+    journal = applied(items)
+    accepted = journal.securities[0]
+    candidate = correct_transaction(accepted, items[0].identity, quantity=D(11))
+    correction = candidate.records[-1].id
+    candidate = replace(candidate, active_ids=(accepted.active_ids[0], correction))
+    candidate = exclude_transactions(candidate, [correction], accepted_ids=accepted.active_ids)
+    restored = journal_from_dict(journal_to_dict(replace(journal, securities=(candidate,))))
+    assert replay_securities(restored.securities).positions['aur'].quantity == 10
+    assert [e.id for e in current_records(candidate)] == [items[0].identity]
+    assert correct_transaction(candidate, items[0].identity, quantity=D(12)).records[-1].quantity == 12
+
+
 def test_mapped_evidence_is_an_ordinary_pending_transaction(tmp_path):
     items=rows('b,2024-01-02,buy,AUR,10,100,EUR\n')
     content=positions_content('',read_snapshot(tmp_path/'holdings.csv'),ADDITIONS)

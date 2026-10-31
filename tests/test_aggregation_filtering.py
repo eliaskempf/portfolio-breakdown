@@ -8,6 +8,31 @@ from portfolio_app.filtering import filter_holdings
 from portfolio_app.valuation import portfolio_weights
 
 
+def test_shared_bond_leaf_conserves_both_funds_despite_provider_names():
+    from datetime import date
+    from portfolio_app.etf import FundSnapshot
+    from portfolio_app.company_merges import build_plan, MergeSettings
+    from portfolio_app.exposure_analysis import prepare_exposures
+    from portfolio_app.holdings import parse_holdings
+    holdings = parse_holdings('id,name,shares,account,position_key,ticker,isin,instrument_type\n'
+        'f1,Invented bond fund one,1,Desk,f1,F1,XX0000000001,etf\n'
+        'f2,Invented bond fund two,1,Desk,f2,F2,XX0000000002,etf\n')
+    holdings['current_value_reporting'] = 100.0
+    funds = [FundSnapshot(fund_id=f'f{i}', name=f'Invented fund {i}', isin=f'XX000000000{i}',
+        tickers=(f'F{i}',), as_of=date(2024, 1, 1), source='synthetic', asset_class='bond',
+        constituents=pd.DataFrame([dict(constituent_id='shared-bond', name=name, ticker='',
+            isin='XX0000000003', weight=1.0, instrument_type='bond')]))
+        for i, name in [(1, 'Invented bond 2030'), (2, 'Invented issuer bond 2030')]]
+    plan = build_plan(holdings, funds, {}, MergeSettings(set()))
+    holdings, funds, classifications = plan.apply(holdings, funds, {'shared-bond': {'sector': (('Bonds',),)}})
+    exposures = prepare_exposures(holdings, funds, holdings, lookthrough=True)
+    tree = aggregate(exposures, classifications, taxonomy='sector', include_holdings=True)
+    assert_conserved(tree, 200)
+    assert tree.loc[tree.kind.eq('holding'), 'value'].tolist() == [200]
+    reverse = aggregate(exposures.iloc[::-1], classifications, taxonomy='sector', include_holdings=True)
+    assert tree.equals(reverse)
+
+
 @pytest.fixture
 def exposures():
     return pd.DataFrame([

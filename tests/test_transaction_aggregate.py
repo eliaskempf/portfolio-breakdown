@@ -39,6 +39,30 @@ def activate(rows=None, **kwargs):
                           starts_at_zero=True, aggregate_accounts=ACCOUNTS, **kwargs)
 
 
+@pytest.mark.parametrize('select', [False, True])
+def test_incremental_custody_cannot_reuse_another_accounts_binding(select):
+    first = row('first', 'buy', account_id='Desk', gross_amount='20', currency='EUR')
+    initial = prepare_import(Journal(), holdings(), [first], {('Desk', 'AUR'): 'aur'},
+        selected_ids=[first.identity], starts_at_zero=True)
+    other = row('other', 'buy', account_id='Vault', timestamp_utc='2024-01-03T12:00:00Z', gross_amount='20', currency='EUR')
+    with pytest.raises(DataError, match='Different custody'):
+        prepare_import(initial.journal, holdings(), [other], {('Vault', 'AUR'): 'aur'},
+                       selected_ids=[other.identity] if select else ())
+
+
+def test_saved_aggregate_accepts_known_members_but_not_scope_expansion():
+    initial = activate()
+    again = prepare_import(initial.journal, holdings(), scenario(), MAPPING,
+        selected_ids=[r.identity for r in scenario()])
+    assert again.journal == initial.journal
+    new = row('new', 'buy', account_id='New wallet', timestamp_utc='2024-05-01T12:00:00Z', gross_amount='20', currency='EUR')
+    with pytest.raises(DataError, match='aggregate scope'):
+        prepare_import(initial.journal, holdings(), [new], {('New wallet', 'AUR'): 'aur'}, selected_ids=[new.identity])
+    with pytest.raises(DataError, match='Different custody'):
+        prepare_import(initial.journal, holdings(), [new], {('New wallet', 'AUR'): 'aur'},
+                       selected_ids=[new.identity], aggregate_accounts=(*ACCOUNTS, 'New wallet'))
+
+
 def test_aggregate_replays_forward_and_compares_independent_holdings():
     preview = activate()
     states = replay_securities(preview.journal.securities).positions

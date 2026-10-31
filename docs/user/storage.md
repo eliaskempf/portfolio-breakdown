@@ -200,9 +200,10 @@ An automated scan cannot recognize all personal details.
 ### Transaction-history compatibility
 
 Opening a legacy workspace does not convert its purchase batches or rewrite the
-journal. The first securities-history or dated-allocation save upgrades the
-account journal to version 2 and retains a private backup. Existing native futures
-events preserve their meaning. Older application versions cannot read version 2;
+journal. Securities-history saves use account journal version 5; dated
+allocations require at least version 2. Saves retain a private backup. Versions
+1–5 remain readable, and existing native futures events preserve their meaning. Older
+application versions may not read the current journal;
 use a compatible application or restore the complete pre-upgrade backup into a
 separate workspace. Do not replace only the journal while retaining newer history.
 

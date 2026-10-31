@@ -123,18 +123,22 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     """
     calculation = calculation or HistoryCalculation(journal, observations)
     estimate_notes = []
-    for book in journal.securities:
-        for event in selected_events(book):
-            if not affected_positions(book, event).intersection(scope.positions) and book.account_id not in scope.accounts:
-                continue
-            if event.date > end:
-                continue
-            if any(p.get('quality') == 'estimated' for p in event.costs):
-                estimate_notes.append('Estimated acquisition cost retained from supplied evidence')
-            if event.valuation_quality == 'estimated' or event.estimated:
-                estimate_notes.append('Estimated monetary valuation retained from supplied evidence')
-    if any(p.get('quality') == 'estimated' or e.valuation_quality == 'estimated'
-           for b in journal.securities for e in selected_events(b) for p in (e.costs or ({},))):
+    def dates_for(member):
+        return calculation._get(('scope_dates', member), lambda: scope_dates(journal, member))
+    estimated = calculation._get(('gain_estimates',), lambda: tuple((b, e) for b in journal.securities
+        for e in calculation._events[b.position_id] if e.estimated or e.valuation_quality == 'estimated'
+        or any(p.get('quality') == 'estimated' for p in e.costs)))
+    for book, event in estimated:
+        if not affected_positions(book, event).intersection(scope.positions) and book.account_id not in scope.accounts:
+            continue
+        if event.date > end:
+            continue
+        if any(p.get('quality') == 'estimated' for p in event.costs):
+            estimate_notes.append('Estimated acquisition cost retained from supplied evidence')
+        if event.valuation_quality == 'estimated' or event.estimated:
+            estimate_notes.append('Estimated monetary valuation retained from supplied evidence')
+    if any(e.valuation_quality == 'estimated' or any(p.get('quality') == 'estimated' for p in e.costs)
+           for _, e in estimated):
         states = calculation.securities(end).positions
         if any(p.get('quality') == 'estimated' for identity in scope.positions
                if identity in states for p in states[identity].costs):
@@ -142,8 +146,8 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     # When a movement connects positions, value the selected boundary
     # as a whole before component fallbacks. Missing internal transfer marks must
     # not prevent cancellation or make a known portfolio gain partial.
-    if len(scope.positions) > 1 and not scope.unresolved:
-        dates = scope_dates(journal, scope)
+    if len(scope.positions) + len(scope.accounts) > 1 and not scope.unresolved:
+        dates = dates_for(scope)
         if dates and dates[0] <= end:
             result = calculate_history(journal, scope, observations, dates[0], end, target, returns=False, calculation=calculation)
             flows, missing = calculation.flows(scope, dates[0], end, target)
@@ -168,7 +172,7 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     parts += [('account:'+identity, HistoryScope(accounts=(identity,))) for identity in scope.accounts]
     gains, values, capitals, reasons = [], [], [], [*scope.unresolved, *estimate_notes]
     for identity, member in parts:
-        dates = scope_dates(journal, member)
+        dates = dates_for(member)
         value = (current_values.get(identity) if current_values is not None else
                  calculation.value(member, end, target).amount)
         values.append(value)
@@ -205,11 +209,11 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
                 kinds = {e.kind for e in events}
                 known_parts = [gain if gain is not None else components.unrealized]
                 if kinds.intersection({'sell', 'swap'}):
-                    known_parts.append(components.realized)
+                    known_parts.append(components.known_realized)
                 if kinds.intersection({'distribution', 'reward'}):
-                    known_parts.append(components.income)
-                if components.expenses:
-                    known_parts.append(-components.expenses)
+                    known_parts.append(components.known_income)
+                if components.known_expenses:
+                    known_parts.append(-components.known_expenses)
                 supported = [part for part in known_parts if part is not None]
                 gain = sum(supported, ZERO) if supported else None
                 reasons.extend(components.reasons)

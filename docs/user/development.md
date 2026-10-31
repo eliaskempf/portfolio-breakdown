@@ -116,7 +116,8 @@ periods and pointer movement. Dated value, capital, total gain and TWR remain in
 chart tooltips; position charts do not rewrite headline cards. Return on cost and
 unrealized gain are listed in Details. Without applied history, capital uses the
 recorded acquisition cost and gain is explicitly unrealized only; annualized
-return remains unavailable. Complete-history gates are unchanged.
+return remains unavailable. Applied history supplies the authoritative balance;
+missing evidence limits only the metrics that depend on it.
 
 Missing-data interfaces must identify the affected result and provide a relevant
 action. Do not expose a combined list of every metric's requirements as mandatory

@@ -108,6 +108,12 @@ fees remain unknown; enter zero when none were paid. `estimated=yes` marks suppl
 amounts as estimates. Do not use zero to represent an unknown value. File order is
 the initial order for same-day transactions; supply `order` when a different
 execution order is known. Dates are not converted into invented execution times.
+When dependent transactions on one day come from separate files or incompatible
+clocks, **Review same-day order** shows the affected entries before balance
+review. Enter distinct order numbers, earlier first, and choose **Use reviewed
+order**. Original timestamps remain retained; PDF statement times without a
+timezone are never treated as UTC. Already applied history keeps its accepted
+order until an explicit review changes it.
 
 Use **Save evidence only** to retain the upload without changing active balances.
 Mapped transactions appear in the usual Transactions view. Saved imports for new
@@ -146,8 +152,10 @@ After import, use the normal **Transactions** list to edit or remove entries,
 regardless of whether they came from CSV, PDF or manual entry. Exchanges, transfers
 and fees paid from another asset are reviewed with all affected holdings. Original
 evidence remains retained. Reimporting the same references does not duplicate
-transactions or undo later edits/removals; changed source rows require explicit
-correction review. Economically similar rows from different sources require a
+transactions or undo later edits/removals. Moving rows within an export keeps
+their previously accepted order; use an explicit `order` to correct chronology.
+Changed source rows show their changed fields and require approval individually,
+including a warning when they replace a later edit or removal. Economically similar rows from different sources require a
 review rather than automatic deletion.
 
 Prepare wallet/staking movements and personal approximations before import when

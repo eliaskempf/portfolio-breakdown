@@ -22,6 +22,7 @@ class ReviewPreview:
     checkpoints: tuple = ()
     warnings: tuple = ()
     starting_note: str = ''
+    excluded: int = 0
 
 
 def comparison_status(item):
@@ -148,11 +149,18 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
             preview = build_preview(excluded)
             st.caption(f'{len(excluded)} excluded')
     except (DataError, ValueError) as exc:
+        from portfolio_app.history_order import OrderReviewRequired
+        if isinstance(exc, OrderReviewRequired):
+            _review_order(exc.groups, key)
+            st.button(keep_label, key=key+'keep', on_click=keep)
+            return None
         st.warning(str(exc))
         st.button(keep_label, key=key+'keep', on_click=keep)
         return None
     if not preview.comparisons:
         st.caption('No new transactions selected')
+        if preview.excluded:
+            st.button('Save exclusions', key=key+'exclude', type='primary', on_click=apply, args=(excluded,))
         st.button(keep_label, key=key+'keep', on_click=keep)
         return preview
     with balances:
@@ -208,3 +216,22 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
     if blocked:
         st.caption('Confirm replacement balances' if not checkpoints else 'Cash amounts missing')
     return preview
+
+
+def _review_order(groups, key):
+    from portfolio_app.history_ui import _event_label
+    st.warning('Review same-day order')
+    st.caption('Earlier transactions first', help='Statement times have no recorded timezone. '
+        'Mixed sources or separate date-only files need a reviewed order before balances can be calculated. '
+        'This records order only; original timestamps remain unchanged.')
+    overrides = {}
+    for group in groups:
+        st.markdown('**'+group[0][1].date+'**')
+        for index, (book, event) in enumerate(group, 1):
+            clock = event.timestamp_utc or (event.order_time+' · timezone unknown' if event.order_time else 'Date only')
+            label = f'{index}. {_event_label(event)} · {book.instrument_id} · {clock}'
+            overrides[event.id] = int(review_control(st.number_input, label, min_value=1,
+                value=index, step=1, key=key+'rank_'+event.id))
+    def accept():
+        st.session_state[key+'order'] = overrides
+    st.button('Use reviewed order', key=key+'use_order', type='primary', on_click=accept)

@@ -18,6 +18,53 @@ from test_gain_accounting import book, observations, START, END, E
 from test_history_account_reuse import mixed_journal
 
 
+def test_account_flow_event_resolution_is_once_per_snapshot(monkeypatch):
+    import portfolio_app.personal_performance as module
+    journal = mixed_journal()
+    original, calls = module.effective_events, []
+    def counted(value):
+        calls.append(True)
+        return original(value)
+    monkeypatch.setattr(module, 'effective_events', counted)
+    calculation = HistoryCalculation(journal, ObservationStore())
+    scope = HistoryScope(accounts=('broker',))
+    for day in range(1, 13):
+        calculation.flows(scope, '2026-01-01', f'2026-01-{day:02}', 'EUR')
+    assert len(calls) == 1
+
+
+def test_standalone_negative_equity_scan_reuses_its_calculation(monkeypatch):
+    import portfolio_app.personal_performance as module
+    journal = Journal(version=2, securities=(book(E('opening', 'opening', START, quantity=1, amount=10, currency='EUR')),))
+    scope = HistoryScope(('stock',))
+    obs = observations(journal, scope, [('stock', START, 10), ('stock', END, 12)])
+    def unexpected(*args, **kwargs):
+        raise AssertionError('The negative-equity check must use the shared timeline')
+    monkeypatch.setattr(module, 'replay_securities', unexpected)
+    assert module.calculate_history(journal, scope, obs, START, END).time_weighted == pytest.approx(.2)
+
+
+def test_unrelated_fx_does_not_add_chart_points_or_missing_prices():
+    journal = Journal(version=2, securities=(book(E('opening', 'opening', START, quantity=1, amount=10, currency='EUR')),))
+    scope = HistoryScope(('stock',))
+    obs = observations(journal, scope, [('stock', START, 10), ('stock', END, 12)])
+    extra = Observation('unrelated', 'fx', 'USD/GBP', '2024-06-01', D('.8'), 'USD', target='GBP')
+    first = history_view(journal, scope, obs, 'All', today=date(2025, 1, 1))
+    other = history_view(journal, scope, replace(obs, observations=(*obs.observations, extra)), 'All', today=date(2025, 1, 1))
+    assert first == other
+
+
+def test_fx_dates_include_foreign_account_cash_and_inverse_rates():
+    from portfolio_app.account_journal import Account, Event
+    from portfolio_app.history_valuation import scope_observations
+    journal = Journal(accounts=(Account('a', 'Invented'),), events=(Event('open', START, 'cash_open', account_id='a', currency='USD', amount=100),))
+    scope = HistoryScope(accounts=('a',))
+    obs = ObservationStore((Observation('direct', 'fx', 'USD/EUR', START, '.9', 'USD', target='EUR'),
+        Observation('inverse', 'fx', 'EUR/USD', END, '1', 'EUR', target='USD'),
+        Observation('other', 'fx', 'GBP/JPY', '2024-06-01', '150', 'GBP', target='JPY')))
+    assert [o.id for o in scope_observations(journal, scope, obs, 'EUR')] == ['direct', 'inverse']
+
+
 def test_chart_current_gain_and_categories_share_ledgers_but_not_valuation_basis(monkeypatch):
     import portfolio_app.personal_performance as performance
     journal = Journal(version=2, securities=(
@@ -127,6 +174,51 @@ def test_daily_price_changes_do_not_rebuild_unchanged_flows(monkeypatch):
         flows, reasons = calculation.flows(scope, '2026-01-01', f'2026-01-{day:02}', 'EUR')
         assert flows and reasons  # The unknown charge remains unknown throughout.
     assert len(calls) == 1
+
+
+def test_dense_flow_conversion_and_retention_are_linear(monkeypatch):
+    from datetime import timedelta
+    import portfolio_app.personal_performance as module
+    start = date(2024, 1, 1)
+    events = [E('zero', 'opening', start.isoformat())]
+    events += [E(f'purchase-{i}', 'buy', (start+timedelta(days=i)).isoformat(),
+        quantity=1, amount=10, currency='EUR', charges_known=True) for i in range(1,151)]
+    journal = Journal(version=2,securities=(book(*events),))
+    scope = HistoryScope(('stock',))
+    original, materialized = module.external_flows, []
+    def counted(*args, **kwargs):
+        materialized.extend(kwargs['security_cash'])
+        return original(*args, **kwargs)
+    monkeypatch.setattr(module, 'external_flows', counted)
+    calculation = HistoryCalculation(journal, ObservationStore())
+    for i in range(1,151):
+        flows, reasons = calculation.flows(scope,start.isoformat(),(start+timedelta(days=i)).isoformat(),'EUR')
+        assert not reasons and sum(f.amount for f in flows) == 10*i
+    assert len(materialized) == 150
+    cached = calculation._flows[scope,'EUR']
+    assert sum(len(flows) for flows,_ in cached.buckets.values()) == 150
+    for i in range(40):
+        calculation.flows(HistoryScope((f'other-{i}',)),start.isoformat(),'2024-01-02','EUR')
+    assert len(calculation._flows) == 32
+
+
+def test_future_flow_fx_conflicts_and_nonflow_issues_do_not_leak_into_early_interval():
+    from portfolio_app.personal_performance import external_flows
+    from portfolio_app.holdings import DataError
+    events = (E('zero','opening','2024-01-01'),
+        E('buy','buy','2024-01-02',quantity=1,amount=10,currency='EUR',charges_known=True),
+        E('unknown-origin','inventory_in','2024-01-03',quantity=1,flow_classification='unresolved'),
+        E('foreign','buy','2024-01-04',quantity=1,amount=10,currency='USD',charges_known=True))
+    journal = Journal(version=4,securities=(book(*events),))
+    scope = HistoryScope(('stock',))
+    obs = ObservationStore((Observation('fx-a','fx','USD/EUR','2024-01-04','.9','USD',target='EUR'),
+        Observation('fx-b','fx','EUR/USD','2024-01-04','2','EUR',target='USD')))
+    calculation = HistoryCalculation(journal,obs)
+    for end in ('2024-01-02','2024-01-03'):
+        assert calculation.flows(scope,'2024-01-01',end,'EUR') == external_flows(journal,scope,obs,'2024-01-01',end,'EUR')
+    with pytest.raises(DataError):
+        calculation.flows(scope,'2024-01-01','2024-01-04','EUR')
+    assert not calculation.flows(scope,'2024-01-01','2024-01-02','EUR')[1]
 
 
 def test_category_comparison_does_not_calculate_unused_annualized_returns(monkeypatch):

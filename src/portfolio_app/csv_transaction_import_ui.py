@@ -10,7 +10,7 @@ from portfolio_app.csv_transaction_imports import event_for, prepare_import
 from portfolio_app.holdings import DataError, parse_holdings
 from portfolio_app.import_state import review_control, clear_transaction_draft
 from portfolio_app.positions import read_snapshot
-from portfolio_app.transaction_csv import SIMPLE_FIELDS, TransactionRow, digest, read_csv
+from portfolio_app.transaction_csv import SIMPLE_FIELDS, TransactionRow, digest, read_csv, retain_import_interpretations
 from portfolio_app.transaction_import_commands import positions_content, save_transaction_import
 
 
@@ -58,7 +58,7 @@ def render_transaction_import(directory, *, demo=False):
         st.subheader('Import transactions')
         journal, revision = load_journal(directory)
         snapshot = read_snapshot(directory/'holdings.csv')
-        rows = _rows(journal)
+        rows = retain_import_interpretations(_rows(journal), journal.transaction_imports)
         if not rows:
             return
         if len({r.facts['source_id'] for r in rows}) != 1:
@@ -88,9 +88,51 @@ def render_transaction_import(directory, *, demo=False):
         conflicts = [r for r in rows if r.key[1] in latest.get(r.key[0], {}) and r.identity not in retained]
         corrections = []
         if conflicts:
-            st.caption(f'{len(conflicts)} source records have changed.')
-            if control(st.checkbox, 'Use changed records as corrections', key=token+'corrections'):
-                corrections = [r.identity for r in conflicts]
+            owners = {e.id: b for b in journal.securities for e in b.records}
+            events_by_id = {(b.position_id, e.id): e for b in journal.securities for e in b.records}
+            from portfolio_app.security_history import latest_records
+            lineages = {b.position_id: latest_records(b) for b in journal.securities}
+            receipts = {r.id: r for r in journal.transaction_imports}
+            for row in conflicts:
+                previous = latest[row.key[0]][row.key[1]]
+                label = f'{row.date} · {row.facts["asset_id"]} · {row.facts["event_type"].replace("_", " ").title()}'
+                with st.expander('Changed transaction · '+label):
+                    changes = [{'Field': key.replace('_', ' ').capitalize(),
+                                'Saved source': previous.facts.get(key) or 'Unknown',
+                                'New source': value or 'Unknown'}
+                               for key, value in row.facts.items() if value != previous.facts.get(key)
+                               and key not in ('source_id', 'event_id', 'schema_version', 'group_id')]
+                    st.table(pd.DataFrame(changes), hide_index=True)
+                    ancestor = previous
+                    while ancestor.id not in owners and ancestor.replaces:
+                        ancestor = receipts[ancestor.replaces]
+                    book = owners.get(ancestor.id)
+                    current = events_by_id.get((book.position_id, ancestor.id)) if book else None
+                    if current is not None:
+                        roots, latest_events = lineages[book.position_id]
+                        current = latest_events.get(roots[current.id], current)
+                        # A pending source revision may itself replace a user's
+                        # active edit/removal. Stop at accepted source authority;
+                        # older superseded edits were already reviewed then.
+                        while current.id in receipts and current.id not in book.active_ids and current.replaces:
+                            current = events_by_id[book.position_id, current.replaces]
+                    if current is not None and current.id not in receipts:
+                        if current.kind == 'void':
+                            st.warning('This restores a transaction you removed.')
+                        else:
+                            st.warning('This replaces your later edit to this transaction.')
+                            from portfolio_app.history_ui import _transaction_table
+                            events, labels = [current], ['Current history']
+                            try:
+                                events.append(event_for(row, mapping))
+                                labels.append('New source')
+                            except (DataError, ValueError):
+                                pass  # The ordinary row validation below shows the problem.
+                            table = _transaction_table(events, book).drop(columns='Status')
+                            table.insert(0, 'Version', labels)
+                            st.table(table, hide_index=True)
+                    if control(st.checkbox, 'Use this correction', key=token+'correction_'+row.identity):
+                        corrections.append(row.identity)
         valid, errors = [], []
         for row in rows:
             try:
@@ -135,12 +177,12 @@ def render_transaction_import(directory, *, demo=False):
                        correction_ids=corrections, aggregate_accounts=aggregate)
         actions = st.container(horizontal=True)
         if actions.button('Review against portfolio', type='primary',
-                          disabled=bool(errors or not selected or conflicts and not corrections or needs_start and not zero), key='import_tx_review_start'):
+                          disabled=bool(errors or not selected or len(corrections) != len(conflicts) or needs_start and not zero), key='import_tx_review_start'):
             st.session_state['import_tx_review'] = dict(rows=rows, mapping=mapping, additions=additions,
                 listing_changes=listing_changes, options=options, token=token, baseline=baseline,
                 needs_start=needs_start, zero=zero)
             st.rerun()
-        if actions.button('Save evidence only', disabled=bool(conflicts and not corrections), key='import_tx_save_evidence'):
+        if actions.button('Save evidence only', disabled=len(corrections) != len(conflicts), key='import_tx_save_evidence'):
             existing_mapping = {pair: p for pair, p in mapping.items() if p in set(snapshot.holdings.position_id)}
             result = save_transaction_import(directory, rows, existing_mapping,
                 expected_journal_revision=revision, expected_holdings_revision=snapshot.revision,
@@ -179,9 +221,13 @@ def _review_import(directory, draft):
         if (directory/'holdings.csv').exists() else '', snapshot, draft['additions'], listing_changes=draft['listing_changes'])
     holdings = parse_holdings(content)
     active = {i for b in journal.securities for i in b.active_ids}
+    review_key = 'import_tx_'+draft['token']+'review_'
+    from portfolio_app.history_order import original_order_ids, editable_order_ids
     def options(excluded):
+        excluded = original_order_ids(excluded, st.session_state.get(review_key+'order', {}))
         return {**draft['options'], 'selected_ids':[i for i in draft['options']['selected_ids'] if i not in excluded],
-                'accept_duplicates':True}
+                'excluded_ids': excluded, 'accept_duplicates':True,
+                'order_overrides': st.session_state.get(review_key+'order', {})}
     def build(excluded):
         preview = prepare_import(journal, holdings, draft['rows'], draft['mapping'], target=target,
             historical=ObservationFX(observations), **options(excluded))
@@ -191,9 +237,10 @@ def _review_import(directory, draft):
             note = 'Starts at zero · '+', '.join(names.loc[draft['needs_start']])
         return ReviewPreview(preview.journal, preview.comparisons if preview.applied else (),
             cash=preview.cash_changes, matches=preview.matches,
-            editable=frozenset(draft['options']['selected_ids'])-active,
+            editable=editable_order_ids(preview.journal.securities, set(draft['options']['selected_ids'])-active,
+                st.session_state.get(review_key+'order', {})),
             known_positions=frozenset(snapshot.holdings.position_id),
-            checkpoints=preview.checkpoints, warnings=preview.warnings, starting_note=note)
+            checkpoints=preview.checkpoints, warnings=preview.warnings, starting_note=note, excluded=preview.excluded)
     def apply(excluded):
         save_transaction_import(directory, draft['rows'], draft['mapping'], expected_journal_revision=revision,
             expected_holdings_revision=snapshot.revision, additions=draft['additions'], listing_changes=draft['listing_changes'],
@@ -203,4 +250,4 @@ def _review_import(directory, draft):
         st.session_state['import_tx_pending_complete'] = True
         _return_to_import()
         st.rerun()
-    render_history_review(build, key='import_tx_'+draft['token']+'review_', apply=apply, keep=_return_to_import, keep_label='Back to import')
+    render_history_review(build, key=review_key, apply=apply, keep=_return_to_import, keep_label='Back to import')

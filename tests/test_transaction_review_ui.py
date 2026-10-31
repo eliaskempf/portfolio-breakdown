@@ -21,6 +21,68 @@ def button(app, label):
     return next(item for item in app.button if item.label == label)
 
 
+def test_rejected_swaps_reserve_destination_and_reopen_without_placeholders(tmp_path):
+    first = b'reference,date,type,asset,quantity,amount,currency\na,2024-01-02,buy,BTC,10,100,EUR\n'
+    app = launch(tmp_path,first)
+    button(app,'Review against portfolio').click().run()
+    button(app,'Apply history').click().run()
+    original = (tmp_path/'holdings.csv').read_bytes()
+    content = (b'reference,date,type,asset,quantity,amount,currency,received_asset,received_quantity\n'
+        b'x,2024-01-03,exchange,BTC,1,10,EUR,ETH,2\ny,2024-01-03,exchange,BTC,1,10,EUR,ETH,2\n')
+    app = launch(tmp_path,content)
+    button(app,'Review against portfolio').click().run()
+    assert not app.exception
+    next(s for s in app.multiselect if s.label.startswith('Keep transactions')).set_value([]).run()
+    button(app,'Save exclusions').click().run()
+    assert not app.exception and (tmp_path/'holdings.csv').read_bytes() == original
+    journal,revision = load_journal(tmp_path)
+    assert len(journal.securities) == 2 and not journal.securities[1].active
+    reopened = launch(tmp_path,content)
+    assert not reopened.exception and not any('missing' in c.value for c in reopened.caption)
+    button(reopened,'Review against portfolio').click().run()
+    assert not reopened.exception
+    assert load_journal(tmp_path) == (journal,revision)
+    from portfolio_app.csv_transaction_imports import prepare_import
+    from portfolio_app.positions import read_snapshot
+    rows = read_csv(content)
+    mapping = {(a,asset):p for r in journal.transaction_imports for a,asset,p in r.positions}
+    again = prepare_import(journal,read_snapshot(tmp_path/'holdings.csv').holdings,rows,mapping,
+        selected_ids=[r.identity for r in rows])
+    assert again.journal == journal and again.applied == 0
+
+
+def test_new_source_after_rejected_correction_shows_surviving_manual_edit(tmp_path):
+    from dataclasses import replace
+    from decimal import Decimal
+    from portfolio_app.history_commands import correct_transaction, save_history
+    from portfolio_app.positions import read_snapshot
+    from portfolio_app.transaction_import_commands import save_transaction_import
+    header = 'reference,date,type,asset,quantity,amount,currency\n'
+    original = header+'a,2024-01-02,buy,BTC,10,100,EUR\n'
+    app = launch(tmp_path,original.encode())
+    button(app,'Review against portfolio').click().run()
+    button(app,'Apply history').click().run()
+    journal,revision = load_journal(tmp_path)
+    source = journal.transaction_imports[0]
+    candidate = correct_transaction(journal.securities[0],source.id,quantity=Decimal(11))
+    edited = candidate.records[-1]
+    candidate = replace(candidate,active_ids=tuple(i for i in candidate.active_ids if i!=source.id)+(edited.id,))
+    save_history(tmp_path,candidate,expected_journal_revision=revision,
+        expected_holdings_revision=read_snapshot(tmp_path/'holdings.csv').revision,activate=True,accept_balance_change=True)
+    journal,revision = load_journal(tmp_path)
+    pending = read_csv(header+'a,2024-01-02,buy,BTC,10,102,EUR\n')
+    mapping = {(a,asset):p for a,asset,p in source.positions}
+    save_transaction_import(tmp_path,pending,mapping,expected_journal_revision=revision,
+        expected_holdings_revision=read_snapshot(tmp_path/'holdings.csv').revision,
+        correction_ids=[pending[0].identity],excluded_ids=[pending[0].identity],
+        accept_reconciliation=True,comparison_date='2024-01-03')
+    app = launch(tmp_path,(header+'a,2024-01-02,buy,BTC,10,103,EUR\n').encode())
+    assert not app.exception
+    assert any('replaces your later edit' in item.value for item in app.warning)
+    assert not any('restores a transaction' in item.value for item in app.warning)
+    assert any('11' in table.value.to_string() for table in app.table)
+
+
 def test_matching_holdings_preview_then_confirm_without_blanket_checkboxes(tmp_path):
     (tmp_path/'holdings.csv').write_text('id,name,ticker,instrument_type,shares,acquisition_price,acquisition_currency\n'
         'invented-btc,Bitcoin,BTC-EUR,crypto,2,50,EUR\n')
@@ -74,6 +136,33 @@ def test_similar_rows_default_to_keep_and_can_be_excluded(tmp_path, decision, qu
     journal = load_journal(tmp_path)[0]
     assert len(journal.transaction_imports) == 2
     assert sum(s.quantity for s in replay_securities(journal.securities).positions.values()) == quantity
+    from portfolio_app.history_observations import HistoryScope, Observation, ObservationStore
+    from portfolio_app.personal_performance import calculate_history
+    identity = journal.securities[0].position_id
+    obs = ObservationStore((Observation('invented-close', 'price', identity, '2025-01-02', 110, 'EUR'),))
+    result = calculate_history(journal, HistoryScope((identity,)), obs, '2024-01-01', '2025-01-02')
+    assert result.total_gain == 10*quantity and result.time_weighted == pytest.approx(.1)
+
+
+def test_all_excluded_new_asset_retains_decision_without_creating_a_holding(tmp_path):
+    content = (b'reference,date,type,asset,quantity,amount,currency\n'
+        b'a,2024-01-02,buy,BTC,1,100,EUR\nb,2024-01-02,buy,BTC,1,100,EUR\n')
+    app = launch(tmp_path, content)
+    button(app, 'Review against portfolio').click().run()
+    next(s for s in app.multiselect if s.label.startswith('Keep transactions')).set_value([]).run()
+    assert not app.exception
+    button(app, 'Save exclusions').click().run()
+    assert not app.exception
+    assert not (tmp_path/'holdings.csv').exists()
+    journal, revision = load_journal(tmp_path)
+    assert len(journal.transaction_imports) == 2 and not journal.securities[0].active
+    assert len(journal.securities[0].active_ids) == 2
+    reopened = launch(tmp_path, content)
+    assert not reopened.exception
+    button(reopened, 'Review against portfolio').click().run()
+    assert not reopened.exception
+    assert any(c.value == 'No new transactions selected' for c in reopened.caption)
+    assert load_journal(tmp_path)[1] == revision
 
 
 def test_asset_filter_includes_received_leg_without_excluding_other_transactions(tmp_path):

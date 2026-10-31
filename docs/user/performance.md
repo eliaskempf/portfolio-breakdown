@@ -71,7 +71,7 @@ A position with incomplete costs has no complete cost-based gain, while its
 available current value still counts toward portfolio value and allocation.
 Transaction CSV can retain supplied acquisition-cost and monetary-valuation
 estimates, with their sources. Affected gains show an approximate status.
-Confirming complete transaction history does not certify estimated amounts as exact;
+Applying transaction history does not certify estimated amounts as exact;
 the label remains while the calculation depends on those estimates.
 Costed units can contribute a partial unrealized gain while other units retain
 unknown cost; the unknown units are never treated as free.

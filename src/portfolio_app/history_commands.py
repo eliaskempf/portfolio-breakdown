@@ -32,6 +32,10 @@ def book_for(journal, row):
 
 def preview_activation(journal, book, selected_ids, row, *, target='EUR', historical=None, other_changes=()):
     candidate = replace(book, active_ids=tuple(selected_ids))
+    from portfolio_app.history_order import validate_order
+    merged = {b.position_id: b for b in journal.securities}
+    merged.update({b.position_id: b for b in (candidate, *other_changes)})
+    validate_order(journal, merged.values())
     proposed = proposed_journal(journal, (candidate, *other_changes))
     others = tuple(b for b in proposed.securities if b.position_id != book.position_id)
     comparison = reconcile(candidate, row, other_books=others, target=target, historical=historical)
@@ -127,10 +131,18 @@ def save_history(directory, book, *, expected_journal_revision, expected_holding
                 candidate = replace(candidate, active_ids=previous.active_ids if previous else (),
                                     reviews=previous.reviews if previous else ())
             books.append(candidate)
+        if activate:
+            from portfolio_app.history_order import validate_order
+            merged = {b.position_id: b for b in journal.securities}
+            merged.update({b.position_id: b for b in books})
+            validate_order(journal, merged.values())
         proposed = proposed_journal(journal, books)
         if activate:
             from portfolio_app.security_history import duplicate_candidates
-            if any(duplicate_candidates(b) for b in books) and not accept_duplicates:
+            if not accept_duplicates and any(
+                    first not in (old[b.position_id].active_ids if b.position_id in old else ())
+                    or second not in (old[b.position_id].active_ids if b.position_id in old else ())
+                    for b in books for first, second in duplicate_candidates(b)):
                 raise DataError('Matching transactions require acknowledgment that they are distinct events.')
             from portfolio_app.history_observations import ObservationFX, load_observations
             from portfolio_app.portfolio_settings import load_settings
@@ -194,7 +206,8 @@ def correct_transaction(book, event_id, **changes):
     original = next((e for e in book.records if e.id == event_id), None)
     if original is None or original.source == 'confirmed_zero_start' or original.kind == 'void':
         raise DataError('Choose a saved transaction to edit.')
-    if any(e.replaces == event_id for e in book.records):
+    from portfolio_app.security_history import current_records
+    if event_id not in {e.id for e in current_records(book)}:
         raise DataError('This transaction already has a correction. Edit the latest version.')
     allowed = {'date', 'quantity', 'price', 'amount', 'currency', 'charges', 'charges_known', 'value_date', 'note', 'sequence', 'other_position_id', 'received_quantity',
                'valuation_amount', 'valuation_currency', 'valuation_quality', 'valuation_source',
@@ -203,6 +216,9 @@ def correct_transaction(book, event_id, **changes):
         raise DataError('This transaction field cannot be changed in the editor.')
     if changes.get('date', original.date) != original.date:
         changes['timestamp_utc'] = ''
+        changes['order_domain'] = changes['order_time'] = ''
+    if changes.get('sequence', original.sequence) != original.sequence:
+        changes['order_domain'] = 'reviewed'
     candidate = replace(original, **changes)
     if candidate == original:
         return book
@@ -241,3 +257,35 @@ def remove_transactions(book, event_ids):
             ancestor = known[ancestor].replaces
     candidate = append_evidence(book, additions)
     return replace(candidate, active_ids=tuple(identity for identity in book.active_ids if identity not in removed) + tuple(e.id for e in additions))
+
+
+def exclude_transactions(book, event_ids, *, accepted_ids=()):
+    """Resolve reviewed exclusions without removing an applied predecessor.
+
+    Stable void identities keep repeated previews and their approvals identical.
+    The original evidence remains available for a later explicit correction.
+    """
+    from uuid import NAMESPACE_URL, uuid5
+    from portfolio_app.security_history import SecurityEvent, append_evidence
+    chosen = set(event_ids)
+    if not chosen:
+        return book
+    records = {e.id: e for e in book.records}
+    if not chosen <= records.keys():
+        raise DataError('Excluded transactions no longer match the reviewed evidence.')
+    if chosen & set(accepted_ids):
+        raise DataError('Remove applied transactions through balance review instead of excluding them.')
+    restored = set()
+    for identity in chosen:
+        ancestor = records[identity].replaces
+        while ancestor:
+            if ancestor in accepted_ids:
+                restored.add(ancestor)
+                break
+            ancestor = records[ancestor].replaces
+    additions = tuple(SecurityEvent(uuid5(NAMESPACE_URL, 'history-exclusion:'+book.position_id+':'+identity).hex,
+        'void', records[identity].date, replaces=identity, source='review_exclusion',
+        note='Excluded during review. Original evidence retained.') for identity in sorted(chosen))
+    candidate = append_evidence(book, additions)
+    return replace(candidate, active_ids=tuple(dict.fromkeys(
+        [identity for identity in book.active_ids if identity not in chosen] + sorted(restored) + [e.id for e in additions])))

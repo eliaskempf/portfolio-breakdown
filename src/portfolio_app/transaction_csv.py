@@ -1,6 +1,6 @@
 """Versioned, offline transaction evidence. No portfolio or market-data reads."""
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
@@ -109,6 +109,44 @@ class ImportReceipt:
         object.__setattr__(self,'facts',deepcopy(self.facts))
         if self.id != TransactionRow(self.raw, self.facts).identity:
             raise DataError('Transaction evidence identity differs from its facts.')
+
+
+def _implicit_order(row):
+    return row.facts.get('schema_version') == '3' and 'reference' in row.raw and not row.raw.get('order')
+
+
+def _reimport_key(row, *, include_order):
+    facts = dict(row.facts)
+    if not include_order:
+        facts.pop('sequence')
+    if facts.get('fee_amount') == '0':
+        facts['fee_currency'] = facts['fee_asset_id'] = ''
+    return include_order, digest(facts)
+
+
+def retain_import_interpretations(rows, receipts):
+    """Match incidental CSV layout changes without rewriting stored evidence.
+
+    Initial file order establishes chronology. Subsequent exports keep that
+    interpretation; an explicit order remains a reviewed economic correction.
+    Old receipts keep their original hashes, facts and raw source indefinitely.
+    """
+    retained = {}
+    latest = {}
+    for receipt in receipts:
+        row = TransactionRow(receipt.raw, receipt.facts, receipt.issues)
+        for include_order in (False, True):
+            retained[_reimport_key(row, include_order=include_order)] = row
+        latest[row.key] = row
+    result = []
+    for row in rows:
+        existing = retained.get(_reimport_key(row, include_order=not _implicit_order(row)))
+        if existing is not None:
+            row = replace(existing, row_number=row.row_number)
+        elif (previous := latest.get(row.key)) is not None and _implicit_order(row):
+            row = replace(row, facts={**row.facts, 'sequence': previous.facts['sequence']})
+        result.append(row)
+    return tuple(result)
 
 
 def normalize(raw, *, layout='generic', source_id='', asset_fees=(), row_number=0):
@@ -307,7 +345,13 @@ def read_simple(reader):
             fee_amount=raw.get('fee', '0'), fee_currency=raw.get('fee_currency', ''),
             fee_asset_id=raw.get('fee_asset', ''), note=raw.get('note', ''), estimated='true' if quality == 'estimated' else 'false',
             received_asset_id=raw.get('received_asset', ''), received_quantity=raw.get('received_quantity', ''))
-        if facts['fee_amount'] != '0' and not facts['fee_currency'] and not facts['fee_asset_id']:
+        try:
+            zero_fee = Decimal(facts['fee_amount']) == 0
+        except InvalidOperation:
+            zero_fee = False
+        if zero_fee:
+            facts['fee_currency'] = facts['fee_asset_id'] = ''
+        elif not facts['fee_currency'] and not facts['fee_asset_id']:
             facts['fee_currency'] = raw['currency']
         if kind in ('buy', 'sell', 'distribution', 'cash_fee', 'tax'):
             facts.update(gross_amount=raw['amount'], currency=raw['currency'])

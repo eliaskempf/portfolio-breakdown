@@ -18,6 +18,37 @@ from portfolio_app.security_history import Charge, SecurityBook, SecurityEvent a
 START, END = '2024-01-01', '2025-01-01'
 
 
+def test_internal_account_transfer_needs_no_transfer_date_fx_for_combined_gain():
+    from portfolio_app.account_journal import Account, Event
+    journal = Journal(accounts=(Account('a', 'Invented A'), Account('b', 'Invented B')), events=(
+        Event('open-a', START, 'cash_open', account_id='a', currency='USD', amount=100),
+        Event('open-b', START, 'cash_open', account_id='b', currency='USD', amount=0),
+        Event('move', '2024-07-01', 'transfer', account_id='a', other_account_id='b', currency='USD', amount=50)))
+    scope = HistoryScope(accounts=('a', 'b'))
+    obs = observations(journal, scope, fx=[('USD', 'EUR', START, '.9'), ('USD', 'EUR', END, '1')])
+    assert calculate_history(journal, scope, obs, START, END).total_gain == 10
+    assert summarize_known_gain(journal, scope, obs, END).amount == 10
+    assert summarize_known_gain(journal, HistoryScope(accounts=('a',)), obs, END).amount is None
+
+
+@pytest.mark.parametrize('kind,known_amount,expected', [('sell', 120, 20), ('distribution', 20, 20), ('fee', 20, -20)])
+def test_unknown_event_does_not_erase_supported_gain_subtotals(kind, known_amount, expected):
+    events = (E('o', 'opening', START),
+        E('b', 'buy', '2024-02-01', quantity=2, amount=200, currency='EUR', charges_known=True),
+        E('known', kind, '2024-03-01', quantity=1 if kind == 'sell' else 0,
+          amount=known_amount, currency='EUR', charges_known=True),
+        E('unknown', kind, '2024-04-01', quantity=1 if kind == 'sell' else 0,
+          currency='EUR', charges_known=True))
+    journal = Journal(version=5, securities=(book(*events),))
+    value = D(0 if kind == 'sell' else 200)
+    components = security_gain_components(journal, 'stock', ObservationStore(), END, current_value=value)
+    field = {'sell': 'realized', 'distribution': 'income', 'fee': 'expenses'}[kind]
+    assert getattr(components, field) is None
+    assert getattr(components, 'known_'+field) == abs(expected)
+    summary = summarize_known_gain(journal, HistoryScope(('stock',)), ObservationStore(), END, current_values={'stock': value})
+    assert summary.amount == expected and summary.partial
+
+
 def book(*events, identity='stock', account=''):
     return SecurityBook(identity, 'INVENTED', ('0','',''), account_id=account,
                         records=events, active_ids=tuple(e.id for e in events))

@@ -94,6 +94,36 @@ def test_evidence_only_and_idempotence_and_correction():
     assert replay_securities(corrected.journal.securities).positions['desk'].quantity==2
 
 
+@pytest.mark.parametrize('selected', [False, True])
+def test_batch_assembly_hashes_linearly_and_validates_books_once(monkeypatch, selected):
+    from datetime import date, timedelta
+    from portfolio_app.security_history import SecurityBook
+    from portfolio_app.transaction_csv import TransactionRow
+    count = 180
+    rows = tuple(normalize(dict(schema_version='1',source_id='invented',event_id=str(i),
+        timestamp_utc=(date(2020,1,1)+timedelta(days=i)).isoformat()+'T09:00:00Z',
+        event_type='buy',account_id='Desk',asset_id='AUR',quantity='1',
+        gross_amount='10',currency='EUR',fee_amount='0')) for i in range(count))
+    selected_ids = [r.identity for r in rows] if selected else ()
+    original_hash, original_book = TransactionRow.identity.fget, SecurityBook.__post_init__
+    hashes, validations = [], []
+    def hashed(self):
+        hashes.append(True)
+        return original_hash(self)
+    def validated(self):
+        validations.append(True)
+        return original_book(self)
+    monkeypatch.setattr(TransactionRow,'identity',property(hashed))
+    monkeypatch.setattr(SecurityBook,'__post_init__',validated)
+    result = prepare_import(Journal(),holdings(),rows,MAPPING,selected_ids=selected_ids,starts_at_zero=True)
+    assert result.added == count and result.applied == (count if selected else 0)
+    assert len(hashes) <= 6*count and len(validations) < 12
+    restored = journal_from_dict(journal_to_dict(result.journal))
+    assert restored == result.journal
+    if selected:
+        assert replay_securities(restored.securities).positions['desk'].quantity == count
+
+
 def test_incomplete_reward_applies_units_without_cost_or_income():
     rows = list(scenario())
     rows[4] = normalize({**rows[4].raw,'valuation_amount':'','valuation_currency':''})

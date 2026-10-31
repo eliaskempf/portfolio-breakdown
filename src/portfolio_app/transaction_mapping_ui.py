@@ -8,7 +8,7 @@ from portfolio_app.instruments import Instrument, InstrumentSearch, catalog_sear
 from portfolio_app.import_state import review_control
 from portfolio_app.search_widget import render_search_box
 from portfolio_app.transaction_csv import digest
-from portfolio_app.transaction_matching import holding_matches, suggested_listing, instrument_fields, holding_label, listing_label
+from portfolio_app.transaction_matching import holding_matches, holding_index, suggested_listing, instrument_fields, holding_label, listing_label
 
 
 def _fetch(query, cache_dir, demo):
@@ -56,7 +56,8 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
     names = {r.position_id: holding_label(r) for _, r in holdings.iterrows()}
     by_position = holdings.set_index('position_id')
     retained = {(r.facts['source_id'], a, asset): pos for r in journal.transaction_imports for a, asset, pos in r.positions}
-    matches = {a: holding_matches(a, holdings) for a in assets}
+    index = holding_index(holdings)
+    matches = {a: holding_matches(a, holdings, index=index) for a in assets}
     crypto = not holdings.empty and 'instrument_type' in holdings and holdings.instrument_type.eq('crypto').all()
     kind = 'CRYPTOCURRENCY' if crypto else ''
     lookup = [a for a in assets if (not matches[a] or (len(matches[a]) == 1 and not by_position.loc[matches[a][0], 'ticker'])) and not any((source, account, a) in retained for account, symbol in pairs if symbol == a)]
@@ -70,6 +71,13 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
     st.markdown('**Assets**')
     left, middle, right, _ = st.columns([1, 4.4, 3, 1])
     left.caption('CSV asset'); middle.caption('Holding'); right.caption('Price listing')
+    from portfolio_app.security_history import affected_positions
+    rejected_positions = set()
+    for owner in journal.securities:
+        records = {e.id: e for e in owner.records}
+        for event in owner.records:
+            if event.source == 'review_exclusion' and event.id in owner.active_ids:
+                rejected_positions.update(affected_positions(owner, records[event.replaces]))
     for asset in assets:
         key = prefix+digest(asset)[:12]+'_'
         asset_pairs = [(a, symbol) for a, symbol in pairs if symbol == asset]
@@ -77,7 +85,11 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
         retained_positions = set(prior.values())
         asset_col, holding_col, listing_col, search_col = st.columns([1, 4.4, 3, 1], vertical_alignment='center')
         asset_col.markdown('**'+asset+'**')
-        if retained_positions - names.keys():
+        missing = retained_positions - names.keys()
+        reserved = next((b for b in journal.securities if missing == {b.position_id}
+                         and len(retained_positions) == 1 and not b.active
+                         and b.position_id in rejected_positions), None)
+        if missing and reserved is None:
             holding_col.caption('A previously matched holding is missing. Review the saved import.')
             continue
         if len(prior) == len(asset_pairs) and len(retained_positions) > 1:
@@ -86,7 +98,7 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
             listing_col.caption('Existing listings')
             continue
         candidates = matches[asset]
-        default = next(iter(retained_positions)) if len(retained_positions) == 1 else candidates[0] if len(candidates) == 1 else None if candidates else ''
+        default = '' if reserved else next(iter(retained_positions)) if len(retained_positions) == 1 else candidates[0] if len(candidates) == 1 else None if candidates else ''
         options = [None, '', *names] if default is None else ['', *names]
         current_choice = st.session_state.get(key+'position', st.session_state.get('import_controls', {}).get(key+'position', default))
         choice_col, name_col = holding_col.columns([1, 1.5]) if current_choice == '' else (holding_col, holding_col)
@@ -125,8 +137,8 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
             _suggest_default(key+'name', fields['name'])
             fields['name'] = _control(name_col.text_input, 'Name · '+asset, value=fields['name'], key=key+'name',
                 label_visibility='collapsed', help='Name to save for this new holding. Editing it does not change the price listing.')
-            selected = 'csv-position-'+digest((source, asset))[:24]
-            addition = dict(position_key=selected, id='csv-asset-'+digest((source,asset))[:24], account='Portfolio', **fields)
+            selected = reserved.position_id if reserved else 'csv-position-'+digest((source, asset))[:24]
+            addition = dict(position_key=selected, id=reserved.instrument_id if reserved else 'csv-asset-'+digest((source,asset))[:24], account='Portfolio', **fields)
             additions.append(addition)
             new_details.append((asset, key, addition))
         elif listing and ticker != current:

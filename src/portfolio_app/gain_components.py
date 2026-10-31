@@ -26,6 +26,9 @@ class SecurityGainComponents:
     purchase_payments: Decimal | None
     sale_proceeds: Decimal | None
     reasons: tuple[str, ...]
+    known_realized: Decimal | None = None
+    known_income: Decimal | None = None
+    known_expenses: Decimal | None = None
 
 
 def security_gain_components(journal, identity, observations, end, target='EUR', *, current_value=None, calculation=None):
@@ -85,6 +88,10 @@ def recorded_security_gains(book, state, observations, end, target):
 
     def total(values):
         return sum(values, ZERO) if all(v is not None for v in values) else None
+
+    def supported(values):
+        known = [v for v in values if v is not None]
+        return sum(known, ZERO) if known or not values else None
 
     cash = [c for c in state.cash if c.position_id == identity]
     converted = {c.id:convert(c.amount,c.currency,target,c.date,observations) for c in cash}
@@ -147,4 +154,4 @@ def recorded_security_gains(book, state, observations, end, target):
                     for disposal in state.disposals if disposal.position_id == identity and disposal.kind == 'asset_fee')
     remaining = cost(balance.costs)
     return SecurityGainComponents(remaining,None,total(realized),total(income),total(expenses),total(buys),total(sales),
-                                  tuple(dict.fromkeys(reasons)))
+                                  tuple(dict.fromkeys(reasons)), supported(realized), supported(income), supported(expenses))

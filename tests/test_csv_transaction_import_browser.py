@@ -38,6 +38,118 @@ def open_transactions(page, name):
     page.get_by_role('dialog').get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
 
 
+def open_correction(page, index):
+    checkbox = page.get_by_role('checkbox', name='Use this correction', exact=True, include_hidden=True).nth(index)
+    if not checkbox.is_visible():
+        page.get_by_text(re.compile('^Changed transaction ·')).nth(index).click()
+    return checkbox
+
+
+def test_second_same_day_file_has_order_review_before_apply(import_page):
+    page,path = import_page
+    header = b'reference,date,type,asset,quantity,amount,currency\n'
+    upload(page,header+b'a,2024-01-02,buy,BTC,2,20,EUR\n')
+    page.get_by_role('button',name='Review against portfolio',exact=True).click(); settle(page)
+    page.get_by_role('button',name='Apply history',exact=True).click(); settle(page)
+    page.get_by_role('tab',name='Positions',exact=True).click(); settle(page)
+    page.get_by_role('radio',name='Import',exact=True).click(); settle(page)
+    page.locator('input[type=file]').set_input_files({'name':'invented-second.csv','mimeType':'text/csv',
+        'buffer':header+b'b,2024-01-02,sell,BTC,1,30,EUR\n'})
+    settle(page)
+    page.get_by_role('button',name='Review against portfolio',exact=True).click(); settle(page)
+    playwright.expect(page.get_by_text('Review same-day order',exact=True)).to_be_visible()
+    playwright.expect(page.get_by_role('spinbutton')).to_have_count(2)
+    assert not page.get_by_role('button',name='Apply history',exact=True).count()
+    page.get_by_role('button',name='Use reviewed order',exact=True).click(); settle(page)
+    page.get_by_role('button',name='Apply history',exact=True).click(); settle(page)
+    assert not page.get_by_test_id('stException').count()
+    assert next(iter(replay_securities(load_journal(path.parent)[0].securities).positions.values())).quantity == 1
+
+
+def test_excluding_all_rows_has_explicit_save_and_reopens(import_page):
+    page,path = import_page
+    content = (b'reference,date,type,asset,quantity,amount,currency\n'
+        b'a,2024-01-02,buy,BTC,1,10,EUR\nb,2024-01-02,buy,BTC,1,10,EUR\n')
+    upload(page,content)
+    page.get_by_role('button',name='Review against portfolio',exact=True).click(); settle(page)
+    page.get_by_text(re.compile('^2 similar transactions')).click()
+    choice = page.get_by_test_id('stMultiSelect').filter(has=page.get_by_text(re.compile('^Keep transactions')))
+    choice.get_by_role('button',name=re.compile('^Remove ')).first.click(); settle(page)
+    choice.get_by_role('button',name=re.compile('^Remove ')).first.click(); settle(page)
+    page.get_by_role('button',name='Save exclusions',exact=True).click(); settle(page)
+    assert not path.exists() and not load_journal(path.parent)[0].securities[0].active
+    assert not page.get_by_test_id('stException').count()
+
+
+@pytest.mark.parametrize('removal', [False, True])
+@pytest.mark.parametrize('invalid_pending', [False, True])
+def test_changed_sources_show_fields_and_require_individual_decisions(import_page, removal, invalid_pending):
+    from dataclasses import replace
+    from decimal import Decimal
+    from portfolio_app.history_commands import correct_transaction, remove_transactions, save_history
+    from portfolio_app.positions import read_snapshot
+    from portfolio_app.transaction_csv import read_csv
+    from portfolio_app.transaction_import_commands import save_transaction_import
+    page, path = import_page
+    header = 'reference,date,type,asset,quantity,amount,currency\n'
+    original = read_csv(header+'a,2024-01-02,buy,AUR,10,100,EUR\nb,2024-01-03,buy,AUR,5,60,EUR\n')
+    save_transaction_import(path.parent, original, {('Portfolio', 'AUR'): 'aur'},
+        expected_journal_revision=None, expected_holdings_revision=None,
+        additions=[dict(position_key='aur', id='aur', name='Invented Aurora', account='Portfolio')],
+        selected_ids=[r.identity for r in original], starts_at_zero=True,
+        accept_reconciliation=True, comparison_date='2024-01-04')
+    journal, revision = load_journal(path.parent)
+    candidate = correct_transaction(journal.securities[0], original[0].identity, quantity=Decimal(11))
+    candidate = replace(candidate, active_ids=tuple(i for i in candidate.active_ids if i != original[0].identity)
+                        + (candidate.records[-1].id,))
+    if removal:
+        candidate = remove_transactions(candidate, [candidate.records[-1].id])
+    save_history(path.parent, candidate, expected_journal_revision=revision,
+        expected_holdings_revision=read_snapshot(path).revision, activate=True, accept_balance_change=True)
+    page.reload(); settle(page)
+    page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
+    page.get_by_role('radio', name='Import', exact=True).click(); settle(page)
+    incoming = header+'a,2024-01-02,buy,AUR,10,101,EUR\nb,2024-01-03,buy,AUR,5,62,EUR\n'
+    pending = incoming.replace(',101,', ',unknown,' if invalid_pending else ',102,').replace(',62,', ',61,')
+    page.locator('input[type=file]').set_input_files({'name': 'invented-invalid-correction.csv', 'mimeType': 'text/csv',
+        'buffer': pending.encode()})
+    settle(page)
+    playwright.expect(page.get_by_role('button', name='Save evidence only', exact=True)).to_be_visible()
+    assert not page.get_by_test_id('stException').count()
+    for index in range(2):
+        checkbox = open_correction(page, index)
+        page.get_by_text('Use this correction', exact=True).nth(index).click(); settle(page)
+        playwright.expect(checkbox).to_be_checked()
+    page.get_by_role('button', name='Save evidence only', exact=True).click(); settle(page)
+    assert len(load_journal(path.parent)[0].transaction_imports) == 4
+    page.locator('input[type=file]').set_input_files({'name': 'invented-corrections.csv', 'mimeType': 'text/csv', 'buffer': incoming.encode()})
+    settle(page)
+    review = page.get_by_role('button', name='Review against portfolio', exact=True)
+    playwright.expect(review).to_be_disabled()
+    expanders = page.get_by_text(re.compile('^Changed transaction ·'))
+    playwright.expect(expanders).to_have_count(2)
+    open_correction(page, 0)
+    if removal:
+        playwright.expect(page.get_by_text('This restores a transaction you removed.', exact=True)).to_be_visible()
+    else:
+        playwright.expect(page.get_by_text('This replaces your later edit to this transaction.', exact=True)).to_be_visible()
+        playwright.expect(page.get_by_text('Current history', exact=True)).to_be_visible()
+        playwright.expect(page.get_by_role('cell', name='11', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_text('Gross amount', exact=True).nth(0)).to_be_visible()
+    checks = page.get_by_role('checkbox', name='Use this correction', exact=True, include_hidden=True)
+    page.get_by_text('Use this correction', exact=True).nth(0).click(); settle(page)
+    playwright.expect(checks.nth(0)).to_be_checked()
+    playwright.expect(review).to_be_disabled()
+    open_correction(page, 1)
+    page.get_by_text('Use this correction', exact=True).nth(1).click(); settle(page)
+    playwright.expect(checks.nth(1)).to_be_checked()
+    playwright.expect(review).to_be_enabled()
+    review.click(); settle(page)
+    playwright.expect(page.get_by_role('button', name='Apply history', exact=True)).to_be_visible()
+    assert replay_securities(load_journal(path.parent)[0].securities).positions['aur'].quantity == (5 if removal else 16)
+    assert not page.get_by_test_id('stException').count()
+
+
 def test_simple_upload_apply_edit_and_remove_in_normal_transactions(import_page):
     page, path = import_page
     content = (b'reference,date,type,asset,quantity,amount,currency,received_asset,received_quantity\n'

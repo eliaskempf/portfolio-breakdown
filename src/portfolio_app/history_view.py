@@ -4,7 +4,8 @@ from portfolio_app.history_diagnostics import HistoryIssue
 from dataclasses import dataclass
 from datetime import date
 
-from portfolio_app.history_observations import active_observations, index_observations
+from portfolio_app.history_observations import index_observations
+from portfolio_app.history_valuation import scope_observations
 from portfolio_app.personal_performance import PersonalPerformance, HistoryCalculation, calculate_history, known_negative_equity_dates
 from portfolio_app.security_history import selected_events
 from portfolio_app.gain_accounting import GainSummary, scope_dates, summarize_known_gain
@@ -52,12 +53,8 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     earliest = date.fromisoformat(min(dates)) if dates else today
     first = period_start(period,today,earliest).isoformat()
     last = today.isoformat()
-    subjects = set(scope.positions) | {b.instrument_id for b in journal.securities if b.position_id in scope.positions}
-    subjects |= {p.id for p in journal.positions if p.account_id in scope.accounts}
-    subjects |= {p.contract_id for p in journal.positions if p.account_id in scope.accounts}
-    relevant = [o for o in active_observations(observations) if
-        (o.kind == 'price' and o.subject in subjects) or o.kind == 'fx'
-        or (o.kind == 'value' and o.subject == scope.key and o.side == 'close')]
+    relevant = [o for o in scope_observations(journal, scope, observations, target)
+                if o.kind != 'value' or o.side == 'close']
     beginning = earliest.isoformat()
     flows, _ = calculation.flows(scope, beginning, last, target)
     stamps = sorted({o.date for o in relevant if beginning <= o.date <= last} | {f.date for f in flows}
@@ -66,7 +63,7 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     values = {stamp:valuation.amount for stamp,valuation in valuations.items()}
     available = [stamp for stamp in stamps if values[stamp] is not None]
     all_start,all_end = beginning, (available[-1] if available else last)
-    negative_dates = known_negative_equity_dates(journal,scope,observations,all_start,last,target,valuations=valuations)
+    negative_dates = known_negative_equity_dates(journal,scope,observations,all_start,last,target,valuations=valuations,calculation=calculation)
     def calculate(start, end, *, annualized=True):
         return calculation._get(('history_result', scope, start, end, target, annualized, tuple(negative_dates)),
             lambda: calculate_history(journal, scope, observations, start, end, target,
@@ -95,10 +92,15 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     # a neighboring day's capital from a hovered value at a missing observation.
     flows, missing = calculation.flows(scope,all_start,all_end,target)
     points = []
+    flow_index, contributions = 0, 0
     for stamp in stamps if include_points else ():
         if not first <= stamp <= all_end:
             continue
-        invested = (all_result.opening_capital + sum(f.amount for f in flows if f.date <= stamp)
+        while flow_index < len(flows) and flows[flow_index].date <= stamp:
+            if flows[flow_index].amount is not None:
+                contributions += flows[flow_index].amount
+            flow_index += 1
+        invested = (all_result.opening_capital + contributions
                     if stamp >= all_start and all_result.opening_capital is not None
                     and all_result.net_contributions is not None and not missing else None)
         gain = values[stamp] - invested if values[stamp] is not None and invested is not None else None

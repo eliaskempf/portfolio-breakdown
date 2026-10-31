@@ -135,8 +135,12 @@ class SecurityEvent:
     valuation_quality: str = 'recorded'
     valuation_source: str = ''
     estimated: bool = False
+    order_domain: str = ''
+    order_time: str = ''
 
     def __post_init__(self):
+        if not isinstance(self.order_domain, str) or not isinstance(self.order_time, str):
+            raise DataError('Invalid transaction ordering metadata.')
         if type(self.estimated) is not bool:
             raise DataError('Invalid transaction estimate flag.')
         if self.kind == 'checkpoint' and (self.charges or self.asset_charges or self.price is not None or self.amount is not None):
@@ -280,11 +284,24 @@ def event_from_dict(raw):
     return SecurityEvent(**fields)
 
 
+def latest_records(book, *, ignore=()):
+    """Latest proposals per lineage, ignoring explicitly rejected proposals."""
+    exclusions = {e.id: e.replaces for e in book.records
+                  if e.kind == 'void' and e.source == 'review_exclusion' and e.id in book.active_ids}
+    ignored = set(ignore) | exclusions.keys() | set(exclusions.values())
+    roots, latest = {}, {}
+    for event in book.records:
+        root = roots[event.replaces] if event.replaces else event.id
+        roots[event.id] = root
+        if event.id not in ignored:
+            latest[root] = event
+    return roots, latest
+
+
 def current_records(book):
     """Latest retained versions, excluding removed entries and internal boundaries."""
-    replaced = {event.replaces for event in book.records if event.replaces}
-    return tuple(event for event in book.records if event.id not in replaced
-                 and event.kind != 'void' and event.source != 'confirmed_zero_start')
+    return tuple(event for event in latest_records(book)[1].values()
+                 if event.kind != 'void' and event.source != 'confirmed_zero_start')
 
 
 def selected_events(book):
@@ -558,19 +575,37 @@ class SecurityTimeline:
     each snapshot owns its positions mapping and never sees subsequent mutations.
     """
 
+    MAX_SNAPSHOTS = 64
+
     def __init__(self, books):
-        self.replay = _SecurityReplay(books)
+        from collections import OrderedDict
+        self.books = tuple(books)
+        self.replay = _SecurityReplay(self.books)
         self.dates = sorted({e.date for _, e in self.replay.events} |
                             {c.date for _, e in self.replay.events for c in e.charges if c.date})
-        self.snapshots = [self.replay.state]
+        self.snapshots = OrderedDict({0: self.replay.state})
+        self._cursor_index = 0
+        self._complete = None
 
     def at(self, stamp=None):
         from bisect import bisect_right
         index = len(self.dates) if stamp is None else bisect_right(self.dates, stamp)
-        while len(self.snapshots) <= index:
-            day = self.dates[len(self.snapshots)-1]
-            self.snapshots.append(self.replay.advance(day))
-        return self.snapshots[index]
+        if index == len(self.dates) and self._complete is not None:
+            return self._complete
+        if index in self.snapshots:
+            self.snapshots.move_to_end(index)
+            return self.snapshots[index]
+        # An uncached backwards request resets the forward cursor once. The
+        # following ascending chart pass then advances incrementally again.
+        cursor = _SecurityReplay(self.books) if index < self._cursor_index else self.replay
+        snapshot = cursor.advance(self.dates[index-1]) if index else cursor.state
+        self.replay, self._cursor_index = cursor, index
+        if index == len(self.dates):
+            self._complete = snapshot
+        self.snapshots[index] = snapshot
+        while len(self.snapshots) > self.MAX_SNAPSHOTS:
+            self.snapshots.popitem(last=False)
+        return snapshot
 
 
 @dataclass(frozen=True)
@@ -725,7 +760,7 @@ def duplicate_candidates(book):
             continue
         facts = asdict(event)
         for key in ('id', 'sequence', 'source', 'replaces', 'note', 'timestamp_utc', 'group_id',
-                    'observed_at', 'valuation_quality', 'valuation_source', 'estimated'):
+                    'observed_at', 'valuation_quality', 'valuation_source', 'estimated', 'order_domain', 'order_time'):
             facts.pop(key)
         for part in facts['costs']:
             part.pop('quality', None)
@@ -791,7 +826,7 @@ def security_history_fingerprint(journal, position_id):
                 raw.pop('custody_id')
             defaults = dict(received_quantity=ZERO, valuation_amount=None, valuation_currency='',
                             asset_charges=(), timestamp_utc='', group_id='', observed_at='',
-                            flow_classification='', valuation_quality='recorded', valuation_source='', estimated=False)
+                            flow_classification='', valuation_quality='recorded', valuation_source='', estimated=False, order_domain='', order_time='')
             for event in raw['records']:
                 for field, default in defaults.items():
                     if event[field] == default:

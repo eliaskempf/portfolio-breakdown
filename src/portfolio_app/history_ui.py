@@ -479,9 +479,11 @@ def _fix_history(directory, journal, revision, snapshot, book, row, key):
                 fields['charges'] = tuple(Charge(_decimal(c['Amount'], optional=True), str(c['Currency']).upper(), str(c.get('Date') or ''),
                     str(c.get('Kind') or 'fee'), bool(c.get('External') or False)) for c in charge_table.to_dict('records') if c.get('Currency'))
             identity = old.id if old else _record_id(key+str(revision), fields)
+            if old and fields['date'] != old.date:
+                fields.update(timestamp_utc='', order_domain='', order_time='')
+            if old and fields['sequence'] != old.sequence:
+                fields['order_domain'] = 'reviewed'
             candidate = replace(old, **fields) if old else SecurityEvent(identity, **fields)
-            if old and candidate.date != old.date:
-                candidate = replace(candidate, timestamp_utc='')
             if old and candidate != old:
                 candidate = replace(candidate, id=_record_id(key+str(revision), fields), replaces=old.id)
             if candidate != old:
@@ -537,10 +539,20 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
     from portfolio_app.history_commands import changed_positions, proposed_journal, history_comparisons
     from portfolio_app.history_review_ui import ReviewPreview, render_history_review
     from portfolio_app.security_history import duplicate_candidates
+    from portfolio_app.history_order import original_order_ids, editable_order_ids
     originals = (candidate, *other_changes)
     active = {i for b in journal.securities for i in b.active_ids}
     def chosen(excluded):
-        return tuple(replace(b, active_ids=tuple(i for i in b.active_ids if i not in excluded)) for b in originals)
+        excluded = original_order_ids(excluded, st.session_state.get(key+'order', {}))
+        from portfolio_app.history_commands import exclude_transactions
+        from portfolio_app.history_order import apply_order
+        selected = tuple(exclude_transactions(b, set(b.active_ids) & excluded, accepted_ids=active) for b in originals)
+        merged = {b.position_id: b for b in journal.securities}
+        merged.update({b.position_id: b for b in selected})
+        ordered = apply_order(journal, merged.values(), st.session_state.get(key+'order', {}))
+        old = {b.position_id: b for b in journal.securities}
+        changed = [b for b in ordered if b.position_id == candidate.position_id or old.get(b.position_id) != b]
+        return tuple(sorted(changed, key=lambda b: b.position_id != candidate.position_id))
     def build(excluded):
         selected = chosen(excluded)
         primary, comparison, cash = preview_activation(journal, selected[0], selected[0].active_ids, row,
@@ -554,7 +566,8 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
             for c in cash if c['Before'] != c['After'] or (c['Account'] == primary.account_id and c['After'] is None))
         matches = tuple((b.position_id, a, z) for b in selected for a,z in duplicate_candidates(b) if b.position_id in touched)
         return ReviewPreview(proposed, comparisons, cash=changes, matches=matches,
-            editable=frozenset(i for b in originals for i in b.active_ids)-active,
+            editable=editable_order_ids(selected, {i for b in originals for i in b.active_ids}-active,
+                st.session_state.get(key+'order', {})),
             known_positions=frozenset(snapshot.holdings.position_id))
     def keep():
         _history_action(_key(directory, candidate.position_id), 'list')

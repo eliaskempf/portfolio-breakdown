@@ -23,6 +23,51 @@ def setup(tmp_path):
     return path,snapshot,replace(book,active_ids=('open','buy'))
 
 
+def test_pending_removal_preserves_accepted_partial_fills_but_new_fills_need_review(tmp_path):
+    from portfolio_app.history_commands import remove_transactions
+    path, snapshot, book = setup(tmp_path)
+    fill = replace(book.records[-1], id='second-fill', sequence=1)
+    pending = E('pending-fee', 'fee', '2024-03-01', amount=1, currency='EUR')
+    book = append_evidence(book, (fill, pending))
+    book = replace(book, active_ids=(*book.active_ids, fill.id))
+    save_history(tmp_path, book, expected_journal_revision=None, expected_holdings_revision=snapshot.revision,
+                 activate=True, accept_balance_change=True, accept_duplicates=True)
+    journal, revision = load_journal(tmp_path)
+    candidate = remove_transactions(journal.securities[0], [pending.id])
+    saved = save_history(tmp_path, candidate, expected_journal_revision=revision,
+                         expected_holdings_revision=read_snapshot(path).revision, activate=True)
+    assert effective_holdings(read_snapshot(path).holdings, saved.securities).iloc[0].shares == 14
+    third = replace(fill, id='third-fill', sequence=2)
+    candidate = append_evidence(saved.securities[0], (third,))
+    candidate = replace(candidate, active_ids=(*candidate.active_ids, third.id))
+    with pytest.raises(DataError, match='Matching transactions'):
+        save_history(tmp_path, candidate, expected_journal_revision=load_journal(tmp_path)[1],
+            expected_holdings_revision=read_snapshot(path).revision, activate=True, accept_balance_change=True)
+
+
+@pytest.mark.parametrize('source', ['manual', 'consors_pdf:invented'])
+def test_rejecting_pending_correction_keeps_predecessor_visible_and_editable(tmp_path, source):
+    from portfolio_app.history_commands import correct_transaction, exclude_transactions
+    from portfolio_app.security_history import current_records
+    path, snapshot, book = setup(tmp_path)
+    book = replace(book, records=tuple(replace(e, source=source) for e in book.records))
+    saved = save_history(tmp_path, book, expected_journal_revision=None, expected_holdings_revision=snapshot.revision,
+                         activate=True, accept_balance_change=True)
+    accepted = saved.securities[0]
+    candidate = correct_transaction(accepted, 'buy', quantity=D(3))
+    correction = candidate.records[-1].id
+    candidate = replace(candidate, active_ids=('open', correction))
+    rejected = exclude_transactions(candidate, [correction], accepted_ids=accepted.active_ids)
+    assert rejected == exclude_transactions(candidate, [correction], accepted_ids=accepted.active_ids)
+    result = save_history(tmp_path, rejected, expected_journal_revision=load_journal(tmp_path)[1],
+                          expected_holdings_revision=read_snapshot(path).revision, activate=True)
+    assert effective_holdings(read_snapshot(path).holdings, result.securities).iloc[0].shares == 12
+    assert [e.id for e in current_records(result.securities[0])] == ['open', 'buy']
+    assert correct_transaction(result.securities[0], 'buy', quantity=D(4)).records[-1].quantity == 4
+    with pytest.raises(DataError, match='Remove applied'):
+        exclude_transactions(accepted, ['buy'], accepted_ids=accepted.active_ids)
+
+
 def test_activation_reconstructs_without_adding_shares_twice_and_raw_snapshot_remains(tmp_path):
     path,snapshot,book=setup(tmp_path)
     journal=save_history(tmp_path,book,expected_journal_revision=None,expected_holdings_revision=snapshot.revision,

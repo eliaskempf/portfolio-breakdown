@@ -60,6 +60,7 @@ def as_event(draft, *, sequence=0, charges_known=False):
         quantity=draft.quantity, amount=draft.gross.amount, currency=draft.gross.currency,
         charges=charges, charges_known=charges_known or draft.statement_charges_known or draft.zero_statement_charges, source=source_id(draft),
         value_date=draft.settlement_date or '',
+        order_domain='statement-local' if draft.trade_time else '', order_time=draft.trade_time or '',
         note='Consorsbank PDF. Settlement: '+(
             f'{draft.settlement.amount} {draft.settlement.currency}' if draft.settlement else 'unknown')+
             '. Quoted unit price: '+(f'{draft.unit_price.amount} {draft.unit_price.currency}' if draft.unit_price else 'unknown')+
@@ -91,6 +92,8 @@ def save_pdf_drafts(directory, row, journal, revision, snapshot, drafts, *,
     known = list(existing_transactions(book))
     sources = set()
     events = []
+    from portfolio_app.transaction_csv import digest
+    batch_domain = 'file:'+digest(sorted(d.fingerprint for d in drafts))
     for draft in drafts:
         problems = draft_problems(draft, row, journal)
         if problems:
@@ -113,6 +116,8 @@ def save_pdf_drafts(directory, row, journal, revision, snapshot, drafts, *,
             sequence += 1
         event = as_event(draft, sequence=sequence,
                          charges_known=charges_known or draft.fingerprint in confirmed_charge_ids)
+        if not event.order_domain:
+            event = replace(event, order_domain=batch_domain)
         if any(old.id == event.id for old in book.records):
             event = replace(event, id=uuid4().hex)
         known.append(event); events.append(event); sources.add(source_id(draft))

@@ -5,6 +5,24 @@ from portfolio_app.instruments import Instrument
 from portfolio_app.transaction_matching import holding_matches, suggested_listing, instrument_fields
 
 
+def test_snapshot_index_normalizes_once_and_rebuilds_after_metadata_changes(monkeypatch):
+    import portfolio_app.transaction_matching as matching
+    holdings = pd.DataFrame([dict(position_id=f'p{i}', id=f'asset-{i}', name=f'Invented {i}',
+        ticker=f'T{i}', isin='', instrument_type='equity') for i in range(100)])
+    original, calls = matching.normalized_query, []
+    def counted(value):
+        calls.append(value)
+        return original(value)
+    monkeypatch.setattr(matching, 'normalized_query', counted)
+    index = matching.holding_index(holdings)
+    assert [holding_matches(f'T{i}', holdings, index=index) for i in range(100)] == [[f'p{i}'] for i in range(100)]
+    assert len(calls) == 500
+    holdings.loc[0, 'ticker'] = 'UPDATED'
+    updated = matching.holding_index(holdings)
+    assert holding_matches('T0', holdings, index=updated) == []
+    assert holding_matches('UPDATED', holdings, index=updated) == ['p0']
+
+
 def test_crypto_pair_matches_stable_position_and_ambiguity_is_preserved():
     holdings = pd.DataFrame([
         dict(position_id='one', id='invented-id', name='Bitcoin', ticker='BTC-EUR', isin='', instrument_type='crypto'),
