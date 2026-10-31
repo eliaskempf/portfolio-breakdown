@@ -122,7 +122,7 @@ def positions_content(content, snapshot, additions, *, listing_changes=None):
         for k,v in {**item,'shares':'0'}.items():
             raw.at[len(raw)-1,k] = v
         existing.add(item['position_key'])
-    content = raw.to_csv(index=False)
+    content = raw.to_csv(index=False, lineterminator='\n')
     from portfolio_app.imports import listing_content
     for instrument, listing in (listing_changes or {}).items():
         content = listing_content(content, instrument, listing)
