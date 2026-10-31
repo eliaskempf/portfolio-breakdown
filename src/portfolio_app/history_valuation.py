@@ -6,6 +6,38 @@ from functools import lru_cache
 
 from portfolio_app.history_observations import index_observations, lookup, rate
 
+
+def scope_observations(journal, scope, observations, target):
+    """Conservative historical currency requirements, shared by charts and gates."""
+    from portfolio_app.account_journal import effective_events
+    from portfolio_app.currencies import quote_unit
+    from portfolio_app.history_observations import active_observations
+    from portfolio_app.security_history import selected_events
+    subjects = set(scope.positions) | {b.instrument_id for b in journal.securities if b.position_id in scope.positions}
+    positions = {p.id: p for p in journal.positions if p.account_id in scope.accounts}
+    contracts = {p.contract_id for p in positions.values()}
+    subjects.update(positions)
+    subjects.update(contracts)
+    active = active_observations(observations)
+    currencies = {quote_unit(o.currency)[0] for o in active if o.kind == 'price' and o.subject in subjects}
+    currencies.update(c.currency for c in journal.contracts if c.id in contracts)
+    for book in journal.securities:
+        if book.position_id not in scope.positions and book.account_id not in scope.accounts:
+            continue
+        for event in selected_events(book):
+            currencies.update((event.currency, event.valuation_currency))
+            currencies.update(c.currency for c in event.charges)
+            currencies.update(p['currency'] for p in event.costs)
+            currencies.update(p['currency'] for lot in event.lots for p in lot.costs)
+    for event in effective_events(journal):
+        if event.account_id in scope.accounts or event.other_account_id in scope.accounts or event.position_id in positions:
+            currencies.update((event.currency, event.other_currency))
+    pairs = {(native, target) for native in currencies - {'', target}}
+    pairs |= {(right, left) for left, right in tuple(pairs)}
+    return tuple(o for o in active if o.kind == 'price' and o.subject in subjects
+                 or o.kind == 'fx' and (o.currency, o.target) in pairs
+                 or o.kind == 'value' and o.subject == scope.key)
+
 # Provider venue codes, not ticker suffixes or an instrument's domicile.
 VENUES = {
     'NYQ': ('XNYS', 'America/New_York'),

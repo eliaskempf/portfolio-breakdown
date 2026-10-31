@@ -18,16 +18,21 @@ def listing_currency(listing):
     return ''
 
 
-def holding_matches(asset, holdings):
-    query = normalized_query(asset)
-    matches = []
-    for _, row in holdings.iterrows():
+def holding_index(holdings):
+    """One index for a holdings snapshot; account ambiguity remains explicit."""
+    result = {}
+    for row in holdings.to_dict('records'):
         identifiers = {normalized_query(row.get(k, '')) for k in ('id', 'name', 'ticker', 'isin')}
         if row.get('instrument_type') == 'crypto' and '-' in row.get('ticker', ''):
-            identifiers.add(normalized_query(row.ticker.rsplit('-', 1)[0]))
-        if query and query in identifiers:
-            matches.append(row.position_id)
-    return matches
+            identifiers.add(normalized_query(row['ticker'].rsplit('-', 1)[0]))
+        for identifier in identifiers - {''}:
+            result.setdefault(identifier, []).append(row['position_id'])
+    return result
+
+
+def holding_matches(asset, holdings, *, index=None):
+    index = holding_index(holdings) if index is None else index
+    return list(index.get(normalized_query(asset), ()))
 
 
 def exact_listings(asset, listings, *, kind=''):

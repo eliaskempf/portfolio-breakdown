@@ -718,6 +718,11 @@ def roll(journal, *, close: Event, opening: Event, charges: Iterable[Event] = ()
 
 def journal_to_dict(journal):
     result = asdict(journal)
+    for book in result['securities']:
+        for event in book['records']:
+            for field in ('order_domain', 'order_time'):
+                if not event[field]:
+                    event.pop(field)
     if journal.version < 5:
         for book in result['securities']:
             for event in book['records']:

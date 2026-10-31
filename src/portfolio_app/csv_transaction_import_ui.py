@@ -90,7 +90,8 @@ def render_transaction_import(directory, *, demo=False):
         if conflicts:
             owners = {e.id: b for b in journal.securities for e in b.records}
             events_by_id = {(b.position_id, e.id): e for b in journal.securities for e in b.records}
-            descendants = {(b.position_id, e.replaces): e for b in journal.securities for e in b.records if e.replaces}
+            from portfolio_app.security_history import latest_records
+            lineages = {b.position_id: latest_records(b) for b in journal.securities}
             receipts = {r.id: r for r in journal.transaction_imports}
             for row in conflicts:
                 previous = latest[row.key[0]][row.key[1]]
@@ -108,8 +109,8 @@ def render_transaction_import(directory, *, demo=False):
                     book = owners.get(ancestor.id)
                     current = events_by_id.get((book.position_id, ancestor.id)) if book else None
                     if current is not None:
-                        while (book.position_id, current.id) in descendants:
-                            current = descendants[book.position_id, current.id]
+                        roots, latest_events = lineages[book.position_id]
+                        current = latest_events.get(roots[current.id], current)
                         # A pending source revision may itself replace a user's
                         # active edit/removal. Stop at accepted source authority;
                         # older superseded edits were already reviewed then.
@@ -220,9 +221,13 @@ def _review_import(directory, draft):
         if (directory/'holdings.csv').exists() else '', snapshot, draft['additions'], listing_changes=draft['listing_changes'])
     holdings = parse_holdings(content)
     active = {i for b in journal.securities for i in b.active_ids}
+    review_key = 'import_tx_'+draft['token']+'review_'
+    from portfolio_app.history_order import original_order_ids, editable_order_ids
     def options(excluded):
+        excluded = original_order_ids(excluded, st.session_state.get(review_key+'order', {}))
         return {**draft['options'], 'selected_ids':[i for i in draft['options']['selected_ids'] if i not in excluded],
-                'accept_duplicates':True}
+                'excluded_ids': excluded, 'accept_duplicates':True,
+                'order_overrides': st.session_state.get(review_key+'order', {})}
     def build(excluded):
         preview = prepare_import(journal, holdings, draft['rows'], draft['mapping'], target=target,
             historical=ObservationFX(observations), **options(excluded))
@@ -232,9 +237,10 @@ def _review_import(directory, draft):
             note = 'Starts at zero · '+', '.join(names.loc[draft['needs_start']])
         return ReviewPreview(preview.journal, preview.comparisons if preview.applied else (),
             cash=preview.cash_changes, matches=preview.matches,
-            editable=frozenset(draft['options']['selected_ids'])-active,
+            editable=editable_order_ids(preview.journal.securities, set(draft['options']['selected_ids'])-active,
+                st.session_state.get(review_key+'order', {})),
             known_positions=frozenset(snapshot.holdings.position_id),
-            checkpoints=preview.checkpoints, warnings=preview.warnings, starting_note=note)
+            checkpoints=preview.checkpoints, warnings=preview.warnings, starting_note=note, excluded=preview.excluded)
     def apply(excluded):
         save_transaction_import(directory, draft['rows'], draft['mapping'], expected_journal_revision=revision,
             expected_holdings_revision=snapshot.revision, additions=draft['additions'], listing_changes=draft['listing_changes'],
@@ -244,4 +250,4 @@ def _review_import(directory, draft):
         st.session_state['import_tx_pending_complete'] = True
         _return_to_import()
         st.rerun()
-    render_history_review(build, key='import_tx_'+draft['token']+'review_', apply=apply, keep=_return_to_import, keep_label='Back to import')
+    render_history_review(build, key=review_key, apply=apply, keep=_return_to_import, keep_label='Back to import')

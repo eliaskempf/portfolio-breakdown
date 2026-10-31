@@ -108,6 +108,12 @@ fees remain unknown; enter zero when none were paid. `estimated=yes` marks suppl
 amounts as estimates. Do not use zero to represent an unknown value. File order is
 the initial order for same-day transactions; supply `order` when a different
 execution order is known. Dates are not converted into invented execution times.
+When dependent transactions on one day come from separate files or incompatible
+clocks, **Review same-day order** shows the affected entries before balance
+review. Enter distinct order numbers, earlier first, and choose **Use reviewed
+order**. Original timestamps remain retained; PDF statement times without a
+timezone are never treated as UTC. Already applied history keeps its accepted
+order until an explicit review changes it.
 
 Use **Save evidence only** to retain the upload without changing active balances.
 Mapped transactions appear in the usual Transactions view. Saved imports for new

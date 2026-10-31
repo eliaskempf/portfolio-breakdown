@@ -78,3 +78,38 @@ def test_fresh_replay_still_honors_same_day_sequence_cutoff():
     b = book(opening('0', '0'), first, second)
     assert replay_securities((b,), as_of='2024-01-02', sequence=1).positions[b.position_id].quantity == 2
     assert SecurityTimeline((b,)).at('2024-01-02').positions[b.position_id].quantity == 5
+
+
+def test_full_cash_then_forward_chart_keeps_bounded_snapshots_and_two_passes(monkeypatch):
+    from portfolio_app.security_history import Charge
+    begin = date(2024, 1, 1)
+    count = SecurityTimeline.MAX_SNAPSHOTS * 3
+    events = tuple(E(f'invented-{n}', 'buy', (begin+timedelta(days=n)).isoformat(),
+        quantity=1, price=10, currency='EUR', charges_known=True,
+        charges=(Charge(D(1), 'EUR', date=(begin+timedelta(days=n+3)).isoformat()),)) for n in range(1, count+1))
+    books = (book(opening('0', '0'), *events),)
+    original, calls = SecurityLot.__post_init__, []
+    def counted(self):
+        calls.append(self.id)
+        original(self)
+    monkeypatch.setattr(SecurityLot, '__post_init__', counted)
+    timeline = SecurityTimeline(books)
+    complete = timeline.at(None)
+    snapshots = []
+    for n in range(count+4):
+        stamp = (begin+timedelta(days=n)).isoformat()
+        state = timeline.at(stamp)
+        assert timeline.at(None) is complete  # Full cash reuse never moves the cursor.
+        if n % 37 == 0:
+            snapshots.append((stamp, state))
+        assert len(timeline.snapshots) <= timeline.MAX_SNAPSHOTS
+    assert len(calls) <= 2*count
+    for stamp, state in snapshots:
+        assert state == replay_securities(books, as_of=stamp)
+    assert complete == replay_securities(books)
+    # An evicted early query resets the cursor, then a new forward pass remains
+    # correct even when separately dated charges extend beyond the event day.
+    for n in (1, 2, count//2, count+1, 0, count+3):
+        stamp = (begin+timedelta(days=n)).isoformat()
+        assert timeline.at(stamp) == replay_securities(books, as_of=stamp)
+        assert len(timeline.snapshots) <= timeline.MAX_SNAPSHOTS

@@ -47,7 +47,8 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
         if revision != expected_journal_revision or snapshot.revision != expected_holdings_revision:
             raise DataError('History or holdings changed. Reload and review again.')
         selected = tuple(options.get('selected_ids', ()))
-        if selected:
+        excluded = tuple(options.get('excluded_ids', ()))
+        if selected or excluded:
             if not accept_reconciliation:
                 raise DataError('Review and accept the reconstructed balances and cash changes first.')
             if any(r.identity in selected and r.facts['event_type'] == 'checkpoint' for r in rows) and not accept_checkpoints:
@@ -64,18 +65,29 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
         from portfolio_app.portfolio_settings import load_settings
         observations, observation_revision = load_observations(directory)
         target = load_settings(directory).reporting_currency
-        if selected and ((expected_observations_revision is not ... and observation_revision != expected_observations_revision)
+        if (selected or excluded) and ((expected_observations_revision is not ... and observation_revision != expected_observations_revision)
                          or (expected_reporting_currency is not None and expected_reporting_currency != target)):
             raise DataError('Valuation evidence or reporting currency changed. Review reconciliation again.')
         content = None
         preview_holdings = snapshot.holdings
-        if selected and (additions or listing_changes):
+        if (selected or excluded) and (additions or listing_changes):
             path = directory/'holdings.csv'
             content = positions_content(path.read_text(encoding='utf-8-sig') if path.exists() else '', snapshot, additions, listing_changes=listing_changes)
             preview_holdings = parse_holdings(content)
         preview = prepare_import(journal, preview_holdings, rows, mapping,
             target=target, historical=ObservationFX(observations), **options)
         proposed = preview.journal
+        if content is not None:
+            # Rejected new positions remain reserved evidence identities, not
+            # zero-unit holdings or unused price-listing changes.
+            applied_positions = {c['position_id'] for c in preview.comparisons}
+            kept_additions = tuple(a for a in additions if a['position_key'] in applied_positions)
+            applied_assets = set(preview_holdings.loc[preview_holdings.position_id.isin(applied_positions), 'id'])
+            kept_listings = {a: listing for a, listing in (listing_changes or {}).items() if a in applied_assets}
+            content = (positions_content((directory/'holdings.csv').read_text(encoding='utf-8-sig')
+                if (directory/'holdings.csv').exists() else '', snapshot, kept_additions, listing_changes=kept_listings)
+                if kept_additions or kept_listings else None)
+            preview_holdings = parse_holdings(content) if content is not None else snapshot.holdings
         if selected:
             touched = {c['position_id'] for c in preview.comparisons}
             if any(e.date > comparison_date for b in proposed.securities for e in selected_events(b)

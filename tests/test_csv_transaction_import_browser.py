@@ -45,6 +45,42 @@ def open_correction(page, index):
     return checkbox
 
 
+def test_second_same_day_file_has_order_review_before_apply(import_page):
+    page,path = import_page
+    header = b'reference,date,type,asset,quantity,amount,currency\n'
+    upload(page,header+b'a,2024-01-02,buy,BTC,2,20,EUR\n')
+    page.get_by_role('button',name='Review against portfolio',exact=True).click(); settle(page)
+    page.get_by_role('button',name='Apply history',exact=True).click(); settle(page)
+    page.get_by_role('tab',name='Positions',exact=True).click(); settle(page)
+    page.get_by_role('radio',name='Import',exact=True).click(); settle(page)
+    page.locator('input[type=file]').set_input_files({'name':'invented-second.csv','mimeType':'text/csv',
+        'buffer':header+b'b,2024-01-02,sell,BTC,1,30,EUR\n'})
+    settle(page)
+    page.get_by_role('button',name='Review against portfolio',exact=True).click(); settle(page)
+    playwright.expect(page.get_by_text('Review same-day order',exact=True)).to_be_visible()
+    playwright.expect(page.get_by_role('spinbutton')).to_have_count(2)
+    assert not page.get_by_role('button',name='Apply history',exact=True).count()
+    page.get_by_role('button',name='Use reviewed order',exact=True).click(); settle(page)
+    page.get_by_role('button',name='Apply history',exact=True).click(); settle(page)
+    assert not page.get_by_test_id('stException').count()
+    assert next(iter(replay_securities(load_journal(path.parent)[0].securities).positions.values())).quantity == 1
+
+
+def test_excluding_all_rows_has_explicit_save_and_reopens(import_page):
+    page,path = import_page
+    content = (b'reference,date,type,asset,quantity,amount,currency\n'
+        b'a,2024-01-02,buy,BTC,1,10,EUR\nb,2024-01-02,buy,BTC,1,10,EUR\n')
+    upload(page,content)
+    page.get_by_role('button',name='Review against portfolio',exact=True).click(); settle(page)
+    page.get_by_text(re.compile('^2 similar transactions')).click()
+    choice = page.get_by_test_id('stMultiSelect').filter(has=page.get_by_text(re.compile('^Keep transactions')))
+    choice.get_by_role('button',name=re.compile('^Remove ')).first.click(); settle(page)
+    choice.get_by_role('button',name=re.compile('^Remove ')).first.click(); settle(page)
+    page.get_by_role('button',name='Save exclusions',exact=True).click(); settle(page)
+    assert not path.exists() and not load_journal(path.parent)[0].securities[0].active
+    assert not page.get_by_test_id('stException').count()
+
+
 @pytest.mark.parametrize('removal', [False, True])
 @pytest.mark.parametrize('invalid_pending', [False, True])
 def test_changed_sources_show_fields_and_require_individual_decisions(import_page, removal, invalid_pending):

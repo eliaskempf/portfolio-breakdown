@@ -41,14 +41,16 @@ def build_tree(
         raise ValueError("Depth must be a nonnegative integer or None.")
     nodes: dict[str, dict] = {}
     terminal_values: dict[TaxonomyPath, float] = defaultdict(float)
-    asset_values: dict[tuple[TaxonomyPath, str, str], float] = defaultdict(float)
+    asset_values: dict[tuple[TaxonomyPath, str], float] = defaultdict(float)
+    asset_names: dict[str, str] = {}
     root_id = _node_id("category", root)
     for row in allocations.itertuples(index=False):
         if not is_descendant(row.path, root):
             continue
         path = row.path if depth is None else row.path[: len(root) + depth]
         terminal_values[path] += row.value
-        asset_values[(path, row.asset_id, row.asset_name)] += row.value
+        asset_values[(path, row.asset_id)] += row.value
+        asset_names[row.asset_id] = min(asset_names.get(row.asset_id, row.asset_name), row.asset_name)
         for length in range(len(root), len(path) + 1):
             prefix = path[:length]
             node_id = _node_id("category", prefix)
@@ -66,11 +68,11 @@ def build_tree(
     if not nodes:
         return pd.DataFrame(columns=NODE_COLUMNS)
     if include_holdings:
-        for (path, asset_id, name), value in sorted(asset_values.items()):
+        for (path, asset_id), value in sorted(asset_values.items()):
             node_id = _node_id("asset", path, asset_id)
             nodes[node_id] = {
                 "node_id": node_id, "parent_id": _node_id("category", path),
-                "label": name, "path": path, "depth": len(path) - len(root) + 1,
+                "label": asset_names[asset_id], "path": path, "depth": len(path) - len(root) + 1,
                 "value": value, "kind": "holding",
             }
     else:

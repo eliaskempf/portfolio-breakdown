@@ -53,8 +53,9 @@ approximations require explicit confirmation and remain labelled.
 
 Use a single date only when it applies to the whole cost. For purchases on different
 dates, enter separate purchase rows or supply their combined converted cost. After sales, transfers or splits, reconcile the
-remaining quantity and cost with your records. The app does not track tax lots,
-sales accounting or realized gains.
+remaining quantity and cost with your records. This summary editor does not infer
+sales or realized gains. Use transaction history to record sales and calculate
+FIFO carrying costs and realized gains; it is not a tax-lot reporting service.
 
 ## Replace balances {#balances}
 

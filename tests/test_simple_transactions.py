@@ -180,6 +180,22 @@ def test_changed_amount_keeps_accepted_implicit_order_and_requires_correction():
     assert result.journal.securities[0].records[-1].amount == 21
 
 
+def test_excluded_csv_correction_preserves_the_applied_predecessor():
+    from portfolio_app.history_commands import exclude_transactions
+    from portfolio_app.security_history import current_records
+    items = rows('b,2024-01-02,buy,AUR,10,100,EUR\n')
+    journal = applied(items)
+    accepted = journal.securities[0]
+    candidate = correct_transaction(accepted, items[0].identity, quantity=D(11))
+    correction = candidate.records[-1].id
+    candidate = replace(candidate, active_ids=(accepted.active_ids[0], correction))
+    candidate = exclude_transactions(candidate, [correction], accepted_ids=accepted.active_ids)
+    restored = journal_from_dict(journal_to_dict(replace(journal, securities=(candidate,))))
+    assert replay_securities(restored.securities).positions['aur'].quantity == 10
+    assert [e.id for e in current_records(candidate)] == [items[0].identity]
+    assert correct_transaction(candidate, items[0].identity, quantity=D(12)).records[-1].quantity == 12
+
+
 def test_mapped_evidence_is_an_ordinary_pending_transaction(tmp_path):
     items=rows('b,2024-01-02,buy,AUR,10,100,EUR\n')
     content=positions_content('',read_snapshot(tmp_path/'holdings.csv'),ADDITIONS)
