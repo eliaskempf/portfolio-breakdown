@@ -116,7 +116,7 @@ def test_edit_and_reconfirm_replaces_review_with_transaction_list(transaction_pa
         const sample=()=>{
             if(!e.isConnected)return;
             const list=e.querySelector('table[aria-label="Transactions"]');
-            const apply=[...e.querySelectorAll('button')].find(b=>b.textContent.trim()==='Apply and confirm history');
+            const apply=[...e.querySelectorAll('button')].find(b=>b.textContent.trim()==='Apply history');
             if(visible(list) && visible(apply)) window.mixedHistoryFrames++;
             window.historyFrame=requestAnimationFrame(sample);
         };
@@ -132,14 +132,14 @@ def test_edit_and_reconfirm_replaces_review_with_transaction_list(transaction_pa
             price.fill('11'); price.press('Tab'); settle(page)
             dialog.get_by_role('button', name='Save changes', exact=True).click(); settle(page)
         dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
-        dialog.get_by_role('button', name='Apply and confirm history', exact=True).click(); settle(page)
+        dialog.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
         playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_have_count(1)
         playwright.expect(dialog.get_by_role('button', name='Review against portfolio', exact=True)).to_have_count(1)
-        for label in ('Apply and confirm history', 'Apply incomplete history', 'Keep portfolio unchanged', 'Back to transactions'):
+        for label in ('Apply history', 'Apply incomplete history', 'Keep portfolio unchanged', 'Back to transactions'):
             playwright.expect(dialog.get_by_role('button', name=label, exact=True)).to_have_count(0)
         playwright.expect(dialog.get_by_text('Review options', exact=True)).to_have_count(0)
         playwright.expect(dialog.get_by_text('Confirm complete history', exact=False)).to_have_count(0)
-        assert load_journal(root)[0].securities[0].reviews[-1].complete_through
+        assert load_journal(root)[0].securities[0].reviews[-1].date
     assert page.evaluate('window.missingDialogFrames') == 0
     assert dialog.evaluate('e=>e===window.originalDialog')
     page.evaluate('cancelAnimationFrame(window.dialogFrame)')
@@ -147,21 +147,21 @@ def test_edit_and_reconfirm_replaces_review_with_transaction_list(transaction_pa
     assert page.evaluate('window.mixedHistoryFrames') == 0
     assert page.locator('#page-runs').inner_text() == '1'
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
-    incomplete = dialog.get_by_role('button', name='Apply incomplete history', exact=True)
-    playwright.expect(incomplete).to_have_attribute('data-testid', 'stBaseButton-secondary')
+    apply = dialog.get_by_role('button', name='Apply history', exact=True)
+    playwright.expect(apply).to_have_attribute('data-testid', 'stBaseButton-primary')
     actions = [dialog.get_by_role('button', name=label, exact=True) for label in
-               ('Apply and confirm history', 'Apply incomplete history', 'Keep portfolio unchanged')]
+               ('Apply history', 'Keep portfolio unchanged')]
     boxes = [button.bounding_box() for button in actions]
     assert all(box['x'] >= 0 and box['x']+box['width'] <= width for box in boxes)
     if width == 1280:
         assert max(box['y'] for box in boxes)-min(box['y'] for box in boxes) <= 1
-    incomplete.click(); settle(page)
+    apply.click(); settle(page)
     assert not load_journal(root)[0].securities[0].reviews[-1].complete_through
-    playwright.expect(dialog.get_by_role('button', name='Apply incomplete history', exact=True)).to_have_count(0)
+    playwright.expect(dialog.get_by_role('button', name='Apply history', exact=True)).to_have_count(0)
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     dialog.get_by_role('button', name='Keep portfolio unchanged', exact=True).click(); settle(page)
     playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_have_count(1)
-    playwright.expect(dialog.get_by_role('button', name='Apply and confirm history', exact=True)).to_have_count(0)
+    playwright.expect(dialog.get_by_role('button', name='Apply history', exact=True)).to_have_count(0)
     playwright.expect(dialog.get_by_text('Review options', exact=True)).to_have_count(0)
 
 
@@ -195,7 +195,7 @@ def test_save_and_review_keep_dialog_visible(transaction_page, action):
         playwright.expect(dialog.get_by_role('button', name='Review against portfolio', exact=True)).to_be_visible()
     else:
         assert current_revision == revision
-        playwright.expect(dialog.get_by_role('button', name='Apply and confirm history', exact=True)).to_be_visible()
+        playwright.expect(dialog.get_by_role('button', name='Apply history', exact=True)).to_be_visible()
     page.evaluate('cancelAnimationFrame(window.dialogFrame)')
 
 
@@ -223,12 +223,12 @@ def test_first_history_preserves_tabs_selection_and_valuation(ux_page):
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     assert page.evaluate('window.missingDialogFrames') == 0
     assert dialog.evaluate('e=>e===window.originalDialog')
-    dialog.get_by_role('button', name='Apply and confirm history', exact=True).click(); settle(page)
+    dialog.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
     assert page.evaluate('window.missingDialogFrames') == 0
     assert dialog.evaluate('e=>e===window.originalDialog')
     page.evaluate('cancelAnimationFrame(window.dialogFrame)')
     applied = next(book for book in load_journal(root)[0].securities if book.position_id == 'fund-a')
-    assert applied.reviews[-1].complete_from and applied.reviews[-1].complete_through
+    assert applied.reviews[-1].date and not applied.reviews[-1].complete_through
     assert tabs.get_by_role('radio').all_text_contents() == before
     playwright.expect(tabs.get_by_role('radio', name='Transactions', exact=True)).to_be_checked()
     dialog.get_by_role('button', name='Close', exact=True).last.click(); settle(page)
@@ -308,7 +308,7 @@ def test_review_repairs_and_apply_share_dialog_refresh_boundary(transaction_page
     dialog.get_by_role('textbox', name=field, exact=True).fill(value)
     dialog.get_by_role('textbox', name=field, exact=True).press('Tab'); settle(page)
     dialog.get_by_role('button', name=action, exact=True).click(); settle(page)
-    dialog.get_by_role('button', name='Apply and confirm history', exact=True).click(); settle(page)
+    dialog.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
     assert load_journal(root)[0].securities[0].active
     assert load_journal(root)[0].securities[0].records[0] == original.securities[0].records[0]
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
@@ -317,9 +317,9 @@ def test_review_repairs_and_apply_share_dialog_refresh_boundary(transaction_page
     from portfolio_app.personal_performance import coverage_reasons
     saved = load_journal(root)[0]
     review = saved.securities[0].reviews[-1]
-    assert review.complete_from and review.complete_through
+    assert review.date and not review.complete_through
     assert not coverage_reasons(saved, HistoryScope(('position-0',)), load_observations(root)[0],
-                                review.complete_from, review.complete_through)
+                                saved.securities[0].records[0].date, review.date)
     assert page.locator('#page-runs').inner_text() == '1'
     assert page.evaluate('window.missingDialogFrames') == 0
     assert dialog.evaluate('e=>e===window.originalDialog')

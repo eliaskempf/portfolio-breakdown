@@ -130,7 +130,7 @@ with the portfolio and applies to its date pickers without changing recorded dat
 
 To find gaps across current positions, open **Positions → History**. It shows
 positions needing attention by default; clear that filter to see every position.
-The list separates absent or unapplied transactions, completeness confirmation,
+The list separates absent or unapplied transactions, missing transaction details,
 and missing market inputs. Select a row to open its transaction review, holdings
 history or account journal. Checks use saved evidence and the recorded interval;
 matching balances alone cannot prove that no transactions are missing. Ordinary
@@ -273,9 +273,8 @@ an end-of-day boundary; its acquisition cost is separate from the market value
 used to start performance measurement. Earlier transactions are not inferred.
 
 The review compares shares, remaining acquisition cost and average buy-in with
-the current portfolio, and checks linked cash where applicable. **Apply and confirm history** accepts the displayed
-holding and any linked cash changes, and confirms transaction completeness for the
-shown interval. **Apply incomplete history** applies balances without that declaration.
+the current portfolio, and checks linked cash where applicable. **Apply history**
+accepts the displayed holding and linked cash changes as the authoritative ledger.
 No separate acceptance checkbox is needed. Backfilled shares are not added to the
 current holding a second time. Resolve discrepancies by correcting records or
 explicitly accepting the reconstructed balance; **Keep portfolio unchanged**
@@ -306,31 +305,24 @@ purchase/sale history opens this view even before its first prices have loaded;
 snapshot-only positions keep the existing clean default. Saved observations are
 reused on later visits. Failed refreshes retain them and offer **Retry prices**.
 FX currencies come from saved transactions and observed price currency. Manual
-observations are preserved, and downloads never create transactions or confirm
-completeness. Missing prices, FX or transaction records still need to be supplied.
+observations are preserved, and downloads never create transactions. Missing prices, FX or transaction records still need to be supplied.
 Personal value uses the shares held on each date and prices in that date's traded
 share units; split-normalized asset-chart prices cannot be reused blindly.
 Offline synthetic demos do not start automatic market requests.
 
-In **Transactions → Review against portfolio**, check income, fees, taxes,
-offsetting trades, transfers and corporate actions before choosing **Apply and
-confirm history**. The interval starts at the selected starting boundary and ends
-today. A starting snapshot does not confirm transactions before that boundary.
-Matching shares and cost alone does not establish completeness. Use **Apply
-incomplete history** while still backfilling. Confirmation does not supply missing
-prices, FX or amounts, or override return eligibility requirements.
+In **Transactions → Review against portfolio**, compare the reconstructed units
+and costs, then choose **Apply history**. For multiple holdings, use **Accept this
+holding** for each reviewed balance and **Apply reviewed holdings** to save the
+batch. Applying makes that history authoritative for the resulting position:
+a one-share history replaces a two-share balance with one share. Reapplying does
+not add those shares again.
 
-Previously applied histories can be confirmed through the same **Review against
-portfolio → Apply and confirm history** action. Applied shares are not added again.
-A position's confirmation survives unrelated position
-changes; changes to its own evidence or linked transfers require another review.
-Confirmation covers the shown dates, not future transactions. Account and
-whole-portfolio scope reviews retain their separate membership requirements.
-
-**History not confirmed** means the completeness declaration is outstanding.
-**Incomplete gain history** identifies other missing evidence or limited coverage,
-with a short explanation in its tooltip. A calculable gain contribution does not
-establish complete history.
+There is no separate history confirmation. New valuation dates and changes in
+chart period do not require reapproval. Gains and returns use the applied records;
+missing prices, FX, amounts or required starting balances still limit the affected
+metrics. A starting snapshot does not invent earlier transactions.
+**Incomplete gain history** identifies actual missing evidence or limited scope,
+with details in its tooltip. Supplied estimates remain labelled.
 
 Transaction entry offers **Unit price**, **Trade value (excluding fees)** and
 **Total paid (including fees)** for purchases or **Total received (after fees)**

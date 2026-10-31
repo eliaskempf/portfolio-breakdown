@@ -14,7 +14,6 @@ from portfolio_app.security_history import effective_holdings, selected_events, 
 from portfolio_app.storage import save_document
 from portfolio_app.csv_transaction_imports import prepare_import
 from portfolio_app.workspace_lock import workspace_lock
-from portfolio_app.history_confirmation import confirmation_intervals as import_confirmation_intervals
 
 
 def prepare_positions(directory, additions, *, expected_holdings_revision):
@@ -38,7 +37,7 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
                             expected_holdings_revision, accept_reconciliation=False,
                             accept_checkpoints=False,
                             comparison_date='', additions=(), listing_changes=None, expected_observations_revision=...,
-                            expected_reporting_currency=None, complete_intervals=None, **options):
+                            expected_reporting_currency=None, **options):
     """Recompute under the lock; evidence and all activated legs publish together."""
     directory = Path(directory)
     rows = tuple(rows)
@@ -82,15 +81,10 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
             if any(e.date > comparison_date for b in proposed.securities for e in selected_events(b)
                    if affected_positions(b,e).intersection(touched)):
                 raise DataError('The comparison date must cover all active movements in these positions.')
-        if complete_intervals is not None:
-            touched = {c['position_id'] for c in preview.comparisons}
-            expected = import_confirmation_intervals(proposed, touched)
-            if not selected or not preview.applied or any(p not in expected or interval != expected[p] for p, interval in complete_intervals.items()):
-                raise DataError('History review intervals changed. Review the proposed history again.')
         if selected and preview.applied:
             touched = {c['position_id'] for c in preview.comparisons}
             from portfolio_app.history_commands import record_reviews
-            proposed = record_reviews(proposed, touched, comparison_date, complete_intervals)
+            proposed = record_reviews(proposed, touched, comparison_date)
         if proposed == journal:
             return replace(preview,journal=journal)
         effective_holdings(preview_holdings, proposed.securities)

@@ -135,12 +135,12 @@ Different recorded execution times distinguish otherwise identical transactions.
 When either entry has only a date, matching economic details still appear in the
 similar-transactions group.
 
-**Apply and confirm history** explicitly confirms the displayed history interval;
-**Apply incomplete history** leaves completeness unconfirmed. Both use the same
-forward reconstruction. Estimates do not automatically mean incomplete history,
-and completeness does not create missing market prices. Application replaces the
-managed holding with its reconstruction rather than adding trades to the existing
-snapshot a second time.
+**Apply history** makes the reviewed ledger authoritative for the resulting
+holding. For multiple holdings, accept each displayed balance and choose
+**Apply reviewed holdings**. There is no separate completeness declaration.
+Estimates stay labelled, and missing prices or amounts still limit their dependent
+metrics. Application replaces the managed balance; it does not add the same
+trades to the existing snapshot again.
 
 After import, use the normal **Transactions** list to edit or remove entries,
 regardless of whether they came from CSV, PDF or manual entry. Exchanges, transfers

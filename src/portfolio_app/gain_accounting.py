@@ -38,28 +38,17 @@ class GainSummary:
         return 'Unavailable' if self.amount is None else 'Partial' if self.partial else 'Complete'
 
     @property
-    def review_required_only(self):
-        return (self.amount is not None and self.covered == self.count and bool(self.reasons)
-                and all(reason.startswith('Review complete scope') for reason in self.reasons))
-
-    @property
     def coverage_note(self):
         if self.amount is None:
             return 'Gain unavailable'
-        if self.review_required_only:
-            return 'History not confirmed'
         if any('Estimated acquisition cost' in r or 'Estimated monetary valuation' in r for r in self.reasons):
-            return 'Estimated gain' + (' · history not confirmed' if any(r.startswith('Review complete scope') for r in self.reasons) else '')
+            return 'Estimated gain'
         return 'Incomplete gain history' if self.partial else 'Complete gain history'
 
     @property
     def coverage_help(self):
-        if self.review_required_only:
-            return ('Gain uses recorded transactions. Review the selected transactions and confirm history completeness; '
-                    'applying transactions to the portfolio does not confirm completeness.')
         if any('Estimated acquisition cost' in r or 'Estimated monetary valuation' in r for r in self.reasons):
-            return ('Gain includes imported estimates for acquisition costs or transaction valuations. '
-                    'Confirming history completeness does not make those inputs exact.')
+            return 'Gain includes imported estimates for acquisition costs or transaction valuations.'
         if self.amount is None:
             return 'Available values and costs are insufficient to calculate a gain.'
         return ('Gain uses available costs and recorded transactions. Missing history or inputs '
@@ -158,8 +147,7 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
         if dates and dates[0] <= end:
             result = calculate_history(journal, scope, observations, dates[0], end, target, returns=False, calculation=calculation)
             flows, missing = calculation.flows(scope, dates[0], end, target)
-            review_only = all(r.startswith('Review complete scope') for r in result.flow_reasons)
-            if result.opening_capital is not None and not missing and review_only:
+            if result.opening_capital is not None and not missing and not result.flow_reasons:
                 value = result.ending_value
                 if current_values is not None:
                     values = [current_values.get(i) for i in scope.positions]
@@ -189,15 +177,6 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
         if dates and dates[0] <= end:
             result = calculate_history(journal, member, observations, dates[0], end, target, returns=False, calculation=calculation)
             capital = result.invested_capital
-            # A missing completeness attestation is different from an explicitly
-            # unknown amount. Retain the subtotal of recorded facts, clearly
-            # partial; never enable a percentage return through this fallback.
-            review_only = result.flow_reasons and all(r.startswith('Review complete scope') for r in result.flow_reasons)
-            if capital is None and result.opening_capital is not None and review_only:
-                flows, missing = calculation.flows(member, dates[0], end, target)
-                if not missing:
-                    capital = result.opening_capital + sum((f.amount for f in flows), ZERO)
-                    reasons.extend(result.flow_reasons)
             if value is not None and capital is not None:
                 gain = value-capital
             else:

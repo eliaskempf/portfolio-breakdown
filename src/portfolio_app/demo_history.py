@@ -12,10 +12,10 @@ from portfolio_app.account_journal import Account, Event, Journal, save_journal
 from portfolio_app.cost_basis import component
 from portfolio_app.demo import create_demo_data, _write_csv
 from portfolio_app.history_commands import book_for
-from portfolio_app.history_observations import CoverageReview, HistoryScope, Observation, ObservationStore, save_observations
+from portfolio_app.history_observations import HistoryScope, Observation, ObservationStore, save_observations
 from portfolio_app.personal_performance import external_flows, value_at
 from portfolio_app.positions import read_snapshot
-from portfolio_app.security_history import Charge, SecurityEvent, SecurityLot, history_fingerprint, replay_securities
+from portfolio_app.security_history import Charge, SecurityEvent, SecurityLot, replay_securities
 
 
 def create_history_demo(directory: Path, *, end: date | None = None, market_prices=None) -> Path:
@@ -102,7 +102,7 @@ def create_history_demo(directory: Path, *, end: date | None = None, market_pric
                 source='Yahoo Close, split normalization reversed' if market_prices is not None else 'Invented demo price'))
     scopes = [HistoryScope(tuple(b.position_id for b in books),(account,))]
     scopes.extend(HistoryScope((b.position_id,)) for b in books)
-    store = ObservationStore(tuple(observations), tuple(CoverageReview(f'demo-review-{i}',scope,stamp(0),stamp(730),history_fingerprint(journal)) for i,scope in enumerate(scopes)))
+    store = ObservationStore(tuple(observations))
     # Exact demo boundaries for portfolio deposits/withdrawals and the fee-free
     # cash-fund purchase. Daily returns use the generated daily prices. Exact
     # equity returns additionally require distribution-time boundary values.

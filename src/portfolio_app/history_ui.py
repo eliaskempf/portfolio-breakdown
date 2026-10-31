@@ -57,7 +57,7 @@ def prepared_history_calculation(directory, journal, observations, revision, *, 
     cache = st.session_state.setdefault('parsed_inputs', {})
     previous = cache.get('history_calculation')
     if previous is None or previous[0] != signature:
-        # Results and ledger facts must expire together, including confirmations.
+        # Results and ledger facts must expire together when evidence changes.
         for key in list(cache):
             if key.startswith('history_view_'):
                 del cache[key]
@@ -535,7 +535,6 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
     if st.session_state.get(key+'reviewed') != (signature, revision, snapshot.revision):
         return
     from portfolio_app.history_commands import changed_positions, proposed_journal, history_comparisons
-    from portfolio_app.history_confirmation import confirmation_intervals
     from portfolio_app.history_review_ui import ReviewPreview, render_history_review
     from portfolio_app.security_history import duplicate_candidates
     originals = (candidate, *other_changes)
@@ -556,18 +555,14 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
         matches = tuple((b.position_id, a, z) for b in selected for a,z in duplicate_candidates(b) if b.position_id in touched)
         return ReviewPreview(proposed, comparisons, cash=changes, matches=matches,
             editable=frozenset(i for b in originals for i in b.active_ids)-active,
-            known_positions=frozenset(snapshot.holdings.position_id),
-            intervals=confirmation_intervals(proposed, touched) if action_label is None else {})
+            known_positions=frozenset(snapshot.holdings.position_id))
     def keep():
         _history_action(_key(directory, candidate.position_id), 'list')
-    def apply(excluded, complete):
+    def apply(excluded):
         selected = chosen(excluded)
-        intervals = build(excluded).intervals
-        start, end = intervals.get(candidate.position_id, ('', '')) if complete is True else ('', '')
         save_history(directory, selected[0], expected_journal_revision=revision, expected_holdings_revision=snapshot.revision,
             activate=True, resolution=resolution, accept_balance_change=True, accept_cash_change=True,
-            accept_duplicates=True, complete_from=start, complete_through=end, other_changes=selected[1:],
-            complete_intervals={p:intervals[p] for p in complete} if isinstance(complete, frozenset) else None)
+            accept_duplicates=True, other_changes=selected[1:])
         st.session_state.pop(key+'reviewed', None)
         st.session_state[(return_key or _key(directory, candidate.position_id))+'screen'] = 'list'
         st.rerun()
@@ -1027,21 +1022,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
         _history_inputs(directory, journal, scope, observations, revision, view, target, key)
 
 
-def _open_transaction_review(directory, identity):
-    st.session_state[f'position_edit_detail_view_{identity}'] = 'Transactions'
-    st.session_state[_key(directory, identity)+'screen'] = 'review'
-
-
 def _history_inputs(directory, journal, scope, observations, revision, view, target, key):
-    needs_review = any(r.startswith('Review complete scope') for r in view.all_result.flow_reasons)
-    if needs_review:
-        if len(scope.positions) == 1 and not scope.accounts and st.session_state.get('position_edit_dialog'):
-            st.button('Review transactions', type='tertiary', key=key+'review_transactions',
-                on_click=_open_transaction_review, args=(directory, scope.positions[0]))
-        else:
-            with st.expander('Review history completeness'):
-                from portfolio_app.history_coverage_ui import render_coverage_review
-                render_coverage_review(directory, journal, scope, key=key)
     from portfolio_app.history_data_ui import render_history_data
     render_history_data(directory, journal, scope, observations, revision, view, target, key)
 
@@ -1049,7 +1030,7 @@ def _history_inputs(directory, journal, scope, observations, revision, view, tar
 def _load_market_observations(directory, journal, scope, observations, revision, start, end, target, key):
     from portfolio_app.personal_market import download_scope_observations
     if st.button('Load prices and FX', key=key+'fetch_market',
-                 help='Load available dated market observations through today. Transactions and coverage reviews stay unchanged.'):
+                 help='Load available dated market observations through today. Transactions stay unchanged.'):
         try:
             with st.spinner('Loading historical prices and FX…'):
                 updated, errors = download_scope_observations(directory, journal, scope, observations, start, end, target)

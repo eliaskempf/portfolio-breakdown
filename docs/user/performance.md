@@ -123,8 +123,8 @@ calculations or editability. Exchanges and transfers are single economic events
 whose connected holdings are reviewed together.
 
 Explicitly supplied estimates can support daily TWR and annualized XIRR. Affected
-results are labelled **Estimated**. This is separate from transaction completeness
-and missing market observations. An estimated acquisition cost does not by itself
+results are labelled **Estimated**. Missing transaction details and market
+observations remain separate limitations. An estimated acquisition cost does not by itself
 make a return estimated when that return uses independently known cash flows and
 market values. Unknown amounts stay unknown; a matching ending quantity does not
 certify complete history. The former separate daily-Dietz diagnostic is retired.
@@ -236,16 +236,17 @@ Transaction payments, fees and acquisition-cost conversions still require their 
 Gaps are not interpolated or filled with current quotes. Missing data can be entered manually. Corrections retain
 original observations.
 
-**Confirm complete history**, beside the position's transaction reconciliation,
-records your review of the opening inventory and all events within the displayed
-interval. Apply pending transaction changes before confirming. Portfolio history
-has a separate **Review history completeness** action for its combined scope. Journal changes invalidate that confirmation.
-Applying transaction history to current balances does not confirm performance
-coverage. A review covers its named members and their subsets for the reviewed
-dates; it does not cover new members or a changed journal.
-Replacement balances interrupt the interval; unresolved cash adjustments must be
-classified as external flows, income or expenses, or retained as boundaries.
-Coverage is specific to the selected members, dates and metric.
+Applied history is the authoritative ledger for the resulting holdings and
+accounts. **Apply history** accepts the balances shown in reconciliation; there
+is no separate completeness confirmation. Gains and returns remain available as
+new prices arrive, provided their required inputs are supported. A newer
+valuation date does not invalidate the applied ledger.
+
+Replacement balances interrupt an interval, and unresolved cash adjustments must
+be classified as external flows, income or expenses, or retained as boundaries.
+Unknown amounts, missing market data and unsupported earlier periods remain
+explicit limitations. Applying records does not prove that unrecorded real-world
+activity never occurred; calculations describe the records supplied.
 
 Account cash openings precede separately recorded same-day account trades, fees
 and external funding; these events must not disappear into the first closing
@@ -303,8 +304,7 @@ are already in market prices and are not deducted again.
 Exact event TWR remains an explicit calculation option. It requires genuine
 ordering and supported before/after event valuations, and includes the event's
 fees and income. Execution prices may support standalone security boundaries,
-but do not value other assets in a portfolio. Neither method changes saved trade
-dates or confirms history completeness.
+but do not value other assets in a portfolio. Neither method changes saved trade dates.
 Historical value points and monetary gains can remain useful when returns cannot
 be calculated. The affected metric’s help explains its own missing requirements;
 other metrics do not inherit that restriction.

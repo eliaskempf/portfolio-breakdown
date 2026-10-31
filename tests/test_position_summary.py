@@ -70,11 +70,11 @@ def test_summary_only_uses_recorded_cost_and_leaves_annualized_return_unknown(tm
     assert any(c.value == 'Unrealized gain only' for c in app.caption)
 
 
-def test_incomplete_history_keeps_known_gain_without_enabling_return(tmp_path):
-    app, _ = launch(tmp_path, complete=False)
+def test_applied_history_shows_gain_and_return_without_confirmation(tmp_path):
+    app, result = launch(tmp_path, complete=False)
     before = headlines(app)
     assert before[0] == ('Position value', '€300.00', '+€220.00')
-    assert before[2] == ('Annualized return', '—', '')
+    assert before[2] == ('Annualized return', return_percent(100*result.money_weighted), '')
     by_label(app.get('button_group'), 'History type').set_value('Price').run()
     assert headlines(app) == before
-    assert any(c.value == 'History not confirmed' or c.value == 'Incomplete gain history' for c in app.caption)
+    assert not any(c.value == 'History not confirmed' for c in app.caption)

@@ -76,6 +76,7 @@ class Observation:
 
 @dataclass(frozen=True)
 class CoverageReview:
+    """Legacy attestation retained for file compatibility, not calculation eligibility."""
     id: str
     scope: HistoryScope
     start: str

@@ -97,7 +97,7 @@ Position opening and clean dismissal rerun only the dialog host. Creating or
 discarding an unsaved editor draft refreshes the parent toolbar once so its
 resume action matches the retained draft. Child workflows
 share a local refresh boundary, including evidence saves, reconciliation, market
-evidence repairs and completeness review. Persisted changes refresh current
+evidence repairs and balance review. Persisted changes refresh current
 position values locally and refresh the parent page once after dismissal. Pending
 evidence alone does not repeat portfolio valuation. Streamlit 1.65 or newer is
 required for the keyed host callbacks; the runtime adapter is isolated in
@@ -130,22 +130,18 @@ for debugging, expose them only inside an explicitly opened internal diagnostics
 view, never in the normal import or transaction-review workflow.
 Show overwrite confirmation only when a value will actually be replaced.
 
-For a single holding, offer **Apply and confirm history** as the normal reconciliation action, with a
-visible interval and an **Apply incomplete history** alternative. For multiple holdings,
-review each holding with **Confirm this holding** or **Mark incomplete**, then
-**Apply reviewed holdings** in one atomic save. Only explicitly confirmed holdings
-receive completeness intervals. Changes to the reviewed facts reset these decisions.
-Return CSV imports to Positions after saving without opening an arbitrary holding.
-Valid per-holding confirmations also satisfy a combined securities-only scope;
-account coverage and unsupported earlier periods still require their own evidence. Reconciliation
-and completeness remain distinct facts; the combined action explicitly records
-both in one journal write. Matching today's holding must never silently certify
-omitted sales or income. Keep confirmation inside the existing history review;
-do not add a separate toolbar shortcut for this catch-up workflow. Position attestations bind retained
-facts and transfer-connected holdings, so unrelated position edits do not undo
-review. Legacy whole-journal attestations keep their original validation rules.
-Manual market-data correction is separate from this review. Broader changes to
-established interfaces require discussion rather than opportunistic redesign.
+For a single holding, use **Apply history** after reconciliation. For multiple
+holdings, review each with **Accept this holding**, then **Apply reviewed holdings**
+in one atomic save. Changes to reviewed facts reset these balance-review decisions.
+Applying makes the selected ledger authoritative for the resulting holdings,
+including when it replaces a different current balance. There is no separate
+history-completeness confirmation, expiry date, or incomplete-apply mode.
+Return CSV imports to Positions without opening an arbitrary holding.
+Missing amounts, prices, FX, starting balances and unresolved transactions remain
+metric-specific limitations. Do not infer evidence before a starting snapshot or
+claim that applied records prove the absence of omitted real-world transactions.
+Legacy completeness records remain readable but do not gate results. Market-data
+correction stays separate from transaction reconciliation.
 
 ## Architecture and verification
 
@@ -596,13 +592,13 @@ converted costs. Calculate the disposed portion once and derive its remainder;
 do not independently scale both sides with a rounded ratio. Quantity validation
 remains exact, including when a derived lot is reloaded at another Decimal precision.
 
-`history_observations.py` stores dated observations and scope-specific coverage
-reviews. `personal_performance.py` computes equity, external flows, money-weighted
+`history_observations.py` stores dated observations and retains legacy scope reviews. `personal_performance.py` computes equity, external flows, money-weighted
 returns and daily/exact time-weighted returns without Streamlit or network calls.
 `personal_market.py` supplies provider observations with explicit adjustment
 semantics. `history_ui.py` renders the optional workflows. Keep source-position
 history separate from present-day ETF constituent expansion and hypothetical risk
-backtests. New evidence must never silently certify historical completeness.
+backtests. Applying history establishes the ledger used for the resulting position;
+new market data never changes its transactions.
 
 History charts share a `HistoryCalculation` for one journal and observation
 revision. `SecurityTimeline` advances the canonical FIFO replay once and retains
@@ -651,8 +647,8 @@ opens portfolio **Performance** by default. Both views use periods ending today.
 
 The demo includes exact flow-boundary observations for the portfolio and the
 fee-free money-market holding. The equity holding has a money-weighted return;
-daily TWR includes its recorded fees; exact event TWR additionally needs supported event boundaries. Editing financial history
-invalidates the prior coverage confirmation, as it does for any workspace.
+daily TWR includes its recorded fees; exact event TWR additionally needs supported
+event boundaries. Applying edited financial history recalculates affected results.
 
 ### Transaction CSV boundary
 

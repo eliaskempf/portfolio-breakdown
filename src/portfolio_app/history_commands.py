@@ -88,24 +88,23 @@ def history_comparisons(journal, proposed, holdings, positions, *, target='EUR',
     return tuple(comparisons)
 
 
-def record_reviews(proposed, positions, comparison_date, intervals=None, *, resolution='accept'):
-    """Shared evidence of an explicit reconciliation and optional completeness."""
+def record_reviews(proposed, positions, comparison_date, *, resolution='accept'):
+    """Shared audit record of the balances accepted during application."""
     from portfolio_app.security_history import security_history_fingerprint
     books = []
     for book in proposed.securities:
         if book.position_id in positions:
-            start, end = (intervals or {}).get(book.position_id, ('', ''))
             review = HistoryReview(uuid4().hex, book.active_ids, comparison_date, resolution,
-                start, end, security_history_fingerprint(proposed, book.position_id))
+                facts_fingerprint=security_history_fingerprint(proposed, book.position_id))
             book = replace(book, reviews=(*book.reviews, review))
         books.append(book)
     return replace(proposed, securities=tuple(books))
 
 
 def save_history(directory, book, *, expected_journal_revision, expected_holdings_revision,
-                 activate=False, resolution='accept', complete_from='', complete_through='',
+                 activate=False, resolution='accept',
                  accept_balance_change=False, accept_cash_change=False, accept_duplicates=False,
-                 other_changes=(), complete_intervals=None):
+                 other_changes=()):
     """Publish all legs together; provenance never changes transaction permissions."""
     directory = Path(directory)
     with workspace_lock(directory):
@@ -147,21 +146,7 @@ def save_history(directory, book, *, expected_journal_revision, expected_holding
             before, after = replay(journal), replay(proposed)
             if (before.cash, before.unknown_cash) != (after.cash, after.unknown_cash) and not accept_cash_change:
                 raise DataError('Review and accept the linked cash changes before activation.')
-            intervals = complete_intervals
-            if complete_intervals is not None:
-                from portfolio_app.history_confirmation import confirmation_intervals
-                expected = confirmation_intervals(proposed, touched)
-                if complete_from or complete_through or any(p not in expected or interval != expected[p] for p, interval in complete_intervals.items()):
-                    raise DataError('History review intervals changed. Review the proposed history again.')
-            if complete_from:
-                from portfolio_app.history_confirmation import confirmation_intervals
-                intervals = confirmation_intervals(proposed, touched)
-                if complete_from < intervals[book.position_id][0] or not complete_from <= complete_through <= date.today().isoformat():
-                    raise DataError('Confirm completeness only within the supported history interval.')
-                intervals = {p: (max(start, complete_from), complete_through) for p, (start, _) in intervals.items()}
-                if any(start > end for start, end in intervals.values()):
-                    raise DataError('An affected holding starts after the reviewed interval.')
-            proposed = record_reviews(proposed, touched, date.today().isoformat(), intervals, resolution=resolution)
+            proposed = record_reviews(proposed, touched, date.today().isoformat(), resolution=resolution)
         snapshot = freeze_position_keys(directory, snapshot.revision)
         effective_holdings(snapshot.holdings, proposed.securities)
         save_journal(directory, proposed, revision)
@@ -190,7 +175,7 @@ def reconstruction_candidate(book, selected_ids, *, starts_at_zero=False):
             raise DataError('Select either a starting balance or history from zero, not both.')
         return candidate
     if not starts_at_zero:
-        raise DataError('Starting holding unknown. Confirm history from the first purchase or add a starting balance.')
+        raise DataError('Starting holding unknown. Choose history from the first purchase or add a starting balance.')
     earliest = min([event.date for event in events] + [c.date for e in events for c in e.charges if c.date])
     try:
         boundary = (date.fromisoformat(earliest)-timedelta(days=1)).isoformat()

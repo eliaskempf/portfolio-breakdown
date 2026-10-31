@@ -206,6 +206,7 @@ class HistoryReview:
     active_ids: tuple[str, ...]
     date: str
     resolution: str
+    # Legacy completeness metadata is preserved on reload, never used as a gate.
     complete_from: str = ''
     complete_through: str = ''
     facts_fingerprint: str = ''
@@ -262,12 +263,6 @@ class SecurityBook:
         selected = set(self.active_ids)
         return any(e.id in selected and e.kind != 'void' for e in self.records)
 
-    @property
-    def interval(self):
-        if self.reviews and self.reviews[-1].active_ids == self.active_ids:
-            r = self.reviews[-1]
-            return r.complete_from, r.complete_through
-        return '', ''
 
 
 def book_from_dict(raw):
@@ -760,7 +755,7 @@ def duplicate_candidates(book):
 
 
 def accounting_fingerprint(journal):
-    """Bind completeness to facts, without making review receipts self-referential."""
+    """Fingerprint accounting facts without including review receipts."""
     from portfolio_app.account_journal import journal_to_dict
     raw = journal_to_dict(journal)
     for book in raw.get('securities', ()):

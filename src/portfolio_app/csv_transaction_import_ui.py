@@ -11,7 +11,7 @@ from portfolio_app.holdings import DataError, parse_holdings
 from portfolio_app.import_state import review_control, clear_transaction_draft
 from portfolio_app.positions import read_snapshot
 from portfolio_app.transaction_csv import SIMPLE_FIELDS, TransactionRow, digest, read_csv
-from portfolio_app.transaction_import_commands import positions_content, save_transaction_import, import_confirmation_intervals
+from portfolio_app.transaction_import_commands import positions_content, save_transaction_import
 
 
 def control(widget, *args, key, **kwargs):
@@ -185,7 +185,6 @@ def _review_import(directory, draft):
     def build(excluded):
         preview = prepare_import(journal, holdings, draft['rows'], draft['mapping'], target=target,
             historical=ObservationFX(observations), **options(excluded))
-        intervals = import_confirmation_intervals(preview.journal, {c['position_id'] for c in preview.comparisons}) if preview.applied else {}
         note = ''
         if draft['zero'] and preview.applied:
             names = holdings.set_index('position_id')['name']
@@ -193,15 +192,13 @@ def _review_import(directory, draft):
         return ReviewPreview(preview.journal, preview.comparisons if preview.applied else (),
             cash=preview.cash_changes, matches=preview.matches,
             editable=frozenset(draft['options']['selected_ids'])-active,
-            known_positions=frozenset(snapshot.holdings.position_id), intervals=intervals,
+            known_positions=frozenset(snapshot.holdings.position_id),
             checkpoints=preview.checkpoints, warnings=preview.warnings, starting_note=note)
-    def apply(excluded, complete):
-        preview = build(excluded)
+    def apply(excluded):
         save_transaction_import(directory, draft['rows'], draft['mapping'], expected_journal_revision=revision,
             expected_holdings_revision=snapshot.revision, additions=draft['additions'], listing_changes=draft['listing_changes'],
             accept_reconciliation=True, accept_checkpoints=True, comparison_date=date.today().isoformat(),
-            complete_intervals=(preview.intervals if complete is True else
-                {p:preview.intervals[p] for p in complete} if isinstance(complete, frozenset) else None), expected_observations_revision=observation_revision,
+            expected_observations_revision=observation_revision,
             expected_reporting_currency=target, **options(excluded))
         st.session_state['import_tx_pending_complete'] = True
         _return_to_import()

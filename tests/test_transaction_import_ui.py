@@ -27,7 +27,7 @@ def test_received_swap_income_fee_and_valuation_are_visible(tmp_path):
     assert exchange.iloc[0]['Monetary valuation'] == '80.00 EUR'
     next(b for b in app.button if b.label == 'Review against portfolio').click().run()
     assert not app.exception
-    assert any(b.label == 'Apply incomplete history' for b in app.button)
+    assert any(b.label == 'Apply history' for b in app.button)
 
 
 def test_checkpoint_history_shows_estimates_and_unknown_observation(tmp_path):
@@ -104,7 +104,7 @@ def test_mixed_starting_balance_and_new_exchange_destination_can_be_reviewed(tmp
     assert not app.exception and not app.warning
     next(b for b in app.button if b.label == 'Review against portfolio').click().run()
     assert not app.exception
-    assert any(b.label=='Confirm this holding' for b in app.button)
+    assert any(b.label=='Accept this holding' for b in app.button)
     assert next(b for b in app.button if b.label=='Apply reviewed holdings').disabled
     assert not (tmp_path/'holdings.csv').exists()
 

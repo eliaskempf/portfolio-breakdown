@@ -75,7 +75,7 @@ def test_replay_lots_cash_and_profit_identity():
     assert sum(c.unrealized for c in components) == 43
     gain = summarize_known_gain(j,scope,obs,'2024-04-08',current_values={'desk':D(40),'vault':D(0),'orb':D(140)})
     assert gain.amount == 150 and gain.capital == 30
-    assert gain.review_required_only
+    assert not gain.partial
     assert journal_from_dict(journal_to_dict(j)) == j
 
 

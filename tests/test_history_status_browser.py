@@ -2,7 +2,7 @@
 from datetime import date
 from decimal import Decimal
 
-from browser_support import select_tab
+from browser_support import select_tab, settle
 from test_ux_browser import ux_page, playwright  # noqa: F401
 
 
@@ -44,14 +44,15 @@ def test_history_filter_and_review_navigation(ux_page):
     page.reload(); page.locator('.js-plotly-plot').first.wait_for()
     table = open_history(page)
     playwright.expect(table.locator('tr[data-position-id="fund-a"]')).to_have_count(0)
-    playwright.expect(table.locator('tr[data-position-id="fund-b"]')).to_contain_text('Not confirmed')
+    playwright.expect(table.locator('tr[data-position-id="fund-b"]')).to_have_count(0)
     checkbox = page.get_by_role('checkbox', name='Only show positions needing attention')
     checkbox.press('Space')
-    playwright.expect(table.locator('tr[data-position-id="fund-a"]')).to_contain_text('Confirmed')
+    playwright.expect(table.locator('tr[data-position-id="fund-a"]')).to_contain_text('Applied')
     table.locator('tr[data-position-id="fund-b"] td').first.click()
     dialog = page.get_by_role('dialog')
-    playwright.expect(dialog.get_by_role('radio', name='Transactions', exact=True)).to_be_checked()
-    playwright.expect(dialog.get_by_role('button', name='Apply and confirm history', exact=True)).to_be_visible()
+    dialog.get_by_role('radio', name='All', exact=True).click(); settle(page)
+    playwright.expect(dialog.locator('.js-plotly-plot')).to_be_visible()
+    playwright.expect(dialog.get_by_role('button', name='Confirm complete history', exact=True)).to_have_count(0)
     assert load_journal(root)[0] == journal  # Navigation never confirms or applies data.
     assert page.get_by_test_id('stException').count() == 0
 
@@ -115,7 +116,7 @@ render_history_status_list(root/'holdings.csv',snapshot,snapshot.holdings)
                 checkbox.press('Space')
             table=page.get_by_role('table',name='History status',exact=True)
             playwright.expect(table.get_by_text('Available',exact=True)).to_have_count(3,timeout=20000)
-            playwright.expect(table.get_by_text('Confirmed',exact=True)).to_be_visible()
+            playwright.expect(table.get_by_text('Applied',exact=True)).to_be_visible()
             playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
             assert load_journal(tmp_path)[0]==journal
             assert len(load_observations(tmp_path)[0].reviews)==1

@@ -32,7 +32,7 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
         gain_note = 'Unrealized gain only'
         gain_help = 'Current value less recorded acquisition cost. Earlier realized gains, income and expenses are not reconstructed.'
         capital_help = 'Recorded acquisition cost of the current holding; earlier purchases and proceeds are not reconstructed.'
-        return_help = 'Requires applied transaction history, dated valuations and confirmed completeness. Market-price returns are not personal returns.'
+        return_help = 'Requires applied transaction history and dated valuations. Market-price returns are not personal returns.'
         if has_history:
             from portfolio_app.gain_accounting import summarize_known_gain, amount
             from portfolio_app.history_data_ui import readable_reasons

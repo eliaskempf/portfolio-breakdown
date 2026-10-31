@@ -65,18 +65,15 @@ def readable_reasons(directory, journal, scope, reasons, *, names=None):
         names[event.id] = f'{event.date} account entry'
     results = []
     for reason in reasons:
-        if reason.startswith('Review complete scope'):
-            message = 'Confirm completeness after reviewing the selected history.'
-        else:
-            identity, separator, detail = reason.partition(': ')
-            message = f'{names.get(identity, "History")}: {detail}' if separator else reason
-            message = message.replace('charges have not been confirmed', 'confirm transaction fees')
-            for stored, label in sorted(names.items(), key=lambda pair: -len(pair[0])):
-                if len(stored) < 16 and not any(marker in stored for marker in ('-', ':')):
-                    continue
-                message = re.sub(r'(?<![\w-])'+re.escape(stored)+r'(?![\w-])', lambda _: label, message)
-            message = re.sub(r'\bsecurity:[^\s,;]+', 'payment', message)
-            message = re.sub(r'\b[a-f0-9]{24,64}\b', 'record', message)
+        identity, separator, detail = reason.partition(': ')
+        message = f'{names.get(identity, "History")}: {detail}' if separator else reason
+        message = message.replace('charges have not been confirmed', 'confirm transaction fees')
+        for stored, label in sorted(names.items(), key=lambda pair: -len(pair[0])):
+            if len(stored) < 16 and not any(marker in stored for marker in ('-', ':')):
+                continue
+            message = re.sub(r'(?<![\w-])'+re.escape(stored)+r'(?![\w-])', lambda _: label, message)
+        message = re.sub(r'\bsecurity:[^\s,;]+', 'payment', message)
+        message = re.sub(r'\b[a-f0-9]{24,64}\b', 'record', message)
         if message not in results:
             results.append(message)
     return tuple(results)

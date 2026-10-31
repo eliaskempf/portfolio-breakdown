@@ -210,14 +210,14 @@ def test_summary_estimate_remains_labelled_and_cannot_create_historical_capital(
     assert any('estimated cost conversion' in r for r in result.reasons)
 
 
-def test_unreviewed_records_keep_known_closed_gains_but_never_enable_returns():
+def test_applied_records_enable_known_closed_gains_and_returns_without_attestation():
     j=Journal(version=2,securities=(book(E('o','opening',START),E('b','buy','2024-02-01',quantity=1,price=10,currency='EUR',charges_known=True),
         E('s','sell','2024-07-01',quantity=1,price=12,currency='EUR',charges_known=True)),))
     scope=HistoryScope(('stock',));obs=observations(j,scope,review=False)
     r=summarize_known_gain(j,scope,obs,END)
-    assert r.amount==2 and r.partial
-    assert r.review_required_only and r.coverage_note == 'History not confirmed'
-    assert calculate_history(j,scope,obs,START,END).money_weighted is None
+    assert r.amount==2 and not r.partial
+    assert r.coverage_note == 'Complete gain history'
+    assert calculate_history(j,scope,obs,START,END).money_weighted is not None
 
 
 def test_unknown_snapshot_cost_retains_measured_gain_but_not_capital():
@@ -225,7 +225,7 @@ def test_unknown_snapshot_cost_retains_measured_gain_but_not_capital():
     scope=HistoryScope(('stock',));obs=observations(j,scope,[('stock',START,10),('stock',END,12)])
     r=summarize_known_gain(j,scope,obs,END)
     assert r.amount==20 and r.capital is None and r.partial
-    assert not r.review_required_only and r.coverage_note == 'Incomplete gain history'
+    assert r.coverage_note == 'Incomplete gain history'
     assert calculate_history(j,scope,obs,START,END).time_weighted==pytest.approx(.2)
 
 

@@ -97,23 +97,20 @@ def test_invalid_pending_correction_keeps_original_scope_for_review():
         journal, HistoryScope(('desk',)), ObservationStore(), '2024-03-31', '2024-04-08')
 
 
-@pytest.mark.parametrize('confirm', [False, True])
-def test_saved_csv_coverage_controls_returns_without_claiming_market_inputs(tmp_path, confirm):
+def test_saved_csv_enables_returns_without_inventing_market_inputs(tmp_path):
     from datetime import date
     from test_transaction_import_commands import setup
     from test_csv_transaction_imports import scenario
     from portfolio_app.history_status import position_history_statuses
-    from portfolio_app.transaction_import_commands import import_confirmation_intervals, save_transaction_import
+    from portfolio_app.transaction_import_commands import save_transaction_import
 
     snapshot = setup(tmp_path)
     rows = scenario()[:1]  # Invented purchase: 10 units for 100 plus a fee of 2.
     preview = prepare_import(Journal(), snapshot.holdings, rows, MAPPING,
                              selected_ids=[r.identity for r in rows], starts_at_zero=True)
-    intervals = import_confirmation_intervals(preview.journal, ('desk',)) if confirm else None
     saved = save_transaction_import(tmp_path, rows, MAPPING, expected_journal_revision=None,
         expected_holdings_revision=snapshot.revision, selected_ids=[r.identity for r in rows],
-        starts_at_zero=True, accept_reconciliation=True, comparison_date='2024-04-02',
-        complete_intervals=intervals)
+        starts_at_zero=True, accept_reconciliation=True, comparison_date='2024-04-02')
     scope = HistoryScope(('desk',))
     store = ObservationStore((Observation('first', 'price', 'desk', '2024-04-01', 10, 'EUR'),
                               Observation('last', 'price', 'desk', '2024-04-02', 11, 'EUR')))
@@ -121,12 +118,8 @@ def test_saved_csv_coverage_controls_returns_without_claiming_market_inputs(tmp_
     assert result.ending_value == 110
     status = next(s for s in position_history_statuses(snapshot.holdings, saved.journal, store,
                   today=date(2024, 4, 2)) if s.position_id == 'desk')
-    assert status.transactions == ('Confirmed' if confirm else 'Not confirmed')
-    if confirm:
-        assert result.time_weighted == pytest.approx(110/102-1)
-        assert result.money_weighted is not None
-        # Transaction completeness does not fabricate missing closing prices.
-        missing = calculate_history(saved.journal, scope, ObservationStore(), '2024-03-31', '2024-04-02')
-        assert missing.ending_value is None and missing.time_weighted is None
-    else:
-        assert result.time_weighted is None and result.money_weighted is None
+    assert status.transactions == 'Applied'
+    assert result.time_weighted == pytest.approx(110/102-1)
+    assert result.money_weighted is not None
+    missing = calculate_history(saved.journal, scope, ObservationStore(), '2024-03-31', '2024-04-02')
+    assert missing.ending_value is None and missing.time_weighted is None

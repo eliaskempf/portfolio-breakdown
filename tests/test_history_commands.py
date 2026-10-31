@@ -111,17 +111,16 @@ def test_unknown_opening_fifo_cost_can_be_manually_reconciled_without_inventing_
     assert not replay_securities(journal.securities).positions[book.position_id].lots[0].exact
 
 
-def test_position_completeness_confirmation_is_used_and_new_evidence_invalidates_it(tmp_path):
+def test_applied_position_remains_usable_when_unapplied_evidence_is_added(tmp_path):
     from portfolio_app.personal_performance import coverage_reasons
-    from portfolio_app.history_observations import HistoryScope,ObservationStore
+    from portfolio_app.history_observations import HistoryScope, ObservationStore
     path,snapshot,book=setup(tmp_path)
     journal=save_history(tmp_path,book,expected_journal_revision=None,expected_holdings_revision=snapshot.revision,
-        activate=True,accept_balance_change=True,complete_from='2024-01-01',complete_through='2025-01-01')
+        activate=True,accept_balance_change=True)
     scope=HistoryScope((book.position_id,))
     assert not coverage_reasons(journal,scope,ObservationStore(),'2024-01-01','2025-01-01')
-    changed=append_evidence(journal.securities[0],(E('missing','note',note='Unresolved synthetic evidence'),))
-    journal=replace(journal,securities=(changed,))
-    assert coverage_reasons(journal,scope,ObservationStore(),'2024-01-01','2025-01-01')
+    changed=append_evidence(journal.securities[0],(E('draft','note',note='Unapplied synthetic evidence'),))
+    assert not coverage_reasons(replace(journal,securities=(changed,)),scope,ObservationStore(),'2024-01-01','2025-01-01')
 
 
 def test_zero_start_requires_confirmation_and_is_not_a_purchase(tmp_path):
@@ -275,18 +274,10 @@ def test_removal_does_not_silently_change_other_holding():
     assert changed_positions(journal, (candidate,)) == {'source', 'other'}
 
 
-def test_individual_confirmation_intervals_validate_before_publication(tmp_path):
-    from portfolio_app.history_confirmation import confirmation_intervals
-    from portfolio_app.history_commands import proposed_journal
-    from portfolio_app.account_journal import Journal
+def test_application_records_reconciliation_without_completeness_dates(tmp_path):
     path, snapshot, book = setup(tmp_path)
-    intervals = confirmation_intervals(proposed_journal(Journal(), (book,)), (book.position_id,))
-    for invalid in ({'unknown':next(iter(intervals.values()))}, {book.position_id:('2020-01-01','2024-01-01')}):
-        with pytest.raises(DataError, match='intervals changed'):
-            save_history(tmp_path, book, expected_journal_revision=None, expected_holdings_revision=snapshot.revision,
-                activate=True, accept_balance_change=True, complete_intervals=invalid)
-        assert not load_journal(tmp_path)[0].securities
     journal = save_history(tmp_path, book, expected_journal_revision=None, expected_holdings_revision=snapshot.revision,
-        activate=True, accept_balance_change=True, complete_intervals=intervals)
+        activate=True, accept_balance_change=True)
     review = journal.securities[0].reviews[-1]
-    assert (review.complete_from, review.complete_through) == intervals[book.position_id]
+    assert review.active_ids == book.active_ids
+    assert review.date and not review.complete_from and not review.complete_through

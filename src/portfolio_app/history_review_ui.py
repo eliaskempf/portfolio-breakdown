@@ -1,6 +1,5 @@
 """One reconciliation screen for manual, PDF and CSV transaction histories."""
-from dataclasses import dataclass, field
-from datetime import date
+from dataclasses import dataclass
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -20,7 +19,6 @@ class ReviewPreview:
     matches: tuple = ()
     editable: frozenset = frozenset()
     known_positions: frozenset = frozenset()
-    intervals: dict = field(default_factory=dict)
     checkpoints: tuple = ()
     warnings: tuple = ()
     starting_note: str = ''
@@ -75,7 +73,7 @@ def _similar_transactions(preview, key):
                     help='Repeated fills can share dates and amounts. Applying retains the selected entries; excluded source evidence stays saved.')
                 excluded.update(set(options)-set(kept))
             if position in preview.known_positions and comparison_status(item) != 'Units differ':
-                st.caption('All entries: units reconcile', help='A matching ending balance supports retaining these entries; it does not prove completeness.')
+                st.caption('All entries: units reconcile', help='The selected entries reconstruct the recorded holding.')
             elif position not in preview.known_positions:
                 st.caption('No reference balance')
     return excluded
@@ -168,9 +166,6 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
         names = {c['position_id']:c['name'] for c in preview.comparisons}
         table.insert(0, 'Position', table.position_id.map(names))
         st.dataframe(table.drop(columns=['position_id']), hide_index=True, width='stretch')
-    if action_label is None:
-        start, end = preview.intervals[position]
-        st.caption(f'Confirm complete history · {date.fromisoformat(start):%d %b %Y} – {date.fromisoformat(end):%d %b %Y}')
     if preview.warnings:
         with st.expander('Transaction details'):
             for warning in preview.warnings:
@@ -180,7 +175,7 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
     if multiple:
         from portfolio_app.security_history import history_fingerprint
         signature = digest([history_fingerprint(preview.journal), str(preview.comparisons),
-                            preview.intervals, sorted(excluded)])
+                            sorted(excluded)])
         state_key = key+'asset_reviews'
         state = st.session_state.get(state_key, {})
         if state.get('signature') != signature:
@@ -190,29 +185,25 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
         identities = [c['position_id'] for c in preview.comparisons]
         st.caption(f'Reviewed {len(choices)} / {len(identities)}')
         if position in choices:
-            st.caption('Complete history' if choices[position] else 'Incomplete history')
-        def decide(complete):
-            choices[position] = complete
+            st.caption('Reviewed')
+        def decide():
+            choices[position] = True
             following = next((p for p in identities if p not in choices), position)
             st.session_state[key+'holding'] = following
             st.session_state.setdefault('import_controls', {})[key+'holding'] = following
         with st.container(horizontal=True):
-            st.button('Confirm this holding', key=key+'confirm_asset', disabled=blocked,
-                      on_click=decide, args=(True,), type='primary')
-            st.button('Mark incomplete', key=key+'incomplete_asset', disabled=blocked,
-                      on_click=decide, args=(False,))
+            st.button('Accept this holding', key=key+'confirm_asset', disabled=blocked,
+                      on_click=decide, type='primary')
         with st.container(horizontal=True, key=key+'actions'):
             if st.button('Apply reviewed holdings', key=key+'save',
                          disabled=blocked or any(p not in choices for p in identities)):
-                apply(excluded, frozenset(p for p in identities if choices[p]))
+                apply(excluded)
             st.button(keep_label, key=key+'keep', on_click=keep)
         return preview
     with st.container(horizontal=True, key=key+'actions'):
-        if st.button(action_label or 'Apply and confirm history', key=key+'save', disabled=blocked, type='primary',
-                     help='Apply the displayed balances and retain selected similar entries. Confirming history declares all transactions in the shown interval recorded.' if action_label is None else 'Apply the displayed balances and retain selected similar entries.'):
-            apply(excluded, action_label is None)
-        if action_label is None and st.button('Apply incomplete history', key=key+'save_incomplete', disabled=blocked):
-            apply(excluded, False)
+        if st.button(action_label or 'Apply history', key=key+'save', disabled=blocked, type='primary',
+                     help='Apply the displayed balances and retain selected similar entries.'):
+            apply(excluded)
         st.button(keep_label, key=key+'keep', on_click=keep)
     if blocked:
         st.caption('Confirm replacement balances' if not checkpoints else 'Cash amounts missing')

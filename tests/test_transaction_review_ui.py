@@ -34,14 +34,14 @@ def test_matching_holdings_preview_then_confirm_without_blanket_checkboxes(tmp_p
     assert app.table[0].value['From history'].tolist() == ['2', '100.00', '50.00']
     assert any(item.value == 'Units and cost match' for item in app.caption)
     assert not any(s.label.startswith('Holding ·') for s in app.selectbox)
-    assert not button(app, 'Apply and confirm history').disabled
+    assert not button(app, 'Apply history').disabled
     assert (tmp_path/'holdings.csv').read_bytes() == original
     assert not load_journal(tmp_path)[0].securities
-    button(app, 'Apply and confirm history').click().run()
+    button(app, 'Apply history').click().run()
     assert not app.exception
     journal = load_journal(tmp_path)[0]
     assert sum(s.quantity for s in replay_securities(journal.securities).positions.values()) == 2
-    assert journal.securities[0].reviews[-1].complete_from
+    assert not journal.securities[0].reviews[-1].complete_from
 
 
 def test_earlier_holdings_require_explicit_starting_inventory(tmp_path):
@@ -61,15 +61,15 @@ def test_similar_rows_default_to_keep_and_can_be_excluded(tmp_path, decision, qu
     assert not app.exception
     button(app, 'Review against portfolio').click().run()
     assert not app.exception
-    assert not button(app, 'Apply and confirm history').disabled
+    assert not button(app, 'Apply history').disabled
     assert any(list(frame.value.get('Entry', [])) == [1, 2] for frame in app.dataframe)
     choice = next(s for s in app.multiselect if s.label.startswith('Keep transactions'))
     assert len(choice.value) == 2
     if decision == 'exclude':
         choice.set_value([read_csv(content)[0].identity]).run()
     assert not app.exception
-    assert not button(app, 'Apply and confirm history').disabled
-    button(app, 'Apply and confirm history').click().run()
+    assert not button(app, 'Apply history').disabled
+    button(app, 'Apply history').click().run()
     assert not app.exception
     journal = load_journal(tmp_path)[0]
     assert len(journal.transaction_imports) == 2
@@ -86,17 +86,17 @@ def test_asset_filter_includes_received_leg_without_excluding_other_transactions
     assert not app.exception
     assert button(app, 'Apply reviewed holdings').disabled
     first = next(s for s in app.selectbox if s.label == 'Holding to review').value
-    button(app, 'Confirm this holding').click().run()
+    button(app, 'Accept this holding').click().run()
     assert not app.exception
     assert button(app, 'Apply reviewed holdings').disabled
     assert not load_journal(tmp_path)[0].securities
     assert next(s for s in app.selectbox if s.label == 'Holding to review').value != first
-    button(app, 'Mark incomplete').click().run()
+    button(app, 'Accept this holding').click().run()
     assert not app.exception
     button(app, 'Apply reviewed holdings').click().run()
     assert not app.exception
     journal = load_journal(tmp_path)[0]
-    assert {b.position_id:bool(b.reviews[-1].complete_from) for b in journal.securities} == {b.position_id:b.position_id == first for b in journal.securities}
+    assert all(b.reviews and not b.reviews[-1].complete_from for b in journal.securities)
     positions = replay_securities(load_journal(tmp_path)[0].securities).positions
     assert sorted(s.quantity for s in positions.values()) == [4,8]
 
@@ -114,8 +114,8 @@ def test_similar_entries_are_one_group_and_exclusions_recompute_balances(tmp_pat
     choices[0].set_value([entries[0].identity, entries[2].identity]).run()
     assert not app.exception
     assert app.table[0].value['From history'].iloc[0] == '2'
-    assert not button(app, 'Apply and confirm history').disabled
-    button(app, 'Apply and confirm history').click().run()
+    assert not button(app, 'Apply history').disabled
+    button(app, 'Apply history').click().run()
     assert not app.exception
     positions = replay_securities(load_journal(tmp_path)[0].securities).positions
     assert sum(s.quantity for s in positions.values()) == 2
@@ -246,9 +246,9 @@ def test_partial_fills_use_same_review_for_every_source(tmp_path, source):
         choices = [m for m in app.multiselect if m.label.startswith('Keep transactions')]
         assert len(choices) == 1 and len(choices[0].value) == 3
         assert any(c.value == 'All entries: units reconcile' for c in app.caption)
-        assert not button(app, 'Apply and confirm history').disabled
+        assert not button(app, 'Apply history').disabled
         assert not app.radio
-    button(ordinary, 'Apply incomplete history').click().run()
+    button(ordinary, 'Apply history').click().run()
     assert not ordinary.exception
     assert next(iter(replay_securities(load_journal(history_dir)[0].securities).positions.values())).quantity == 0
 
@@ -304,8 +304,8 @@ def test_changing_reviewed_entries_requires_fresh_asset_decisions(tmp_path):
     app = launch(tmp_path, b'reference,date,type,asset,quantity,amount,currency\n'
         b'a,2024-01-01,buy,AUR,1,10,EUR\nb,2024-01-01,buy,AUR,1,10,EUR\nc,2024-01-01,buy,ORB,1,10,EUR\n')
     button(app, 'Review against portfolio').click().run()
-    button(app, 'Confirm this holding').click().run()
-    button(app, 'Confirm this holding').click().run()
+    button(app, 'Accept this holding').click().run()
+    button(app, 'Accept this holding').click().run()
     assert not app.exception
     assert not button(app, 'Apply reviewed holdings').disabled
     choice = next(s for s in app.multiselect if s.label.startswith('Keep transactions'))

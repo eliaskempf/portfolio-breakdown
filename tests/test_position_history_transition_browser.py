@@ -106,9 +106,13 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             dialog.get_by_role('radio', name='Price', exact=True).click(); settle(page)
             if pending_refresh:
                 page.wait_for_timeout(2300); settle(page)
-            playwright.expect(dialog.locator('.js-plotly-plot')).to_have_count(1)
+            # A queued timer may retain the outgoing chart in its hidden fixed slot.
+            # Only the selected Price chart may be visible to the user.
+            visible_chart = dialog.locator('.js-plotly-plot:visible')
+            playwright.expect(visible_chart).to_have_count(1)
             playwright.expect(metrics).to_have_count(3)
-            dialog.locator('.js-plotly-plot').wait_for(); settle(page)
+            visible_chart.wait_for(); settle(page)
+            assert visible_chart.evaluate('e=>e.data[0].name') == 'Price'
             assert metrics.all_text_contents() == expected_summary
             price_sizes = metrics.evaluate_all('es=>es.map(e=>({width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height}))')
             for a, b in zip(history_sizes, price_sizes):
@@ -126,15 +130,16 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             assert metrics.all_text_contents() == expected_summary
             assert not dialog.get_by_text('Required inputs', exact=True).count()
             assert not dialog.get_by_text('History inputs', exact=True).count()
-            dialog.get_by_role('button', name='Review transactions', exact=True).click(); settle(page)
-            assert dialog.get_by_role('button', name='Apply and confirm history', exact=True).count() == 1
+            dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+            dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
+            assert dialog.get_by_role('button', name='Apply history', exact=True).count() == 1
             assert not dialog.get_by_role('checkbox').count()
             assert not page.get_by_test_id('stException').count()
             # A long review remains scrollable without growing the outer window.
             assert dialog.evaluate('e=>{const s=e.lastElementChild; return s.scrollHeight>=s.clientHeight && getComputedStyle(s).overflowY==="auto";}')
             if viewport['height'] == 720:
                 assert dialog.evaluate('e=>e.lastElementChild.scrollHeight>e.lastElementChild.clientHeight')
-            dialog.get_by_role('button', name='Apply and confirm history', exact=True).scroll_into_view_if_needed()
+            dialog.get_by_role('button', name='Apply history', exact=True).scroll_into_view_if_needed()
             bounds = page.evaluate('cancelAnimationFrame(window.dialogFrame); window.dialogBounds')
             assert max(b['height'] for b in bounds)-min(b['height'] for b in bounds) <= 1
             assert max(b['top'] for b in bounds)-min(b['top'] for b in bounds) <= 1
@@ -142,17 +147,16 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             # Evidence arriving while Price is selected updates the shared row
             # without a chart switch or a whole-dialog remount.
             from dataclasses import replace
-            from portfolio_app.history_observations import load_observations, CoverageReview, HistoryScope
-            from portfolio_app.security_history import history_fingerprint
+            from portfolio_app.history_observations import load_observations
             dialog.get_by_role('radio', name='History', exact=True).click(); settle(page)
             dialog.get_by_role('radio', name='Price', exact=True).click(); settle(page)
             annualized = metrics.filter(has_text='Annualized return').get_by_test_id('stMetricValue')
-            playwright.expect(annualized).to_have_text('—')
+            playwright.expect(annualized).not_to_have_text('—')
+            previous_return = annualized.inner_text()
             store, revision = load_observations(tmp_path)
-            review = CoverageReview('synthetic-review', HistoryScope(('position-0',)),
-                '2024-01-01', date.today().isoformat(), history_fingerprint(journal))
-            save_observations(tmp_path, replace(store, reviews=(review,)), revision)
-            playwright.expect(annualized).not_to_have_text('—', timeout=10000)
+            correction = Observation('correction', 'price', 'position-0', date.today().isoformat(), 15, 'EUR', replaces='2')
+            save_observations(tmp_path, replace(store, observations=(*store.observations, correction)), revision)
+            playwright.expect(annualized).not_to_have_text(previous_return, timeout=10000)
             assert dialog.evaluate('e=>e===window.originalDialog')
             page.wait_for_timeout(2300)
             assert (tmp_path/'calculations.txt').read_text().count('summary') == 2

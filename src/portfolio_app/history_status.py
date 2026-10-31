@@ -84,7 +84,7 @@ def position_history_statuses(holdings, journal, observations, *, target='EUR', 
                                 include_points=False, calculation=calculation)
             # Check the recorded interval, not invented weekend/today prices.
             coverage = coverage_reasons(journal, scope, calculation.observations, dates[0], latest,
-                fingerprint=calculation.fingerprint, security_fingerprints=calculation._security_fingerprints)
+                events_by_position=calculation._events)
             reasons = [*coverage, *view.all_result.value_reasons, *view.all_result.flow_reasons,
                        *view.all_result.capital_reasons, *view.all_result.money_weighted_reasons,
                        *view.all_result.time_weighted_reasons]
@@ -94,12 +94,11 @@ def position_history_statuses(holdings, journal, observations, *, target='EUR', 
                 reasons.extend(calculation.value(scope, latest, target).reasons)
             summaries[scope] = view, coverage, tuple(dict.fromkeys(reasons)), latest
         view, coverage, reasons, latest = summaries[scope]
-        unconfirmed = any(issue_kind(reason) == 'coverage' for reason in coverage)
-        transaction_issues = [reason for reason in coverage if issue_kind(reason) != 'coverage']
+        transaction_issues = list(coverage)
         cost_issues = [reason for reason in view.all_result.capital_reasons if issue_kind(reason) == 'transaction']
         transaction_issues.extend(cost_issues)
         transactions = ('Unapplied changes' if pending else 'Needs transaction details' if transaction_issues else
-                        'Not confirmed' if unconfirmed else 'Confirmed')
+                        'Applied')
         evidence_reasons = tuple(issue_tree(reasons))
         missing_prices = any(issue_kind(reason) == 'price' for reason in evidence_reasons)
         missing_fx = any(issue_kind(reason) == 'fx' for reason in evidence_reasons)
@@ -109,8 +108,8 @@ def position_history_statuses(holdings, journal, observations, *, target='EUR', 
         mwr = 'Available' if view.all_result.money_weighted is not None else 'Unavailable' if view.useful else '—'
         twr = 'Available' if view.all_result.time_weighted is not None else 'Unavailable' if view.useful else '—'
         method_issue = view.useful and (mwr == 'Unavailable' or twr == 'Unavailable')
-        if pending or transaction_issues or unconfirmed:
-            action, screen = ('Review transactions' if pending or transaction_issues else 'Confirm history'), 'review'
+        if pending or transaction_issues:
+            action, screen = 'Review transactions', 'review'
         elif market_issue:
             action, screen = 'Review market data', 'list'
             route = 'accounts' if account_managed else 'holdings'
@@ -125,6 +124,6 @@ def position_history_statuses(holdings, journal, observations, *, target='EUR', 
         freshness = (carry_label+' · '+', '.join(carried) if current.amount is not None and carried else
                      'Current' if current.amount is not None else f'Valued {view.all_end}')
         results.append(HistoryStatus(identity, transactions, market, action, route, screen, scope, reasons,
-                                     bool(pending or transaction_issues or unconfirmed or market_issue or method_issue), view.all_start, latest, mwr, twr,
+                                     bool(pending or transaction_issues or market_issue or method_issue), view.all_start, latest, mwr, twr,
                                      freshness))
     return tuple(results)

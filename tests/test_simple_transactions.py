@@ -129,8 +129,9 @@ def test_estimates_enable_normal_returns_but_missing_prices_still_block():
     assert result.time_weighted == pytest.approx(.2)
     missing=calculate_history(journal,scope,replace(store,observations=()),'2024-01-01','2024-01-03')
     assert missing.money_weighted is None and missing.time_weighted is None
-    incomplete=calculate_history(journal,scope,replace(store,reviews=()),'2024-01-01','2024-01-03')
-    assert incomplete.money_weighted is None
+    without_review=calculate_history(journal,scope,replace(store,reviews=()),'2024-01-01','2024-01-03')
+    assert without_review.money_weighted == result.money_weighted
+    assert without_review.time_weighted == result.time_weighted
 
 
 def test_atomic_new_positions_roll_back_on_journal_failure(tmp_path, monkeypatch):

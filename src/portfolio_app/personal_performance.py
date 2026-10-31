@@ -97,7 +97,6 @@ class HistoryCalculation:
         self._flow_dates = sorted(set(self._security_dates) | {e.date for e in effective_events(journal)})
         self.fingerprint = history_fingerprint(journal)
         self._facts = {}
-        self._security_fingerprints = {}
 
     def _get(self, key, load):
         if key not in self._facts:
@@ -324,49 +323,12 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
     return AmountResult(None if reasons else total, tuple(reasons), tuple(evidence))
 
 
-def coverage_reasons(journal, scope, observations, start, end, *, fingerprint=None, security_fingerprints=None, events_by_position=None):
-    """A quantity match cannot certify omitted offsetting events or income."""
+def coverage_reasons(journal, scope, observations, start, end, *, events_by_position=None):
+    """Check concrete gaps in the applied ledger; no separate completeness attestation."""
     def events_for(book):
         return events_by_position[book.position_id] if events_by_position is not None else selected_events(book)
     reasons = list(scope.unresolved)
     books = {b.position_id: b for b in journal.securities}
-    fingerprint = fingerprint or history_fingerprint(journal)
-    from portfolio_app.security_history import security_history_fingerprint
-    security_fingerprints = {} if security_fingerprints is None else security_fingerprints
-    def position_fingerprint(identity):
-        if identity not in security_fingerprints:
-            security_fingerprints[identity] = security_history_fingerprint(journal, identity)
-        return security_fingerprints[identity]
-    def matches(review):
-        if review.journal_fingerprint == fingerprint:
-            return True  # Existing whole-journal attestations retain their contract.
-        return (not review.scope.accounts and len(review.scope.positions) == 1
-                and review.journal_fingerprint == position_fingerprint(review.scope.positions[0]))
-    reviewed = any(set(scope.positions) <= set(r.scope.positions) and set(scope.accounts) <= set(r.scope.accounts)
-                   and not r.scope.unresolved and r.start <= start and r.end >= end
-                   and matches(r) for r in observations.reviews)
-    if not reviewed and not scope.accounts and scope.positions and not scope.unresolved:
-        from portfolio_app.security_history import accounting_fingerprint
-        def position_reviewed(identity):
-            book = books.get(identity)
-            if book is None or not book.active:
-                return False
-            # A reviewed inception at zero covers earlier empty time; a later
-            # nonzero snapshot does not attest anything about the missing period.
-            since = events_for(book)[0].date if confirmed_empty_before(book, start, events=events_for(book)) else start
-            if any(identity in r.scope.positions and not r.scope.unresolved
-                   and r.start <= since and r.end >= end and matches(r) for r in observations.reviews):
-                return True
-            if not book.reviews:
-                return False
-            review = book.reviews[-1]
-            return (bool(review.complete_from) and review.complete_from <= since and review.complete_through >= end
-                        and review.active_ids == book.active_ids
-                        and (review.facts_fingerprint == position_fingerprint(book.position_id)
-                             or review.facts_fingerprint == accounting_fingerprint(journal)))
-        reviewed = all(position_reviewed(identity) for identity in scope.positions)
-    if not reviewed:
-        reasons.append(Issue('Review complete scope membership, transactions, income and charges for this interval', 'coverage'))
     for identity in scope.positions:
         book = books.get(identity)
         if book is None or not book.active:
@@ -624,8 +586,7 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
     calculation = calculation or HistoryCalculation(journal, observations)
     observations = calculation.observations
     opening, ending = calculation.opening(scope, start, target), calculation.value(scope, end, target)
-    coverage = coverage_reasons(journal, scope, observations, start, end, fingerprint=calculation.fingerprint,
-                                security_fingerprints=calculation._security_fingerprints, events_by_position=calculation._events)
+    coverage = coverage_reasons(journal, scope, observations, start, end, events_by_position=calculation._events)
     flows, missing_flows = calculation.flows(scope, start, end, target)
     flow_reasons = tuple(dict.fromkeys((*coverage, *missing_flows)))
     net = sum((f.amount for f in flows), ZERO) if not flow_reasons else None

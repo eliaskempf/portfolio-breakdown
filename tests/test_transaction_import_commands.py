@@ -91,34 +91,28 @@ def test_manual_followup_preserves_imported_movements(tmp_path):
     assert replay_securities(result.securities).positions['desk'].quantity==3
 
 
-def test_combined_application_records_scoped_completeness(tmp_path):
-    from portfolio_app.transaction_import_commands import import_confirmation_intervals
+def test_combined_application_records_reconciliation_audit(tmp_path):
     from portfolio_app.csv_transaction_imports import prepare_import
     from portfolio_app.security_history import security_history_fingerprint
     snapshot = setup(tmp_path)
     rows = scenario()
     preview = prepare_import(load_journal(tmp_path)[0], snapshot.holdings, rows, MAPPING,
                              selected_ids=[r.identity for r in rows], starts_at_zero=True)
-    intervals = import_confirmation_intervals(preview.journal, {c['position_id'] for c in preview.comparisons})
-    result = save(tmp_path, snapshot, complete_intervals=intervals)
+    result = save(tmp_path, snapshot)
     for book in result.journal.securities:
         review = book.reviews[-1]
-        assert (review.complete_from, review.complete_through) == intervals[book.position_id]
+        assert not review.complete_from and not review.complete_through
         assert review.facts_fingerprint == security_history_fingerprint(result.journal, book.position_id)
-    # A changed companion leg invalidates the connected position's attestation.
+    # The audit fingerprint still records the connected financial facts.
     companion = next(b for b in result.journal.securities if b.position_id == 'orb')
     changed = replace(companion, records=(*companion.records, replace(companion.records[0], id='invented-correction', source='manual', replaces=companion.records[0].id)))
     journal = replace(result.journal, securities=tuple(changed if b.position_id == 'orb' else b for b in result.journal.securities))
     assert security_history_fingerprint(journal, 'desk') != security_history_fingerprint(result.journal, 'desk')
 
 
-def test_incomplete_application_does_not_confirm_and_stale_intervals_do_not_write(tmp_path):
-    snapshot = setup(tmp_path)
-    with pytest.raises(DataError, match='intervals changed'):
-        save(tmp_path, snapshot, complete_intervals={'desk': ('2024-01-01', '2024-04-08')})
-    assert not load_journal(tmp_path)[0].securities
-    result = save(tmp_path, snapshot)
-    assert all(not b.reviews[-1].complete_from for b in result.journal.securities)
+def test_application_needs_no_completeness_metadata(tmp_path):
+    result = save(tmp_path, setup(tmp_path))
+    assert all(b.reviews and not b.reviews[-1].complete_from for b in result.journal.securities)
 
 
 def test_imported_economic_event_removal_includes_every_leg(tmp_path):
@@ -164,18 +158,12 @@ def test_failed_history_publication_rolls_back_staged_listing(tmp_path, monkeypa
     assert not load_journal(tmp_path)[0].securities
 
 
-def test_partial_asset_confirmations_preserve_atomic_import(tmp_path):
-    from portfolio_app.transaction_import_commands import import_confirmation_intervals
+def test_reviewed_import_applies_all_legs_without_separate_confirmations(tmp_path):
     from portfolio_app.csv_transaction_imports import prepare_import
     snapshot = setup(tmp_path)
     rows = scenario()
     preview = prepare_import(load_journal(tmp_path)[0], snapshot.holdings, rows, MAPPING,
                              selected_ids=[r.identity for r in rows], starts_at_zero=True)
-    intervals = import_confirmation_intervals(preview.journal, {c['position_id'] for c in preview.comparisons})
-    with pytest.raises(DataError, match='intervals changed'):
-        save(tmp_path, snapshot, complete_intervals={'unknown': next(iter(intervals.values()))})
-    assert not load_journal(tmp_path)[0].securities
-    result = save(tmp_path, snapshot, complete_intervals={'desk': intervals['desk']})
-    assert {b.position_id:bool(b.reviews[-1].complete_from) for b in result.journal.securities} == {
-        b.position_id:b.position_id == 'desk' for b in result.journal.securities}
+    result = save(tmp_path, snapshot)
+    assert all(b.reviews and not b.reviews[-1].complete_from for b in result.journal.securities)
     assert replay_securities(result.journal.securities).positions == replay_securities(preview.journal.securities).positions

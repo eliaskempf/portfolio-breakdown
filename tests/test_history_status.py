@@ -46,10 +46,10 @@ def test_statuses_distinguish_missing_history_pending_confirmation_prices_and_fx
     assert statuses['none'].transactions == 'No history' and statuses['none'].action == 'Add transactions'
     assert statuses['unapplied'].transactions == 'Not applied' and statuses['unapplied'].screen == 'review'
     assert statuses['pending'].transactions == 'Unapplied changes'
-    assert statuses['unconfirmed'].transactions == 'Not confirmed' and statuses['unconfirmed'].action == 'Confirm history'
+    assert statuses['unconfirmed'].transactions == 'Applied' and statuses['unconfirmed'].action == 'View history'
     assert statuses['prices'].market == 'Prices missing' and statuses['prices'].needs_attention
     assert statuses['fx'].market == 'FX / cash inputs missing' and statuses['fx'].needs_attention
-    assert statuses['ready'].transactions == 'Confirmed' and statuses['ready'].market == 'Available'
+    assert statuses['ready'].transactions == 'Applied' and statuses['ready'].market == 'Available'
     assert not statuses['ready'].needs_attention and statuses['ready'].end == '2025-01-03'
     assert statuses['snapshot'].market == 'Starting value only' and not statuses['snapshot'].needs_attention
 
@@ -85,7 +85,7 @@ def test_account_history_and_missing_cash_are_not_security_purchase_gaps():
     holdings = pd.DataFrame([dict(position_id=identity, instrument_type='cash') for identity in ('linked', 'unlinked')])
     statuses = position_history_statuses(holdings, journal, ObservationStore(), today=TODAY)
     assert all(status.target == 'accounts' and status.action == 'Open account journal' for status in statuses)
-    assert statuses[0].transactions == 'Not confirmed'
+    assert statuses[0].transactions == 'Applied'
     assert statuses[1].transactions == 'No account history'
 
 
@@ -97,7 +97,7 @@ def test_applied_removal_does_not_leave_permanent_unapplied_changes():
     book = replace(book, records=(*book.records, buy, void))
     journal = replace(journal, securities=tuple(book if b.position_id == book.position_id else b for b in journal.securities))
     row = next(s for s in position_history_statuses(holdings, journal, observations, today=TODAY) if s.position_id == 'ready')
-    assert row.transactions == 'Not confirmed'  # Changed facts need review, not reapplying a deleted transaction.
+    assert row.transactions == 'Applied'  # Applied removal needs no additional confirmation.
 
 
 def test_unknown_fees_require_transaction_review_even_with_matching_balances():
@@ -124,7 +124,7 @@ def test_method_restriction_is_separate_from_confirmed_transactions_and_prices()
     observations = replace(observations, reviews=(CoverageReview('new-review', HistoryScope(('ready',)),
         '2024-01-01', '2025-01-03', history_fingerprint(journal)),))
     row = next(s for s in position_history_statuses(holdings, journal, observations, today=TODAY) if s.position_id == 'ready')
-    assert row.transactions == 'Confirmed' and row.market == 'Prices missing'
+    assert row.transactions == 'Applied' and row.market == 'Prices missing'
     assert row.action == 'Review market data'
     assert row.money_weighted == 'Available' and row.time_weighted == 'Unavailable'
     assert row.needs_attention
@@ -139,6 +139,6 @@ def test_missing_snapshot_cost_fx_does_not_unconfirm_transactions():
     journal=replace(journal,securities=tuple(book if b.position_id=='ready' else b for b in journal.securities))
     store=replace(store,reviews=(CoverageReview('review',HistoryScope(('ready',)),'2024-01-01','2025-01-03',history_fingerprint(journal)),))
     row=next(s for s in position_history_statuses(holdings,journal,store,today=TODAY) if s.position_id=='ready')
-    assert row.transactions=='Confirmed'
+    assert row.transactions=='Applied'
     assert row.market=='FX / cash inputs missing'
     assert row.money_weighted==row.time_weighted=='Available'

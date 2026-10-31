@@ -272,8 +272,6 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
         render_transaction(directory, journal, revision)
     from portfolio_app.account_activity_ui import render_activity
     render_activity(directory, journal, revision, key=key+'journal_')
-    from portfolio_app.history_coverage_ui import render_account_coverage_review
-    render_account_coverage_review(directory, journal, key=key+'coverage_')
 
 
 def render_transaction(directory, journal, revision, *, position_ids=None, key_prefix=None):

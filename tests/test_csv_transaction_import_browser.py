@@ -26,9 +26,9 @@ def upload(page, content):
     settle(page)
 
 
-def apply_batch_incomplete(page):
+def apply_reviewed_batch(page):
     for _ in range(2):
-        page.get_by_role('button', name='Mark incomplete', exact=True).click(); settle(page)
+        page.get_by_role('button', name='Accept this holding', exact=True).click(); settle(page)
     page.get_by_role('button', name='Apply reviewed holdings', exact=True).click(); settle(page)
 
 
@@ -55,7 +55,7 @@ def test_simple_upload_apply_edit_and_remove_in_normal_transactions(import_page)
     page.get_by_role('tab', name='Overview', exact=True).click(); settle(page)
     page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
     page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
-    apply_batch_incomplete(page)
+    apply_reviewed_batch(page)
     open_transactions(page, 'Aur')
     table = page.get_by_role('table', name='Transactions', exact=True)
     playwright.expect(table).to_be_visible()
@@ -68,7 +68,7 @@ def test_simple_upload_apply_edit_and_remove_in_normal_transactions(import_page)
     page.get_by_role('button', name='Save changes', exact=True).click(); settle(page)
     assert sorted(s.quantity for s in replay_securities(load_journal(path.parent)[0].securities).positions.values()) == [4,8]
     page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
-    apply_batch_incomplete(page)
+    apply_reviewed_batch(page)
     assert sorted(s.quantity for s in replay_securities(load_journal(path.parent)[0].securities).positions.values()) == [5,8]
     table = page.get_by_role('table', name='Transactions', exact=True)
     table.get_by_role('checkbox', name=re.compile('Select .*Exchange')).check()
@@ -85,7 +85,7 @@ def test_estimated_checkpoint_requires_explicit_reconciliation(import_page):
     stream=StringIO(); writer=csv.DictWriter(stream,fieldnames=FIELDS_V2); writer.writeheader(); writer.writerow(row('balance',**estimate()).facts)
     upload(page, stream.getvalue().encode())
     page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
-    apply=page.get_by_role('button', name='Apply and confirm history', exact=True)
+    apply=page.get_by_role('button', name='Apply history', exact=True)
     playwright.expect(apply).to_be_disabled()
     page.get_by_text('Accept the displayed replacement balances', exact=True).click(); settle(page)
     playwright.expect(apply).to_be_enabled()
@@ -135,7 +135,7 @@ def test_listing_suggestions_dropdown_and_live_search_survive_navigation(import_
     page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     assert not page.get_by_role('combobox', name='Holding · BTC', exact=True).count()
     page.screenshot(path=str(path.parent.parent / 'synthetic-shared-review.png'))
-    page.get_by_role('button', name='Apply incomplete history', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
     saved = read_snapshot(path).holdings
     assert saved.ticker.tolist() == ['BTC-EUR']
     assert saved.instrument_type.tolist() == ['crypto']
@@ -221,17 +221,17 @@ def test_partial_fills_share_one_optional_group_and_apply_together(import_page):
     upload(page, b'reference,date,type,asset,quantity,amount,currency\n'
         b'b,2024-01-01,buy,AUR,6,60,EUR\n'
         b's1,2024-01-02,sell,AUR,2,30,EUR\ns2,2024-01-02,sell,AUR,2,30,EUR\ns3,2024-01-02,sell,AUR,2,30,EUR\n')
-    assert not page.get_by_role('button', name='Apply and confirm history', exact=True).count()
+    assert not page.get_by_role('button', name='Apply history', exact=True).count()
     page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     assert not page.get_by_role('combobox', name='Resolve match', exact=False).count()
     assert not page.get_by_role('combobox', name='Holding · AUR', exact=True).count()
     group = page.get_by_text('3 similar transactions · AUR', exact=True)
     playwright.expect(group).to_be_visible()
-    playwright.expect(page.get_by_role('button', name='Apply and confirm history', exact=True)).to_be_enabled()
+    playwright.expect(page.get_by_role('button', name='Apply history', exact=True)).to_be_enabled()
     group.click(); settle(page)
     page.screenshot(path=str(path.parent.parent / 'synthetic-partial-fills-review.png'))
     assert not path.exists()
-    page.get_by_role('button', name='Apply incomplete history', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
     assert not page.get_by_role('dialog').count()
     journal, _ = load_journal(path.parent)
     assert not page.get_by_role('table', name='Positions', exact=True).get_by_text('Aur', exact=True).count()
