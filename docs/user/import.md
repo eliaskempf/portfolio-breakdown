@@ -146,8 +146,10 @@ After import, use the normal **Transactions** list to edit or remove entries,
 regardless of whether they came from CSV, PDF or manual entry. Exchanges, transfers
 and fees paid from another asset are reviewed with all affected holdings. Original
 evidence remains retained. Reimporting the same references does not duplicate
-transactions or undo later edits/removals; changed source rows require explicit
-correction review. Economically similar rows from different sources require a
+transactions or undo later edits/removals. Moving rows within an export keeps
+their previously accepted order; use an explicit `order` to correct chronology.
+Changed source rows show their changed fields and require approval individually,
+including a warning when they replace a later edit or removal. Economically similar rows from different sources require a
 review rather than automatic deletion.
 
 Prepare wallet/staking movements and personal approximations before import when

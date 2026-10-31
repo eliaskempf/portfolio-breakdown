@@ -9,7 +9,7 @@ from portfolio_app.security_history import (
     duplicate_candidates, effective_holdings, replay_securities, selected_events,
 )
 from portfolio_app.history_commands import book_for
-from portfolio_app.transaction_csv import ImportReceipt, digest
+from portfolio_app.transaction_csv import ImportReceipt, digest, retain_import_interpretations
 
 
 @dataclass(frozen=True)
@@ -107,6 +107,11 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
     cash_accounts = cash_accounts or {}
     selected_ids, correction_ids = set(selected_ids), set(correction_ids)
     rows = tuple(rows)
+    interpreted = retain_import_interpretations(rows, journal.transaction_imports)
+    aliases = {row.identity: retained.identity for row, retained in zip(rows, interpreted)}
+    selected_ids = {aliases.get(identity, identity) for identity in selected_ids}
+    correction_ids = {aliases.get(identity, identity) for identity in correction_ids}
+    rows = interpreted
     aggregate_accounts = tuple(sorted(set(aggregate_accounts)))
     aggregate_id = 'aggregate:'+digest(aggregate_accounts) if aggregate_accounts else ''
     if aggregate_accounts:
