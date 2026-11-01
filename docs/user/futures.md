@@ -309,7 +309,12 @@ values retain **Stale**, **Manual**, **Recorded**, **Revised**, or **No price** 
 same quote time retain the first observation with neutral styling until a newer
 quote or manual mark resolves valuation. Quotes become stale after 30 minutes
 of scheduled trading time: closed overnight hours, weekends and published exchange
-holidays do not age a recent closing quote. An already-old quote stays stale.
+holidays do not age a recent closing quote. While the market is closed, the latest
+available trade from its latest completed session uses compact **Market closed**
+details instead of a stale warning, even if the last trade preceded the close by
+more than 30 minutes. Its timestamp remains available; it is not presented as an
+official closing price. Quotes from an earlier session, conflicting prices and
+failed refreshes retain their qualifications. The trading-age rule resumes at reopening.
 The latest session's official settlement also retains normal gain coloring while
 the market is closed; it is qualified again when trading reopens. Manual marks
 and execution-price fallbacks remain qualified.

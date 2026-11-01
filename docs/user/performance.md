@@ -123,7 +123,8 @@ calculations or editability. Exchanges and transfers are single economic events
 whose connected holdings are reviewed together.
 
 Explicitly supplied estimates can support daily TWR and annualized XIRR. Affected
-results are labelled **Estimated**. Missing transaction details and market
+results retain the estimate qualification in gain/TWR and annualized-return
+tooltips, without separate estimate captions. Missing transaction details and market
 observations remain separate limitations. An estimated acquisition cost does not by itself
 make a return estimated when that return uses independently known cash flows and
 market values. Unknown amounts stay unknown; a matching ending quantity does not

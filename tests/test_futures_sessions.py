@@ -33,13 +33,30 @@ def test_weekend_and_reopening_count_only_trading_minutes(now, status):
     assert value.qualified == (status == 'stale')
 
 
-def test_old_quote_and_conflict_do_not_become_fresh_over_weekend():
+@pytest.mark.parametrize('now,status', [
+    ('2026-01-09T20:00', 'stale'),
+    ('2026-01-09T21:01', 'market_closed'),
+    ('2026-01-10T12:00', 'market_closed'),
+    ('2026-01-12T00:09', 'market_closed'),
+    ('2026-01-12T00:11', 'stale'),
+])
+def test_latest_session_last_trade_is_quiet_while_closed(now, status):
     c = contract()
     q = PriceObservation(c.id, '2026-01-09', 100, kind='mark', quote_at=at('2026-01-09T19:00').isoformat())
-    assert freshness(q, now=at('2026-01-10T12:00'), contract=c).qualified
-    q = replace(q, quote_at=at('2026-01-09T20:45').isoformat())
+    value = freshness(q, now=at(now), contract=c)
+    assert value.status == status
+    assert value.qualified == (status == 'stale')
+    assert q.quote_at in value.detail
+
+
+def test_prior_session_quote_failure_and_conflict_remain_qualified_while_closed():
+    c = contract()
+    q = PriceObservation(c.id, '2026-01-09', 100, kind='mark', quote_at=at('2026-01-09T19:00').isoformat())
+    assert freshness(q, now=at('2026-01-10T12:00'), contract=c, error='Invented outage').qualified
     assert freshness(q, now=at('2026-01-10T12:00'), contract=c, disputed=True).qualified
     assert freshness(q, now=at('2026-01-10T12:00')).qualified
+    older = replace(q, date='2026-01-08', quote_at=at('2026-01-08T19:00').isoformat())
+    assert freshness(older, now=at('2026-01-10T12:00'), contract=c).qualified
 
 
 @pytest.mark.parametrize('day,kind,fallback,qualified', [

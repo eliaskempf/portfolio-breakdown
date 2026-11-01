@@ -41,7 +41,8 @@ export default function({parentElement}) {
                 (amount > 0 ? '↑ ' : amount < 0 ? '↓ ' : '') + number.format(Math.abs(amount)) + '%' : signed(amount)) : metric.gainSummary;
               if (text.textContent !== gain) text.textContent = gain;
               const tooltip = points ? (metric.gainPercent ? 'TWR · ' : 'Gain · ') + 'All history' + (valid ? ' to ' + date.format(new Date(point.x)) : '') +
-                (metric.gainPercent ? ' · Click for amount' : ' · Click for TWR') : metric.gainTooltip;
+                (metric.gainPercent ? ' · Click for amount' : ' · Click for TWR') +
+                (metric.gainHelp ? ' · ' + metric.gainHelp : '') : metric.gainTooltip;
               if (tooltip) delta.setAttribute('title', tooltip);
               // Keep the native metric styling at rest and whenever the sign
               // matches it. For a sign change, use the component's theme palette.

@@ -48,7 +48,7 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
                 cached, signature = (view, known), current
             view, known = cached
             gain, capital = known.amount, known.capital
-            gain_note = known.coverage_note if known.partial else ''
+            gain_note = known.coverage_note if known.partial and known.coverage_note != 'Estimated gain' else ''
             gain_help = known.coverage_help
             capital_help = ('Known opening acquisition cost plus recorded net contributions through today. '
                             'Includes sale proceeds, income and expenses; can be negative after withdrawals. '
@@ -59,6 +59,8 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
             return_help = f'All history · {view.all_start} – {view.all_end}. Money-weighted; unchanged by chart type, range or hover.'
             if full.days < 365:
                 return_help += f' Annualized from a short interval of {full.days} days.'
+            if estimated_return:
+                return_help += ' Estimated return: uses supplied estimates in dated transaction inputs.'
             if annualized is None:
                 reasons = readable_reasons(directory, journal, scope, full.money_weighted_reasons)
                 return_help += ' ' + ' '.join(reasons[:3])
@@ -74,6 +76,4 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
             if not has_history and row.get('cost_estimated'):
                 second.caption('Estimated cost', help=row.get('cost_note') or 'Acquisition cost uses an estimated conversion.')
             third.metric('Annualized return', return_percent(annualized), help=return_help)
-            if estimated_return and annualized is not None:
-                third.caption('Estimated', help='Uses supplied estimates in the dated transaction inputs.')
     summary()

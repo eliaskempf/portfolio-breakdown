@@ -158,7 +158,8 @@ def test_stale_fresh_failure_settlement_and_popup_navigation(futures_page):
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
 
-def test_closed_market_settlement_has_compact_accessible_details(futures_page):
+@pytest.mark.parametrize('last_trade', [False, True])
+def test_closed_market_latest_session_has_compact_accessible_details(futures_page, last_trade):
     page, root, journal, contract = futures_page
     row = page.locator('tr[data-position-id="investment:synthetic"]')
     row.wait_for(); settle(page)
@@ -167,17 +168,25 @@ def test_closed_market_settlement_has_compact_accessible_details(futures_page):
     (root/'clock.next').replace(root/'clock.txt')
     SettlementArchive(root).record(contract, PriceObservation(contract.id, '2026-01-09', 1020,
         source='Invented settlement'))
+    title = 'Settlement · 09 Jan · Market closed'
+    if last_trade:
+        now = datetime.fromisoformat('2026-01-10T12:00:00+00:00')
+        record_result(root, contract, PriceObservation(contract.id, '2026-01-09', 1025,
+            kind='mark', source='Invented last trade', quote_at='2026-01-09T19:00:00+00:00'),
+            '', attempted_at=now, now=now)
+        title = 'Market closed · Latest available quote'
     page.get_by_role('button', name='Refresh prices').click(); settle(page)
     indicator = row.get_by_label('Valuation details', exact=True)
     playwright.expect(indicator).to_have_text('ⓘ')
     playwright.expect(row.locator('td').first.get_by_label('Valuation details')).to_have_count(1)
     playwright.expect(row.locator('td.number details')).to_have_count(0)
-    playwright.expect(indicator).to_have_attribute('title', 'Settlement · 09 Jan · Market closed')
+    playwright.expect(indicator).to_have_attribute('title', title)
     assert row.locator('td.positive').count() >= 1
     assert 'Settlement' not in row.inner_text()
+    assert 'Stale' not in row.inner_text()
     indicator.focus(); page.keyboard.press('Enter')
     playwright.expect(row.locator('details')).to_have_attribute('open', '')
-    playwright.expect(row).to_contain_text('Settlement · 09 Jan · Market closed')
+    playwright.expect(row).to_contain_text(title)
     playwright.expect(page.get_by_role('dialog')).to_have_count(0)
     select_tab(page, 'Positions')
     row = page.locator('tr[data-position-id="investment:synthetic"]')

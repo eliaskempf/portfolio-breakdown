@@ -948,6 +948,11 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     displayed_gain = (100*twr if twr is not None else None) if percent else gain
     gain_text = return_percent(displayed_gain) if percent else (money(gain,signed=True) if gain is not None else '—')
     gain_tooltip = ('Daily TWR · ' if percent else 'Gain · ') + ('All history' if view.covers_full_history else period) + (' · Click for amount' if percent else ' · Click for TWR')
+    gain_help = ('Estimated TWR: uses supplied transaction estimates and the normal daily timing convention.'
+                 if (full if view.covers_full_history else result).estimated else '') if percent else (
+                     known.coverage_help if known.coverage_note == 'Estimated gain' else '')
+    if gain_help:
+        gain_tooltip += ' · '+gain_help
     with summary:
         if show_summary and (total_value is not None or full.ending_value is not None):
             cols = st.columns([2,1,1])
@@ -956,8 +961,9 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
                     delta_color=('inverse' if percent and displayed_gain < 0 else 'normal') if displayed_gain else 'off', delta_arrow='off',
                     help=f"{'TWR' if percent else 'Gain'}: {'all history' if view.covers_full_history else period}. Chart hover: total to date. "
                         + ('Daily convention: inflows at day start, outflows at day end; fees included. ' if percent else '')
+                        + gain_help + ' '
                         + explanation((full if view.covers_full_history else result).time_weighted_reasons if percent else known.reasons))
-                if known.partial:
+                if known.partial and known.coverage_note != 'Estimated gain':
                     st.caption(known.coverage_note, help=known.coverage_help)
             from portfolio_app.metric_interactions import toggle_gain_unit
             toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain, container_key=value_key, interaction_key=interaction_key, tooltip=gain_tooltip)
@@ -967,11 +973,8 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
             cols[2].metric('Annualized return', return_percent(None if full.money_weighted is None else 100*full.money_weighted),
                 help=f'All history · {view.all_start} – {view.all_end}. Money-weighted; fixed across periods and hover.'
                     + (f' Annualized from a short interval of {full.days} days.' if full.days < 365 else '')
+                    + (' Estimated return: uses supplied estimates in dated flows.' if full.estimated else '')
                     + (' '+explanation(full.money_weighted_reasons) if full.money_weighted is None else ''))
-    if percent and (full if view.covers_full_history else result).estimated:
-        st.caption('Estimated TWR', help='Uses supplied transaction estimates and the normal daily timing convention.')
-    if show_summary and full.estimated and full.money_weighted is not None:
-        st.caption('Estimated annualized return', help='Uses supplied estimates in dated flows.')
     points = view.points
     if sum(p['Value'] is not None for p in points) >= 2:
         import plotly.graph_objects as go
@@ -990,7 +993,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
             meta=dict(historyInspection=dict(currency=target, symbol_money=True, metrics=[
                 dict(key=value_key, trace='Value', label=label, summary=money(total_value),
                     gainSummary=gain_text, gainAmount=float(displayed_gain) if displayed_gain is not None else None,
-                    gainPercent=percent, gainTooltip=gain_tooltip),
+                    gainPercent=percent, gainTooltip=gain_tooltip, gainHelp=gain_help),
                 dict(key=key+'hover_capital', trace='Invested capital', label='Invested capital', summary=money(capital))] if show_summary else [])))
         figure = chart_hover(money_history_axes(figure, target))
         if not show_summary:

@@ -97,7 +97,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                          label=('Category value' if bucket else 'Portfolio value') if exposure_result is not None else None,
                          funded_gain=exposure_result is not None, strategy_gain=has_strategy, freshness=freshness, freshness_rows=selected,
                          known=history.get('current_gain') if history else None,
-                         twr=history['view'].all_result.time_weighted if history else None)
+                         twr=history['view'].all_result.time_weighted if history else None,
+                         twr_estimated=history['view'].all_result.estimated if history else False)
         if second is not None:
             with second:
                 from portfolio_app.portfolio_exposure_ui import render_equity_exposure_metric

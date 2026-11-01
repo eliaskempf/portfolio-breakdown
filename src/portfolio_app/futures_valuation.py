@@ -66,9 +66,10 @@ def _freshness(observation, *, now=None, fallback=False, error='', closed=False,
         status = 'delayed' if current else 'stale'
         label = '' if status == 'delayed' else f'Stale · {age}'
         detail += f' Quote time {observation.quote_at}; declared delay {observation.delay_minutes or 0} minutes.'
-        if current and elapsed is not None and session is not None and not session.is_open:
+        if (session is not None and not session.is_open and not error
+                and session.opening <= stamp <= session.closing):
             status, label = 'market_closed', 'Market closed'
-            detail += ' Quote remains within 30 minutes of scheduled trading time; closed hours do not age it.'
+            detail += ' Latest available trade from the latest completed session; market closed. This is not an official closing or settlement price.'
         if disputed:
             status, label = 'revised', f'Revised · {age}'
             detail += ' Conflicting source prices at this quote time; first observation retained pending a newer quote or manual mark.'
