@@ -137,7 +137,7 @@ def valuation_fx(observations, source, target, stamp):
     return None, ()
 
 
-def price_at(observations, subjects, stamp, *, events=()):
+def price_at(observations, subjects, stamp, *, events=(), contract=None):
     """Exact close first; carry only across an evidenced exchange closure.
 
     A split in the intervening interval needs a new correctly based quote.
@@ -158,6 +158,11 @@ def price_at(observations, subjects, stamp, *, events=()):
         if len(candidates) != 1:
             continue
         previous = candidates[0]
+        if contract is not None:
+            from portfolio_app.futures_sessions import closed_interval as futures_closed_interval
+            if futures_closed_interval(contract, previous.date, stamp):
+                return previous
+            continue
         if not previous.listing or not previous.calendar or not previous.exchange_timezone:
             continue
         if any(previous.date < e.date <= stamp and e.kind in ('split', 'note') for e in events):

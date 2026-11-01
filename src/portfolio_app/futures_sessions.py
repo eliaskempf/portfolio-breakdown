@@ -1,4 +1,4 @@
-"""Verified Eurex sessions used only for quote freshness, never for cash posting.
+"""Verified Eurex sessions for valuation and freshness, never for cash posting.
 
 Sources: https://www.eurex.com/ex-en/trade/trading-calendar/holiday-regulations
 and the 2026 trading-hours calendar linked there (including the CEST footnote).
@@ -58,6 +58,21 @@ def market_session(contract, now):
             return MarketSession(opening, closing, local < closing)
         day -= timedelta(days=1)
     return None
+
+
+def closed_interval(contract, observed, requested):
+    """A historical close may span closures, never a missing trading session."""
+    first, last = date.fromisoformat(observed), date.fromisoformat(requested)
+    if first >= last or (last-first).days > 31 or not _supported(contract, first):
+        return False
+    if _bounds(contract.product, first) is None:
+        return False
+    day = first+timedelta(days=1)
+    while day <= last:
+        if not _supported(contract, day) or _bounds(contract.product, day) is not None:
+            return False
+        day += timedelta(days=1)
+    return True
 
 
 def trading_age(contract, stamp, now):

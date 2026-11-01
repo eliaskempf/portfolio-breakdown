@@ -222,6 +222,9 @@ trades, distributions or splits. Downloaded closes are converted back to the
 units traded on each date using the provider's split evidence, without dividend
 reinvestment or automatic price repair. Manual observations take precedence.
 Prices must cover required valuation boundaries; only verified closed sessions can use the preceding eligible close.
+Exact-contract futures marks use the supported Eurex session calendar too, so
+weekend funding can use the preceding session's settlement without inventing a
+weekend mark. Missing trading-day marks and unsupported calendars remain gaps.
 For Saturday/Sunday valuations, an absent closing FX rate uses the immediately preceding Friday's closing rate,
 or the prior scheduled close when Friday itself is a documented FX holiday.
 Thus a Monday contribution can use Friday's supported closing price and FX for its opening valuation,

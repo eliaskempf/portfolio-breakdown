@@ -25,6 +25,10 @@ def exposure_positions(valued, result, future=None, *, known_only=False):
     amounts = grouped.sum(min_count=1) if known_only else grouped.agg(
         lambda values: values.sum() if values.notna().all() else float('nan'))
     projected['current_value_reporting'] = projected.position_id.map(amounts)
+    # Closed holdings retain history but have no current exposure contributions.
+    # Their absent source rows mean zero, not an unknown portfolio denominator.
+    if 'shares' in projected:
+        projected.loc[projected.shares.eq(0), 'current_value_reporting'] = 0.
     projected.attrs = dict(valued.attrs, reporting_currency=result.reporting_currency)
     return projected
 

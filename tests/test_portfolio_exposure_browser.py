@@ -9,6 +9,27 @@ from test_ux_browser import ux_page as ux_page, playwright
 from browser_support import settle, select_tab
 
 
+def test_sold_unassigned_asset_does_not_blank_market_exposure_gaps(ux_page):
+    page, directory = ux_page
+    holdings = directory/'holdings.csv'
+    lines = holdings.read_text().splitlines()
+    holdings.write_text(lines[0]+',instrument_type\n'+'\n'.join(line+',equity' for line in lines[1:])
+        +'\nsold,sold,Invented sold asset,,0,,,Invented account,,,crypto\n')
+    position = FuturePosition(entry_price=5., mark_price=5., bucket_id='core')
+    (directory/SANDBOX_FILE).write_text(json.dumps(dict(version=2, simulation=True,
+        instrument='FMWN', position=asdict(position))))
+    page.reload(); settle(page)
+    table = page.get_by_role('table', name='Market exposure', exact=True)
+    playwright.expect(table).to_be_visible()
+    playwright.expect(table.get_by_text('Unassigned', exact=True)).to_have_count(0)
+    headers = table.get_by_role('columnheader').all_text_contents()
+    for label in ('% of exposure', 'Gap (pp)'):
+        index = next(i for i, text in enumerate(headers) if text.startswith(label))
+        cells = table.locator('tbody tr').locator(f'td:nth-child({index+1})')
+        assert all(text.strip() not in ('', '—') for text in cells.all_text_contents())
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
 def test_market_basis_survives_real_browser_remount(ux_page):
     page, directory = ux_page
     position = FuturePosition(entry_price=5., mark_price=5., bucket_id='core')

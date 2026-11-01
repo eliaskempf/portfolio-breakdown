@@ -349,7 +349,7 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
         for identity, balance in accounts.positions.items():
             if balance.spec.account_id != account or not balance.quantity:
                 continue
-            price = price_at(observations, (identity, balance.contract.id), stamp)
+            price = price_at(observations, (identity, balance.contract.id), stamp, contract=balance.contract)
             if price is None or price.currency != balance.contract.currency:
                 reasons.append(Issue(f'{identity}: missing exact-contract mark on {stamp}', 'price'))
             else:

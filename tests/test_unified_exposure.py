@@ -178,6 +178,31 @@ def test_partial_fund_preserves_known_subtotal_without_inventing_total():
     assert table['Current (%)'].isna().all()
 
 
+@pytest.mark.parametrize('known_only', [False, True])
+def test_closed_unassigned_holding_has_zero_exposure_and_does_not_hide_gaps(known_only):
+    from portfolio_app.exposure_presentation import exposure_positions
+    from portfolio_app.strategic import strategic_summary
+    from test_portfolio_exposure import CONFIG
+    config = replace(CONFIG, buckets=tuple(replace(b, target=target)
+        for b, target in zip(CONFIG.buckets, (.6, .3, .1))))
+    frame, fund, future = fixture()
+    closed = dict(frame.iloc[0], position_id='sold', id='sold', name='Invented sold asset',
+                  shares=0., bucket_id='', current_value_reporting=0.)
+    frame = pd.concat([frame, pd.DataFrame([closed])], ignore_index=True)
+    result = calculate(frame, fund, future)
+    projected = exposure_positions(frame, result, future, known_only=known_only)
+    assert projected.set_index('position_id').loc['sold', 'current_value_reporting'] == 0
+    table = strategic_summary(projected, config)
+    assert 'Unassigned' not in set(table.Category)
+    assert table['Current (%)'].notna().all()
+    assert table['Gap (pp)'].notna().all()
+    # An active holding with missing exposure must still withhold percentages.
+    frame.loc[frame.position_id.eq('sold'), 'shares'] = 1.
+    projected = exposure_positions(frame, result, future, known_only=known_only)
+    assert pd.isna(projected.set_index('position_id').loc['sold', 'current_value_reporting'])
+    assert strategic_summary(projected, CONFIG)['Current (%)'].isna().all()
+
+
 def test_partial_fund_ui_explains_constituent_gap_and_keeps_chart(tmp_path):
     from base64 import b64decode
     import json
