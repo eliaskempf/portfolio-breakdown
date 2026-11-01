@@ -66,7 +66,7 @@ def prepared_history_calculation(directory, journal, observations, revision, *, 
     return previous[1]
 
 
-def prepared_history_view(directory, journal, scope, observations, revision, period='1Y', *, target=None, include_points=True, calculation=None):
+def prepared_history_view(directory, journal, scope, observations, revision, period='1Y', *, target=None, include_points=True, calculation=None, annualized=True):
     """Reuse a chart across dialog interactions until its actual inputs change."""
     from portfolio_app.currency_display import reporting_currency
     from portfolio_app.history_view import history_view
@@ -74,10 +74,10 @@ def prepared_history_view(directory, journal, scope, observations, revision, per
     target = target or reporting_currency()
     calculation = calculation or prepared_history_calculation(directory, journal, observations, revision, target=target)
     stamp = date.today()
-    signature = str(directory.resolve()), calculation.fingerprint, revision, scope, period, target, stamp, include_points
-    key = 'history_view_'+scope.key+'_'+period+('_chart' if include_points else '_summary')
+    signature = str(directory.resolve()), calculation.fingerprint, revision, scope, period, target, stamp, include_points, annualized
+    key = 'history_view_'+scope.key+'_'+period+('_chart' if include_points else '_summary')+('_annualized' if annualized else '_twr')
     view = cached_input(key, signature,
-        lambda: history_view(journal, scope, observations, period, today=stamp, target=target, include_points=include_points, calculation=calculation))
+        lambda: history_view(journal, scope, observations, period, today=stamp, target=target, include_points=include_points, calculation=calculation, annualized=annualized))
     cache = st.session_state['parsed_inputs']
     cache[key] = cache.pop(key)
     entries = [name for name in cache if name.startswith('history_view_')]
@@ -813,7 +813,7 @@ def _replace_balance(directory, journal, revision, snapshot, book, row, key):
         st.caption(str(exc))
 
 
-def prepare_portfolio_history(directory, holdings, *, config, bucket='', displayed=None, current_valued=None, include_points=True):
+def prepare_portfolio_history(directory, holdings, *, config, bucket='', displayed=None, current_valued=None, include_points=True, annualized=True):
     """Read once before choosing the initial Overview tab; no UI side effects."""
     from portfolio_app.currency_display import reporting_currency
     journal, _ = load_journal(directory)
@@ -837,7 +837,7 @@ def prepare_portfolio_history(directory, holdings, *, config, bucket='', display
     period = st.session_state.get(key+'period') or '1Y'
     calculation = prepared_history_calculation(directory, journal, observations, revision)
     view = prepared_history_view(directory,journal,scope,observations,revision,period,target=reporting_currency(),
-                                 include_points=include_points,calculation=calculation)
+                                 include_points=include_points,calculation=calculation,annualized=annualized)
     from portfolio_app.gain_accounting import current_component_values, summarize_known_gain
     current = current_values = None
     if current_valued is not None:

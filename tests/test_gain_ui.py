@@ -44,7 +44,14 @@ def test_allocation_explains_full_history_twr_gap_even_when_recent_return_is_kno
 
 @pytest.mark.parametrize('remove_current_row', [False, True])
 @pytest.mark.parametrize('estimated', [False, True])
-def test_fully_liquidated_history_has_shared_gain_without_current_quote(tmp_path, remove_current_row, estimated):
+def test_fully_liquidated_history_has_shared_gain_without_current_quote(tmp_path, remove_current_row, estimated, monkeypatch):
+    import portfolio_app.personal_performance as performance
+    xirr_calls = []
+    original_xirr = performance.xirr
+    def counted(*args, **kwargs):
+        xirr_calls.append(True)
+        return original_xirr(*args, **kwargs)
+    monkeypatch.setattr(performance, 'xirr', counted)
     (tmp_path/'holdings.csv').write_text('position_key,id,name,shares,acquisition_price,acquisition_currency\nclosed,synthetic,Invented closed investment,0,,\n')
     (tmp_path/'demo_prices.json').write_text(json.dumps({'prices':{},'fx':{}}))
     row=read_snapshot(tmp_path/'holdings.csv').holdings.iloc[0]
@@ -67,10 +74,13 @@ def test_fully_liquidated_history_has_shared_gain_without_current_quote(tmp_path
     assert '+€22.00' in by_label(app.metric,'Portfolio value').delta
     assert by_label(app.metric,'Invested capital').value=='€-22.00'
     assert by_label(app.metric,'Annualized return').value!='—'
+    assert xirr_calls
     assert ('estimates' in by_label(app.metric, 'Portfolio value').proto.help) == estimated
     assert ('Estimated return' in by_label(app.metric, 'Annualized return').proto.help) == estimated
     assert not any(c.value.startswith('Estimated') for c in app.caption)
+    xirr_calls.clear()
     by_label(app.get('button_group'),'Overview view').set_value('Allocation').run()
+    assert not xirr_calls
     assert not app.exception
     assert '+€22.00' in by_label(app.metric,'Current value').delta
     assert ('estimates' in by_label(app.metric, 'Current value').proto.help) == estimated
@@ -80,6 +90,7 @@ def test_fully_liquidated_history_has_shared_gain_without_current_quote(tmp_path
     activate(reopened, 'Overview')
     assert not reopened.exception
     assert by_label(reopened.get('button_group'), 'Overview view').value == 'Allocation'
+    assert not xirr_calls
     assert '+€22.00' in by_label(reopened.metric, 'Current value').delta
     by_label(app.selectbox,'Category').set_value('unassigned').run()
     assert not app.exception

@@ -463,12 +463,15 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
     classes = dict(observations.classifications)
     account_events = calculation._account_events if calculation else effective_events(journal)
     starts = calculation._account_starts if calculation else account_start_dates(journal, account_events)
-    boundary_reason = 'internal transfer crosses different opening boundaries; choose a period starting before or after this day'
+    boundary_reason = 'linked movement crosses different opening boundaries; choose a period starting before or after this day'
     for book in journal.securities if initial_positions else ():
         for event in events_for(book):
-            if (event.date == start and event.kind in {'transfer', 'swap'}
-                    and book.position_id in scope.positions and event.other_position_id in scope.positions
-                    and ((book.position_id in initial_positions) != (event.other_position_id in initial_positions))):
+            linked = {fee.position_id for fee in event.asset_charges}
+            if event.kind in {'transfer', 'swap'}:
+                linked.add(event.other_position_id)
+            if (event.date == start and book.position_id in scope.positions
+                    and any(other in scope.positions and ((book.position_id in initial_positions) !=
+                            (other in initial_positions)) for other in linked)):
                 reasons.append(Issue(f'{event.id}: {boundary_reason}', 'boundary'))
     for e in account_events:
         if e.account_id not in scope.accounts:

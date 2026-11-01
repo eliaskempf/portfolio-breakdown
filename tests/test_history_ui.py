@@ -432,6 +432,31 @@ def test_summary_cache_does_not_replace_chart_cache(tmp_path, monkeypatch):
     assert prepared_history_view(tmp_path, journal, scope, store, 'synthetic') == chart
 
 
+def test_twr_only_summary_cache_cannot_replace_annualized_results(tmp_path, monkeypatch):
+    from portfolio_app import input_cache, personal_performance
+    from portfolio_app.history_ui import prepared_history_view
+    from test_history_view import fixture
+    monkeypatch.setattr(input_cache.st, 'session_state', {})
+    journal, scope, store = fixture()
+    calls = []
+    original = personal_performance.xirr
+    def counted(*args, **kwargs):
+        calls.append(True)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(personal_performance, 'xirr', counted)
+    def view(annualized):
+        return prepared_history_view(tmp_path, journal, scope, store, 'synthetic', 'All',
+                                     include_points=False, annualized=annualized)
+    twr = view(False)
+    assert not calls and twr.all_result.money_weighted is None
+    annualized = view(True)
+    assert len(calls) == 1 and annualized.all_result.money_weighted is not None
+    assert annualized.all_result.time_weighted == twr.all_result.time_weighted
+    assert annualized.all_result.time_weighted_reasons == twr.all_result.time_weighted_reasons
+    assert view(False) == twr and view(True) == annualized
+    assert len(calls) == 1
+
+
 def test_direct_editor_keeps_concurrent_revision_guard(tmp_path):
     from portfolio_app.account_journal import load_journal
     fixture(tmp_path)

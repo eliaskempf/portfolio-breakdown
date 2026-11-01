@@ -184,6 +184,29 @@ def test_first_day_reward_still_requires_confirmed_charges():
     assert any('charges have not been confirmed' in reason for reason in result.flow_reasons)
 
 
+def test_fee_paid_with_existing_asset_cannot_disappear_at_new_account_boundary():
+    from portfolio_app.security_history import AssetCharge, SecurityBook, SecurityEvent
+    from portfolio_app.history_observations import Observation
+    old_events = (SecurityEvent('old-open', 'opening', '2024-01-01', quantity=10, amount=100, currency='EUR'),)
+    new_events = (SecurityEvent('new-zero', 'opening', '2024-01-02', source='confirmed_zero_start'),
+        SecurityEvent('buy', 'buy', '2024-01-02', sequence=1, quantity=1, price=100, currency='EUR',
+                      charges_known=True, asset_charges=(AssetCharge('old', D(1)),)))
+    books = (SecurityBook('old', 'invented-old', ('10', '100', 'EUR'), records=old_events, active_ids=('old-open',)),
+        SecurityBook('new', 'invented-new', ('0', '', ''), account_id='a', records=new_events, active_ids=('new-zero', 'buy')))
+    journal = Journal(version=5, accounts=(Account('a', 'Invented new'),), securities=books, events=(
+        Event('zero', '2024-01-02', 'cash_open', 'a', 'EUR', 0, source='confirmed_zero_start'),
+        Event('fund', '2024-01-02', 'cash_flow', 'a', 'EUR', 100, sequence=1)))
+    observations = ObservationStore(tuple(Observation(p+stamp, 'price', p, stamp,
+        D(10) if p == 'old' else D(100), 'EUR') for p in ('old', 'new')
+        for stamp in ('2024-01-01', '2024-01-02', '2024-01-03')))
+    scope = HistoryScope(('old', 'new'), ('a',))
+    before = calculate_history(journal, scope, observations, '2024-01-01', '2024-01-03')
+    assert before.gain == -10 and before.time_weighted == pytest.approx(-.05)
+    mixed = calculate_history(journal, scope, observations, '2024-01-02', '2024-01-03')
+    assert mixed.ending_value == 190 and mixed.gain is None and mixed.time_weighted is None
+    assert any('different opening boundaries' in reason for reason in mixed.flow_reasons)
+
+
 @pytest.mark.parametrize('explicit', [True, False])
 def test_future_snapshot_does_not_imply_zero_contracts_after_account_start(explicit):
     from portfolio_app.account_journal import PositionSpec

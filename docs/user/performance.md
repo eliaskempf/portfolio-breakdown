@@ -278,7 +278,7 @@ security payments already included in an account opening are not posted again.
 An explicitly newly funded account instead starts at zero before its first-day
 transactions, including linked securities purchases and fees. A confirmed empty
 security opening dated the preceding day is consistent with that declaration.
-If an internal transfer on the selected start date crosses a new account's
+If an internal transfer or asset-paid fee on the selected start date crosses a new account's
 opening boundary and an existing account or holding's closing snapshot, period
 gain and returns remain unavailable. Choose a start date before or after that
 day; the supported ending value remains available.
