@@ -175,6 +175,29 @@ def test_replacement_boundary_prevents_return_across_unexplained_balance_change(
     assert any('boundary' in r for r in result.flow_reasons)
 
 
+@pytest.mark.parametrize('replacement_kind', ['opening', 'checkpoint'])
+def test_old_unknown_checkpoint_does_not_block_returns_after_known_replacement(replacement_kind):
+    events = (E('old', 'checkpoint', '2023-01-01', quantity=10),
+              E('known', replacement_kind, '2024-01-01', quantity=10,
+                observed_at='2024-01-01T12:00:00+00:00'))
+    book = SecurityBook('holding', 'invented', ('10', '', ''), records=events,
+                        active_ids=tuple(e.id for e in events))
+    j = Journal(version=4, securities=(book,))
+    scope = HistoryScope(('holding',))
+    store = observed(j, scope)
+    result = calculate_history(j, scope, store, '2024-01-01', '2025-01-01')
+    assert result.gain == 50 and result.time_weighted == pytest.approx(.5)
+    assert result.money_weighted is not None and not result.flow_reasons
+    assert result.total_gain is None  # Unknown acquisition cost is still unknown.
+    crossing = calculate_history(j, scope, store, '2023-01-01', '2025-01-01')
+    assert crossing.time_weighted is None and crossing.money_weighted is None
+    assert any('boundary' in reason for reason in crossing.flow_reasons)
+    without_replacement = replace(j, securities=(replace(book, active_ids=('old',)),))
+    unsupported = calculate_history(without_replacement, scope, store, '2024-01-01', '2025-01-01')
+    assert unsupported.time_weighted is None
+    assert any('observation date unknown' in reason for reason in unsupported.flow_reasons)
+
+
 def test_external_security_transfer_is_contribution_without_fabricating_purchase_cost():
     events=(E('o','opening','2024-01-01'),E('gift','transfer_in','2024-02-01',quantity=D(2),amount=D(50),currency='EUR',charges_known=True))
     b=SecurityBook('holding','invented',('0','',''),records=events,active_ids=('o','gift'))

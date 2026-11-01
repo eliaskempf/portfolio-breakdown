@@ -321,11 +321,54 @@ def test_negative_equity_blocks_percentages_and_same_day_has_no_annualization():
 
 def test_cost_reconciliation_is_not_a_fabricated_cash_flow_or_lifetime_profit():
     j=Journal(version=2,securities=(book(E('o','opening',START,quantity=10,amount=80,currency='EUR'),
-        E('fix','cost','2024-07-01',amount=100,currency='EUR')),))
+        E('fix','cost','2024-07-01',amount=90,currency='EUR')),))
     scope=HistoryScope(('stock',));obs=observations(j,scope,[('stock',START,10),('stock',END,12)])
     r=calculate_history(j,scope,obs,START,END)
     assert r.ending_value==120 and r.total_gain is None
-    assert any('boundary' in reason for reason in r.flow_reasons)
+    assert r.net_contributions == 0 and r.gain == 20
+    assert r.time_weighted == pytest.approx(.2)
+    assert r.money_weighted == pytest.approx(1.2**(365/366)-1)
+    assert not r.flow_reasons
+    assert any(reason.kind == 'cost_basis' for reason in r.capital_reasons)
+    # Retain the corrected unrealized amount, not gain against the old cost.
+    summary = summarize_known_gain(j, scope, obs, END)
+    assert summary.amount == 30 and summary.partial and summary.capital is None
+
+
+def test_cost_reconciliation_needs_no_dated_fx_for_market_returns_or_unrelated_scopes():
+    from portfolio_app.personal_performance import HistoryCalculation
+    correction = E('fix', 'cost', '2024-07-01', amount=90, currency='USD')
+    stock = book(E('o', 'opening', START, quantity=10, amount=80, currency='EUR'), correction)
+    other = book(E('other-open', 'opening', START, quantity=1, amount=100, currency='EUR'), identity='other')
+    j = Journal(version=2, securities=(stock, other))
+    scope = HistoryScope(('stock', 'other'))
+    obs = observations(j, scope, [('stock', START, 10), ('stock', END, 12),
+                                 ('other', START, 100), ('other', END, 110)])
+    calculation = HistoryCalculation(j, obs)
+    result = calculate_history(j, scope, obs, START, END, calculation=calculation)
+    assert result.gain == 30 and result.net_contributions == 0
+    assert result.time_weighted == pytest.approx(.15)
+    assert result.money_weighted == pytest.approx(1.15**(365/366)-1)
+    assert result.invested_capital is None and result.total_gain is None
+    assert not result.time_weighted_reasons and not result.money_weighted_reasons
+    unrelated = calculate_history(j, HistoryScope(('other',)), obs, START, END, calculation=calculation)
+    assert unrelated.total_gain == 10 and not unrelated.capital_reasons
+    before = calculate_history(j, scope, obs, START, START, calculation=calculation)
+    assert before.total_gain == 20 and not before.capital_reasons
+
+
+@pytest.mark.parametrize('kind', ['note', 'opening'])
+def test_cost_reconciliation_does_not_bypass_real_inventory_boundaries(kind):
+    boundary = (E('gap', 'note', '2024-08-01', note='Invented unresolved movement') if kind == 'note'
+                else E('gap', 'opening', '2024-08-01', quantity=10, amount=90, currency='EUR'))
+    j = Journal(version=2, securities=(book(
+        E('o', 'opening', START, quantity=10, amount=80, currency='EUR'),
+        E('fix', 'cost', '2024-07-01', amount=90, currency='EUR'), boundary),))
+    scope = HistoryScope(('stock',))
+    obs = observations(j, scope, [('stock', START, 10), ('stock', END, 12)])
+    result = calculate_history(j, scope, obs, START, END)
+    assert result.gain is None and result.time_weighted is None and result.money_weighted is None
+    assert result.flow_reasons
 
 
 def test_first_day_account_fee_and_external_deposit_are_not_lost_in_opening_close():

@@ -185,7 +185,8 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
                 gain = value-capital
             else:
                 reasons.extend(f'{identity}: {r}' for r in (*result.flow_reasons, *result.capital_reasons))
-                if value is not None and result.opening_value is not None and result.net_contributions is not None:
+                if (value is not None and result.opening_value is not None and result.net_contributions is not None
+                        and not any(getattr(r, 'kind', '') == 'cost_basis' for r in result.capital_reasons)):
                     gain = value-result.opening_value-result.net_contributions
                     reasons.append(f'{identity}: only post-snapshot gain is known; opening acquisition cost is unavailable')
             if book:

@@ -96,6 +96,8 @@ class HistoryCalculation:
         self._coverage_events = {identity: tuple(e for e in events if
             e.kind in ('opening', 'checkpoint', 'note', 'cost', 'inventory_in', 'inventory_out')
             or not e.charges_known) for identity, events in self._events.items()}
+        self._cost_dates = {identity: tuple(e.date for e in events if e.kind == 'cost')
+                            for identity, events in self._events.items()}
         self._estimated_events = {identity: tuple(e for e in events if e.estimated or
             e.valuation_quality == 'estimated') for identity, events in self._events.items()}
         self._unresolved_receipts = unresolved_receipts(journal)
@@ -404,13 +406,15 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
             reasons.append(Issue(f'{identity}: missing opening snapshot', 'transaction'))
         if calculation:
             events = calculation._coverage_events[identity]
-        if any(e.kind in ('opening', 'checkpoint', 'note', 'cost') and start < e.date <= end
+        if any(e.kind in ('opening', 'checkpoint', 'note') and start < e.date <= end
                and not (e.kind == 'opening' and not e.quantity and e.source == 'confirmed_zero_start') for e in events):
             reasons.append(Issue(f'{identity}: unresolved event or replacement boundary in interval', 'transaction'))
         if any(e.kind in ('inventory_in','inventory_out') and e.flow_classification == 'unresolved'
                and start < e.date <= end for e in events):
             reasons.append(Issue(f'{identity}: inventory origin or purpose unresolved', 'transaction'))
-        if any(e.kind == 'checkpoint' and e.date <= end and not e.observed_at for e in events):
+        opening = next((e for e in reversed(events)
+                        if e.kind in ('opening', 'checkpoint') and e.date <= start), None)
+        if opening and opening.kind == 'checkpoint' and not opening.observed_at:
             reasons.append(Issue(f'{identity}: checkpoint observation date unknown', 'transaction'))
         if any(e.kind in ('buy', 'sell', 'distribution', 'swap', 'reward') and start < e.date <= end and not e.charges_known for e in events):
             reasons.append(Issue(f'{identity}: charges have not been confirmed', 'transaction'))
@@ -655,6 +659,15 @@ def _calculate_history(journal, scope, observations, start, end, target='EUR', *
     flow_reasons = tuple(dict.fromkeys((*coverage, *missing_flows)))
     net = sum((f.amount for f in flows), ZERO) if not flow_reasons else None
     capital = calculation.capital(scope, start, target)
+    # A remaining-cost correction changes neither inventory nor cash. It cannot
+    # invalidate market-value returns, but the old opening cost no longer proves
+    # lifetime capital/gain across the correction. Keep that limitation local.
+    cost_boundaries = tuple(Issue(f'{identity}: acquisition-cost basis changed inside interval', 'cost_basis')
+        for identity in scope.positions
+        if bisect_right(calculation._cost_dates.get(identity, ()), start)
+           < bisect_right(calculation._cost_dates.get(identity, ()), end))
+    if cost_boundaries:
+        capital = AmountResult(None, (*capital.reasons, *cost_boundaries))
     invested = capital.amount + net if capital.amount is not None and net is not None else None
     gain = ending.amount - opening.amount - net if ending.amount is not None and opening.amount is not None and net is not None else None
     total_gain = ending.amount - invested if ending.amount is not None and invested is not None else None

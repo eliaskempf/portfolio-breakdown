@@ -248,9 +248,16 @@ valuation date does not invalidate the applied ledger.
 
 Replacement balances interrupt an interval, and unresolved cash adjustments must
 be classified as external flows, income or expenses, or retained as boundaries.
+An edit to remaining acquisition cost alone does not interrupt period gain,
+TWR or XIRR: those use market values and cash flows. It does prevent carrying
+the old cost basis through the edit as complete lifetime capital or gain;
+independently supported gain components remain available.
 Unknown amounts, missing market data and unsupported earlier periods remain
 explicit limitations. Applying records does not prove that unrecorded real-world
 activity never occurred; calculations describe the records supplied.
+After a dated replacement opening, later periods can use that opening even if
+an older checkpoint lacked an observation date. Returns across the replacement
+remain unsupported.
 
 Account cash openings precede separately recorded same-day account trades, fees
 and external funding; these events must not disappear into the first closing
