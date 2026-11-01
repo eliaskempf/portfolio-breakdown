@@ -38,7 +38,11 @@ def test_closed_new_holding_category_survives_browser_review(import_page):
     page.get_by_text('Asset types & categories', exact=True).click(); settle(page)
     category = page.get_by_role('combobox', name='Category · AUR', exact=True)
     playwright.expect(category).to_have_value('Unassigned')
-    category.press('ArrowDown')
+    # Keep the portalled menu clear of the viewport edge in headless Chromium.
+    category.evaluate("el => el.scrollIntoView({block:'center', behavior:'instant'})")
+    settle(page)
+    category.click()
+    playwright.expect(category).to_have_attribute('aria-expanded', 'true')
     page.get_by_role('option', name='Invented category', exact=True).click(); settle(page)
     page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     page.get_by_role('button', name='Back to import', exact=True).click(); settle(page)
