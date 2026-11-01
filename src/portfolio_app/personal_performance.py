@@ -463,6 +463,8 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
     classes = dict(observations.classifications)
     account_events = calculation._account_events if calculation else effective_events(journal)
     starts = calculation._account_starts if calculation else account_start_dates(journal, account_events)
+    from portfolio_app.account_inception import account_inceptions
+    inceptions = calculation._account_inceptions if calculation else account_inceptions(journal, account_events)
     boundary_reason = 'linked movement crosses different opening boundaries; choose a period starting before or after this day'
     for book in journal.securities if initial_positions else ():
         for event in events_for(book):
@@ -481,7 +483,7 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
             reasons.append(Issue(f'{e.id}: {boundary_reason}', 'boundary'))
         if start < e.date <= end or (e.date == start and starts.get(e.account_id) == start):
             if (e.kind in ('cash_open', 'debt_open', 'snapshot') and e.date > start
-                    and not (e.kind == 'cash_open' and not e.amount and e.source == 'confirmed_zero_start')):
+                    and not (e.kind == 'cash_open' and not e.amount and inceptions.get(e.account_id) == e.date)):
                 reasons.append(Issue(f'{e.id}: account opening boundary inside interval', 'transaction'))
             if e.kind == 'cash_adjust' and classes.get(e.id, 'boundary') == 'boundary':
                 reasons.append(Issue(f'{e.id}: classify or resolve the cash adjustment', 'transaction'))

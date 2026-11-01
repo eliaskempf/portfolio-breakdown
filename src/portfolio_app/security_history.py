@@ -702,7 +702,10 @@ def cash_postings(journal, *, security_cash=None):
     Confirmed zero inception instead precedes that day's transactions.
     """
     from portfolio_app.account_journal import Event, effective_events
-    openings = {(e.account_id, e.currency): e for e in effective_events(journal) if e.kind == 'cash_open'}
+    events = effective_events(journal)
+    openings = {(e.account_id, e.currency): e for e in events if e.kind == 'cash_open'}
+    inceptions = {(e.account_id, e.date) for e in events
+                  if e.kind == 'cash_open' and not e.amount and e.source == 'confirmed_zero_start'}
     result = []
     roots = {}
     for book in journal.securities:
@@ -724,7 +727,7 @@ def cash_postings(journal, *, security_cash=None):
         opening = openings.get((c.account_id, c.currency))
         if not opening:
             raise DataError(f'Supply an opening {c.currency} cash balance before activating linked transactions.')
-        covered = c.date < opening.date or (c.date == opening.date and opening.source != 'confirmed_zero_start')
+        covered = c.date < opening.date or (c.date == opening.date and (c.account_id, c.date) not in inceptions)
         if covered and (not c.value_date or c.value_date == c.date):
             continue
         result.append(Event(id=posting_id(c.id), date=c.date, sequence=c.sequence,

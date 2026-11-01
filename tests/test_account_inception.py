@@ -46,7 +46,8 @@ def test_ordinary_opening_balance_never_proves_zero_before_it(amount):
 @pytest.mark.parametrize('start', ['2024-01-01', '2024-01-02'])
 @pytest.mark.parametrize('include_security', [False, True])
 @pytest.mark.parametrize('fee', [0, 1])
-def test_first_day_linked_purchase_counts_cash_and_funding_once(start, include_security, fee):
+@pytest.mark.parametrize('second_currency', [False, True])
+def test_first_day_linked_purchase_counts_cash_and_funding_once(start, include_security, fee, second_currency):
     from portfolio_app.security_history import Charge, SecurityBook, SecurityEvent
     from portfolio_app.history_observations import Observation
     events = (SecurityEvent('empty', 'opening', '2024-01-02', source='confirmed_zero_start'),
@@ -55,7 +56,8 @@ def test_first_day_linked_purchase_counts_cash_and_funding_once(start, include_s
     book = SecurityBook('stock', 'invented', ('0', '', ''), account_id='a', records=events,
                         active_ids=tuple(e.id for e in events))
     journal = Journal(version=5, accounts=(Account('a', 'Invented new account'),), securities=(book,), events=(
-        Event('zero', '2024-01-02', 'cash_open', 'a', 'EUR', D(0), source='confirmed_zero_start'),
+        Event('zero', '2024-01-02', 'cash_open', 'a', 'USD' if second_currency else 'EUR', D(0), source='confirmed_zero_start'),
+        *((Event('second-zero', '2024-01-02', 'cash_open', 'a', 'EUR', D(0)),) if second_currency else ()),
         Event('fund', '2024-01-02', 'cash_flow', 'a', 'EUR', D(100 + fee), sequence=1)))
     observations = ObservationStore((Observation('price', 'price', 'stock', '2024-01-03', D(100), 'EUR'),))
     scope = HistoryScope(('stock',) if include_security else (), ('a',))
