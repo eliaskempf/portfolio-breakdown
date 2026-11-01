@@ -148,7 +148,10 @@ similar-transactions group.
 
 **Apply history** makes the reviewed ledger authoritative for the resulting
 holding. For multiple holdings, accept each displayed balance and choose
-**Apply reviewed holdings**. There is no separate completeness declaration.
+**Apply reviewed holdings**. Each acceptance advances to the next unreviewed
+holding; reviewed holdings are marked in the selector. You can revisit them
+without accepting them again. Nothing is applied until every holding is reviewed
+and you choose the final apply action. There is no separate completeness declaration.
 Estimates stay labelled, and missing prices or amounts still limit their dependent
 metrics. Application replaces the managed balance; it does not add the same
 trades to the existing snapshot again.

@@ -191,6 +191,46 @@ def test_asset_filter_includes_received_leg_without_excluding_other_transactions
     assert sorted(s.quantity for s in positions.values()) == [4,8]
 
 
+def test_acceptance_advances_forward_and_reviewed_holdings_cannot_be_accepted_again(tmp_path):
+    content = ('reference,date,type,asset,quantity,amount,currency\n'+''.join(
+        f'invented-{asset},2024-01-02,buy,{asset},1,10,EUR\n'
+        for asset in ('AUR', 'BRN', 'CEL', 'DUS'))).encode()
+    app = launch(tmp_path, content)
+    button(app, 'Review against portfolio').click().run()
+    holding = next(s for s in app.selectbox if s.label == 'Holding to review')
+    expected_next = holding.options[3]
+    holding.select_index(2).run()
+    before_button = button(app, 'Accept this holding').proto.id
+    before_selector = next(s for s in app.selectbox if s.label == 'Holding to review').proto.id
+    button(app, 'Accept this holding').click().run()
+    assert not app.exception
+    holding = next(s for s in app.selectbox if s.label == 'Holding to review')
+    assert holding.format_func(holding.value) == expected_next
+    assert holding.proto.id != before_selector
+    assert button(app, 'Accept this holding').proto.id != before_button
+    holding.select_index(2).run()
+    assert button(app, 'Accept this holding').disabled
+    assert button(app, 'Apply reviewed holdings').disabled
+    assert any(c.value == 'Reviewed 1 / 4' for c in app.caption)
+    assert next(s for s in app.selectbox if s.label == 'Holding to review').options[2].endswith(' · Reviewed')
+    assert not load_journal(tmp_path)[0].securities
+
+
+def test_acceptance_during_a_pending_holding_change_requires_the_new_balance_to_render(tmp_path):
+    app = launch(tmp_path, b'reference,date,type,asset,quantity,amount,currency\n'
+        b'a,2024-01-01,buy,AUR,1,10,EUR\nb,2024-01-01,buy,BRN,2,20,EUR\n')
+    button(app, 'Review against portfolio').click().run()
+    # The dropdown change and old button click arrive in the same rerun.
+    next(s for s in app.selectbox if s.label == 'Holding to review').select_index(1)
+    button(app, 'Accept this holding').click().run()
+    assert not app.exception
+    assert any(c.value == 'Reviewed 0 / 2' for c in app.caption)
+    assert button(app, 'Apply reviewed holdings').disabled
+    button(app, 'Accept this holding').click().run()
+    assert any(c.value == 'Reviewed 1 / 2' for c in app.caption)
+    assert not load_journal(tmp_path)[0].securities
+
+
 def test_similar_entries_are_one_group_and_exclusions_recompute_balances(tmp_path):
     content = (b'reference,date,type,asset,quantity,amount,currency\n'
         b'a,2024-01-02,buy,BTC,1,100,EUR\nb,2024-01-02,buy,BTC,1,100,EUR\nc,2024-01-02,buy,BTC,1,100,EUR\n')

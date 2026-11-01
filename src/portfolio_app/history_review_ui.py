@@ -80,7 +80,7 @@ def _similar_transactions(preview, key):
     return excluded
 
 
-def _balances(preview, key):
+def _balances(preview, key, *, review_step='', reviewed=()):
     from portfolio_app.history_ui import _money
     items = {c['position_id']: c for c in preview.comparisons}
     position = next(iter(items))
@@ -91,8 +91,16 @@ def _balances(preview, key):
         if selected is not None and selected not in items:
             st.session_state[selection_key] = position
             controls[selection_key] = position
+        # Keep the destination separate from the mounted control. Delayed events
+        # from the previous step must not restore its old dropdown selection.
+        widget_key = selection_key+'_'+review_step if review_step else selection_key
+        selected = st.session_state.get(selection_key, controls.get(selection_key, position))
         position = review_control(st.selectbox, 'Holding to review', list(items),
-            format_func=lambda p: items[p]['name'], filter_mode=None, key=key+'holding')
+            index=list(items).index(selected),
+            format_func=lambda p: items[p]['name']+(' · Reviewed' if p in reviewed else ''),
+            filter_mode=None, key=widget_key)
+        if review_step:
+            st.session_state[selection_key] = controls[selection_key] = position
     item = items[position]
     known = position in preview.known_positions
     if len(items) == 1:
@@ -163,8 +171,21 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
             st.button('Save exclusions', key=key+'exclude', type='primary', on_click=apply, args=(excluded,))
         st.button(keep_label, key=key+'keep', on_click=keep)
         return preview
+    multiple = len(preview.comparisons) > 1 and action_label is None
+    review_step, choices = '', {}
+    if multiple:
+        from portfolio_app.security_history import history_fingerprint
+        signature = digest([history_fingerprint(preview.journal), str(preview.comparisons),
+                            sorted(excluded)])
+        state_key = key+'asset_reviews'
+        state = st.session_state.get(state_key, {})
+        if state.get('signature') != signature:
+            state = {'signature':signature, 'choices':{}}
+            st.session_state[state_key] = state
+        choices = state['choices']
+        review_step = digest([signature, sorted(choices)])[:16]
     with balances:
-        position = _balances(preview, key)
+        position = _balances(preview, key, review_step=review_step, reviewed=choices)
     if preview.starting_note:
         st.caption(preview.starting_note)
     checkpoints = True
@@ -179,32 +200,31 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
             for warning in preview.warnings:
                 st.caption(warning)
     blocked = not checkpoints or any(c['after'] is None for c in preview.cash)
-    multiple = len(preview.comparisons) > 1 and action_label is None
     if multiple:
-        from portfolio_app.security_history import history_fingerprint
-        signature = digest([history_fingerprint(preview.journal), str(preview.comparisons),
-                            sorted(excluded)])
-        state_key = key+'asset_reviews'
-        state = st.session_state.get(state_key, {})
-        if state.get('signature') != signature:
-            state = {'signature':signature, 'choices':{}}
-            st.session_state[state_key] = state
-        choices = state['choices']
         identities = [c['position_id'] for c in preview.comparisons]
+        complete = all(p in choices for p in identities)
         st.caption(f'Reviewed {len(choices)} / {len(identities)}')
         if position in choices:
             st.caption('Reviewed')
         def decide():
-            choices[position] = True
-            following = next((p for p in identities if p not in choices), position)
+            current = st.session_state.get(state_key, {})
+            if (blocked or current.get('signature') != signature or position in current.get('choices', {})
+                    or st.session_state.get(key+'holding_'+review_step) != position):
+                return
+            current['choices'][position] = True
+            index = identities.index(position)+1
+            remaining = identities[index:]+identities[:index]
+            following = next((p for p in remaining if p not in current['choices']), position)
             st.session_state[key+'holding'] = following
             st.session_state.setdefault('import_controls', {})[key+'holding'] = following
         with st.container(horizontal=True):
-            st.button('Accept this holding', key=key+'confirm_asset', disabled=blocked,
+            st.button('Accept this holding', key=key+'confirm_asset_'+review_step+'_'+digest(position)[:16],
+                      disabled=blocked or position in choices,
                       on_click=decide, type='primary')
         with st.container(horizontal=True, key=key+'actions'):
-            if st.button('Apply reviewed holdings', key=key+'save',
-                         disabled=blocked or any(p not in choices for p in identities)):
+            pressed = st.button('Apply reviewed holdings', key=key+'save_'+review_step,
+                                disabled=blocked or not complete, type='primary' if complete else 'secondary')
+            if pressed and complete and not blocked:
                 apply(excluded)
             st.button(keep_label, key=key+'keep', on_click=keep)
         return preview
