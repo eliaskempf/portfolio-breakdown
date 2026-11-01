@@ -1,5 +1,6 @@
 """Analytics fits the refactored navigation; all screenshots use invented data."""
 from test_ux_browser import ux_page, playwright
+from browser_support import settle
 
 
 def test_analytics_views_dialog_and_mobile_layout(ux_page):
@@ -44,9 +45,19 @@ def test_analytics_views_dialog_and_mobile_layout(ux_page):
     playwright.expect(table.get_by_role('button', name='Trailing P/E', exact=True)).to_be_visible()
     assert table.locator('thead th').count() == 6  # Identity, value, three metrics, edit.
     page.get_by_role('searchbox', name='Filter positions').fill('Regional')
+    playwright.expect(table.locator('tbody tr')).to_have_count(1)
+    playwright.expect(table.locator('tbody tr').first).to_contain_text('Invented Regional')
     table.locator('tbody tr').first.click()
     dialog = page.get_by_role('dialog')
-    dialog.get_by_role('radio', name='Key metrics', exact=True).click()
+    # The selector arrives before the initial History body. Wait for that render
+    # to finish so the next click does not target a control being replaced.
+    playwright.expect(dialog.locator('[data-position-view-ready="History"]')).to_have_count(1)
+    settle(page)
+    metrics = dialog.get_by_role('radio', name='Key metrics', exact=True)
+    metrics.click()
+    playwright.expect(metrics).to_be_checked()
+    playwright.expect(dialog.locator('[data-position-view-ready="Key metrics"]')).to_have_count(1)
+    settle(page)
     playwright.expect(dialog.get_by_text('P/E (trailing)', exact=True).first).to_be_visible()
     page.screenshot(path=str(directory / 'analytics-position-detail.png'), full_page=True)
     dialog.get_by_role('button', name='Close', exact=True).last.click()

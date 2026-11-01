@@ -287,3 +287,41 @@ def test_monitoring_tour_rejects_non_tour_workspace(tmp_path):
     with pytest.raises(ValueError, match='own synthetic workspace'):
         prepare_step(directory, 'Tracked rules')
     assert tree_bytes(directory) == before
+
+
+def test_tour_monitoring_completion_uses_canonical_workspace(tmp_path, monkeypatch):
+    from threading import Event
+    from types import SimpleNamespace
+    from portfolio_app import monitoring_service, tour
+    from portfolio_app.market_data import RequestCoordinator
+    from portfolio_app.monitoring import SeriesSpec
+
+    # A noncanonical temporary root exercises the same identity mismatch as
+    # Windows short names and symlinked temp roots, without requiring symlinks.
+    (tmp_path / 'parent').mkdir()
+    actual = tmp_path / 'invented-tour'
+    actual.mkdir()
+    alias = tmp_path / 'parent' / '..' / actual.name
+    owner = SimpleNamespace(name=str(alias))
+    monkeypatch.setattr(tour, 'st', SimpleNamespace(session_state={
+        'tour_step': 15, 'tour_directory': owner}))
+    directory = tour.demo_directory()
+    coordinator = RequestCoordinator(workers=1)
+    monkeypatch.setattr(monitoring_service, 'coordinator', coordinator)
+    service = monitoring_service.MonitoringService(directory, demo=True)
+    started = Event()
+    get_series = service.market.get
+    def fetch(*args, **kwargs):
+        started.set()
+        return get_series(*args, **kwargs)
+    monkeypatch.setattr(service.market, 'get', fetch)
+    spec = SeriesSpec('MSCI:990100:NETR:EUR', currency='EUR')
+    try:
+        assert service.browse(spec) is None
+        assert started.wait(timeout=5), 'Synthetic monitoring worker did not start'
+    finally:
+        coordinator.close()
+    # The UI polls the resolved identity; completion must reach that same key.
+    assert coordinator.revision(directory.resolve()) == 1
+    assert service.browse(spec).dates
+    assert owner.name == str(alias)

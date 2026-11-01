@@ -93,7 +93,9 @@ def _start() -> None:
 
 
 def demo_directory() -> Path | None:
-    return Path(st.session_state['tour_directory'].name) if active() else None
+    # Temporary roots may use a Windows short name or a symlink. Background
+    # requests and UI completion polling must share one workspace identity.
+    return Path(st.session_state['tour_directory'].name).resolve() if active() else None
 
 
 def _move(index: int) -> None:
