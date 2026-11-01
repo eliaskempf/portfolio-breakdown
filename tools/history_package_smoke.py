@@ -80,7 +80,9 @@ def smoke(command, evidence=None):
     from portfolio_app.workspace import inventory
 
     with TemporaryDirectory(prefix='portfolio history acceptance ü ') as temporary:
-        root = Path(temporary)
+        # macOS temporary paths commonly traverse /var -> /private/var. The
+        # app deliberately rejects restore destinations with linked ancestors.
+        root = Path(temporary).resolve()
         workspace, restored = root/'invented history', root/'restored history é'
         expected = create_acceptance_workspace(workspace)
         state = root/'state'
