@@ -467,6 +467,7 @@ def watch_monitoring(directory, *, demo=False, disabled=False):
     if disabled:
         return
     service = monitoring_for(directory, demo=demo)
+    directory = service.directory
     try:
         doc, _ = load_monitoring(directory)
     except DataError:

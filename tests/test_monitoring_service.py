@@ -8,6 +8,37 @@ from portfolio_app.monitoring_store import save_rule, load_monitoring, record_ev
 from test_monitoring import rule, history, NOW
 
 
+def test_factory_alias_shares_service_and_background_completion(tmp_path, monkeypatch):
+    from threading import Event
+    from portfolio_app import monitoring_service
+    from portfolio_app.market_data import RequestCoordinator
+    from portfolio_app.monitoring import SeriesSpec
+
+    (tmp_path / 'parent').mkdir()
+    directory = tmp_path / 'invented-demo'
+    directory.mkdir()
+    alias = tmp_path / 'parent' / '..' / directory.name
+    coordinator = RequestCoordinator(workers=1)
+    monkeypatch.setattr(monitoring_service, 'coordinator', coordinator)
+    monkeypatch.setattr(monitoring_service, '_services', {})
+    service = monitoring_service.monitoring_for(alias, demo=True)
+    assert monitoring_service.monitoring_for(directory, demo=True) is service
+    started = Event()
+    original_get = service.market.get
+    def get(*args, **kwargs):
+        started.set()
+        return original_get(*args, **kwargs)
+    monkeypatch.setattr(service.market, 'get', get)
+    spec = SeriesSpec('MSCI:990100:NETR:EUR', currency='EUR')
+    try:
+        assert service.browse(spec) is None
+        assert started.wait(5), 'Synthetic monitoring request did not start'
+    finally:
+        coordinator.close()
+    assert coordinator.revision(directory.resolve()) == 1
+    assert service.browse(spec).dates
+
+
 def test_catchup_only_completed_closes_after_recorded_observation(tmp_path):
     r=replace(rule(),created_at='2026-10-01T00:00:00+00:00')
     save_rule(tmp_path,r)

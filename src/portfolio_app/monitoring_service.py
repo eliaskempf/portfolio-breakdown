@@ -161,7 +161,10 @@ _lock = RLock()
 
 
 def monitoring_for(directory, *, demo=False):
-    key = (str(directory.resolve()), demo)
+    # Cache identity and background request identity must match UI polling,
+    # including temporary roots exposed through short names or symlinks.
+    directory = directory.resolve()
+    key = (str(directory), demo)
     with _lock:
         if key not in _services:
             _services[key] = MonitoringService(directory, demo=demo)

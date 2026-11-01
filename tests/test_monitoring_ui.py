@@ -9,6 +9,53 @@ from portfolio_app.monitoring import SeriesSpec
 from test_ui import by_label
 
 
+def test_heartbeat_observes_aliased_workspace_completion(tmp_path, monkeypatch):
+    from threading import Event
+    from types import SimpleNamespace
+    from portfolio_app import market_data, monitoring_service, monitoring_ui
+    from portfolio_app.market_data import RequestCoordinator
+    from portfolio_app.monitoring_store import save_rule
+    from test_monitoring import rule
+
+    (tmp_path / 'parent').mkdir()
+    directory = tmp_path / 'invented-demo'
+    directory.mkdir()
+    alias = tmp_path / 'parent' / '..' / directory.name
+    save_rule(directory, rule())
+    coordinator = RequestCoordinator(workers=1)
+    monkeypatch.setattr(monitoring_service, 'coordinator', coordinator)
+    monkeypatch.setattr(market_data, 'coordinator', coordinator)
+    monkeypatch.setattr(monitoring_service, '_services', {})
+    service = monitoring_for(alias, demo=True)
+    started, release = Event(), Event()
+    original_get = service.market.get
+    def get(*args, **kwargs):
+        started.set()
+        assert release.wait(5), 'Synthetic evaluation was not released'
+        return original_get(*args, **kwargs)
+    monkeypatch.setattr(service.market, 'get', get)
+    callbacks, reruns = [], []
+    def fragment(*, run_every):
+        assert run_every == 60
+        def capture(callback):
+            callbacks.append(callback)
+            return callback
+        return capture
+    monkeypatch.setattr(monitoring_ui, 'st', SimpleNamespace(
+        fragment=fragment, rerun=lambda: reruns.append(True)))
+    monkeypatch.setattr(monitoring_ui, 'refresh_allowed', lambda: True)
+    try:
+        monitoring_ui.watch_monitoring(alias, demo=True)
+        assert started.wait(5), 'Synthetic evaluation did not start'
+        assert not reruns
+    finally:
+        release.set()
+        coordinator.close()
+    assert coordinator.revision(directory.resolve()) == 1
+    callbacks[0]()
+    assert reruns == [True]
+
+
 def launch(tmp_path, *, seed='INVENTED'):
     import json
     service=monitoring_for(tmp_path,demo=True)
