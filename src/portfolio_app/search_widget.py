@@ -27,24 +27,54 @@ h3{font-size:14px;line-height:1.45;font-weight:600;margin:0 0 5px}.meta{opacity:
 summary{cursor:pointer;margin-top:12px;font-weight:600;font-size:13px}summary:focus-visible{outline:2px solid var(--st-primary-color)}.listing strong{color:var(--st-primary-color)}.listing span{opacity:.7;padding-left:7px;font-size:11px}.listing:hover,.listing:focus-visible{border-color:var(--st-primary-color);outline:2px solid var(--st-primary-color);outline-offset:1px}
 .listing.selected{border-color:var(--st-primary-color)}@media(max-width:600px){.result{padding:12px}.listing{width:100%}.input-wrap{padding:2px 10px}}
 """
+COMPACT_CSS = """
+section{padding:0;min-width:min(380px,70vw)}label{font-size:14px;margin-bottom:6px}
+.input-wrap{padding:2px 8px}.input-wrap>span{font-size:20px}input{padding:6px 0;font-size:14px}
+#status:empty{display:none}.results{gap:4px;max-height:200px}
+.compact-listing{display:grid;gap:3px;width:100%;padding:9px 10px;text-align:left;border:1px solid transparent;border-radius:5px;background:transparent}
+.compact-listing:hover,.compact-listing:focus-visible{background:var(--st-secondary-background-color);border-color:var(--st-primary-color);outline:none}
+.compact-listing[aria-pressed=true]{border-color:var(--st-primary-color)}
+.compact-listing strong{font-size:14px}.compact-listing small{font-size:12px;opacity:.7}
+"""
 JS = """
 export default function(component) {
  const {parentElement:root,data,setStateValue,setTriggerValue}=component;
  const input=root.querySelector('input'), results=root.querySelector('.results'), status=root.querySelector('#status');
+ if(data.compact){root.querySelector('label').textContent='Search listings';input.placeholder='Name, ticker or ISIN…';}
  const normalize=text=>text.normalize('NFKC').trim().replace(/\\s+/g,' ').toLowerCase();
- if(input.dataset.context!==data.context){clearTimeout(input.searchTimer);input.value=data.query||'';input.dataset.context=data.context;}
+ if(input.dataset.context!==data.context){clearTimeout(input.searchTimer);input.value=data.query||'';input.dataset.context=data.context;if(data.compact)queueMicrotask(()=>input.focus());}
  const publish=()=>{clearTimeout(input.searchTimer);if(input.isConnected&&input.dataset.context===data.context)setStateValue('query',input.value);};
  input.oninput=event=>{clearTimeout(input.searchTimer);results.replaceChildren();status.textContent=input.value.trim().length<2?'Type at least 2 characters to search.':'Searching…';if(!event.isComposing)input.searchTimer=setTimeout(publish,400);};
  input.oncompositionend=()=>{clearTimeout(input.searchTimer);input.searchTimer=setTimeout(publish,400);};
  input.onkeydown=event=>{
   if(event.key==='Enter'&&!event.isComposing){event.preventDefault();publish();}
   if(event.key==='ArrowDown'){event.preventDefault();results.querySelector('summary,button')?.focus();}
-  if(event.key==='Escape'){input.value='';results.replaceChildren();publish();}
+  if(event.key==='Escape'&&!data.compact){input.value='';results.replaceChildren();publish();}
  };
  const element=(tag,text,cls)=>{const el=document.createElement(tag);if(text)el.textContent=text;if(cls)el.className=cls;return el;};
  // Suppress responses for an older query while the user is still typing.
  if(normalize(input.value)!==normalize(data.query||''))return;
  status.textContent=data.message;results.replaceChildren();
+ if(data.compact){
+  const add=(ticker,title,meta)=>{
+   const button=element('button','','compact-listing');button.type='button';
+   button.setAttribute('aria-label',ticker?'Select '+ticker:'No price listing');
+   button.setAttribute('aria-pressed',String(data.selected===ticker));
+   button.appendChild(element('strong',title));if(meta)button.appendChild(element('small',meta));
+   button.onclick=()=>{if(normalize(input.value)===normalize(data.query))setTriggerValue('selected',{ticker,query:data.query});};
+   results.appendChild(button);
+  };
+  for(const group of data.groups)for(const listing of group.listings){
+   add(listing.ticker,listing.ticker+' · '+group.name,[listing.currency,listing.exchange,group.isin].filter(Boolean).join(' · '));
+  }
+  if(data.allowClear)add('','No price listing','');
+  results.onkeydown=event=>{
+   const buttons=Array.from(results.querySelectorAll('button')),index=buttons.indexOf(root.activeElement);
+   if(event.key==='ArrowDown'){event.preventDefault();buttons[Math.min(index+1,buttons.length-1)]?.focus();}
+   if(event.key==='ArrowUp'){event.preventDefault();if(index<=0)input.focus();else buttons[index-1]?.focus();}
+  };
+  return;
+ }
  for(const group of data.groups){
   const card=element('article','','result'),head=element('div','','head'),info=element('div'),meta=element('div','','meta');
   head.appendChild(element('div',group.name.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(),'monogram'));
@@ -78,11 +108,14 @@ export default function(component) {
 }
 """
 
-def render_search_box(query: str, groups: list[dict], message: str, selected: str = "", *, key: str = SEARCH_KEY) -> dict | None:
+def render_search_box(query: str, groups: list[dict], message: str, selected: str = "", *, key: str = SEARCH_KEY,
+                      compact: bool = False, allow_clear: bool = False, on_selected_change=None) -> dict | None:
     # Registration is idempotent for identical definitions, and must happen in
     # the current runtime (AppTest and server restarts use separate registries).
-    _search_box = st.components.v2.component("instrument_search", html=HTML, css=CSS, js=JS)
+    _search_box = st.components.v2.component("listing_picker_search" if compact else "instrument_search",
+                                           html=HTML, css=CSS+(COMPACT_CSS if compact else ''), js=JS)
     generation = st.session_state.setdefault(key+"_generation", uuid4().hex)
-    result = _search_box(key=key, data={"query": query, "groups": groups, "message": message, "selected": selected, "context": generation},
-                         default={"query": query}, on_query_change=lambda: None, on_selected_change=lambda: None)
+    result = _search_box(key=key, data={"query": query, "groups": groups, "message": message, "selected": selected, "context": generation,
+                                      "compact": compact, "allowClear": allow_clear},
+                         default={"query": query}, on_query_change=lambda: None, on_selected_change=on_selected_change or (lambda: None))
     return result.get("selected")

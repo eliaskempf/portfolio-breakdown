@@ -5,6 +5,7 @@ from streamlit.testing.v1 import AppTest
 from portfolio_app.account_journal import load_journal
 from portfolio_app.security_history import replay_securities
 from portfolio_app.transaction_csv import read_csv
+from test_transaction_mapping_ui import set_listing
 
 
 def launch(directory, content):
@@ -232,7 +233,7 @@ def test_name_edit_survives_listing_change_and_destination_switch(tmp_path):
     (tmp_path/'holdings.csv').write_text('id,name,ticker,instrument_type,shares\ninvented-existing,Bitcoin,BTC-EUR,crypto,2\n')
     app = launch(tmp_path, b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-02,buy,ETH,1,100,EUR\n')
     next(t for t in app.text_input if t.label == 'Name · ETH').set_value('Invented coin holding').run()
-    next(s for s in app.selectbox if s.label == 'Price listing · ETH').set_value('ETH-USD').run()
+    set_listing(app, 'ETH', 'ETH-USD')
     assert next(t for t in app.text_input if t.label == 'Name · ETH').value == 'Invented coin holding'
     holding = next(s for s in app.selectbox if s.label == 'Holding · ETH')
     assert holding.options[0] == 'New position'
@@ -249,9 +250,9 @@ def test_name_edit_survives_listing_change_and_destination_switch(tmp_path):
 
 def test_automatic_name_follows_listing_until_user_edits_it(tmp_path):
     app = launch(tmp_path, b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-02,buy,BTC,1,100,EUR\n')
-    next(s for s in app.selectbox if s.label == 'Price listing · BTC').set_value('').run()
+    set_listing(app, 'BTC', '')
     assert next(t for t in app.text_input if t.label == 'Name · BTC').value == 'BTC'
-    next(s for s in app.selectbox if s.label == 'Price listing · BTC').set_value('BTC-EUR').run()
+    set_listing(app, 'BTC', 'BTC-EUR')
     assert next(t for t in app.text_input if t.label == 'Name · BTC').value == 'Bitcoin'
 
 

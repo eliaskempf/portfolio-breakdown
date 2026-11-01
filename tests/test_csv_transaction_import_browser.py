@@ -26,6 +26,11 @@ def upload(page, content):
     settle(page)
 
 
+def listing_field(page, asset):
+    from portfolio_app.transaction_csv import digest
+    return page.locator(f'[class*="{digest(asset)[:12]}_listing_"][class*="_picker"]').get_by_role('button').first
+
+
 def apply_reviewed_batch(page):
     for _ in range(2):
         page.get_by_role('button', name='Accept this holding', exact=True).click(); settle(page)
@@ -209,38 +214,61 @@ def test_estimated_checkpoint_requires_explicit_reconciliation(import_page):
     assert not page.get_by_test_id('stException').count()
 
 
-def test_listing_suggestions_dropdown_and_live_search_survive_navigation(import_page):
+@pytest.mark.parametrize('width', [1440, 390])
+def test_listing_popup_search_selection_dismissal_and_navigation(import_page, width):
     from portfolio_app.positions import read_snapshot
     page, path = import_page
+    page.set_viewport_size({'width': width, 'height': 1000})
     upload(page, b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-02,buy,BTC,1,100,EUR\n')
     holding = page.get_by_role('combobox', name='Holding · BTC', exact=True)
     playwright.expect(holding).to_have_value('New position')
     assert not page.get_by_role('combobox', name='Destination ·', exact=False).count()
-    listing = page.get_by_role('combobox', name='Price listing · BTC', exact=True)
-    playwright.expect(listing).to_have_value('BTC-EUR · Bitcoin')
-    playwright.expect(listing).to_have_attribute('inputmode', 'none')
-    listing.focus(); listing.press('Backspace'); listing.press_sequentially('Not an editable name')
-    playwright.expect(listing).to_have_value('BTC-EUR · Bitcoin')
-    listing.press('Escape')
+    listing = listing_field(page, 'BTC')
+    playwright.expect(listing).to_contain_text('BTC-EUR · Bitcoin')
+    assert not page.get_by_role('button', name='Search', exact=True).and_(page.get_by_test_id('stBaseButton-secondary')).count()
+    assert not page.get_by_role('searchbox', name='Search listings', exact=True).count()
     name = page.get_by_role('textbox', name='Name · BTC', exact=True)
     choice_box, name_box = holding.bounding_box(), name.bounding_box()
-    assert name_box['x'] > choice_box['x'] + choice_box['width']
-    assert abs(choice_box['y'] - name_box['y']) < 5
+    if width > 600:
+        assert name_box['x'] > choice_box['x'] + choice_box['width']
+        assert abs(choice_box['y'] - name_box['y']) < 5
     name.fill('Invented Bitcoin holding'); name.press('Tab'); settle(page)
-    listing.click()
-    page.get_by_role('option', name='BTC-USD · Bitcoin', exact=True).click(); settle(page)
+    listing.click(); settle(page)
+    query = page.get_by_role('searchbox', name='Search listings', exact=True)
+    playwright.expect(query).to_be_focused()
+    results = page.get_by_role('button', name=re.compile('^Select BTC-'))
+    playwright.expect(results.first).to_have_accessible_name('Select BTC-EUR')
+    playwright.expect(results.first).to_be_in_viewport(ratio=1)
+    playwright.expect(page.get_by_role('button', name='No price listing', exact=True)).to_be_in_viewport(ratio=1)
+    page.screenshot(path=str(path.parent.parent / f'synthetic-listing-popup-{width}.png'))
+    page.get_by_role('button', name='Select BTC-USD', exact=True).click(); settle(page)
+    playwright.expect(query).not_to_be_visible()
     assert not path.exists()
     page.get_by_role('tab', name='Overview', exact=True).click(); settle(page)
     page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
-    playwright.expect(listing).to_have_value('BTC-USD · Bitcoin')
+    playwright.expect(listing).to_contain_text('BTC-USD · Bitcoin')
     playwright.expect(name).to_have_value('Invented Bitcoin holding')
-    search = page.get_by_role('button', name='Search', exact=True).and_(page.get_by_test_id('stBaseButton-secondary'))
-    playwright.expect(search).to_have_count(1)
-    search.click(); settle(page)
-    query = page.get_by_role('searchbox', name='Find an investment', exact=True)
+    listing.click(); settle(page)
+    query.fill('Nvidia'); query.press('Escape'); settle(page)
+    playwright.expect(query).not_to_be_visible()
+    playwright.expect(listing).to_contain_text('BTC-USD · Bitcoin')
+    listing.click(); settle(page)
+    page.get_by_role('textbox', name='Name · BTC', exact=True).click(); settle(page)
+    playwright.expect(query).not_to_be_visible()
+    playwright.expect(listing).to_contain_text('BTC-USD · Bitcoin')
+    listing.click(); settle(page)
     query.fill('Bitcoin')
-    page.get_by_role('button', name='Select BTC-EUR on', exact=False).click(); settle(page)
-    playwright.expect(listing).to_have_value('BTC-EUR · Bitcoin')
+    page.get_by_role('button', name='Select BTC-EUR', exact=True).wait_for()
+    query.press('ArrowDown'); page.keyboard.press('Enter'); settle(page)
+    playwright.expect(query).not_to_be_visible()
+    playwright.expect(listing).to_contain_text('BTC-EUR · Bitcoin')
+    listing.click(); settle(page)
+    page.get_by_role('button', name='No price listing', exact=True).click(); settle(page)
+    playwright.expect(query).not_to_be_visible()
+    playwright.expect(listing).to_contain_text('No price listing')
+    playwright.expect(name).to_have_value('Invented Bitcoin holding')
+    listing.click(); settle(page)
+    page.get_by_role('button', name='Select BTC-EUR', exact=True).click(); settle(page)
     assert not path.exists()
     playwright.expect(page.get_by_role('textbox', name='Name · BTC', exact=True)).to_have_value('Invented Bitcoin holding')
     page.screenshot(path=str(path.parent.parent / 'synthetic-import-mapping.png'))
@@ -280,8 +308,8 @@ mapping_ui._fetch = synthetic_search
                   b'a,2024-01-02,buy,ADA,1,10,EUR\nb,2024-01-02,buy,LTC,1,20,EUR\n'})
     settle(page)
     for asset in ('ADA', 'LTC'):
-        listing = page.get_by_role('combobox', name='Price listing · '+asset, exact=True)
-        playwright.expect(listing).to_have_value(asset+'-EUR · '+asset+'-EUR')
+        listing = listing_field(page, asset)
+        playwright.expect(listing).to_contain_text(asset+'-EUR · '+asset+'-EUR')
     assert path.read_bytes() == before
     assert not page.get_by_test_id('stException').count()
 

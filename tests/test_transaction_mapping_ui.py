@@ -5,6 +5,21 @@ from streamlit.testing.v1 import AppTest
 from portfolio_app.instruments import Instrument
 
 
+def listing_key(app, asset):
+    popup = next(x for x in app.get('popover') if x.proto.popover.help == 'Price listing · '+asset)
+    return popup.proto.popover.id.split('-', 2)[2].removesuffix('_picker')
+
+
+def listing_value(app, asset):
+    return app.session_state[listing_key(app, asset)]
+
+
+def set_listing(app, asset, ticker):
+    # AppTest doesn't expose popover/component clicks; browser tests cover those.
+    app.session_state[listing_key(app, asset)] = ticker
+    return app.run()
+
+
 def mapping_app(directory, currency):
     from pathlib import Path
     from portfolio_app.account_journal import Journal
@@ -38,11 +53,10 @@ def test_mixed_portfolio_fetches_preferred_currency_and_keeps_manual_choice(tmp_
     app = AppTest.from_function(mapping_app, args=(str(tmp_path), currency)).run()
     assert not app.exception
     assert sorted(queries) == sorted(['ADA', 'LTC', 'ADA-'+currency, 'LTC-'+currency])
-    listing = next(s for s in app.selectbox if s.label == 'Price listing · ADA')
-    assert listing.value == 'ADA-'+(currency if available else 'USD')
-    listing.select('ADA-USD').run()
+    assert listing_value(app, 'ADA') == 'ADA-'+(currency if available else 'USD')
+    set_listing(app, 'ADA', 'ADA-USD')
     assert not app.exception
-    assert next(s for s in app.selectbox if s.label == 'Price listing · ADA').value == 'ADA-USD'
+    assert listing_value(app, 'ADA') == 'ADA-USD'
     assert len(queries) == 4  # Rerenders reuse both stages of the lookup.
 
 
@@ -63,9 +77,8 @@ def test_preferred_currency_does_not_resolve_ambiguous_assets_or_replace_existin
     app = AppTest.from_function(mapping_app, args=(str(tmp_path), 'EUR')).run()
     assert not app.exception
     assert sorted(queries) == ['ADA', 'ADA-EUR']
-    values = {s.label:s.value for s in app.selectbox}
-    assert values['Price listing · ADA'] == ''
-    assert values['Price listing · LTC'] == 'LTC-USD'
+    assert listing_value(app, 'ADA') == ''
+    assert listing_value(app, 'LTC') == 'LTC-USD'
 
 
 def test_existing_preferred_pair_and_unrelated_crypto_results_need_no_extra_lookup(tmp_path, monkeypatch):
@@ -83,6 +96,5 @@ def test_existing_preferred_pair_and_unrelated_crypto_results_need_no_extra_look
     app = AppTest.from_function(mapping_app, args=(str(tmp_path), 'EUR')).run()
     assert not app.exception
     assert sorted(queries) == ['ADA', 'LTC']
-    values = {s.label:s.value for s in app.selectbox}
-    assert values['Price listing · ADA'] == 'ADA-EUR'
-    assert values['Price listing · LTC'] == ''
+    assert listing_value(app, 'ADA') == 'ADA-EUR'
+    assert listing_value(app, 'LTC') == ''

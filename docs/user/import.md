@@ -67,14 +67,17 @@ also match ticker pairs such as `BTC-EUR`. Ambiguous matches require a choice.
 New assets receive exact listing suggestions, preferring the reporting currency.
 Crypto listings are checked for that currency in mixed portfolios too; other
 quote currencies remain available when no matching pair is found.
-Use the price-listing dropdown or its search button to find another listing with
-the same live search used when adding a position. Suggestions, names and types
+Click the price-listing field to open its searchable popup. Suggestions appear
+immediately, with the reporting currency first; type a name, ticker or ISIN to
+search in the same popup. Each result shows its ticker, currency and exchange.
+Choosing a result updates the field and closes the popup. Escape or clicking
+outside keeps the previous selection. Suggestions, names and types
 remain editable; listing changes are saved together with applied transactions.
 The listing label identifies the quote pair; its quote currency is not added to
 the holding name. The **Holding** dropdown contains existing holdings and **New
 position**. Selecting **New position** splits that cell into the dropdown and an
-editable holding name beside it. Holding and price-listing dropdowns only select
-options; use **Search** for live listing search.
+editable holding name beside it. The holding dropdown selects the destination;
+the price-listing popup selects the market-data source.
 Edited names survive listing changes and navigation. Automatically suggested types
 can be reviewed under **Asset types**. **Show transactions for** filters the review
 table by asset, including received exchange legs and asset fees. It does not

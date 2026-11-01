@@ -1,6 +1,7 @@
 """Synthetic history presentation keeps non-cash evidence visible."""
 from streamlit.testing.v1 import AppTest
 from test_transaction_import_commands import setup,save
+from test_transaction_mapping_ui import listing_value
 
 
 def test_received_swap_income_fee_and_valuation_are_visible(tmp_path):
@@ -125,7 +126,7 @@ def test_crypto_symbol_maps_to_existing_pair_without_creating_duplicate(tmp_path
     app = AppTest.from_function(script, args=(str(tmp_path),)).run()
     assert not app.exception
     assert next(c for c in app.selectbox if c.label == 'Holding · BTC').value == 'invented-position'
-    assert next(c for c in app.selectbox if c.label == 'Price listing · BTC').value == 'BTC-EUR'
+    assert listing_value(app, 'BTC') == 'BTC-EUR'
     assert (tmp_path/'holdings.csv').read_bytes() == original
 
 
@@ -153,7 +154,7 @@ def test_new_crypto_uses_verified_live_pair_in_reporting_currency(tmp_path, monk
     app = AppTest.from_function(script, args=(str(tmp_path),)).run()
     assert not app.exception
     assert set(queries) == {'XYZ', 'XYZ-EUR'}
-    assert next(c for c in app.selectbox if c.label == 'Price listing · XYZ').value == 'XYZ-EUR'
+    assert listing_value(app, 'XYZ') == 'XYZ-EUR'
     assert next(c for c in app.selectbox if c.label == 'Type · XYZ').value == 'crypto'
     assert next(c for c in app.text_input if c.label == 'Name · XYZ').value == 'Invented token'
     assert (tmp_path/'holdings.csv').read_bytes() == before
