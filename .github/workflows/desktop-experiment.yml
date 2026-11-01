@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.mac_candidate_run != '' && '["macos-14"]' || '["macos-14","ubuntu-24.04"]') }}
+        os: ${{ fromJSON(inputs.mac_candidate_run != '' && '["macos-15"]' || '["macos-15","ubuntu-24.04"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
@@ -153,7 +153,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.build_platforms == 'macos' && '[{"os":"macos-14","target":"macos-arm64","python":"3.13"}]' || inputs.build_platforms == 'linux' && '[{"os":"ubuntu-22.04","target":"linux-x64","python":"3.12"}]' || '[{"os":"ubuntu-22.04","target":"linux-x64","python":"3.12"},{"os":"macos-14","target":"macos-arm64","python":"3.13"}]') }}
+        include: ${{ fromJSON(inputs.build_platforms == 'macos' && '[{"os":"macos-15","target":"macos-arm64","python":"3.13"}]' || inputs.build_platforms == 'linux' && '[{"os":"ubuntu-22.04","target":"linux-x64","python":"3.12"}]' || '[{"os":"ubuntu-22.04","target":"linux-x64","python":"3.12"},{"os":"macos-15","target":"macos-arm64","python":"3.13"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -354,7 +354,7 @@ jobs:
           path: dist/downloaded
       - run: uv sync --locked --all-groups
       - run: uv run playwright install chromium
-      - name: Verify and install the macOS 14-built DMG
+      - name: Verify and install the macOS 15-built DMG
         run: |
           cd dist/downloaded
           shasum -a 256 -c SHA256SUMS

@@ -275,9 +275,9 @@ def promote(api, repository, run_id, *, linux_native_run_id, macos_run_id=None):
             raise ValueError('Release tag already points elsewhere.')
         if not existing:
             api.call('/git/refs', method='POST', body={'ref': 'refs/tags/' + tag, 'sha': commit})
-        mac_note = (f'\n\nExperimental macOS installer (Apple Silicon, macOS 14+): '
+        mac_note = (f'\n\nExperimental macOS installer (Apple Silicon, macOS 15+): '
             f'https://github.com/{repository}/actions/runs/{macos_run_id}\n'
-            'Automated packaged-app checks passed on macOS 14, 15 and 26. '
+            'Automated packaged-app checks passed on macOS 15 and 26. '
             'No Developer ID signing or notarization; Gatekeeper may block normal launch. '
             'Interactive installation/download approval on a personal Mac remains unverified.' if macos_run_id else '')
         linux_note = (f'\n\nUbuntu 22.04/24.04 x64 native installer: '

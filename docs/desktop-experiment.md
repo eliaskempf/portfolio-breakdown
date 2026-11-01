@@ -11,7 +11,7 @@ The app's **? → User guide** opens its matching bundled documentation offline.
 ## Targets and build
 
 - Ubuntu 22.04/24.04 x64: Qt WebEngine, bundled Python, `.deb`, application menu shortcut.
-- Apple Silicon macOS 14+: Cocoa/WKWebView, bundled Python, `.app` inside a DMG.
+- Apple Silicon macOS 15+: Cocoa/WKWebView, bundled Python, `.app` inside a DMG.
 - Intel Macs, other Linux distributions, automatic updates and additional window
   decoration are outside the experiment. Windows retains its existing adapter.
 
@@ -81,7 +81,7 @@ browser tests and health endpoints are supporting evidence only.
 
 The extended matrix tests native Cocoa file panels and minimize/restore/focus,
 an Openbox X11 session and an isolated Weston Wayland session, plus the same
-macOS 14-built DMG on macOS 15 and 26. The `desktop` mode requires a window
+macOS 15-built DMG on macOS 15 and 26. The `desktop` mode requires a window
 manager/compositor; bare Xvfb is insufficient for activation checks.
 The Cocoa upload and save checks run independently so a picker automation
 failure cannot prevent collecting download evidence. Weston is nested inside
@@ -121,7 +121,7 @@ Both checks are mandatory; neither substitutes for the other.
 For release regressions, **Build candidate** also supports `diagnostics_only`.
 It runs the affected Windows browser suites, four slower-render browser cases,
 and six independent native source probes per selected Mac host without
-building installers. The Mac group covers macOS 14, 15 and 26; `macos26` selects
+building installers. The Mac group covers macOS 15 and 26; `macos26` selects
 only the newest host for focused investigation. Mac diagnostics record permission, focus and default-button
 state, with a bounded accessibility tree and synthetic panel snapshot on failure.
 Three probes use the build job's render mode and three include desktop focus
@@ -137,11 +137,11 @@ Launch Services acceptance uses the real installed `.app` in the installer job.
 gh workflow run candidate.yml --ref REVIEWED_BRANCH -f diagnostics_only=true -f diagnostics_platforms=all
 ```
 
-Choose `windows`, `macos` or just `macos14` instead of `all` when the other platform has already
+Choose `windows`, `macos` or just `macos15` instead of `all` when the other platform has already
 been checked locally. These inputs do not affect normal candidate builds.
 
 Set `mac_candidate_run` to an existing experimental workflow run ID for one
-macOS 14 job that verifies and installs its DMG, then runs Launch Services and
+macOS 15 job that verifies and installs its DMG, then runs Launch Services and
 full installed native/browser acceptance without rebuilding or repeating tests.
 Set `linux_candidate_run` instead to run Linux-only diagnostics: three native
 cycles per backend against both the selected installer (under GDB) and current

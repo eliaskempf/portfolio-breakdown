@@ -258,7 +258,7 @@ is a disclosed limitation, not a requirement for later manual testing.
       installer SHA256 and native reports. Earlier experimental artifacts are
       not substitutes for the current release's builds.
 - [ ] Include the planned experimental macOS DMG via the explicit publication
-      inputs after its automated gates pass. Disclose Apple Silicon/macOS 14+,
+      inputs after its automated gates pass. Disclose Apple Silicon/macOS 15+,
       no Developer ID signing/notarization and unverified personal-Mac install
       approval. This known manual gap does not block experimental inclusion.
       Official publication still requires approval; no automatic triggers added.

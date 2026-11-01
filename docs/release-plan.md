@@ -3,7 +3,7 @@
 ## Release contract
 
 Build Windows x64, Ubuntu 22.04/24.04 x64 and experimental Apple Silicon
-macOS 14+ installers from one clean, frozen default-branch commit. Preserve the
+macOS 15+ installers from one clean, frozen default-branch commit. Preserve the
 valuation → exposure → taxonomy → aggregation pipeline and financial semantics.
 Use synthetic workspaces for every automated and manual acceptance check.
 Candidate builds create artifacts, never tags or releases. Publication verifies

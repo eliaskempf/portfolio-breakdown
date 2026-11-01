@@ -47,5 +47,5 @@ if sys.platform == 'darwin':
         bundle_identifier='io.github.eliaskempf.portfolio-breakdown.experimental',
         info_plist={'CFBundleShortVersionString': version('portfolio-breakdown'),
                     'CFBundleVersion': version('portfolio-breakdown'),
-                    'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': '14.0',
+                    'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': '15.0',
                     'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True}})

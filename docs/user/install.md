@@ -34,7 +34,7 @@ notes for that installer’s acceptance status and desktop limitations.
 For browser mode, extract the application `.tar.gz` archive and run
 `./portfolio-app`. Keep its whole folder together.
 
-**macOS (experimental):** on Apple Silicon with macOS 14 or later, open the DMG
+**macOS (experimental):** on Apple Silicon with macOS 15 or later, open the DMG
 and drag **Portfolio Breakdown Experimental** into **Applications**, then launch
 it there. Python is bundled; installing Python or uv is unnecessary. Intel Macs are
 not supported. This installer has ad-hoc integrity signing only, without a

@@ -31,7 +31,7 @@ The browser archive remains available: `./portfolio-app` opens the browser; clos
 running until **Portfolio settings → App & workspace → Stop application** or `--stop`.
 Portable installs can add a shortcut with `--install-shortcut`.
 
-The experimental Apple Silicon macOS 14+ DMG accompanies a release only after
+The experimental Apple Silicon macOS 15+ DMG accompanies a release only after
 its automated packaged checks pass. Open the DMG and copy **Portfolio
 Breakdown Experimental.app** into Applications. It includes Python and opens a
 standalone window. There is no Developer ID signature or notarization; Gatekeeper
