@@ -1,4 +1,4 @@
-"""Run exhaustive candidate tests in one unit and two isolated browser processes."""
+"""Run exhaustive tests with isolated units/latency and two balanced browser workers."""
 import argparse
 from collections import Counter
 import json
@@ -184,6 +184,67 @@ def start_worker(command, *, cwd, env, log_path):
     return process, log
 
 
+def build_schedule(files, nodeids):
+    """Keep timing-sensitive work alone, then balance browser case counts."""
+    files = sorted(files)
+    counts = Counter(node.split('::')[0] for node in nodeids)
+    if set(counts) - set(files):
+        raise ValueError('Canonical collection contains an unassigned test file')
+    responsiveness = ['tests/test_market_data_browser.py', 'tests/test_unified_exposure_browser.py']
+    browser = [p for p in files if p.endswith('browser.py') and p not in responsiveness]
+    groups = {'unit': [p for p in files if not p.endswith('browser.py')],
+              'responsiveness': responsiveness, 'browser-0': [], 'browser-1': []}
+    if not set(responsiveness) <= set(files):
+        raise ValueError('Missing isolated responsiveness test file')
+    weights = {'browser-0': 0, 'browser-1': 0}
+    for path in sorted(browser, key=lambda path: (-counts[path], path)):
+        group = min(weights, key=lambda name: (weights[name], name))
+        groups[group].append(path)
+        weights[group] += counts[path]
+    phases = [['unit'], ['responsiveness'], ['browser-0', 'browser-1']]
+    if not all(groups.values()):
+        raise ValueError('Expected nonempty unit, responsiveness and browser groups')
+    assigned = [path for paths in groups.values() for path in paths]
+    if len(assigned) != len(set(assigned)) or sorted(assigned) != files:
+        raise ValueError('Test file assignment must be disjoint and exhaustive')
+    return groups, phases, dict(counts)
+
+
+def run_phases(groups, phases, start, output):
+    """Finish every worker in a phase before starting the next; never retry."""
+    results, timings, processes = {}, {}, {}
+    started = time.monotonic()
+    try:
+        for phase in phases:
+            worker_started = {}
+            for name in phase:
+                process, log = start(name)
+                processes[name] = (process, log)
+                worker_started[name] = time.monotonic()
+                print(json.dumps({'started': name, 'files': len(groups[name]), 'pid': process.pid,
+                                  'seconds': round(worker_started[name]-started, 2)}), flush=True)
+            while processes:
+                for name, (process, log) in list(processes.items()):
+                    code = process.poll()
+                    if code is not None:
+                        results[name] = code
+                        timings[name] = time.monotonic()-worker_started[name]
+                        log.close()
+                        del processes[name]
+                        print(json.dumps({'finished': name, 'code': code,
+                            'worker_seconds': round(timings[name], 2),
+                            'seconds': round(time.monotonic()-started, 2)}), flush=True)
+                if processes:
+                    time.sleep(1)
+    finally:
+        errors = cleanup_processes(processes)
+        if errors:
+            (output/'cleanup-errors.json').write_text(json.dumps(errors))
+            if sys.exc_info()[0] is None:
+                raise RuntimeError('Worker cleanup failed; inspect evidence')
+    return results, timings
+
+
 def main(args):
     checkout, output = args.checkout.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -194,15 +255,6 @@ def main(args):
     # canonical collection below independently verifies every collected node ID.
     files = sorted({p.relative_to(checkout).as_posix() for pattern in ('test_*.py', '*_test.py')
                     for p in (checkout/'tests').rglob(pattern)})
-    browser = [p for p in files if p.endswith('browser.py')]
-    groups = {'unit': [p for p in files if p not in browser],
-              'browser-0': browser[::2], 'browser-1': browser[1::2]}
-    assert all(groups.values())
-    assert sorted(p for paths in groups.values() for p in paths) == files
-    assert len(files) == sum(len(paths) for paths in groups.values())
-    manifest = {'source': expected, 'groups': groups, 'max_processes': 3,
-                'mandatory_browser': True, 'all_test_files': files}
-    (output/'manifest.json').write_text(json.dumps(manifest, indent=2))
     env = dict(os.environ, PORTFOLIO_REQUIRE_BROWSER='1')
     env.pop('VIRTUAL_ENV', None)
     script = str(Path(__file__).resolve())
@@ -222,36 +274,21 @@ def main(args):
                 raise RuntimeError('Canonical worker cleanup failed; inspect evidence')
     canonical = json.loads((output/'canonical.collection.json').read_text())
     assert not canonical['skipped_browsers']
-    assert all(node.split('::')[0] in files for node in canonical['nodeids'])
+    groups, phases, counts = build_schedule(files, canonical['nodeids'])
+    manifest = {'source': expected, 'groups': groups, 'phases': phases, 'max_processes': 2,
+                'canonical_cases_per_file': counts,
+                'mandatory_browser': True, 'all_test_files': files}
+    (output/'manifest.json').write_text(json.dumps(manifest, indent=2))
     started = time.monotonic()
-    processes, results = {}, {}
-    try:
-        for name in groups:
-            child_env = dict(env, PORTFOLIO_STATE_DIR=str(output/(name+'-state')),
-                             PORTFOLIO_BROWSER_EVIDENCE=str(output/(name+'-browser-evidence')))
-            process, log = start_worker(command(name), cwd=checkout, env=child_env, log_path=output/(name+'.log'))
-            processes[name] = (process, log)
-            print(json.dumps({'started': name, 'files': len(groups[name]), 'pid': process.pid}), flush=True)
-        while processes:
-            for name, (process, log) in list(processes.items()):
-                code = process.poll()
-                if code is not None:
-                    results[name] = code
-                    log.close()
-                    del processes[name]
-                    print(json.dumps({'finished': name, 'code': code, 'seconds': round(time.monotonic()-started, 2)}), flush=True)
-            if processes:
-                time.sleep(1)
-    finally:
-        errors = cleanup_processes(processes)
-        if errors:
-            (output/'cleanup-errors.json').write_text(json.dumps(errors))
-            if sys.exc_info()[0] is None:
-                raise RuntimeError('Worker cleanup failed; inspect evidence')
+    def start(name):
+        child_env = dict(env, PORTFOLIO_STATE_DIR=str(output/(name+'-state')),
+                         PORTFOLIO_BROWSER_EVIDENCE=str(output/(name+'-browser-evidence')))
+        return start_worker(command(name), cwd=checkout, env=child_env, log_path=output/(name+'.log'))
+    results, timings = run_phases(groups, phases, start, output)
     unchanged = head(checkout) == expected and clean(checkout)
     result = final_evidence(output, groups, results, canonical['nodeids'],
                             source_unchanged=unchanged, aggregate=args.junit.resolve())
-    result.update(source=expected, seconds=time.monotonic()-started)
+    result.update(source=expected, seconds=time.monotonic()-started, worker_seconds=timings)
     (output/'results.json').write_text(json.dumps(result, indent=2))
     print(json.dumps(result), flush=True)
     return 0 if result['status'] == 'passed' else 1

@@ -13,7 +13,7 @@ spec.loader.exec_module(runner)
 
 
 def evidence(tmp_path):
-    groups = {'unit': ['tests/test_unit.py'], 'browser-0': ['tests/test_first_browser.py'],
+    groups = {'unit': ['tests/test_unit.py'], 'responsiveness': ['tests/test_market_data_browser.py'], 'browser-0': ['tests/test_first_browser.py'],
               'browser-1': ['tests/test_second_browser.py']}
     nodeids = []
     for name, files in groups.items():
@@ -34,8 +34,8 @@ def test_all_groups_require_exact_disjoint_collection_and_valid_junit(tmp_path):
     groups, results, nodeids = evidence(tmp_path)
     result = finish(tmp_path, groups, results, nodeids)
     assert result['status'] == 'passed' and result['complete_results']
-    assert result['exhaustive_disjoint'] and result['junit']['tests'] == '3'
-    assert len(ET.parse(tmp_path/'aggregate.xml').getroot()) == 3
+    assert result['exhaustive_disjoint'] and result['junit']['tests'] == '4'
+    assert len(ET.parse(tmp_path/'aggregate.xml').getroot()) == 4
 
 
 @pytest.mark.parametrize('fault', ['missing_result', 'missing_xml', 'invalid_xml', 'wrong_xml_root',
@@ -94,7 +94,7 @@ def test_all_worker_failures_survive_aggregation(tmp_path):
         results[name] = 1
         (tmp_path/(name+'.xml')).write_text(f'<testsuite tests="1" failures="1" errors="0"><testcase name="{name}"><failure message="Invented {name} failure"/></testcase></testsuite>')
     result = finish(tmp_path, groups, results, nodeids)
-    assert result['status'] == 'failed' and result['junit']['failures'] == '3'
+    assert result['status'] == 'failed' and result['junit']['failures'] == '4'
     assert {e.get('message') for e in ET.parse(tmp_path/'aggregate.xml').getroot().iter('failure')} == {
         f'Invented {name} failure' for name in groups}
 
@@ -123,7 +123,7 @@ def test_legitimate_nonbrowser_collection_skip_has_separate_junit_case(tmp_path)
     path.write_text(json.dumps(data))
     (tmp_path/'unit.xml').write_text('<testsuite tests="2" errors="0" failures="0" skipped="1"><testcase name="invented"/><testcase name="platform_only"><skipped/></testcase></testsuite>')
     result = finish(tmp_path, groups, results, nodeids)
-    assert result['status'] == 'passed' and result['junit']['tests'] == '4'
+    assert result['status'] == 'passed' and result['junit']['tests'] == '5'
 
 
 def test_cleanup_continues_after_tree_kill_timeout_and_preserves_primary(monkeypatch):
@@ -173,3 +173,97 @@ def test_untracked_source_is_not_a_clean_frozen_checkout(tmp_path):
     assert runner.clean(tmp_path)
     (tmp_path/'unreviewed.py').write_text('pass\n')
     assert not runner.clean(tmp_path)
+
+
+def test_schedule_balances_canonical_case_counts_with_deterministic_ties():
+    weights = {'tests/test_a_browser.py': 10, 'tests/test_b_browser.py': 9,
+               'tests/test_c_browser.py': 5, 'tests/test_d_browser.py': 4,
+               'tests/test_e_browser.py': 1, 'tests/test_f_browser.py': 1,
+               'tests/test_market_data_browser.py': 2, 'tests/test_unified_exposure_browser.py': 3,
+               'tests/test_unit.py': 100}
+    nodeids = [path+'::test_case['+str(i)+']' for path, count in weights.items() for i in range(count)]
+    groups, phases, counts = runner.build_schedule(list(reversed(weights)), list(reversed(nodeids)))
+    assert phases == [['unit'], ['responsiveness'], ['browser-0', 'browser-1']]
+    assert groups == {'unit': ['tests/test_unit.py'],
+        'responsiveness': ['tests/test_market_data_browser.py', 'tests/test_unified_exposure_browser.py'],
+        'browser-0': ['tests/test_a_browser.py', 'tests/test_d_browser.py', 'tests/test_e_browser.py'],
+        'browser-1': ['tests/test_b_browser.py', 'tests/test_c_browser.py', 'tests/test_f_browser.py']}
+    assert counts == weights
+    assert [sum(counts[p] for p in groups[g]) for g in ('browser-0', 'browser-1')] == [15, 15]
+    assert sorted(p for paths in groups.values() for p in paths) == sorted(weights)
+    assert runner.build_schedule(list(weights), nodeids) == (groups, phases, counts)
+
+
+@pytest.mark.parametrize('fault', ['missing_responsiveness', 'missing_large_exposure', 'unknown_canonical', 'duplicate_file'])
+def test_schedule_rejects_incomplete_or_ambiguous_assignment(fault):
+    files = ['tests/test_unit.py', 'tests/test_market_data_browser.py',
+             'tests/test_unified_exposure_browser.py', 'tests/test_a_browser.py', 'tests/test_b_browser.py']
+    nodeids = [p+'::test_case' for p in files]
+    if fault == 'missing_responsiveness':
+        files.remove('tests/test_market_data_browser.py')
+        nodeids = [n for n in nodeids if 'market_data' not in n]
+    elif fault == 'missing_large_exposure':
+        files.remove('tests/test_unified_exposure_browser.py')
+        nodeids = [n for n in nodeids if 'unified_exposure' not in n]
+    elif fault == 'unknown_canonical':
+        nodeids.append('tests/test_unassigned.py::test_case')
+    else:
+        files.append(files[0])
+    with pytest.raises(ValueError):
+        runner.build_schedule(files, nodeids)
+
+
+def test_phases_isolate_unit_and_responsiveness_then_overlap_only_browsers(tmp_path, monkeypatch):
+    import io
+    groups = {'unit': ['unit'], 'responsiveness': ['latency'],
+              'browser-0': ['first'], 'browser-1': ['second']}
+    phases = [['unit'], ['responsiveness'], ['browser-0', 'browser-1']]
+    active, events, logs, snapshots = set(), [], [], []
+    class Process:
+        pid = 123
+        def __init__(self, name):
+            self.name, self.polls = name, 0
+        def poll(self):
+            self.polls += 1
+            if self.polls == 1:
+                return None
+            active.remove(self.name)
+            events.append(('finish', self.name))
+            # A failed worker still leaves all remaining required work runnable.
+            return 1 if self.name == 'responsiveness' else 0
+    def start(name):
+        if name in {'unit', 'responsiveness'}:
+            assert not active
+        else:
+            assert active <= {'browser-0', 'browser-1'}
+        active.add(name)
+        snapshots.append(set(active))
+        events.append(('start', name))
+        log = io.StringIO()
+        logs.append(log)
+        return Process(name), log
+    monkeypatch.setattr(runner.time, 'sleep', lambda seconds: None)
+    results, timings = runner.run_phases(groups, phases, start, tmp_path)
+    assert results == {'unit': 0, 'responsiveness': 1, 'browser-0': 0, 'browser-1': 0}
+    assert set(timings) == set(groups)
+    assert events == [('start', 'unit'), ('finish', 'unit'),
+        ('start', 'responsiveness'), ('finish', 'responsiveness'),
+        ('start', 'browser-0'), ('start', 'browser-1'),
+        ('finish', 'browser-0'), ('finish', 'browser-1')]
+    assert max(map(len, snapshots)) == 2
+    assert not active and all(log.closed for log in logs)
+
+
+@pytest.mark.parametrize('fault', ['missing_result', 'missing_xml', 'missing_execution'])
+def test_isolated_responsiveness_requires_complete_evidence(tmp_path, fault):
+    groups, results, nodeids = evidence(tmp_path)
+    if fault == 'missing_result':
+        results.pop('responsiveness')
+    elif fault == 'missing_xml':
+        (tmp_path/'responsiveness.xml').unlink()
+    else:
+        path = tmp_path/'responsiveness.collection.json'
+        data = json.loads(path.read_text())
+        data['executed_nodeids'] = []
+        path.write_text(json.dumps(data))
+    assert finish(tmp_path, groups, results, nodeids)['status'] == 'failed'

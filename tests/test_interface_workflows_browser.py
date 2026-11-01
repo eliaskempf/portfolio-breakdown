@@ -147,8 +147,16 @@ def test_named_liability_and_company_controls(workflow_page):
     item = load_leverage_settings(root/'funds')[0].liabilities[0]
     assert item.balance_eur is None
     select(page, 'Liability', 'Invented reserve loan · Invented lender')
-    page.get_by_role('textbox', name='Outstanding balance (EUR)', exact=True).fill('0')
+    playwright.expect(page.get_by_role('textbox', name='Liability name', exact=True)).to_have_value('Invented reserve loan')
+    playwright.expect(page.get_by_role('button', name='Remove liability', exact=True)).to_be_enabled()
+    balance = page.get_by_role('textbox', name='Outstanding balance (EUR)', exact=True)
+    balance.fill('0')
+    balance.press('Tab')
+    playwright.expect(balance).to_have_value('0')
     page.get_by_role('button', name='Save liability', exact=True).click(); settle(page)
+    # The saved form is rebuilt from its new revision; wait for its persisted
+    # numeric value instead of treating a transient idle state as a saved file.
+    playwright.expect(balance).to_have_value('0.0')
     assert load_leverage_settings(root/'funds')[0].liabilities[0].balance_eur == 0
     playwright.expect(page.get_by_role('combobox', name='ETF position', exact=True)).to_have_value('Invented fund · Synthetic')
     page.get_by_role('textbox', name='Signed factor', exact=True).fill('-2')

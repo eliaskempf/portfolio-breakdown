@@ -67,16 +67,23 @@ def test_large_exposure_paging_search_and_bounded_charts(ux_page, count):
     playwright.expect(table).to_contain_text(f'Invented constituent {count-1:05d}')
     search.fill(''); search.press('Enter'); settle(page)
     page.get_by_role('radio', name='Themes & sectors', exact=True).click()
+    playwright.expect(page.get_by_role('radio', name='Themes & sectors', exact=True)).to_be_checked()
+    settle(page)
     chart = page.locator('.st-key-exposure_results .js-plotly-plot').first
     playwright.expect(chart).to_be_visible()
-    settle(page)
     assert chart.evaluate('el => el.data[0].ids.length') < 100
     page.get_by_role('radio', name='Assets', exact=True).click()
-    page.get_by_role('button', name='Data & settings', exact=True).click()
-    page.get_by_text('Show largest exposures chart', exact=True).click()
-    page.keyboard.press('Escape')
-    playwright.expect(chart).to_be_visible()
+    playwright.expect(page.get_by_role('radio', name='Assets', exact=True)).to_be_checked()
     settle(page)
+    page.get_by_role('button', name='Data & settings', exact=True).click()
+    show_chart = page.get_by_role('checkbox', name='Show largest exposures chart', exact=True)
+    playwright.expect(show_chart).not_to_be_checked()
+    page.get_by_text('Show largest exposures chart', exact=True).click()
+    playwright.expect(show_chart).to_be_checked()
+    settle(page)
+    page.keyboard.press('Escape')
+    settle(page)
+    playwright.expect(chart).to_be_visible()
     assert chart.evaluate('el => el.data[0].y.length') == 30
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 

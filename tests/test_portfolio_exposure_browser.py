@@ -221,10 +221,14 @@ def test_funded_strategy_value_return_close_and_negative_chart(ux_page):
                  '€243.00', '2026-07-01', '2026-12-18', '2026-08-05', 'Eurex']:
         playwright.expect(page.get_by_role('dialog')).to_contain_text(text)
     playwright.expect(page.get_by_role('dialog')).to_contain_text('Return')
-    page.get_by_role('button', name='Open Futures analysis', exact=True).click()
+    settle(page)
+    dialog.get_by_role('button', name='Open Futures analysis', exact=True).click()
+    playwright.expect(dialog).to_have_count(0)
+    playwright.expect(page.get_by_role('tab', name='Futures', exact=True)).to_have_attribute('aria-selected', 'true')
+    settle(page)
     page.get_by_text('Strategy capital & lifetime gains', exact=True).click()
     page.get_by_role('button', name='Close saved contract and retain cash', exact=True).click()
-    page.get_by_role('tab', name='Overview', exact=True).click()
+    select_tab(page, 'Overview')
     playwright.expect(future_row).to_be_visible()
     playwright.expect(future_row.locator('td').nth(1)).to_contain_text('243.00')
     if toggle.get_attribute('aria-expanded') != 'true':

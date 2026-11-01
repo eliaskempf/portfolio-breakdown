@@ -23,7 +23,10 @@ def test_idle_minutes_retrievals_and_failure_preserve_table_and_focus(futures_pa
     select_tab(page, 'Positions')
     row = page.locator('tr[data-position-id="investment:synthetic"]')
     summary = row.locator('summary')
-    summary.focus(); page.keyboard.press('Enter')
+    # Resolve and focus the current disclosure for the keypress; a separate
+    # page-level Enter can land on another control after a component update.
+    summary.press('Enter')
+    playwright.expect(summary).to_be_focused()
     playwright.expect(row.locator('details')).to_have_attribute('open', '')
     row.evaluate("""el => {
         window.retainedRow=el;
