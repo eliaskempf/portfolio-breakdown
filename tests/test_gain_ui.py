@@ -13,6 +13,35 @@ from portfolio_app.security_history import Charge, SecurityBook, SecurityEvent a
 from test_ui import launch, by_label, activate
 
 
+def test_allocation_explains_full_history_twr_gap_even_when_recent_return_is_known(tmp_path):
+    from portfolio_app.history_observations import Observation
+    (tmp_path/'holdings.csv').write_text(
+        'position_key,id,name,ticker,shares,acquisition_price,acquisition_currency\n'
+        'synthetic-position,synthetic-asset,Invented investment,SYNTH,2,100,EUR\n')
+    (tmp_path/'demo_prices.json').write_text(json.dumps({'prices': {
+        'SYNTH':dict(price=110, currency='EUR', observed_at='2026-09-01T12:00:00+00:00')}, 'fx':{}}))
+    row = read_snapshot(tmp_path/'holdings.csv').holdings.iloc[0]
+    events = (E('open', 'opening', '2024-01-01', quantity=1, amount=100, currency='EUR'),
+              E('buy', 'buy', '2024-01-04', quantity=1, price=100, currency='EUR', charges_known=True))
+    book = SecurityBook('synthetic-position', 'synthetic-asset', tuple(fingerprint(row)), records=events,
+                        active_ids=tuple(e.id for e in events))
+    save_journal(tmp_path, Journal(version=2, securities=(book,)), None)
+    save_observations(tmp_path, ObservationStore(tuple(Observation(str(i), 'price', 'synthetic-position', stamp, price, 'EUR')
+        for i,(stamp,price) in enumerate([('2024-01-01',100), ('2025-01-01',105), (date.today().isoformat(),110)]))), None)
+    app = launch(tmp_path)
+    activate(app, 'Overview')
+    by_label(app.get('button_group'), 'Overview view').set_value('Allocation').run()
+    unit_key = next(k for k in app.session_state._state.filtered_state if k.startswith('performance_unit_'))
+    app.session_state[unit_key] = '%'
+    app.run()
+    assert not app.exception
+    metric = by_label(app.metric, 'Current value')
+    assert metric.delta == '—'
+    assert '2024-01-03' in metric.proto.help and 'Invented investment' in metric.proto.help
+    assert 'TWR: all recorded history' in metric.proto.help
+    assert 'Open Performance' in metric.proto.help
+
+
 @pytest.mark.parametrize('remove_current_row', [False, True])
 @pytest.mark.parametrize('estimated', [False, True])
 def test_fully_liquidated_history_has_shared_gain_without_current_quote(tmp_path, remove_current_row, estimated):
@@ -46,6 +75,12 @@ def test_fully_liquidated_history_has_shared_gain_without_current_quote(tmp_path
     assert '+€22.00' in by_label(app.metric,'Current value').delta
     assert ('estimates' in by_label(app.metric, 'Current value').proto.help) == estimated
     assert not any(c.value == 'Estimated gain' for c in app.caption)
+    # A new Streamlit session (browser refresh) restores the explicit view.
+    reopened = launch(tmp_path)
+    activate(reopened, 'Overview')
+    assert not reopened.exception
+    assert by_label(reopened.get('button_group'), 'Overview view').value == 'Allocation'
+    assert '+€22.00' in by_label(reopened.metric, 'Current value').delta
     by_label(app.selectbox,'Category').set_value('unassigned').run()
     assert not app.exception
     assert '+€22.00' in by_label(app.metric,'Current value').delta

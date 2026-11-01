@@ -2,7 +2,7 @@
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.display_preferences import FILE, load_preferences, save_preferences
+from portfolio_app.display_preferences import FILE, load_preferences, save_preferences, save_overview_view
 from portfolio_app.holdings import DataError
 from test_ui import by_label
 
@@ -45,3 +45,18 @@ def test_invalid_preferences_are_not_overwritten(tmp_path):
     with pytest.raises(DataError,match='display preferences'):
         load_preferences(tmp_path)
     assert (tmp_path/FILE).read_text()=='broken'
+
+
+def test_overview_choice_preserves_calendar_and_calendar_preserves_overview(tmp_path):
+    save_preferences(tmp_path, 'Sunday', None)
+    save_overview_view(tmp_path, 'Allocation')
+    saved = load_preferences(tmp_path)
+    assert saved.week_start == 'Sunday' and saved.overview_view == 'Allocation'
+    save_preferences(tmp_path, 'Monday', saved.revision)
+    assert load_preferences(tmp_path).overview_view == 'Allocation'
+    before = (tmp_path/FILE).read_bytes()
+    save_overview_view(tmp_path, 'Allocation')
+    assert (tmp_path/FILE).read_bytes() == before
+    with pytest.raises(DataError, match='Overview'):
+        save_overview_view(tmp_path, 'Unsupported')
+    assert (tmp_path/FILE).read_bytes() == before

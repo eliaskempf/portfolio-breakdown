@@ -56,3 +56,8 @@ def test_gain_and_twr_estimates_survive_toggle_and_chart_hover_in_tooltips(ux_pa
     allocation.click(); settle(page)
     playwright.expect(allocation).to_have_attribute('title', re.compile('gain.*estimates'))
     playwright.expect(page.get_by_text('Estimated gain', exact=True)).to_have_count(0)
+    page.reload(); settle(page)
+    playwright.expect(page.get_by_role('radio', name='Allocation', exact=True)).to_be_checked()
+    page.get_by_role('radio', name='Performance', exact=True).click(); settle(page)
+    page.reload(); settle(page)
+    playwright.expect(page.get_by_role('radio', name='Performance', exact=True)).to_be_checked()

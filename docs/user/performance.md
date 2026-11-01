@@ -139,8 +139,11 @@ history exists and **Price** otherwise. Positions without recorded history evide
 show the price chart directly, without the selector. The Holdings / Price selector
 remembers your explicit choice for each position during the session. Without applied history,
 Holdings offers a route to add and review transactions. The other position tabs
-stay in the same order. Overview defaults to **Performance** when useful history
-exists. Position details share one row above the chart selector: **Position value** with
+stay in the same order. Overview remembers your selected view for each portfolio,
+including after a browser refresh or app restart. With no saved choice it opens
+**Performance** when useful history exists, otherwise **Allocation**.
+Allocation's percentage gain uses full-history TWR; when unavailable, its tooltip
+explains the missing evidence. Position details share one row above the chart selector: **Position value** with
 personal gain, **Invested capital**, and **Annualized return**. Switching chart type,
 range or hover does not change these headlines. Dated figures stay in the chart
 tooltip. **Details** contains return on cost and unrealized gain. Without applied

@@ -23,6 +23,22 @@ from portfolio_app.strategic import bucket_paths, category_labels, bucket_positi
 
 
 def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None, open_capital_targets=None, current_valued=None, automatic_history=False, show_sold_positions=False):
+    from portfolio_app.display_preferences import load_preferences, save_overview_view
+    from portfolio_app.holdings import DataError
+    modes = ['Allocation', 'Performance', *(['Analytics'] if analytics else [])]
+    if data_dir is not None and 'strategic_view' not in st.session_state:
+        try:
+            saved_view = load_preferences(data_dir).overview_view
+            if saved_view in modes:
+                st.session_state['strategic_view'] = saved_view
+        except DataError as exc:
+            st.caption(str(exc))
+    def remember_view():
+        if data_dir is not None:
+            try:
+                save_overview_view(data_dir, st.session_state['strategic_view'])
+            except (DataError, OSError) as exc:
+                st.warning(str(exc))
     if 'unrealized_gain_reporting' not in valued:
         valued = position_performance(valued)
     from portfolio_app.futures import funded_strategy_positions
@@ -83,7 +99,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
     default_view = 'Performance' if has_history else 'Allocation'
     measure = 'Capital allocation'
     with st.container(horizontal=True, vertical_alignment='center', gap='medium', key='overview_view_controls'):
-        mode = st.segmented_control('Overview view', ['Allocation', 'Performance', *(['Analytics'] if analytics else [])], help='Switch between allocation, performance and available portfolio analytics.', default=st.session_state.get('strategic_view', default_view), key='strategic_view', selection_mode='single', required=True, label_visibility='collapsed')
+        mode = st.segmented_control('Overview view', modes, help='Switch between allocation, performance and available portfolio analytics. Your choice is remembered for this portfolio.', default=st.session_state.get('strategic_view', default_view), key='strategic_view', on_change=remember_view, selection_mode='single', required=True, label_visibility='collapsed')
     if mode != 'Performance' or not has_history:
         columns = st.columns([2, 1, 1] if exposure_result is not None and leverage_enabled else [2, 1])
         first, share = columns[:2]
@@ -91,6 +107,12 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         share.metric('Portfolio share', f'{100 * subtotal / whole:.1f}%' if not missing and valued.current_value_reporting.notna().all() and whole else '—',
                      help='Selected capital as a share of all owned capital, including a funded futures strategy. Excludes debt and any legacy unfunded settlement adjustment.')
         with first:
+            twr_help = ''
+            if history and history['view'].all_result.time_weighted_reasons:
+                from portfolio_app.history_data_ui import readable_reasons
+                reasons = readable_reasons(data_dir, history['journal'], history['scope'],
+                    history['view'].all_result.time_weighted_reasons)
+                twr_help = ' '.join(reasons[:3]) + ' Open Performance for details and corrections.'
             value_metric(exposure_result.net_equity if exposure_result is not None and not bucket else subtotal,
                          performance, missing=missing, percent=percent, key='overview_value',
                          on_toggle_gain=on_toggle_gain,
@@ -98,6 +120,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                          funded_gain=exposure_result is not None, strategy_gain=has_strategy, freshness=freshness, freshness_rows=selected,
                          known=history.get('current_gain') if history else None,
                          twr=history['view'].all_result.time_weighted if history else None,
+                         twr_help=twr_help,
                          twr_estimated=history['view'].all_result.estimated if history else False)
         if second is not None:
             with second:
