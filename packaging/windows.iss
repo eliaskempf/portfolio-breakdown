@@ -19,6 +19,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 DisableProgramGroupPage=yes
+AllowNoIcons=yes
 CloseApplications=yes
 RestartApplications=no
 

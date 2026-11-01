@@ -157,9 +157,19 @@ def test_alerts_arrive_on_every_tab_without_global_status_or_banners(monitoring_
         playwright.expect(dialog.get_by_role('button',name='View rule',exact=True)).to_be_visible()
         playwright.expect(dialog.get_by_role('button',name='Acknowledge alert',exact=True)).to_be_visible()
         settle(page)
-        a=dialog.get_by_role('button',name='View rule',exact=True).bounding_box()
-        b=dialog.get_by_role('button',name='Acknowledge alert',exact=True).bounding_box()
-        assert abs(a['y']-b['y'])<3
+        # An alert fragment can replace the dialog after settle(). Reacquire
+        # both controls and measure one DOM state, retaining the alignment check.
+        page.wait_for_function("""() => {
+            const dialog = document.querySelector('[role="dialog"]');
+            const buttons = [...(dialog?.querySelectorAll('button') ?? [])];
+            const controls = ['View rule', 'Acknowledge alert'].map(label =>
+                buttons.find(button => button.textContent.trim() === label));
+            if (controls.some(button => !button || getComputedStyle(button).visibility !== 'visible'))
+                return false;
+            const [a, b] = controls.map(button => button.getBoundingClientRect());
+            return a.width > 0 && a.height > 0 && b.width > 0 && b.height > 0
+                && Math.abs(a.top - b.top) < 3;
+        }""")
         dialog.get_by_role('button',name='Acknowledge alert',exact=True).click()
         playwright.expect(dialog).to_have_count(0)
         settle(page)

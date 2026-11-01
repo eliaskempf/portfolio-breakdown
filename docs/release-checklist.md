@@ -44,6 +44,14 @@ Pages deployment remain manual-only and require explicit dispatch approval.
 - [ ] Candidate archives contain no private workspace data, local installation
       provenance or personal build paths; archive owner metadata is neutral.
 - [ ] Extracted binaries pass lifecycle and browser navigation checks on both OSes.
+- [ ] Packaged history acceptance verifies the synthetic portfolio value, closed
+      holding/corrected sale, account modes, downloaded archive digests, restore
+      activation and reopening the restored workspace after restart.
+- [ ] Windows Setup installs its exact portable payload into an isolated folder,
+      passes installed browser/native smoke, and preserves every synthetic
+      workspace file across same-version reinstall and uninstall. Retain
+      `candidate-windows-setup-evidence`; this does not replace the clean Windows
+      11 checks for normal shortcuts, optional runtime installation and native dialogs.
 - [ ] Linux binary tested on Ubuntu 22.04 and 24.04.
 
 For paid runs, dispatch **Build candidate** and **Experimental desktop candidates**

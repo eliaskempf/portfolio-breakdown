@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkdtemp
 import tomllib
 import zipfile
 from urllib.parse import quote, unquote, urlsplit
@@ -253,6 +253,155 @@ def extract_bundle(directory, destination):
     return destination / 'portfolio-app' / ('portfolio-app.exe' if os.name == 'nt' else 'portfolio-app')
 
 
+def workspace_hashes(directory):
+    """Exact regular-file inventory for an explicitly synthetic acceptance workspace."""
+    if not directory.is_dir() or directory.is_symlink():
+        raise ValueError('Expected an existing synthetic workspace directory.')
+    result = {}
+    for path in sorted(directory.rglob('*')):
+        if path.is_symlink() or (hasattr(path, 'is_junction') and path.is_junction()) or not (path.is_file() or path.is_dir()):
+            raise ValueError('Synthetic acceptance inventory cannot contain links or special files.')
+        if path.is_file():
+            result[path.relative_to(directory).as_posix()] = digest(path)
+    if not result:
+        raise ValueError('Synthetic acceptance workspace must not be empty.')
+    return result
+
+
+def windows_installation_present():
+    """Refuse to overwrite any existing per-user or machine installation."""
+    import winreg
+    key = r'Software\Microsoft\Windows\CurrentVersion\Uninstall\{6D349059-F435-44AF-BBD7-FC10D66F665B}_is1'
+    for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        for view in (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY):
+            try:
+                with winreg.OpenKey(hive, key, 0, winreg.KEY_READ | view):
+                    return True
+            except FileNotFoundError:
+                pass
+    return False
+
+
+def portable_lifecycle_smoke(command):
+    """Check portable startup ownership; identical installed bytes get full UI smoke."""
+    from package_smoke import wait_for_instance
+    with TemporaryDirectory(prefix='portfolio-portable-synthetic-') as temporary:
+        root = Path(temporary)
+        workspace, state = root / 'workspace', root / 'state'
+        env = dict(os.environ, PORTFOLIO_STATE_DIR=str(state), PYTHONPATH='', PYTHONHOME='')
+        env.pop('VIRTUAL_ENV', None)
+        assert subprocess.check_output([*command, '--version'], env=env, cwd=root, text=True).strip()
+        args = [*command, '--offline-demo', '--foreground', '--no-browser', '--data-dir', str(workspace)]
+        with (root / 'portable.log').open('w') as log:
+            child = subprocess.Popen(args, env=env, cwd=root, stdout=log, stderr=log)
+            try:
+                wait_for_instance(state, child)
+                repeated = subprocess.run(args, env=env, cwd=root, capture_output=True, text=True, timeout=30)
+                assert repeated.returncode == 0 and 'Already running' in repeated.stdout
+                subprocess.run([*command, '--data-dir', str(workspace), '--stop'],
+                               env=env, cwd=root, check=True, capture_output=True, timeout=30)
+                assert child.wait(timeout=20) == 0
+                assert not list((state / 'sessions').glob('*.json'))
+            finally:
+                if child.poll() is None:
+                    try:
+                        subprocess.run([*command, '--data-dir', str(workspace), '--stop'],
+                                       env=env, cwd=root, capture_output=True, timeout=30)
+                    finally:
+                        try:
+                            child.wait(timeout=20)
+                        except subprocess.TimeoutExpired:
+                            child.kill()
+                            child.wait()
+    print('Portable startup, repeated launch, stop and session cleanup passed.', flush=True)
+
+
+def windows_setup_smoke(directory, reference_bundle, evidence):
+    """Install accepted Setup bytes privately, reinstall, then remove only that install.
+
+    Native dialogs and standard-user visual acceptance remain separate. The host
+    must have no existing registration; this never uninstalls a user's copy.
+    """
+    if windows_installation_present():
+        raise ValueError('Windows Setup acceptance requires no existing Portfolio Breakdown installation.')
+    installers = list(directory.glob('*-windows-x64-setup.exe'))
+    if len(installers) != 1:
+        raise ValueError('Expected exactly one Windows Setup candidate.')
+    from history_package_smoke import create_acceptance_workspace
+    evidence.mkdir(parents=True, exist_ok=False)
+    root = Path(mkdtemp(prefix='portfolio-setup-synthetic-'))
+    installation, workspace = root / 'installed app é', root / 'preserved workspace ü'
+    report = {'status': 'failed', 'installer_sha256': digest(installers[0]), 'checks': [],
+              'limits': ['same-version reinstall, not an older installer upgrade',
+                         'shortcuts and optional WebView2 installation disabled',
+                         'native upload/save dialogs and clean Windows 11 acceptance remain manual']}
+    env = dict(os.environ, PORTFOLIO_STATE_DIR=str(root / 'state'), PYTHONPATH='', PYTHONHOME='')
+    env.pop('VIRTUAL_ENV', None)
+    uninstaller = installation / 'unins000.exe'
+    completed = False
+    try:
+        create_acceptance_workspace(workspace)
+        before = workspace_hashes(workspace)
+        report['workspace_before'] = before
+        payload = workspace_hashes(reference_bundle)
+        setup_args = [str(installers[0]), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
+                      '/RESTARTEXITCODE=3010', '/NOICONS', '/TASKS=', f'/DIR={installation}']
+        for stage in ('install', 'reinstall'):
+            subprocess.run([*setup_args, f'/LOG={evidence / (stage + ".log")}'],
+                           cwd=root, env=env, check=True, timeout=300)
+            if not uninstaller.is_file():
+                raise ValueError('Setup did not install its uninstaller in the isolated directory.')
+            # Setup and portable outputs must contain the same accepted payload.
+            for relative, checksum in payload.items():
+                if not (installation / relative).is_file() or digest(installation / relative) != checksum:
+                    raise ValueError(f'Installed payload differs from portable candidate: {relative}')
+            if workspace_hashes(workspace) != before:
+                raise ValueError(f'{stage} changed the synthetic persistent workspace.')
+            executable = installation / 'portfolio-app.exe'
+            # Read the preserved history through the installed public CLI after
+            # both installs. The full browser scenario owns its own fixture.
+            subprocess.run([str(executable), '--data-dir', str(workspace), '--backup-to', str(root / (stage + '-backup'))],
+                           cwd=root, env=env, check=True, timeout=60)
+            report['checks'].append(stage + ': payload matches portable and complete workspace preserved')
+            if stage == 'install':
+                subprocess.run([sys.executable, str(ROOT / 'tools/package_smoke.py'), str(executable),
+                                '--evidence', str(evidence / 'installed-browser')], check=True, timeout=600)
+                subprocess.run([sys.executable, str(ROOT / 'tools/window_smoke.py'),
+                                str(installation / 'Portfolio Breakdown.exe')], check=True, timeout=180)
+                report['checks'].append('exact installed console and native window smoke passed')
+        completed = True
+    except BaseException as exc:
+        report['error'] = str(exc)
+        raise
+    finally:
+        try:
+            if uninstaller.is_file():
+                subprocess.run([str(uninstaller), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
+                                f'/LOG={evidence / "uninstall.log"}'],
+                               cwd=root, env=env, check=True, timeout=180)
+                if any((installation / relative).exists() for relative in payload):
+                    raise ValueError('Uninstall left installed payload files behind.')
+                if windows_installation_present():
+                    raise ValueError('Uninstall left the synthetic installation registration behind.')
+                if workspace_hashes(workspace) != before:
+                    raise ValueError('Uninstall changed the synthetic persistent workspace.')
+                report['checks'].append('uninstall removed app/registration and preserved every workspace file')
+            elif completed:
+                raise ValueError('Missing uninstaller for the synthetic installed candidate.')
+        except BaseException as exc:
+            completed = False
+            report['cleanup_error'] = str(exc)
+            raise
+        finally:
+            report['status'] = 'passed' if completed else 'failed'
+            (evidence / 'setup-result.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+            if completed:
+                shutil.rmtree(root)
+            else:
+                print(f'Synthetic Setup diagnostic files retained at {root}', flush=True)
+    print('Windows Setup install/reinstall/uninstall and full synthetic workspace preservation passed.', flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['preflight', 'build', 'check', 'test'])
@@ -275,10 +424,14 @@ def main():
         with TemporaryDirectory(prefix='portfolio-package-') as temporary:
             executable = extract_bundle(directory, Path(temporary))
             frozen_check(executable.parent)
-            subprocess.run([sys.executable, str(ROOT / 'tools/package_smoke.py'), str(executable)], check=True)
             if os.name == 'nt':
+                portable_lifecycle_smoke([str(executable)])
                 subprocess.run([sys.executable, str(ROOT / 'tools/window_smoke.py'),
                                 str(executable.with_name('Portfolio Breakdown.exe'))], check=True)
+                evidence_root = Path(os.environ.get('RUNNER_TEMP', str(directory.parent)))
+                windows_setup_smoke(directory, executable.parent, evidence_root / 'windows-setup-evidence')
+            else:
+                subprocess.run([sys.executable, str(ROOT / 'tools/package_smoke.py'), str(executable)], check=True)
 
 
 if __name__ == '__main__':

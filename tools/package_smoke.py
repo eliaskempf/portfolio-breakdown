@@ -410,6 +410,8 @@ def smoke(command, evidence=None):
                     except subprocess.TimeoutExpired:
                         child.kill()
                         child.wait()
+    from history_package_smoke import smoke as history_smoke
+    history_smoke(command, evidence)
     print('Installed application browser, navigation and lifecycle checks passed.')
 
 

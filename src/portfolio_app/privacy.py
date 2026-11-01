@@ -13,7 +13,7 @@ RELEASE_FILES = {"packaging/posix-window.spec", "tools/desktop_build.py", "tools
                  ".github/workflows/ci.yml", ".github/workflows/candidate.yml",
                  ".github/workflows/publish.yml", ".github/workflows/maintenance.yml",
                  ".github/dependabot.yml", "packaging/portfolio.spec", "packaging/entrypoint.py",
-                 "tools/release.py", "tools/promote.py", "tools/package_smoke.py",
+                 "tools/release.py", "tools/promote.py", "tools/package_smoke.py", "tools/history_package_smoke.py",
                  "packaging/window.spec", "packaging/window_entrypoint.py",
                  "tools/window_build.py", "tools/window_smoke.py", "tools/windows_bundle.py", "packaging/windows.iss",
                  "src/portfolio_app/documentation-build.json",

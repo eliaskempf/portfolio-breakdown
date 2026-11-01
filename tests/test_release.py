@@ -434,3 +434,142 @@ def test_retained_native_job_uses_original_build_evidence(tmp_path, monkeypatch,
         manifest = json.loads(api.uploaded['linux-native-x64-manifest.json'])
         assert manifest['run_attempt'] == '1'
     assert len(queried) == 1
+
+
+def test_complete_workspace_inventory_detects_nested_changes_and_removals(tmp_path):
+    workspace = tmp_path / 'invented-workspace'
+    (workspace / '.backups').mkdir(parents=True)
+    (workspace / 'account-journal.json').write_text('{"invented":1}')
+    (workspace / '.backups/original.json').write_text('{"invented":0}')
+    original = release_build.workspace_hashes(workspace)
+    assert set(original) == {'account-journal.json', '.backups/original.json'}
+    (workspace / '.backups/original.json').write_text('{"invented":2}')
+    assert release_build.workspace_hashes(workspace) != original
+    (workspace / '.backups/original.json').unlink()
+    assert release_build.workspace_hashes(workspace) != original
+    with pytest.raises(ValueError, match='existing synthetic'):
+        release_build.workspace_hashes(tmp_path / 'absent')
+
+
+def test_workspace_preservation_refuses_links(tmp_path):
+    (tmp_path / 'invented.txt').write_text('Invented')
+    try:
+        (tmp_path / 'linked.txt').symlink_to(tmp_path / 'invented.txt')
+    except OSError:
+        pytest.skip('Creating synthetic symlinks requires OS permissions')
+    with pytest.raises(ValueError, match='links'):
+        release_build.workspace_hashes(tmp_path)
+
+
+def test_windows_setup_refuses_existing_install_before_any_mutation(tmp_path, monkeypatch):
+    monkeypatch.setattr(release_build, 'windows_installation_present', lambda: True)
+    monkeypatch.setattr(release_build.subprocess, 'run', lambda *a, **kw: pytest.fail('Must not run Setup'))
+    with pytest.raises(ValueError, match='no existing'):
+        release_build.windows_setup_smoke(tmp_path, tmp_path, tmp_path / 'evidence')
+    assert not (tmp_path / 'evidence').exists()
+
+
+def test_windows_setup_registration_guard_checks_both_hives_and_views(monkeypatch):
+    from types import SimpleNamespace
+    import sys
+    calls = []
+    def open_key(hive, key, reserved, access):
+        calls.append((hive, key, access))
+        raise FileNotFoundError
+    registry = SimpleNamespace(HKEY_CURRENT_USER=1, HKEY_LOCAL_MACHINE=2,
+        KEY_WOW64_32KEY=32, KEY_WOW64_64KEY=64, KEY_READ=128, OpenKey=open_key)
+    monkeypatch.setitem(sys.modules, 'winreg', registry)
+    assert not release_build.windows_installation_present()
+    assert {(hive, access) for hive, _, access in calls} == {(1, 160), (1, 192), (2, 160), (2, 192)}
+    identifier = calls[0][1].split('\\')[-1].removesuffix('_is1')
+    assert 'AppId={' + identifier in (ROOT / 'packaging/windows.iss').read_text()
+    assert 'AllowNoIcons=yes' in (ROOT / 'packaging/windows.iss').read_text()
+
+
+@pytest.mark.parametrize('failure', [None, 'payload', 'reinstall', 'uninstall', 'browser'])
+def test_setup_lifecycle_checks_exact_payload_preservation_and_cleans_failure(tmp_path, monkeypatch, failure):
+    """Model installer effects, including corruption and browser failure, without Windows."""
+    from types import SimpleNamespace
+    import sys
+    candidate, reference = tmp_path / 'candidate', tmp_path / 'portable'
+    candidate.mkdir(); reference.mkdir()
+    installer = candidate / 'portfolio-breakdown-0.2.0-windows-x64-setup.exe'
+    installer.write_bytes(b'Invented setup bytes')
+    for name in ('portfolio-app.exe', 'Portfolio Breakdown.exe', 'LICENSE'):
+        (reference / name).write_bytes(('Invented payload: ' + name).encode())
+    owned = tmp_path / 'synthetic-owned'
+    owned.mkdir()
+    evidence = tmp_path / 'evidence'
+    registered, calls = [False], []
+    monkeypatch.setattr(release_build, 'mkdtemp', lambda **kwargs: str(owned))
+    monkeypatch.setattr(release_build, 'windows_installation_present', lambda: registered[0])
+    def seed(path):
+        (path / '.backups').mkdir(parents=True)
+        (path / 'holdings.csv').write_text('Invented holdings')
+        (path / 'account-journal.json').write_text('Invented imported/corrected account history')
+        (path / '.backups/old.json').write_text('Invented retained original')
+    monkeypatch.setitem(sys.modules, 'history_package_smoke', SimpleNamespace(create_acceptance_workspace=seed))
+    workspace = owned / 'preserved workspace ü'
+    installation = owned / 'installed app é'
+    def run(command, **kwargs):
+        calls.append(command)
+        if command[0] == str(installer):
+            assert {'/NOICONS', '/TASKS=', '/NORESTART', '/RESTARTEXITCODE=3010'}.issubset(command)
+            assert kwargs['cwd'] == owned and kwargs['timeout'] == 300
+            reinstall = registered[0]
+            shutil.copytree(reference, installation, dirs_exist_ok=True)
+            (installation / 'unins000.exe').write_bytes(b'Invented uninstaller')
+            registered[0] = True
+            if failure == 'payload':
+                (installation / 'LICENSE').write_text('Unexpected changed payload')
+            if failure == 'reinstall' and reinstall:
+                (workspace / '.backups/old.json').unlink()
+        elif command[0] == str(installation / 'unins000.exe'):
+            assert '/NORESTART' in command
+            shutil.rmtree(installation)
+            registered[0] = False
+            if failure == 'uninstall':
+                (workspace / 'account-journal.json').write_text('Unexpected changed history')
+        elif len(command) > 1 and command[1].endswith('package_smoke.py') and failure == 'browser':
+            raise RuntimeError('Invented installed browser failure')
+        return SimpleNamespace(returncode=0)
+    monkeypatch.setattr(release_build.subprocess, 'run', run)
+    if failure:
+        with pytest.raises((ValueError, RuntimeError)):
+            release_build.windows_setup_smoke(candidate, reference, evidence)
+    else:
+        release_build.windows_setup_smoke(candidate, reference, evidence)
+        assert not owned.exists()
+    report = json.loads((evidence / 'setup-result.json').read_text())
+    assert report['status'] == ('failed' if failure else 'passed')
+    assert not registered[0] and not installation.exists()
+    assert any(command[0].endswith('unins000.exe') for command in calls)
+    if failure is None:
+        assert sum(command[0] == str(installer) for command in calls) == 2
+        assert any(len(command) > 2 and command[1].endswith('package_smoke.py') and command[2] == str(installation / 'portfolio-app.exe') for command in calls)
+        assert any(len(command) > 2 and command[1].endswith('window_smoke.py') and command[2] == str(installation / 'Portfolio Breakdown.exe') for command in calls)
+        assert len(report['workspace_before']) == 3
+
+
+def test_portable_lifecycle_cleans_owned_child_after_startup_failure(monkeypatch):
+    from types import SimpleNamespace
+    import sys
+    calls = []
+    class Child:
+        returncode = None
+        def poll(self):
+            return self.returncode
+        def wait(self, timeout=None):
+            self.returncode = 0
+            return 0
+    child = Child()
+    def not_ready(*args):
+        raise RuntimeError('Invented startup failure')
+    monkeypatch.setitem(sys.modules, 'package_smoke', SimpleNamespace(wait_for_instance=not_ready))
+    monkeypatch.setattr(release_build.subprocess, 'check_output', lambda *args, **kwargs: '0.2.0')
+    monkeypatch.setattr(release_build.subprocess, 'Popen', lambda *args, **kwargs: child)
+    monkeypatch.setattr(release_build.subprocess, 'run', lambda command, **kwargs: calls.append(command))
+    with pytest.raises(RuntimeError, match='Invented startup'):
+        release_build.portable_lifecycle_smoke(['invented-app.exe'])
+    assert len(calls) == 1 and calls[0][-1] == '--stop'
+    assert child.poll() == 0
