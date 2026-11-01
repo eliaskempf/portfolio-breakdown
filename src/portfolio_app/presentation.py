@@ -23,7 +23,8 @@ CSS = """
 .app-brand img {width:56px;height:56px;flex-shrink:0;}
 /* Keep the bell's text available to assistive technology without a visible label. */
 .st-key-header_notifications [data-testid="stPopoverButton"] [data-testid="stMarkdownContainer"] {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
-.st-key-header_notifications [data-testid="stPopoverButton"] [aria-hidden="true"] {display:none;}
+/* Hide the chevron wrapper, preserving the decorative bell icon itself. */
+.st-key-header_notifications [data-testid="stPopoverButton"] [aria-hidden="true"]:not([data-testid="stIconMaterial"]) {display:none;}
 .st-key-header_notifications [data-testid="stPopoverButton"] {position:relative;padding:0;}
 .st-key-header_notifications [data-testid="stIconMaterial"] {position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:20px;line-height:1;}
 .st-key-header_notifications [data-testid="stPopoverButton"]::after {content:none;position:absolute;right:7px;top:7px;width:8px;height:8px;border-radius:50%;background:#d04755;box-shadow:0 0 0 2px var(--st-background-color);pointer-events:none;}
