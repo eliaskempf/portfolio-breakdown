@@ -218,10 +218,20 @@ def account_position_starts(events):
     return starts
 
 
+def initial_security_positions(journal, scope, stamp, *, calculation=None):
+    """Linked securities share an included new account's zero opening boundary."""
+    from portfolio_app.account_inception import account_inceptions
+    inceptions = calculation._account_inceptions if calculation else account_inceptions(journal)
+    accounts = {a for a in scope.accounts if inceptions.get(a) == stamp}
+    return {b.position_id for b in journal.securities if b.account_id in accounts} if accounts else set()
+
+
 def opening_value_at(journal, scope, observations, stamp, target, *, calculation=None):
     """Account cash openings precede same-day account trades/fees/flows.
 
-    Security openings remain end-of-day snapshots. Their derived cash postings
+    Security openings normally remain end-of-day snapshots. Explicit new account
+    inception precedes its linked positions' first-day transactions instead.
+    Ordinary derived cash postings
     already omit payments covered by a same-day account cash opening. Do not
     apply that omission to separately recorded account fees or external funding.
     """
@@ -233,8 +243,10 @@ def opening_value_at(journal, scope, observations, stamp, target, *, calculation
     if not any(starts.get(a) == stamp for a in scope.accounts):
         return value_for(scope)
     total, reasons = ZERO, list(scope.unresolved)
-    if scope.positions:
-        value = value_for(HistoryScope(scope.positions))
+    initial_positions = initial_security_positions(journal, scope, stamp, calculation=calculation)
+    positions = tuple(p for p in scope.positions if p not in initial_positions)
+    if positions:
+        value = value_for(HistoryScope(positions))
         reasons.extend(value.reasons)
         if value.amount is not None:
             total += value.amount
@@ -268,7 +280,10 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
     total, reasons = ZERO, list(scope.unresolved)
     states = (calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)).positions
     books = {b.position_id: b for b in journal.securities}
+    initial_positions = initial_security_positions(journal, scope, stamp, calculation=calculation)
     for identity in scope.positions:
+        if identity in initial_positions:
+            continue
         book, state = books.get(identity), states.get(identity)
         if book and confirmed_empty_before(book, stamp, events=calculation._events[book.position_id] if calculation else None):
             continue
@@ -414,6 +429,7 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
         return events_by_position[book.position_id] if events_by_position is not None else selected_events(book)
     reasons = list(scope.unresolved)
     books = {b.position_id: b for b in journal.securities}
+    initial_positions = initial_security_positions(journal, scope, start, calculation=calculation)
     for identity in scope.positions:
         book = books.get(identity)
         if book is None or not book.active:
@@ -424,17 +440,19 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
             reasons.append(Issue(f'{identity}: missing opening snapshot', 'transaction'))
         if calculation:
             events = calculation._coverage_events[identity]
-        if any(e.kind in ('opening', 'checkpoint', 'note') and start < e.date <= end
+        def inside(stamp):
+            return start < stamp <= end or identity in initial_positions and stamp == start
+        if any(e.kind in ('opening', 'checkpoint', 'note') and inside(e.date)
                and not (e.kind == 'opening' and not e.quantity and e.source == 'confirmed_zero_start') for e in events):
             reasons.append(Issue(f'{identity}: unresolved event or replacement boundary in interval', 'transaction'))
         if any(e.kind in ('inventory_in','inventory_out') and e.flow_classification == 'unresolved'
-               and start < e.date <= end for e in events):
+               and inside(e.date) for e in events):
             reasons.append(Issue(f'{identity}: inventory origin or purpose unresolved', 'transaction'))
         opening = next((e for e in reversed(events)
                         if e.kind in ('opening', 'checkpoint') and e.date <= start), None)
         if opening and opening.kind == 'checkpoint' and not opening.observed_at:
             reasons.append(Issue(f'{identity}: checkpoint observation date unknown', 'transaction'))
-        if any(e.kind in ('buy', 'sell', 'distribution', 'swap', 'reward') and start < e.date <= end and not e.charges_known for e in events):
+        if any(e.kind in ('buy', 'sell', 'distribution', 'swap', 'reward') and inside(e.date) and not e.charges_known for e in events):
             reasons.append(Issue(f'{identity}: charges have not been confirmed', 'transaction'))
     unresolved = calculation._unresolved_receipts if calculation else unresolved_receipts(journal)
     members = set(scope.positions) | {b.position_id for b in journal.securities if b.account_id in scope.accounts}
@@ -445,9 +463,19 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
     classes = dict(observations.classifications)
     account_events = calculation._account_events if calculation else effective_events(journal)
     starts = calculation._account_starts if calculation else account_start_dates(journal, account_events)
+    boundary_reason = 'internal transfer crosses different opening boundaries; choose a period starting before or after this day'
+    for book in journal.securities if initial_positions else ():
+        for event in events_for(book):
+            if (event.date == start and event.kind in {'transfer', 'swap'}
+                    and book.position_id in scope.positions and event.other_position_id in scope.positions
+                    and ((book.position_id in initial_positions) != (event.other_position_id in initial_positions))):
+                reasons.append(Issue(f'{event.id}: {boundary_reason}', 'boundary'))
     for e in account_events:
         if e.account_id not in scope.accounts:
             continue
+        if (e.date == start and e.kind in {'transfer', 'fx'} and e.other_account_id in scope.accounts
+                and ((starts.get(e.account_id) == start) != (starts.get(e.other_account_id) == start))):
+            reasons.append(Issue(f'{e.id}: {boundary_reason}', 'boundary'))
         if start < e.date <= end or (e.date == start and starts.get(e.account_id) == start):
             if (e.kind in ('cash_open', 'debt_open', 'snapshot') and e.date > start
                     and not (e.kind == 'cash_open' and not e.amount and e.source == 'confirmed_zero_start')):
@@ -461,6 +489,9 @@ def external_flows(journal, scope, observations, start, end, target, *, security
                    security_events=None, account_events=None, include_account_start=True, dated_issues=None):
     flows, reasons = [], []
     members, accounts = set(scope.positions), set(scope.accounts)
+    from portfolio_app.account_inception import account_inceptions
+    inceptions = calculation._account_inceptions if calculation else account_inceptions(journal)
+    initial_positions = initial_security_positions(journal, scope, start, calculation=calculation) & members if include_account_start else set()
 
     def issue(reason, stamp):
         reasons.append(reason)
@@ -486,29 +517,33 @@ def external_flows(journal, scope, observations, start, end, target, *, security
         # Asset-only purchases are contributions; account-only payments out are withdrawals.
         amount = None if c.amount is None else -c.amount if asset_inside else c.amount
         add('security:'+c.id, c.date, c.sequence, amount, c.currency, event_id='security:'+(c.event_id or c.id),
+            include_start=include_account_start and (c.position_id in initial_positions
+                or cash_inside and inceptions.get(c.account_id) == start),
             expense=-c.amount if asset_inside and c.kind in ('fee', 'tax') and c.amount is not None else ZERO,
             income=c.amount if asset_inside and c.kind == 'distribution' and c.amount is not None else ZERO)
     entries = ((book, e) for book in journal.securities for e in selected_events(book)) if security_events is None else security_events
     for book, e in entries:
-        if e.kind in ('inventory_in', 'inventory_out') and book.position_id in members and start < e.date <= end:
+        initial = include_account_start and (book.position_id in initial_positions or e.other_position_id in initial_positions)
+        inside_interval = start < e.date <= end or initial and e.date == start
+        if e.kind in ('inventory_in', 'inventory_out') and book.position_id in members and inside_interval:
             if e.flow_classification == 'external':
                 add(e.id, e.date, e.sequence,
                     None if e.valuation_amount is None else e.valuation_amount*(1 if e.kind == 'inventory_in' else -1),
-                    e.valuation_currency)
+                    e.valuation_currency, include_start=initial)
             else:
                 issue(f'{e.id}: inventory origin or purpose unresolved', e.date)
-        if e.kind in ('transfer_in', 'transfer_out') and book.position_id in members and start < e.date <= end:
+        if e.kind in ('transfer_in', 'transfer_out') and book.position_id in members and inside_interval:
             price = price_at(observations, (book.position_id, book.instrument_id), e.date, events=selected_events(book))
             amount = e.amount if e.amount is not None else e.quantity*price.amount if price else None
             denomination = e.currency if e.amount is not None else price.currency if price else e.currency
-            add(e.id, e.date, e.sequence, None if amount is None else amount*(1 if e.kind == 'transfer_in' else -1), denomination)
-        if e.kind == 'swap' and start < e.date <= end:
+            add(e.id, e.date, e.sequence, None if amount is None else amount*(1 if e.kind == 'transfer_in' else -1), denomination, include_start=initial)
+        if e.kind == 'swap' and inside_interval:
             source_inside, dest_inside = book.position_id in members, e.other_position_id in members
             if source_inside != dest_inside:
                 add(e.id, e.date, e.sequence,
                     None if e.valuation_amount is None else e.valuation_amount*(-1 if source_inside else 1),
-                    e.valuation_currency)
-        if e.kind != 'transfer' or not start < e.date <= end:
+                    e.valuation_currency, include_start=initial)
+        if e.kind != 'transfer' or not inside_interval:
             continue
         source_inside, dest_inside = book.position_id in members, e.other_position_id in members
         if source_inside == dest_inside:
@@ -518,7 +553,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
             issue(Issue(f'{e.id}: supply transfer-date market value', 'transaction'), e.date)
             flows.append(ExternalFlow(e.id, e.date, e.sequence, None))
         else:
-            add(e.id, e.date, e.sequence, e.quantity * price.amount * (-1 if source_inside else 1), price.currency)
+            add(e.id, e.date, e.sequence, e.quantity * price.amount * (-1 if source_inside else 1), price.currency, include_start=initial)
     classes = dict(observations.classifications)
     if account_events is None:
         account_events = calculation._account_events if calculation else effective_events(journal)

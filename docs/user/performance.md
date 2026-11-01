@@ -275,6 +275,13 @@ Account cash openings precede separately recorded same-day account trades, fees
 and external funding; these events must not disappear into the first closing
 valuation. Security starting balances remain end-of-day snapshots, and derived
 security payments already included in an account opening are not posted again.
+An explicitly newly funded account instead starts at zero before its first-day
+transactions, including linked securities purchases and fees. A confirmed empty
+security opening dated the preceding day is consistent with that declaration.
+If an internal transfer on the selected start date crosses a new account's
+opening boundary and an existing account or holding's closing snapshot, period
+gain and returns remain unavailable. Choose a start date before or after that
+day; the supported ending value remains available.
 Same-day flow order must be explicit for exact TWR.
 
 | Metric | Required evidence |

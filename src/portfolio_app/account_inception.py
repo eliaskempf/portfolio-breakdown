@@ -34,6 +34,8 @@ def account_inceptions(journal, events=None):
         if book.account_id in dates:
             start = dates[book.account_id]
             for event in selected_events(book):
+                if event.kind == 'opening' and not event.quantity and event.source == 'confirmed_zero_start':
+                    continue
                 if event.date < start or (event.date == start and event.kind in {'opening', 'checkpoint'} and event.quantity):
                     raise DataError('Linked security history contradicts the account’s confirmed zero inception.')
     return dates

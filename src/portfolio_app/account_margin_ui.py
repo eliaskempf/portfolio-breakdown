@@ -130,8 +130,10 @@ def render_account_margin(directory, journal, revision, holdings, valued, report
             column.metric(label, format_money(float(amount), denomination) if amount is not None else '—')
         if coverage.initial_requirement is None:
             st.caption('Headroom needs complete FX and a recorded margin requirement.')
-        liquidity = pd.DataFrame([{'Currency': denomination, 'Settled cash': str(coverage.settled_cash),
-            'Cash less reservations': str(coverage.unreserved_cash), 'Pending receipts / payments': str(coverage.pending_cash),
+        liquidity = pd.DataFrame([{'Currency': denomination,
+            'Settled cash': str(coverage.settled_cash) if coverage.settled_cash is not None else 'Unavailable',
+            'Cash less reservations': str(coverage.unreserved_cash) if coverage.unreserved_cash is not None else 'Unavailable',
+            'Pending receipts / payments': str(coverage.pending_cash),
             'Explicit loans': str(coverage.loans)}])
         st.dataframe(liquidity, hide_index=True)
         st.caption('Pending cash is excluded from collateral. Loans remain separate recorded liabilities; '

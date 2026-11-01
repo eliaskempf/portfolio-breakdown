@@ -143,8 +143,8 @@ class MarginCoverage:
     eligible_collateral: Decimal | None
     initial_requirement: Decimal | None
     maintenance_requirement: Decimal | None
-    settled_cash: Decimal
-    unreserved_cash: Decimal
+    settled_cash: Decimal | None
+    unreserved_cash: Decimal | None
     pending_cash: Decimal
     loans: Decimal
     collateral: tuple[CollateralRow, ...]
@@ -236,8 +236,14 @@ def margin_coverage(journal, holdings, valued, account_id, denomination, *, repo
             break
         initial += requirement.initial*rate
         maintenance += requirement.maintenance*rate
+    if (account_id, denomination) in state.unknown_cash:
+        settled_cash = unreserved_cash = None
+        issues.append(f'{denomination} cash is incomplete; supply missing transaction amounts.')
+    else:
+        settled_cash = state.cash.get((account_id, denomination), ZERO)
+        unreserved_cash = state.available_cash(account_id, denomination)
     return MarginCoverage(account_id, denomination, collateral, initial, maintenance,
-        state.cash.get((account_id, denomination), ZERO), state.available_cash(account_id, denomination),
+        settled_cash, unreserved_cash,
         sum((item.amount for item in state.pending.values() if item.account_id == account_id and item.currency == denomination), ZERO),
         sum((amount for (owner, unit, _), amount in state.loans.items() if owner == account_id and unit == denomination), ZERO),
         tuple(rows), tuple(dict.fromkeys(issues)))

@@ -248,7 +248,8 @@ render_account_margin(directory, journal, revision, holdings, valued, 'EUR', fx_
     assert 'opaque-reservation-id' in replay(load_journal(tmp_path)[0]).reservations
 
 
-def test_unknown_foreign_cash_withholds_collateral_in_other_coverage_currency():
+@pytest.mark.parametrize('denomination', ['EUR', 'USD'])
+def test_unknown_cash_withholds_affected_collateral_and_liquidity(denomination, tmp_path):
     from portfolio_app.security_history import SecurityBook, SecurityEvent
     journal, held, valued = fixture()
     journal = reserve_collateral(journal, Event('reserve', DAY, 'reserve', account_id='broker',
@@ -259,18 +260,65 @@ def test_unknown_foreign_cash_withholds_collateral_in_other_coverage_currency():
         records=records, active_ids=tuple(e.id for e in records))
     journal = replace(journal, version=5, securities=(book,), margin_requirements=(
         MarginRequirement('margin', 'broker', 'EUR', 100, 80, DAY),))
-    coverage = margin_coverage(journal, held, valued, 'broker', 'EUR', fx_rates={'USD': '.9'})
+    coverage = margin_coverage(journal, held, valued, 'broker', denomination, fx_rates={'USD': '.9'})
     assert coverage.eligible_collateral is None
     assert coverage.initial_headroom is None and coverage.maintenance_headroom is None
     assert coverage.collateral[0].eligible_value is None
     assert 'USD cash is incomplete' in coverage.collateral[0].issue
+    if denomination == 'USD':
+        assert coverage.settled_cash is None and coverage.unreserved_cash is None
+        from streamlit.testing.v1 import AppTest
+        (tmp_path/'holdings.csv').write_text(CSV)
+        save_journal(tmp_path, journal, None)
+        app = AppTest.from_string(f'''
+from pathlib import Path
+from portfolio_app.account_journal import load_journal
+from portfolio_app.account_margin_ui import render_account_margin
+from portfolio_app.positions import read_snapshot
+directory = Path({str(tmp_path)!r})
+journal, revision = load_journal(directory)
+holdings = read_snapshot(directory/'holdings.csv').holdings
+valued = holdings.copy()
+valued['current_value_reporting'] = 1000.
+render_account_margin(directory, journal, revision, holdings, valued, 'USD', fx_rates={{('USD', 'EUR'): '.9'}})
+''').run()
+        assert not app.exception
+        liquidity = next(frame.value for frame in app.dataframe if 'Settled cash' in frame.value.columns)
+        assert liquidity.loc[0, 'Settled cash'] == 'Unavailable'
+        assert liquidity.loc[0, 'Cash less reservations'] == 'Unavailable'
+        assert any('USD cash is incomplete' in warning.value for warning in app.warning)
+    else:
+        assert coverage.settled_cash == 0 and coverage.unreserved_cash == 0
+    assert coverage.initial_requirement is not None and coverage.pending_cash == 0 and coverage.loans == 0
     # A correction restores only the affected currency's known cash coverage.
     corrected = replace(records[-1], id='known-charge', amount=D(10), replaces=records[-1].id)
     book = replace(book, records=(*records, corrected), active_ids=(records[0].id, corrected.id))
     known = margin_coverage(replace(journal, securities=(book,)), held, valued,
-                            'broker', 'EUR', fx_rates={'USD': '.9'})
-    assert known.eligible_collateral == 450 and known.initial_headroom == 350
+                            'broker', denomination, fx_rates={'USD': '.9'})
+    assert known.eligible_collateral == (450 if denomination == 'EUR' else 500)
+    if denomination == 'EUR':
+        assert known.initial_headroom == 350
+    else:
+        assert known.settled_cash == 990 and known.unreserved_cash == 490
     assert not known.issues
+
+
+def test_unknown_settlement_cash_preserves_independent_security_coverage():
+    from portfolio_app.security_history import SecurityBook, SecurityEvent
+    journal, held, valued = fixture()
+    journal = security_reserve(journal, held)
+    journal = append_events(journal, (Event('eur-cash', DAY, 'cash_open', account_id='broker', currency='EUR', amount=0),))
+    records = (SecurityEvent('opening', 'opening', DAY, quantity=D('2.5')),
+        SecurityEvent('missing-charge', 'fee', '2026-01-06', currency='EUR'))
+    book = SecurityBook('security', 'synthetic', ('2.5', '', ''), account_id='broker',
+        records=records, active_ids=tuple(e.id for e in records))
+    journal = replace(journal, version=5, securities=(book,), margin_requirements=(
+        MarginRequirement('margin', 'broker', 'EUR', 100, 80, DAY),))
+    coverage = margin_coverage(journal, held, valued, 'broker', 'EUR')
+    assert coverage.settled_cash is None and coverage.unreserved_cash is None
+    assert coverage.eligible_collateral == 40 and coverage.initial_headroom == -60
+    assert coverage.initial_requirement == 100 and coverage.maintenance_requirement == 80
+    assert coverage.issues == ('EUR cash is incomplete; supply missing transaction amounts.',)
 
 
 @pytest.mark.parametrize('snapshot_quantity', [0, 10, 30])

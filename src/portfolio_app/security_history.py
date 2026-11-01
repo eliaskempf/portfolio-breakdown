@@ -699,9 +699,10 @@ def cash_postings(journal, *, security_cash=None):
 
     An existing cash opening already contains earlier payments. Its end-of-day
     boundary excludes earlier securities postings, not the retained evidence.
+    Confirmed zero inception instead precedes that day's transactions.
     """
     from portfolio_app.account_journal import Event, effective_events
-    openings = {(e.account_id, e.currency): e.date for e in effective_events(journal) if e.kind == 'cash_open'}
+    openings = {(e.account_id, e.currency): e for e in effective_events(journal) if e.kind == 'cash_open'}
     result = []
     roots = {}
     for book in journal.securities:
@@ -723,7 +724,8 @@ def cash_postings(journal, *, security_cash=None):
         opening = openings.get((c.account_id, c.currency))
         if not opening:
             raise DataError(f'Supply an opening {c.currency} cash balance before activating linked transactions.')
-        if c.date <= opening and (not c.value_date or c.value_date == c.date):
+        covered = c.date < opening.date or (c.date == opening.date and opening.source != 'confirmed_zero_start')
+        if covered and (not c.value_date or c.value_date == c.date):
             continue
         result.append(Event(id=posting_id(c.id), date=c.date, sequence=c.sequence,
             kind='security_unknown' if c.amount is None else 'security_cash', account_id=c.account_id,

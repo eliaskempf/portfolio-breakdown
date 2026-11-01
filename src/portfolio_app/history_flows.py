@@ -46,7 +46,8 @@ class DatedFlows:
         if start <= end and any(calculation._account_starts.get(account) == start for account in self.scope.accounts):
             if start not in self.starts:
                 self.starts[start] = external_flows(calculation.journal, self.scope, calculation.observations,
-                    start, start, self.target, calculation=calculation, security_cash=(), security_events=(),
+                    start, start, self.target, calculation=calculation, security_cash=cash.get(start, ()),
+                    security_events=securities.get(start, ()),
                     account_events=accounts.get(start, ()))
             opening = self.starts[start]
         chunks = [opening, *(self.buckets[stamp] for stamp in dates[lower:upper])]

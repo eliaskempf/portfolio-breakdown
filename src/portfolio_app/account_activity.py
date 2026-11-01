@@ -133,6 +133,10 @@ def correct_entry(journal, identity, changes=None, *, reverse=False):
     replacement = ledger.Event(uuid4().hex, date.today().isoformat(), 'void', replaces=identity,
                                note='Reversed by user') if reverse else replace(
         event, **changes, id=uuid4().hex, replaces=identity, source='manual correction')
+    if (not reverse and event.source == 'confirmed_zero_start' and event.kind == 'cash_open'
+            and all(getattr(replacement, key) == getattr(event, key)
+                    for key in ('date', 'account_id', 'currency', 'amount'))):
+        replacement = replace(replacement, source=event.source)
     return ledger.append_event(journal, replacement)
 
 
