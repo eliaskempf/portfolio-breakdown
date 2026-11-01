@@ -255,6 +255,37 @@ def test_listing_suggestions_dropdown_and_live_search_survive_navigation(import_
     assert not page.get_by_test_id('stException').count()
 
 
+def test_mixed_portfolio_finds_eur_pairs_missing_from_initial_suggestions(import_page):
+    page, path = import_page
+    path.parent.mkdir(exist_ok=True)
+    path.write_text('id,name,ticker,instrument_type,shares\n'
+                    'invented-stock,Invented Company,INVENTED,equity,1\n'
+                    'invented-crypto,Invented Bitcoin holding,BTC-USD,crypto,1\n')
+    # Simulate broad search returning only USD; exact pair lookup returns EUR.
+    script = path.parent.parent/'app.py'
+    script.write_text('''
+from portfolio_app.instruments import Instrument
+import portfolio_app.transaction_mapping_ui as mapping_ui
+def synthetic_search(query, cache_dir, demo):
+    ticker = query if '-' in query else query+'-USD'
+    return [Instrument(ticker, ticker, kind='CRYPTOCURRENCY')], ''
+mapping_ui._fetch = synthetic_search
+''' + script.read_text())
+    before = path.read_bytes()
+    page.reload()
+    page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
+    page.get_by_role('radio', name='Import', exact=True).click(); settle(page)
+    page.locator('input[type=file]').set_input_files({'name':'invented-transactions.csv', 'mimeType':'text/csv',
+        'buffer': b'reference,date,type,asset,quantity,amount,currency\n'
+                  b'a,2024-01-02,buy,ADA,1,10,EUR\nb,2024-01-02,buy,LTC,1,20,EUR\n'})
+    settle(page)
+    for asset in ('ADA', 'LTC'):
+        listing = page.get_by_role('combobox', name='Price listing · '+asset, exact=True)
+        playwright.expect(listing).to_have_value(asset+'-EUR · '+asset+'-EUR')
+    assert path.read_bytes() == before
+    assert not page.get_by_test_id('stException').count()
+
+
 def test_existing_portfolio_opens_transaction_import_directly(import_page):
     page, path = import_page
     path.parent.mkdir(exist_ok=True)

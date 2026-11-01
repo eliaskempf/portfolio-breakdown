@@ -8,7 +8,7 @@ from portfolio_app.instruments import Instrument, InstrumentSearch, catalog_sear
 from portfolio_app.import_state import review_control
 from portfolio_app.search_widget import render_search_box
 from portfolio_app.transaction_csv import digest
-from portfolio_app.transaction_matching import holding_matches, holding_index, suggested_listing, instrument_fields, holding_label, listing_label
+from portfolio_app.transaction_matching import exact_listings, holding_matches, holding_index, suggested_listing, instrument_fields, holding_label, listing_label
 
 
 def _fetch(query, cache_dir, demo):
@@ -63,7 +63,9 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
     lookup = [a for a in assets if (not matches[a] or (len(matches[a]) == 1 and not by_position.loc[matches[a][0], 'ticker'])) and not any((source, account, a) in retained for account, symbol in pairs if symbol == a)]
     with st.spinner('Finding price listings…', show_time=False):
         initial = searches(lookup, directory, demo)
-        preferred = [a+'-'+currency for a in lookup if crypto and not any(x.ticker == a.upper()+'-'+currency for x in initial[a][0])]
+        preferred = [a+'-'+currency for a in lookup
+                     if (crypto or exact_listings(a, initial[a][0], kind='CRYPTOCURRENCY'))
+                     and not any(x.ticker == a.upper()+'-'+currency for x in initial[a][0])]
         extra = searches(preferred, directory, demo)
     custom = st.session_state.setdefault('import_tx_chosen_listings', {})
     mapping, additions, listing_changes, selected_listings, new_details = {}, [], {}, {}, []

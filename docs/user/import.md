@@ -65,6 +65,8 @@ An optional price listing connects normal current and historical market data.
 Existing holdings are matched by identifier, name, ISIN or ticker; crypto symbols
 also match ticker pairs such as `BTC-EUR`. Ambiguous matches require a choice.
 New assets receive exact listing suggestions, preferring the reporting currency.
+Crypto listings are checked for that currency in mixed portfolios too; other
+quote currencies remain available when no matching pair is found.
 Use the price-listing dropdown or its search button to find another listing with
 the same live search used when adding a position. Suggestions, names and types
 remain editable; listing changes are saved together with applied transactions.
