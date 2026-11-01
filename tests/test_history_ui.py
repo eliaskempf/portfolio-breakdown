@@ -1,6 +1,7 @@
 """UI tests use only a generated synthetic workspace."""
 from decimal import Decimal as D
 from dataclasses import replace
+import pytest
 from streamlit.testing.v1 import AppTest
 
 from portfolio_app.account_journal import save_journal, Journal
@@ -163,6 +164,40 @@ def test_buys_and_sells_save_before_starting_balance_and_review_from_zero(tmp_pa
     label(app.button,'Review against portfolio').click().run()
     assert not any('zero shares beforehand' in e.label for e in app.checkbox)
     assert any(e.label=='Apply history' for e in app.button)
+
+
+@pytest.mark.parametrize('kind', ['buy', 'sell'])
+@pytest.mark.parametrize('explicit_fee', [False, True])
+def test_manual_fee_defaults_follow_trade_and_explicit_details_survive_edits(tmp_path, kind, explicit_fee):
+    from datetime import date
+    from portfolio_app.account_journal import load_journal
+    from portfolio_app.security_history import Charge
+    fixture(tmp_path)
+    app = launch(tmp_path)
+    label(app.button, 'Add '+kind).click().run()
+    if explicit_fee:
+        label(app.text_input, 'Fee currency').set_value('GBP').run()
+        label(app.date_input, 'Fee date').set_value(date(2024, 2, 5)).run()
+    # Change both defaults after the fee widgets have already been created.
+    label(app.date_input, 'Transaction date').set_value(date(2024, 2, 1)).run()
+    label(app.text_input, 'Currency').set_value('USD').run()
+    label(app.text_input, 'Quantity').set_value('1').run()
+    label(app.text_input, 'Unit price').set_value('10').run()
+    label(app.text_input, 'Fees').set_value('1').run()
+    label(app.button, 'Save transaction').click().run()
+    assert not app.exception
+    event = load_journal(tmp_path)[0].securities[0].records[-1]
+    expected = Charge(D(1), 'GBP', '2024-02-05') if explicit_fee else Charge(D(1), 'USD')
+    assert event.date == '2024-02-01' and event.currency == 'USD'
+    assert event.charges == (expected,)
+
+    open_transaction_editor(app, tmp_path)
+    label(app.date_input, 'Transaction date').set_value(date(2024, 2, 2)).run()
+    label(app.button, 'Save changes').click().run()
+    assert not app.exception
+    correction = load_journal(tmp_path)[0].securities[0].records[-1]
+    assert correction.replaces == event.id and correction.date == '2024-02-02'
+    assert correction.charges == (expected,)
 
 
 def test_review_can_leave_portfolio_unchanged(tmp_path):

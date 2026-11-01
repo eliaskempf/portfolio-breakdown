@@ -10,6 +10,7 @@ from portfolio_app.csv_transaction_imports import event_for, prepare_import
 from portfolio_app.holdings import DataError, parse_holdings
 from portfolio_app.import_state import review_control, clear_transaction_draft
 from portfolio_app.positions import read_snapshot
+from portfolio_app.storage import revision as file_revision
 from portfolio_app.transaction_csv import SIMPLE_FIELDS, TransactionRow, digest, read_csv, retain_import_interpretations
 from portfolio_app.transaction_import_commands import positions_content, save_transaction_import
 
@@ -68,7 +69,7 @@ def render_transaction_import(directory, *, demo=False):
         from portfolio_app.portfolio_settings import load_settings
         observations, observation_revision = load_observations(directory)
         target = load_settings(directory).reporting_currency
-        baseline = revision, snapshot.revision, observation_revision, target
+        baseline = revision, snapshot.revision, observation_revision, target, file_revision(directory/'allocation.yaml')
         baseline_key = 'import_tx_baseline_'+token
         if st.session_state.setdefault(baseline_key, baseline) != baseline:
             st.warning('Portfolio changed. Reload this review before applying.')
@@ -80,7 +81,9 @@ def render_transaction_import(directory, *, demo=False):
         mapping, additions, listing_changes = render_mapping(directory, snapshot, journal, rows, token, currency=target, demo=demo)
         content = positions_content((directory/'holdings.csv').read_text(encoding='utf-8-sig')
                                     if (directory/'holdings.csv').exists() else '', snapshot, additions, listing_changes=listing_changes)
-        parse_holdings(content)  # Validate proposed metadata before entering review.
+        proposed_holdings = parse_holdings(content)
+        from portfolio_app.transaction_import_commands import _validate_categories
+        _validate_categories(directory, proposed_holdings)
         latest = {r.facts['source_id']: {} for r in journal.transaction_imports}
         for receipt in journal.transaction_imports:
             latest[receipt.facts['source_id']][receipt.facts['event_id']] = receipt
@@ -208,7 +211,8 @@ def _review_import(directory, draft):
     snapshot = read_snapshot(directory/'holdings.csv')
     observations, observation_revision = load_observations(directory)
     target = load_settings(directory).reporting_currency
-    baseline = revision, snapshot.revision, observation_revision, target
+    allocation_revision = file_revision(directory/'allocation.yaml')
+    baseline = revision, snapshot.revision, observation_revision, target, allocation_revision
     if draft['baseline'] != baseline:
         st.warning('Portfolio changed. Reload this review before applying.')
         def reload():
@@ -246,6 +250,7 @@ def _review_import(directory, draft):
             expected_holdings_revision=snapshot.revision, additions=draft['additions'], listing_changes=draft['listing_changes'],
             accept_reconciliation=True, accept_checkpoints=True, comparison_date=date.today().isoformat(),
             expected_observations_revision=observation_revision,
+            expected_allocation_revision=allocation_revision,
             expected_reporting_currency=target, **options(excluded))
         st.session_state['import_tx_pending_complete'] = True
         _return_to_import()

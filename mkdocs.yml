@@ -46,16 +46,17 @@ nav:
   - Start here: index.md
   - Setup:
       - Install and run: install.md
+      - Release and upgrade notes: releases.md
       - Your first portfolio: getting-started.md
   - Holdings:
       - Positions and buy-ins: positions.md
-      - Import holdings: import.md
+      - Import holdings and transactions: import.md
   - Analysis:
       - Exposure and ETFs: exposure.md
       - Prices and performance: performance.md
       - Analytics and risk: analytics.md
       - Monitoring and alerts: monitoring.md
-      - Futures and leverage (development): futures.md
+      - Futures and leverage: futures.md
   - Planning:
       - Categories and targets: allocation.md
       - Rebalance: rebalance.md

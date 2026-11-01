@@ -224,6 +224,15 @@ settlement marks. It does not create
 trades, distributions or splits. Downloaded closes are converted back to the
 units traded on each date using the provider's split evidence, without dividend
 reinvestment or automatic price repair. Manual observations take precedence.
+For prices, optional **Quote provenance** contains **Source**, **Quote listing**,
+**Exchange calendar** and **Exchange timezone**. Corrections initially retain
+the saved quote's details; missing dates can receive explicitly supplied details.
+These entries are your evidence, not automatic verification. The historical quote
+listing does not change the holding's current listing. Saving preserves the
+original observation and records a manual correction, so later downloads do not
+overwrite it. **Saved market data** shows actual source and listing/calendar/timezone
+details; manual source descriptions are marked `manual:`.
+
 Prices must cover required valuation boundaries; only verified closed sessions can use the preceding eligible close.
 Exact-contract futures marks use the supported Eurex session calendar too, so
 weekend funding can use the preceding session's settlement without inventing a
@@ -296,10 +305,12 @@ dated flows establish a unique result. TWR can link explicitly valued funded
 intervals separated by an empty period; money appearing without funding is invalid.
 Mixed-sign cash flows are eligible only when the solver establishes a unique,
 numerically verified XIRR. Multiple roots, no solution and uncertain numerical
-conditioning are different from missing transactions. Mixed-sign root isolation
-supports up to 128 nonzero net cash-flow dates; larger mixed-sign schedules stay
-unavailable rather than selecting an arbitrary root. Conventional schedules use
-a separate fast path.
+conditioning are different from missing transactions. Supported long schedules use
+a verified uniqueness certificate. An XIRR **calculation limit** means the bounded
+solver could not verify the full schedule within its work limit; unusually complex
+schedules can still remain unavailable. The app never shortens the period,
+guesses a root or substitutes return on cost. Conventional schedules retain a
+separate fast path.
 
 Ordinary TWR uses a daily convention: incoming capital is available at the start
 of the day and outgoing capital leaves at its end. Chain daily factors

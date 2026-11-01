@@ -2,6 +2,7 @@
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from hashlib import sha256
 import re
 from uuid import uuid4
 
@@ -153,12 +154,22 @@ def scoped_observations(journal, scope, observations, target):
                  or o.kind == 'fx' and o.currency in currencies and o.target in currencies)
 
 
-def save_manual_observation(directory, observations, revision, observation, *, replace_existing=False):
+def save_manual_observation(directory, observations, revision, observation, *, replace_existing=False, provenance=None):
     previous = next((o for o in active_observations(observations) if o.key == observation.key), None)
     if previous and not replace_existing:
         raise DataError('A value is already saved for this date. Use Replace saved value to correct it.')
     if previous:
         observation = replace(observation, replaces=previous.id)
+        if provenance is None:
+            provenance = {field: getattr(previous, field) for field in ('source', 'listing', 'calendar', 'exchange_timezone')}
+    if provenance is not None:
+        observation = replace(observation, **provenance)
+    # Source text remains useful evidence, but user-entered prices must retain
+    # manual precedence over automatic downloads, including repeated corrections.
+    source = observation.source.strip() or 'manual'
+    if source != 'manual' and not source.startswith('manual: '):
+        source = 'manual: '+source
+    observation = replace(observation, source=source)
     updated = add_observation(observations, observation)
     save_observations(directory, updated, revision)
     return updated
@@ -183,11 +194,28 @@ def _save_form(directory, observations, revision, *, kind, subject, stamp, curre
     if previous:
         formatted = str(previous.amount) if kind == 'fx' else format_money(previous.amount, previous.currency)
         st.caption(f'Saved: {formatted} · The original stays in the correction history.')
+    provenance = None
+    if kind == 'price':
+        identity = previous.id if previous else sha256(repr(existing_key).encode()).hexdigest()[:16]
+        provenance_key = key+'provenance_'+identity+'_'
+        with st.expander('Quote provenance'):
+            source = previous.source.removeprefix('manual: ') if previous else 'manual'
+            source = st.text_input('Source', value=source, key=provenance_key+'source',
+                help='Your source description. Saving records a manual observation, not an automatically verified provider quote.')
+            listing = st.text_input('Quote listing', value=previous.listing if previous else '', key=provenance_key+'listing',
+                help='Listing used for this historical quote. This does not change the holding’s current listing.')
+            calendar = st.text_input('Exchange calendar', value=previous.calendar if previous else '', key=provenance_key+'calendar',
+                help='Optional supported exchange calendar code, such as XNYS. Supply only evidence for this quote’s exchange; blank leaves closure coverage unknown.')
+            zone = st.text_input('Exchange timezone', value=previous.exchange_timezone if previous else '', key=provenance_key+'zone',
+                help='Optional exchange timezone, such as America/New_York. These details are supplied by you and are not automatically verified.')
+            provenance = dict(source=source.strip() or 'manual', listing=listing.strip(),
+                              calendar=calendar.strip(), exchange_timezone=zone.strip())
     if st.button('Replace saved value' if previous else 'Save value', key=key+'save'):
         try:
             observation = Observation(uuid4().hex, kind, subject, stamp, _amount(amount), currency,
                                       target, side, boundary)
-            save_manual_observation(directory, observations, revision, observation, replace_existing=previous is not None)
+            save_manual_observation(directory, observations, revision, observation,
+                                    replace_existing=previous is not None, provenance=provenance)
             st.rerun()
         except (DataError, ValueError, OSError) as exc:
             st.error(str(exc))
@@ -294,5 +322,7 @@ def render_history_data(directory, journal, scope, observations, revision, view,
                     'Value':str(o.amount) if o.kind == 'fx' else format_money(o.amount, o.currency),
                     'Currency':f'{o.currency}/{o.target}' if o.kind == 'fx' else o.currency,
                     'Timing':{'close':'End of day', 'before':'Before cash flow', 'after':'After cash flow'}[o.side],
-                    'Source':'Manual' if o.source == 'manual' else 'Market data'} for o in values]),
+                    'Source': 'Manual' if o.source == 'manual' else o.source,
+                    'Quote listing': o.listing, 'Exchange calendar': o.calendar,
+                    'Exchange timezone': o.exchange_timezone} for o in values]),
                     hide_index=True, width='stretch')

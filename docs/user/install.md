@@ -115,6 +115,10 @@ its command-line demo/live launch mode.
 
 ## Update or remove {#update}
 
+Read the [version 0.2.0 release and upgrade notes](releases.md#upgrade-020)
+before updating an existing workspace, especially if you will apply transaction
+history or record futures/accounts.
+
 1. Stop the old app and [back up the workspace](storage.md#backup).
 2. Run the new Windows Setup, install the new Ubuntu `.deb` with
    `sudo apt install ./portfolio-breakdown-experimental_<version>_amd64.deb`,

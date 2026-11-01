@@ -85,7 +85,7 @@ def history_comparisons(journal, proposed, holdings, positions, *, target='EUR',
             raise DataError('Every affected holding needs an explicit starting balance before applying.')
         row, state = current.loc[identity], states[identity]
         old = resolve_cost(active_components(row), target, historical).exact_amount
-        new = resolve_cost(list(state.costs), target, historical).exact_amount if state.costs else 0
+        new = resolve_cost(list(state.costs), target, historical).exact_amount if state.costs else (0 if state.quantity == 0 else None)
         comparisons.append(dict(position_id=identity, name=row['name'], account=row['account'],
             before_quantity=str(row.shares), after_quantity=str(state.quantity),
             before_cost=old, after_cost=new, currency=target))

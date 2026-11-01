@@ -91,7 +91,10 @@ class HistoryCalculation:
     def __init__(self, journal, observations):
         self.journal, self.observations = journal, index_observations(observations)
         self._account_events = effective_events(journal)
+        self._position_starts = account_position_starts(self._account_events)
         self._account_starts = account_start_dates(journal, self._account_events)
+        from portfolio_app.account_inception import account_inceptions
+        self._account_inceptions = account_inceptions(journal, self._account_events)
         self._events = {book.position_id: selected_events(book) for book in journal.securities}
         self._coverage_events = {identity: tuple(e for e in events if
             e.kind in ('opening', 'checkpoint', 'note', 'cost', 'inventory_in', 'inventory_out')
@@ -132,18 +135,14 @@ class HistoryCalculation:
         return self._get(('security_gains', identity, interval, target), load)
 
     def accounts(self, stamp):
-        from portfolio_app.derivative_types import iso_date
-        if stamp is not None:
-            iso_date(stamp)
+        from portfolio_app.account_timeline import AccountTimeline
         # Cash postings are derived once from the same immutable journal snapshot.
         # Pending receipts still require explicit receive events: value_date alone
         # does not change account balances and must not advance this timeline.
         postings = self._get(('account_postings',), lambda: cash_postings(
             self.journal, security_cash=self.securities().cash))
-        dates = self._get(('account_dates',), lambda: sorted(
-            {event.date for event in self._account_events} | {event.date for event in postings}))
-        interval = bisect_right(dates, stamp) if stamp is not None else None
-        return self._get(('accounts', interval), lambda: replay(self.journal, as_of=stamp, _security_postings=postings))
+        timeline = self._get(('account_timeline',), lambda: AccountTimeline(self.journal, postings))
+        return timeline.at(stamp)
 
     def value(self, scope, stamp, target):
         return self._get(('value', scope, stamp, target), lambda: value_at(
@@ -209,6 +208,14 @@ def account_start_dates(journal, events=None):
 
 def account_starts_on(journal, account, stamp):
     return account_start_dates(journal).get(account) == stamp
+
+
+def account_position_starts(events):
+    starts = {}
+    for event in events:
+        if event.position_id and event.kind in {'trade', 'snapshot'}:
+            starts.setdefault(event.position_id, event)
+    return starts
 
 
 def opening_value_at(journal, scope, observations, stamp, target, *, calculation=None):
@@ -338,7 +345,12 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
             evidence.append(provenance(price, stamp))
             add(state.quantity * price.amount, price.currency, identity)
     events = calculation._account_events if calculation else effective_events(journal)
+    from portfolio_app.account_inception import account_inceptions
+    inceptions = calculation._account_inceptions if calculation else account_inceptions(journal, events)
+    position_starts = calculation._position_starts if calculation else account_position_starts(events)
     for account in scope.accounts:
+        if account in inceptions and stamp < inceptions[account]:
+            continue
         openings = [e for e in events if e.account_id == account and e.kind == 'cash_open']
         if not openings or any(e.date > stamp for e in openings):
             reasons.append(Issue(f'{account}: missing opening cash coverage on {stamp}', 'transaction'))
@@ -349,7 +361,13 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
             if owner == account:
                 add(-amount, currency, loan)
         for identity, balance in accounts.positions.items():
-            if balance.spec.account_id != account or not balance.quantity:
+            if balance.spec.account_id != account:
+                continue
+            first = position_starts.get(identity)
+            if first and first.kind == 'snapshot' and stamp < first.date:
+                reasons.append(Issue(f'{identity}: contract history before the {first.date} snapshot is unknown', 'transaction'))
+                continue
+            if not balance.quantity:
                 continue
             price = price_at(observations, (identity, balance.contract.id), stamp, contract=balance.contract)
             if price is None or price.currency != balance.contract.currency:
@@ -431,7 +449,8 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
         if e.account_id not in scope.accounts:
             continue
         if start < e.date <= end or (e.date == start and starts.get(e.account_id) == start):
-            if e.kind in ('cash_open', 'debt_open', 'snapshot') and e.date > start:
+            if (e.kind in ('cash_open', 'debt_open', 'snapshot') and e.date > start
+                    and not (e.kind == 'cash_open' and not e.amount and e.source == 'confirmed_zero_start')):
                 reasons.append(Issue(f'{e.id}: account opening boundary inside interval', 'transaction'))
             if e.kind == 'cash_adjust' and classes.get(e.id, 'boundary') == 'boundary':
                 reasons.append(Issue(f'{e.id}: classify or resolve the cash adjustment', 'transaction'))

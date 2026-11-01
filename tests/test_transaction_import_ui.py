@@ -4,6 +4,55 @@ from test_transaction_import_commands import setup,save
 from test_transaction_mapping_ui import listing_value
 
 
+def category_import_app(directory):
+    from pathlib import Path
+    import streamlit as st
+    from portfolio_app.csv_transaction_import_ui import render_transaction_import
+    st.session_state['import_tx_content'] = ('invented.csv',
+        b'reference,date,type,asset,quantity,amount,currency\n'
+        b'b,2024-01-01,buy,AUR,2,20,EUR\ns,2024-01-02,sell,AUR,2,30,EUR\n')
+    render_transaction_import(Path(directory), demo=True)
+
+
+def test_new_import_category_is_optional_persistent_and_independent_of_type(tmp_path):
+    from portfolio_app.positions import read_snapshot
+    (tmp_path/'allocation.yaml').write_text('version: 2\nbuckets:\n'
+        '  - {id: leaf, name: Invented category, target: 1}\n')
+    app = AppTest.from_function(category_import_app, args=(str(tmp_path),)).run()
+    category = next(s for s in app.selectbox if s.label == 'Category · AUR')
+    assert category.value == '' and category.options == ['Unassigned', 'Invented category']
+    category.set_value('leaf').run()
+    next(s for s in app.selectbox if s.label == 'Type · AUR').set_value('etf').run()
+    assert next(s for s in app.selectbox if s.label == 'Category · AUR').value == 'leaf'
+    next(b for b in app.button if b.label == 'Review against portfolio').click().run()
+    next(b for b in app.button if b.label == 'Back to import').click().run()
+    assert next(s for s in app.selectbox if s.label == 'Category · AUR').value == 'leaf'
+    next(b for b in app.button if b.label == 'Review against portfolio').click().run()
+    next(b for b in app.button if b.label == 'Apply history').click().run()
+    assert not app.exception
+    saved = read_snapshot(tmp_path/'holdings.csv').holdings.iloc[0]
+    assert saved.bucket_id == 'leaf' and saved.instrument_type == 'etf'
+
+
+def test_category_revision_invalidates_pending_review(tmp_path):
+    path = tmp_path/'allocation.yaml'
+    path.write_text('version: 2\nbuckets:\n  - {id: leaf, name: Invented category, target: 1}\n')
+    app = AppTest.from_function(category_import_app, args=(str(tmp_path),)).run()
+    next(s for s in app.selectbox if s.label == 'Category · AUR').set_value('leaf').run()
+    next(b for b in app.button if b.label == 'Review against portfolio').click().run()
+    path.write_text('version: 2\nbuckets: []\n')
+    app.run()
+    assert not app.exception
+    assert any('Portfolio changed' in w.value for w in app.warning)
+    assert not any(b.label == 'Apply history' for b in app.button)
+    next(b for b in app.button if b.label == 'Reload transaction review').click().run()
+    category = next(s for s in app.selectbox if s.label == 'Category · AUR')
+    assert category.value == 'leaf' and 'Unavailable category' in category.options
+    category.set_value('').run()
+    assert not app.exception and not app.warning
+    assert not (tmp_path/'holdings.csv').exists()
+
+
 def test_received_swap_income_fee_and_valuation_are_visible(tmp_path):
     snapshot=setup(tmp_path);save(tmp_path,snapshot)
     def script(directory):

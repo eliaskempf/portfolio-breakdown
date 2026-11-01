@@ -213,7 +213,9 @@ def margin_coverage(journal, holdings, valued, account_id, denomination, *, repo
             total = totals['cash', item.currency]
             backing = min(Decimal(1), balance/total) if total else ZERO
             rate = conversion_rate(fx_rates, item.currency, denomination, reporting_currency)
-            if rate is None:
+            if (account_id, item.currency) in state.unknown_cash:
+                issue = f'{item.currency} cash is incomplete; supply missing transaction amounts.'
+            elif rate is None:
                 issue = 'Missing FX for cash collateral.'
             else:
                 value = item.amount*backing*rate

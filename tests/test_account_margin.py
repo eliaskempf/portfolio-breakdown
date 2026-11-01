@@ -246,3 +246,104 @@ render_account_margin(directory, journal, revision, holdings, valued, 'EUR', fx_
     assert review.loc[0, 'Quantity / native cash'] == '0.125'
     assert all('opaque-' not in frame.value.to_string() for frame in app.dataframe)
     assert 'opaque-reservation-id' in replay(load_journal(tmp_path)[0]).reservations
+
+
+def test_unknown_foreign_cash_withholds_collateral_in_other_coverage_currency():
+    from portfolio_app.security_history import SecurityBook, SecurityEvent
+    journal, held, valued = fixture()
+    journal = reserve_collateral(journal, Event('reserve', DAY, 'reserve', account_id='broker',
+        currency='USD', amount=500, collateral_id='cash'), held)
+    records = (SecurityEvent('opening', 'opening', DAY),
+        SecurityEvent('missing-charge', 'fee', '2026-01-06', currency='USD'))
+    book = SecurityBook('security', 'synthetic', ('2.5', '', ''), account_id='broker',
+        records=records, active_ids=tuple(e.id for e in records))
+    journal = replace(journal, version=5, securities=(book,), margin_requirements=(
+        MarginRequirement('margin', 'broker', 'EUR', 100, 80, DAY),))
+    coverage = margin_coverage(journal, held, valued, 'broker', 'EUR', fx_rates={'USD': '.9'})
+    assert coverage.eligible_collateral is None
+    assert coverage.initial_headroom is None and coverage.maintenance_headroom is None
+    assert coverage.collateral[0].eligible_value is None
+    assert 'USD cash is incomplete' in coverage.collateral[0].issue
+    # A correction restores only the affected currency's known cash coverage.
+    corrected = replace(records[-1], id='known-charge', amount=D(10), replaces=records[-1].id)
+    book = replace(book, records=(*records, corrected), active_ids=(records[0].id, corrected.id))
+    known = margin_coverage(replace(journal, securities=(book,)), held, valued,
+                            'broker', 'EUR', fx_rates={'USD': '.9'})
+    assert known.eligible_collateral == 450 and known.initial_headroom == 350
+    assert not known.issues
+
+
+@pytest.mark.parametrize('snapshot_quantity', [0, 10, 30])
+@pytest.mark.parametrize('projected_input', [False, True])
+def test_collateral_ui_uses_applied_history_for_coverage_and_reviewed_save(tmp_path, snapshot_quantity, projected_input):
+    from streamlit.testing.v1 import AppTest
+    from portfolio_app.account_journal import HoldingLink
+    from portfolio_app.cost_basis import fingerprint
+    from portfolio_app.security_history import SecurityBook, SecurityEvent
+    content = ('id,name,shares,instrument_type,position_key,acquisition_price,acquisition_currency\n'
+               f'synthetic,Invented security,{snapshot_quantity},equity,security,10,EUR\n')
+    (tmp_path/'holdings.csv').write_text(content)
+    held = parse_holdings(content)
+    records = (SecurityEvent('opening', 'opening', '2024-01-01', quantity=snapshot_quantity,
+                            amount=snapshot_quantity*10, currency='EUR'),
+        SecurityEvent('movement', 'buy' if snapshot_quantity < 20 else 'sell', '2024-02-01',
+                      quantity=abs(20-snapshot_quantity), price=10, currency='EUR', charges_known=True))
+    book = SecurityBook('security', 'synthetic', fingerprint(held.iloc[0]), records=records,
+                        active_ids=tuple(e.id for e in records))
+    journal = Journal(version=5, accounts=(Account('broker', 'Invented broker'),),
+        securities=(book,), holding_links=(HoldingLink('security', 'broker'),),
+        events=(Event('cash', '2024-01-01', 'cash_open', account_id='broker', currency='EUR', amount=1000),
+            Event('pledge', '2024-02-02', 'reserve', account_id='broker', currency='EUR',
+                  amount=5, holding_id='security', collateral_id='original-pledge')),
+        margin_requirements=(MarginRequirement('margin', 'broker', 'EUR', 75, 60, '2024-02-02'),))
+    save_journal(tmp_path, journal, None)
+    app = AppTest.from_string(f'''
+from pathlib import Path
+from portfolio_app.account_journal import load_journal
+from portfolio_app.account_margin_ui import render_account_margin
+from portfolio_app.positions import read_snapshot
+from portfolio_app.security_history import effective_holdings
+directory = Path({str(tmp_path)!r})
+journal, revision = load_journal(directory)
+holdings = read_snapshot(directory/'holdings.csv').holdings
+valued = effective_holdings(holdings, journal.securities).assign(current_value_reporting=200.)
+if {projected_input!r}:
+    holdings = effective_holdings(holdings, journal.securities)
+render_account_margin(directory, journal, revision, holdings, valued, 'EUR', fx_rates={{}})
+''').run()
+    assert not app.exception
+    assert next(m for m in app.metric if m.label == 'Eligible collateral').value == '€50.00'
+    assert next(m for m in app.metric if m.label == 'Initial requirement headroom').value == '€-25.00'
+    next(w for w in app.radio if w.label == 'Collateral asset').set_value('Security / asset').run()
+    next(w for w in app.text_input if w.label == 'Shares / units to reserve').set_value('10').run()
+    next(w for w in app.button if w.label == 'Review collateral changes').click().run()
+    assert len(replay(load_journal(tmp_path)[0]).reservations) == 1
+    next(w for w in app.button if w.label == 'Save reviewed collateral changes').click().run()
+    assert not app.exception and not app.error
+    saved = load_journal(tmp_path)[0]
+    assert sum(r.amount for r in replay(saved).reservations.values()) == 15
+    assert saved.securities == journal.securities
+    assert (tmp_path/'holdings.csv').read_text() == content
+    assert next(m for m in app.metric if m.label == 'Eligible collateral').value == '€150.00'
+
+
+def test_collateral_rejects_stale_projected_journal_even_when_units_match(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    (tmp_path/'holdings.csv').write_text(CSV)
+    journal, _, _ = fixture()
+    save_journal(tmp_path, journal, None)
+    app = AppTest.from_string(f'''
+from pathlib import Path
+from portfolio_app.account_journal import load_journal
+from portfolio_app.account_margin_ui import render_account_margin
+from portfolio_app.positions import read_snapshot
+directory = Path({str(tmp_path)!r})
+journal, revision = load_journal(directory)
+holdings = read_snapshot(directory/'holdings.csv').holdings
+holdings.attrs['history_journal_revision'] = 'older-journal-revision'
+valued = holdings.assign(current_value_reporting=1000.)
+render_account_margin(directory, journal, revision, holdings, valued, 'EUR', fx_rates={{'USD': '.9'}})
+''').run()
+    assert not app.exception and not app.metric
+    assert any('Holdings changed' in item.value for item in app.info)
+    assert not any(button.label == 'Review collateral changes' for button in app.button)

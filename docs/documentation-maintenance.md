@@ -125,7 +125,7 @@ The authoritative topic map is `TOPICS` in `tools/docs_site.py`, exported
 in every `build-info.json` and checked against generated anchors. Topic IDs are
 independent of sidebar/header layout. Example: `buy-ins` maps to
 `positions/#buy-ins`; `etf-other` maps to `exposure/#other`; `risk` maps to
-`analytics/#risk`. There are 30 topics. Application links are rendered by `workspace_ui.py` using
+`analytics/#risk`. Application links are rendered by `workspace_ui.py` using
 `documentation.guide_url`. Bundled-help behavior is tested in
 `tests/test_bundled_documentation.py`.
 
@@ -151,7 +151,7 @@ retaining compatibility. A frozen version is never retroactively edited.
 | Candidate with source SHA | `candidates/<full-source-sha>/` |
 | Official release | `releases/<package-version>/`, an exact copy of approved candidate bytes |
 
-Candidates can share package version 0.1.0; the full source SHA distinguishes them.
+Candidates can share a package version; the full source SHA distinguishes them.
 Candidate packaging records the documentation source SHA, route and build-info
 checksum in its manifest and bundles that exact site with the executable. The
 installed app serves those bytes locally. Verify their identity before release;
@@ -173,7 +173,7 @@ channel, URL, routes and hashes. `check` verifies the complete file inventory an
 anchors without network access. For a previously archived approved candidate:
 
 ```sh
-uv run python tools/docs_site.py promote dist/pages --source-sha FULL_SOURCE_SHA --version 0.1.0
+uv run python tools/docs_site.py promote dist/pages --source-sha FULL_SOURCE_SHA --version CANDIDATE_PACKAGE_VERSION
 ```
 
 Promotion copies the candidate bytes without rebuilding and refuses a different

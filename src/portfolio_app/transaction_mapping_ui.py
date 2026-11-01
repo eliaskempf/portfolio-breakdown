@@ -142,12 +142,26 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
         for pair in asset_pairs:
             mapping[pair] = prior.get(pair, selected)
     if new_details:
-        with st.expander('Asset types'):
+        from portfolio_app.allocation import load_allocation
+        from portfolio_app.strategic import category_labels
+        allocation = load_allocation(directory/'allocation.yaml', holdings)
+        categories = ['', *sorted(allocation.leaves())] if allocation else ['']
+        labels = category_labels(allocation) if allocation else {}
+        with st.expander('Asset types & categories'):
             for asset, key, addition in new_details:
+                type_col, category_col = st.columns(2)
                 kinds = ['crypto','equity','etf','etc','unknown']
                 _suggest_default(key+'kind', addition['instrument_type'])
-                addition['instrument_type'] = _control(st.selectbox, 'Type · '+asset, kinds,
+                addition['instrument_type'] = _control(type_col.selectbox, 'Type · '+asset, kinds,
                     index=kinds.index(addition['instrument_type']), filter_mode=None, key=key+'kind')
+                chosen = st.session_state.get(key+'category', st.session_state.get('import_controls', {}).get(key+'category', ''))
+                # Keep an invalidated selection visible until explicitly changed;
+                # preview/application validation rejects it rather than reassigning it.
+                options = categories if chosen in categories else [*categories, chosen]
+                addition['bucket_id'] = _control(category_col.selectbox, 'Category · '+asset, options,
+                    index=0, format_func=lambda value: labels.get(value, 'Unassigned' if not value else 'Unavailable category'),
+                    filter_mode=None, key=key+'category',
+                    help='Category for this new holding, including its closed history. Blank is Unassigned. Add categories in Rebalance → Targets; type does not choose a category.')
     errors = [error for _, error in initial.values() if error]
     if errors:
         st.caption('Some live suggestions are unavailable. Open a price listing to retry.')

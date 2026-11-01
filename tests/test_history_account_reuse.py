@@ -35,23 +35,26 @@ def mixed_journal():
 
 def test_reuse_preserves_corrections_fees_debt_and_explicit_receipts(monkeypatch):
     import portfolio_app.personal_performance as module
+    import portfolio_app.account_journal as ledger
     journal = mixed_journal()
     calculation = HistoryCalculation(journal, ObservationStore())
     postings_calls, replay_calls = [], []
     def counted_postings(*args, **kwargs):
         postings_calls.append(True)
         return cash_postings(*args, **kwargs)
+    original = ledger._replay_states
     def counted_replay(*args, **kwargs):
-        replay_calls.append(kwargs.get('as_of'))
-        return replay(*args, **kwargs)
+        if kwargs.get('snapshots'):
+            replay_calls.append(True)
+        return original(*args, **kwargs)
     monkeypatch.setattr(module, 'cash_postings', counted_postings)
-    monkeypatch.setattr(module, 'replay', counted_replay)
+    monkeypatch.setattr(ledger, '_replay_states', counted_replay)
     # Out-of-order queries must not leak a later receipt/charge into earlier days.
     for day in (12, 6, 1, 9, 5, 2, 7, 4, 11, 3, 8, 10):
         stamp = f'2026-01-{day:02}'
         assert calculation.accounts(stamp) == replay(journal, as_of=stamp)
     assert len(postings_calls) == 1
-    assert len(replay_calls) == 8  # Only dates with account or derived cash events.
+    assert len(replay_calls) == 1  # One forward account pass, even out of order.
     assert calculation.accounts('2026-01-02').cash['broker', 'EUR'] == 980
     before_receipt = calculation.accounts('2026-01-06')
     assert before_receipt.cash['broker', 'EUR'] == 979
@@ -62,7 +65,7 @@ def test_reuse_preserves_corrections_fees_debt_and_explicit_receipts(monkeypatch
     assert sum(end.loans.values()) == 70
     assert ('broker', 'EUR') in calculation.accounts('2026-01-10').unknown_cash
     assert calculation.accounts(None) == replay(journal)
-    assert len(postings_calls) == 1 and len(replay_calls) == 9
+    assert len(postings_calls) == 1 and len(replay_calls) == 1
 
 
 def test_full_replay_still_validates_adopted_liabilities_after_dated_query():
@@ -71,6 +74,37 @@ def test_full_replay_still_validates_adopted_liabilities_after_dated_query():
     assert calculation.accounts('2026-01-01').loans == {}
     with pytest.raises(DataError, match='adopted liability'):
         calculation.accounts(None)
+    with pytest.raises(DataError, match='adopted liability'):
+        calculation.accounts(None)  # Retrying must not consume and hide a failure.
+
+
+def test_dense_timeline_is_one_pass_bounded_and_prior_movements_stay_immutable(monkeypatch):
+    from datetime import date, timedelta
+    import portfolio_app.account_journal as ledger
+    from portfolio_app.account_timeline import AccountTimeline
+    start = date(2020, 1, 1)
+    events = tuple(ledger.Event(str(i), (start+timedelta(days=i)).isoformat(),
+        'cash_open' if not i else 'interest', 'a', 'EUR', D(1000) if not i else D(1)) for i in range(1001))
+    journal = Journal(accounts=(Account('a', 'Invented'),), events=events)
+    calls = []
+    original = ledger._replay_states
+    def counted(*args, **kwargs):
+        calls.append(True)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(ledger, '_replay_states', counted)
+    timeline = AccountTimeline(journal, ())
+    first = timeline.at(events[0].date)
+    for i, event in enumerate(events):
+        state = timeline.at(event.date)
+        assert state.cash['a', 'EUR'] == 1000+i
+        assert len(state.cash_movements) == i+1
+    assert len(calls) == 1
+    assert len(timeline._states) <= 128
+    assert first.cash['a', 'EUR'] == 1000 and len(first.cash_movements) == 1
+    assert first.cash_movements[-1].event_id == '0'
+    assert timeline.at(events[0].date) == first  # Evicted old date safely replays.
+    assert len(calls) == 2
+    assert timeline.at(None) == replay(journal)
 
 
 def test_posting_ids_keep_longest_matching_event_prefix_and_correction_root():

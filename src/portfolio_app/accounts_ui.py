@@ -101,7 +101,7 @@ def _save_review(directory, journal, revision, candidate, key, *, holdings_revis
             st.rerun()
 
 
-def _account_choice(directory, journal, snapshot, valued, *, key, day):
+def _account_choice(directory, journal, snapshot, valued, *, key, day, allow_funding=True):
     """Return journal candidate and account ID; explicitly adopt or add cash."""
     ledger = _imports()
     names = {a.id: a.name for a in journal.accounts}
@@ -121,12 +121,28 @@ def _account_choice(directory, journal, snapshot, valued, *, key, day):
         amount = Decimal(str(existing.shares)) * Decimal(str(existing.current_price))
         st.caption(f'The existing cash contribution will be replaced, preserving its balance of {amount} {currency}.')
     else:
-        amount = _money_input('Cash balance (cash only, not account net liquidation value)', key+'cash', help=field_help('Cash balance (cash only, not account net liquidation value)'))
+        start_mode = (st.radio('Account start', ['Existing balance', 'Newly funded account'], horizontal=True,
+            key=key+'start_mode', help='Existing balance starts from a snapshot. Newly funded declares the account empty before its first contribution; the funding source must be outside this tracked portfolio.')
+            if allow_funding else 'Existing balance')
+        if start_mode == 'Newly funded account':
+            funding_day = st.date_input('Funding date', value=day, max_value=day, key=key+'funding_date')
+            amount = _money_input(f'Initial contribution ({currency})', key+'initial_contribution', '',
+                help='Actual positive funding from outside the tracked portfolio. Tracked account transfers must use Transfer instead.')
+            if amount <= 0:
+                raise DataError('Enter a positive initial contribution.')
+        else:
+            amount = _money_input('Cash balance (cash only, not account net liquidation value)', key+'cash', help=field_help('Cash balance (cash only, not account net liquidation value)'))
     if not name.strip():
         raise DataError('Enter an account name to continue.')
     account_id = st.session_state.setdefault(key+'new_account_id', uuid4().hex)
     candidate = ledger.add_account(candidate, ledger.Account(account_id, name.strip()))
-    candidate = ledger.append_event(candidate, _event(candidate, 'cash_open', day, account_id=account_id, currency=currency, amount=amount))
+    if not source and start_mode == 'Newly funded account':
+        candidate = ledger.append_event(candidate, _event(candidate, 'cash_open', funding_day,
+            account_id=account_id, currency=currency, amount=Decimal(0), source='confirmed_zero_start'))
+        candidate = ledger.append_event(candidate, _event(candidate, 'cash_flow', funding_day,
+            account_id=account_id, currency=currency, amount=amount))
+    else:
+        candidate = ledger.append_event(candidate, _event(candidate, 'cash_open', day, account_id=account_id, currency=currency, amount=amount))
     if source:
         candidate = replace(candidate, cash_links=(*candidate.cash_links, ledger.CashLink(account_id, currency, source)))
     return candidate, account_id
@@ -162,7 +178,8 @@ def render_future_entry(directory, snapshot, *, valued=None, allocation=None):
         quantity = st.number_input('Signed contracts (negative for short)', value=1, step=1, key=key+'quantity', help=field_help('Signed contracts (negative for short)'))
         price = _money_input('Fill price' if mode == 'New opening trade' else 'Last settled price / clearing basis', key+'price', '', help=field_help('Fill price' if mode == 'New opening trade' else 'Last settled price / clearing basis'))
         fees = _money_input('Opening fees' if mode == 'New opening trade' else 'New fees to record (exclude costs already in opening cash)', key+'fees', help=field_help('Opening fees' if mode == 'New opening trade' else 'New fees to record (exclude costs already in opening cash)'))
-        candidate, account = _account_choice(directory, journal, snapshot, valued, key=key, day=day)
+        candidate, account = _account_choice(directory, journal, snapshot, valued, key=key, day=day,
+                                            allow_funding=mode == 'New opening trade')
         investment_name = st.text_input('Investment name', value=f'{contract.product} futures', key=key+'investment_name', help=field_help('Investment name'))
         capital = _money_input(f'Initial allocated capital ({contract.currency})', key+'investment_capital', help=field_help('Initial allocated capital'))
         leaves = allocation.leaves() if allocation else set()

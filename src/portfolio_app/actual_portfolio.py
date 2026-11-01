@@ -87,20 +87,30 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
         result.loc[result.position_id.eq(binding.position_id), 'account'] = accounts[binding.account_id]
         result.loc[result.position_id.eq(binding.position_id), 'account_id'] = binding.account_id
     for book in journal.securities:
-        if book.account_id and book.active:
+        if not book.account_id or not book.active:
+            continue
+        matches = result.position_id.eq(book.position_id)
+        if matches.any():
             if not book.custody_id:
-                result.loc[result.position_id.eq(book.position_id), 'account'] = accounts[book.account_id]
-            result.loc[result.position_id.eq(book.position_id), 'account_id'] = book.account_id
+                result.loc[matches, 'account'] = accounts[book.account_id]
+            result.loc[matches, 'account_id'] = book.account_id
     rates = {}
     def converted(amount, currency):
+        # Funded investment displays also convert reference capital and posted
+        # P&L using these rates, even after their cash and open claims reach zero.
+        if amount == 0 and not journal.investments:
+            return 0.
         if currency not in rates:
             from portfolio_app.account_observations import manual_rate
             manual = manual_rate(fx_rates or {}, currency, reporting_currency)
             quote = current_rate(prices, currency, reporting_currency) if manual is None else None
             rates[currency] = manual if manual is not None else float(quote.quote.price) if quote.quote else None
+        if amount == 0:
+            return 0.
         return float(amount) * rates[currency] if amount is not None and rates[currency] is not None else float('nan')
     rows = []
     def row(identity, account_id, currency, amount, name, kind, **extra):
+        fx_needed = amount != 0 or (kind == 'future' and extra.get('signed_notional_reporting') != 0)
         base = dict(position_id=identity, id=identity, name=name, short_name='', ticker='', isin='',
             shares=1., instrument_type=kind, exposure_kind='non_equity',
             quote_currency=currency, acquisition_currency=currency, reporting_currency=reporting_currency,
@@ -111,7 +121,7 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
             within_bucket_target=float('nan'), target_allocation=float('nan'), acquisition_price=float('nan'),
             cost_basis=float('nan'), cost_basis_reporting=float('nan'), unrealized_gain=float('nan'),
             unrealized_gain_reporting=float('nan'), return_pct=float('nan'), cost_estimated=False,
-            price_status='manual', fx_status='fresh' if rates.get(currency) is not None else 'unavailable',
+            price_status='manual', fx_status='not_required' if not fx_needed else 'fresh' if rates.get(currency) is not None else 'unavailable',
             valuation_note='Recorded account balance; notional is not wealth.',
             performance_note='Account transaction history is shown in Accounts; pre-snapshot returns may be unknown.',
             journal_managed=True)

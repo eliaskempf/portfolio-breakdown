@@ -1,5 +1,6 @@
 """Focused history corrections use only invented holdings and static evidence."""
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal as D
 from types import SimpleNamespace
 
@@ -199,3 +200,59 @@ _market_form(path,journal,scope,store,revision,scope_names(path,journal,scope),'
     assert not app.exception
     corrected = load_observations(tmp_path)[0].observations[-1]
     assert corrected.subject == 'invented' and corrected.replaces == 'p1'
+
+
+def test_price_correction_retains_quote_provenance_and_manual_download_precedence(tmp_path):
+    from portfolio_app.personal_market import merge_download
+    original = Observation('download', 'price', 'position-0', '2024-01-02', D(10), 'USD',
+        source='Invented exchange feed', listing='SYNTH', calendar='XNYS', exchange_timezone='America/New_York')
+    store = ObservationStore((original,))
+    save_observations(tmp_path, store, None)
+    revised = save_manual_observation(tmp_path, store, load_observations(tmp_path)[1],
+        replace(original, id='edit', amount=D(11), source='manual', listing='', calendar='', exchange_timezone=''),
+        replace_existing=True)
+    saved = revised.observations[-1]
+    assert revised.observations[0] == original and saved.replaces == original.id
+    assert (saved.source, saved.listing, saved.calendar, saved.exchange_timezone) == (
+        'manual: Invented exchange feed', 'SYNTH', 'XNYS', 'America/New_York')
+    assert merge_download(revised, (replace(original, id='redownload', amount=D(12)),)) == revised
+    again = save_manual_observation(tmp_path, revised, load_observations(tmp_path)[1],
+        replace(saved, id='edit-again', amount=D(13)), replace_existing=True)
+    assert again.observations[-1].source == saved.source
+    assert again.observations[-1].replaces == 'edit'
+
+
+def test_new_manual_quote_source_is_protected_without_changing_holding_listing(tmp_path):
+    from portfolio_app.personal_market import merge_download
+    (tmp_path/'holdings.csv').write_text('id,name,shares,ticker\ninvented,Invented asset,1,HELD\n')
+    before = (tmp_path/'holdings.csv').read_bytes()
+    app = AppTest.from_string(f'''
+from pathlib import Path
+from portfolio_app.account_journal import Journal
+from portfolio_app.security_history import SecurityBook
+from portfolio_app.history_observations import load_observations, HistoryScope
+from portfolio_app.history_data_ui import _market_form, scope_names
+path=Path({str(tmp_path)!r})
+journal=Journal(version=2,securities=(SecurityBook('position-0','invented',('1','10','USD')),))
+scope=HistoryScope(('position-0',))
+store,revision=load_observations(path)
+_market_form(path,journal,scope,store,revision,scope_names(path,journal,scope),'EUR','form_',end='2024-01-02')
+''').run()
+    assert not app.exception
+    assert [e.label for e in app.expander] == ['Quote provenance']
+    for label, value in [('Price currency','USD'), ('Price (USD)','10.5'),
+                         ('Source','Invented closing bulletin'), ('Quote listing','ALTERNATIVE'),
+                         ('Exchange calendar','XNYS'), ('Exchange timezone','America/New_York')]:
+        next(t for t in app.text_input if t.label == label).set_value(value).run()
+    next(b for b in app.button if b.label == 'Save value').click().run()
+    assert not app.exception
+    store = load_observations(tmp_path)[0]
+    quote = store.observations[-1]
+    assert (quote.source, quote.listing, quote.calendar, quote.exchange_timezone) == (
+        'manual: Invented closing bulletin', 'ALTERNATIVE', 'XNYS', 'America/New_York')
+    assert (tmp_path/'holdings.csv').read_bytes() == before
+    assert merge_download(store, (replace(quote, id='download', source='Invented provider', amount=D(99)),)) == store
+    # A new date must not inherit another quote's metadata accidentally.
+    app.date_input[0].set_value(date(2024, 1, 3)).run()
+    assert next(t for t in app.text_input if t.label == 'Quote listing').value == ''
+    assert next(t for t in app.text_input if t.label == 'Source').value == 'manual'

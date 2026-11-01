@@ -184,6 +184,22 @@ synthetic directory; it reuses the normal alert explanation and acknowledgment U
 
 ### Calculation contracts
 
+Account history advances the canonical replay engine through dated checkpoints,
+retaining at most 128 in its local timeline. Movement prefixes share an append-only
+log without changing earlier states. A dated query and complete-journal validation
+remain distinct: final adoption checks run only when requesting the complete
+state, and validation failures remain failures on retry. Explicit zero inception
+uses a validated zero-opening source marker; snapshots never imply unknown
+prehistory was empty.
+
+Long XIRR schedules can certify uniqueness by enclosing a sign-changing root and
+all proper discounted cash-flow prefixes with directed decimal intervals. A
+uniform prefix sign implies the quotient after removing that root has uniformly
+signed coefficients, hence no other positive roots. Otherwise the solver isolates
+stationary points after exponential differentiation at a coefficient sign boundary.
+Work and depth limits produce a separate computational diagnostic; accepted rates
+still require residual and conditioning checks against the original full schedule.
+
 CSV and PDF readers normalize evidence into the ordinary securities history.
 Transaction commands, corrections, removals, reconciliation and calculation
 eligibility depend on economic facts, never the entry source. Linked exchanges,
@@ -342,7 +358,7 @@ endpoint is `/_stcore/health`.
 
 Independent target overrides on analytical-taxonomy nodes, ordinary-security
 tax reporting and automatic broker transaction imports remain
-unsupported. The development account journal records actual futures settlements
+unsupported. The account journal records actual futures settlements
 and closes; an opening snapshot does not reconstruct pre-snapshot gains.
 Strategic category targets, instrument price history and historical risk analysis
 are supported.
@@ -456,7 +472,7 @@ development requirements. These notes contain no working portfolio data.
   base does not suppress an otherwise supported portfolio beta contribution.
   The benchmark remains selected even for non-equity categories. Subset and
   contribution metrics use the same sample, which can differ across categories.
-- The released app uses asset-normalized beta. The development branch adds
+- Ordinary holdings use asset-normalized beta. Version 0.2.0 also supports
   [actual-account leverage](futures.md) in EUR/USD/GBP, with a separate net-equity
   denominator. Asset-normalized beta must not be presented as levered equity beta;
   legacy sandbox risk remains EUR-only.
@@ -510,7 +526,7 @@ These are ideas, not promises or already implemented features.
 3. **Beta stability.** Add rolling beta or comparisons across windows, confidence
    intervals, and benchmark explanatory power. A point estimate alone should not
    imply a stable forecast. Do not confuse beta with total volatility.
-4. **Joint funded-asset and futures planning.** The development branch already
+4. **Joint funded-asset and futures planning.** The app already
    provides actual-account futures plans alongside the capital planner. Joint
    routing between funded holdings and derivatives would need explicit funding,
    transfer and financing assumptions. A leveraged ETF's advertised daily

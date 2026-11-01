@@ -31,8 +31,8 @@ The browser archive remains available: `./portfolio-app` opens the browser; clos
 running until **Portfolio settings → App & workspace → Stop application** or `--stop`.
 Portable installs can add a shortcut with `--install-shortcut`.
 
-The experimental Apple Silicon macOS 14+ DMG is intended to accompany v0.1.0
-after its automated packaged checks pass. Open the DMG and copy **Portfolio
+The experimental Apple Silicon macOS 14+ DMG accompanies a release only after
+its automated packaged checks pass. Open the DMG and copy **Portfolio
 Breakdown Experimental.app** into Applications. It includes Python and opens a
 standalone window. There is no Developer ID signature or notarization; Gatekeeper
 rejects quarantined copies, and interactive installation approval on a personal
@@ -125,8 +125,9 @@ and check the restored workspace before adopting it. Automatic per-document
 `.backups` remain useful for individual edits but do not replace complete backups.
 Backup directories contain private financial data; keep them outside Git.
 
-For upgrades, stop the old application and back up the workspace. Installed
-Windows apps can run the new Setup over the existing install. Update Ubuntu with
+For upgrades, stop the old application and back up the workspace. Read the
+[release-specific compatibility notes](user/releases.md#upgrade-020).
+Installed Windows apps can run the new Setup over the existing install. Update Ubuntu with
 `sudo apt install ./portfolio-breakdown-experimental_<version>_amd64.deb` and Mac
 by replacing the stopped app in Applications with the new DMG's copy.
 For portable apps, extract the new

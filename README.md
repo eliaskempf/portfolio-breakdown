@@ -76,13 +76,13 @@ The [user guide](docs/user/index.md) covers imports, calculations, backups, trou
 and other features. Installed versions also include offline documentation, accessible through
 **? → User guide**.
 
-## Development branch
+## Version 0.2.0
 
-This branch includes manually recorded futures and margin accounts in EUR, USD
-and GBP, plus exposure analysis and hypothetical funding studies. No broker
-connection is required. See the
+Version 0.2.0 adds reviewed transaction history, personal performance analysis,
+monitoring, and manually recorded futures and margin accounts in EUR, USD and
+GBP. Read the [release and upgrade notes](docs/user/releases.md) before updating
+an existing workspace. No broker connection is required. See the
 [futures and leverage guide](docs/user/futures.md) for scope, accounting and setup.
-Published installers retain their documented release behavior.
 
 ## Disclaimer
 

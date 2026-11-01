@@ -70,21 +70,82 @@ def test_unique_positive_root_with_complex_pair_has_known_independent_answer(pos
     assert not reason and result==pytest.approx(float(1/positive-1),abs=1e-12)
 
 
-def test_long_schedule_uses_equivalent_reversed_polynomial(monkeypatch):
+@pytest.mark.parametrize('length', [91, 201, 501])
+def test_long_schedule_certifies_known_unique_root_without_term_count_limit(monkeypatch, length):
     import portfolio_app.history_irr as module
-    # (x-p)*(x²-0.6x+4.09)*(1+x+...+x^90). The latter factors
+    # (x-p)*(x²-0.6x+4.09)*(1+x+...+x^(length-1)). The latter factors
     # have no positive real roots, so the only admissible root is p.
     p = D('1.2')
     cubic = [-p*D('4.09'), D('4.09')+p*D('.6'), -p-D('.6'), D(1)]
-    coefficients = [D(0)]*94
-    for offset in range(91):
+    coefficients = [D(0)]*(length+3)
+    for offset in range(length):
         for index, amount in enumerate(cubic):
             coefficients[offset+index] += amount
-    original, calls = module._roots, []
-    def counted(terms):
+    original, calls = module._isolate, []
+    def counted(terms, budget, depth=0):
         calls.append(len(terms))
-        return original(terms)
-    monkeypatch.setattr(module, '_roots', counted)
+        return original(terms, budget, depth)
+    monkeypatch.setattr(module, '_isolate', counted)
     value, reason = solve(coefficients)
     assert not reason and value == pytest.approx(float(1/p-1), abs=1e-12)
     assert len(calls) < 10  # Preserve isolation without peeling ninety coefficients.
+
+
+def test_long_irregular_savings_and_withdrawals_verify_full_schedule(monkeypatch):
+    from decimal import localcontext
+    import portfolio_app.history_irr as module
+    days = [0, *(13*i+i%3 for i in range(1, 401)), 5300]
+    amounts = [D(-1000), *(D(15) if i%3 == 0 else D(-30) for i in range(1, 401))]
+    with localcontext() as context:
+        context.prec = 80
+        rate = D('.065')
+        amounts.append(-sum(a*((1+rate).ln()*D(days[-1]-day)/365).exp()
+                            for a, day in zip(amounts, days)))
+    def no_recursive_isolation(*args, **kwargs):
+        raise AssertionError('The positive invested-balance certificate should suffice')
+    original = module._isolate
+    def top_only(terms, budget, depth=0):
+        if depth:
+            no_recursive_isolation()
+        return original(terms, budget, depth)
+    monkeypatch.setattr(module, '_isolate', top_only)
+    value, reason = solve(amounts, days)
+    assert not reason and value == pytest.approx(.065, abs=1e-12)
+    assert abs(sum(float(a)/(1+value)**(day/365) for a, day in zip(amounts, days))) < 1e-8
+
+
+def test_long_multiple_root_schedule_never_passes_investment_certificate():
+    # Positive geometric factor introduces no roots; roots remain .5, 1 and 2.
+    coefficients = [D(0)]*204
+    for offset in range(201):
+        for i, amount in enumerate([-100, 350, -350, 100]):
+            coefficients[offset+i] += amount
+    value, reason = solve(coefficients, list(range(len(coefficients))))
+    assert value is None and reason.kind == 'irr_multiple'
+
+
+def test_calculation_limit_has_its_own_diagnostic(monkeypatch):
+    import portfolio_app.history_irr as module
+    original = module._Budget
+    monkeypatch.setattr(module, '_Budget', lambda: original(remaining=0))
+    value, reason = solve([-100, 40, -20, 100])
+    assert value is None and reason.kind == 'irr_complexity'
+    assert 'calculation limit' in str(reason)
+
+
+def test_prefix_interval_bounds_enclose_direct_high_precision_evaluation():
+    from decimal import localcontext
+    from portfolio_app.history_irr import _prefix_bounds, _Budget
+    terms = ((0, D('-1e30')), (7, D('3e30')), (400, D('-2e30')))
+    low, high = D('-.0001'), D('.0002')
+    with localcontext() as context:
+        context.prec = 30
+        bounds = _prefix_bounds(terms, low, high, _Budget())
+    with localcontext() as context:
+        context.prec = 100
+        shift = terms[-1][0]*high
+        for z in (low, (low+high)/2, high):
+            prefix = D(0)
+            for (n, a), (lower, upper) in zip(terms, bounds):
+                prefix += a*(n*z-shift).exp()
+                assert lower <= prefix <= upper

@@ -23,9 +23,9 @@ per-document `.backups`. Keep the whole directory private. App-managed saves
 validate data, check file revisions and back up previous files before atomic
 replacement. Those backups do not protect against loss of the entire drive.
 
-### Futures and account records (development)
+### History, futures and account records {#futures-and-account-records-development}
 
-The futures development branch also keeps these private documents in the same
+Version 0.2.0 also keeps these private documents in the same
 workspace:
 
 | Document | Contents |
@@ -83,7 +83,7 @@ portfolio unchanged. Unsaved forms are not included.
 The versioned archive preserves saved holdings and purchase-cost components/FX,
 reporting currency, categories and targets, classifications, ETF holdings and
 substitute baskets, overrides, portfolio caches and hidden document backups.
-On the futures development branch it also preserves the account journal,
+It also preserves the account journal,
 valuation observations, collateral/account bindings, named study settings and
 legacy sandbox documents. Restore validates account references against the saved
 holdings; it does not promote simulated positions into real transactions.
@@ -190,14 +190,14 @@ Futures data requests use public product, contract, date, FX and explicitly chos
 proxy identifiers. Account cash, contract quantities and manually entered taxes
 are stored locally; no broker connection is required. Market downloads, account
 transaction entry and hypothetical studies are separate operations. Futures
-transaction CSV import is not supported by the development account journal.
+transaction CSV import is not supported; enter futures transactions manually.
 
 Do not commit personal holdings, accounts, costs, targets, classifications,
 imports, screenshots, reports, caches, backups or credentials. The entire `data/`
 directory and personal `handoff.md` are private. Contributor checks are described in [Source development](development.md).
 An automated scan cannot recognize all personal details.
 
-### Transaction-history compatibility
+### Transaction-history compatibility {#transaction-history-compatibility}
 
 Opening a legacy workspace does not convert its purchase batches or rewrite the
 journal. Securities-history saves use account journal version 5; dated
@@ -213,3 +213,6 @@ current-balance export. Back up the entire workspace. Draft evidence, original
 records, observations, coverage reviews and closed positions are included. A
 failed first activation may leave stable position keys, but never a partially
 applied trade or duplicate cash posting.
+
+See the [version 0.2.0 upgrade notes](releases.md#upgrade-020) before updating or
+downgrading an installation.

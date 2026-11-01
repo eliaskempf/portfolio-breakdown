@@ -75,7 +75,8 @@ def _review(directory, original, revision, candidate, holdings_revision, key, ho
             with workspace_lock(directory):
                 snapshot = freeze_position_keys(directory, expected_holdings)
                 validate_links(proposed, snapshot.holdings)
-                validate_reservations(proposed, snapshot.holdings)
+                from portfolio_app.security_history import effective_holdings
+                validate_reservations(proposed, effective_holdings(snapshot.holdings, proposed.securities))
                 save_journal(directory, proposed, expected)
         except (DataError, OSError) as exc:
             st.error(str(exc))
@@ -98,9 +99,14 @@ def render_account_margin(directory, journal, revision, holdings, valued, report
         st.info('Create an account in Cash & financing before recording collateral.')
         return
     snapshot = read_snapshot(directory/'holdings.csv')
-    if not snapshot.holdings.equals(holdings):
+    from portfolio_app.security_history import effective_holdings
+    current_holdings = effective_holdings(snapshot.holdings, journal.securities)
+    stale_history = ('history_journal_revision' in holdings.attrs
+                     and holdings.attrs['history_journal_revision'] != revision)
+    if stale_history or (not snapshot.holdings.equals(holdings) and not current_holdings.equals(holdings)):
         st.info('Holdings changed. Reload before changing account bindings or collateral.')
         return
+    holdings = current_holdings
     if fx_rates is None:
         from portfolio_app.account_observations import load_observations
         _, fx_rates, _ = load_observations(directory)

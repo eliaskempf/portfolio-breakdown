@@ -79,7 +79,15 @@ position**. Selecting **New position** splits that cell into the dropdown and an
 editable holding name beside it. The holding dropdown selects the destination;
 the price-listing popup selects the market-data source.
 Edited names survive listing changes and navigation. Automatically suggested types
-can be reviewed under **Asset types**. **Show transactions for** filters the review
+can be reviewed under **Asset types & categories**. Each new holding has a separate
+**Category** choice, initially **Unassigned**, using the portfolio's leaf categories.
+This also assigns fully sold holdings and their retained history. Type and price
+listing never choose a category automatically. Existing holdings keep their
+categories and targets; new position targets remain undecided. Category choices
+survive **Back to import**. If categories or targets change during review, reload
+and review again; an unavailable category must be changed explicitly before
+application. Create categories in **Rebalance → Targets** when needed.
+**Show transactions for** filters the review
 table by asset, including received exchange legs and asset fees. It does not
 exclude transactions from the import.
 

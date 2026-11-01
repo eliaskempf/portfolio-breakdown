@@ -667,8 +667,10 @@ def _add_transaction(directory, journal, revision, snapshot, book, key):
         help='Enter the total transaction fees. For a total paid or received, these fees are already included and will not be counted twice. In the transaction currency unless specified below.', key=key+'fee')
     with st.expander('Different fee currency or settlement date'):
         left, right = st.columns(2)
-        fee_currency = left.text_input('Fee currency', value=currency, key=key+'fee_currency').upper()
-        fee_date = right.date_input('Fee date', value=stamp, max_value=date.today(), key=key+'fee_date')
+        fee_currency = left.text_input('Fee currency', placeholder='Transaction currency',
+            help='Leave empty to use the transaction currency.', key=key+'fee_currency').strip().upper() or currency
+        fee_date = right.date_input('Fee date', value=None, max_value=date.today(), key=key+'fee_date',
+            help='Leave empty to use the transaction date.')
         external = st.checkbox('Fee paid outside the linked cash account', key=key+'external') if book.account_id else False
         deferred = st.checkbox('Cash settles later', key=key+'deferred') if book.account_id and kind in ('buy','sell') else False
         settlement = st.date_input('Cash settlement date', min_value=stamp, key=key+'settlement') if deferred else None
@@ -692,7 +694,7 @@ def _add_transaction(directory, journal, revision, snapshot, book, key):
             gross = value-(charge or 0) if kind == 'buy' else value+(charge or 0)
         fields = dict(kind=kind, date=stamp.isoformat(), sequence=sequence, estimated=estimated, asset_charges=asset_charges,
             quantity=qty, price=price, amount=gross, currency=currency,
-            charges=(Charge(charge, fee_currency, fee_date.isoformat(), external=external),) if fee else (), charges_known=known,
+            charges=(Charge(charge, fee_currency, fee_date.isoformat() if fee_date else '', external=external),) if fee else (), charges_known=known,
             other_position_id=destination, value_date=settlement.isoformat() if settlement else '')
         event = SecurityEvent(_record_id(key+str(revision), fields), **fields)
         candidate = append_evidence(book, (event,))

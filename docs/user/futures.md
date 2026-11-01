@@ -1,9 +1,8 @@
-# Futures and leverage (development)
+# Futures and leverage {#futures-and-leverage-development}
 
-This development branch supports manually recorded futures and account balances
-in the normal portfolio workspace. It is not part of the published v0.1.0
-installers. EUR, USD and GBP are supported as account, contract-settlement and
-reporting currencies. No broker connection or order execution is involved.
+Version 0.2.0 supports manually recorded futures and account balances in the
+normal portfolio workspace. EUR, USD and GBP are supported as account,
+contract-settlement and reporting currencies. No broker connection or order execution is involved.
 Futures transactions are entered manually; transaction CSV imports are deferred.
 
 ## Add an actual futures position
@@ -22,9 +21,20 @@ If the listing source is unavailable, only the explicit manual option is offered
 Select an account or create one. If its cash already appears in Holdings, choose
 **Adopt existing cash**: the account balance replaces that holding's contribution
 instead of creating another asset. Otherwise enter cash that is not already
-recorded elsewhere. Enter cash only, not a broker's account net liquidation value.
-Use zero when there is no cash to record. An account can subsequently have separate
+recorded elsewhere. For a **New opening trade**, **Account start** defaults to **Existing balance**, a dated
+snapshot that leaves earlier account history unknown. Choose **Newly funded account**
+only when funding began from a confirmed zero account balance. Enter **Funding date**
+and a positive **Initial contribution** in the account currency; the funding date
+must be no later than the trade date. This records zero inception
+and the dated contribution separately. The contribution must come from outside
+the tracked scope; use **Transfer** for cash moving between included accounts.
+Enter cash only, not a broker's account net liquidation value. Use zero when there
+is no cash to record in an existing-balance snapshot. An account can subsequently have separate
 EUR, USD and GBP balances under **Futures → Cash & financing**.
+An **Already-open position snapshot** creates an existing-balance account;
+it cannot establish a new account's complete opening trade history. For an account
+funded before a later contract snapshot, equity and returns before that snapshot
+remain unknown even when the earlier cash balance is known.
 
 For an existing position, enter its **last settled price / clearing basis** and
 current cash at the snapshot date. That cash already includes earlier settlements;
@@ -404,6 +414,10 @@ withhold the reference chart rather than relabelling prices.
 For an account without a futures position, open **Positions → Position tools →
 Accounts & futures**, then **Cash & financing → Create account**. This opens the
 same account workflow without requiring a placeholder contract.
+It offers the same **Existing balance** and **Newly funded account** choices.
+The latter requires a **Funding date** no later than the balance date and a
+positive external **Initial contribution**; a snapshot alone does not prove zero
+before inception.
 
 **Cash & financing** records opening balances, reconciliations, deposits,
 withdrawals, transfers, actual currency-conversion legs, existing loans,

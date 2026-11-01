@@ -97,7 +97,7 @@ def main():
                 assert not external, external
                 browser.close()
                 print(f'Browser passed: {url}; dark default/light toggle persistence, navigation, '
-                      'search, 30 topics, 390px layout, no external requests')
+                      f'search, {len(info["topics"])} topics, 390px layout, no external requests')
         finally:
             server.shutdown()
             server.server_close()

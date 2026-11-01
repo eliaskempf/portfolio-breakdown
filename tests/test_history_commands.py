@@ -23,6 +23,21 @@ def setup(tmp_path):
     return path,snapshot,replace(book,active_ids=('open','buy'))
 
 
+@pytest.mark.parametrize('quantity, expected_cost', [(D(10), None), (D(0), 0)])
+def test_history_comparison_without_cost_evidence_only_reports_zero_for_empty_position(tmp_path, quantity, expected_cost):
+    from portfolio_app.account_journal import Journal
+    from portfolio_app.history_commands import history_comparisons
+    from portfolio_app.security_history import SecurityLot
+    _, snapshot, book = setup(tmp_path)
+    opening = E('unknown-opening', 'opening', '2024-03-01', quantity=quantity,
+                lots=(SecurityLot('unknown-lot', quantity, (), date='2024-01-01'),) if quantity else ())
+    proposed = replace(book, records=(opening,), active_ids=(opening.id,))
+    comparison, = history_comparisons(Journal(), Journal(version=2, securities=(proposed,)),
+                                     snapshot.holdings, {book.position_id})
+    assert comparison['before_cost'] == D(120)
+    assert comparison['after_cost'] == expected_cost
+
+
 def test_pending_removal_preserves_accepted_partial_fills_but_new_fills_need_review(tmp_path):
     from portfolio_app.history_commands import remove_transactions
     path, snapshot, book = setup(tmp_path)

@@ -19,7 +19,9 @@ For an existing holdings report, use the [reviewed import](import.md#import).
 | Interpret historical risk and fund metrics | [Analytics](analytics.md#risk) |
 | Track moving averages and account thresholds | [Monitoring and alerts](monitoring.md) |
 | Preview a contribution or rebalance | [Rebalance](rebalance.md#planning) |
-| Record futures and account financing in the development branch | [Futures and leverage](futures.md) |
+| Review transaction history and reconstructed balances | [Import transactions](import.md#transactions) |
+| Record futures and account financing | [Futures and leverage](futures.md) |
+| Upgrade an existing installation | [Release and upgrade notes](releases.md) |
 | Back up, restore or move your data | [Storage and recovery](storage.md#backup) |
 | Resolve a problem | [Troubleshooting](troubleshooting.md#troubleshooting) |
 
@@ -30,8 +32,8 @@ channel. **Development** follows ongoing work. **Candidate** and **release**
 copies refer to fixed source commits. Use the help linked by your installed
 version; a newer development guide may describe different controls.
 
-This guide covers the v1 feature set, including holdings import and extended ETF
-support. The [futures and leverage guide](futures.md) describes actual-account
-recording in EUR/USD/GBP and hypothetical studies in the development branch,
-separate from published installers. A package version alone may be shared by
-several candidates: the source commit distinguishes them.
+This guide covers version 0.2.0, including optional transaction history,
+personal performance, monitoring, and actual-account recording in EUR/USD/GBP.
+The [release notes](releases.md) explain the changes and upgrade precautions.
+A package version alone may be shared by several candidates: the source commit
+distinguishes them.

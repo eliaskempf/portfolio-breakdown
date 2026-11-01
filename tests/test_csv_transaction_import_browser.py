@@ -26,6 +26,37 @@ def upload(page, content):
     settle(page)
 
 
+def test_closed_new_holding_category_survives_browser_review(import_page):
+    from portfolio_app.positions import read_snapshot
+    page, path = import_page
+    path.parent.mkdir(exist_ok=True)
+    path.with_name('allocation.yaml').write_text('version: 2\nbuckets:\n'
+        '  - {id: invented-category, name: Invented category, target: 1}\n')
+    page.reload(); settle(page)
+    upload(page, b'reference,date,type,asset,quantity,amount,currency\n'
+        b'b,2024-01-01,buy,AUR,2,20,EUR\ns,2024-01-02,sell,AUR,2,30,EUR\n')
+    page.get_by_text('Asset types & categories', exact=True).click(); settle(page)
+    category = page.get_by_role('combobox', name='Category · AUR', exact=True)
+    playwright.expect(category).to_have_value('Unassigned')
+    category.press('ArrowDown')
+    page.get_by_role('option', name='Invented category', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Back to import', exact=True).click(); settle(page)
+    page.get_by_text('Asset types & categories', exact=True).click(); settle(page)
+    playwright.expect(category).to_have_value('Invented category')
+    page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
+    saved = read_snapshot(path).holdings.iloc[0]
+    assert saved.bucket_id == 'invented-category'
+    assert next(iter(replay_securities(load_journal(path.parent)[0].securities).positions.values())).quantity == 0
+    assert not page.get_by_test_id('stException').count()
+    page.get_by_role('button', name='Portfolio settings', exact=True).click(); settle(page)
+    page.get_by_text('Show sold positions', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Portfolio settings', exact=True).click(); settle(page)
+    open_transactions(page, 'Aur')
+    playwright.expect(page.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
+
+
 def listing_field(page, asset):
     from portfolio_app.transaction_csv import digest
     return page.locator(f'[class*="{digest(asset)[:12]}_listing_"][class*="_picker"]').get_by_role('button').first

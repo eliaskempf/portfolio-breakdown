@@ -26,6 +26,11 @@ locked runtime pin with platform markers removed from a disposable export;
 never use that audit-only export to install dependencies.
 
 Review wheel/source inventories, licenses, docs and privacy before packaging.
+Update the package version and its local lock entry together without implicitly
+upgrading dependencies. Review [release and upgrade notes](user/releases.md)
+against the implemented workflows and data compatibility. Link the matching
+version's notes in the release description; generated publication text alone
+contains provenance and platform caveats, not the product changes.
 Working handoffs, session diaries, build reports and detailed privacy findings
 belong outside the repository and must not ship in source archives or guides.
 Before commits run `uv run portfolio-check-private --staged`, inspect the staged
@@ -151,12 +156,12 @@ notices use `linux-native-x64` and `macos-arm64` prefixes to avoid collisions.
 Inspect interrupted drafts before retrying: existing assets are never overwritten.
 
 After publication, rerun **Publish reviewed documentation** with the same SHA,
-`channel=candidate`, `release_version=0.1.0` (without `v`) and acceptance. This
-copies the archived candidate to `releases/0.1.0/` without rebuilding. Verify
+`channel=candidate`, `release_version=<candidate-package-version>` (without `v`)
+and acceptance. This copies the archived candidate to
+`releases/<candidate-package-version>/` without rebuilding. Verify
 downloads, checksums and docs signed out. Pages root opens the latest stable
 release automatically (Main before the first release). The hosted guide offers
 Latest release/Main navigation. Publication
 refreshes Main and applies hosted navigation/favicon styling to a separate copy;
-the archived and bundled candidate bytes remain unchanged. Restore automatic
-CI/docs/audit only as a separate reviewed change; keep installer builds and
-release publication manual.
+the archived and bundled candidate bytes remain unchanged. Keep routine
+CI/docs/audit enabled and installer builds and release publication manual.

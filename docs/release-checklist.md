@@ -23,7 +23,8 @@ Pages deployment remain manual-only and require explicit dispatch approval.
 
 - [ ] Finish source/docs review locally, merge the approved source into `main`,
       then manually run **Build candidate** once on that commit. No tag-triggered
-      build is needed: publication creates `v0.1.0` at the tested commit.
+      build is needed: publication creates `v<candidate-package-version>` at the
+      tested commit.
 - [ ] For a transient failure at the same source SHA, choose **Re-run failed jobs**;
       successful platform artifacts can be reused across attempts of that run.
       If source must change, run a new candidate and repeat affected acceptance.
@@ -127,7 +128,9 @@ not a pending manual task.
       saving writes the holding and purchase records together once.
 - [ ] Action and column help is available on hover and keyboard focus. Native
       Light/Dark/System themes work; normal launches hide developer menu options.
-- [ ] Futures sandbox absent from package, navigation and CLI.
+- [ ] Actual futures/accounts and hypothetical studies are clearly distinguished;
+      opening an existing workspace never converts legacy simulations into actual
+      positions or creates unreviewed transactions.
 - [ ] CSV and Excel imports reviewed and saved; cancel writes nothing, workspace
       switching clears drafts, navigation retains uploads/mappings/edits, restart
       retains positions and live-price linking works.
@@ -160,6 +163,55 @@ not a pending manual task.
 - [ ] Final icon approved and checked as favicon, shortcut and executable icon.
 - [ ] GPL corresponding source and third-party notices included.
 - [ ] Checksums verified; exact candidate approved for publication.
+
+## History, accounts and upgrade acceptance
+
+Use invented data for these workflows on the accepted candidate. Retain detailed
+results outside the repository; this checklist records no completed acceptance.
+Required Windows manual and platform automated gates still apply as specified
+above. Do not infer coverage merely from an older holdings-only smoke test.
+
+- [ ] Review the release notes against the candidate's source/version. Check the
+      release description links to those notes and the bundled help matches.
+- [ ] Open a synthetic earlier-release workspace without activating history.
+      Holdings, costs, currency, categories, targets and ETF references retain
+      their meaning; opening does not rewrite purchase batches as transactions.
+- [ ] Import supported CSV and PDF transactions and enter a manual transaction.
+      Save evidence only, reopen it, review every affected holding, and apply once.
+      Pending/repeated review actions cannot accept an unseen holding. Balances
+      match the final reviewed ledger without adding it to the old snapshot.
+- [ ] Reimport identical evidence, retain similar legitimate fills, and review a
+      changed source row. Edit/remove an applied transaction and verify a later
+      reimport preserves the decision. Cross-asset corrections publish together;
+      cancellation and stale revisions leave existing evidence and balances intact.
+- [ ] Check partial disposal and complete liquidation: remaining cost, realized
+      gain and income retain their separate meanings. Closed positions retain
+      categories, targets and history and can be revealed with Show sold positions.
+- [ ] Check monetary gain, daily TWR and annualized XIRR on known synthetic cases,
+      including fees, a supported zero inception, liquidation and internal transfers.
+      Missing inputs block only dependent metrics. Multiple/uncertain XIRR roots
+      and unsupported schedules remain explicit; no arbitrary rate is shown.
+- [ ] Allocation percentage gain uses full-history TWR. Overview's chosen view
+      persists per portfolio after refresh/restart. Changes of scope and period
+      retain correct denominators and do not silently shorten available history.
+- [ ] Check historical prices/FX on a scheduled exchange closure and a missing
+      scheduled close. Sources, as-of dates and alternative-listing/proxy use stay
+      discoverable; missing scheduled data does not become an invented quote.
+- [ ] Create an actual futures account, record funding, fees, settlement and close,
+      and review a correction. Equity, allocated principal, margin and signed
+      notional remain distinct. Account-linked cash and settled P&L count once.
+      EUR/USD/GBP conversions and missing FX remain honest. Hypothetical studies
+      do not change actual balances or transactions.
+- [ ] Create and restore a full archive containing current version-5 journal
+      history, retained import/correction evidence, closed positions, observations,
+      account bindings, settlement archive, monitoring and legacy settings. Compare
+      saved files and supported balances, then reopen affected views after restart.
+- [ ] Exercise interrupted publication recovery and stale-write refusal with
+      synthetic fault tests. Review/restore refuses damaged archives and existing
+      destinations; the original workspace remains intact.
+- [ ] Retain a complete pre-upgrade backup. Restore it into a new folder for the
+      matching older app; do not treat a newer journal or mixed old/new documents
+      as a supported downgrade. Verify remembered workspace selection explicitly.
 
 No manual acceptance has been performed or release approved merely by adding
 this checklist. Windows manual acceptance and each platform's required automated
@@ -196,7 +248,7 @@ is a disclosed limitation, not a requirement for later manual testing.
 
 - [ ] Build from the final integrated source and record its commit, lock hash,
       installer SHA256 and native reports. Earlier experimental artifacts are
-      not final v1 builds.
+      not substitutes for the current release's builds.
 - [ ] Include the planned experimental macOS DMG via the explicit publication
       inputs after its automated gates pass. Disclose Apple Silicon/macOS 14+,
       no Developer ID signing/notarization and unverified personal-Mac install
@@ -209,6 +261,6 @@ is a disclosed limitation, not a requirement for later manual testing.
 - [ ] Hosted Apple Silicon macOS checks verify the exact final DMG's native workflows and
       document ad-hoc signing, Gatekeeper rejection and any unverified interactive
       approval/download-quarantine behavior. No paid signing/notarization is
-      planned for v1; do not describe the app as notarized or routinely trusted.
+      included; do not describe the app as notarized or routinely trusted.
 - [ ] Complete approved hosted checks for the frozen source SHA. Local unit/browser
       results do not replace native acceptance of the new packaged artifacts.

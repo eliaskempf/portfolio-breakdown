@@ -17,7 +17,7 @@ from decimal import Decimal
 from hashlib import sha256
 import json
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence
 
 from portfolio_app.derivative_types import (
     ContractSpec, ZERO, currency, decimal, identifier, iso_date, money,
@@ -392,7 +392,7 @@ class JournalState:
     positions: dict[str, PositionBalance]
     pending: dict[str, PendingCash]
     reservations: dict[str, Reservation]
-    cash_movements: tuple[CashMovement, ...]
+    cash_movements: Sequence[CashMovement]
     unknown_cash: frozenset[tuple[str, str]] = frozenset()
 
     def available_cash(self, account_id, denomination):
@@ -426,6 +426,13 @@ def replay(journal: Journal, *, as_of: str | None = None, _security_postings=Non
     `as_of` is economic history with currently known corrections, not a view of
     what information had been entered at that time.
     """
+    for _, state in _replay_states(journal, as_of=as_of, _security_postings=_security_postings):
+        pass
+    return state
+
+
+def _replay_states(journal, *, as_of=None, _security_postings=None, snapshots=False):
+    """The same validation/replay engine can yield bounded timeline checkpoints."""
     if not isinstance(journal, Journal):
         raise DataError('A validated Journal is required.')
     if as_of is not None:
@@ -441,10 +448,21 @@ def replay(journal: Journal, *, as_of: str | None = None, _security_postings=Non
     if len({e.id for e in postings}) != len(postings) or {e.id for e in postings}.intersection(e.id for e in journal.events):
         raise DataError('Account event ID collides with a securities posting.')
     events = tuple(sorted((*effective_events(journal), *postings), key=lambda e: (e.date, e.sequence)))
+    from portfolio_app.account_inception import account_inceptions
+    account_inceptions(journal, events)
     unknown_cash = set()
     roots = {e.id: e.id for e in postings}
     for event in journal.events:
         roots[event.id] = roots[event.replaces] if event.replaces else event.id
+
+    def snapshot():
+        from portfolio_app.account_timeline import MovementPrefix
+        return JournalState(dict(cash), dict(loans), dict(positions), dict(pending),
+                            dict(reservations), MovementPrefix(movements, len(movements)), frozenset(unknown_cash))
+
+    stamp = ''
+    if snapshots:
+        yield stamp, snapshot()
 
     def post(event, account, denomination, amount, *, kind=None, position_id=None):
         if account not in accounts:
@@ -471,6 +489,9 @@ def replay(journal: Journal, *, as_of: str | None = None, _security_postings=Non
     for event in events:
         if as_of and event.date > as_of:
             continue
+        if snapshots and stamp and event.date != stamp:
+            yield stamp, snapshot()
+        stamp = event.date
         if event.account_id and event.account_id not in accounts:
             raise DataError('Event refers to an unknown account.')
         if event.other_account_id and event.other_account_id not in accounts:
@@ -644,6 +665,10 @@ def replay(journal: Journal, *, as_of: str | None = None, _security_postings=Non
                 post(event, event.account_id, event.currency, -event.amount)
         else:
             raise DataError('Unsupported journal event.')
+    if snapshots and stamp:
+        # Dated callers stop here. Exhausting the iterator explicitly requests
+        # the same whole-journal validation as replay(as_of=None).
+        yield stamp, snapshot()
     if as_of is None:
         for link in journal.cash_links:
             if (link.account_id, link.currency) not in opened_cash:
@@ -651,7 +676,8 @@ def replay(journal: Journal, *, as_of: str | None = None, _security_postings=Non
         for identity in journal.adopted_liability_ids:
             if not any(reference == 'legacy:'+identity for _, _, reference in loans):
                 raise DataError('An adopted liability must retain its loan record; correct or undo the adoption explicitly.')
-    return JournalState(cash, loans, positions, pending, reservations, tuple(movements), frozenset(unknown_cash))
+    if not snapshots:
+        yield stamp, JournalState(cash, loans, positions, pending, reservations, tuple(movements), frozenset(unknown_cash))
 
 
 def append_events(journal: Journal, events: Iterable[Event]) -> Journal:

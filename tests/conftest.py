@@ -10,6 +10,14 @@ from portfolio_app.valuation import value_holdings
 
 
 @pytest.fixture(autouse=True)
+def preserve_process_main_module(monkeypatch):
+    # AppTest replaces __main__ with its temporary application script. Restore
+    # pytest's entrypoint so later multiprocessing spawn tests can import it.
+    import sys
+    monkeypatch.setitem(sys.modules, '__main__', sys.modules['__main__'])
+
+
+@pytest.fixture(autouse=True)
 def isolated_application_paths(tmp_path, monkeypatch):
     monkeypatch.setenv('PORTFOLIO_STATE_DIR', str(tmp_path / 'app-state'))
     monkeypatch.setattr('portfolio_app.settings.user_data_path', lambda *a, **kw: tmp_path / 'data')

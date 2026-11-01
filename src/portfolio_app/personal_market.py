@@ -80,7 +80,7 @@ def merge_download(store, observations):
     identities = {o.id: o for o in records}
     for observation in observations:
         previous = active.get(observation.key)
-        if previous and (previous.source == 'manual' or (previous.amount == observation.amount and previous.listing == observation.listing
+        if previous and (previous.source == 'manual' or previous.source.startswith('manual: ') or (previous.amount == observation.amount and previous.listing == observation.listing
                 and previous.calendar == observation.calendar and previous.exchange_timezone == observation.exchange_timezone)):
             continue
         if previous:

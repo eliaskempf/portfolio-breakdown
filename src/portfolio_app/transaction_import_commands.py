@@ -11,7 +11,7 @@ from portfolio_app.actual_portfolio import freeze_position_keys
 from portfolio_app.holdings import DataError, parse_holdings
 from portfolio_app.positions import EMPTY_CSV, read_snapshot
 from portfolio_app.security_history import effective_holdings, selected_events, affected_positions
-from portfolio_app.storage import save_document
+from portfolio_app.storage import save_document, revision as file_revision
 from portfolio_app.csv_transaction_imports import prepare_import
 from portfolio_app.workspace_lock import workspace_lock
 
@@ -29,6 +29,7 @@ def prepare_positions(directory, additions, *, expected_holdings_revision):
         if snapshot.revision != expected_holdings_revision:
             raise DataError('Holdings changed. Review the mappings again.')
         content = positions_content(path.read_text(encoding='utf-8-sig') if path.exists() else '', snapshot, additions)
+        _validate_categories(directory, parse_holdings(content))
         save_document(path,content,snapshot.revision)
         return read_snapshot(path)
 
@@ -37,7 +38,7 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
                             expected_holdings_revision, accept_reconciliation=False,
                             accept_checkpoints=False,
                             comparison_date='', additions=(), listing_changes=None, expected_observations_revision=...,
-                            expected_reporting_currency=None, **options):
+                            expected_reporting_currency=None, expected_allocation_revision=..., **options):
     """Recompute under the lock; evidence and all activated legs publish together."""
     directory = Path(directory)
     rows = tuple(rows)
@@ -46,6 +47,8 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
         snapshot = read_snapshot(directory/'holdings.csv')
         if revision != expected_journal_revision or snapshot.revision != expected_holdings_revision:
             raise DataError('History or holdings changed. Reload and review again.')
+        if expected_allocation_revision is not ... and file_revision(directory/'allocation.yaml') != expected_allocation_revision:
+            raise DataError('Categories or targets changed. Reload and review the import again.')
         selected = tuple(options.get('selected_ids', ()))
         excluded = tuple(options.get('excluded_ids', ()))
         if selected or excluded:
@@ -100,6 +103,7 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
         if proposed == journal:
             return replace(preview,journal=journal)
         effective_holdings(preview_holdings, proposed.securities)
+        _validate_categories(directory, preview_holdings)
         if content is not None:
             from portfolio_app.history_publication import publish_positions_and_history
             publish_positions_and_history(directory, content, proposed, snapshot.revision, revision)
@@ -107,6 +111,13 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
             snapshot = freeze_position_keys(directory, snapshot.revision)
             save_journal(directory, proposed, revision)
         return replace(preview,journal=proposed)
+
+
+def _validate_categories(directory, holdings):
+    from portfolio_app.allocation import load_allocation
+    allocation = load_allocation(Path(directory)/'allocation.yaml', holdings)
+    if allocation is None and 'bucket_id' in holdings and holdings.bucket_id.ne('').any():
+        raise DataError('Categories are unavailable. Choose Unassigned or restore the categories before applying.')
 
 
 def positions_content(content, snapshot, additions, *, listing_changes=None):
@@ -117,7 +128,7 @@ def positions_content(content, snapshot, additions, *, listing_changes=None):
         raw['account'] = snapshot.holdings.account.tolist()
     existing = set(raw.position_key)
     for item in additions:
-        allowed = {'position_key','id','name','account','instrument_type','ticker','isin'}
+        allowed = {'position_key','id','name','account','instrument_type','ticker','isin','bucket_id'}
         if set(item) - allowed or any(not item.get(k) for k in ('position_key','id','name','account')):
             raise DataError('Supply an explicit instrument, custody account and stable position identity.')
         if item['position_key'] in existing:

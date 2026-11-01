@@ -167,3 +167,62 @@ def test_reviewed_import_applies_all_legs_without_separate_confirmations(tmp_pat
     result = save(tmp_path, snapshot)
     assert all(b.reviews and not b.reviews[-1].complete_from for b in result.journal.securities)
     assert replay_securities(result.journal.securities).positions == replay_securities(preview.journal.securities).positions
+
+
+def categorized_import(directory):
+    from portfolio_app.storage import revision
+    from portfolio_app.transaction_csv import read_csv
+    (directory/'allocation.yaml').write_text('version: 2\nbuckets:\n'
+        '  - {id: root, name: Invented root, target: 1}\n'
+        '  - {id: leaf, name: Invented category, parent: root, target: 1}\n')
+    (directory/'holdings.csv').write_text('id,name,shares,position_key,account,bucket_id,within_bucket_target\n'
+        'existing,Invented existing,1,existing,Portfolio,leaf,0.4\n')
+    rows = read_csv('reference,date,type,asset,quantity,amount,currency\n'
+        'buy,2024-01-01,buy,AUR,2,20,EUR\nsell,2024-01-02,sell,AUR,2,30,EUR\n')
+    options = dict(expected_journal_revision=None, expected_holdings_revision=revision(directory/'holdings.csv'),
+        expected_allocation_revision=revision(directory/'allocation.yaml'),
+        additions=[dict(position_key='closed',id='aur',name='Invented closed',account='Portfolio',bucket_id='leaf',instrument_type='equity')],
+        selected_ids=[r.identity for r in rows], starts_at_zero=True,
+        accept_reconciliation=True, comparison_date='2024-01-03')
+    return rows, options
+
+
+def test_new_closed_import_retains_category_and_existing_targets(tmp_path):
+    rows, options = categorized_import(tmp_path)
+    before = read_snapshot(tmp_path/'holdings.csv').holdings.iloc[0]
+    result = save_transaction_import(tmp_path, rows, {('Portfolio','AUR'):'closed'}, **options)
+    holdings = effective_holdings(read_snapshot(tmp_path/'holdings.csv').holdings, result.journal.securities).set_index('position_id')
+    assert holdings.loc['closed', 'shares'] == 0
+    assert holdings.loc['closed', 'bucket_id'] == 'leaf'
+    assert holdings.loc['closed', 'instrument_type'] == 'equity'
+    assert holdings.loc['existing', 'bucket_id'] == before.bucket_id
+    assert holdings.loc['existing', 'within_bucket_target'] == before.within_bucket_target
+    assert holdings.loc['existing', 'shares'] == before.shares
+
+
+@pytest.mark.parametrize('change', ['revision', 'removed', 'parent'])
+def test_changed_or_nonleaf_category_blocks_atomic_application(tmp_path, change):
+    from portfolio_app.storage import revision
+    rows, options = categorized_import(tmp_path)
+    before = (tmp_path/'holdings.csv').read_bytes()
+    if change == 'revision':
+        path = tmp_path/'allocation.yaml'
+        path.write_text(path.read_text().replace('Invented category', 'Renamed category'))
+    else:
+        options['expected_allocation_revision'] = revision(tmp_path/'allocation.yaml')
+        options['additions'][0]['bucket_id'] = 'missing' if change == 'removed' else 'root'
+    with pytest.raises(DataError, match='Categories or targets changed|existing leaf buckets'):
+        save_transaction_import(tmp_path, rows, {('Portfolio','AUR'):'closed'}, **options)
+    assert (tmp_path/'holdings.csv').read_bytes() == before
+    assert not (tmp_path/'account-journal.json').exists()
+
+
+def test_new_import_rejects_category_when_allocation_was_removed(tmp_path):
+    rows, options = categorized_import(tmp_path)
+    (tmp_path/'allocation.yaml').unlink()
+    options.pop('expected_allocation_revision')  # Even non-UI callers must validate the category.
+    before = (tmp_path/'holdings.csv').read_bytes()
+    with pytest.raises(DataError, match='Categories are unavailable'):
+        save_transaction_import(tmp_path, rows, {('Portfolio','AUR'):'closed'}, **options)
+    assert (tmp_path/'holdings.csv').read_bytes() == before
+    assert not (tmp_path/'account-journal.json').exists()

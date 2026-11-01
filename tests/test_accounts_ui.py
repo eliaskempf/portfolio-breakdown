@@ -41,6 +41,10 @@ def test_add_future_from_normal_position_dialog(tmp_path):
     maturity.select_index(0).run()
     assert not app.exception
     by_label(app.text_input,'Fill price').set_value('1000').run()
+    by_label(app.radio, 'Record').set_value('Already-open position snapshot').run()
+    assert not any(item.label == 'Account start' for item in app.radio)
+    by_label(app.radio, 'Record').set_value('New opening trade').run()
+    assert by_label(app.radio, 'Account start').value == 'Existing balance'
     assert 'No broker connection' in by_label(app.selectbox,'Account').proto.help
     assert 'Actual cash' in by_label(app.text_input,'Cash balance (cash only, not account net liquidation value)').proto.help
     by_label(app.text_input,'Account name').set_value('Invented futures account').run()

@@ -1,7 +1,7 @@
 # Linux and macOS desktop experiment
 
-This work adds Linux and macOS native windows. macOS is now targeted for v0.1.0
-as an experimental download alongside Windows/Linux, subject to same-source
+Linux and macOS native windows accompany the browser application. macOS is
+an experimental download alongside Windows/Linux, subject to same-source
 build and automated packaged checks. Official publication still requires explicit
 approval.
 
