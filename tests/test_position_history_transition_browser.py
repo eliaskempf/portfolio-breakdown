@@ -123,7 +123,9 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             page.wait_for_timeout(200)
             # Returning to cached holdings must remove or hide the old price chart.
             # Plotly can purge its data before React removes the chart element.
-            assert dialog.locator('.js-plotly-plot').evaluate_all('es=>es.every(e=>e.data?.[0]?.name!=="Price" || getComputedStyle(e).visibility==="hidden")')
+            # The inactive fixed slot uses display:none on an ancestor, which
+            # does not change the chart's own computed visibility property.
+            assert dialog.locator('.js-plotly-plot:visible').evaluate_all('es=>es.every(e=>e.data?.[0]?.name!=="Price")')
             settle(page)
             assert dialog.evaluate('e=>e===window.originalDialog')
             assert (tmp_path/'calculations.txt').read_text().count('chart') == 1
