@@ -59,8 +59,15 @@ root = Path({str(root)!r})
 import portfolio_app.futures_valuation as valuation
 from datetime import datetime
 valuation.utc_now = lambda: datetime.fromisoformat((root/'clock.txt').read_text())
+from portfolio_app.atomic_file import staged_text
+from portfolio_app.locking import write_lock
 count = root/'app-renders.txt'
-count.write_text(str(int(count.read_text())+1 if count.exists() else 1))
+# Fast full reruns can overlap before either reaches render_app. Keep the
+# diagnostic integer readable by polling tests and serialize every increment.
+with write_lock(root/'.app-renders.lock'):
+    next_count = str(int(count.read_text())+1 if count.exists() else 1)
+    with staged_text(count, lambda handle: handle.write(next_count)) as staged:
+        staged.replace(count)
 render_app(root, demo=False, ignore_selection=True, price_service=PriceService(StaticProvider(root/'demo_prices.json')))
 '''
 

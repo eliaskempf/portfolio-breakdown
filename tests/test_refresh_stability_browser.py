@@ -5,11 +5,14 @@ from datetime import timedelta
 from browser_support import settle, select_tab
 from portfolio_app.futures_quotes import record_result
 from portfolio_app.derivative_types import PriceObservation
+from portfolio_app.locking import write_lock
 from test_futures_freshness_browser import futures_page, playwright, NOW
 
 
 def renders(root):
-    return int((root/'app-renders.txt').read_text())
+    # Windows readers must also release their handle before atomic replacement.
+    with write_lock(root/'.app-renders.lock'):
+        return int((root/'app-renders.txt').read_text())
 
 
 def set_clock(root, now):
