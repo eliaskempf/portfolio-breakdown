@@ -5,6 +5,7 @@ launches do not enable remote debugging. Windows 11 human acceptance stays separ
 """
 import argparse
 import ctypes
+from contextlib import contextmanager
 from ctypes import wintypes
 import json
 import os
@@ -44,6 +45,21 @@ def native_api():
     api.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
     api.GetForegroundWindow.restype = wintypes.HWND
     api.SetForegroundWindow.argtypes = [wintypes.HWND]
+    api.SetForegroundWindow.restype = wintypes.BOOL
+    api.IsWindow.argtypes = api.IsIconic.argtypes = [wintypes.HWND]
+    api.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
+    api.GetWindow.restype = wintypes.HWND
+    api.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    api.GetAncestor.restype = wintypes.HWND
+    api.WindowFromPoint.argtypes = [wintypes.POINT]
+    api.WindowFromPoint.restype = wintypes.HWND
+    api.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+    api.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
+    api.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+    api.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+    api.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+    api.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(MouseInputEvent), ctypes.c_int]
+    api.SendInput.restype = wintypes.UINT
     api.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
     api.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
     api.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
@@ -64,6 +80,193 @@ def window_handle(api, callback, pid):
         return True
     api.EnumWindows(callback(inspect), 0)
     return found[0] if found else None
+
+
+def window_pid(api, handle):
+    pid = wintypes.DWORD()
+    if handle:
+        api.GetWindowThreadProcessId(handle, ctypes.byref(pid))
+    return pid.value
+
+
+def focus_for_keyboard(api, callback, process, original, page, records, iteration):
+    """Select our synthetic window with real input before sending global keys.
+
+    SetForegroundWindow may legally refuse an automation controller. One owned
+    mouse click models the user selecting the app; no global focus-policy change
+    or repeated activation is used. All readiness shares the existing five seconds.
+    """
+    deadline = time.monotonic() + 5
+    record = {'iteration': iteration, 'original_hwnd': original,
+              'target_pid': process.pid, 'controller_pid': os.getpid()}
+    records.append(record)
+    def remaining():
+        seconds = deadline - time.monotonic()
+        if seconds <= 0:
+            raise TimeoutError('Owned native foreground check did not complete within five seconds.')
+        return seconds
+    def snapshot():
+        foreground = api.GetForegroundWindow()
+        current = window_handle(api, callback, process.pid)
+        return {'foreground_hwnd': foreground, 'foreground_pid': window_pid(api, foreground),
+                'current_hwnd': current, 'current_pid': window_pid(api, current),
+                'original_valid': bool(api.IsWindow(original)),
+                'visible': bool(current and api.IsWindowVisible(current)),
+                'minimized': bool(current and api.IsIconic(current)), 'process_exit': process.poll()}
+    surface = page.locator('#native-smoke-focus-surface')
+    previous_dpi = None
+    try:
+        record['before'] = snapshot()
+        handle = record['before']['current_hwnd']
+        if (not handle or window_pid(api, handle) != process.pid or process.poll() is not None
+                or api.GetWindow(handle, 4) or api.IsIconic(handle)):
+            raise AssertionError('Synthetic main window is not available for native input.')
+        remaining()
+        record['set_foreground_result'] = bool(api.SetForegroundWindow(handle))
+        # A per-thread context keeps client coordinates and pointer APIs in the
+        # same physical-pixel space, including a scaled/mixed-DPI host.
+        previous_dpi = api.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
+        if not previous_dpi:
+            raise RuntimeError('Could not establish per-monitor DPI coordinates for native input.')
+        page.locator('body').evaluate("""body => {
+            const target = document.createElement('div'); target.id = 'native-smoke-focus-surface';
+            target.setAttribute('aria-hidden', 'true');
+            target.style.cssText = 'position:fixed;left:16px;top:16px;width:24px;height:24px;z-index:2147483647;background:#111;pointer-events:auto';
+            target.addEventListener('pointerdown', event => {
+                target.__down = {trusted:event.isTrusted,x:event.clientX,y:event.clientY};
+            });
+            target.addEventListener('pointerup', event => {
+                target.__up = {trusted:event.isTrusted,x:event.clientX,y:event.clientY};
+            });
+            body.append(target);
+        }""", timeout=remaining() * 1000)
+        geometry = surface.evaluate("""target => {
+            const box = target.getBoundingClientRect(), x = box.x + box.width/2, y = box.y + box.height/2;
+            return {x,y,width:innerWidth,height:innerHeight,owned:document.elementFromPoint(x,y)===target};
+        }""", timeout=remaining() * 1000)
+        if not geometry['owned'] or not geometry['width'] or not geometry['height']:
+            raise AssertionError('Synthetic inert focus surface is obscured.')
+        rect, origin = wintypes.RECT(), wintypes.POINT(0, 0)
+        if not api.GetClientRect(handle, ctypes.byref(rect)) or not api.ClientToScreen(handle, ctypes.byref(origin)):
+            raise RuntimeError('Could not locate the owned native client area.')
+        point = wintypes.POINT(round(origin.x + geometry['x'] * rect.right / geometry['width']),
+                              round(origin.y + geometry['y'] * rect.bottom / geometry['height']))
+        record['point'] = {'x': point.x, 'y': point.y}
+        record['geometry'] = geometry
+        record['client'] = {'width': rect.right, 'height': rect.bottom, 'x': origin.x, 'y': origin.y}
+        def point_owned():
+            hit = api.WindowFromPoint(point)
+            root = api.GetAncestor(hit, 2)
+            record['hit'] = {'hwnd': hit, 'root': root, 'pid': window_pid(api, hit)}
+            return (window_handle(api, callback, process.pid) == handle
+                    and window_pid(api, handle) == process.pid and api.IsWindowVisible(handle)
+                    and not api.IsIconic(handle) and root == handle)
+        remaining()
+        if not point_owned():
+            raise AssertionError('Native focus point is not owned by the synthetic window; refusing input.')
+        if not api.SetCursorPos(point.x, point.y):
+            raise RuntimeError('Could not move the pointer to the owned focus point.')
+        actual = wintypes.POINT()
+        if not api.GetCursorPos(ctypes.byref(actual)) or (actual.x, actual.y) != (point.x, point.y):
+            raise AssertionError('Native pointer did not reach the owned focus point.')
+        remaining()
+        if not point_owned():
+            raise AssertionError('Native focus point changed ownership; refusing input.')
+        inputs = (MouseInputEvent * 2)(mouse_event(0x0002), mouse_event(0x0004))
+        sent = api.SendInput(2, inputs, ctypes.sizeof(MouseInputEvent))
+        record['mouse_events_sent'] = sent
+        if sent != 2:
+            if sent == 1:  # Release only our partially delivered button-down.
+                release = mouse_event(0x0004)
+                api.SendInput(1, ctypes.byref(release), ctypes.sizeof(MouseInputEvent))
+            raise RuntimeError('Native owned click was not completely delivered.')
+        while True:
+            remaining()
+            current = window_handle(api, callback, process.pid)
+            pointer = surface.evaluate('target => ({down:target.__down,up:target.__up})',
+                                       timeout=remaining() * 1000)
+            record['pointer_events'] = pointer
+            if (current == handle and window_pid(api, current) == process.pid
+                    and not api.GetWindow(current, 4) and api.GetForegroundWindow() == current
+                    and (pointer.get('down') or {}).get('trusted') and (pointer.get('up') or {}).get('trusted')):
+                if any(abs(event[axis] - geometry[axis]) > 1
+                       for event in (pointer['down'], pointer['up']) for axis in ('x', 'y')):
+                    raise AssertionError('Native click did not land at the inert surface center.')
+                record['after'] = snapshot()
+                return current
+            page.wait_for_timeout(min(50, remaining() * 1000))
+    except BaseException as exc:
+        record['error'] = repr(exc)
+        raise
+    finally:
+        try:
+            record['after'] = snapshot()
+            if previous_dpi and not api.SetThreadDpiAwarenessContext(previous_dpi):
+                record['native_cleanup_error'] = 'Could not restore the controller DPI context.'
+        except Exception as exc:
+            record['native_cleanup_error'] = repr(exc)
+        # Cleanup cannot replace the focus failure or start another action budget.
+        try:
+            surface.evaluate('target => target.remove()', timeout=max(1, (deadline-time.monotonic())*1000))
+        except Exception as exc:
+            record['surface_cleanup_error'] = repr(exc)
+
+
+class NativeMouseInput(ctypes.Structure):
+    _fields_ = [('dx', wintypes.LONG), ('dy', wintypes.LONG), ('mouseData', wintypes.DWORD),
+                ('flags', wintypes.DWORD), ('time', wintypes.DWORD), ('extra', ctypes.c_size_t)]
+
+
+class MouseInputUnion(ctypes.Union):
+    _fields_ = [('mouse', NativeMouseInput)]
+
+
+class MouseInputEvent(ctypes.Structure):
+    _fields_ = [('kind', wintypes.DWORD), ('data', MouseInputUnion)]
+
+
+def mouse_event(flags):
+    return MouseInputEvent(0, MouseInputUnion(NativeMouseInput(0, 0, 0, flags, 0, 0)))
+
+
+@contextmanager
+def native_evidence(browser, evidence, label):
+    """Capture only this synthetic app, before CDP/browser teardown on failure."""
+    records = []
+    context = browser.contexts[0]
+    if evidence is not None:
+        evidence = Path(evidence) / label
+        evidence.mkdir(parents=True, exist_ok=True)
+        context.tracing.start(screenshots=True, snapshots=True, sources=True)
+    failed = False
+    try:
+        yield records
+    except BaseException as exc:
+        failed = True
+        if evidence is not None:
+            errors = []
+            for name, capture in [
+                ('screenshot', lambda: context.pages[-1].screenshot(path=str(evidence/'failure.png'), timeout=5000)),
+                ('trace', lambda: context.tracing.stop(path=str(evidence/'trace.zip'))),
+            ]:
+                try:
+                    capture()
+                except Exception as capture_error:
+                    errors.append({'capture': name, 'error': repr(capture_error)})
+            try:
+                (evidence/'failure.json').write_text(json.dumps(
+                    {'error': repr(exc), 'focus': records, 'capture_errors': errors}, indent=2), encoding='utf-8')
+            except Exception as capture_error:
+                print(f'Native failure evidence could not be written: {capture_error}', flush=True)
+        raise
+    finally:
+        if evidence is not None and not failed:
+            try:
+                context.tracing.stop()
+            except Exception:
+                # Successful native exit can already have closed the CDP context.
+                pass
+            (evidence/'focus.json').write_text(json.dumps(records, indent=2), encoding='utf-8')
 
 
 def close_without_dialog(api, callback, process, handle, close):
@@ -213,7 +416,7 @@ def file_and_link_checks(page, frame, api, callback, handle, root):
     print('Native upload/save dialogs, saved synthetic CSV, download bytes and system-browser external link passed.', flush=True)
 
 
-def smoke(executable, *, interactive=False, welcome_only=False):
+def smoke(executable, *, interactive=False, welcome_only=False, evidence=None):
     if os.name != 'nt':
         raise RuntimeError('Run the frozen window smoke test on native Windows.')
     api, callback = native_api()
@@ -244,59 +447,67 @@ def smoke(executable, *, interactive=False, welcome_only=False):
             until(debugger_ready)
             with sync_playwright() as playwright:
                 browser = playwright.chromium.connect_over_cdp(f'http://127.0.0.1:{debug_port}')
-                page = wait_for_window_page(browser)
-                frame = page.frame_locator('#portfolio-app')
-                expect(frame.get_by_role('button', name='Explore demo', exact=True)).to_be_visible(timeout=90000)
-                expect(page.locator('main')).to_have_count(0, timeout=15000)
-                if welcome_only:
+                with native_evidence(browser, evidence, 'welcome' if welcome_only else 'application') as focus_records:
+                    page = wait_for_window_page(browser)
+                    frame = page.frame_locator('#portfolio-app')
+                    expect(frame.get_by_role('button', name='Explore demo', exact=True)).to_be_visible(timeout=90000)
+                    expect(page.locator('main')).to_have_count(0, timeout=15000)
+                    if welcome_only:
+                        close_without_dialog(api, callback, process, handle,
+                                             lambda: api.PostMessageW(handle, 0x0010, 0, 0))
+                        assert not list((root / 'state/sessions').glob('*.json'))
+                        print('Frozen window: welcome-screen close without error dialogs and session cleanup passed.')
+                        return
+                    frame.get_by_role('button', name='Explore demo', exact=True).click()
+                    frame.get_by_role('button', name='Not now', exact=True).click()
+                    expect(frame.locator('.js-plotly-plot').first).to_be_visible(timeout=30000)
+                    for tab in ['Exposure', 'Positions', 'Rebalance', 'Overview']:
+                        frame.get_by_role('tab', name=tab, exact=True).click()
+                        expect(frame.get_by_test_id('stException')).to_have_count(0)
+                    # Real F11 is sent only after confirming our own foreground HWND.
+                    original_handle = handle
+                    for fullscreen in (True, False):
+                        handle = focus_for_keyboard(api, callback, process, original_handle, page, focus_records, fullscreen)
+                        assert api.GetForegroundWindow() == handle, 'Owned window lost foreground before F11'
+                        api.keybd_event(0x7A, 0, 0, 0)
+                        api.keybd_event(0x7A, 0, 2, 0)
+                        expect(page.get_by_role('button', name='Windowed' if fullscreen else 'Fullscreen', exact=True)).to_be_visible()
+                        # Border-style changes can recreate the WinForms HWND.
+                        handle = window_handle(api, callback, process.pid)
+                        assert handle and window_pid(api, handle) == process.pid
+                        if fullscreen:
+                            class Monitor(ctypes.Structure):
+                                _fields_ = [('size', wintypes.DWORD), ('bounds', wintypes.RECT),
+                                            ('work', wintypes.RECT), ('flags', wintypes.DWORD)]
+                            info = Monitor()
+                            info.size = ctypes.sizeof(info)
+                            assert api.GetMonitorInfoW(api.MonitorFromWindow(handle, 2), ctypes.byref(info))
+                            rect, client = wintypes.RECT(), wintypes.RECT()
+                            assert api.GetWindowRect(handle, ctypes.byref(rect))
+                            assert api.GetClientRect(handle, ctypes.byref(client))
+                            assert tuple(getattr(rect, k) for k in ('left', 'top', 'right', 'bottom')) == tuple(
+                                getattr(info.bounds, k) for k in ('left', 'top', 'right', 'bottom'))
+                            assert client.right == rect.right - rect.left and client.bottom == rect.bottom - rect.top
+                    # Repeat launch must focus the existing process, not create a server.
+                    repeat = subprocess.run(command, cwd=root, env=env, timeout=20)
+                    assert repeat.returncode == 0 and process.poll() is None
+                    assert window_handle(api, callback, process.pid) == handle
+                    frame.get_by_role('button', name='?', exact=True).click()
+                    help_link = frame.get_by_role('link', name='User guide', exact=False)
+                    href = help_link.get_attribute('href')
+                    assert href.startswith('http://127.0.0.1:')
+                    with urlopen(href, timeout=3) as response:
+                        assert b'Portfolio Breakdown' in response.read()
+                    frame.get_by_role('button', name='?', exact=True).click()
+                    if interactive:
+                        file_and_link_checks(page, frame, api, callback, handle, root)
+                    # The custom exit command exercises shutdown in borderless mode.
+                    page.get_by_role('button', name='Fullscreen', exact=True).click()
+                    expect(page.get_by_role('button', name='Windowed', exact=True)).to_be_visible()
+                    handle = window_handle(api, callback, process.pid)
+                    assert handle and window_pid(api, handle) == process.pid
                     close_without_dialog(api, callback, process, handle,
-                                         lambda: api.PostMessageW(handle, 0x0010, 0, 0))
-                    assert not list((root / 'state/sessions').glob('*.json'))
-                    print('Frozen window: welcome-screen close without error dialogs and session cleanup passed.')
-                    return
-                frame.get_by_role('button', name='Explore demo', exact=True).click()
-                frame.get_by_role('button', name='Not now', exact=True).click()
-                expect(frame.locator('.js-plotly-plot').first).to_be_visible(timeout=30000)
-                for tab in ['Exposure', 'Positions', 'Rebalance', 'Overview']:
-                    frame.get_by_role('tab', name=tab, exact=True).click()
-                    expect(frame.get_by_test_id('stException')).to_have_count(0)
-                # Real F11 is sent only after confirming our own foreground HWND.
-                for fullscreen in (True, False):
-                    api.SetForegroundWindow(handle)
-                    until(lambda: api.GetForegroundWindow() == handle, 5)
-                    api.keybd_event(0x7A, 0, 0, 0)
-                    api.keybd_event(0x7A, 0, 2, 0)
-                    expect(page.get_by_role('button', name='Windowed' if fullscreen else 'Fullscreen', exact=True)).to_be_visible()
-                    if fullscreen:
-                        class Monitor(ctypes.Structure):
-                            _fields_ = [('size', wintypes.DWORD), ('bounds', wintypes.RECT),
-                                        ('work', wintypes.RECT), ('flags', wintypes.DWORD)]
-                        info = Monitor()
-                        info.size = ctypes.sizeof(info)
-                        api.GetMonitorInfoW(api.MonitorFromWindow(handle, 2), ctypes.byref(info))
-                        rect, client = wintypes.RECT(), wintypes.RECT()
-                        api.GetWindowRect(handle, ctypes.byref(rect))
-                        api.GetClientRect(handle, ctypes.byref(client))
-                        assert tuple(getattr(rect, k) for k in ('left', 'top', 'right', 'bottom')) == tuple(
-                            getattr(info.bounds, k) for k in ('left', 'top', 'right', 'bottom'))
-                        assert client.right == rect.right - rect.left and client.bottom == rect.bottom - rect.top
-                # Repeat launch must focus the existing process, not create a server.
-                repeat = subprocess.run(command, cwd=root, env=env, timeout=20)
-                assert repeat.returncode == 0 and process.poll() is None
-                assert window_handle(api, callback, process.pid) == handle
-                frame.get_by_role('button', name='?', exact=True).click()
-                help_link = frame.get_by_role('link', name='User guide', exact=False)
-                href = help_link.get_attribute('href')
-                assert href.startswith('http://127.0.0.1:')
-                with urlopen(href, timeout=3) as response:
-                    assert b'Portfolio Breakdown' in response.read()
-                frame.get_by_role('button', name='?', exact=True).click()
-                if interactive:
-                    file_and_link_checks(page, frame, api, callback, handle, root)
-                # The custom exit command exercises shutdown in borderless mode.
-                page.get_by_role('button', name='Fullscreen', exact=True).click()
-                close_without_dialog(api, callback, process, handle,
-                                     lambda: page.get_by_role('button', name='Exit', exact=True).click())
+                                         lambda: page.get_by_role('button', name='Exit', exact=True).click())
             assert not list((root / 'state/sessions').glob('*.json'))
             print('Frozen window: startup, charts/tabs, real F11, monitor edges, repeat launch, bundled help and shutdown passed.')
         finally:
@@ -314,6 +525,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('executable', type=Path)
     parser.add_argument('--interactive', action='store_true', help='Also exercise native file dialogs and the system browser')
+    parser.add_argument('--evidence', type=Path, help='Synthetic native failure evidence directory')
     args = parser.parse_args()
-    smoke(args.executable.resolve(), welcome_only=True)
-    smoke(args.executable.resolve(), interactive=args.interactive)
+    smoke(args.executable.resolve(), welcome_only=True, evidence=args.evidence)
+    smoke(args.executable.resolve(), interactive=args.interactive, evidence=args.evidence)

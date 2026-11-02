@@ -64,6 +64,7 @@ jobs:
         with:
           name: candidate-${{ matrix.platform }}
           overwrite: true # A retried platform replaces only its own earlier artifact.
+          compression-level: 0 # Installers and package archives are already compressed.
           path: dist/candidate/*
           if-no-files-found: error
           retention-days: 30

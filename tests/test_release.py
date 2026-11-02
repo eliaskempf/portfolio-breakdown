@@ -547,7 +547,9 @@ def test_setup_lifecycle_checks_exact_payload_preservation_and_cleans_failure(tm
     if failure is None:
         assert sum(command[0] == str(installer) for command in calls) == 2
         assert any(len(command) > 2 and command[1].endswith('package_smoke.py') and command[2] == str(installation / 'portfolio-app.exe') for command in calls)
-        assert any(len(command) > 2 and command[1].endswith('window_smoke.py') and command[2] == str(installation / 'Portfolio Breakdown.exe') for command in calls)
+        assert any(len(command) > 2 and command[1].endswith('window_smoke.py')
+                   and command[2:] == [str(installation / 'Portfolio Breakdown.exe'),
+                                      '--evidence', str(evidence / 'installed-native')] for command in calls)
         assert len(report['workspace_before']) == 3
 
 

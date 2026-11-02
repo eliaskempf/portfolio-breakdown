@@ -367,7 +367,8 @@ def windows_setup_smoke(directory, reference_bundle, evidence):
                 subprocess.run([sys.executable, str(ROOT / 'tools/package_smoke.py'), str(executable),
                                 '--evidence', str(evidence / 'installed-browser')], check=True, timeout=600)
                 subprocess.run([sys.executable, str(ROOT / 'tools/window_smoke.py'),
-                                str(installation / 'Portfolio Breakdown.exe')], check=True, timeout=180)
+                                str(installation / 'Portfolio Breakdown.exe'),
+                                '--evidence', str(evidence / 'installed-native')], check=True, timeout=180)
                 report['checks'].append('exact installed console and native window smoke passed')
         completed = True
     except BaseException as exc:
