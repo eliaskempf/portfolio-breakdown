@@ -11,6 +11,11 @@ on:
         type: choice
         options: [all, windows, macos, macos15, macos26]
         default: all
+      diagnostics_suite:
+        description: Windows diagnostics to exercise without building installers
+        type: choice
+        options: [navigation, rerun-sync]
+        default: navigation
 permissions:
   contents: read
 env:
@@ -140,7 +145,7 @@ jobs:
           python-version: ${{ runner.os == 'macOS' && '3.13' || '3.12' }}
       - run: uv sync --locked --extra window --all-groups
       - name: Windows synthetic navigation regressions
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && inputs.diagnostics_suite != 'rerun-sync'
         env:
           PORTFOLIO_REQUIRE_BROWSER: '1'
           PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/browser
@@ -148,12 +153,30 @@ jobs:
           uv run playwright install chromium
           uv run pytest tests/test_backup_browser.py tests/test_position_entry_browser.py tests/test_tour_browser.py -q --junitxml="$RUNNER_TEMP/release-diagnostics/browser.xml"
       - name: Windows slow-render regressions
-        if: runner.os == 'Windows' && !cancelled()
+        if: runner.os == 'Windows' && inputs.diagnostics_suite != 'rerun-sync' && !cancelled()
         env:
           PORTFOLIO_REQUIRE_BROWSER: '1'
           PORTFOLIO_TEST_CPU_RATE: '4'
           PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/slow-browser
         run: uv run pytest tests/test_backup_browser.py::test_archive_review_cancel_switch_restart_and_tabs tests/test_position_entry_browser.py::test_search_selection_and_settings_help tests/test_tour_browser.py::test_demo_tour_every_view_and_menu_replay tests/test_tour_browser.py::test_help_chevron_keeps_menu_open -q --junitxml="$RUNNER_TEMP/release-diagnostics/slow-browser.xml"
+      - name: Windows rerun synchronization regressions
+        if: runner.os == 'Windows' && inputs.diagnostics_suite == 'rerun-sync'
+        env:
+          PORTFOLIO_REQUIRE_BROWSER: '1'
+          PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/rerun-browser
+        run: |
+          uv run playwright install chromium
+          uv run pytest tests/test_ux_browser.py -q -k 'text_commit or navigation or readiness_timeout or baseline_full or unsolicited_full or full_request or transaction_review_defaults' --junitxml="$RUNNER_TEMP/release-diagnostics/rerun-browser.xml"
+      - name: Windows source application smoke
+        if: runner.os == 'Windows' && inputs.diagnostics_suite == 'rerun-sync' && !cancelled()
+        run: uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/release-diagnostics/source-smoke"
+      - name: Windows slow rerun synchronization regressions
+        if: runner.os == 'Windows' && inputs.diagnostics_suite == 'rerun-sync' && !cancelled()
+        env:
+          PORTFOLIO_REQUIRE_BROWSER: '1'
+          PORTFOLIO_TEST_CPU_RATE: '4'
+          PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/slow-rerun-browser
+        run: uv run pytest tests/test_ux_browser.py -q -k 'text_commit or navigation or readiness_timeout or baseline_full or unsolicited_full or full_request or transaction_review_defaults' --junitxml="$RUNNER_TEMP/release-diagnostics/slow-rerun-browser.xml"
       - name: Mac native source controls
         if: runner.os == 'macOS'
         env:
