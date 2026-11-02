@@ -196,6 +196,254 @@ def test_text_commit_waits_for_acknowledged_run(fragment, continuation):
         thread.join(timeout=10)
         assert not thread.is_alive()
 
+@pytest.mark.parametrize('serialized', [False, True])
+def test_navigation_waits_before_next_dialog_request(serialized):
+    """The real Streamlit queue rewrites an unflushed finish as EARLY.
+
+    Exposing the next control is insufficient: a second dialog request before
+    that finish strands the earlier full request. Serialized clicks avoid the
+    ambiguous sequence instead of acknowledging unrelated scopes.
+    """
+    from queue import Queue
+    from threading import Thread
+    from websockets.sync.server import serve
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+    from streamlit.runtime.forward_msg_queue import ForwardMsgQueue
+
+    connections = Queue()
+    pending = ForwardMsgQueue()
+    requests = []
+    def session(scope):
+        message = ForwardMsg()
+        message.new_session.script_run_id = 'invented-' + (scope or 'full')
+        if scope:
+            message.new_session.fragment_ids_this_run.append(scope)
+        return message
+    def finish(status):
+        return ForwardMsg(script_finished=status)
+    def gate(name):
+        message = ForwardMsg()
+        message.page_info_changed.query_string = name
+        return message
+    def send(socket, *messages):
+        for message in messages:
+            socket.send(message.SerializeToString())
+    def handle(socket):
+        connections.put(socket)
+        for payload in socket:
+            request = BackMsg.FromString(payload).rerun_script.query_string
+            requests.append(request)
+            if request == 'initial':
+                send(socket, session(''), finish(ForwardMsg.FINISHED_SUCCESSFULLY))
+            elif request == 'open':
+                pending.enqueue(finish(ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY))
+                send(socket, session(''), finish(ForwardMsg.FINISHED_EARLY_FOR_RERUN),
+                     session('dialog-host'), gate('visible'))
+            elif request == 'next':
+                pending.clear(retain_lifecycle_msgs=True, fragment_ids_this_run=['nested-dialog'])
+                pending.enqueue(session('nested-dialog'))
+                pending.enqueue(finish(ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY))
+                send(socket, *pending.flush(), gate('done'))
+    server = serve(handle, '127.0.0.1', 0)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with playwright.sync_playwright() as runner:
+            browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),
+                                             args=['--no-sandbox'])
+            try:
+                page = browser.new_page()
+                page.set_default_timeout(10000)
+                runs = StreamlitReruns(page, settle=settle)
+                server_socket = None
+                saw_unacknowledged_render = []
+                def received(payload):
+                    message = ForwardMsg.FromString(payload)
+                    if message.WhichOneof('type') != 'page_info_changed':
+                        return
+                    if message.page_info_changed.query_string == 'visible':
+                        assert not runs.idle
+                        assert requests == ['initial', 'open']
+                        saw_unacknowledged_render.append(True)
+                        page.evaluate("document.querySelector('#next').hidden = false")
+                        if serialized:
+                            settle(page)
+                            assert requests == ['initial', 'open']
+                            # Release only after proving the next click has not
+                            # occurred while its control is already rendered.
+                            send(server_socket, *pending.flush())
+                    else:
+                        page.evaluate('window.done = true')
+                page.on('websocket', lambda socket: socket.on('framereceived', received))
+                page.set_content('''<div data-testid="stApp" data-test-script-state="notRunning">
+                    <button id="open">Open</button><button id="next" hidden>Next</button></div>''')
+                messages = {}
+                for name, scope in [('initial', ''), ('open', ''), ('next', 'nested-dialog')]:
+                    message = BackMsg()
+                    message.rerun_script.query_string = name
+                    message.rerun_script.fragment_id = scope
+                    messages[name] = list(message.SerializeToString())
+                page.evaluate('''({port, messages}) => {
+                    window.socket = new WebSocket(`ws://127.0.0.1:${port}/_stcore/stream`);
+                    socket.onopen = () => socket.send(new Uint8Array(messages.initial));
+                    for (const name of ['open', 'next']) {
+                        document.getElementById(name).onclick = () => {
+                            // Defer the send until after this click's event task.
+                            setTimeout(() => socket.send(new Uint8Array(messages[name])), 0);
+                        };
+                    }
+                }''', {'port': server.socket.getsockname()[1], 'messages': messages})
+                server_socket = connections.get(timeout=10)
+                page.wait_for_function('window.socket.readyState === WebSocket.OPEN')
+                runs.wait()
+                for name in ['Open', 'Next']:
+                    button = page.get_by_role('button', name=name, exact=True)
+                    if serialized:
+                        runs.click(page, button)
+                    else:
+                        button.click()
+                        if name == 'Open':
+                            page.get_by_role('button', name='Next', exact=True).wait_for()
+                            settle(page)
+                            assert not runs.idle
+                page.wait_for_function('window.done === true')
+                assert saw_unacknowledged_render == [True]
+                assert requests == ['initial', 'open', 'next']
+                assert runs.idle is serialized
+                if not serialized:
+                    assert set(runs._pending) == {''}
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+        thread.join(timeout=10)
+        assert not thread.is_alive()
+
+
+def test_readiness_timeout_reports_scope_state_without_widget_values(monkeypatch):
+    from types import SimpleNamespace
+    runs = StreamlitReruns(SimpleNamespace(on=lambda *a: None), settle=lambda *a, **kw: None)
+    runs.expected = ('synthetic-field', 'do-not-log-widget-value')
+    runs._early_scopes.add('invented-dialog')
+    runs._awaiting_restart = True
+    def timeout(**kwargs):
+        raise playwright.TimeoutError('invented transport timeout')
+    monkeypatch.setattr(runs, 'wait', timeout)
+    with pytest.raises(playwright.TimeoutError) as caught:
+        runs._ready(None, time.monotonic() + 1)
+    message = str(caught.value)
+    assert 'invented-dialog' in message and 'awaiting_restart' in message
+    assert 'do-not-log-widget-value' not in message
+
+
+def test_navigation_finish_preserves_a_newer_request_identity():
+    from types import SimpleNamespace
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+    runs = StreamlitReruns(SimpleNamespace(on=lambda *a: None), settle=lambda *a, **kw: None)
+    request = BackMsg()
+    request.rerun_script.fragment_id = 'invented-dialog'
+    started = ForwardMsg()
+    started.new_session.script_run_id = 'invented-first-run'
+    started.new_session.fragment_ids_this_run.append('invented-dialog')
+    finished = ForwardMsg(script_finished=ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY)
+    runs._sent(request.SerializeToString())
+    runs._received(started.SerializeToString())
+    runs._sent(request.SerializeToString())
+    newer = runs._pending['invented-dialog']
+    runs._received(finished.SerializeToString())
+    assert not runs.idle and runs._pending['invented-dialog'] is newer
+    started.new_session.script_run_id = 'invented-newer-run'
+    runs._received(started.SerializeToString())
+    runs._received(finished.SerializeToString())
+    assert runs.idle
+
+
+@pytest.mark.parametrize('newer_fragment', [None, 'before-start', 'after-start'])
+def test_baseline_full_request_supersedes_only_older_fragment_work(newer_fragment):
+    from types import SimpleNamespace
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+    from streamlit.runtime.scriptrunner_utils.script_requests import RerunData, ScriptRequests
+    runs = StreamlitReruns(SimpleNamespace(on=lambda *a: None), settle=lambda *a, **kw: None)
+    scheduler = ScriptRequests()
+    fragment = BackMsg()
+    fragment.rerun_script.fragment_id = 'invented-poll'
+    fragment.rerun_script.is_auto_rerun = True
+    full = BackMsg()
+    full.rerun_script.SetInParent()
+    runs._sent(fragment.SerializeToString())
+    scheduler.request_rerun(RerunData(fragment_id='invented-poll', is_auto_rerun=True))
+    runs._sent(full.SerializeToString())
+    scheduler.request_rerun(RerunData())
+    # Actual Streamlit coalesces older fragment work into the full rerun.
+    assert scheduler.on_scriptrunner_ready().rerun_data.fragment_id_queue == []
+    assert set(runs._pending) == {''} and not runs.idle
+    start = ForwardMsg()
+    start.new_session.script_run_id = 'invented-full'
+    if newer_fragment == 'before-start':
+        runs._sent(fragment.SerializeToString())
+    runs._received(start.SerializeToString())
+    if newer_fragment == 'after-start':
+        runs._sent(fragment.SerializeToString())
+    runs._received(ForwardMsg(script_finished=ForwardMsg.FINISHED_SUCCESSFULLY).SerializeToString())
+    assert runs.idle is (newer_fragment is None)
+    if newer_fragment:
+        assert set(runs._pending) == {'invented-poll'}
+        start.new_session.script_run_id = 'invented-newer-poll'
+        start.new_session.fragment_ids_this_run.append('invented-poll')
+        runs._received(start.SerializeToString())
+        runs._received(ForwardMsg(script_finished=ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY).SerializeToString())
+        assert runs.idle
+
+
+def test_unsolicited_full_start_and_retired_early_keep_request_identity():
+    from types import SimpleNamespace
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+    runs = StreamlitReruns(SimpleNamespace(on=lambda *a: None), settle=lambda *a, **kw: None)
+    fragment = BackMsg()
+    fragment.rerun_script.fragment_id = 'invented-poll'
+    runs._sent(fragment.SerializeToString())
+    start = ForwardMsg()
+    start.new_session.script_run_id = 'invented-unsolicited-full'
+    runs._received(start.SerializeToString())
+    runs._received(ForwardMsg(script_finished=ForwardMsg.FINISHED_SUCCESSFULLY).SerializeToString())
+    assert not runs.idle and set(runs._pending) == {'invented-poll'}
+    start.new_session.fragment_ids_this_run.append('invented-poll')
+    runs._received(start.SerializeToString())
+    full = BackMsg()
+    full.rerun_script.SetInParent()
+    runs._sent(full.SerializeToString())
+    runs._received(ForwardMsg(script_finished=ForwardMsg.FINISHED_EARLY_FOR_RERUN).SerializeToString())
+    assert not runs._early_scopes and set(runs._pending) == {''}
+    del start.new_session.fragment_ids_this_run[:]
+    runs._received(start.SerializeToString())
+    runs._received(ForwardMsg(script_finished=ForwardMsg.FINISHED_SUCCESSFULLY).SerializeToString())
+    assert runs.idle
+
+
+def test_full_request_cannot_supersede_an_active_text_commit():
+    from types import SimpleNamespace
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+    runs = StreamlitReruns(SimpleNamespace(on=lambda *a: None), settle=lambda *a, **kw: None)
+    runs.expected = ('invented', 'after')
+    edit = BackMsg()
+    edit.rerun_script.fragment_id = 'invented-editor'
+    edit.rerun_script.widget_states.widgets.add(id='$$ID-synthetic-invented', string_value='after')
+    runs._sent(edit.SerializeToString())
+    full = BackMsg()
+    full.rerun_script.is_auto_rerun = True
+    runs._sent(full.SerializeToString())
+    start = ForwardMsg()
+    start.new_session.script_run_id = 'invented-background-full'
+    runs._received(start.SerializeToString())
+    runs._received(ForwardMsg(script_finished=ForwardMsg.FINISHED_SUCCESSFULLY).SerializeToString())
+    assert runs.error is None and not runs._commit_complete and not runs.idle
+    assert set(runs._pending) == {'invented-editor'}
+
 
 @pytest.fixture
 def ux_page(tmp_path):
@@ -563,11 +811,12 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     from portfolio_app.account_journal import load_journal
     from portfolio_app.security_history import effective_holdings
     from portfolio_app.positions import read_snapshot
-    select_tab(page, 'Positions')
-    page.get_by_role('table', name='Positions', exact=True).locator('tr[data-position-id="fund-a"]').click()
+    runs = page.streamlit_reruns
+    runs.click(page, page.get_by_role('tab', name='Positions', exact=True))
+    runs.click(page, page.get_by_role('table', name='Positions', exact=True).locator('tr[data-position-id="fund-a"]'))
     dialog = page.get_by_role('dialog')
-    dialog.get_by_text('Transactions', exact=True).click()
-    dialog.get_by_role('button', name='Add buy').click()
+    runs.click(page, dialog.get_by_text('Transactions', exact=True))
+    runs.click(page, dialog.get_by_role('button', name='Add buy'))
     # Each blur starts a rerender; finish it before editing the next field.
     inputs = [('Quantity', '2'), ('Unit price', '80'), ('Fees', '0')]
     for label, value in inputs:
@@ -576,24 +825,24 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     for label, value in inputs:
         playwright.expect(dialog.get_by_role('textbox', name=label, exact=True)).to_have_value(value)
     assert not dialog.get_by_text('Charges complete (blank means no charge)', exact=True).count()
-    dialog.get_by_role('button', name='Save transaction', exact=True).click()
+    runs.click(page, dialog.get_by_role('button', name='Save transaction', exact=True))
     settle(page)
     buy = next(event for event in load_journal(directory)[0].securities[0].records if event.kind == 'buy')
     assert buy.quantity == 2 and buy.price == 80
     assert buy.charges_known and buy.charges[0].amount == 0
-    dialog.get_by_role('button', name='Review against portfolio', exact=True).click()
+    runs.click(page, dialog.get_by_role('button', name='Review against portfolio', exact=True))
     apply = dialog.get_by_role('button', name='Apply history', exact=True)
     playwright.expect(apply).to_be_enabled()
     playwright.expect(dialog.get_by_text('Units and cost match', exact=True)).to_be_visible()
     assert not dialog.get_by_role('checkbox').count()
     assert not dialog.get_by_role('combobox', name='Included transactions', exact=True).is_visible()
     assert not load_journal(directory)[0].securities[0].active
-    apply.click()
+    runs.click(page, apply)
     dialog.get_by_role('button', name='Review against portfolio', exact=True).wait_for()
     journal, _ = load_journal(directory)
     row = effective_holdings(read_snapshot(directory/'holdings.csv').holdings, journal.securities).set_index('position_id').loc['fund-a']
     assert row.shares == 2 and row.acquisition_price == 80
-    dialog.get_by_role('table', name='Transactions', exact=True).get_by_role('button', name=re.compile('^Edit ')).first.click()
+    runs.click(page, dialog.get_by_role('table', name='Transactions', exact=True).get_by_role('button', name=re.compile('^Edit ')).first)
     expect_price = dialog.get_by_role('textbox', name='Unit price', exact=True)
     playwright.expect(expect_price).to_have_value('80')
     page.streamlit_reruns.commit_text(page, expect_price, '81.125')

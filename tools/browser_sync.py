@@ -65,6 +65,13 @@ class StreamlitReruns:
             return
         rerun = message.rerun_script
         request = _Request(rerun.fragment_id)
+        if self.expected is None and not request.scope:
+            # An explicitly sent full rerun supersedes older baseline fragment
+            # work: fastReruns replaces the runner, and queued requests coalesce
+            # into the full run. Keep the new full request pending below. Never
+            # infer this from a received full start or retire later requests.
+            self._pending.clear()
+            self._early_scopes.clear()
         if self.expected is not None:
             if rerun.is_auto_rerun:
                 # Independent polling fragments are legitimate. A same-scope
@@ -114,7 +121,8 @@ class StreamlitReruns:
             elif self._active is not None:
                 scopes, covered = self._active
                 if status == ForwardMsg.FINISHED_EARLY_FOR_RERUN:
-                    self._early_scopes.update(covered)
+                    self._early_scopes.update(scope for scope, request in covered.items()
+                                              if self._pending.get(scope) is request)
                     self._active = None
                     self._awaiting_restart = True
                 elif status == (ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY if scopes
@@ -163,6 +171,39 @@ class StreamlitReruns:
         self._ready(page, deadline)
         expect(field).to_have_value(value, timeout=self._remaining(deadline))
 
+    def click(self, page, control):
+        """Serialize one navigation click that sends a non-automatic rerun.
+
+        Use from the beginning of a navigation chain, before partially rendered
+        controls can start a second request. This is not for purely local UI
+        controls (such as opening a select menu) or already-selected tabs.
+        """
+        deadline = time.monotonic() + self.timeout_ms / 1000
+        self._ready(page, deadline)
+        def requested(payload):
+            message = BackMsg.FromString(payload)
+            return (message.WhichOneof('type') == 'rerun_script'
+                    and not message.rerun_script.is_auto_rerun)
+        # The click may return before the browser sends its request. Arm first
+        # and require the send before examining lifecycle/DOM readiness.
+        with self.socket.expect_event('framesent', predicate=requested,
+                                      timeout=self._remaining(deadline)):
+            control.click(timeout=self._remaining(deadline))
+        self._ready(page, deadline)
+
+    def _diagnostic_state(self):
+        # Scope identities only: never include widget values or page contents.
+        pending = {scope: id(request) for scope, request in self._pending.items()}
+        active = None if self._active is None else {
+            'scopes': sorted(self._active[0]),
+            'covered': {scope: {'request': id(request),
+                               'still_pending': self._pending.get(scope) is request}
+                        for scope, request in self._active[1].items()},
+        }
+        return dict(pending=pending, active=active, early=sorted(self._early_scopes),
+                    awaiting_restart=self._awaiting_restart,
+                    completed_once=self._completed_once)
+
     @staticmethod
     def _remaining(deadline):
         remaining = (deadline - time.monotonic()) * 1000
@@ -173,8 +214,11 @@ class StreamlitReruns:
     def _ready(self, page, deadline):
         # If a polling run starts during DOM settling, finish that run and its
         # render too. This repeats readiness checks, never a user action.
-        while True:
-            self.wait(timeout=self._remaining(deadline))
-            self.settle(page, timeout=self._remaining(deadline))
-            if self.idle:
-                return
+        try:
+            while True:
+                self.wait(timeout=self._remaining(deadline))
+                self.settle(page, timeout=self._remaining(deadline))
+                if self.idle:
+                    return
+        except TimeoutError as exc:
+            raise TimeoutError(f'{exc}; Streamlit readiness: {self._diagnostic_state()}') from exc
