@@ -166,7 +166,8 @@ def test_native_failure_evidence_is_captured_before_browser_teardown(tmp_path):
     with playwright.sync_playwright() as runner:
         browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
         try:
-            page = browser.new_page()
+            context = browser.new_context()
+            page = context.new_page()
             page.set_content('<p>Invented native focus evidence</p>')
             primary = RuntimeError('Invented native focus failure')
             with pytest.raises(RuntimeError) as caught:
