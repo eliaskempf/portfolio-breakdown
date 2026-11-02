@@ -6,7 +6,7 @@ import re
 from portfolio_app.futures import FuturePosition
 from portfolio_app.futures_workspace import SANDBOX_FILE
 from test_ux_browser import ux_page as ux_page, playwright
-from browser_support import settle, select_tab
+from browser_support import settle, settle_layout, select_tab
 
 
 def test_sold_unassigned_asset_does_not_blank_market_exposure_gaps(ux_page):
@@ -227,7 +227,14 @@ def test_funded_strategy_value_return_close_and_negative_chart(ux_page):
     playwright.expect(page.get_by_role('tab', name='Futures', exact=True)).to_have_attribute('aria-selected', 'true')
     settle(page)
     page.get_by_text('Strategy capital & lifetime gains', exact=True).click()
-    page.get_by_role('button', name='Close saved contract and retain cash', exact=True).click()
+    settle_layout(page)
+    close_contract = page.get_by_role('button', name='Close saved contract and retain cash', exact=True)
+    playwright.expect(close_contract).to_be_visible()
+    close_contract.click()
+    playwright.expect(close_contract).to_be_disabled()
+    playwright.expect(page.get_by_role('spinbutton', name='Signed contracts', exact=True,
+                                      include_hidden=True)).to_have_value('0')
+    assert json.loads((directory / SANDBOX_FILE).read_text())['position']['contracts'] == 0
     select_tab(page, 'Overview')
     playwright.expect(future_row).to_be_visible()
     playwright.expect(future_row.locator('td').nth(1)).to_contain_text('243.00')

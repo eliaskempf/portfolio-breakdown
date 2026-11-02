@@ -7,7 +7,7 @@ import pytest
 from test_import_browser import import_page
 from portfolio_app.account_journal import load_journal
 from portfolio_app.security_history import replay_securities
-from browser_support import settle as render_settle
+from browser_support import settle_layout, settle as render_settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -18,16 +18,6 @@ def settle(page):
     except AssertionError:
         assert not page.get_by_test_id('stException').count(), page.get_by_test_id('stException').all_text_contents()
         raise
-
-
-def settle_layout(page):
-    settle(page)
-    # A completed Streamlit render can still leave an expander moving. Wait
-    # for finite animations before scrolling or targeting its controls.
-    page.wait_for_function("""() => !document.getAnimations().some(animation =>
-        (animation.pending || animation.playState === 'running')
-        && Number.isFinite(animation.effect?.getComputedTiming().endTime))""")
-    settle(page)
 
 
 def upload(page, content):

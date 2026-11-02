@@ -72,6 +72,16 @@ def settle(page, *, timeout=None):
     expect(page.get_by_test_id('stException')).to_have_count(0, timeout=remaining())
 
 
+def settle_layout(page):
+    settle(page)
+    # A completed Streamlit render can still leave an expander moving. Wait
+    # for finite animations before scrolling or targeting its controls.
+    page.wait_for_function("""() => !document.getAnimations().some(animation =>
+        (animation.pending || animation.playState === 'running')
+        && Number.isFinite(animation.effect?.getComputedTiming().endTime))""")
+    settle(page)
+
+
 def select_tab(page, name):
     settle(page)
     tab = page.get_by_role('tab', name=name, exact=True)
