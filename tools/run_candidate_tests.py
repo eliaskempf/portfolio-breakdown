@@ -1,4 +1,4 @@
-"""Run exhaustive tests with isolated units/latency and two balanced browser workers."""
+"""Run exhaustive unit/browser phases around isolated responsiveness checks."""
 import argparse
 from collections import Counter
 import json
@@ -185,23 +185,25 @@ def start_worker(command, *, cwd, env, log_path):
 
 
 def build_schedule(files, nodeids):
-    """Keep timing-sensitive work alone, then balance browser case counts."""
+    """Balance unit/browser files separately; keep responsiveness alone."""
     files = sorted(files)
     counts = Counter(node.split('::')[0] for node in nodeids)
     if set(counts) - set(files):
         raise ValueError('Canonical collection contains an unassigned test file')
     responsiveness = ['tests/test_market_data_browser.py', 'tests/test_unified_exposure_browser.py']
     browser = [p for p in files if p.endswith('browser.py') and p not in responsiveness]
-    groups = {'unit': [p for p in files if not p.endswith('browser.py')],
+    unit = [p for p in files if not p.endswith('browser.py')]
+    groups = {'unit-0': [], 'unit-1': [],
               'responsiveness': responsiveness, 'browser-0': [], 'browser-1': []}
     if not set(responsiveness) <= set(files):
         raise ValueError('Missing isolated responsiveness test file')
-    weights = {'browser-0': 0, 'browser-1': 0}
-    for path in sorted(browser, key=lambda path: (-counts[path], path)):
-        group = min(weights, key=lambda name: (weights[name], name))
-        groups[group].append(path)
-        weights[group] += counts[path]
-    phases = [['unit'], ['responsiveness'], ['browser-0', 'browser-1']]
+    for prefix, candidates in (('unit', unit), ('browser', browser)):
+        weights = {prefix+'-0': 0, prefix+'-1': 0}
+        for path in sorted(candidates, key=lambda path: (-counts[path], path)):
+            group = min(weights, key=lambda name: (weights[name], name))
+            groups[group].append(path)
+            weights[group] += counts[path]
+    phases = [['unit-0', 'unit-1'], ['responsiveness'], ['browser-0', 'browser-1']]
     if not all(groups.values()):
         raise ValueError('Expected nonempty unit, responsiveness and browser groups')
     assigned = [path for paths in groups.values() for path in paths]

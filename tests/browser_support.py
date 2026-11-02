@@ -1,11 +1,34 @@
 """Wait for a completed Streamlit render before the next synthetic interaction."""
+import importlib.util
+from pathlib import Path
+import sys
+import time
+
 import pytest
 
 playwright = pytest.importorskip('playwright.sync_api')
 expect = playwright.expect
 
+# Load the driver helper explicitly; tests must not rely on tools/ being on
+# PYTHONPATH, and installed-app smoke drivers import it beside their entrypoint.
+_spec = importlib.util.spec_from_file_location('portfolio_browser_sync',
+    Path(__file__).resolve().parents[1] / 'tools' / 'browser_sync.py')
+_sync = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = _sync
+_spec.loader.exec_module(_sync)
+StreamlitReruns = _sync.StreamlitReruns
 
-def settle(page):
+
+
+def settle(page, *, timeout=None):
+    deadline = None if timeout is None else time.monotonic() + timeout / 1000
+    def remaining():
+        if deadline is None:
+            return None
+        milliseconds = (deadline - time.monotonic()) * 1000
+        if milliseconds <= 0:
+            raise playwright.TimeoutError('Streamlit render exceeded its remaining action timeout')
+        return milliseconds
     # Script completion can arrive before React removes stale widgets or paints
     # the replacement tree. A visible control alone is not a completed rerun.
     page.evaluate("""() => {
@@ -32,7 +55,7 @@ def settle(page):
             document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'
             && !document.querySelector('[data-stale="true"]')
             && performance.now() - window.__testRenderChanged >= 200
-        """)
+        """, timeout=remaining())
     except playwright.TimeoutError as exc:
         state = page.evaluate("""() => ({
             scriptState: document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state'),
@@ -46,7 +69,7 @@ def settle(page):
         raise AssertionError(f'Streamlit render did not settle: {state}') from exc
     finally:
         page.evaluate('window.__testRenderObserver?.disconnect()')
-    expect(page.get_by_test_id('stException')).to_have_count(0)
+    expect(page.get_by_test_id('stException')).to_have_count(0, timeout=remaining())
 
 
 def select_tab(page, name):

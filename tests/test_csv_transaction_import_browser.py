@@ -1,6 +1,7 @@
 """Browser acceptance of the common lifecycle, with invented transactions only."""
 import csv
 from io import StringIO
+import os
 import re
 import pytest
 from test_import_browser import import_page
@@ -17,6 +18,16 @@ def settle(page):
     except AssertionError:
         assert not page.get_by_test_id('stException').count(), page.get_by_test_id('stException').all_text_contents()
         raise
+
+
+def settle_layout(page):
+    settle(page)
+    # A completed Streamlit render can still leave an expander moving. Wait
+    # for finite animations before scrolling or targeting its controls.
+    page.wait_for_function("""() => !document.getAnimations().some(animation =>
+        (animation.pending || animation.playState === 'running')
+        && Number.isFinite(animation.effect?.getComputedTiming().endTime))""")
+    settle(page)
 
 
 def upload(page, content):
@@ -38,12 +49,17 @@ def test_closed_new_holding_category_survives_browser_review(import_page):
     page.get_by_text('Asset types & categories', exact=True).click(); settle(page)
     category = page.get_by_role('combobox', name='Category · AUR', exact=True)
     playwright.expect(category).to_have_value('Unassigned')
-    # Keep the portalled menu clear of the viewport edge in headless Chromium.
+    # Finish the expander layout before focusing the selectbox. Keyboard
+    # selection avoids closing its portalled menu through ancestor scrolling.
+    settle_layout(page)
     category.evaluate("el => el.scrollIntoView({block:'center', behavior:'instant'})")
-    settle(page)
-    category.click()
+    category.focus()
+    playwright.expect(category).to_be_focused()
+    category.press('ArrowDown')
     playwright.expect(category).to_have_attribute('aria-expanded', 'true')
-    page.get_by_role('option', name='Invented category', exact=True).click(); settle(page)
+    category.press('End')
+    category.press('Enter'); settle(page)
+    playwright.expect(category).to_have_value('Invented category')
     page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     page.get_by_role('button', name='Back to import', exact=True).click(); settle(page)
     page.get_by_text('Asset types & categories', exact=True).click(); settle(page)
@@ -82,7 +98,60 @@ def open_correction(page, index):
     checkbox = page.get_by_role('checkbox', name='Use this correction', exact=True, include_hidden=True).nth(index)
     if not checkbox.is_visible():
         page.get_by_text(re.compile('^Changed transaction ·')).nth(index).click()
+    settle_layout(page)
+    checkbox = page.get_by_role('checkbox', name='Use this correction', exact=True, include_hidden=True).nth(index)
+    playwright.expect(checkbox).to_be_visible()
     return checkbox
+
+
+def test_correction_target_is_reachable_after_expansion():
+    """An idle DOM can still clip a checkbox during a real height animation."""
+    with playwright.sync_playwright() as runner:
+        browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),
+                                         args=['--no-sandbox'])
+        try:
+            page = browser.new_page()
+            page.set_default_timeout(5000)
+            page.set_content('''<div data-testid="stApp" data-test-script-state="notRunning">
+                <span id="decoration">Synthetic activity</span>
+                <details style="box-sizing:border-box;border:1px solid">
+                    <summary>Changed transaction · Invented correction</summary>
+                    <div style="padding:24px"><div style="height:100px">Source comparison</div>
+                    <label><input type="checkbox">Use this correction</label></div>
+                </details></div>''')
+            page.evaluate('''() => {
+                window.decoration = document.querySelector('#decoration').animate(
+                    {opacity: [0.5, 1]}, {duration: 300, iterations: Infinity});
+                const details = document.querySelector('details');
+                details.querySelector('summary').onclick = event => {
+                    event.preventDefault();
+                    const start = details.getBoundingClientRect().height;
+                    details.open = true;
+                    const end = details.getBoundingClientRect().height;
+                    details.style.height = `${start}px`;
+                    details.style.overflow = 'hidden';
+                    const animation = details.animate({height: [`${start}px`, `${end}px`]},
+                        {duration: 1200, easing: 'linear'});
+                    animation.onfinish = () => {
+                        details.style.height = '';
+                        details.style.overflow = '';
+                    };
+                };
+            }''')
+            checkbox = open_correction(page, 0)
+            # Check target geometry, not whether a particular wait API ran.
+            bounds = checkbox.evaluate('''element => {
+                const target = element.closest('label').getBoundingClientRect();
+                const clip = element.closest('details').getBoundingClientRect();
+                return {top: target.top, bottom: target.bottom,
+                        clipTop: clip.top, clipBottom: clip.bottom};
+            }''')
+            assert bounds['clipTop'] <= bounds['top'] < bounds['bottom'] <= bounds['clipBottom'], bounds
+            assert page.evaluate("window.decoration.playState === 'running'")
+            page.get_by_text('Use this correction', exact=True).click()
+            playwright.expect(checkbox).to_be_checked()
+        finally:
+            browser.close()
 
 
 def test_second_same_day_file_has_order_review_before_apply(import_page):

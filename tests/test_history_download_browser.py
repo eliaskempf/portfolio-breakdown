@@ -88,6 +88,9 @@ else:
                 page.wait_for_timeout(2500)
                 assert page.locator('.js-plotly-plot').evaluate('e => e===window.originalChart')
             if mode == 'portfolio':
+                # The asynchronously delivered plot can exist before its metric
+                # controls have finished rendering and reached their final layout.
+                settle(page)
                 page.get_by_role('button', name='Show gain as percentage', exact=True).click(); settle(page)
                 playwright.expect(page.get_by_role('button', name='Show gain as amount', exact=True)).to_be_visible()
             page.reload(); settle(page)

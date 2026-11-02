@@ -573,6 +573,21 @@ Use a generated synthetic workspace explicitly when launching from a
 worktree. Restart that preview if imported modules remain stale; do not restart another session's app. Check the
 port before assuming which version a browser tab displays.
 
+### Browser acceptance
+
+Use synthetic workspaces and preserve observable value, persistence and lifecycle
+assertions. Streamlit's idle script marker can still describe the previous render
+while a widget update is queued. Commit dependent text edits one at a time and
+await the corresponding request and successful render before editing the next
+field. A received protocol message alone does not establish that React has painted.
+Wait for finite layout animations before targeting controls inside expanders;
+infinite decorative animations must not block readiness.
+
+Capture failure evidence while the browser and page are still alive. Inspect the
+first failure before retrying; additional clicks, longer timeouts or removed
+assertions do not establish a correct interaction. Candidate builds run the source
+application smoke before the full suite so basic workflow failures surface early.
+
 
 ## Before committing
 

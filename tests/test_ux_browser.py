@@ -12,9 +12,189 @@ from urllib.request import urlopen
 import pytest
 import yaml
 
-from browser_support import select_tab, settle
+from browser_support import StreamlitReruns, select_tab, settle
 
 playwright = pytest.importorskip('playwright.sync_api')
+
+
+def test_text_commit_readiness_keeps_one_deadline_during_polling(monkeypatch):
+    from types import SimpleNamespace
+    import browser_support
+    clock = [0.0]
+    monkeypatch.setattr(browser_support._sync, 'time', SimpleNamespace(monotonic=lambda: clock[0]))
+    budgets = []
+    def settle_during_poll(page, *, timeout):
+        budgets.append(timeout)
+        clock[0] += .4
+        runs._active = (frozenset({'poll'}), {})
+    runs = StreamlitReruns(SimpleNamespace(on=lambda *args: None),
+                          settle=settle_during_poll, timeout_ms=1000)
+    def finish_poll(*, timeout):
+        runs._active = None
+        runs._completed_once = True
+    monkeypatch.setattr(runs, 'wait', finish_poll)
+    # No field method can run: repeated polling exhausts the same deadline
+    # instead of renewing the budget at every lifecycle/DOM readiness check.
+    with pytest.raises(playwright.TimeoutError, match='action timeout'):
+        runs.commit_text(None, object(), 'after')
+    assert budgets == pytest.approx([1000, 600, 200])
+
+
+@pytest.mark.parametrize(('fragment', 'continuation'),
+                         [(False, 'same'), (True, 'same'), (True, 'full'), (False, 'fragment')])
+def test_text_commit_waits_for_acknowledged_run(fragment, continuation):
+    """A real local socket gates lifecycle frames while the old DOM is idle."""
+    from queue import Queue
+    from threading import Thread
+    from websockets.sync.server import serve
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+
+    ready = Queue()
+    def session(run_id, scopes=None):
+        message = ForwardMsg()
+        message.new_session.script_run_id = run_id
+        message.new_session.fragment_ids_this_run.extend(
+            (('invented-fragment',) if fragment else ()) if scopes is None else scopes)
+        return message.SerializeToString()
+    def finished(status):
+        return ForwardMsg(script_finished=status).SerializeToString()
+    def gate(name):
+        message = ForwardMsg()
+        message.page_info_changed.query_string = name
+        return message.SerializeToString()
+    def handle(socket):
+        ready.put(socket)
+        for payload in socket:
+            message = BackMsg.FromString(payload)
+            if message.rerun_script.is_auto_rerun:
+                socket.send(session('background', ('background',)))
+                socket.send(finished(ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY))
+                socket.send(gate('background'))
+            elif message.rerun_script.widget_states.widgets:
+                socket.send(gate('request'))
+            else:
+                # Navigation can legitimately hand a full callback to a dialog
+                # fragment or request a full rerun from a fragment. Establish
+                # that acknowledged baseline BEFORE the serialized text edit.
+                socket.send(session('initial', ('baseline-fragment',) if fragment else ()))
+                socket.send(finished(ForwardMsg.FINISHED_EARLY_FOR_RERUN))
+                socket.send(session('baseline-continuation', () if fragment else ('baseline-dialog',)))
+                socket.send(finished(ForwardMsg.FINISHED_SUCCESSFULLY if fragment
+                                     else ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY))
+    server = serve(handle, '127.0.0.1', 0)
+    port = server.socket.getsockname()[1]
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with playwright.sync_playwright() as runner:
+            browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),
+                                             args=['--no-sandbox'])
+            try:
+                page = browser.new_page()
+                page.set_default_timeout(10000)
+                runs = StreamlitReruns(page, settle=settle)
+                observations = []
+                server_socket = None
+                def send(*messages):
+                    for message in messages:
+                        server_socket.send(message)
+                def poll():
+                    automatic = BackMsg()
+                    automatic.rerun_script.is_auto_rerun = True
+                    automatic.rerun_script.fragment_id = 'background'
+                    page.evaluate('payload => socket.send(new Uint8Array(payload))',
+                                  list(automatic.SerializeToString()))
+                def received(payload):
+                    message = ForwardMsg.FromString(payload)
+                    if message.WhichOneof('type') != 'page_info_changed':
+                        return
+                    name = message.page_info_changed.query_string
+                    assert runs.request_seen and not runs.idle
+                    if name == 'request':
+                        # Server has sent no start/finish. The old helper still
+                        # returns against the previous idle DOM.
+                        settle(page)
+                        assert not runs.idle
+                        observations.append('old settle returned before acknowledgement')
+                        poll()
+                    elif name == 'background':
+                        assert runs.error is None
+                        if observations[-1] == 'early rerun did not complete commit':
+                            observations.append('background after early rerun ignored')
+                            final_scopes = (() if continuation == 'full' else ('next-fragment',)
+                                            if continuation == 'fragment' else None)
+                            send(session('accepted', final_scopes),
+                                 finished(ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY
+                                          if continuation == 'fragment' or (fragment and continuation != 'full')
+                                          else ForwardMsg.FINISHED_SUCCESSFULLY))
+                            if continuation != 'same':
+                                send(gate('cross-scope'))
+                            return
+                        observations.append('background completion ignored')
+                        send(finished(ForwardMsg.FINISHED_SUCCESSFULLY), gate('unpaired'))
+                    elif name == 'unpaired':
+                        observations.append('unpaired finish ignored')
+                        send(session('unrelated', ('unrelated',)),
+                             finished(ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY), gate('unrelated'))
+                    elif name == 'unrelated':
+                        observations.append('unrelated scope ignored')
+                        send(session('interrupted'), finished(ForwardMsg.FINISHED_EARLY_FOR_RERUN), gate('early'))
+                    elif name == 'early':
+                        observations.append('early rerun did not complete commit')
+                        poll()
+                    elif name == 'cross-scope':
+                        assert not runs._commit_complete
+                        observations.append('cross-scope finish ignored')
+                        send(session('correct-scope'), finished(ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY
+                             if fragment else ForwardMsg.FINISHED_SUCCESSFULLY))
+                page.on('websocket', lambda socket: socket.on('framereceived', received))
+                page.set_content('''<div data-testid="stApp" data-test-script-state="notRunning">
+                    <div class="st-key-invented"><input aria-label="Invented value" value="before"></div>
+                    </div>''')
+                initial = BackMsg()
+                initial.rerun_script.SetInParent()
+                if fragment:
+                    initial.rerun_script.fragment_id = 'baseline-fragment'
+                changed = BackMsg()
+                changed.rerun_script.widget_states.widgets.add(id='$$ID-synthetic-invented', string_value='after')
+                if fragment:
+                    changed.rerun_script.fragment_id = 'invented-fragment'
+                page.evaluate('''({initial, changed, port}) => {
+                    window.socket = new WebSocket(`ws://127.0.0.1:${port}/_stcore/stream`);
+                    socket.onopen = () => socket.send(new Uint8Array(initial));
+                    document.querySelector('input').onkeydown = event => {
+                        if (event.key === 'Enter') socket.send(new Uint8Array(changed));
+                    };
+                }''', {'initial': list(initial.SerializeToString()), 'changed': list(changed.SerializeToString()), 'port': port})
+                server_socket = ready.get(timeout=10)
+                page.wait_for_function('window.socket.readyState === WebSocket.OPEN')
+                runs.wait()
+                field = page.get_by_role('textbox', name='Invented value')
+                runs.commit_text(page, field, 'after')
+                expected = ['old settle returned before acknowledgement',
+                            'background completion ignored', 'unpaired finish ignored', 'unrelated scope ignored',
+                            'early rerun did not complete commit', 'background after early rerun ignored']
+                if continuation != 'same':
+                    expected.append('cross-scope finish ignored')
+                assert observations == expected
+                assert runs.idle
+                runs.commit_text(page, field, 'after')  # No-op does not need a request.
+                assert observations == expected
+                # New unsolicited work must clear a previously idle baseline.
+                with runs.socket.expect_event('framereceived', predicate=lambda payload:
+                        ForwardMsg.FromString(payload).WhichOneof('type') == 'new_session'):
+                    send(session('later-background', ('background',)))
+                assert not runs.idle
+                send(finished(ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY))
+                runs.wait()
+                assert runs.idle
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+        thread.join(timeout=10)
+        assert not thread.is_alive()
 
 
 @pytest.fixture
@@ -47,6 +227,7 @@ def ux_page(tmp_path):
         with playwright.sync_playwright() as runner:
             browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1440, 'height': 1000}, locale='en-US')
+            page.streamlit_reruns = StreamlitReruns(page, settle=settle)
             page.set_default_timeout(10000)
             page.goto(f'http://127.0.0.1:{port}')
             page.locator('.js-plotly-plot').first.wait_for()
@@ -391,9 +572,7 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     inputs = [('Quantity', '2'), ('Unit price', '80'), ('Fees', '0')]
     for label, value in inputs:
         field = dialog.get_by_role('textbox', name=label, exact=True)
-        field.fill(value)
-        field.press('Tab')
-        settle(page)
+        page.streamlit_reruns.commit_text(page, field, value)
     for label, value in inputs:
         playwright.expect(dialog.get_by_role('textbox', name=label, exact=True)).to_have_value(value)
     assert not dialog.get_by_text('Charges complete (blank means no charge)', exact=True).count()
@@ -417,9 +596,7 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     dialog.get_by_role('table', name='Transactions', exact=True).get_by_role('button', name=re.compile('^Edit ')).first.click()
     expect_price = dialog.get_by_role('textbox', name='Unit price', exact=True)
     playwright.expect(expect_price).to_have_value('80')
-    expect_price.fill('81.125')
-    expect_price.press('Tab')
-    settle(page)
+    page.streamlit_reruns.commit_text(page, expect_price, '81.125')
     dialog.get_by_role('button', name='Save changes', exact=True).click()
     dialog.get_by_role('button', name='Review against portfolio', exact=True).wait_for()
     journal, _ = load_journal(directory)

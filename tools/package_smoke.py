@@ -1,5 +1,6 @@
 """Real-browser smoke test against an installed or extracted app; invented data only."""
 import argparse
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import subprocess
@@ -15,16 +16,26 @@ from zipfile import ZipFile
 
 from playwright.sync_api import sync_playwright, expect
 
+from browser_sync import StreamlitReruns
 
-def settle_app(page):
+
+def settle_app(page, *, timeout=None):
     """Wait for the completed render, including stale DOM replacement."""
+    deadline = time.monotonic() + timeout / 1000 if timeout is not None else None
+    def remaining():
+        if deadline is None:
+            return None
+        left = (deadline - time.monotonic()) * 1000
+        if left <= 0:
+            raise AssertionError('Streamlit render did not settle within the action budget')
+        return left
     page.evaluate("""() => {
         window.__smokeObserver?.disconnect();
         window.__smokeChanged = performance.now();
         window.__smokeObserver = new MutationObserver(() => {
             window.__smokeChanged = performance.now();
         });
-        window.__smokeObserver.observe(document.querySelector('[data-testid=stMain]'),
+        window.__smokeObserver.observe(document.body,
             {subtree:true, childList:true, attributes:true, characterData:true});
     }""")
     try:
@@ -32,10 +43,57 @@ def settle_app(page):
             document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'
             && !document.querySelector('[data-stale="true"]')
             && performance.now() - window.__smokeChanged >= 200
-        """)
+        """, timeout=remaining())
     finally:
         page.evaluate('window.__smokeObserver?.disconnect()')
-    expect(page.get_by_test_id('stException')).to_have_count(0)
+    expect(page.get_by_test_id('stException')).to_have_count(0, timeout=remaining())
+
+
+@contextmanager
+def browser_page(evidence, stage, *, viewport=None):
+    """Capture this invented scenario while its browser and event loop are alive."""
+    with sync_playwright() as runner:
+        browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
+        page = browser.new_page(**({'viewport': viewport} if viewport is not None else {}))
+        if evidence is not None:
+            page.context.tracing.start(screenshots=True, snapshots=True, sources=True)
+        try:
+            yield page
+        except BaseException as exc:
+            if evidence is not None:
+                report = {'stage': stage, 'error': str(exc), 'url': page.url, 'capture_errors': []}
+                def fields():
+                    report['page_state'] = page.evaluate('''() => ({
+                        scriptState: document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state'),
+                        fields: [...document.querySelectorAll('input')]
+                            .filter(el => !['password', 'file', 'hidden'].includes(el.type))
+                            .map(el => ({label: el.getAttribute('aria-label'), id: el.id,
+                                value: el.value, checked: el.checked})),
+                        exceptions: [...document.querySelectorAll('[data-testid=stException]')].map(el => el.innerText)
+                    })''')
+                captures = {
+                    'page_state': fields,
+                    'screenshot': lambda: page.screenshot(path=str(evidence / (stage+'-failure.png')), full_page=True),
+                    'html': lambda: (evidence / (stage+'-failure.html')).write_text(page.content(), encoding='utf-8'),
+                    'text': lambda: (evidence / (stage+'-failure.txt')).write_text(page.locator('body').inner_text(), encoding='utf-8'),
+                    'trace': lambda: page.context.tracing.stop(path=str(evidence / (stage+'-trace.zip'))),
+                }
+                for kind, capture in captures.items():
+                    try:
+                        capture()
+                    except Exception as failure:
+                        report['capture_errors'].append({'kind': kind, 'error': str(failure)})
+                try:
+                    (evidence / (stage+'-failure.json')).write_text(json.dumps(report, indent=2), encoding='utf-8')
+                except OSError as failure:
+                    print(f'Could not write smoke failure report: {failure}', file=sys.stderr)
+            raise
+        else:
+            if evidence is not None:
+                page.context.tracing.stop()
+            print(f'Browser smoke stage passed: {stage} ({page.url})', flush=True)
+        finally:
+            browser.close()
 
 
 def synthetic_workbook():
@@ -199,6 +257,13 @@ def exercise_manual_breakdown(page, evidence=None):
     expect(panel).to_be_visible()
     panel.click()
     page.get_by_role('combobox', name='Summarize by', exact=True).wait_for()
+    settle_app(page)
+    # This real ETF expander mounts its results on opening; its finite height
+    # animation must finish before interacting with controls inside it.
+    page.wait_for_function("""() => ![...document.querySelectorAll('[data-testid=stExpander]')]
+        .some(panel => panel.getAnimations({subtree:true}).some(animation =>
+            (animation.pending || animation.playState === 'running') && Number.isFinite(animation.effect?.getComputedTiming().endTime)))""")
+    settle_app(page)
     expect(page.locator('.js-plotly-plot').last).to_be_visible()
     page.get_by_role('radio', name='Holdings', exact=True).click()
     table = page.get_by_role('table', name='Synthetic bond fund holdings', exact=True)
@@ -229,10 +294,9 @@ def smoke(command, evidence=None):
                 repeated = subprocess.run(command + ['--foreground', '--no-browser', '--data-dir', str(workspace)],
                                           env=env, cwd=root, capture_output=True, text=True, timeout=30)
                 assert repeated.returncode == 0 and 'Already running' in repeated.stdout
-                with sync_playwright() as runner:
-                    browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
-                    page = browser.new_page(viewport={'width': 1440, 'height': 1000})
+                with browser_page(evidence, 'application', viewport={'width': 1440, 'height': 1000}) as page:
                     page.set_default_timeout(20000)
+                    runs = StreamlitReruns(page, settle=settle_app, timeout_ms=20000)
                     page.goto(url)
                     expect(page.locator('iframe[title*=portfolio_breakdown_intro]')).to_be_visible()
                     expect(page.get_by_role('heading', name='Welcome to Portfolio Breakdown', exact=True)).to_be_visible()
@@ -274,7 +338,8 @@ def smoke(command, evidence=None):
                     page.get_by_role('tab', name='Positions', exact=True).click()
                     table = page.get_by_role('table', name='Positions', exact=True)
                     table.get_by_role('button', name=re.compile('^Edit ')).first.click()
-                    page.get_by_role('textbox', name='Instrument name', exact=True).fill('Synthetic packaged position')
+                    runs.commit_text(page, page.get_by_role('textbox', name='Instrument name', exact=True),
+                                     'Synthetic packaged position')
                     page.get_by_role('button', name='Save position', exact=True).click()
                     expect(page.get_by_role('dialog')).to_have_count(0)
                     expect(table.get_by_text('Synthetic packaged position', exact=True).first).to_be_visible()
@@ -313,8 +378,11 @@ def smoke(command, evidence=None):
                         expect(page.get_by_role('table', name='Positions', exact=True).get_by_text(name, exact=True)).to_be_visible()
                     page.get_by_role('button', name=re.compile(r'Add position$')).click()
                     page.get_by_role('button', name='Enter manually', exact=True).click()
-                    page.get_by_role('textbox', name='Instrument name', exact=True).fill('Synthetic persistent position')
-                    page.get_by_role('textbox', name='Quantity held (total)', exact=True).fill('1')
+                    # Each changed field commits on blur/Enter and can rebuild
+                    # the dialog. Acknowledge that run before the next edit/save.
+                    runs.commit_text(page, page.get_by_role('textbox', name='Instrument name', exact=True),
+                                     'Synthetic persistent position')
+                    runs.commit_text(page, page.get_by_role('textbox', name='Quantity held (total)', exact=True), '1')
                     page.get_by_role('button', name='Save position', exact=True).click()
                     expect(page.get_by_role('dialog')).to_have_count(0)
                     expect(page.get_by_role('table', name='Positions', exact=True)
@@ -323,7 +391,6 @@ def smoke(command, evidence=None):
                         expect(page.get_by_role('table', name='Positions', exact=True).get_by_text(name, exact=True)).to_be_visible()
                     assert 'Synthetic persistent position' in (workspace / 'holdings.csv').read_text(encoding='utf-8')
                     expect(page.get_by_test_id('stException')).to_have_count(0)
-                    browser.close()
                 stop = subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,
                                       capture_output=True, text=True, timeout=30)
                 assert stop.returncode == 0 and 'Stopped' in stop.stdout
@@ -335,16 +402,13 @@ def smoke(command, evidence=None):
                 child = subprocess.Popen(command + ['--foreground', '--no-browser', '--data-dir', str(workspace)],
                                          cwd=root, env=env, stdout=handle, stderr=handle)
                 url = wait_for_instance(state, child)
-                with sync_playwright() as runner:
-                    browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
-                    page = browser.new_page()
+                with browser_page(evidence, 'restart-breakdown') as page:
                     page.goto(url)
                     page.get_by_role('tab', name='Positions', exact=True).click()
                     expect(page.get_by_role('table', name='Positions', exact=True)
                            .get_by_text('Synthetic persistent position', exact=True)).to_be_visible()
                     expect(page.get_by_test_id('stException')).to_have_count(0)
                     exercise_manual_breakdown(page, evidence)
-                    browser.close()
                 subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,
                                check=True, capture_output=True, timeout=30)
                 child.wait(timeout=15)
@@ -353,9 +417,7 @@ def smoke(command, evidence=None):
                                          env=env, cwd=root, capture_output=True, text=True, timeout=90)
                 assert desktop.returncode == 0, desktop.stderr
                 assert 'http://127.0.0.1:' in desktop.stdout
-                with sync_playwright() as runner:
-                    browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
-                    page = browser.new_page()
+                with browser_page(evidence, 'desktop-demo') as page:
                     page.goto(re.search(r'http://127\.0\.0\.1:\d+', desktop.stdout)[0])
                     expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('93,184.35', timeout=20000)
                     page.get_by_role('tab', name='Positions', exact=True).click()
@@ -363,7 +425,6 @@ def smoke(command, evidence=None):
                     expect(page.get_by_role('table', name='Positions', exact=True)
                            .get_by_text('Synthetic packaged position', exact=True)).to_have_count(0)
                     expect(page.get_by_test_id('stException')).to_have_count(0)
-                    browser.close()
                 subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,
                                check=True, capture_output=True, timeout=30)
                 assert (workspace / 'holdings.csv').read_bytes() == saved
@@ -377,13 +438,10 @@ def smoke(command, evidence=None):
                                               '--data-dir', str(workspace)], env=env, cwd=root, timeout=90)
                     assert desktop.returncode == 0
                     gui_url = wait_for_instance(state, None)
-                    with sync_playwright() as runner:
-                        browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
-                        page = browser.new_page()
+                    with browser_page(evidence, 'windows-browser-entry') as page:
                         page.goto(gui_url)
                         expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('93,184.35', timeout=20000)
                         expect(page.get_by_test_id('stException')).to_have_count(0)
-                        browser.close()
                     subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,
                                    check=True, capture_output=True, timeout=30)
                     assert (workspace / 'holdings.csv').read_bytes() == saved
