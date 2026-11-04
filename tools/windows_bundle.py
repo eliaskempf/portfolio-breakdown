@@ -54,6 +54,7 @@ def signed_bootstrapper(cache):
 
 
 def prepare_notices(bundle, cache):
+    from frozen_runtime import bundle_runtime
     cache.mkdir(parents=True, exist_ok=True)
     sdk = cache / f'webview2-{SDK_VERSION}.nupkg'
     if not sdk.exists():
@@ -62,7 +63,7 @@ def prepare_notices(bundle, cache):
         raise ValueError('WebView2 SDK checksum mismatch.')
     # Audit the DLLs actually shipped, not only the installed build dependencies.
     interop_notices(sdk, bundle, bundle)
-    dlls = sorted((bundle / '_internal').rglob('*.dll'))
+    dlls = sorted(bundle_runtime(bundle).rglob('*.dll'))
     inventory = [{'file': p.relative_to(bundle).as_posix(),
                   'sha256': sha256(p.read_bytes()).hexdigest(), 'bytes': p.stat().st_size}
                  for p in dlls if 'webview' in p.as_posix().lower() or p.name.startswith('Python.Runtime')]
@@ -74,11 +75,14 @@ def prepare_notices(bundle, cache):
 
 def build_installer(root, bundle, output, version):
     """Build one per-user installer; never install it on the build host."""
+    from frozen_runtime import bundle_runtime
+    runtime = bundle_runtime(bundle)
     cache = root / 'dist/windows-prerequisites'
     bootstrapper = signed_bootstrapper(cache)
     # Evergreen bootstrappers change. Require a valid Microsoft Authenticode
     # signature instead of trusting unversioned downloaded executable bytes.
     subprocess.run([compiler_path(), '/Qp', f'/DAppVersion={version}', f'/DBundleDir={bundle}',
+                    f'/DRuntimeDir={runtime.name}',
                     f'/DOutputDir={output}', f'/DBootstrapper={bootstrapper}',
                     str(root / 'packaging/windows.iss')], check=True)
     installer = output / f'portfolio-breakdown-{version}-windows-x64-setup.exe'

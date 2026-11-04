@@ -52,6 +52,12 @@ Pages deployment remain manual-only and require explicit dispatch approval.
       workspace file across same-version reinstall and uninstall. Retain
       `candidate-windows-setup-evidence`; this does not replace the clean Windows
       11 checks for normal shortcuts, optional runtime installation and native dialogs.
+- [ ] The pinned previous Windows Setup upgrades to this candidate in the same
+      isolated installation directory. Browser/native startup and history pass
+      with obsolete libraries still present; the new runtime reports the new
+      version. Reinstall/uninstall preserve the synthetic workspace and unrelated
+      files, and uninstall removes both registered payloads. Retain
+      `candidate-windows-upgrade-evidence`.
 - [ ] Linux binary tested on Ubuntu 22.04 and 24.04.
 
 For paid runs, dispatch **Build candidate** and **Experimental desktop candidates**

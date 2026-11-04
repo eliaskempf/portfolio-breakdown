@@ -231,7 +231,11 @@ class FakeWebview:
 
 
 @pytest.mark.parametrize('failure', [False, True])
-def test_window_monitor_completion_closes_window_and_reports_failures(tmp_path, monkeypatch, failure):
+@pytest.mark.parametrize('installed', [False, True])
+def test_window_monitor_completion_closes_window_and_reports_failures(tmp_path, monkeypatch, failure, installed):
+    if installed:
+        monkeypatch.setattr(sys, 'platform', 'win32')
+        monkeypatch.setattr(sys, 'frozen', True, raising=False)
     presentation = WindowPresentation()
     fake = FakeWebview()
     presentation.webview = fake
@@ -243,8 +247,10 @@ def test_window_monitor_completion_closes_window_and_reports_failures(tmp_path, 
             raise DataError('Invented server crash')
         return 0
     if failure:
-        with pytest.raises(DataError, match='--browser'):
+        with pytest.raises(DataError, match='Invented server crash') as error:
             presentation.run('http://127.0.0.1:1', stopped, monitor)
+        assert ('Portfolio Breakdown (browser)' if installed else '--browser') in str(error.value)
+        assert str(tmp_path / 'app-state' / 'window') in str(error.value)
     else:
         assert presentation.run('http://127.0.0.1:1', stopped, monitor) == 0
         assert presentation.state == 'first-view-rendered'

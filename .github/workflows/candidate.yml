@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       diagnostics_only:
-        description: Focused Windows browser and Mac native source checks; no installers
+        description: Focused checks only; installer-upgrade builds a Windows diagnostic package
         type: boolean
         default: false
       diagnostics_platforms:
@@ -12,9 +12,9 @@ on:
         options: [all, windows, macos, macos15, macos26]
         default: all
       diagnostics_suite:
-        description: Windows diagnostics to exercise without building installers
+        description: Windows diagnostic suite (installer-upgrade skips the full test matrix)
         type: choice
-        options: [navigation, rerun-sync]
+        options: [navigation, rerun-sync, installer-upgrade]
         default: navigation
 permissions:
   contents: read
@@ -74,6 +74,14 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && runner.os == 'Windows'
+        with:
+          name: candidate-windows-upgrade-evidence
+          overwrite: true
+          path: ${{ runner.temp }}/windows-upgrade-evidence
+          if-no-files-found: ignore
+          retention-days: 30
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: candidate-source-smoke-${{ matrix.platform }}
@@ -121,8 +129,42 @@ jobs:
       - run: uv sync --locked --group browser
       - run: uv run playwright install --with-deps chromium
       - run: uv run python tools/release.py test
+  windows-upgrade-diagnostic:
+    if: ${{ inputs.diagnostics_only && inputs.diagnostics_suite == 'installer-upgrade' }}
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: '0.12.10'
+          python-version: '3.12'
+      - run: uv sync --locked --all-groups
+      - run: choco install innosetup --version=6.5.4 --yes --no-progress --allow-downgrade
+      - run: uv run python tools/windows_bundle.py --ensure-runtime
+      - run: uv run playwright install chromium
+      - name: Build focused Windows diagnostic package
+        run: uv run python tools/release.py build
+      - name: Verify fresh install and pinned previous-version upgrade
+        run: uv run python tools/release.py test
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: windows-upgrade-diagnostic
+          path: |
+            ${{ runner.temp }}/windows-setup-evidence
+            ${{ runner.temp }}/windows-upgrade-evidence
+            dist/candidate/manifest.json
+          if-no-files-found: error
+          retention-days: 14
   diagnostics:
-    if: ${{ inputs.diagnostics_only }}
+    if: ${{ inputs.diagnostics_only && inputs.diagnostics_suite != 'installer-upgrade' }}
     strategy:
       fail-fast: false
       matrix:

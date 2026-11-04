@@ -63,7 +63,10 @@ Close the browser tab when finished; closing it does not stop the managed server
 
 `Portfolio Breakdown.exe` is the console-free entry and shortcut target.
 `portfolio-app.exe` is the console companion for CLI output and the hidden server.
-Both share the same `_internal` directory; keep the complete bundle together.
+Both share the same `_internal-<source revision>` directory; keep the complete bundle
+together. A new Windows build uses a separate runtime directory so an upgrade cannot
+import obsolete libraries or package metadata left by an older build. Setup leaves
+unrelated files untouched; uninstall removes files recorded by the installations.
 The console-free entry initializes private diagnostic logging before application
 imports and retains native startup-error reporting. The default Windows shortcut opens the native WebView2 window; `--browser`
 selects the browser fallback.

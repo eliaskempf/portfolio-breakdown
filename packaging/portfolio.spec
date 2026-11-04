@@ -5,6 +5,9 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy
 from portfolio_app.settings import BRANDING_ASSETS
 
 root = Path(SPECPATH).parent
+sys.path.insert(0, str(root / 'tools'))
+from frozen_runtime import windows_runtime_name
+runtime = windows_runtime_name(root) if sys.platform == 'win32' else '_internal'
 assets = root / 'src' / 'portfolio_app' / 'assets'
 datas = collect_data_files('streamlit')
 datas += [(str(path), 'portfolio_app') for path in (root / 'src/portfolio_app').glob('*.py')]
@@ -26,11 +29,13 @@ analysis = Analysis(
 analysis.datas = [entry for entry in analysis.datas if Path(entry[0]).name != 'direct_url.json']
 pyz = PYZ(analysis.pure)
 exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True, name='portfolio-app',
+          contents_directory=runtime,
           console=True, icon=str(assets / 'portfolio-breakdown.png') if (assets / 'portfolio-breakdown.png').exists() else None)
 executables = [exe]
 if sys.platform == 'win32':
     # Share the same package; keep a console entry for scripts and diagnostics.
     executables.append(EXE(pyz, analysis.scripts, [], exclude_binaries=True,
         name='Portfolio Breakdown', console=False,
+        contents_directory=runtime,
         icon=str(assets / 'portfolio-breakdown.png')))
 collection = COLLECT(*executables, analysis.binaries, analysis.datas, name='portfolio-app')

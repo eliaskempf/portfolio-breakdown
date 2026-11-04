@@ -147,7 +147,9 @@ def frozen_check(bundle):
     from portfolio_app.privacy import ICON_FILES, content_problem, icon_problem, path_problem
     if any(bundle.rglob('direct_url.json')):
         raise ValueError('Frozen bundle contains local installation provenance.')
-    package = bundle / '_internal' / 'portfolio_app'
+    from frozen_runtime import bundle_runtime
+    runtime = bundle_runtime(bundle)
+    package = runtime / 'portfolio_app'
     if not (package / 'ui.py').is_file():
         raise ValueError('Frozen bundle is missing application source.')
     for file in package.rglob('*'):
@@ -160,7 +162,7 @@ def frozen_check(bundle):
             reason = icon_problem(name, content) if name in ICON_FILES else content_problem(content)
         if reason:
             raise ValueError(f'Unapproved frozen application content: {name}: {reason}')
-    for metadata in (bundle / '_internal').glob('portfolio_breakdown-*.dist-info'):
+    for metadata in runtime.glob('portfolio_breakdown-*.dist-info'):
         for file in metadata.rglob('*'):
             if file.is_file() and (reason := content_problem(file.read_bytes())):
                 raise ValueError(f'Unapproved frozen application metadata: {file.name}: {reason}')
@@ -208,7 +210,8 @@ def build(output):
     # Frozen help uses the exact bundled site, including before Pages publication.
     help_metadata = dict(source_sha=docs_info['source_sha'], route=docs_info['route'],
                          site_url=docs_info['site_url'], topics=docs_info['topics'])
-    (bundle / '_internal/portfolio_app/documentation-build.json').write_text(
+    from frozen_runtime import bundle_runtime
+    (bundle_runtime(bundle) / 'portfolio_app/documentation-build.json').write_text(
         json.dumps(help_metadata, indent=2), encoding='utf-8')
     frozen_check(bundle)
     version = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))['project']['version']
@@ -316,7 +319,7 @@ def portable_lifecycle_smoke(command):
     print('Portable startup, repeated launch, stop and session cleanup passed.', flush=True)
 
 
-def windows_setup_smoke(directory, reference_bundle, evidence):
+def windows_setup_smoke(directory, reference_bundle, evidence, *, previous=None):
     """Install accepted Setup bytes privately, reinstall, then remove only that install.
 
     Native dialogs and standard-user visual acceptance remain separate. The host
@@ -332,7 +335,7 @@ def windows_setup_smoke(directory, reference_bundle, evidence):
     root = Path(mkdtemp(prefix='portfolio-setup-synthetic-'))
     installation, workspace = root / 'installed app é', root / 'preserved workspace ü'
     report = {'status': 'failed', 'installer_sha256': digest(installers[0]), 'checks': [],
-              'limits': ['same-version reinstall, not an older installer upgrade',
+              'limits': [*([] if previous else ['fresh install and same-version reinstall']),
                          'shortcuts and optional WebView2 installation disabled',
                          'native upload/save dialogs and clean Windows 11 acceptance remain manual']}
     env = dict(os.environ, PORTFOLIO_STATE_DIR=str(root / 'state'), PYTHONPATH='', PYTHONHOME='')
@@ -346,7 +349,26 @@ def windows_setup_smoke(directory, reference_bundle, evidence):
         payload = workspace_hashes(reference_bundle)
         setup_args = [str(installers[0]), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
                       '/RESTARTEXITCODE=3010', '/NOICONS', '/TASKS=', f'/DIR={installation}']
-        for stage in ('install', 'reinstall'):
+        legacy_payload = {}
+        sentinels = {}
+        if previous:
+            old_setup, old_bundle = previous
+            report['previous_installer_sha256'] = digest(old_setup)
+            legacy_payload = workspace_hashes(old_bundle)
+            subprocess.run([str(old_setup), *setup_args[1:], f'/LOG={evidence / "previous-install.log"}'],
+                           cwd=root, env=env, check=True, timeout=300)
+            for relative, checksum in legacy_payload.items():
+                if not (installation / relative).is_file() or digest(installation / relative) != checksum:
+                    raise ValueError(f'Previous installed payload differs from pinned release: {relative}')
+            # An unknown file keeps the obsolete namespace directory present.
+            # The new runtime must ignore it; Setup/uninstall must preserve it.
+            for relative in ('_internal/httptools/invented-user-file.txt', 'invented-user-file.txt'):
+                target = installation / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text('Deliberately invented unrelated file; preserve me.', encoding='utf-8')
+                sentinels[relative] = digest(target)
+            report['checks'].append('pinned previous Setup payload verified before upgrade')
+        for stage in (('upgrade', 'reinstall') if previous else ('install', 'reinstall')):
             subprocess.run([*setup_args, f'/LOG={evidence / (stage + ".log")}'],
                            cwd=root, env=env, check=True, timeout=300)
             if not uninstaller.is_file():
@@ -357,13 +379,28 @@ def windows_setup_smoke(directory, reference_bundle, evidence):
                     raise ValueError(f'Installed payload differs from portable candidate: {relative}')
             if workspace_hashes(workspace) != before:
                 raise ValueError(f'{stage} changed the synthetic persistent workspace.')
+            for relative, checksum in sentinels.items():
+                if not (installation / relative).is_file() or digest(installation / relative) != checksum:
+                    raise ValueError(f'{stage} changed an unrelated synthetic installation file.')
+            if previous:
+                retired = legacy_payload.keys() - payload.keys()
+                for relative in retired:
+                    if not (installation / relative).is_file() or digest(installation / relative) != legacy_payload[relative]:
+                        raise ValueError('Upgrade did not retain the old runtime regression fixture.')
+                report['retained_previous_files'] = len(retired)
             executable = installation / 'portfolio-app.exe'
+            if previous:
+                expected_version = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))['project']['version']
+                actual_version = subprocess.check_output([str(executable), '--version'],
+                    cwd=installation, env=env, text=True, timeout=30).strip()
+                if actual_version != expected_version:
+                    raise ValueError('Upgraded application loaded an obsolete package version.')
             # Read the preserved history through the installed public CLI after
             # both installs. The full browser scenario owns its own fixture.
             subprocess.run([str(executable), '--data-dir', str(workspace), '--backup-to', str(root / (stage + '-backup'))],
                            cwd=root, env=env, check=True, timeout=60)
             report['checks'].append(stage + ': payload matches portable and complete workspace preserved')
-            if stage == 'install':
+            if stage in {'install', 'upgrade'}:
                 subprocess.run([sys.executable, str(ROOT / 'tools/package_smoke.py'), str(executable),
                                 '--evidence', str(evidence / 'installed-browser')], check=True, timeout=600)
                 subprocess.run([sys.executable, str(ROOT / 'tools/window_smoke.py'),
@@ -380,13 +417,18 @@ def windows_setup_smoke(directory, reference_bundle, evidence):
                 subprocess.run([str(uninstaller), '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART',
                                 f'/LOG={evidence / "uninstall.log"}'],
                                cwd=root, env=env, check=True, timeout=180)
-                if any((installation / relative).exists() for relative in payload):
+                if any((installation / relative).exists() for relative in payload.keys() | legacy_payload.keys()):
                     raise ValueError('Uninstall left installed payload files behind.')
                 if windows_installation_present():
                     raise ValueError('Uninstall left the synthetic installation registration behind.')
                 if workspace_hashes(workspace) != before:
                     raise ValueError('Uninstall changed the synthetic persistent workspace.')
+                for relative, checksum in sentinels.items():
+                    if not (installation / relative).is_file() or digest(installation / relative) != checksum:
+                        raise ValueError('Uninstall changed an unrelated synthetic installation file.')
                 report['checks'].append('uninstall removed app/registration and preserved every workspace file')
+                if previous:
+                    report['checks'].append('upgrade/reinstall/uninstall preserved unrelated files and removed both registered payloads')
             elif completed:
                 raise ValueError('Missing uninstaller for the synthetic installed candidate.')
         except BaseException as exc:
@@ -431,6 +473,10 @@ def main():
                                 str(executable.with_name('Portfolio Breakdown.exe'))], check=True)
                 evidence_root = Path(os.environ.get('RUNNER_TEMP', str(directory.parent)))
                 windows_setup_smoke(directory, executable.parent, evidence_root / 'windows-setup-evidence')
+                from windows_upgrade import baseline
+                previous = baseline(Path(temporary) / 'previous-release')
+                windows_setup_smoke(directory, executable.parent,
+                                    evidence_root / 'windows-upgrade-evidence', previous=previous)
             else:
                 subprocess.run([sys.executable, str(ROOT / 'tools/package_smoke.py'), str(executable)], check=True)
 

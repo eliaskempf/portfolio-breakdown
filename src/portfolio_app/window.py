@@ -45,6 +45,15 @@ def runtime_available() -> bool:
     return False
 
 
+def startup_guidance() -> str:
+    from portfolio_app.settings import state_path
+    fallback = ('Try "Portfolio Breakdown (browser)" in the Windows Start menu.'
+                if sys.platform == 'win32' and getattr(sys, 'frozen', False)
+                else 'Try launching with --browser.')
+    return (f'{fallback}\n\nLog folder: {state_path() / "window"}\n'
+            'When reporting the problem, share the relevant error lines with personal details removed.')
+
+
 class WindowPresentation:
     def __init__(self):
         self.window = None
@@ -65,14 +74,14 @@ class WindowPresentation:
         if sys.platform != 'win32':
             raise DataError('The desktop window requires Windows. Use portfolio-app or --browser.')
         if not runtime_available():
-            raise DataError(f'WebView2 Runtime is missing. Install Evergreen from {RUNTIME_URL} '
-                            'or relaunch with --browser.')
+            raise DataError(f'WebView2 Runtime is missing. Install Evergreen from {RUNTIME_URL}.\n\n'
+                            + startup_guidance())
         try:
             import webview
             self.webview = webview
         except Exception as exc:
-            raise DataError('Window dependencies could not load. Reinstall the application or run uv sync --locked, '
-                            'or relaunch with --browser.') from exc
+            raise DataError('Window dependencies could not load. Reinstall the application.\n\n'
+                            + startup_guidance()) from exc
 
     def child(self, command):
         from portfolio_app.window_process import contained_child
@@ -343,8 +352,8 @@ class WindowPresentation:
             finished.wait(3)
         if self.failures:
             reason = str(self.failures[0]) or type(self.failures[0]).__name__
-            raise DataError(f'The application window failed: {reason} '
-                            'Relaunch with --browser; see the private window log.') from self.failures[0]
+            raise DataError(f'The application window failed: {reason}\n\n'
+                            + startup_guidance()) from self.failures[0]
         return result[0]
 
 
@@ -484,8 +493,7 @@ def main():
     except Exception:
         LOG.exception('Window startup failed')
         from portfolio_app.desktop import startup_error
-        startup_error('The application window could not start. Relaunch with --browser. '
-                      'Diagnostics are in the application state directory under window.')
+        startup_error('The application window could not start.\n\n' + startup_guidance())
         raise SystemExit(1) from None
 
 

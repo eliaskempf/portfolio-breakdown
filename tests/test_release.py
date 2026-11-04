@@ -116,13 +116,15 @@ def test_package_check_inspects_content_inside_archives(tmp_path, tainted):
         release_build.package_check(tmp_path)
 
 
-def test_frozen_check_rejects_installer_provenance_and_private_app_content(tmp_path):
-    package = tmp_path / '_internal' / 'portfolio_app'
+@pytest.mark.parametrize('runtime', ['_internal', '_internal-0123456789ab'])
+def test_frozen_check_rejects_installer_provenance_and_private_app_content(tmp_path, monkeypatch, runtime):
+    monkeypatch.syspath_prepend(str(ROOT / 'tools'))
+    package = tmp_path / runtime / 'portfolio_app'
     package.mkdir(parents=True)
     source = package / 'ui.py'
     source.write_text('# Synthetic application')
     release_build.frozen_check(tmp_path)
-    metadata = tmp_path / '_internal' / 'invented.dist-info'
+    metadata = tmp_path / runtime / 'invented.dist-info'
     metadata.mkdir()
     provenance = metadata / 'direct_url.json'
     provenance.write_text('{}')
@@ -486,8 +488,12 @@ def test_windows_setup_registration_guard_checks_both_hives_and_views(monkeypatc
     assert 'AllowNoIcons=yes' in (ROOT / 'packaging/windows.iss').read_text()
 
 
-@pytest.mark.parametrize('failure', [None, 'payload', 'reinstall', 'uninstall', 'browser'])
-def test_setup_lifecycle_checks_exact_payload_preservation_and_cleans_failure(tmp_path, monkeypatch, failure):
+@pytest.mark.parametrize('upgrade,failure', [
+    (upgrade, failure) for upgrade in (False, True)
+    for failure in (None, 'payload', 'reinstall', 'uninstall', 'browser', 'old-version', 'unrelated')
+    if upgrade or failure not in {'old-version', 'unrelated'}
+])
+def test_setup_lifecycle_checks_exact_payload_preservation_and_cleans_failure(tmp_path, monkeypatch, failure, upgrade):
     """Model installer effects, including corruption and browser failure, without Windows."""
     from types import SimpleNamespace
     import sys
@@ -497,6 +503,12 @@ def test_setup_lifecycle_checks_exact_payload_preservation_and_cleans_failure(tm
     installer.write_bytes(b'Invented setup bytes')
     for name in ('portfolio-app.exe', 'Portfolio Breakdown.exe', 'LICENSE'):
         (reference / name).write_bytes(('Invented payload: ' + name).encode())
+    previous_bundle = tmp_path / 'previous-portable'
+    previous_bundle.mkdir()
+    (previous_bundle / '_internal/httptools/parser').mkdir(parents=True)
+    (previous_bundle / '_internal/httptools/parser/old.pyd').write_bytes(b'Invented retired parser')
+    previous_setup = tmp_path / 'previous-setup.exe'
+    previous_setup.write_bytes(b'Invented previous setup')
     owned = tmp_path / 'synthetic-owned'
     owned.mkdir()
     evidence = tmp_path / 'evidence'
@@ -511,22 +523,36 @@ def test_setup_lifecycle_checks_exact_payload_preservation_and_cleans_failure(tm
     monkeypatch.setitem(sys.modules, 'history_package_smoke', SimpleNamespace(create_acceptance_workspace=seed))
     workspace = owned / 'preserved workspace ü'
     installation = owned / 'installed app é'
+    monkeypatch.setattr(release_build.subprocess, 'check_output',
+                        lambda *a, **kw: '0.1.0\n' if failure == 'old-version' else '0.2.0\n')
     def run(command, **kwargs):
         calls.append(command)
-        if command[0] == str(installer):
+        if command[0] in {str(installer), str(previous_setup)}:
             assert {'/NOICONS', '/TASKS=', '/NORESTART', '/RESTARTEXITCODE=3010'}.issubset(command)
             assert kwargs['cwd'] == owned and kwargs['timeout'] == 300
-            reinstall = registered[0]
-            shutil.copytree(reference, installation, dirs_exist_ok=True)
+            reinstall = sum(c[0] == str(installer) for c in calls) > 1
+            source = previous_bundle if command[0] == str(previous_setup) else reference
+            shutil.copytree(source, installation, dirs_exist_ok=True)
             (installation / 'unins000.exe').write_bytes(b'Invented uninstaller')
             registered[0] = True
-            if failure == 'payload':
+            if failure == 'payload' and source == reference:
                 (installation / 'LICENSE').write_text('Unexpected changed payload')
             if failure == 'reinstall' and reinstall:
                 (workspace / '.backups/old.json').unlink()
+            if failure == 'unrelated' and source == reference:
+                (installation / 'invented-user-file.txt').write_text('Unexpected changed file')
         elif command[0] == str(installation / 'unins000.exe'):
             assert '/NORESTART' in command
-            shutil.rmtree(installation)
+            for source in (reference, previous_bundle):
+                for path in source.rglob('*'):
+                    if path.is_file():
+                        (installation / path.relative_to(source)).unlink(missing_ok=True)
+            (installation / 'unins000.exe').unlink()
+            for path in sorted(installation.rglob('*'), key=lambda p: len(p.parts), reverse=True):
+                if path.is_dir() and not any(path.iterdir()):
+                    path.rmdir()
+            if not any(installation.iterdir()):
+                installation.rmdir()
             registered[0] = False
             if failure == 'uninstall':
                 (workspace / 'account-journal.json').write_text('Unexpected changed history')
@@ -534,15 +560,20 @@ def test_setup_lifecycle_checks_exact_payload_preservation_and_cleans_failure(tm
             raise RuntimeError('Invented installed browser failure')
         return SimpleNamespace(returncode=0)
     monkeypatch.setattr(release_build.subprocess, 'run', run)
+    options = {'previous': (previous_setup, previous_bundle)} if upgrade else {}
     if failure:
         with pytest.raises((ValueError, RuntimeError)):
-            release_build.windows_setup_smoke(candidate, reference, evidence)
+            release_build.windows_setup_smoke(candidate, reference, evidence, **options)
     else:
-        release_build.windows_setup_smoke(candidate, reference, evidence)
+        release_build.windows_setup_smoke(candidate, reference, evidence, **options)
         assert not owned.exists()
     report = json.loads((evidence / 'setup-result.json').read_text())
     assert report['status'] == ('failed' if failure else 'passed')
-    assert not registered[0] and not installation.exists()
+    assert not registered[0]
+    if failure and upgrade:
+        assert (installation / '_internal/httptools/invented-user-file.txt').is_file()
+    else:
+        assert not installation.exists()
     assert any(command[0].endswith('unins000.exe') for command in calls)
     if failure is None:
         assert sum(command[0] == str(installer) for command in calls) == 2

@@ -111,7 +111,10 @@ docs, corresponding source, notices and builder paths. Source-only checks do not
 establish binary privacy. Manual installer acceptance applies to Windows Setup
 on Windows 11. Linux and macOS use automated acceptance only; no manual Linux
 or Mac verification is required or planned. Hosted checks must exercise the
-exact installers, including Linux upgrade/removal and workspace preservation.
+exact installers, including Windows upgrade from the checksum-pinned previous
+release, Linux upgrade/removal and workspace preservation. Windows checks retain
+old runtime libraries and unrelated synthetic files while verifying the new
+runtime, then check removal of both installer-owned payloads.
 Record whether Python/uv are absent or merely excluded from PATH in the
 applicable test environment.
 

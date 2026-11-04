@@ -10,7 +10,8 @@ installer and archives directly. Its manifest and SHA256SUMS identify the source
 and exact files; retain its test/acceptance record. Local build and acceptance instructions are
 in [the release procedure](release-plan.md).
 Inside that download, extract the platform application archive. Keep the entire
-`portfolio-app` directory together; the executable needs its `_internal` folder.
+`portfolio-app` directory together; the executable needs its bundled runtime folder
+(`_internal` or `_internal-<build>`).
 Use a permanent application location outside your portfolio folder.
 
 On Windows, run `portfolio-breakdown-<version>-windows-x64-setup.exe` from the

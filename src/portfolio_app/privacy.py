@@ -15,6 +15,7 @@ RELEASE_FILES = {"packaging/posix-window.spec", "tools/desktop_build.py", "tools
                  ".github/dependabot.yml", "packaging/portfolio.spec", "packaging/entrypoint.py",
                  "tools/release.py", "tools/promote.py", "tools/package_smoke.py", "tools/history_package_smoke.py", "tools/run_candidate_tests.py",
                  "tools/browser_sync.py",
+                 "tools/frozen_runtime.py", "tools/windows_upgrade.py",
                  "packaging/window.spec", "packaging/window_entrypoint.py",
                  "tools/window_build.py", "tools/window_smoke.py", "tools/windows_bundle.py", "packaging/windows.iss",
                  "src/portfolio_app/documentation-build.json",

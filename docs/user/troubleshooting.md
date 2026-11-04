@@ -5,7 +5,7 @@
 | Browser tab closed but app still runs | Relaunch the same shortcut to reopen it, then choose **Portfolio settings → App & workspace → Stop application**. See [launch and stop](install.md#launch-stop) for recovery commands. |
 | Another version or mode opens | Stop that workspace's instance before relaunching; verify the executable/checkout and data directory. |
 | Explicit port is occupied | Use a different port or stop the owning app. Do not stop another workspace blindly. |
-| Package fails to start | Keep `_internal` beside the executable; try `--foreground` for diagnostics. Desktop startup logs are private per-user state files. |
+| Package fails to start | Keep the complete application folder together, including its `_internal` or `_internal-<build>` runtime. On Windows, try **Portfolio Breakdown (browser)** in the Start menu. See startup logs below. |
 | Source changes do not appear | Restart the owning server after Python module changes; browser refresh alone can leave imported modules stale. |
 | Position value is blank | Inspect ticker, manual price, quote currency, FX and [price status](performance.md#valuation). Buy-in is not a market price. |
 | Refresh shows old data | Cached fallback preserves the last successful data. Check provider dates separately from retrieval time. |
@@ -20,7 +20,20 @@
 | Plan is infeasible | Review target totals, valuation coverage, minimum buys, protected categories, eligibility and caps. |
 | Restore refuses a destination | Use a new directory; [restore](storage.md#backup) intentionally refuses overwrite. |
 
+## Startup logs
+
+On Windows, the normal **Portfolio Breakdown** shortcut opens the app window;
+**Portfolio Breakdown (browser)** opens it in your default browser. Both use the
+same local server, so switching presentation may not resolve a server failure.
+
+The window's startup error shows the actual log folder. To open the default
+location, paste `%LOCALAPPDATA%\portfolio-breakdown\window` into File Explorer's
+address bar. Look at the newest `window-*.log` files: the launcher and server can
+write separate logs. Browser-launch diagnostics are in
+`%LOCALAPPDATA%\portfolio-breakdown\launcher.log`.
+
 If reporting a problem, provide the app version/source commit, operating system,
 action and a minimal invented reproduction. Review diagnostics before sharing.
-Do not attach private workspace files, logs or portfolio screenshots. A successful
+Share only relevant error lines after removing personal paths and portfolio details;
+do not attach complete private logs, workspace files or portfolio screenshots. A successful
 server health response confirms liveness only; check the actual affected view.
