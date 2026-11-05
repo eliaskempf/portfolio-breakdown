@@ -14,7 +14,7 @@ on:
       diagnostics_suite:
         description: Windows diagnostic suite (installer-upgrade skips the full test matrix)
         type: choice
-        options: [navigation, rerun-sync, installer-upgrade]
+        options: [navigation, rerun-sync, backup-startup, installer-upgrade]
         default: navigation
 permissions:
   contents: read
@@ -187,7 +187,7 @@ jobs:
           python-version: ${{ runner.os == 'macOS' && '3.13' || '3.12' }}
       - run: uv sync --locked --extra window --all-groups
       - name: Windows synthetic navigation regressions
-        if: runner.os == 'Windows' && inputs.diagnostics_suite != 'rerun-sync'
+        if: runner.os == 'Windows' && inputs.diagnostics_suite == 'navigation'
         env:
           PORTFOLIO_REQUIRE_BROWSER: '1'
           PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/browser
@@ -195,12 +195,21 @@ jobs:
           uv run playwright install chromium
           uv run pytest tests/test_backup_browser.py tests/test_position_entry_browser.py tests/test_tour_browser.py tests/test_intro_browser.py::test_intro_welcome_navigation_and_help tests/test_report_download_browser.py -q --junitxml="$RUNNER_TEMP/release-diagnostics/browser.xml"
       - name: Windows slow-render regressions
-        if: runner.os == 'Windows' && inputs.diagnostics_suite != 'rerun-sync' && !cancelled()
+        if: runner.os == 'Windows' && inputs.diagnostics_suite == 'navigation' && !cancelled()
         env:
           PORTFOLIO_REQUIRE_BROWSER: '1'
           PORTFOLIO_TEST_CPU_RATE: '4'
           PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/slow-browser
         run: uv run pytest tests/test_backup_browser.py::test_archive_review_cancel_switch_restart_and_tabs tests/test_position_entry_browser.py::test_search_selection_and_settings_help tests/test_tour_browser.py::test_demo_tour_every_view_and_menu_replay tests/test_tour_browser.py::test_help_chevron_keeps_menu_open tests/test_intro_browser.py::test_intro_welcome_navigation_and_help tests/test_report_download_browser.py -q --junitxml="$RUNNER_TEMP/release-diagnostics/slow-browser.xml"
+      - name: Windows backup startup diagnosis
+        if: runner.os == 'Windows' && inputs.diagnostics_suite == 'backup-startup'
+        env:
+          PORTFOLIO_REQUIRE_BROWSER: '1'
+          PORTFOLIO_TEST_CPU_RATE: '4'
+          PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/backup-startup
+        run: |
+          uv run playwright install chromium
+          uv run pytest tests/test_backup_browser.py::test_archive_review_cancel_switch_restart_and_tabs -q --basetemp="$RUNNER_TEMP/backup-startup-workspace" --junitxml="$RUNNER_TEMP/release-diagnostics/backup-startup.xml"
       - name: Windows rerun synchronization regressions
         if: runner.os == 'Windows' && inputs.diagnostics_suite == 'rerun-sync'
         env:
@@ -235,6 +244,8 @@ jobs:
         if: always()
         with:
           name: release-diagnostics-${{ matrix.os }}
-          path: ${{ runner.temp }}/release-diagnostics
+          path: |
+            ${{ runner.temp }}/release-diagnostics
+            ${{ runner.temp }}/backup-startup-workspace/**/synthetic-server.log
           if-no-files-found: warn
           retention-days: 7

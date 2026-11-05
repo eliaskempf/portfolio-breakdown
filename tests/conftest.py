@@ -127,6 +127,70 @@ def browser_diagnostics(request, monkeypatch):
             page.on('websocket', lambda socket: page.synthetic_sockets.append(socket))
         return page
     monkeypatch.setattr(Browser, 'new_page', new_page)
+    if evidence:
+        # Setup/teardown exceptions may never reach the call-phase report hook.
+        request.addfinalizer(lambda: _cleanup_browser_evidence(request.node))
+        from playwright.sync_api._context_manager import PlaywrightContextManager
+        original_exit = PlaywrightContextManager.__exit__
+        def exit_with_evidence(manager, *args):
+            # Inline `with sync_playwright()` closes its loop before pytest's
+            # report hook. Stage evidence while this exception's pages live.
+            if len(args) >= 2 and args[1] is not None:
+                try:
+                    from pathlib import Path
+                    from tempfile import TemporaryDirectory
+                    staged = getattr(request.node, 'synthetic_early_evidence', None)
+                    if staged and request.node.synthetic_early_exception is not args[1]:
+                        staged.cleanup()
+                        staged = None
+                    if staged is None:
+                        Path(evidence).mkdir(parents=True, exist_ok=True)
+                        staged = TemporaryDirectory(prefix='.pending-', dir=evidence)
+                        request.node.synthetic_early_evidence = staged
+                    request.node.synthetic_early_exception = args[1]
+                    _capture_browser_pages(request.node, Path(staged.name), manager._connection)
+                except Exception:
+                    # Evidence must never replace the escaping test exception.
+                    pass
+            return original_exit(manager, *args)
+        monkeypatch.setattr(PlaywrightContextManager, '__exit__', exit_with_evidence)
+
+
+def _cleanup_browser_evidence(item):
+    staged = getattr(item, 'synthetic_early_evidence', None)
+    if staged:
+        try:
+            staged.cleanup()
+            item.synthetic_early_evidence = None
+        except Exception:
+            pass
+
+
+def _capture_browser_pages(item, root, connection=None):
+    """Best effort, once per owned page; one failed capture must not lose trace."""
+    captured = getattr(item, 'synthetic_captured_pages', set())
+    item.synthetic_captured_pages = captured
+    for index, page in enumerate(getattr(item, 'synthetic_pages', [])):
+        if index in captured or (connection is not None and page._impl_obj._connection is not connection):
+            continue
+        try:
+            if page.is_closed():
+                continue
+            captured.add(index)
+            errors = []
+            for action in (
+                lambda: page.screenshot(path=str(root / f'page-{index}.png')),
+                lambda: (root / f'page-{index}.html').write_text(page.content(), encoding='utf-8'),
+                lambda: page.context.tracing.stop(path=str(root / f'trace-{index}.zip')),
+            ):
+                try:
+                    action()
+                except Exception as exc:
+                    errors.append(str(exc))
+            if errors:
+                (root / f'capture-{index}.txt').write_text('\n'.join(errors), encoding='utf-8')
+        except Exception:
+            pass
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -135,19 +199,24 @@ def pytest_runtest_makereport(item, call):
     report = outcome.get_result()
     import os
     evidence = os.environ.get('PORTFOLIO_BROWSER_EVIDENCE')
-    if not evidence or report.when != 'call' or not report.failed:
+    if report.when != 'call':
         return
-    from hashlib import sha256
-    from pathlib import Path
-    root = Path(evidence) / sha256(item.nodeid.encode()).hexdigest()[:16]
-    root.mkdir(parents=True, exist_ok=True)
-    (root / 'test.txt').write_text(item.nodeid + '\n' + str(report.longrepr), encoding='utf-8')
-    for index, page in enumerate(getattr(item, 'synthetic_pages', [])):
-        if page.is_closed():
-            continue
-        try:
-            page.screenshot(path=str(root / f'page-{index}.png'))
-            (root / f'page-{index}.html').write_text(page.content(), encoding='utf-8')
-            page.context.tracing.stop(path=str(root / f'trace-{index}.zip'))
-        except Exception as exc:
-            (root / f'capture-{index}.txt').write_text(str(exc), encoding='utf-8')
+    staged = getattr(item, 'synthetic_early_evidence', None)
+    try:
+        if not evidence or not report.failed or not hasattr(item, 'synthetic_pages'):
+            return
+        from hashlib import sha256
+        from pathlib import Path
+        root = Path(evidence) / sha256(item.nodeid.encode()).hexdigest()[:16]
+        root.mkdir(parents=True, exist_ok=True)
+        (root / 'test.txt').write_text(item.nodeid + '\n' + str(report.longrepr), encoding='utf-8')
+        # A caught exception is not this test's failure. Never publish its
+        # premature capture, including when the test ultimately passes.
+        if staged and call.excinfo and call.excinfo.value is item.synthetic_early_exception:
+            for path in Path(staged.name).iterdir():
+                path.replace(root / path.name)
+        _capture_browser_pages(item, root)
+    except Exception:
+        pass
+    finally:
+        _cleanup_browser_evidence(item)
