@@ -52,11 +52,15 @@ must survive this operation; the native probe checks both.
 ## Automated verification
 
 The separate **Experimental desktop candidates** workflow builds and tests Linux
-and macOS independently. It uploads artifacts without publishing or promoting
-releases. The second Linux job installs the Ubuntu 22.04-built package on 24.04.
-Build candidate supplies the full browser suite and Windows regressions; the
-experiment runs each target's unit suite plus native and installed-package
-checks. Synthetic Qt and WebKit snapshots support visual review.
+and macOS independently. Supply `source_run` from complete same-commit CI/source
+validation. Packaging uploads `unaccepted-*` artifacts before separate acceptance
+jobs download them. Linux compatibility installs the Ubuntu 22.04-built package
+on 24.04 under X11 and Wayland. Linux reuses the full source suite and runs native
+lifecycle tests with the window extra; Mac retains its full Python 3.13 unit suite.
+Native and installed-package checks record the exact manifest digest. These jobs
+upload evidence and accepted artifacts without publishing releases. Synthetic Qt
+and WebKit snapshots support visual review. See the [release procedure](release-plan.md)
+for source reuse, diagnostic stages and acceptance gates.
 
 ```sh
 uv run pytest tests/test_posix_desktop.py tests/test_window.py tests/test_window_lifecycle.py tests/test_launcher.py

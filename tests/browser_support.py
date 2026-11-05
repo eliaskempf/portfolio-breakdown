@@ -82,10 +82,22 @@ def settle_layout(page):
     settle(page)
 
 
+def open_app(page, url, **kwargs):
+    page.streamlit_reruns = StreamlitReruns(page, settle=settle)
+    with page.expect_event('websocket', predicate=lambda socket: '/_stcore/stream' in socket.url):
+        page.goto(url, **kwargs)
+    page.streamlit_reruns.wait()
+    settle(page)
+
+
 def select_tab(page, name):
     settle(page)
     tab = page.get_by_role('tab', name=name, exact=True)
-    tab.click()
+    runs = getattr(page, 'streamlit_reruns', None)
+    if runs and runs.socket and tab.get_attribute('aria-selected') != 'true':
+        runs.click(page, tab)
+    elif tab.get_attribute('aria-selected') != 'true':
+        tab.click()
     expect(tab).to_have_attribute('aria-selected', 'true')
     settle(page)
     expect(tab).to_have_attribute('aria-selected', 'true')

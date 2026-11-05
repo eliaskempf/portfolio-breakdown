@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import threading
 from tempfile import TemporaryDirectory
 import time
@@ -416,6 +417,34 @@ def file_and_link_checks(page, frame, api, callback, handle, root):
     print('Native upload/save dialogs, saved synthetic CSV, download bytes and system-browser external link passed.', flush=True)
 
 
+@contextmanager
+def process_evidence(root, destination, stage):
+    """Cover launch/attachment failures, before a browser context exists."""
+    import shutil
+    records = []
+    destination = Path(destination) / stage if destination else None
+    if destination:
+        destination.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    def record(event, **details):
+        records.append(dict(seconds=round(time.monotonic()-started, 6), event=event, **details))
+    try:
+        yield record
+    except BaseException as exc:
+        record('failure', type=type(exc).__name__, error=str(exc))
+        raise
+    finally:
+        if destination:
+            try:
+                for path in root.rglob('*.log'):
+                    target = destination / 'logs' / path.relative_to(root)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(path, target)
+                (destination / 'process.json').write_text(json.dumps(records, indent=2), encoding='utf-8')
+            except Exception as exc:
+                print(f'Native process evidence capture failed: {exc}', file=sys.stderr)
+
+
 def smoke(executable, *, interactive=False, welcome_only=False, evidence=None):
     if os.name != 'nt':
         raise RuntimeError('Run the frozen window smoke test on native Windows.')
@@ -425,100 +454,108 @@ def smoke(executable, *, interactive=False, welcome_only=False, evidence=None):
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             debug_port = sock.getsockname()[1]
-        # Deliberately remove every Python/uv directory from the launched app's
-        # PATH. The test controller can use Python; the executable cannot rely on it.
-        windows = os.environ['WINDIR']
-        env = os.environ | {'PORTFOLIO_STATE_DIR': str(root / 'state'),
-            'PATH': os.pathsep.join([windows, str(Path(windows) / 'System32')]),
-            'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS': f'--remote-debugging-port={debug_port}',
-            'PYTHONPATH': '', 'PYTHONHOME': ''}
-        command = [str(executable), '--data-dir', str(root / 'workspace'), '--offline-demo']
-        process = subprocess.Popen(command, cwd=root, env=env)
-        try:
-            handle = until(lambda: window_handle(api, callback, process.pid))
-            def debugger_ready():
-                if process.poll() is not None:
-                    raise RuntimeError(f'Window exited with code {process.returncode}')
-                try:
-                    with urlopen(f'http://127.0.0.1:{debug_port}/json/version', timeout=1) as response:
-                        return json.load(response)
-                except OSError:
-                    return None
-            until(debugger_ready)
-            with sync_playwright() as playwright:
-                browser = playwright.chromium.connect_over_cdp(f'http://127.0.0.1:{debug_port}')
-                with native_evidence(browser, evidence, 'welcome' if welcome_only else 'application') as focus_records:
-                    page = wait_for_window_page(browser)
-                    frame = page.frame_locator('#portfolio-app')
-                    expect(frame.get_by_role('button', name='Explore demo', exact=True)).to_be_visible(timeout=90000)
-                    expect(page.locator('main')).to_have_count(0, timeout=15000)
-                    if welcome_only:
-                        close_without_dialog(api, callback, process, handle,
-                                             lambda: api.PostMessageW(handle, 0x0010, 0, 0))
-                        assert not list((root / 'state/sessions').glob('*.json'))
-                        print('Frozen window: welcome-screen close without error dialogs and session cleanup passed.')
-                        return
-                    frame.get_by_role('button', name='Explore demo', exact=True).click()
-                    frame.get_by_role('button', name='Not now', exact=True).click()
-                    expect(frame.locator('.js-plotly-plot').first).to_be_visible(timeout=30000)
-                    for tab in ['Exposure', 'Positions', 'Rebalance', 'Overview']:
-                        frame.get_by_role('tab', name=tab, exact=True).click()
-                        expect(frame.get_by_test_id('stException')).to_have_count(0)
-                    # Real F11 is sent only after confirming our own foreground HWND.
-                    original_handle = handle
-                    for fullscreen in (True, False):
-                        handle = focus_for_keyboard(api, callback, process, original_handle, page, focus_records, fullscreen)
-                        assert api.GetForegroundWindow() == handle, 'Owned window lost foreground before F11'
-                        api.keybd_event(0x7A, 0, 0, 0)
-                        api.keybd_event(0x7A, 0, 2, 0)
-                        expect(page.get_by_role('button', name='Windowed' if fullscreen else 'Fullscreen', exact=True)).to_be_visible()
-                        # Border-style changes can recreate the WinForms HWND.
+        stage = 'welcome' if welcome_only else 'application'
+        with process_evidence(root, evidence, stage) as record, (root / 'native-process.log').open('w', encoding='utf-8') as process_log:
+            # Deliberately remove every Python/uv directory from the launched app's
+            # PATH. The test controller can use Python; the executable cannot rely on it.
+            windows = os.environ['WINDIR']
+            env = os.environ | {'PORTFOLIO_STATE_DIR': str(root / 'state'),
+                'PATH': os.pathsep.join([windows, str(Path(windows) / 'System32')]),
+                'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS': f'--remote-debugging-port={debug_port}',
+                'PYTHONPATH': '', 'PYTHONHOME': ''}
+            command = [str(executable), '--data-dir', str(root / 'workspace'), '--offline-demo']
+            process = subprocess.Popen(command, cwd=root, env=env, stdout=process_log, stderr=subprocess.STDOUT)
+            record('launched', pid=process.pid, debugger_port=debug_port)
+            try:
+                handle = until(lambda: window_handle(api, callback, process.pid))
+                def debugger_ready():
+                    if process.poll() is not None:
+                        raise RuntimeError(f'Window exited with code {process.returncode}')
+                    try:
+                        with urlopen(f'http://127.0.0.1:{debug_port}/json/version', timeout=1) as response:
+                            version = json.load(response)
+                            record('debugger-ready', websocket=version.get('webSocketDebuggerUrl'))
+                            return version
+                    except OSError:
+                        return None
+                until(debugger_ready)
+                record('attaching', returncode=process.poll())
+                with sync_playwright() as playwright:
+                    browser = playwright.chromium.connect_over_cdp(f'http://127.0.0.1:{debug_port}')
+                    with native_evidence(browser, evidence, 'welcome' if welcome_only else 'application') as focus_records:
+                        page = wait_for_window_page(browser)
+                        frame = page.frame_locator('#portfolio-app')
+                        expect(frame.get_by_role('button', name='Explore demo', exact=True)).to_be_visible(timeout=90000)
+                        expect(page.locator('main')).to_have_count(0, timeout=15000)
+                        if welcome_only:
+                            close_without_dialog(api, callback, process, handle,
+                                                 lambda: api.PostMessageW(handle, 0x0010, 0, 0))
+                            assert not list((root / 'state/sessions').glob('*.json'))
+                            print('Frozen window: welcome-screen close without error dialogs and session cleanup passed.')
+                            return
+                        frame.get_by_role('button', name='Explore demo', exact=True).click()
+                        frame.get_by_role('button', name='Not now', exact=True).click()
+                        expect(frame.locator('.js-plotly-plot').first).to_be_visible(timeout=30000)
+                        for tab in ['Exposure', 'Positions', 'Rebalance', 'Overview']:
+                            frame.get_by_role('tab', name=tab, exact=True).click()
+                            expect(frame.get_by_test_id('stException')).to_have_count(0)
+                        # Real F11 is sent only after confirming our own foreground HWND.
+                        original_handle = handle
+                        for fullscreen in (True, False):
+                            handle = focus_for_keyboard(api, callback, process, original_handle, page, focus_records, fullscreen)
+                            assert api.GetForegroundWindow() == handle, 'Owned window lost foreground before F11'
+                            api.keybd_event(0x7A, 0, 0, 0)
+                            api.keybd_event(0x7A, 0, 2, 0)
+                            expect(page.get_by_role('button', name='Windowed' if fullscreen else 'Fullscreen', exact=True)).to_be_visible()
+                            # Border-style changes can recreate the WinForms HWND.
+                            handle = window_handle(api, callback, process.pid)
+                            assert handle and window_pid(api, handle) == process.pid
+                            if fullscreen:
+                                class Monitor(ctypes.Structure):
+                                    _fields_ = [('size', wintypes.DWORD), ('bounds', wintypes.RECT),
+                                                ('work', wintypes.RECT), ('flags', wintypes.DWORD)]
+                                info = Monitor()
+                                info.size = ctypes.sizeof(info)
+                                assert api.GetMonitorInfoW(api.MonitorFromWindow(handle, 2), ctypes.byref(info))
+                                rect, client = wintypes.RECT(), wintypes.RECT()
+                                assert api.GetWindowRect(handle, ctypes.byref(rect))
+                                assert api.GetClientRect(handle, ctypes.byref(client))
+                                assert tuple(getattr(rect, k) for k in ('left', 'top', 'right', 'bottom')) == tuple(
+                                    getattr(info.bounds, k) for k in ('left', 'top', 'right', 'bottom'))
+                                assert client.right == rect.right - rect.left and client.bottom == rect.bottom - rect.top
+                        # Repeat launch must focus the existing process, not create a server.
+                        repeat = subprocess.run(command, cwd=root, env=env, timeout=20)
+                        assert repeat.returncode == 0 and process.poll() is None
+                        assert window_handle(api, callback, process.pid) == handle
+                        frame.get_by_role('button', name='?', exact=True).click()
+                        help_link = frame.get_by_role('link', name='User guide', exact=False)
+                        href = help_link.get_attribute('href')
+                        assert href.startswith('http://127.0.0.1:')
+                        with urlopen(href, timeout=3) as response:
+                            assert b'Portfolio Breakdown' in response.read()
+                        frame.get_by_role('button', name='?', exact=True).click()
+                        if interactive:
+                            file_and_link_checks(page, frame, api, callback, handle, root)
+                        # The custom exit command exercises shutdown in borderless mode.
+                        page.get_by_role('button', name='Fullscreen', exact=True).click()
+                        expect(page.get_by_role('button', name='Windowed', exact=True)).to_be_visible()
                         handle = window_handle(api, callback, process.pid)
                         assert handle and window_pid(api, handle) == process.pid
-                        if fullscreen:
-                            class Monitor(ctypes.Structure):
-                                _fields_ = [('size', wintypes.DWORD), ('bounds', wintypes.RECT),
-                                            ('work', wintypes.RECT), ('flags', wintypes.DWORD)]
-                            info = Monitor()
-                            info.size = ctypes.sizeof(info)
-                            assert api.GetMonitorInfoW(api.MonitorFromWindow(handle, 2), ctypes.byref(info))
-                            rect, client = wintypes.RECT(), wintypes.RECT()
-                            assert api.GetWindowRect(handle, ctypes.byref(rect))
-                            assert api.GetClientRect(handle, ctypes.byref(client))
-                            assert tuple(getattr(rect, k) for k in ('left', 'top', 'right', 'bottom')) == tuple(
-                                getattr(info.bounds, k) for k in ('left', 'top', 'right', 'bottom'))
-                            assert client.right == rect.right - rect.left and client.bottom == rect.bottom - rect.top
-                    # Repeat launch must focus the existing process, not create a server.
-                    repeat = subprocess.run(command, cwd=root, env=env, timeout=20)
-                    assert repeat.returncode == 0 and process.poll() is None
-                    assert window_handle(api, callback, process.pid) == handle
-                    frame.get_by_role('button', name='?', exact=True).click()
-                    help_link = frame.get_by_role('link', name='User guide', exact=False)
-                    href = help_link.get_attribute('href')
-                    assert href.startswith('http://127.0.0.1:')
-                    with urlopen(href, timeout=3) as response:
-                        assert b'Portfolio Breakdown' in response.read()
-                    frame.get_by_role('button', name='?', exact=True).click()
-                    if interactive:
-                        file_and_link_checks(page, frame, api, callback, handle, root)
-                    # The custom exit command exercises shutdown in borderless mode.
-                    page.get_by_role('button', name='Fullscreen', exact=True).click()
-                    expect(page.get_by_role('button', name='Windowed', exact=True)).to_be_visible()
-                    handle = window_handle(api, callback, process.pid)
-                    assert handle and window_pid(api, handle) == process.pid
-                    close_without_dialog(api, callback, process, handle,
-                                         lambda: page.get_by_role('button', name='Exit', exact=True).click())
-            assert not list((root / 'state/sessions').glob('*.json'))
-            print('Frozen window: startup, charts/tabs, real F11, monitor edges, repeat launch, bundled help and shutdown passed.')
-        finally:
-            if process.poll() is None:
-                if (handle := window_handle(api, callback, process.pid)):
-                    api.PostMessageW(handle, 0x0010, 0, 0)  # WM_CLOSE: normal owned-window cleanup.
-                try:
-                    process.wait(timeout=15)
-                except subprocess.TimeoutExpired:
-                    process.terminate()
-                    process.wait(timeout=20)
+                        close_without_dialog(api, callback, process, handle,
+                                             lambda: page.get_by_role('button', name='Exit', exact=True).click())
+                assert not list((root / 'state/sessions').glob('*.json'))
+                print('Frozen window: startup, charts/tabs, real F11, monitor edges, repeat launch, bundled help and shutdown passed.')
+            finally:
+                record('before-cleanup', returncode=process.poll())
+                if process.poll() is None:
+                    if (handle := window_handle(api, callback, process.pid)):
+                        api.PostMessageW(handle, 0x0010, 0, 0)  # WM_CLOSE: normal owned-window cleanup.
+                    try:
+                        process.wait(timeout=15)
+                    except subprocess.TimeoutExpired:
+                        process.terminate()
+                        process.wait(timeout=20)
+                record('cleanup-complete', returncode=process.poll())
 
 
 if __name__ == '__main__':
@@ -526,6 +563,9 @@ if __name__ == '__main__':
     parser.add_argument('executable', type=Path)
     parser.add_argument('--interactive', action='store_true', help='Also exercise native file dialogs and the system browser')
     parser.add_argument('--evidence', type=Path, help='Synthetic native failure evidence directory')
+    parser.add_argument('--stage', choices=['all', 'startup', 'interaction'], default='all')
     args = parser.parse_args()
-    smoke(args.executable.resolve(), welcome_only=True, evidence=args.evidence)
-    smoke(args.executable.resolve(), interactive=args.interactive, evidence=args.evidence)
+    if args.stage in ('all', 'startup'):
+        smoke(args.executable.resolve(), welcome_only=True, evidence=args.evidence)
+    if args.stage in ('all', 'interaction'):
+        smoke(args.executable.resolve(), interactive=args.interactive, evidence=args.evidence)

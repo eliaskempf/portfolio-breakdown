@@ -4,6 +4,8 @@ Run with ``uv run --with playwright pytest tests/test_grid_browser.py`` after
 installing Playwright's Chromium. PORTFOLIO_TEST_CHROMIUM can select a local binary.
 Streamlit AppTest does not execute the grid's JavaScript.
 """
+from browser_support import open_app
+from browser_runtime import browser_session, start_server
 
 import os
 import socket
@@ -51,7 +53,7 @@ st.html('<div style="height:1200px"></div>')
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     url = f"http://127.0.0.1:{port}"
-    process = subprocess.Popen(
+    process = start_server(
         [sys.executable, "-m", "streamlit", "run", str(app),
          "--server.headless=true", "--server.address=127.0.0.1",
          f"--server.port={port}", "--server.fileWatcherType=none",
@@ -77,13 +79,13 @@ st.html('<div style="height:1200px"></div>')
 
 @pytest.fixture
 def page(grid_url):
-    with playwright.sync_playwright() as runner:
+    with browser_session() as runner:
         browser = runner.chromium.launch(
             executable_path=os.environ.get("PORTFOLIO_TEST_CHROMIUM"),
             args=["--no-sandbox"],
         )
         page = browser.new_page(viewport={"width": 1400, "height": 800})
-        page.goto(grid_url)
+        open_app(page, grid_url)
         page.wait_for_function("!!window.__portfolioGridInteractions")
         # The dashboard uses the shared read-only table; editor tests use Glide.
         page.locator('[data-testid="stDataFrame"], table[aria-label="Allocation"]').first.wait_for()

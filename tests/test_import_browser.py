@@ -1,4 +1,5 @@
 """Optional real-browser onboarding coverage using exclusively invented holdings."""
+from browser_runtime import browser_session, start_server
 import os
 import socket
 import subprocess
@@ -42,7 +43,7 @@ render_app(Path(__file__).parent / 'synthetic-portfolio', demo=True,
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
-    process = subprocess.Popen(
+    process = start_server(
         [sys.executable, '-m', 'streamlit', 'run', str(app), '--server.address=127.0.0.1',
          f'--server.port={port}', '--server.headless=true', '--server.fileWatcherType=none',
          '--browser.gatherUsageStats=false'], cwd=tmp_path,
@@ -58,7 +59,7 @@ render_app(Path(__file__).parent / 'synthetic-portfolio', demo=True,
                 time.sleep(.1)
         else:
             pytest.fail('Synthetic import preview did not start')
-        with playwright.sync_playwright() as runner:
+        with browser_session() as runner:
             browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1440, 'height': 1000})
             page.streamlit_reruns = StreamlitReruns(page, settle=settle)

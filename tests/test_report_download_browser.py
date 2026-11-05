@@ -1,4 +1,5 @@
 """Deferred report downloads retain their callback while its worker is pending."""
+from browser_runtime import browser_session, start_server
 import json
 import os
 from pathlib import Path
@@ -61,7 +62,7 @@ report_view()
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     with (tmp_path / 'server.log').open('w') as log:
-        process = subprocess.Popen([
+        process = start_server([
             sys.executable, '-m', 'streamlit', 'run', str(script),
             '--server.address=127.0.0.1', f'--server.port={port}',
             '--server.headless=true', '--server.fileWatcherType=none',
@@ -74,7 +75,7 @@ report_view()
                     break
                 except OSError:
                     time.sleep(.1)
-            with playwright.sync_playwright() as runner:
+            with browser_session() as runner:
                 browser = runner.chromium.launch(
                     executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
                 page = browser.new_page(viewport={'width': 1280, 'height': 900})

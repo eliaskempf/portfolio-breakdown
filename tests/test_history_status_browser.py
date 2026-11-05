@@ -1,4 +1,5 @@
 """History checklist navigation with invented holdings and offline evidence."""
+from browser_runtime import browser_session, start_server
 from datetime import date
 from decimal import Decimal
 
@@ -97,7 +98,7 @@ render_history_status_list(root/'holdings.csv',snapshot,snapshot.holdings)
 ''')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
-    process=subprocess.Popen([sys.executable,'-m','streamlit','run',str(script),'--server.address=127.0.0.1',
+    process=start_server([sys.executable,'-m','streamlit','run',str(script),'--server.address=127.0.0.1',
         f'--server.port={port}','--server.headless=true','--server.fileWatcherType=none','--browser.gatherUsageStats=false'],
         stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     try:
@@ -106,7 +107,7 @@ render_history_status_list(root/'holdings.csv',snapshot,snapshot.holdings)
             try:
                 urlopen(f'http://127.0.0.1:{port}/_stcore/health',timeout=1);break
             except OSError: time.sleep(.1)
-        with playwright.sync_playwright() as runner:
+        with browser_session() as runner:
             browser=runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),args=['--no-sandbox'])
             page=browser.new_page(viewport={'width':1440,'height':1000})
             page.goto(f'http://127.0.0.1:{port}')

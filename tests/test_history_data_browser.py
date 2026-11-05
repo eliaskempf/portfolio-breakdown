@@ -1,4 +1,5 @@
 """Quote corrections retain disclosed provenance in a synthetic running view."""
+from browser_runtime import browser_session, start_server
 from dataclasses import replace
 import os
 import socket
@@ -42,7 +43,7 @@ render_history_data(root,journal,HistoryScope(('position-0',)),store,revision,vi
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     url = f'http://127.0.0.1:{port}'
-    process = subprocess.Popen([sys.executable, '-m', 'streamlit', 'run', str(script),
+    process = start_server([sys.executable, '-m', 'streamlit', 'run', str(script),
         '--server.address=127.0.0.1', f'--server.port={port}', '--server.headless=true',
         '--server.fileWatcherType=none', '--browser.gatherUsageStats=false'],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -56,7 +57,7 @@ render_history_data(root,journal,HistoryScope(('position-0',)),store,revision,vi
                 time.sleep(.1)
         else:
             pytest.fail('Synthetic history preview did not start')
-        with playwright.sync_playwright() as runner:
+        with browser_session() as runner:
             browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1280, 'height': 900})
             page.goto(url); settle(page)

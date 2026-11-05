@@ -1,0 +1,95 @@
+name: Focused release diagnostics
+'on':
+  workflow_dispatch:
+    inputs:
+      platform:
+        type: choice
+        options:
+        - linux
+        - windows
+        default: linux
+        description: Host for the selected check
+      suite:
+        type: choice
+        options:
+        - tests
+        - source-smoke
+        - native-startup
+        - native-interaction
+        - packaged-browser
+        - installer
+        - installer-upgrade
+        default: tests
+      test_nodeids:
+        type: string
+        default: ''
+        description: Newline-separated collected test node IDs or test files
+      repeat:
+        type: number
+        default: 1
+        description: 1–10 independent repetitions; stops on first failure
+      cpu_rate:
+        type: choice
+        options:
+        - '1'
+        - '4'
+        default: '1'
+      artifact_run:
+        type: string
+        default: ''
+        description: Existing candidate run at this exact source revision
+      artifact_name:
+        type: string
+        default: ''
+        description: Exact unaccepted or candidate artifact name
+      build_artifact:
+        type: boolean
+        default: false
+        description: Build this revision once when no saved artifact exists (packaged suites only)
+permissions:
+  contents: read
+  actions: read
+jobs:
+  diagnose:
+    runs-on: ${{ inputs.platform == 'windows' && 'windows-2022' || 'ubuntu-22.04' }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - run: git config --global core.autocrlf false
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+      with:
+        version: 0.12.10
+        python-version: '3.12'
+    - run: uv sync --locked --all-groups
+    - run: uv run playwright install --with-deps chromium
+    - if: inputs.build_artifact && inputs.platform == 'windows'
+      run: |-
+        choco install innosetup --version=6.5.4 --yes --no-progress --allow-downgrade
+        uv run python tools/windows_bundle.py --ensure-runtime
+    - name: Selected checks
+      env:
+        TEST_NODEIDS: ${{ inputs.test_nodeids }}
+        DIAGNOSTIC_SUITE: ${{ inputs.suite }}
+        REPEATS: ${{ inputs.repeat }}
+        CPU_RATE: ${{ inputs.cpu_rate }}
+        ARTIFACT_RUN: ${{ inputs.artifact_run }}
+        ARTIFACT_NAME: ${{ inputs.artifact_name }}
+        GH_TOKEN: ${{ github.token }}
+        BUILD_ARTIFACT: ${{ inputs.build_artifact }}
+      run: |-
+        args=()
+        if [ "$BUILD_ARTIFACT" = true ]; then args+=(--build-artifact); fi
+        uv run python tools/run_diagnostics.py --suite "$DIAGNOSTIC_SUITE" --repeat "$REPEATS" --cpu-rate "$CPU_RATE" --artifact-run "$ARTIFACT_RUN" --artifact-name "$ARTIFACT_NAME" --output dist/diagnostic "${args[@]}"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: diagnostic-${{ inputs.platform }}
+        path: dist/diagnostic
+        overwrite: true
+        if-no-files-found: error
+        retention-days: 30
+      if: always()

@@ -22,7 +22,8 @@ dependency audits also run weekly. Installer builds, release publication and
 Pages deployment remain manual-only and require explicit dispatch approval.
 
 - [ ] Finish source/docs review locally, merge the approved source into `main`,
-      then manually run **Build candidate** once on that commit. No tag-triggered
+      reuse its completed CI/source-validation run via `source_run`, then manually
+      run **Build candidate** once on that commit. No tag-triggered
       build is needed: publication creates `v<candidate-package-version>` at the
       tested commit.
 - [ ] For a transient failure at the same source SHA, choose **Re-run failed jobs**;
@@ -50,28 +51,35 @@ Pages deployment remain manual-only and require explicit dispatch approval.
 - [ ] Windows Setup installs its exact portable payload into an isolated folder,
       passes installed browser/native smoke, and preserves every synthetic
       workspace file across same-version reinstall and uninstall. Retain
-      `candidate-windows-setup-evidence`; this does not replace the clean Windows
+      `acceptance-windows-x64-installer`; this does not replace the clean Windows
       11 checks for normal shortcuts, optional runtime installation and native dialogs.
 - [ ] The pinned previous Windows Setup upgrades to this candidate in the same
       isolated installation directory. Browser/native startup and history pass
       with obsolete libraries still present; the new runtime reports the new
       version. Reinstall/uninstall preserve the synthetic workspace and unrelated
       files, and uninstall removes both registered payloads. Retain
-      `candidate-windows-upgrade-evidence`.
+      `acceptance-windows-x64-installer-upgrade`.
 - [ ] Linux binary tested on Ubuntu 22.04 and 24.04.
 
 For paid runs, dispatch **Build candidate** and **Experimental desktop candidates**
-once each on the same final source SHA; leave diagnostics-only disabled for the
-installer build. The existing timeouts cap configured execution at 45 Windows,
-145 Linux and 85 macOS runner-minutes, excluding unrelated CI/publication jobs
-and reruns. Do not raise timeouts or add automatic test retries to obtain a green
-candidate. Investigate failures locally before another paid attempt.
+once each on the same final source SHA with the same verified `source_run`; leave
+diagnostics-only disabled for the installer build. Review the current workflow
+job ceilings and fan-out before paid dispatch. Do not raise timeouts or add
+automatic test retries to obtain a green candidate. Inspect first-failure
+evidence and run a focused diagnostic before another paid candidate attempt.
+
+- [ ] Source evidence has exact SHA/lock, required platform jobs and exhaustive
+      collection/execution/JUnit coverage; no diagnostic subset was substituted.
+- [ ] Each acceptance/compatibility receipt identifies the saved package's
+      manifest digest and build run/attempt. `unaccepted-*` alone is insufficient.
+- [ ] Failed acceptance was retried against saved bytes without rebuilding;
+      a source change invalidated earlier source and artifact evidence.
 
 The publisher requires Windows/Linux browser artifacts from one successful
 Build candidate run and the native Linux artifact via `linux_native_candidate_run`.
 The Linux build and both X11/Wayland compatibility jobs must pass for those bytes.
 For the planned Mac download, supply `macos_candidate_run` and `experimental_macos`;
-its three Mac jobs must also pass. All platforms must match source, lock, version
+its build, acceptance and both compatibility jobs must also pass. All platforms must match source, lock, version
 and frozen docs. Retried compatibility checks may accept unchanged earlier builds;
 checks from before a replacement build do not accept the replacement. Failed Mac
 gates require repair or an explicit deferral decision, never silent omission.

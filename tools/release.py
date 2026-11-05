@@ -449,6 +449,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['preflight', 'build', 'check', 'test'])
     parser.add_argument('--directory', type=Path, default=ROOT / 'dist/candidate')
+    parser.add_argument('--stage', choices=['all', 'packaged-browser', 'native-startup', 'native-interaction', 'installer', 'installer-upgrade'], default='all')
+    parser.add_argument('--evidence', type=Path)
     args = parser.parse_args()
     directory = args.directory.resolve()
     if args.action == 'preflight':
@@ -458,27 +460,41 @@ def main():
     elif args.action == 'check':
         package_check(directory)
     else:
-        from promote import verify_candidate
-        manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
-        verify_candidate(directory, commit=manifest['commit'], run_id=manifest['run_id'],
-                         run_attempt=manifest['run_attempt'], platform=manifest['platform'],
-                         require_publishable=False)
-        from tempfile import TemporaryDirectory
-        with TemporaryDirectory(prefix='portfolio-package-') as temporary:
-            executable = extract_bundle(directory, Path(temporary))
-            frozen_check(executable.parent)
+        test_candidate(directory, stage=args.stage, evidence=args.evidence)
+
+
+def test_candidate(directory, *, stage='all', evidence=None):
+    if stage not in ('all', 'packaged-browser', 'native-startup', 'native-interaction', 'installer', 'installer-upgrade'):
+        raise ValueError('Unknown acceptance stage')
+    from promote import verify_candidate
+    manifest = json.loads((directory / 'manifest.json').read_text(encoding='utf-8'))
+    verify_candidate(directory, commit=manifest['commit'], run_id=manifest['run_id'],
+                     run_attempt=manifest['run_attempt'], platform=manifest['platform'],
+                     require_publishable=False)
+    evidence = (evidence or Path(os.environ.get('RUNNER_TEMP', str(directory.parent))) / 'package-evidence').resolve()
+    evidence.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix='portfolio-package-') as temporary:
+        executable = extract_bundle(directory, Path(temporary))
+        frozen_check(executable.parent)
+        if stage in ('native-startup', 'native-interaction', 'installer', 'installer-upgrade') and os.name != 'nt':
+            raise ValueError('Selected acceptance stage requires Windows')
+        if stage in ('all', 'packaged-browser'):
             if os.name == 'nt':
                 portable_lifecycle_smoke([str(executable)])
+            subprocess.run([sys.executable, str(ROOT / 'tools/package_smoke.py'), str(executable),
+                            '--evidence', str(evidence / 'browser')], check=True)
+        if os.name == 'nt':
+            if stage in ('all', 'native-startup', 'native-interaction'):
+                native_stage = {'native-startup': 'startup', 'native-interaction': 'interaction'}.get(stage, 'all')
                 subprocess.run([sys.executable, str(ROOT / 'tools/window_smoke.py'),
-                                str(executable.with_name('Portfolio Breakdown.exe'))], check=True)
-                evidence_root = Path(os.environ.get('RUNNER_TEMP', str(directory.parent)))
-                windows_setup_smoke(directory, executable.parent, evidence_root / 'windows-setup-evidence')
+                                str(executable.with_name('Portfolio Breakdown.exe')), '--stage', native_stage,
+                                '--evidence', str(evidence / 'native')], check=True)
+            if stage in ('all', 'installer'):
+                windows_setup_smoke(directory, executable.parent, evidence / 'setup')
+            if stage in ('all', 'installer-upgrade'):
                 from windows_upgrade import baseline
                 previous = baseline(Path(temporary) / 'previous-release')
-                windows_setup_smoke(directory, executable.parent,
-                                    evidence_root / 'windows-upgrade-evidence', previous=previous)
-            else:
-                subprocess.run([sys.executable, str(ROOT / 'tools/package_smoke.py'), str(executable)], check=True)
+                windows_setup_smoke(directory, executable.parent, evidence / 'upgrade', previous=previous)
 
 
 if __name__ == '__main__':

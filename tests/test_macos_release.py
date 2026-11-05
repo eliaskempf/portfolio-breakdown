@@ -55,9 +55,11 @@ class MacGitHub(FakeGitHub):
         self.repack()
         self.mac_run = dict(self.run, path='.github/workflows/desktop-experiment.yml', conclusion='failure')
         self.jobs = [dict(name=name, status='completed', conclusion='success', run_attempt=1, head_sha='a' * 40) for name in
-                     ['build-macos-arm64', 'macos-compatibility-macos-15', 'macos-compatibility-macos-26']]
+                     ['build-macos-arm64', 'macos-compatibility-macos-15', 'macos-compatibility-macos-26', 'accept-macos-arm64', 'source-gate']]
         self.jobs.append(dict(name='build-linux-x64', status='completed', conclusion='failure'))
         self.mac_artifacts = [dict(id=2, name='candidate-macos-arm64', expired=False)]
+        self.refresh_evidence()
+        self.native_evidence(self.mac_folder, 'macos-arm64', '456', self.jobs, self.mac_artifacts)
         self.existing_draft = False
 
     def repack(self):
@@ -146,6 +148,7 @@ def test_compatibility_retry_can_accept_same_earlier_mac_build(tmp_path, monkeyp
     api = MacGitHub(tmp_path, monkeypatch)
     api.mac_run['run_attempt'] = 2
     api.jobs[1]['run_attempt'] = 2
+    api.native_evidence(api.mac_folder, 'macos-arm64', '456', api.jobs, api.mac_artifacts)
     promote.promote(api, 'invented/project', '123', linux_native_run_id='789', macos_run_id='456')
     assert api.dmg_name in api.uploaded
 
@@ -158,7 +161,7 @@ def test_mac_checks_must_identify_the_current_artifact_not_a_replaced_build(tmp_
     if new_build:
         rewrite_candidate_manifest(api.mac_folder, run_attempt='2')
         api.repack()
-    with pytest.raises(ValueError, match='job evidence'):
+    with pytest.raises(ValueError, match='job evidence|Acceptance'):
         promote.promote(api, 'invented/project', '123', linux_native_run_id='789', macos_run_id='456')
     assert api.mutations == [] and api.uploaded == {}
 
@@ -166,10 +169,13 @@ def test_mac_checks_must_identify_the_current_artifact_not_a_replaced_build(tmp_
 def test_workflow_mac_jobs_and_upload_match_publisher_contract():
     import yaml
     workflow = yaml.load((ROOT / '.github/workflows/desktop-experiment.yml').read_text(), Loader=yaml.BaseLoader)
-    build = workflow['jobs']['build']
-    assert build['name'] == 'build-${{ matrix.target }}'
-    upload = next(step for step in build['steps'] if step.get('with', {}).get('name') == 'candidate-macos-arm64')
-    assert upload['if'] == "runner.os == 'macOS'"  # Default success guard, never always().
+    build = workflow['jobs']['build-macos-arm64']
+    assert build['name'] == 'build-macos-arm64'
+    assert any(s.get('with', {}).get('name') == 'unaccepted-macos-arm64' for s in build['steps'])
+    accept = workflow['jobs']['accept-macos-arm64']
+    assert accept['needs'] == 'build-macos-arm64'
+    upload = next(step for step in accept['steps'] if step.get('with', {}).get('name') == 'candidate-macos-arm64')
+    assert 'if' not in upload  # Default success guard, never always().
     assert upload['with']['overwrite'] == 'true'
     compatibility = workflow['jobs']['macos-compatibility']
     assert compatibility['name'] == 'macos-compatibility-${{ matrix.os }}'

@@ -3,6 +3,7 @@
 Run with ``uv run --with playwright pytest tests/test_dashboard_browser.py``.
 Only an invented in-memory portfolio is used; no prices or user data are read.
 """
+from browser_runtime import start_server
 
 import socket
 import subprocess
@@ -43,7 +44,7 @@ render_search_box("", [], "")
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     url = f"http://127.0.0.1:{port}"
-    process = subprocess.Popen(
+    process = start_server(
         [sys.executable, "-m", "streamlit", "run", str(app),
          "--server.headless=true", "--server.address=127.0.0.1", f"--server.port={port}",
          "--server.fileWatcherType=none", "--browser.gatherUsageStats=false"],

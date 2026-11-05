@@ -102,8 +102,8 @@ def test_all_worker_failures_survive_aggregation(tmp_path):
 
 def test_workflow_keeps_ceiling_and_aggregate_artifact_path():
     import yaml
-    workflow = yaml.load((ROOT/'.github/workflows/candidate.yml').read_text(), Loader=yaml.BaseLoader)
-    job = workflow['jobs']['build']
+    workflow = yaml.load((ROOT/'.github/workflows/source-validation.yml').read_text(), Loader=yaml.BaseLoader)
+    job = workflow['jobs']['validate']
     assert job['timeout-minutes'] == '45'
     step = next(s for s in job['steps'] if s.get('name') == 'Tests (including required browser suites)')
     assert step['run'] == 'uv run python tools/run_candidate_tests.py'

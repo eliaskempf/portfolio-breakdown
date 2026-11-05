@@ -1,4 +1,5 @@
 """Startup transitions with invented workspaces and no market network."""
+from browser_runtime import browser_session, start_server
 import os
 import json
 import re
@@ -40,7 +41,7 @@ render_app(Path(__file__).parent / 'empty', demo_dir=Path(__file__).parent / 'de
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     with (directory / 'server.log').open('w', encoding='utf-8') as log:
-        process = subprocess.Popen([sys.executable, '-m', 'streamlit', 'run', str(app),
+        process = start_server([sys.executable, '-m', 'streamlit', 'run', str(app),
             '--server.address=127.0.0.1', f'--server.port={port}', '--server.headless=true',
             '--server.fileWatcherType=none', '--browser.gatherUsageStats=false', *theme_options()], stdout=log, stderr=log)
         try:
@@ -62,7 +63,7 @@ render_app(Path(__file__).parent / 'empty', demo_dir=Path(__file__).parent / 'de
 
 @pytest.fixture
 def intro_page(intro_server):
-    with playwright.sync_playwright() as runner:
+    with browser_session() as runner:
         browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
         page = browser.new_page(viewport={'width': 1440, 'height': 1000})
         page.set_default_timeout(15000)

@@ -11,6 +11,13 @@ import zipfile
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def release_tools_importable(monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'tools'))
+
+
 spec = importlib.util.spec_from_file_location('release_promote', ROOT / 'tools/promote.py')
 promote = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(promote)
@@ -255,8 +262,64 @@ class FakeGitHub:
         self.native_run = dict(self.run, path='.github/workflows/desktop-experiment.yml')
         self.native_jobs = [dict(name=name, status='completed', conclusion='success',
                                 run_attempt=1, head_sha='a' * 40) for name in
-                            ['build-linux-x64', 'linux-compatibility-x11', 'linux-compatibility-wayland']]
+                            ['build-linux-x64', 'linux-compatibility-x11', 'linux-compatibility-wayland', 'accept-linux-x64', 'source-gate']]
         self.native_artifacts = [dict(id=3, name='candidate-linux-native-x64', expired=False)]
+        self.browser_jobs = [dict(name=name, status='completed', conclusion='success', run_attempt=1, head_sha='a'*40)
+                             for name in ['source-linux-x64', 'source-windows-x64', 'build-linux-x64', 'build-windows-x64',
+                                          'accept-linux-x64-packaged-browser', 'linux-compatibility',
+                                          *['accept-windows-x64-'+s for s in ['packaged-browser', 'native-startup',
+                                                                                  'native-interaction', 'installer', 'installer-upgrade']]]]
+        self.refresh_evidence()
+
+    def evidence_archive(self, name, files, artifacts):
+        matches = [a for a in artifacts if a['name'] == name]
+        number = matches[0]['id'] if matches else 100 + len(list(self.root.glob('*.zip')))
+        with zipfile.ZipFile(self.root/f'{number}.zip', 'w') as archive:
+            for filename, content in files.items():
+                archive.writestr(filename, content)
+        if not matches:
+            artifacts.append(dict(id=number, name=name, expired=False))
+
+    def receipt(self, folder, name, stage, run, job, artifacts):
+        manifest_path = folder/'manifest.json'
+        manifest = json.loads(manifest_path.read_text())
+        receipt = dict(status='passed', source=manifest['commit'], source_clean=True, lock_sha256=manifest['lock_sha256'], stage=stage,
+                       build_run=manifest['run_id'], build_attempt=manifest['run_attempt'], run_id=run,
+                       run_attempt=str(job['run_attempt']), manifest_sha256=sha256(manifest_path.read_bytes()).hexdigest())
+        self.evidence_archive(name, {'acceptance.json': json.dumps(receipt)}, artifacts)
+
+    def refresh_evidence(self):
+        from tempfile import TemporaryDirectory
+        from test_candidate_test_runner import evidence, finish
+        lock = json.loads((self.root/'linux-x64/manifest.json').read_text())['lock_sha256']
+        for target in ['linux-x64', 'windows-x64']:
+            with TemporaryDirectory() as tmp:
+                folder = Path(tmp)
+                groups, results, nodes = evidence(folder)
+                report = finish(folder, groups, results, nodes)
+                report.update(source='a'*40, lock_sha256=lock, system='Windows' if target.startswith('windows') else 'Linux',
+                              python='3.12.14', run_id='123', run_attempt='1')
+                (folder/'results.json').write_text(json.dumps(report))
+                (folder/'manifest.json').write_text(json.dumps(dict(source='a'*40, groups=groups)))
+                (folder/'canonical.collection.json').write_text(json.dumps(dict(nodeids=nodes, skipped_browsers=[])))
+                self.evidence_archive('source-evidence-'+target, {p.name:p.read_bytes() for p in folder.iterdir()}, self.artifacts)
+        for job in self.browser_jobs:
+            name = job['name']
+            if name.startswith('accept-'):
+                target = 'windows-x64' if 'windows' in name else 'linux-x64'
+                self.receipt(self.root/target, 'acceptance-'+name.removeprefix('accept-'),
+                             name.removeprefix('accept-'+target+'-'), '123', job, self.artifacts)
+            elif name == 'linux-compatibility':
+                self.receipt(self.root/'linux-x64', 'acceptance-linux-compatibility', 'packaged-browser', '123', job, self.artifacts)
+        self.native_evidence(self.native_folder, 'linux-native-x64', '789', self.native_jobs, self.native_artifacts)
+
+    def native_evidence(self, folder, target, run, jobs, artifacts):
+        self.evidence_archive('source-reference', {'source.json':json.dumps(dict(source_run='123'))}, artifacts)
+        for job in jobs:
+            if job['name'].startswith('accept-'):
+                self.receipt(folder, 'acceptance-'+target+'-native', 'native', run, job, artifacts)
+            elif '-compatibility-' in job['name']:
+                self.receipt(folder, 'acceptance-'+job['name'], 'native', run, job, artifacts)
 
     def repack_native(self):
         shutil.make_archive(str(self.root / '3'), 'zip', self.native_folder)
@@ -271,6 +334,8 @@ class FakeGitHub:
             return self.run
         if path.startswith('/actions/runs/123/artifacts'):
             return {'artifacts': self.artifacts}
+        if path.startswith('/actions/runs/123/jobs'):
+            return dict(total_count=len(self.browser_jobs), jobs=self.browser_jobs)
         if path == '/actions/runs/789':
             return self.native_run
         if path.startswith('/actions/runs/789/jobs'):
@@ -313,6 +378,10 @@ def test_failed_job_rerun_reuses_successful_platform_bytes(tmp_path, windows_att
     folder = tmp_path / 'windows-x64'
     rewrite_candidate_manifest(folder, run_attempt=windows_attempt)
     shutil.make_archive(str(tmp_path / '1'), 'zip', folder)
+    for job in api.browser_jobs:
+        if 'windows-x64' in job['name'] and not job['name'].startswith('source-'):
+            job['run_attempt'] = int(windows_attempt)
+    api.refresh_evidence()
     promote.promote(api, 'invented/project', '123', linux_native_run_id='789')
     for platform in ['linux-x64', 'windows-x64']:
         suffix = '.zip' if platform == 'windows-x64' else '.tar.gz'
@@ -365,7 +434,7 @@ def test_routine_workflow_triggers_and_permissions(name):
     assert 'github.event.pull_request.number || github.ref' in workflow['concurrency']['group']
     for job in workflow['jobs'].values():
         assert 'permissions' not in job
-        for step in job['steps']:
+        for step in job.get('steps', []):
             if step.get('uses', '').startswith('actions/checkout@'):
                 assert step['with']['persist-credentials'] == 'false'
 
@@ -403,6 +472,7 @@ def test_retained_native_job_uses_original_build_evidence(tmp_path, monkeypatch,
     original_build = dict(build)
     for job in api.native_jobs:
         job['run_attempt'] = 2
+    api.refresh_evidence()
     original = dict(total_count=1, jobs=[original_build])
     if failure == 'start':
         original_build['started_at'] = '2026-01-01T09:00:00Z'

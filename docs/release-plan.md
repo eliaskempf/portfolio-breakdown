@@ -74,34 +74,75 @@ remain manual-only. Changing
 visibility, enabling/dispatching workflows, Pages deployment and release
 publication each require the appropriate explicit approval. Billing setup alone
 is not build approval. Recheck branch protections after visibility changes.
+When adopting the reusable CI workflow, review any required checks pinned to old
+job names and select the Linux/Windows source checks from its first run.
 
 ## Build once
 
-Dispatch these two workflows from the same frozen default-branch SHA after build
-approval. They can run concurrently; keep the branch frozen until both runs have
-selected that SHA.
+First obtain a completed **CI** or **Source validation** run at the frozen SHA.
+CI calls the same required Linux/Windows source validation used by candidates:
+installed-wheel and source smoke, complete unit/AppTest/browser execution, and
+raw collection/execution/JUnit evidence. Supply its run ID as `source_run` to
+both installer workflows after build approval. Keep the branch frozen until
+both workflows have selected that SHA. They can then package concurrently.
 
 | Workflow | Inputs | Output |
 | --- | --- | --- |
-| Build candidate | manual dispatch | Windows Setup/portable ZIP, Linux browser archive, tests, frozen docs and Ubuntu browser compatibility |
-| Experimental desktop candidates | diagnostics_only=false | Ubuntu native .deb and experimental Mac DMG with native/compatibility checks |
+| Build candidate | source_run; empty runs source validation in this workflow | Windows Setup/portable ZIP, Linux browser archive, frozen docs and platform acceptance |
+| Experimental desktop candidates | source_run, diagnostics_only=false | Ubuntu native .deb and experimental Mac DMG with native/compatibility checks |
 
 Do not duplicate their gates by dispatching CI or Documentation as routine extra
 builds. Run Dependency audit only if equivalent local evidence is missing/stale.
-Current installer-job ceilings are 45 Windows, 145 Linux and 85 macOS runner
-minutes across both workflows (275 total, not elapsed time or a billing cap).
-Publication permits 20 Linux minutes and each Pages dispatch 25. Reruns, storage
-and unrelated jobs are additional.
+Reusing source evidence verifies repository, workflow, commit, dependency lock,
+Python/OS, successful jobs, run attempts and complete disjoint test execution;
+a diagnostic subset cannot satisfy this gate. Missing or expired evidence fails
+closed. Native Linux reuses the complete Linux source run and additionally checks
+native lifecycle behavior with the window extra. Mac retains its full unit suite
+on Python 3.13 as well as native checks. Source checks retain their 45-minute ceiling. Packaging and acceptance
+have separate bounded jobs; these ceilings are not expected durations or a
+billing cap. Separate acceptance runners add setup/download overhead on a fully
+successful run, but a failed check no longer repeats source validation or packaging.
+Review the selected jobs and platform fan-out before approving paid runs.
 
 For transient failures at unchanged source, investigate and rerun only failed
-jobs. Retained successful platform artifacts may identify earlier attempts of
-the same run. Native build evidence must identify the exact artifact attempt;
-compatibility evidence must be from that attempt or later.
+jobs. Packaging uploads `unaccepted-<platform>` before any acceptance job starts.
+Acceptance downloads those bytes and records their manifest digest; publication
+requires all applicable receipts and successful jobs, including compatibility.
+Retained successful platform artifacts may identify earlier attempts of the same
+run. Native build evidence must identify the exact artifact attempt; compatibility
+evidence must be from that attempt or later and cover the same manifest digest.
 When GitHub labels a retained build with the new rerun attempt, the publisher
 requires a successful build record from the artifact's original attempt with
 identical start/end timestamps and source identity; replacement builds do not
 qualify. A source change needs new matching candidates for all published platforms.
 Download accepted candidates before their 30-day artifact retention expires.
+
+## Diagnose before another candidate
+
+Inspect the first failure and its evidence. Use **Focused release diagnostics**
+for a test file or exact collected node ID, a source smoke, or one Windows/Linux
+packaged stage. Select the platform that failed. Newline-separated node IDs are
+validated against collection; inputs are never evaluated as shell commands.
+For packaged checks supply `artifact_run` and `artifact_name` from the same SHA,
+including an `unaccepted-*` artifact from a failed candidate. Only enable
+`build_artifact` when no saved package exists. This builds once, without the
+full source suite, and stores a diagnostic package that cannot be published.
+
+The local equivalent is:
+
+```sh
+uv run python tools/run_diagnostics.py --nodeid tests/test_etf_discovery_browser.py --repeat 3 --cpu-rate 4 --output /tmp/etf-diagnostic
+uv run python tools/run_diagnostics.py --suite native-startup --directory dist/local-candidate --output /tmp/native-diagnostic
+```
+
+Use a new output directory per run. Repetitions are explicit (1–10) and stop on
+the first failure; they never turn a failure into passing acceptance. CPU rate 4
+is Chromium CPU throttling, not a simulation of Windows or disk/network load.
+Inspect `diagnostic.json`, per-attempt logs/JUnit, traces, screenshots and lifecycle
+events before changing synchronization. Native evidence includes process logs and
+readiness/attachment timing even if CDP attachment never succeeds. Diagnostic
+success still requires a complete source gate and exact-artifact acceptance for
+publication. Native Linux/Mac diagnostics remain in the desktop workflow.
 
 ## Accept exact artifacts
 
@@ -119,6 +160,7 @@ Record whether Python/uv are absent or merely excluded from PATH in the
 applicable test environment.
 
 The desktop run provides `candidate-linux-native-x64` and `candidate-macos-arm64`.
+Both native platforms require the source gate and their `accept-<platform>` job.
 Linux requires successful `build-linux-x64`, `linux-compatibility-x11` and
 `linux-compatibility-wayland` jobs. Mac requires `build-macos-arm64` and both
 `macos-compatibility-macos-15` and `macos-compatibility-macos-26`. Diagnostic runs

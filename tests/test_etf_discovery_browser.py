@@ -1,4 +1,6 @@
 """Real app navigation using invented bond/rate funds and offline prices."""
+from browser_support import open_app, select_tab
+from browser_runtime import browser_session, start_server
 from datetime import date
 from dataclasses import replace
 import os
@@ -52,7 +54,7 @@ render_app(Path(__file__).parent, demo=True, price_service=PriceService(Unavaila
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
-    process = subprocess.Popen([sys.executable, '-m', 'streamlit', 'run', str(app), '--server.address=127.0.0.1',
+    process = start_server([sys.executable, '-m', 'streamlit', 'run', str(app), '--server.address=127.0.0.1',
         f'--server.port={port}', '--server.headless=true', '--server.fileWatcherType=none', '--browser.gatherUsageStats=false'],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=tmp_path)
     try:
@@ -63,11 +65,11 @@ render_app(Path(__file__).parent, demo=True, price_service=PriceService(Unavaila
                     break
             except OSError:
                 time.sleep(.1)
-        with playwright.sync_playwright() as runner:
+        with browser_session() as runner:
             browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1440, 'height': 1100})
-            page.goto(f'http://127.0.0.1:{port}')
-            page.get_by_role('tab', name='Exposure', exact=True).click()
+            open_app(page, f'http://127.0.0.1:{port}')
+            select_tab(page, 'Exposure')
             page.get_by_role('table', name='Exposure assets', exact=True).wait_for()
             yield page
             browser.close()

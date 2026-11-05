@@ -1,4 +1,5 @@
 """Delayed native-window navigation with a real browser and synthetic pages."""
+from browser_runtime import browser_session
 import importlib.util
 import os
 from pathlib import Path
@@ -12,7 +13,7 @@ spec.loader.exec_module(window_smoke)
 
 
 def test_native_smoke_receives_navigation_after_attaching():
-    with playwright.sync_playwright() as runner:
+    with browser_session(trace=False) as runner:
         browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
         try:
             context = browser.new_context()
@@ -163,7 +164,7 @@ def test_native_focus_deadline_includes_browser_work_and_requires_pointer_delive
 
 def test_native_failure_evidence_is_captured_before_browser_teardown(tmp_path):
     import json
-    with playwright.sync_playwright() as runner:
+    with browser_session(trace=False) as runner:
         browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
         try:
             context = browser.new_context()

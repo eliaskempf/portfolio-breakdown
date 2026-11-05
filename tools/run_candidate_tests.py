@@ -290,6 +290,8 @@ def main(args):
     unchanged = head(checkout) == expected and clean(checkout)
     result = final_evidence(output, groups, results, canonical['nodeids'],
                             source_unchanged=unchanged, aggregate=args.junit.resolve())
+    from release_evidence import identity
+    result.update(identity(checkout))
     result.update(source=expected, seconds=time.monotonic()-started, worker_seconds=timings)
     (output/'results.json').write_text(json.dumps(result, indent=2))
     print(json.dumps(result), flush=True)

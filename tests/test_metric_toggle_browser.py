@@ -1,4 +1,5 @@
 """Metric actions survive a queued history poll, using synthetic data only."""
+from browser_runtime import browser_session, start_server
 from contextlib import suppress
 import json
 import os
@@ -115,7 +116,7 @@ def metric_page(tmp_path, request):
             return json.load(response)
     env = dict(os.environ, PORTFOLIO_STATE_DIR=str(tmp_path/'state'))
     with (tmp_path/'server.log').open('w', encoding='utf-8') as log:
-        process = subprocess.Popen([sys.executable, '-m', 'streamlit', 'run', str(preview),
+        process = start_server([sys.executable, '-m', 'streamlit', 'run', str(preview),
             '--server.address=127.0.0.1', f'--server.port={port}', '--server.headless=true',
             '--server.fileWatcherType=none', '--browser.gatherUsageStats=false'],
             env=env, stdout=log, stderr=subprocess.STDOUT)
@@ -127,7 +128,7 @@ def metric_page(tmp_path, request):
                     break
                 except OSError:
                     time.sleep(.1)
-            with playwright.sync_playwright() as runner:
+            with browser_session() as runner:
                 browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),
                     args=['--no-sandbox'])
                 page = browser.new_page(viewport={'width': 1440, 'height': 1100})

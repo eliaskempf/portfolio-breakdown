@@ -1,4 +1,5 @@
 """Browser acceptance of the common lifecycle, with invented transactions only."""
+from browser_runtime import browser_session
 import csv
 from io import StringIO
 import os
@@ -113,7 +114,7 @@ def open_correction(page, index):
 
 def test_correction_target_is_reachable_after_expansion():
     """An idle DOM can still clip a checkbox during a real height animation."""
-    with playwright.sync_playwright() as runner:
+    with browser_session() as runner:
         browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),
                                          args=['--no-sandbox'])
         try:

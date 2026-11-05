@@ -1,4 +1,5 @@
 """Slow synthetic history calculations must not leave outgoing views on screen."""
+from browser_runtime import browser_session, start_server
 import os
 import socket
 import subprocess
@@ -58,7 +59,7 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
         f'refresher.request=lambda *a,**k:RefreshStatus(pending={pending_refresh})\nrefresher.pending=lambda _: {pending_refresh}'))
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
-    process = subprocess.Popen([sys.executable, '-m', 'streamlit', 'run', str(script),
+    process = start_server([sys.executable, '-m', 'streamlit', 'run', str(script),
         '--server.address=127.0.0.1', f'--server.port={port}', '--server.headless=true',
         '--server.fileWatcherType=none', '--browser.gatherUsageStats=false'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -67,7 +68,7 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
                 urlopen(f'http://127.0.0.1:{port}/_stcore/health', timeout=1); break
             except OSError:
                 time.sleep(.1)
-        with playwright.sync_playwright() as p:
+        with browser_session() as p:
             browser = p.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport=viewport)
             page.goto(f'http://127.0.0.1:{port}')

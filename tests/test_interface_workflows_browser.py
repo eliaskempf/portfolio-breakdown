@@ -1,4 +1,5 @@
 """Approved interface workflows, using only temporary invented workspaces."""
+from browser_runtime import browser_session, start_server
 import os
 from pathlib import Path
 import socket
@@ -58,7 +59,7 @@ else:
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
     with (tmp_path/'server.log').open('w') as log:
-        process = subprocess.Popen([sys.executable, '-m', 'streamlit', 'run', str(script),
+        process = start_server([sys.executable, '-m', 'streamlit', 'run', str(script),
             '--server.address=127.0.0.1', f'--server.port={port}', '--server.headless=true',
             '--server.fileWatcherType=none', '--browser.gatherUsageStats=false'], stdout=log, stderr=log)
         try:
@@ -69,7 +70,7 @@ else:
                         break
                 except OSError:
                     time.sleep(.1)
-            with playwright.sync_playwright() as runner:
+            with browser_session() as runner:
                 browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
                 page = browser.new_page(viewport={'width': 1440, 'height': 1000})
                 page.set_default_timeout(15000)

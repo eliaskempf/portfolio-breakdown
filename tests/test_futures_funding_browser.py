@@ -1,4 +1,6 @@
 """Real-browser funding navigation on invented data only."""
+from browser_support import open_app, select_tab
+from browser_runtime import browser_session, start_server
 import os
 from pathlib import Path
 import socket
@@ -23,7 +25,7 @@ def funding_page(tmp_path):
                       f'render_app(Path({str(data)!r}), demo=True, ignore_selection=True)\n')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
-    process = subprocess.Popen([sys.executable, '-m', 'streamlit', 'run', str(script),
+    process = start_server([sys.executable, '-m', 'streamlit', 'run', str(script),
         '--server.address=127.0.0.1', f'--server.port={port}', '--server.headless=true',
         '--server.fileWatcherType=none', '--browser.gatherUsageStats=false'],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -33,12 +35,12 @@ def funding_page(tmp_path):
                 urlopen(f'http://127.0.0.1:{port}/_stcore/health', timeout=1); break
             except OSError:
                 time.sleep(.1)
-        with playwright.sync_playwright() as browser_tools:
+        with browser_session() as browser_tools:
             browser = browser_tools.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1440, 'height': 1050})
             page.set_default_timeout(20000)
-            page.goto(f'http://127.0.0.1:{port}')
-            page.get_by_role('tab', name='Futures', exact=True).click()
+            open_app(page, f'http://127.0.0.1:{port}')
+            select_tab(page, 'Futures')
             page.get_by_role('button', name='Run funding study', exact=True).wait_for()
             yield page
             browser.close()

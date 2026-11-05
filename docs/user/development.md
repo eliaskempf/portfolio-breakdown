@@ -588,6 +588,23 @@ field. A received protocol message alone does not establish that React has paint
 Wait for finite layout animations before targeting controls inside expanders;
 infinite decorative animations must not block readiness.
 
+Use `browser_runtime.browser_session()` and `start_server()` for synthetic browser
+tests. The session pool reuses Chromium processes while closing every context
+between tests and recycling each process after eight uses to bound retained trace
+storage; workspaces, ports and Streamlit processes remain test-owned.
+Use `browser_support.open_app()` to install the protocol observer before navigation,
+then await the initial connection, acknowledged rerun and settled render. Use
+`select_tab()` for ordinary fixture navigation. Keep intentional race tests explicit.
+Pure protocol state-machine cases belong in `test_browser_protocol.py` so they run
+without launching a browser.
+
+Set `PORTFOLIO_BROWSER_EVIDENCE` to an external or ignored directory to retain
+setup, call and teardown failures. Evidence is staged before resources close and
+discarded for passing tests. It includes synthetic server logs, Playwright traces,
+screenshots, HTML and bounded protocol lifecycle events. Never use this harness
+against a personal workspace. See `docs/release-plan.md` in the source checkout
+for selected node IDs, explicit repetitions and packaged-stage commands.
+
 Capture failure evidence while the browser and page are still alive. Inspect the
 first failure before retrying; additional clicks, longer timeouts or removed
 assertions do not establish a correct interaction. Candidate builds run the source

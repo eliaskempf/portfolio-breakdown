@@ -55,6 +55,8 @@ handoff.md
 # Reviewed release infrastructure and application artwork only.
 !/.github/workflows/ci.yml
 !/.github/workflows/candidate.yml
+!/.github/workflows/source-validation.yml
+!/.github/workflows/diagnostics.yml
 !/.github/workflows/publish.yml
 !/.github/workflows/maintenance.yml
 !/.github/dependabot.yml

@@ -1,4 +1,5 @@
 """Real backup upload/download, cancellation, activation and restart, offline."""
+from browser_runtime import browser_session, start_server
 import os
 from pathlib import Path
 import re
@@ -54,7 +55,7 @@ app.main()
     log = (tmp_path / 'synthetic-server.log').open('w')
     children = []
     def start():
-        child = subprocess.Popen([sys.executable, str(supervisor), '--data-dir', str(workspace),
+        child = start_server([sys.executable, str(supervisor), '--data-dir', str(workspace),
                                   '--foreground', '--no-browser', '--offline-demo', '--skip-intro'],
                                  stdout=log, stderr=log)
         children.append(child)
@@ -100,7 +101,7 @@ def test_archive_review_cancel_switch_restart_and_tabs(backup_app, tmp_path):
     original, start, stop = backup_app
     before = inventory(original)
     url = start()
-    with playwright.sync_playwright() as runner:
+    with browser_session() as runner:
         browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
         page = browser.new_page(viewport={'width': 1440, 'height': 1000})
         page.set_default_timeout(15000)
@@ -174,7 +175,7 @@ def test_archive_review_cancel_switch_restart_and_tabs(backup_app, tmp_path):
 def test_bad_upload_and_dismiss_write_nothing(backup_app):
     original, start, _ = backup_app
     before = inventory(original)
-    with playwright.sync_playwright() as runner:
+    with browser_session() as runner:
         browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
         page = browser.new_page()
         page.goto(start())

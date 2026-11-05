@@ -1,4 +1,5 @@
 """Actual Streamlit navigation and alerts, using only invented local workspaces."""
+from browser_runtime import browser_session, start_server
 import os
 from pathlib import Path
 import re
@@ -42,7 +43,7 @@ render_app(root,demo=True,ignore_selection=True,price_service=PriceService(Stati
         sock.bind(('127.0.0.1',0))
         port=sock.getsockname()[1]
     with (tmp_path/'server.log').open('w') as log:
-        process=subprocess.Popen([sys.executable,'-m','streamlit','run',str(app),f'--server.port={port}',
+        process=start_server([sys.executable,'-m','streamlit','run',str(app),f'--server.port={port}',
             '--server.address=127.0.0.1','--server.headless=true','--server.fileWatcherType=none',
             '--browser.gatherUsageStats=false'],stdout=log,stderr=log)
         try:
@@ -52,7 +53,7 @@ render_app(root,demo=True,ignore_selection=True,price_service=PriceService(Stati
                 try:
                     with urlopen(url+'/_stcore/health',timeout=1):break
                 except OSError:time.sleep(.1)
-            with playwright.sync_playwright() as runner:
+            with browser_session() as runner:
                 browser=runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),args=['--no-sandbox'])
                 page=browser.new_page(viewport={'width':1440,'height':1100})
                 page.set_default_timeout(20000)

@@ -1,4 +1,6 @@
 """Optional browser coverage for position list interactions, using invented data."""
+from browser_support import open_app
+from browser_runtime import browser_session, start_server
 
 import os
 import socket
@@ -34,7 +36,7 @@ render_position_editor(path, read_snapshot(path), [], demo=True, embedded=True)
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
-    process = subprocess.Popen(
+    process = start_server(
         [sys.executable, '-m', 'streamlit', 'run', str(app), '--server.address=127.0.0.1',
          f'--server.port={port}', '--server.headless=true', '--server.fileWatcherType=none',
          '--browser.gatherUsageStats=false'], cwd=tmp_path,
@@ -50,10 +52,10 @@ render_position_editor(path, read_snapshot(path), [], demo=True, embedded=True)
                 time.sleep(.1)
         else:
             pytest.fail('Synthetic server did not start')
-        with playwright.sync_playwright() as runner:
+        with browser_session() as runner:
             browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1400, 'height': 1000})
-            page.goto(f'http://127.0.0.1:{port}')
+            open_app(page, f'http://127.0.0.1:{port}')
             page.get_by_role('table', name='Positions', exact=True).wait_for()
             yield page, path
             browser.close()

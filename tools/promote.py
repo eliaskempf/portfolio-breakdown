@@ -156,9 +156,9 @@ def desktop_run(api, repository, run_id, commit, branch, platform):
         raise ValueError(f'{platform} must come from the same release commit in a completed desktop workflow.')
     response = api.call(f'/actions/runs/{run_id}/jobs?filter=latest&per_page=100')
     jobs = response['jobs']
-    required = ({'build-linux-x64', 'linux-compatibility-x11', 'linux-compatibility-wayland'}
+    required = ({'source-gate', 'accept-linux-x64', 'build-linux-x64', 'linux-compatibility-x11', 'linux-compatibility-wayland'}
                 if platform == 'linux-native-x64' else
-                {'build-macos-arm64', 'macos-compatibility-macos-15', 'macos-compatibility-macos-26'})
+                {'source-gate', 'accept-macos-arm64', 'build-macos-arm64', 'macos-compatibility-macos-15', 'macos-compatibility-macos-26'})
     if response['total_count'] != len(jobs):
         raise ValueError(f'Incomplete {platform} workflow job evidence.')
     for name in required:
@@ -186,6 +186,75 @@ def retained_build(api, run_id, job, artifact_attempt):
             and all(old.get(key) == job[key] for key in times))
 
 
+def acceptance_receipt(api, run_id, name, *, manifest, stage, job):
+    """A successful job must attest the exact retained build, not another attempt."""
+    artifacts = api.call(f'/actions/runs/{run_id}/artifacts?per_page=100')['artifacts']
+    matches = [a for a in artifacts if a['name'] == name and not a['expired']]
+    if len(matches) != 1:
+        raise ValueError('Missing or ambiguous acceptance receipt: ' + name)
+    with TemporaryDirectory(prefix='portfolio-acceptance-') as tmp:
+        archive = Path(tmp)/'receipt.zip'
+        api.download(matches[0]['id'], archive)
+        with zipfile.ZipFile(archive) as zipped:
+            names = [n for n in zipped.namelist() if n == 'acceptance.json' or n.endswith('/acceptance.json')]
+            if len(names) != 1:
+                raise ValueError('Missing or ambiguous acceptance.json')
+            receipt = json.loads(zipped.read(names[0]))
+    expected = dict(status='passed', source=manifest['commit'], source_clean=True, lock_sha256=manifest['lock_sha256'],
+                    stage=stage, build_run=manifest['run_id'], build_attempt=manifest['run_attempt'])
+    if any(receipt.get(k) != v for k, v in expected.items()):
+        raise ValueError('Acceptance does not cover the selected artifact')
+    # Reconstructing JSON would change its bytes: builders include its digest in SHA256SUMS.
+    if receipt.get('manifest_sha256') != manifest['_verified_manifest_sha256']:
+        raise ValueError('Acceptance artifact checksum mismatch')
+    attempt = receipt.get('run_attempt')
+    if receipt.get('run_id') != str(run_id) or not str(attempt).isdecimal():
+        raise ValueError('Acceptance run mismatch')
+    if not 1 <= int(attempt) <= job.get('run_attempt', 0) or (int(attempt) != job.get('run_attempt') and not retained_build(api, run_id, job, int(attempt))):
+        raise ValueError('Stale acceptance attempt')
+
+
+def browser_candidate_gates(api, repository, run_id, commit, lock, manifests):
+    from release_evidence import check_jobs, source_run
+    response = api.call(f'/actions/runs/{run_id}/jobs?filter=latest&per_page=100')
+    source_jobs = [j for j in response['jobs'] if j['name'].split(' / ')[-1].startswith('source-')
+                   and j['name'].split(' / ')[-1] in ('source-linux-x64', 'source-windows-x64')]
+    if source_jobs:
+        source_run(api, repository, run_id, commit, lock)
+    else:
+        check_jobs(api, run_id, ['source-reuse'], commit)
+        source_reference(api, repository, run_id, commit, lock)
+    for manifest in manifests:
+        target = manifest['platform']
+        stages = ['packaged-browser'] if target == 'linux-x64' else [
+            'packaged-browser', 'native-startup', 'native-interaction', 'installer', 'installer-upgrade']
+        names = ['build-'+target] + ['accept-'+target+'-'+s for s in stages]
+        jobs = check_jobs(api, run_id, names, commit)
+        attempt = int(manifest['run_attempt'])
+        if jobs[0].get('run_attempt') != attempt and not retained_build(api, run_id, jobs[0], attempt):
+            raise ValueError('Build job evidence does not identify uploaded bytes')
+        for stage, job in zip(stages, jobs[1:]):
+            acceptance_receipt(api, run_id, 'acceptance-'+target+'-'+stage, manifest=manifest, stage=stage, job=job)
+        if target == 'linux-x64':
+            job, = check_jobs(api, run_id, ['linux-compatibility'], commit)
+            acceptance_receipt(api, run_id, 'acceptance-linux-compatibility', manifest=manifest,
+                               stage='packaged-browser', job=job)
+
+
+def source_reference(api, repository, run_id, commit, lock):
+    from release_evidence import source_run
+    artifacts = api.call(f'/actions/runs/{run_id}/artifacts?per_page=100')['artifacts']
+    matches = [a for a in artifacts if a['name'] == 'source-reference' and not a['expired']]
+    if len(matches) != 1:
+        raise ValueError('Missing source validation reference')
+    with TemporaryDirectory() as tmp:
+        archive = Path(tmp)/'source.zip'
+        api.download(matches[0]['id'], archive)
+        with zipfile.ZipFile(archive) as zipped:
+            reference = json.loads(zipped.read('source.json'))
+    source_run(api, repository, reference['source_run'], commit, lock)
+
+
 def promote(api, repository, run_id, *, linux_native_run_id, macos_run_id=None):
     if not str(linux_native_run_id).isdecimal():
         raise ValueError('A numeric native Linux candidate run ID is required.')
@@ -211,6 +280,7 @@ def promote(api, repository, run_id, *, linux_native_run_id, macos_run_id=None):
             safe_extract(archive, folder)
             manifest = verify_candidate(folder, commit=commit, run_id=run_id,
                                         run_attempt=run['run_attempt'], platform=platform, allow_earlier_attempt=True)
+            manifest['_verified_manifest_sha256'] = sha256((folder/'manifest.json').read_bytes()).hexdigest()
             manifests.append(manifest)
             for name in manifest['files']:
                 path = folder / name
@@ -222,6 +292,7 @@ def promote(api, repository, run_id, *, linux_native_run_id, macos_run_id=None):
             path = folder / 'manifest.json'
             path.rename(folder / f'{platform}-manifest.json')
             uploads.append(folder / f'{platform}-manifest.json')
+        browser_candidate_gates(api, repository, run_id, commit, manifests[0]['lock_sha256'], manifests)
         desktop_candidates = [('linux-native-x64', linux_native_run_id, 'build-linux-x64', '.deb')]
         if macos_run_id:
             desktop_candidates.append(('macos-arm64', macos_run_id, 'build-macos-arm64', '.dmg'))
@@ -237,14 +308,24 @@ def promote(api, repository, run_id, *, linux_native_run_id, macos_run_id=None):
             safe_extract(archive, folder)
             manifest = verify_candidate(folder, commit=commit, run_id=desktop_run_id,
                 run_attempt=selected_run['run_attempt'], platform=platform, allow_earlier_attempt=True)
+            manifest['_verified_manifest_sha256'] = sha256((folder/'manifest.json').read_bytes()).hexdigest()
+            acceptance_job = next(j for j in jobs if j['name'] == 'accept-' + ('linux-x64' if platform == 'linux-native-x64' else platform))
+            source_reference(api, repository, desktop_run_id, commit, manifest['lock_sha256'])
+            acceptance_receipt(api, desktop_run_id, 'acceptance-'+platform+'-native',
+                               manifest=manifest, stage='native', job=acceptance_job)
             # Compatibility must cover the retained installer, not an older build.
             attempt = int(manifest['run_attempt'])
             for job in jobs:
+                if job['name'] == 'source-gate':
+                    continue
                 checked_attempt = job.get('run_attempt')
                 if (type(checked_attempt) is not int or not attempt <= checked_attempt <= selected_run['run_attempt']
                         or job['name'] == build_job and checked_attempt != attempt
                         and not retained_build(api, desktop_run_id, job, attempt)):
                     raise ValueError(f'{platform} job evidence predates or does not identify the uploaded build.')
+                if 'compatibility-' in job['name']:
+                    acceptance_receipt(api, desktop_run_id, 'acceptance-'+job['name'],
+                                       manifest=manifest, stage='native', job=job)
             manifests.append(manifest)
             for name in manifest['files']:
                 path = folder / name

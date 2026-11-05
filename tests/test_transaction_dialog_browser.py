@@ -1,4 +1,6 @@
 """Transaction workflows keep their dialog mounted using invented holdings only."""
+from browser_support import open_app
+from browser_runtime import browser_session, start_server
 import os
 import json
 import socket
@@ -66,7 +68,7 @@ render_position_dialog(root/'holdings.csv',inputs.snapshot,{},demo=False,valued=
 ''')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
-    process = subprocess.Popen([sys.executable, '-m', 'streamlit', 'run', str(script),
+    process = start_server([sys.executable, '-m', 'streamlit', 'run', str(script),
         '--server.address=127.0.0.1', f'--server.port={port}', '--server.headless=true',
         '--server.fileWatcherType=none', '--browser.gatherUsageStats=false'],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -76,10 +78,10 @@ render_position_dialog(root/'holdings.csv',inputs.snapshot,{},demo=False,valued=
                 urlopen(f'http://127.0.0.1:{port}/_stcore/health', timeout=1); break
             except OSError:
                 time.sleep(.1)
-        with playwright.sync_playwright() as p:
+        with browser_session() as p:
             browser = p.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport={'width':1280, 'height':720})
-            page.goto(f'http://127.0.0.1:{port}')
+            open_app(page, f'http://127.0.0.1:{port}')
             page.get_by_role('button', name='Open position', exact=True).click()
             page.get_by_role('dialog').wait_for(); settle(page)
             yield page, tmp_path

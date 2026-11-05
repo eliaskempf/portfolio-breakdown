@@ -27,6 +27,7 @@ def api(tmp_path, monkeypatch):
                             tmp_path / 'mac/source', '0.1.0', 'linux-native-x64')
     api.native_folder = output / 'candidate'
     api.repack_native()
+    api.refresh_evidence()
     return api
 
 
@@ -123,11 +124,14 @@ def test_linux_retry_evidence_tracks_retained_installer(api, build, artifact, x1
         job['run_attempt'] = attempt
     rewrite_candidate_manifest(api.native_folder, run_attempt=artifact)
     api.repack_native()
+    api.native_jobs[3]['run_attempt'] = int(artifact)
+    if accepted:
+        api.refresh_evidence()
     if accepted:
         publish(api)
         assert 'portfolio-breakdown-experimental_0.1.0_amd64.deb' in api.uploaded
     else:
-        with pytest.raises(ValueError, match='job evidence'):
+        with pytest.raises(ValueError, match='job evidence|Acceptance|acceptance'):
             publish(api)
         assert api.mutations == [] and api.uploaded == {}
 
@@ -135,8 +139,9 @@ def test_linux_retry_evidence_tracks_retained_installer(api, build, artifact, x1
 def test_same_desktop_run_can_supply_both_native_platforms(api, monkeypatch):
     rewrite_candidate_manifest(api.native_folder, run_id='456')
     api.repack_native()
-    api.jobs = [job for job in api.jobs if job['name'] != 'build-linux-x64'] + api.native_jobs
-    api.mac_artifacts += api.native_artifacts
+    api.native_evidence(api.native_folder, 'linux-native-x64', '456', api.native_jobs, api.native_artifacts)
+    api.jobs = [job for job in api.jobs if job['name'] not in ('build-linux-x64', 'source-gate')] + api.native_jobs
+    api.mac_artifacts += [a for a in api.native_artifacts if a['name'] != 'source-reference']
     promote.promote(api, 'invented/project', '123', linux_native_run_id='456', macos_run_id='456')
     assert api.dmg_name in api.uploaded
     assert 'portfolio-breakdown-experimental_0.1.0_amd64.deb' in api.uploaded
@@ -193,6 +198,7 @@ def test_valid_but_different_native_documentation_is_rejected(api):
     manifest['documentation']['build_info_sha256'] = sha256(info_bytes).hexdigest()
     rewrite_candidate_manifest(api.native_folder, **manifest)
     api.repack_native()
+    api.refresh_evidence()
     with pytest.raises(ValueError, match='different documentation'):
         publish(api)
     assert api.mutations == [] and api.uploaded == {}
@@ -200,15 +206,20 @@ def test_valid_but_different_native_documentation_is_rejected(api):
 
 def test_linux_workflow_contract():
     workflow = yaml.load((ROOT / '.github/workflows/desktop-experiment.yml').read_text(), Loader=yaml.BaseLoader)
-    steps = workflow['jobs']['build']['steps']
+    build = workflow['jobs']['build-linux-x64']
+    assert any(s.get('with', {}).get('name') == 'unaccepted-linux-native-x64' for s in build['steps'])
+    accept = workflow['jobs']['accept-linux-x64']
+    assert accept['needs'] == 'build-linux-x64'
+    steps = accept['steps']
     upload = next(step for step in steps if step.get('with', {}).get('name') == 'candidate-linux-native-x64')
-    assert upload['if'] == "runner.os == 'Linux'"
+    assert 'if' not in upload
     assert upload['with']['overwrite'] == 'true'
     assert upload['with']['retention-days'] == '30'
     assert steps.index(upload) > next(i for i, step in enumerate(steps) if step.get('name') == 'Install Linux artifact and test native binary')
     compatibility = workflow['jobs']['linux-compatibility']
     assert compatibility['name'] == 'linux-compatibility-${{ matrix.backend }}'
     assert compatibility['strategy']['matrix']['backend'] == ['x11', 'wayland']
-    assert any(step.get('with', {}).get('name') == 'candidate-linux-native-x64' for step in compatibility['steps'])
+    assert compatibility['needs'] == 'build-linux-x64'
+    assert any(step.get('with', {}).get('name') == 'unaccepted-linux-native-x64' for step in compatibility['steps'])
     publish_workflow = yaml.load((ROOT / '.github/workflows/publish.yml').read_text(), Loader=yaml.BaseLoader)
     assert publish_workflow['on']['workflow_dispatch']['inputs']['linux_native_candidate_run']['required'] == 'true'
