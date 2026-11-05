@@ -56,18 +56,37 @@ export default function({parentElement, data, setStateValue}) {
 """
 
 
+def _consume_toggle(component_key, on_toggle):
+    def changed():
+        state = st.session_state.get(component_key, {})
+        action = state.get('toggle') if isinstance(state, dict) else None
+        nonce = action.get('nonce') if isinstance(action, dict) else None
+        if not isinstance(nonce, str) or not nonce:
+            return
+        # Widget cleanup can forget its value before the browser drops it.
+        # Remember one consumed action outside widget state so returning to a
+        # view cannot replay the same nonce as a newly registered value.
+        consumed_key = '_metric_toggle_consumed_' + component_key
+        if st.session_state.get(consumed_key) == nonce:
+            return
+        st.session_state[consumed_key] = nonce
+        on_toggle()
+    return changed
+
+
 def toggle_gain_unit(*, percent: bool, on_toggle, container_key='overview_value', interaction_key='gain', tooltip=None) -> None:
     component = st.components.v2.component('overview_gain_toggle', js=JS)
     component_key = container_key.rstrip('_') + '_gain_toggle'
     component(key=component_key, data={
         'containerKey': container_key, 'interactionKey': interaction_key, 'tooltip': tooltip,
         'label': 'Show gain as amount' if percent else 'Show gain as percentage',
-    }, on_toggle_change=on_toggle)
+    }, on_toggle_change=_consume_toggle(component_key, on_toggle))
 
 
 def toggle_metric_value(*, label: str, on_toggle, container_key: str, interaction_key: str) -> None:
     component = st.components.v2.component('portfolio_metric_toggle', js=JS)
-    component(key=f'{container_key}_value_toggle', data={
+    component_key = f'{container_key}_value_toggle'
+    component(key=component_key, data={
         'containerKey': container_key, 'target': 'stMetricValue',
         'interactionKey': interaction_key, 'label': label,
-    }, on_toggle_change=on_toggle)
+    }, on_toggle_change=_consume_toggle(component_key, on_toggle))

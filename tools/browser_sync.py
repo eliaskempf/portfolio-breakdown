@@ -22,6 +22,7 @@ from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 @dataclass(eq=False)
 class _Request:
     scope: str
+    is_auto: bool
 
 
 class StreamlitReruns:
@@ -64,7 +65,7 @@ class StreamlitReruns:
         if message.WhichOneof('type') != 'rerun_script':
             return
         rerun = message.rerun_script
-        request = _Request(rerun.fragment_id)
+        request = _Request(rerun.fragment_id, rerun.is_auto_rerun)
         if self.expected is None and not request.scope:
             # An explicitly sent full rerun supersedes older baseline fragment
             # work: fastReruns replaces the runner, and queued requests coalesce
@@ -121,8 +122,17 @@ class StreamlitReruns:
             elif self._active is not None:
                 scopes, covered = self._active
                 if status == ForwardMsg.FINISHED_EARLY_FOR_RERUN:
-                    self._early_scopes.update(scope for scope, request in covered.items()
-                                              if self._pending.get(scope) is request)
+                    for scope, request in covered.items():
+                        if self._pending.get(scope) is not request:
+                            continue
+                        if request.is_auto:
+                            # Streamlit can rewrite an unflushed poll finish as
+                            # EARLY when another fragment starts. Retire only
+                            # that poll, still requiring the next start/finish.
+                            del self._pending[scope]
+                            self._early_scopes.discard(scope)
+                        else:
+                            self._early_scopes.add(scope)
                     self._active = None
                     self._awaiting_restart = True
                 elif status == (ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY if scopes
@@ -201,6 +211,8 @@ class StreamlitReruns:
                         for scope, request in self._active[1].items()},
         }
         return dict(pending=pending, active=active, early=sorted(self._early_scopes),
+                    automatic_pending=sorted(scope for scope, request in self._pending.items()
+                                             if request.is_auto),
                     awaiting_restart=self._awaiting_restart,
                     completed_once=self._completed_once)
 

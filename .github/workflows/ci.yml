@@ -77,6 +77,7 @@ jobs:
       - name: Browser tests
         env:
           BROWSER_SHARD: ${{ matrix.shard }}
+          PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/browser-evidence
         run: |
           uv run python - <<'PY'
           import os
@@ -106,4 +107,12 @@ jobs:
         with:
           name: browser-results-${{ matrix.shard }}
           path: dist/browser-results.xml
+          retention-days: 14
+      - name: Preserve browser failure evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: browser-failure-evidence-${{ matrix.shard }}
+          path: ${{ runner.temp }}/browser-evidence
+          if-no-files-found: ignore
           retention-days: 14

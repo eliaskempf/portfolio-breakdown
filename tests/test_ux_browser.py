@@ -337,6 +337,110 @@ def test_readiness_timeout_reports_scope_state_without_widget_values(monkeypatch
     assert 'do-not-log-widget-value' not in message
 
 
+@pytest.mark.parametrize('newer_scope', [None, 'poll-a', 'poll-c'])
+def test_automatic_early_finish_retires_only_its_covered_request(newer_scope):
+    from types import SimpleNamespace
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+    from streamlit.runtime.forward_msg_queue import ForwardMsgQueue
+    runs = StreamlitReruns(SimpleNamespace(on=lambda *a: None), settle=lambda *a, **kw: None)
+    def sent(scope):
+        message = BackMsg()
+        message.rerun_script.fragment_id = scope
+        message.rerun_script.is_auto_rerun = True
+        runs._sent(message.SerializeToString())
+    def started(scope):
+        message = ForwardMsg()
+        message.new_session.script_run_id = 'invented-' + scope
+        message.new_session.fragment_ids_this_run.append(scope)
+        return message
+    success = ForwardMsg(script_finished=ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY)
+    sent('poll-a')
+    runs._received(started('poll-a').SerializeToString())
+    sent('poll-b')
+    if newer_scope:
+        sent(newer_scope)
+        newer = runs._pending[newer_scope]
+    queue = ForwardMsgQueue()
+    queue.enqueue(ForwardMsg(script_finished=success.script_finished))
+    # Actual Streamlit rewrites A's unflushed success when B starts. A need
+    # not run again; another timer tick must not be needed to reach idle.
+    queue.clear(retain_lifecycle_msgs=True, fragment_ids_this_run=['poll-b'])
+    early, = queue.flush()
+    assert early.script_finished == ForwardMsg.FINISHED_EARLY_FOR_RERUN
+    runs._received(early.SerializeToString())
+    assert not runs.idle and runs._awaiting_restart and not runs._commit_complete
+    assert ('poll-a' in runs._pending) is (newer_scope == 'poll-a')
+    # A stray finish cannot stand in for the required follow-up start.
+    runs._received(success.SerializeToString())
+    assert not runs.idle and runs._awaiting_restart
+    runs._received(started('poll-b').SerializeToString())
+    assert not runs.idle
+    runs._received(success.SerializeToString())
+    assert runs.idle is (newer_scope is None)
+    if newer_scope:
+        assert runs._pending == {newer_scope: newer}
+        runs._received(started(newer_scope).SerializeToString())
+        runs._received(success.SerializeToString())
+        assert runs.idle
+
+
+@pytest.mark.parametrize('text_commit', [False, True])
+def test_nonautomatic_early_finish_keeps_user_request_pending(text_commit):
+    from types import SimpleNamespace
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+    runs = StreamlitReruns(SimpleNamespace(on=lambda *a: None), settle=lambda *a, **kw: None)
+    if text_commit:
+        runs.expected = ('invented', 'after')
+    request = BackMsg()
+    request.rerun_script.fragment_id = 'user'
+    request.rerun_script.widget_states.widgets.add(id='$$ID-synthetic-invented', string_value='after')
+    runs._sent(request.SerializeToString())
+    original = runs._pending['user']
+    start = ForwardMsg()
+    start.new_session.script_run_id = 'invented-user'
+    start.new_session.fragment_ids_this_run.append('user')
+    runs._received(start.SerializeToString())
+    poll = BackMsg()
+    poll.rerun_script.fragment_id = 'background'
+    poll.rerun_script.is_auto_rerun = True
+    runs._sent(poll.SerializeToString())
+    runs._received(ForwardMsg(script_finished=ForwardMsg.FINISHED_EARLY_FOR_RERUN).SerializeToString())
+    assert not runs.idle and runs._pending['user'] is original
+    start.new_session.fragment_ids_this_run[:] = ['background']
+    runs._received(start.SerializeToString())
+    success = ForwardMsg(script_finished=ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY)
+    runs._received(success.SerializeToString())
+    assert not runs.idle and not runs._commit_complete and runs._pending == {'user': original}
+    start.new_session.fragment_ids_this_run[:] = ['user']
+    runs._received(start.SerializeToString())
+    runs._received(success.SerializeToString())
+    assert runs.idle and runs._commit_complete is text_commit
+
+
+def test_automatic_early_finish_cannot_hide_an_active_text_conflict():
+    from types import SimpleNamespace
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+    runs = StreamlitReruns(SimpleNamespace(on=lambda *a: None), settle=lambda *a, **kw: None)
+    runs.expected = ('invented', 'after')
+    request = BackMsg()
+    request.rerun_script.fragment_id = 'editor'
+    request.rerun_script.widget_states.widgets.add(id='$$ID-synthetic-invented', string_value='after')
+    runs._sent(request.SerializeToString())
+    start = ForwardMsg()
+    start.new_session.script_run_id = 'invented-editor'
+    start.new_session.fragment_ids_this_run.append('editor')
+    runs._received(start.SerializeToString())
+    request.rerun_script.is_auto_rerun = True
+    runs._sent(request.SerializeToString())
+    newer = runs._pending['editor']
+    runs._received(ForwardMsg(script_finished=ForwardMsg.FINISHED_EARLY_FOR_RERUN).SerializeToString())
+    assert runs.error == 'Text commit overlapped an automatic request for the edited scope'
+    assert runs._pending['editor'] is newer and not runs._commit_complete
+
+
 def test_navigation_finish_preserves_a_newer_request_identity():
     from types import SimpleNamespace
     from streamlit.proto.BackMsg_pb2 import BackMsg

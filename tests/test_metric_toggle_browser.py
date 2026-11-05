@@ -102,12 +102,13 @@ def unused_ports():
 
 
 @pytest.fixture
-def metric_page(tmp_path):
+def metric_page(tmp_path, request):
     journal, _ = setup(tmp_path)
     save_journal(tmp_path, journal, None)
     port, control_port = unused_ports()
     preview = tmp_path/'preview.py'
-    preview.write_text(PREVIEW.replace('ROOT', repr(str(tmp_path))).replace('CONTROL_PORT', str(control_port)),
+    script = getattr(request, 'param', PREVIEW)
+    preview.write_text(script.replace('ROOT', repr(str(tmp_path))).replace('CONTROL_PORT', str(control_port)),
                        encoding='utf-8')
     def control(command):
         with urlopen(f'http://127.0.0.1:{control_port}/{command}', timeout=8) as response:
@@ -205,4 +206,104 @@ def test_gain_toggle_survives_queued_history_poll_and_remount(metric_page):
     playwright.expect(percentage).to_be_visible()
     reruns.wait(); settle(page)
     assert control('state')['callbacks'] == 5
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
+REMOUNT_PREVIEW = '''
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+from threading import Event, Thread
+import streamlit as st
+from streamlit.runtime.state.session_state import SessionState
+from portfolio_app.metric_interactions import toggle_gain_unit, toggle_metric_value
+
+@st.cache_resource
+def controls():
+    state = dict(entered=Event(), release=Event(), callbacks=0, removed=False)
+    original = SessionState.on_script_finished
+    def finished(session, active, *args, **kwargs):
+        previous = {k: v for k, v in session._old_state.items()
+                    if k.endswith('-first_gain_toggle') and isinstance(v, dict) and v.get('toggle')}
+        hold = (previous and not state['entered'].is_set()
+                and any(k.endswith('-second_value_toggle') for k in active)
+                and kwargs.get('remove_stale_widgets', True))
+        result = original(session, active, *args, **kwargs)
+        if hold:
+            state['removed'] = all(k not in session._old_state for k in previous)
+            state['entered'].set()
+            # Hold completion after genuine cleanup, without changing widget
+            # input or callbacks. A real click can still send the old nonce.
+            if not state['release'].wait(15):
+                raise RuntimeError('Synthetic component cleanup gate was not released')
+        return result
+    SessionState.on_script_finished = finished
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_GET(self):
+            command = self.path.lstrip('/')
+            if command == 'release': state['release'].set()
+            completed = state['entered'].wait(6) if command == 'entered' else True
+            payload = json.dumps(dict(completed=completed, callbacks=state['callbacks'],
+                                      removed=state['removed'])).encode()
+            self.send_response(200); self.end_headers(); self.wfile.write(payload)
+    server = ThreadingHTTPServer(('127.0.0.1', CONTROL_PORT), Handler)
+    Thread(target=server.serve_forever, daemon=True).start()
+    return state
+state = controls()
+def toggle():
+    state['callbacks'] += 1
+    st.session_state.percent = not st.session_state.get('percent', False)
+view = st.segmented_control('View', ['First', 'Second'], default='First', required=True)
+percent = st.session_state.get('percent', False)
+label = 'Show gain as amount' if percent else 'Show gain as percentage'
+if view == 'First':
+    with st.container(key='first'):
+        st.metric('Invented value', 'EUR 100', '10%' if percent else 'EUR 10')
+    toggle_gain_unit(percent=percent, on_toggle=toggle, container_key='first')
+else:
+    with st.container(key='second'):
+        st.metric('Invented value', '10%' if percent else 'EUR 10')
+    toggle_metric_value(label=label, on_toggle=toggle, container_key='second', interaction_key='gain')
+'''
+
+
+@pytest.mark.parametrize('metric_page', [REMOUNT_PREVIEW], indirect=True, ids=['component-cleanup'])
+def test_metric_action_is_not_replayed_after_inactive_host_cleanup(metric_page):
+    page, reruns, requests, control = metric_page
+    first = page.locator('.st-key-first').get_by_test_id('stMetricDelta')
+    second = page.locator('.st-key-second').get_by_test_id('stMetricValue')
+    playwright.expect(first).to_have_attribute('role', 'button')
+    reruns.wait(); settle(page)
+    first.click()
+    playwright.expect(first).to_have_text('10%')
+    reruns.wait(); settle(page)
+    assert control('state')['callbacks'] == 1
+    page.get_by_role('radio', name='Second', exact=True).click()
+    playwright.expect(second).to_have_text('10%')
+    try:
+        state = control('entered')
+        assert state['completed'] and state['removed']
+        # Intentionally navigate before completion: the visible replacement
+        # metric is ready, but the client still owns the old component state.
+        page.get_by_role('radio', name='First', exact=True).click()
+        playwright.expect(first).to_have_text('10%', timeout=5000)
+        assert control('state')['callbacks'] == 1
+    finally:
+        with suppress(OSError):
+            control('release')
+    # The nonce genuinely arrived on multiple browser requests; it was not
+    # injected by the test. Cleanup must not turn it into another action.
+    nonces = [json.loads(w.json_value)['toggle']['nonce']
+              for request in requests for w in request.widget_states.widgets
+              if w.id.endswith('-first_gain_toggle') and w.json_value]
+    assert len(nonces) >= 3 and len(set(nonces)) == 1
+    reruns.wait(); settle(page)
+    first.press('Enter')
+    playwright.expect(first).to_have_text('EUR 10', timeout=5000)
+    assert control('state')['callbacks'] == 2
+    reruns.click(page, page.get_by_role('radio', name='Second', exact=True))
+    playwright.expect(second).to_have_attribute('role', 'button')
+    second.press('Space')
+    playwright.expect(second).to_have_text('10%', timeout=5000)
+    assert control('state')['callbacks'] == 3
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

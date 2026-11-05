@@ -210,14 +210,14 @@ jobs:
         run: |
           uv run playwright install chromium
           uv run pytest tests/test_backup_browser.py::test_archive_review_cancel_switch_restart_and_tabs -q --basetemp="$RUNNER_TEMP/backup-startup-workspace" --junitxml="$RUNNER_TEMP/release-diagnostics/backup-startup.xml"
-      - name: Windows metric action regressions
+      - name: Windows metric and readiness regressions
         if: runner.os == 'Windows' && inputs.diagnostics_suite == 'metric-toggle'
         env:
           PORTFOLIO_REQUIRE_BROWSER: '1'
           PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/metric-toggle
         run: |
           uv run playwright install chromium
-          uv run pytest tests/test_metric_toggle_browser.py tests/test_history_download_browser.py tests/test_ux_browser.py::test_category_scope_performance_and_tab_roundtrip tests/test_portfolio_exposure_browser.py::test_normal_and_sandbox_exposure_controls -q --basetemp="$RUNNER_TEMP/metric-toggle-workspace" --junitxml="$RUNNER_TEMP/release-diagnostics/metric-toggle.xml"
+          uv run pytest tests/test_metric_toggle_browser.py tests/test_history_download_browser.py tests/test_ux_browser.py::test_category_scope_performance_and_tab_roundtrip tests/test_ux_browser.py::test_personal_history_is_visible_with_periods_ending_today tests/test_ux_browser.py::test_automatic_early_finish_retires_only_its_covered_request tests/test_ux_browser.py::test_nonautomatic_early_finish_keeps_user_request_pending tests/test_ux_browser.py::test_automatic_early_finish_cannot_hide_an_active_text_conflict tests/test_portfolio_exposure_browser.py::test_normal_and_sandbox_exposure_controls tests/test_futures_freshness_browser.py::test_stale_fresh_failure_settlement_and_popup_navigation tests/test_refresh_stability_browser.py::test_session_transitions_and_unsaved_editor_survive_ticks -q --basetemp="$RUNNER_TEMP/metric-toggle-workspace" --junitxml="$RUNNER_TEMP/release-diagnostics/metric-toggle.xml"
       - name: Windows rerun synchronization regressions
         if: runner.os == 'Windows' && inputs.diagnostics_suite == 'rerun-sync'
         env:
@@ -225,7 +225,7 @@ jobs:
           PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/rerun-browser
         run: |
           uv run playwright install chromium
-          uv run pytest tests/test_ux_browser.py -q -k 'text_commit or navigation or readiness_timeout or baseline_full or unsolicited_full or full_request or transaction_review_defaults' --junitxml="$RUNNER_TEMP/release-diagnostics/rerun-browser.xml"
+          uv run pytest tests/test_ux_browser.py -q -k 'text_commit or navigation or readiness_timeout or baseline_full or unsolicited_full or full_request or automatic_early or transaction_review_defaults' --junitxml="$RUNNER_TEMP/release-diagnostics/rerun-browser.xml"
       - name: Windows source application smoke
         if: runner.os == 'Windows' && inputs.diagnostics_suite == 'rerun-sync' && !cancelled()
         run: uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/release-diagnostics/source-smoke"
@@ -235,7 +235,7 @@ jobs:
           PORTFOLIO_REQUIRE_BROWSER: '1'
           PORTFOLIO_TEST_CPU_RATE: '4'
           PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/slow-rerun-browser
-        run: uv run pytest tests/test_ux_browser.py -q -k 'text_commit or navigation or readiness_timeout or baseline_full or unsolicited_full or full_request or transaction_review_defaults' --junitxml="$RUNNER_TEMP/release-diagnostics/slow-rerun-browser.xml"
+        run: uv run pytest tests/test_ux_browser.py -q -k 'text_commit or navigation or readiness_timeout or baseline_full or unsolicited_full or full_request or automatic_early or transaction_review_defaults' --junitxml="$RUNNER_TEMP/release-diagnostics/slow-rerun-browser.xml"
       - name: Mac native source controls
         if: runner.os == 'macOS'
         env:
