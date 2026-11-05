@@ -384,9 +384,13 @@ def test_listing_popup_search_selection_dismissal_and_navigation(import_page, wi
     playwright.expect(page.get_by_role('textbox', name='Name · BTC', exact=True)).to_have_value('Invented Bitcoin holding')
     page.screenshot(path=str(path.parent.parent / 'synthetic-import-mapping.png'))
     page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
-    assert not page.get_by_role('combobox', name='Holding · BTC', exact=True).count()
+    # The mapping run hands off to review through st.rerun(). Its intermediate
+    # idle DOM is not the destination; wait for the completed review itself.
+    playwright.expect(holding).to_have_count(0)
+    apply = page.get_by_role('button', name='Apply history', exact=True)
+    playwright.expect(apply).to_be_visible()
     page.screenshot(path=str(path.parent.parent / 'synthetic-shared-review.png'))
-    page.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
+    page.streamlit_reruns.click(page, apply)
     saved = read_snapshot(path).holdings
     assert saved.ticker.tolist() == ['BTC-EUR']
     assert saved.instrument_type.tolist() == ['crypto']
@@ -501,15 +505,15 @@ def test_partial_fills_share_one_optional_group_and_apply_together(import_page):
         b's1,2024-01-02,sell,AUR,2,30,EUR\ns2,2024-01-02,sell,AUR,2,30,EUR\ns3,2024-01-02,sell,AUR,2,30,EUR\n')
     assert not page.get_by_role('button', name='Apply history', exact=True).count()
     page.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
-    assert not page.get_by_role('combobox', name='Resolve match', exact=False).count()
-    assert not page.get_by_role('combobox', name='Holding · AUR', exact=True).count()
     group = page.get_by_text('3 similar transactions · AUR', exact=True)
     playwright.expect(group).to_be_visible()
+    assert not page.get_by_role('combobox', name='Resolve match', exact=False).count()
+    assert not page.get_by_role('combobox', name='Holding · AUR', exact=True).count()
     playwright.expect(page.get_by_role('button', name='Apply history', exact=True)).to_be_enabled()
     group.click(); settle(page)
     page.screenshot(path=str(path.parent.parent / 'synthetic-partial-fills-review.png'))
     assert not path.exists()
-    page.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
+    page.streamlit_reruns.click(page, page.get_by_role('button', name='Apply history', exact=True))
     assert not page.get_by_role('dialog').count()
     journal, _ = load_journal(path.parent)
     assert not page.get_by_role('table', name='Positions', exact=True).get_by_text('Aur', exact=True).count()

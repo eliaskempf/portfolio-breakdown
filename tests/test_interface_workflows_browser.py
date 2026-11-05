@@ -14,7 +14,7 @@ from portfolio_app.leverage_settings import load_leverage_settings
 from test_actual_portfolio import invented
 from test_generalized_studies_ui import config
 from test_leveraged_funds import invented_workspace
-from browser_support import settle
+from browser_support import StreamlitReruns, settle
 from test_futures_freshness_browser import futures_page  # noqa: F401
 
 playwright = pytest.importorskip('playwright.sync_api')
@@ -73,7 +73,10 @@ else:
                 browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
                 page = browser.new_page(viewport={'width': 1440, 'height': 1000})
                 page.set_default_timeout(15000)
+                page.reruns = StreamlitReruns(page, settle=settle, timeout_ms=15000)
                 page.goto(f'http://127.0.0.1:{port}')
+                playwright.expect(page.get_by_role('radio', name='Journal', exact=True)).to_be_checked()
+                page.reruns.wait()
                 settle(page)
                 yield page, tmp_path
                 browser.close()
@@ -114,22 +117,22 @@ def test_journal_review_cancel_save_and_stale_revision(workflow_page):
     select(page, 'Entry action', 'Correct entry')
     playwright.expect(page.get_by_role('textbox', name='Corrected amount', exact=True)).to_have_value('8.00')
     fill(page, 'Corrected amount', '3')
-    page.get_by_role('button', name='Review correction', exact=True).click(); settle(page)
+    page.reruns.click(page, page.get_by_role('button', name='Review correction', exact=True))
     playwright.expect(page.get_by_role('button', name='Save correction', exact=True)).to_be_visible()
     assert (root/'accounts'/ledger.FILE).read_bytes() == original
-    page.get_by_role('button', name='Cancel correction', exact=True).click(); settle(page)
+    page.reruns.click(page, page.get_by_role('button', name='Cancel correction', exact=True))
     playwright.expect(page.get_by_role('button', name='Save correction', exact=True)).to_have_count(0)
     select(page, 'Entry action', 'Correct entry')
     fill(page, 'Corrected amount', '4')
-    page.get_by_role('button', name='Review correction', exact=True).click(); settle(page)
+    page.reruns.click(page, page.get_by_role('button', name='Review correction', exact=True))
     current, revision = ledger.load_journal(root/'accounts')
     external = ledger.append_event(current, ledger.Event('external', '2026-01-06', 'fee', account_id='a', currency='EUR', amount=1))
     ledger.save_journal(root/'accounts', external, revision)
-    page.get_by_role('button', name='Save correction', exact=True).click(); settle(page)
+    page.reruns.click(page, page.get_by_role('button', name='Save correction', exact=True))
     assert ledger.load_journal(root/'accounts')[0] == external
     playwright.expect(page.get_by_role('button', name='Save correction', exact=True)).to_have_count(0)
-    page.get_by_role('button', name='Review correction', exact=True).click(); settle(page)
-    page.get_by_role('button', name='Save correction', exact=True).click(); settle(page)
+    page.reruns.click(page, page.get_by_role('button', name='Review correction', exact=True))
+    page.reruns.click(page, page.get_by_role('button', name='Save correction', exact=True))
     saved, _ = ledger.load_journal(root/'accounts')
     assert saved.events[:-1] == external.events and saved.events[-1].replaces == 'fee'
     assert ledger.replay(saved).cash['a', 'EUR'] == 19995
@@ -139,11 +142,11 @@ def test_journal_review_cancel_save_and_stale_revision(workflow_page):
 
 def test_named_liability_and_company_controls(workflow_page):
     page, root = workflow_page
-    page.get_by_text('Liabilities & funds', exact=True).click(); settle(page)
+    page.reruns.click(page, page.get_by_text('Liabilities & funds', exact=True))
     page.get_by_text('Recorded liabilities & leveraged funds', exact=True).click(); settle(page)
     page.get_by_role('textbox', name='Liability name', exact=True).fill('Invented reserve loan')
     page.get_by_role('textbox', name='Account or lender', exact=True).fill('Invented lender')
-    page.get_by_role('button', name='Save liability', exact=True).click(); settle(page)
+    page.reruns.click(page, page.get_by_role('button', name='Save liability', exact=True))
     item = load_leverage_settings(root/'funds')[0].liabilities[0]
     assert item.balance_eur is None
     select(page, 'Liability', 'Invented reserve loan · Invented lender')
@@ -153,18 +156,18 @@ def test_named_liability_and_company_controls(workflow_page):
     balance.fill('0')
     balance.press('Tab')
     playwright.expect(balance).to_have_value('0')
-    page.get_by_role('button', name='Save liability', exact=True).click(); settle(page)
-    # The saved form is rebuilt from its new revision; wait for its persisted
-    # numeric value instead of treating a transient idle state as a saved file.
+    page.reruns.click(page, page.get_by_role('button', name='Save liability', exact=True))
+    # The acknowledged save rebuilds the form from its new revision; retain
+    # the displayed-value check as well as the persisted-file assertion.
     playwright.expect(balance).to_have_value('0.0')
     assert load_leverage_settings(root/'funds')[0].liabilities[0].balance_eur == 0
     playwright.expect(page.get_by_role('combobox', name='ETF position', exact=True)).to_have_value('Invented fund · Synthetic')
     page.get_by_role('textbox', name='Signed factor', exact=True).fill('-2')
     page.get_by_role('textbox', name='Source or method', exact=True).fill('Invented documented factor')
-    page.get_by_role('button', name='Save fund factor', exact=True).click(); settle(page)
+    page.reruns.click(page, page.get_by_role('button', name='Save fund factor', exact=True))
     settings = load_leverage_settings(root/'funds')[0]
     assert settings.liabilities[0].id == item.id and settings.fund_factors[0].factor == -2
-    page.get_by_text('Companies', exact=True).click(); settle(page)
+    page.reruns.click(page, page.get_by_text('Companies', exact=True))
     playwright.expect(page.get_by_role('checkbox', name='Show stock-only company exposure')).to_have_count(0)
     playwright.expect(page.get_by_text('Selected stock universe:', exact=False)).to_be_visible()
     select(page, 'Exclude source buckets from stock exposure', 'active')
