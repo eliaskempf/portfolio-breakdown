@@ -193,14 +193,14 @@ jobs:
           PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/browser
         run: |
           uv run playwright install chromium
-          uv run pytest tests/test_backup_browser.py tests/test_position_entry_browser.py tests/test_tour_browser.py -q --junitxml="$RUNNER_TEMP/release-diagnostics/browser.xml"
+          uv run pytest tests/test_backup_browser.py tests/test_position_entry_browser.py tests/test_tour_browser.py tests/test_intro_browser.py::test_intro_welcome_navigation_and_help tests/test_report_download_browser.py -q --junitxml="$RUNNER_TEMP/release-diagnostics/browser.xml"
       - name: Windows slow-render regressions
         if: runner.os == 'Windows' && inputs.diagnostics_suite != 'rerun-sync' && !cancelled()
         env:
           PORTFOLIO_REQUIRE_BROWSER: '1'
           PORTFOLIO_TEST_CPU_RATE: '4'
           PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/slow-browser
-        run: uv run pytest tests/test_backup_browser.py::test_archive_review_cancel_switch_restart_and_tabs tests/test_position_entry_browser.py::test_search_selection_and_settings_help tests/test_tour_browser.py::test_demo_tour_every_view_and_menu_replay tests/test_tour_browser.py::test_help_chevron_keeps_menu_open -q --junitxml="$RUNNER_TEMP/release-diagnostics/slow-browser.xml"
+        run: uv run pytest tests/test_backup_browser.py::test_archive_review_cancel_switch_restart_and_tabs tests/test_position_entry_browser.py::test_search_selection_and_settings_help tests/test_tour_browser.py::test_demo_tour_every_view_and_menu_replay tests/test_tour_browser.py::test_help_chevron_keeps_menu_open tests/test_intro_browser.py::test_intro_welcome_navigation_and_help tests/test_report_download_browser.py -q --junitxml="$RUNNER_TEMP/release-diagnostics/slow-browser.xml"
       - name: Windows rerun synchronization regressions
         if: runner.os == 'Windows' && inputs.diagnostics_suite == 'rerun-sync'
         env:

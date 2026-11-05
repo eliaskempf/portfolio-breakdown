@@ -131,8 +131,9 @@ def test_report_download_does_not_rerun_while_deferred_worker_waits(report_page)
             playwright.expect(page.get_by_text('Synthetic report renders: 1', exact=True)).to_be_visible()
         finally:
             (root / 'release-worker').touch()
-    report = Path(pending.value.path()).read_text()
-    assert report == layout_report([source])
+    downloaded = Path(pending.value.path()).read_bytes()
+    assert downloaded == layout_report([source]).encode('utf-8')
+    report = downloaded.decode('utf-8')
     assert all(secret not in report for secret in
                ('XX0000000000', 'SYN001', 'INVENTED FUND', '100,00', '107,00'))
     settle(page)

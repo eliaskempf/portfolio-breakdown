@@ -244,6 +244,8 @@ def test_intro_welcome_navigation_and_help(intro_page):
     page.get_by_role('button', name=re.compile('Add position$')).click()
     dialog.get_by_role('button', name='Enter manually', exact=True).click()
     playwright.expect(dialog.get_by_role('textbox', name='Instrument name', exact=True)).to_have_value('')
+    # The new field can arrive before stale dialog controls are removed.
+    settle(page)
     dialog.get_by_role('button', name='Cancel', exact=True).click()
     playwright.expect(dialog).to_have_count(0)
     assert not (directory / 'empty' / 'holdings.csv').exists()
