@@ -2,7 +2,7 @@
 from dataclasses import replace
 from datetime import timedelta
 
-from browser_support import settle, select_tab
+from browser_support import settle
 from portfolio_app.futures_quotes import record_result
 from portfolio_app.derivative_types import PriceObservation
 from portfolio_app.locking import write_lock
@@ -23,7 +23,9 @@ def set_clock(root, now):
 
 def test_idle_minutes_retrievals_and_failure_preserve_table_and_focus(futures_page):
     page, root, journal, contract = futures_page
-    select_tab(page, 'Positions')
+    # A selected tab can still contain the prior view's inert table until its
+    # navigation rerun completes. Establish focus on the acknowledged view.
+    page.reruns.click(page, page.get_by_role('tab', name='Positions', exact=True))
     row = page.locator('tr[data-position-id="investment:synthetic"]')
     summary = row.locator('summary')
     # Resolve and focus the current disclosure for the keypress; a separate
@@ -82,8 +84,8 @@ def test_freshness_boundary_updates_locally_and_new_price_waits_for_dialog_close
     quote = PriceObservation(contract.id, '2026-01-07', 990, kind='mark',
         source='Invented live observation', quote_at=(now-timedelta(minutes=29)).isoformat())
     record_result(root, contract, quote, '', attempted_at=now, now=now)
-    page.get_by_role('button', name='Refresh prices').click(); settle(page)
-    select_tab(page, 'Positions')
+    page.reruns.click(page, page.get_by_role('button', name='Refresh prices'))
+    page.reruns.click(page, page.get_by_role('tab', name='Positions', exact=True))
     row = page.locator('tr[data-position-id="investment:synthetic"]')
     playwright.expect(row.locator('td.negative')).to_have_count(1)
     count = renders(root)
@@ -124,7 +126,7 @@ def test_session_transitions_and_unsaved_editor_survive_ticks(futures_page):
         source='Invented Friday quote', quote_at='2026-01-09T20:45:00+00:00')
     set_clock(root, friday)
     record_result(root, contract, quote, '', attempted_at=friday, now=friday)
-    page.get_by_role('button', name='Refresh prices').click(); settle(page)
+    page.reruns.click(page, page.get_by_role('button', name='Refresh prices'))
     row = page.locator('tr[data-position-id="investment:synthetic"]')
     playwright.expect(row.locator('td.negative')).to_have_count(2)
     count = renders(root)
@@ -162,8 +164,8 @@ def test_overview_metrics_and_category_qualification_update_without_replacing_ch
     quote = PriceObservation(contract.id, '2026-01-07', 990, kind='mark',
         source='Invented boundary quote', quote_at=(NOW-timedelta(minutes=29)).isoformat())
     record_result(root, contract, quote, '', attempted_at=NOW, now=NOW)
-    page.get_by_role('button', name='Refresh prices').click(); settle(page)
-    select_tab(page, 'Overview')
+    page.reruns.click(page, page.get_by_role('button', name='Refresh prices'))
+    playwright.expect(page.get_by_role('tab', name='Overview', exact=True)).to_have_attribute('aria-selected', 'true')
     value = page.locator('.st-key-overview_value')
     chart = page.locator('.js-plotly-plot').first
     chart.evaluate('el => window.allocationChart=el')

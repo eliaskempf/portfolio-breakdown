@@ -17,6 +17,7 @@ def download_layout_report(page, button):
     from streamlit.proto.BackMsg_pb2 import BackMsg
     from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 
+    settle_layout(page)
     events = deque(maxlen=30)
     sockets = [socket for socket in getattr(page, 'synthetic_sockets', ())
                if '/_stcore/stream' in socket.url]
@@ -148,9 +149,7 @@ def test_failed_statement_offers_local_masked_report_without_saving(transaction_
     before = load_journal(root)[1]
     dialog.locator('input[type=file]').set_input_files([statement_path]); settle(page)
     dialog.get_by_text('Statement details', exact=True).click(); settle(page)
-    with page.expect_download() as pending:
-        dialog.get_by_role('button', name='Download masked layout report', exact=True).click()
-    download = pending.value
+    download = download_layout_report(page, dialog.get_by_role('button', name='Download masked layout report', exact=True))
     assert download.suggested_filename == 'statement-layout.txt'
     from pathlib import Path
     report = Path(download.path()).read_text()
@@ -201,10 +200,9 @@ def test_supplementary_rows_allow_review_without_inventing_charges(transaction_p
     assert dialog.get_by_text('Additional statement rows',exact=True).count() == 1
     assert dialog.get_by_text('Verbleibender synthetischer Bestand ST 7,25000',exact=True).count() == 1
     assert dialog.get_by_role('button',name='Save transactions and review',exact=True).is_disabled()
-    with page.expect_download() as pending:
-        dialog.get_by_role('button',name='Download masked layout report',exact=True).click()
+    downloaded = download_layout_report(page, dialog.get_by_role('button',name='Download masked layout report',exact=True))
     from pathlib import Path
-    report = Path(pending.value.path()).read_text()
+    report = Path(downloaded.path()).read_text()
     assert 'Supplementary quantity (review required)' in report
     assert 'Supplementary tax detail (review required)' in report
     assert all(value not in report for value in ('7,25000','22,50','39,50','synthetic-context.pdf'))
@@ -235,9 +233,8 @@ def test_unconfirmed_fee_purchase_can_download_eligibility_diagnostic(transactio
     confirm_identity(page, dialog)
     assert dialog.get_by_role('button', name='Save transactions and review', exact=True).is_disabled()
     dialog.get_by_text('Statement details', exact=True).click(); settle(page)
-    with page.expect_download() as pending:
-        dialog.get_by_role('button', name='Download masked layout report', exact=True).click()
-    report = Path(pending.value.path()).read_text()
+    downloaded = download_layout_report(page, dialog.get_by_role('button', name='Download masked layout report', exact=True))
+    report = Path(downloaded.path()).read_text()
     assert 'Automatic zero fees: review required.' in report
     assert 'Trade value and debit are not exactly equal in the same currency.' in report
     assert '100,01' not in report
@@ -261,7 +258,7 @@ def test_independent_mixed_batch_provenance_and_identifier_review(transaction_pa
     confirm_identity(page, dialog)
     assert button.is_enabled()
     assert dialog.get_by_role('button', name='Confirm statement charges', exact=True).count() == 0
-    dialog.get_by_text('Statement details', exact=True).click(); settle_layout(page)
+    dialog.get_by_text('Statement details', exact=True).click(); settle(page)
     assert dialog.get_by_role('button', name='Download masked layout report', exact=True).count() == 1
     from pathlib import Path
     downloaded = download_layout_report(page, dialog.get_by_role('button', name='Download masked layout report', exact=True))
@@ -315,9 +312,8 @@ def test_unresolved_financial_rows_offer_diagnostics_but_no_save(transaction_pag
     assert dialog.get_by_role('button', name='Save transactions and review', exact=True).count() == 0
     assert dialog.get_by_text('I checked that all fees and taxes are included', exact=True).count() == 0
     dialog.get_by_text('Statement details', exact=True).click(); settle(page)
-    with page.expect_download() as pending:
-        dialog.get_by_role('button', name='Download masked layout report', exact=True).click()
-    report = Path(pending.value.path()).read_text()
+    downloaded = download_layout_report(page, dialog.get_by_role('button', name='Download masked layout report', exact=True))
+    report = Path(downloaded.path()).read_text()
     assert 'Automatic zero fees: review required.' in report
     expected = 'Gross amount unreadable' if case == 'extra amount' else 'unclassified monetary row'
     assert expected in report

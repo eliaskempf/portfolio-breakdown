@@ -23,8 +23,9 @@ intro while the app loads. **F11** switches between maximized and borderless vie
 borderless mode also has an Exit button. Links to other sites open in your normal
 browser. Closing the app window stops its owned server. Launching again focuses
 the existing window for that workspace. The portable alternative is to extract
-the Windows application ZIP and run `Portfolio Breakdown.exe`; keep `_internal`
-and all other files beside it. `--browser` selects the browser fallback.
+the Windows application ZIP and run `Portfolio Breakdown.exe`; keep the complete
+extracted folder, including its `_internal-<build>` runtime directory. `--browser`
+selects the browser fallback.
 
 **Linux (Ubuntu 22.04/24.04 x64):** install the `.deb` with your package manager
 and launch **Portfolio Breakdown Experimental** from the applications menu.

@@ -17,7 +17,7 @@ from portfolio_app.futures_clock import business_date
 from portfolio_app.futures_quotes import record_result
 from portfolio_app.settlement_archive import SettlementArchive
 from test_futures_investments import grouped
-from browser_support import settle, select_tab
+from browser_support import StreamlitReruns, settle
 
 NOW = datetime(2026, 1, 7, 12, tzinfo=timezone.utc)
 
@@ -95,7 +95,11 @@ def futures_page(tmp_path):
             browser=runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),args=['--no-sandbox'])
             page=browser.new_page(viewport={'width':1440,'height':1100})
             page.set_default_timeout(20000)
+            page.reruns = StreamlitReruns(page, settle=settle)
             page.goto(f'http://127.0.0.1:{port}')
+            # Document load can precede the websocket and first app render.
+            page.locator('tr[data-position-id="investment:synthetic"]').wait_for()
+            page.reruns.wait()
             yield page,root,journal,contract
             browser.close()
     finally:
@@ -112,7 +116,7 @@ def test_stale_fresh_failure_settlement_and_popup_navigation(futures_page):
     playwright.expect(row.locator('details')).to_have_attribute('open','')
     playwright.expect(row).to_contain_text('Invented temporary outage')
     playwright.expect(page.get_by_role('dialog')).to_have_count(0)
-    select_tab(page,'Positions')
+    page.reruns.click(page,page.get_by_role('tab',name='Positions',exact=True))
     row=page.locator('tr[data-position-id="investment:synthetic"]')
     playwright.expect(row.locator('summary')).to_contain_text('Stale')
     row.locator('td').first.click()
@@ -128,7 +132,7 @@ def test_stale_fresh_failure_settlement_and_popup_navigation(futures_page):
     # execution fallback, never an unqualified positive current valuation.
     saved_quotes = root/'invented-saved-quotes.json'
     (root/'futures-quotes.json').rename(saved_quotes)
-    page.get_by_role('button',name='Refresh prices').click();settle(page)
+    page.reruns.click(page,page.get_by_role('button',name='Refresh prices'))
     row=page.locator('tr[data-position-id="investment:synthetic"]')
     playwright.expect(row.locator('summary')).to_contain_text('Recorded')
     assert row.locator('td.positive,td.negative').count()==0
@@ -137,7 +141,7 @@ def test_stale_fresh_failure_settlement_and_popup_navigation(futures_page):
     fresh=PriceObservation(contract.id,business_date(stamp).isoformat(),990,kind='mark',
         source='Invented delayed quote',observed_at=now.isoformat(),quote_at=stamp.isoformat(),delay_minutes=15)
     record_result(root,contract,fresh,'',attempted_at=now,now=now)
-    page.get_by_role('button',name='Refresh prices').click();settle(page)
+    page.reruns.click(page,page.get_by_role('button',name='Refresh prices'))
     row=page.locator('tr[data-position-id="investment:synthetic"]')
     playwright.expect(row.locator('summary')).to_have_count(0)
     assert row.locator('td.negative').count()==1
@@ -148,19 +152,19 @@ def test_stale_fresh_failure_settlement_and_popup_navigation(futures_page):
     SettlementArchive(root).record(contract,PriceObservation(contract.id,day.isoformat(),1005,source='Invented daily settlement'))
     assert apply_archived_settlements(root, today=NOW.date())==1
     assert apply_archived_settlements(root, today=NOW.date())==0
-    page.get_by_role('button',name='Refresh prices').click();settle(page)
+    page.reruns.click(page,page.get_by_role('button',name='Refresh prices'))
     assert row.locator('td').nth(3).inner_text()==before_value
     playwright.expect(row.locator('summary')).to_have_count(0)
     record_result(root,contract,None,'Invented refresh failure',attempted_at=NOW,now=NOW)
-    page.get_by_role('button',name='Refresh prices').click();settle(page)
+    page.reruns.click(page,page.get_by_role('button',name='Refresh prices'))
     playwright.expect(row.locator('summary')).to_have_count(0)
     assert row.locator('td[title]').evaluate_all("cells => cells.some(cell => cell.title.includes('Invented refresh failure'))")
-    select_tab(page,'Futures')
+    page.reruns.click(page,page.get_by_role('tab',name='Futures',exact=True))
     page.get_by_text('Marks & FX',exact=True).click();settle(page)
     page.get_by_role('textbox',name='Manual mark price',exact=True).fill('995')
     page.get_by_role('textbox',name='Manual mark price',exact=True).press('Enter');settle(page)
     playwright.expect(page.get_by_role('button',name='Save mark only',exact=True)).to_be_visible()
-    select_tab(page,'Overview')
+    page.reruns.click(page,page.get_by_role('tab',name='Overview',exact=True))
     page.set_viewport_size({'width':750,'height':1000});settle(page)
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
@@ -182,7 +186,7 @@ def test_closed_market_latest_session_has_compact_accessible_details(futures_pag
             kind='mark', source='Invented last trade', quote_at='2026-01-09T19:00:00+00:00'),
             '', attempted_at=now, now=now)
         title = 'Market closed · Latest available quote'
-    page.get_by_role('button', name='Refresh prices').click(); settle(page)
+    page.reruns.click(page, page.get_by_role('button', name='Refresh prices'))
     indicator = row.get_by_label('Valuation details', exact=True)
     playwright.expect(indicator).to_have_text('ⓘ')
     playwright.expect(row.locator('td').first.get_by_label('Valuation details')).to_have_count(1)
@@ -195,7 +199,7 @@ def test_closed_market_latest_session_has_compact_accessible_details(futures_pag
     playwright.expect(row.locator('details')).to_have_attribute('open', '')
     playwright.expect(row).to_contain_text(title)
     playwright.expect(page.get_by_role('dialog')).to_have_count(0)
-    select_tab(page, 'Positions')
+    page.reruns.click(page, page.get_by_role('tab', name='Positions', exact=True))
     row = page.locator('tr[data-position-id="investment:synthetic"]')
     playwright.expect(row.get_by_label('Valuation details', exact=True)).to_be_visible()
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

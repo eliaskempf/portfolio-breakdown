@@ -50,9 +50,10 @@ def _statement_details(files, drafts, key):
         st.dataframe(pd.DataFrame([{'Document': i+1, 'File': file.name,
             'ISIN': draft.isin or 'Not supplied', 'WKN': draft.wkn or 'Not supplied'}
             for i, (file, draft) in enumerate(zip(files, drafts))]), hide_index=True, width='stretch')
+        # A download-only action must not rerun and replace its deferred callback.
         st.download_button('Download masked layout report',
             data=lambda: layout_report([file.getvalue() for file in files]),
-            file_name='statement-layout.txt', mime='text/plain', key=key+'report',
+            file_name='statement-layout.txt', mime='text/plain', key=key+'report', on_click='ignore',
             help='For troubleshooting only. Names, identifiers, dates and amounts are masked. Originals stay local.')
 
 
