@@ -293,7 +293,12 @@ unmounts and are restored once on remount so the browser receives the retained
 value. Remount bookkeeping is consumed only after view dispatch, preserving it
 across early-return dialogs. Buttons, upload handles and editor patches must not
 be reassigned as ordinary input state. Imports and persistent editors keep their specialized
-adapters. Calculation fingerprints stay with the calculators that understand
+adapters. Registered ordinary import review controls also use the Positions/Import
+remount boundary so a delayed navigation request cannot leave their browser value
+at its default while the backend retains the reviewed choice. The holdings uploader
+discards stale widget handles on that return while retaining the draft file bytes;
+explicitly removing an uploaded file still clears its retained selection.
+Calculation fingerprints stay with the calculators that understand
 their assumptions.
 
 Currency changes clear monetary drafts and prior monetary plans while retaining

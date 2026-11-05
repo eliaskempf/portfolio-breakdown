@@ -207,6 +207,7 @@ def test_first_history_preserves_tabs_selection_and_valuation(ux_page):
     table.locator('tr[data-position-id="fund-a"] td').first.click(); settle(page)
     dialog = page.get_by_role('dialog')
     tabs = dialog.get_by_role('radiogroup', name='Position detail view')
+    playwright.expect(tabs.get_by_role('radio')).to_have_text(['History', 'Key metrics', 'Transactions', 'Details'])
     before = tabs.get_by_role('radio').all_text_contents()
     playwright.expect(tabs.get_by_role('radio', name='History', exact=True)).to_be_checked()
     playwright.expect(dialog.get_by_role('radiogroup', name='History type')).to_have_count(0)

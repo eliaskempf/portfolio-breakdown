@@ -148,7 +148,8 @@ FEATURES = (
         inputs=Keys(prefixes=('futures_input_',))),
     FeatureState('currency', Keys(prefixes=('currency_',)), currency=Keys(prefixes=('currency_estimate_',))),
     FeatureState('onboarding', Keys(prefixes=('onboarding_',)), tour=Keys(prefixes=('onboarding_',))),
-    FeatureState('imports', Keys(prefixes=('import_',))),
+    FeatureState('imports', Keys(prefixes=('import_',)),
+        mounted=tab('Positions', 'positions_workflow', 'Import')),
     FeatureState('fund setup', Keys(prefixes=('etf_setup_',))),
     FeatureState('editors', Keys(names=('view_editor_drafts', 'view_editor_bases')),
         tour_objects=Keys(names=('view_editor_drafts', 'view_editor_bases'))),
@@ -171,7 +172,11 @@ def retained_inputs(state, *, returning=()):
     for key in list(state):
         policy = policy_for(key)
         safe_input = scalar(state[key]) or isinstance(state[key], date)
-        if policy and not trigger(key) and policy.inputs.matches(key) and safe_input and (key in returning or not policy.mounted(key, state)):
+        # Import adapters register ordinary review controls separately from
+        # uploads/editor patches. Re-emit those inputs once on a view remount,
+        # even when a delayed navigation request retained their backend values.
+        review_input = policy and policy.owner == 'imports' and key in state.get('import_controls', {})
+        if policy and not trigger(key) and (policy.inputs.matches(key) or review_input) and safe_input and (key in returning or not policy.mounted(key, state)):
             yield key
 
 

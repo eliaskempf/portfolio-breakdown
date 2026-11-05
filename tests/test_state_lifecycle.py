@@ -86,6 +86,50 @@ def test_remount_is_restored_until_view_dispatch_completes(monkeypatch):
     assert 'exposure_market_basis' not in writes
 
 
+def test_import_review_remount_restores_current_values_once(monkeypatch):
+    from types import SimpleNamespace
+    from portfolio_app import view_state
+
+    class RecordedState(dict):
+        def __setitem__(self, key, value):
+            writes.append(key)
+            super().__setitem__(key, value)
+
+    writes = []
+    saved = RecordedState(main_tabs='Positions', positions_workflow='Import',
+        import_kind='Holdings snapshot', import_example_shares='Adjusted',
+        import_controls={'import_kind': 'Holdings snapshot', 'import_example_shares': 'Original'},
+        import_uploads='upload handle', import_example_rows={'edited_rows': {}},
+        import_tx_pending_complete=True)
+    monkeypatch.setattr(view_state, 'st', SimpleNamespace(session_state=saved))
+    review = {'import_kind', 'import_example_shares'}
+    view_state.preserve_view_inputs()
+    assert not review.intersection(writes)
+    saved['main_tabs'] = 'Overview'
+    assert review <= set(retained_inputs(saved))
+    assert not {'import_uploads', 'import_example_rows', 'import_tx_pending_complete'} & set(retained_inputs(saved))
+    view_state.preserve_view_inputs()
+    view_state.finish_view_inputs()
+    saved['main_tabs'] = 'Positions'
+    writes.clear()
+    view_state.preserve_view_inputs()
+    assert review <= set(writes)
+    # The incoming widget value wins over the older retained draft snapshot.
+    assert saved['import_example_shares'] == 'Adjusted'
+    view_state.finish_view_inputs()
+    writes.clear()
+    view_state.preserve_view_inputs()
+    assert not review.intersection(writes)
+    # Cancellation/completion can remove all import state without old remount
+    # bookkeeping reviving any cleared control.
+    saved['view_unmounted_inputs'] = list(review)
+    for key in list(saved):
+        if key.startswith('import_'):
+            del saved[key]
+    view_state.preserve_view_inputs()
+    assert not review.intersection(saved)
+
+
 def test_workspace_clears_owned_drafts_results_and_keeps_scoped_preferences():
     saved = state()
     transition(saved, 'workspace')

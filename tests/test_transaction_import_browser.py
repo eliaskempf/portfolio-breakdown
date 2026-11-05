@@ -6,7 +6,74 @@ from portfolio_app.positions import read_snapshot
 from portfolio_app.security_history import effective_holdings
 from test_consors_pdf import statement
 from test_transaction_dialog_browser import transaction_page, watch_dialog  # noqa: F401
-from browser_support import settle
+from browser_support import settle, settle_layout
+
+
+def download_layout_report(page, button):
+    """Keep bounded failure evidence without retrying the click or download."""
+    from collections import deque
+    from contextlib import suppress
+    from playwright.sync_api import Error, TimeoutError
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+
+    events = deque(maxlen=30)
+    sockets = [socket for socket in getattr(page, 'synthetic_sockets', ())
+               if '/_stcore/stream' in socket.url]
+
+    def sent(payload):
+        message = BackMsg.FromString(payload)
+        if message.WhichOneof('type') == 'backend_operation_request':
+            operation = message.backend_operation_request
+            if operation.HasField('deferred_file'):
+                events.append(dict(event='request', request_id=operation.request_id,
+                                   file_id=operation.deferred_file.file_id))
+
+    def received(payload):
+        message = ForwardMsg.FromString(payload)
+        kind = message.WhichOneof('type')
+        if kind == 'backend_operation_response':
+            operation = message.backend_operation_response
+            events.append(dict(event='response', request_id=operation.request_id,
+                               error=operation.error_msg, has_url=bool(operation.deferred_file.url)))
+        elif kind in {'new_session', 'script_finished'}:
+            events.append(dict(event=kind))
+
+    for socket in sockets:
+        socket.on('framesent', sent)
+        socket.on('framereceived', received)
+    try:
+        page.evaluate('''() => {
+        window.reportClickEvents = [];
+        window.reportClickObserver = new AbortController();
+        for (const type of ['pointerdown', 'pointerup', 'click']) {
+            document.addEventListener(type, event => {
+                const button = event.target.closest('button');
+                window.reportClickEvents.push({type, target: event.target.tagName,
+                    button: button?.textContent, x: event.clientX, y: event.clientY,
+                    scriptState: document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state')});
+                window.reportClickEvents = window.reportClickEvents.slice(-12);
+            }, {capture: true, signal: window.reportClickObserver.signal});
+        }
+        }''')
+        with page.expect_download() as pending:
+            button.click()
+        return pending.value
+    except TimeoutError as exc:
+        try:
+            clicks = page.evaluate('window.reportClickEvents')
+        except Error as capture_error:
+            clicks = f'Capture unavailable: {capture_error}'
+        raise AssertionError(f'Masked report download timed out: protocol_observed={bool(sockets)}; '
+                             f'protocol={list(events)!r}; clicks={clicks!r}') from exc
+    finally:
+        for socket in sockets:
+            with suppress(Error):
+                socket.remove_listener('framesent', sent)
+            with suppress(Error):
+                socket.remove_listener('framereceived', received)
+        with suppress(Error):
+            page.evaluate('window.reportClickObserver?.abort()')
 
 
 def confirm_identity(page, dialog):
@@ -194,12 +261,11 @@ def test_independent_mixed_batch_provenance_and_identifier_review(transaction_pa
     confirm_identity(page, dialog)
     assert button.is_enabled()
     assert dialog.get_by_role('button', name='Confirm statement charges', exact=True).count() == 0
-    dialog.get_by_text('Statement details', exact=True).click(); settle(page)
+    dialog.get_by_text('Statement details', exact=True).click(); settle_layout(page)
     assert dialog.get_by_role('button', name='Download masked layout report', exact=True).count() == 1
     from pathlib import Path
-    with page.expect_download() as pending:
-        dialog.get_by_role('button', name='Download masked layout report', exact=True).click()
-    report = Path(pending.value.path()).read_text()
+    downloaded = download_layout_report(page, dialog.get_by_role('button', name='Download masked layout report', exact=True))
+    report = Path(downloaded.path()).read_text()
     assert 'Page 2, row 4' in report and 'Unclassified monetary rows remain.' in report
     assert 'Order limit (informational)' in report and 'Tax calculation (informational)' in report
     assert all(secret not in report for secret in ('XX0000000777','7,25','SYNTHETIC','125,00'))

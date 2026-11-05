@@ -28,6 +28,12 @@ def review_control(widget, *args, key, **kwargs):
 
 
 def import_files():
+    if 'import_kind' in st.session_state.get('view_unmounted_inputs', ()):
+        # A delayed return request can resurrect an old upload handle after
+        # the browser has unmounted it. Match the empty remounted uploader;
+        # otherwise its next change falsely discards the retained draft bytes.
+        st.session_state.pop('import_uploads', None)
+
     def remember_uploads():
         st.session_state['import_files'] = [
             (upload.name, upload.getvalue()) for upload in st.session_state.get('import_uploads', [])]

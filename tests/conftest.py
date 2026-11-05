@@ -123,6 +123,8 @@ def browser_diagnostics(request, monkeypatch):
             page.context.new_cdp_session(page).send('Emulation.setCPUThrottlingRate', {'rate': rate})
         if evidence:
             page.context.tracing.start(screenshots=True, snapshots=True, sources=False)
+            page.synthetic_sockets = []
+            page.on('websocket', lambda socket: page.synthetic_sockets.append(socket))
         return page
     monkeypatch.setattr(Browser, 'new_page', new_page)
 

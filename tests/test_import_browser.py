@@ -15,10 +15,25 @@ playwright = pytest.importorskip('playwright.sync_api')
 
 
 @pytest.fixture
-def import_page(tmp_path):
+def import_page(tmp_path, request):
     app = tmp_path / 'app.py'
-    app.write_text('''
-from pathlib import Path
+    delayed_navigation = getattr(request, 'param', None) == 'delayed_navigation'
+    gate = '''
+import time
+import portfolio_app.presentation as presentation
+if not hasattr(presentation, '_synthetic_empty_overview'):
+    presentation._synthetic_empty_overview = presentation.empty_overview
+    def gated_overview():
+        presentation._synthetic_empty_overview()
+        root = Path(__file__).parent
+        deadline = time.monotonic() + 10
+        while (root / 'hold-overview').exists():
+            if time.monotonic() >= deadline:
+                raise RuntimeError('Synthetic navigation gate was not released')
+            time.sleep(.01)
+    presentation.empty_overview = gated_overview
+''' if delayed_navigation else ''
+    app.write_text('from pathlib import Path\n' + gate + '''
 from portfolio_app.ui import render_app
 from portfolio_app.prices import PriceService, UnavailableProvider
 render_app(Path(__file__).parent / 'synthetic-portfolio', demo=True,
@@ -47,6 +62,23 @@ render_app(Path(__file__).parent / 'synthetic-portfolio', demo=True,
             browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1440, 'height': 1000})
             page.streamlit_reruns = StreamlitReruns(page, settle=settle)
+            page.delayed_navigation = delayed_navigation
+            if delayed_navigation:
+                # Hold an outgoing navigation request without changing its
+                # contents or the ordering of any later WebSocket messages.
+                page.add_init_script('''(() => {
+                    const send = WebSocket.prototype.send;
+                    window.heldNavigation = [];
+                    WebSocket.prototype.send = function(data) {
+                        if (window.holdNavigation) window.heldNavigation.push([this, data]);
+                        else send.call(this, data);
+                    };
+                    window.releaseNavigation = () => {
+                        window.holdNavigation = false;
+                        for (const [socket, data] of window.heldNavigation) send.call(socket, data);
+                        window.heldNavigation = [];
+                    };
+                })()''')
             page.goto(f'http://127.0.0.1:{port}')
             page.get_by_role('button', name='Import holdings', exact=True).wait_for()
             yield page, tmp_path / 'synthetic-portfolio' / 'holdings.csv'
@@ -56,6 +88,7 @@ render_app(Path(__file__).parent / 'synthetic-portfolio', demo=True,
         process.wait(timeout=10)
 
 
+@pytest.mark.parametrize('import_page', ['normal', 'delayed_navigation'], indirect=True)
 def test_upload_review_chart_allocation_and_listing(import_page):
     page, path = import_page
     page.get_by_role('button', name='Import holdings', exact=True).click()
@@ -71,11 +104,28 @@ def test_upload_review_chart_allocation_and_listing(import_page):
     page.get_by_role('option', name='Stück/Nennwert Bank', exact=True).click()
     page.get_by_text('Quantities are shares/units and prices are amounts per unit (not nominal values or percent quotes)', exact=True).click()
     playwright.expect(save).to_be_enabled()
+    gate = path.parent.parent / 'hold-overview'
+    if page.delayed_navigation:
+        gate.touch()
     page.get_by_role('tab', name='Overview', exact=True).click()
     playwright.expect(page.get_by_text('Open Positions and choose Add position to get started.', exact=True)).to_be_visible()
+    if page.delayed_navigation:
+        page.evaluate('window.holdNavigation = true')
     page.get_by_role('tab', name='Positions', exact=True).click()
+    if page.delayed_navigation:
+        page.wait_for_function('window.heldNavigation.length > 0')
+        gate.unlink()
+        page.streamlit_reruns.wait()
+        settle(page)
+        # The return request captured the old widget values, but reaches the
+        # server after the completed Overview render removed those controls.
+        with page.streamlit_reruns.socket.expect_event('framesent'):
+            page.evaluate('window.releaseNavigation()')
+        page.streamlit_reruns.wait()
+        settle(page)
     playwright.expect(save).to_be_enabled()
     playwright.expect(page.get_by_role('radio', name='Import', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('radio', name='Holdings snapshot', exact=True)).to_be_checked()
     playwright.expect(page.get_by_role('combobox', name='Quantity (required)', exact=True)).to_have_value('Stück/Nennwert Bank')
     save.click()
     page.locator('.js-plotly-plot').first.wait_for()
@@ -125,3 +175,26 @@ def test_cancel_upload_writes_nothing(import_page):
     page.get_by_role('button', name='Import holdings', exact=True).wait_for()
     assert not path.exists()
     assert page.locator('[data-testid="stException"]').count() == 0
+
+
+def test_remove_upload_discards_draft_and_new_upload_uses_new_rows(import_page):
+    page, path = import_page
+    runs = page.streamlit_reruns
+    runs.click(page, page.get_by_role('button', name='Import holdings', exact=True))
+    uploader = page.locator('input[type=file]')
+    uploader.set_input_files({'name': 'first.csv', 'mimeType': 'text/csv',
+                             'buffer': b'Name;Quantity\nInvented first;2\n'})
+    save = page.get_by_role('button', name='Import reviewed positions', exact=True)
+    playwright.expect(save).to_be_visible()
+    runs.click(page, page.get_by_role('button', name='Remove first.csv', exact=True))
+    playwright.expect(save).to_have_count(0)
+    assert not path.exists()
+    uploader.set_input_files({'name': 'replacement.csv', 'mimeType': 'text/csv',
+                             'buffer': b'Name;Quantity\nInvented replacement;3\n'})
+    playwright.expect(save).to_be_visible()
+    runs.click(page, page.get_by_text(
+        'Quantities are shares/units and prices are amounts per unit (not nominal values or percent quotes)', exact=True))
+    runs.click(page, save)
+    stored = read_snapshot(path).holdings
+    assert stored.name.tolist() == ['Invented replacement']
+    assert stored.shares.tolist() == [3.]
