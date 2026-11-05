@@ -4,7 +4,7 @@ import streamlit as st
 
 
 JS = """
-export default function({parentElement, data, setTriggerValue}) {
+export default function({parentElement, data, setStateValue}) {
   // Streamlit invokes this again when data changes, keeping the component host.
   // Dispose the prior listeners before attaching the updated unit toggle.
   parentElement.disposeMetricToggle?.();
@@ -14,7 +14,9 @@ export default function({parentElement, data, setTriggerValue}) {
   const interaction = data.interactionKey || 'gain';
   registry[interaction]?.();
   let target;
-  const activate = () => setTriggerValue('toggle', {nonce: crypto.randomUUID()});
+  // Persist the nonce so a queued history poll cannot discard the click.
+  // An unchanged nonce in later polls does not invoke the change callback.
+  const activate = () => setStateValue('toggle', {nonce: crypto.randomUUID()});
   const keydown = event => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();

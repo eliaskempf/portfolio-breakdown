@@ -14,7 +14,7 @@ on:
       diagnostics_suite:
         description: Windows diagnostic suite (installer-upgrade skips the full test matrix)
         type: choice
-        options: [navigation, rerun-sync, backup-startup, installer-upgrade]
+        options: [navigation, rerun-sync, backup-startup, metric-toggle, installer-upgrade]
         default: navigation
 permissions:
   contents: read
@@ -210,6 +210,14 @@ jobs:
         run: |
           uv run playwright install chromium
           uv run pytest tests/test_backup_browser.py::test_archive_review_cancel_switch_restart_and_tabs -q --basetemp="$RUNNER_TEMP/backup-startup-workspace" --junitxml="$RUNNER_TEMP/release-diagnostics/backup-startup.xml"
+      - name: Windows metric action regressions
+        if: runner.os == 'Windows' && inputs.diagnostics_suite == 'metric-toggle'
+        env:
+          PORTFOLIO_REQUIRE_BROWSER: '1'
+          PORTFOLIO_BROWSER_EVIDENCE: ${{ runner.temp }}/release-diagnostics/metric-toggle
+        run: |
+          uv run playwright install chromium
+          uv run pytest tests/test_metric_toggle_browser.py tests/test_history_download_browser.py tests/test_ux_browser.py::test_category_scope_performance_and_tab_roundtrip tests/test_portfolio_exposure_browser.py::test_normal_and_sandbox_exposure_controls -q --basetemp="$RUNNER_TEMP/metric-toggle-workspace" --junitxml="$RUNNER_TEMP/release-diagnostics/metric-toggle.xml"
       - name: Windows rerun synchronization regressions
         if: runner.os == 'Windows' && inputs.diagnostics_suite == 'rerun-sync'
         env:
@@ -247,5 +255,6 @@ jobs:
           path: |
             ${{ runner.temp }}/release-diagnostics
             ${{ runner.temp }}/backup-startup-workspace/**/synthetic-server.log
+            ${{ runner.temp }}/metric-toggle-workspace/**/server.log
           if-no-files-found: warn
           retention-days: 7
