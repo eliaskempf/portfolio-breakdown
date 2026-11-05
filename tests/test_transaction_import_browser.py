@@ -451,6 +451,9 @@ def test_double_click_edits_selected_transaction_after_sorting_without_dropdown(
     expect(amount).to_have_value('1326.999906')
     amount.fill('1426.999906')
     dialog.get_by_role('button', name='Save changes', exact=True).click(); settle(page)
+    # DOM idle can precede dispatch of the Save request. The returned list
+    # acknowledges persistence before the test reads the journal directly.
+    expect(table).to_be_visible()
     saved, _ = load_journal(root)
     assert saved.securities[0].records[-1].replaces == 'newer'
     assert str(saved.securities[0].records[-1].amount) == '1426.999906'

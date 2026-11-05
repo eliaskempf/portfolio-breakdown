@@ -297,7 +297,12 @@ def smoke(command, evidence=None):
                 with browser_page(evidence, 'application', viewport={'width': 1440, 'height': 1000}) as page:
                     page.set_default_timeout(20000)
                     runs = StreamlitReruns(page, settle=settle_app, timeout_ms=20000)
-                    page.goto(url)
+                    # Navigation loads Streamlit's shell before the first Python
+                    # render. Finish that lifecycle before asserting the intro;
+                    # DOM assertions retain their normal five-second budget.
+                    with page.expect_websocket(predicate=lambda socket: '/_stcore/stream' in socket.url):
+                        page.goto(url)
+                    runs.wait()
                     expect(page.locator('iframe[title*=portfolio_breakdown_intro]')).to_be_visible()
                     expect(page.get_by_role('heading', name='Welcome to Portfolio Breakdown', exact=True)).to_be_visible()
                     runs.click(page, page.get_by_role('button', name='Explore demo', exact=True))

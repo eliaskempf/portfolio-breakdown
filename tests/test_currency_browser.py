@@ -67,7 +67,9 @@ def test_tour_returns_to_reporting_currency_and_plan(ux_page, currency, symbol):
     page.reload()
     value = page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))
     playwright.expect(value).to_contain_text(symbol)
-    page.get_by_role('tab', name='Rebalance', exact=True).click()
+    # The metric can arrive before the reload finishes. Acknowledge that render
+    # and the navigation request before using the new tab's controls.
+    page.streamlit_reruns.click(page, page.get_by_role('tab', name='Rebalance', exact=True))
     amount = page.get_by_role('spinbutton', name='Contribution', exact=True)
     amount.fill('750')
     amount.press('Enter')

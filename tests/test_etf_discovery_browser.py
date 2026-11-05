@@ -15,6 +15,7 @@ import pytest
 from portfolio_app.etf import FundSnapshot
 from portfolio_app.etf_sources import install_snapshot, publish_snapshot
 from test_etf_discovery import Provider, FUND, invented_isin
+from browser_support import settle_layout
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -148,10 +149,14 @@ def test_overnight_economic_view_and_separate_basket(fund_page):
 
 def test_saved_breakdown_accessible_from_settings_without_live_listing(fund_page):
     page = fund_page
+    settle_layout(page)
     page.get_by_role('button', name='Data & settings', exact=True).click()
     page.get_by_text('ETF refresh & snapshots', exact=True).click()
+    # Nested controls move while the outer expander animates and scrolls.
+    settle_layout(page)
     page.get_by_text('ETF breakdown: Invented fund', exact=True).click()
     page.get_by_role('combobox', name='Summarize by').wait_for()
+    settle_layout(page)
     page.get_by_role('radio', name='Holdings', exact=True).click()
     playwright.expect(page.get_by_text('Fund composition is available independently of position pricing.')).to_be_visible()
     page.get_by_role('table', name='Invented fund holdings', exact=True).wait_for()
