@@ -9,6 +9,7 @@ from urllib.request import urlopen
 import pytest
 
 from portfolio_app.positions import read_snapshot
+from browser_support import StreamlitReruns, settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -45,6 +46,7 @@ render_app(Path(__file__).parent / 'synthetic-portfolio', demo=True,
         with playwright.sync_playwright() as runner:
             browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport={'width': 1440, 'height': 1000})
+            page.streamlit_reruns = StreamlitReruns(page, settle=settle)
             page.goto(f'http://127.0.0.1:{port}')
             page.get_by_role('button', name='Import holdings', exact=True).wait_for()
             yield page, tmp_path / 'synthetic-portfolio' / 'holdings.csv'

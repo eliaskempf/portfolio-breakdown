@@ -27,6 +27,23 @@ def upload(page, content):
     settle(page)
 
 
+def open_existing_import(page):
+    # A reload can expose tabs before its first render finishes. Complete that
+    # render before navigation, including when Positions was already selected.
+    with page.expect_websocket(predicate=lambda socket: '/_stcore/stream' in socket.url):
+        page.reload()
+    runs = page.streamlit_reruns
+    runs.wait()
+    settle(page)
+    positions = page.get_by_role('tab', name='Positions', exact=True)
+    if positions.get_attribute('aria-selected') != 'true':
+        runs.click(page, positions)
+    playwright.expect(positions).to_have_attribute('aria-selected', 'true')
+    imports = page.get_by_role('radio', name='Import', exact=True)
+    if imports.get_attribute('aria-checked') != 'true':
+        runs.click(page, imports)
+
+
 def test_closed_new_holding_category_survives_browser_review(import_page):
     from portfolio_app.positions import read_snapshot
     page, path = import_page
@@ -394,9 +411,7 @@ def synthetic_search(query, cache_dir, demo):
 mapping_ui._fetch = synthetic_search
 ''' + script.read_text())
     before = path.read_bytes()
-    page.reload()
-    page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
-    page.get_by_role('radio', name='Import', exact=True).click(); settle(page)
+    open_existing_import(page)
     page.locator('input[type=file]').set_input_files({'name':'invented-transactions.csv', 'mimeType':'text/csv',
         'buffer': b'reference,date,type,asset,quantity,amount,currency\n'
                   b'a,2024-01-02,buy,ADA,1,10,EUR\nb,2024-01-02,buy,LTC,1,20,EUR\n'})
@@ -414,9 +429,7 @@ def test_existing_portfolio_opens_transaction_import_directly(import_page):
     path.write_text('id,name,ticker,instrument_type,shares,account,quantity_unit,manual_price,manual_price_currency,manual_price_date\n'
                     'invented-btc,Bitcoin,BTC-EUR,crypto,2,Invented wallet,units,100,EUR,2024-01-01\n')
     before = path.read_bytes()
-    page.reload()
-    page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
-    page.get_by_role('radio', name='Import', exact=True).click(); settle(page)
+    open_existing_import(page)
     playwright.expect(page.get_by_role('radio', name='Transactions', exact=True)).to_be_checked()
     playwright.expect(page.get_by_role('button', name='Download CSV template', exact=True)).to_be_visible()
     assert not page.get_by_text('empty portfolio', exact=False).count()
