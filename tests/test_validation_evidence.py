@@ -34,6 +34,29 @@ def test_diagnostics_select_parameterized_nodes_without_shell_parsing(modules):
     assert diagnostic.selections([nodes[0]], nodes) == nodes[:1]
 
 
+def test_source_smoke_diagnostic_supplies_fresh_evidence_directory(tmp_path, modules, monkeypatch):
+    from types import SimpleNamespace
+    release, diagnostic = modules
+    output = tmp_path / 'diagnostic'
+    monkeypatch.setattr(release, 'identity', lambda: dict(source='a'*40))
+    monkeypatch.setattr(sys, 'argv', ['run_diagnostics', '--suite', 'source-smoke', '--output', str(output)])
+    calls = []
+
+    def run(command, **kwargs):
+        destination = Path(command[command.index('--evidence') + 1])
+        # Match the real smoke driver's exclusive evidence-directory ownership.
+        destination.mkdir(parents=True, exist_ok=False)
+        calls.append(destination)
+        (destination / 'smoke-result.json').write_text('{"status":"passed"}')
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(diagnostic.subprocess, 'run', run)
+    assert diagnostic.main() == 0
+    assert calls == [output / '1/source-smoke']
+    report = json.loads((output / 'diagnostic.json').read_text())
+    assert report['publishable'] is False and report['attempts'][0]['exit_code'] == 0
+
+
 
 
 def test_native_pre_attachment_failure_preserves_logs(tmp_path):

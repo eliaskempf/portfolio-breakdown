@@ -402,7 +402,7 @@ def windows_setup_smoke(directory, reference_bundle, evidence, *, previous=None)
             report['checks'].append(stage + ': payload matches portable and complete workspace preserved')
             if stage in {'install', 'upgrade'}:
                 subprocess.run([sys.executable, str(ROOT / 'tools/package_smoke.py'), str(executable),
-                                '--evidence', str(evidence / 'installed-browser')], check=True, timeout=600)
+                                '--installation', 'frozen', '--evidence', str(evidence / 'installed-browser')], check=True, timeout=600)
                 subprocess.run([sys.executable, str(ROOT / 'tools/window_smoke.py'),
                                 str(installation / 'Portfolio Breakdown.exe'),
                                 '--evidence', str(evidence / 'installed-native')], check=True, timeout=180)
@@ -482,7 +482,7 @@ def test_candidate(directory, *, stage='all', evidence=None):
             if os.name == 'nt':
                 portable_lifecycle_smoke([str(executable)])
             subprocess.run([sys.executable, str(ROOT / 'tools/package_smoke.py'), str(executable),
-                            '--evidence', str(evidence / 'browser')], check=True)
+                            '--installation', 'frozen', '--evidence', str(evidence / 'browser')], check=True)
         if os.name == 'nt':
             if stage in ('all', 'native-startup', 'native-interaction'):
                 native_stage = {'native-startup': 'startup', 'native-interaction': 'interaction'}.get(stage, 'all')

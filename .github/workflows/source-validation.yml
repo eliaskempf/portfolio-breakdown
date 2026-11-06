@@ -42,7 +42,7 @@ jobs:
         uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file "$RUNNER_TEMP/runtime.txt"
         uv pip install --python "$RUNNER_TEMP/portfolio-installed" --requirements "$RUNNER_TEMP/runtime.txt"
         if [ "$RUNNER_OS" = Windows ]; then installed="$RUNNER_TEMP/portfolio-installed/Scripts/portfolio-app.exe"; else installed="$RUNNER_TEMP/portfolio-installed/bin/portfolio-app"; fi
-        uv run python tools/package_smoke.py "$installed" --evidence "$RUNNER_TEMP/wheel-smoke"
+        uv run python tools/package_smoke.py "$installed" --installation wheel --evidence "$RUNNER_TEMP/wheel-smoke"
     - name: Source application smoke before freezing
       run: uv run python tools/package_smoke.py --evidence "$RUNNER_TEMP/source-smoke"
     - name: Tests (including required browser suites)

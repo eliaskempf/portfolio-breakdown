@@ -26,6 +26,12 @@ locked runtime pin with platform markers removed from a disposable export;
 never use that audit-only export to install dependencies.
 
 Review wheel/source inventories, licenses, docs and privacy before packaging.
+For smoke checks against an installed wheel, pass its console executable and
+`--installation wheel` to `tools/package_smoke.py`. Use `--installation frozen`
+for an extracted bundle; omitting the executable selects source mode. Windows
+checks the appropriate console-free launcher in each package type. With
+`--evidence DIRECTORY`, top-level failures and synthetic process logs are retained
+alongside browser diagnostics, including failures outside a browser context.
 Update the package version and its local lock entry together without implicitly
 upgrading dependencies. Review [release and upgrade notes](user/releases.md)
 against the implemented workflows and data compatibility. Link the matching

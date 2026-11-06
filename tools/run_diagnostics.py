@@ -101,7 +101,7 @@ def main():
                 command = [sys.executable, '-m', 'pytest', '-x', '-v', '--durations=10',
                            '--junitxml='+str(evidence/'tests.xml'), *selected]
             elif args.suite == 'source-smoke':
-                command = [sys.executable, str(ROOT/'tools/package_smoke.py'), '--evidence', str(evidence)]
+                command = [sys.executable, str(ROOT/'tools/package_smoke.py'), '--evidence', str(evidence/'source-smoke')]
             else:
                 command = [sys.executable, str(ROOT/'tools/release.py'), 'test', '--directory', str(args.directory),
                            '--stage', args.suite, '--evidence', str(evidence)]

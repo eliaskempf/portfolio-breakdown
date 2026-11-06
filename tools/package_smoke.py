@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import shutil
+import traceback
 from tempfile import TemporaryDirectory
 import time
 from urllib.request import urlopen
@@ -271,12 +273,64 @@ def exercise_manual_breakdown(page, evidence=None):
     expect(page.get_by_test_id('stException')).to_have_count(0)
 
 
-def smoke(command, evidence=None):
-    if evidence is not None:
-        evidence.mkdir(parents=True, exist_ok=False)
-    command = [*command, '--offline-demo']
+def windows_gui_entry(executable, installation):
+    names = {'wheel': 'portfolio-desktop.exe', 'frozen': 'Portfolio Breakdown.exe'}
+    gui = Path(executable).with_name(names[installation])
+    assert gui.is_file(), f'Missing console-free {installation} desktop entry: {gui.name}'
+    return gui
+
+
+@contextmanager
+def smoke_workspace(evidence):
     with TemporaryDirectory(prefix='portfolio smoke ü ') as temporary:
         root = Path(temporary)
+        try:
+            yield root
+        finally:
+            if evidence is not None:
+                # These processes use only this smoke's invented workspace/state.
+                # Copy their logs before temporary-directory cleanup, including
+                # failures before a browser context has been opened.
+                logs = [root / 'synthetic-server.log', *(root / 'state/window').glob('*.log*')]
+                for log in logs:
+                    if log.is_file():
+                        try:
+                            destination = evidence / 'process-logs'
+                            destination.mkdir(exist_ok=True)
+                            shutil.copyfile(log, destination / log.name)
+                        except OSError as exc:
+                            print(f'Could not preserve smoke process log: {exc}', file=sys.stderr)
+
+
+def smoke(command, evidence=None, *, installation='source'):
+    if evidence is not None:
+        evidence.mkdir(parents=True, exist_ok=False)
+    report = {'installation': installation, 'status': 'running'}
+    try:
+        if installation not in {'source', 'wheel', 'frozen'}:
+            raise ValueError('Unknown smoke installation mode')
+        _smoke(command, evidence, installation)
+    except BaseException as exc:
+        report.update(status='failed', error=str(exc), error_type=type(exc).__name__,
+                      traceback=traceback.format_exc())
+        if isinstance(exc, subprocess.CalledProcessError):
+            def text(value):
+                return value.decode('utf-8', errors='replace') if isinstance(value, bytes) else value
+            report.update(returncode=exc.returncode, stdout=text(exc.stdout), stderr=text(exc.stderr))
+        raise
+    else:
+        report['status'] = 'passed'
+    finally:
+        if evidence is not None:
+            try:
+                (evidence / 'smoke-result.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+            except OSError as exc:
+                print(f'Could not write smoke result: {exc}', file=sys.stderr)
+
+
+def _smoke(command, evidence, installation):
+    command = [*command, '--offline-demo']
+    with smoke_workspace(evidence) as root:
         state = root / 'state'
         workspace = root / 'synthetic workspace é'
         env = dict(os.environ, PORTFOLIO_STATE_DIR=str(state), PYTHONPATH='',
@@ -433,9 +487,8 @@ def smoke(command, evidence=None):
                                check=True, capture_output=True, timeout=30)
                 assert (workspace / 'holdings.csv').read_bytes() == saved
                 assert not list((state / 'sessions').glob('*.json'))
-                if os.name == 'nt' and len(command) == 2:
-                    gui = Path(command[0]).with_name('Portfolio Breakdown.exe')
-                    assert gui.is_file(), 'Missing console-free desktop entry'
+                if os.name == 'nt' and installation != 'source':
+                    gui = windows_gui_entry(command[0], installation)
                     # Browser fallback detaches; the standalone window is tested
                     # separately and intentionally stays alive until it is closed.
                     desktop = subprocess.run([str(gui), '--browser', '--offline-demo', '--demo', '--no-browser',
@@ -480,6 +533,12 @@ def smoke(command, evidence=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('executable', nargs='?', type=Path)
+    parser.add_argument('--installation', choices=['source', 'wheel', 'frozen'])
     parser.add_argument('--evidence', type=Path)
     args = parser.parse_args()
-    smoke([str(args.executable.resolve())] if args.executable else [sys.executable, '-m', 'portfolio_app.app'], args.evidence)
+    installation = args.installation or ('source' if args.executable is None else None)
+    if (args.executable is not None and installation not in {'wheel', 'frozen'}
+            or args.executable is None and installation != 'source'):
+        parser.error('Select --installation wheel or frozen with an executable; source uses no executable')
+    smoke([str(args.executable.resolve())] if args.executable else [sys.executable, '-m', 'portfolio_app.app'],
+          args.evidence, installation=installation)
