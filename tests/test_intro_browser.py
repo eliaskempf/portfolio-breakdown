@@ -291,6 +291,24 @@ def test_intro_automatically_continues_when_animation_resource_fails(intro_page)
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
 
+@pytest.mark.parametrize('block_animation', [False, True])
+def test_package_smoke_waits_for_intro_completion(intro_page, monkeypatch, block_animation):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / 'tools'))
+    from package_smoke import StreamlitReruns, finish_startup_intro, settle_app
+    page, url, _ = intro_page
+    if block_animation:
+        # The supported eight-second fallback exceeds a normal DOM assertion's
+        # five seconds. First-script completion cannot acknowledge this phase.
+        page.route('**/component/portfolio_app.intro.portfolio_breakdown_intro/**', lambda route: route.abort())
+    runs = StreamlitReruns(page, settle=settle_app, timeout_ms=20000)
+    with page.expect_websocket(predicate=lambda socket: '/_stcore/stream' in socket.url):
+        page.goto(url)
+    runs.wait()
+    finish_startup_intro(page, runs)
+    playwright.expect(page.get_by_role('button', name='Explore demo', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
 def test_animation_standalone_replay_and_exact_final_svg(intro_page):
     page, _, _ = intro_page
     asset = Path(__file__).resolve().parents[1] / 'src/portfolio_app/intro_frontend/index.html'

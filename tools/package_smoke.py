@@ -51,6 +51,20 @@ def settle_app(page, *, timeout=None):
     expect(page.get_by_test_id('stException')).to_have_count(0, timeout=remaining())
 
 
+def finish_startup_intro(page, runs):
+    intro = page.locator('iframe[title*=portfolio_breakdown_intro]')
+    expect(intro).to_be_visible()
+    # The first script finish renders the animation, not the welcome dialog.
+    # Its component callback (or the app's eight-second fallback) starts a later
+    # full rerun. Wait for that transition within the existing action budget.
+    deadline = time.monotonic() + runs.timeout_ms / 1000
+    intro.wait_for(state='detached', timeout=runs.timeout_ms)
+    remaining = (deadline - time.monotonic()) * 1000
+    assert remaining > 0, 'Startup intro did not finish within the action budget'
+    runs.wait(timeout=remaining)
+    expect(page.get_by_role('heading', name='Welcome to Portfolio Breakdown', exact=True)).to_be_visible()
+
+
 @contextmanager
 def browser_page(evidence, stage, *, viewport=None):
     """Capture this invented scenario while its browser and event loop are alive."""
@@ -366,8 +380,7 @@ def _smoke(command, evidence, installation):
                     with page.expect_websocket(predicate=lambda socket: '/_stcore/stream' in socket.url):
                         page.goto(url)
                     runs.wait()
-                    expect(page.locator('iframe[title*=portfolio_breakdown_intro]')).to_be_visible()
-                    expect(page.get_by_role('heading', name='Welcome to Portfolio Breakdown', exact=True)).to_be_visible()
+                    finish_startup_intro(page, runs)
                     runs.click(page, page.get_by_role('button', name='Explore demo', exact=True))
                     runs.click(page, page.get_by_role('button', name='Not now', exact=True))
                     page.locator('.js-plotly-plot').first.wait_for()
