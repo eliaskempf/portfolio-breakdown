@@ -125,3 +125,58 @@ def test_early_child_process_failure_keeps_exit_code_and_output(smoke_driver, tm
     report = json.loads((evidence / 'smoke-result.json').read_text())
     assert report['status'] == 'failed' and report['returncode'] == 17
     assert report['stdout'] == 'invented output' and report['stderr'] == 'invented error'
+
+
+@pytest.mark.parametrize('primary_failure', [False, True])
+@pytest.mark.parametrize('stop_failure', ['timeout', 'exit'])
+def test_stop_failure_still_reaps_child_and_preserves_primary_error(smoke_driver, monkeypatch, capsys, primary_failure, stop_failure):
+    events = []
+    stop_error = (subprocess.TimeoutExpired(['synthetic-stop'], 30) if stop_failure == 'timeout'
+                  else subprocess.CalledProcessError(1, ['synthetic-stop']))
+    original = AssertionError('Invented original smoke failure')
+    def stop(*args, **kwargs):
+        events.append('stop')
+        if stop_failure == 'exit' and not kwargs.get('check'):
+            return subprocess.CompletedProcess(args[0], 1)
+        raise stop_error
+    class Child:
+        def poll(self):
+            return None
+        def wait(self, timeout=None):
+            events.append(('wait', timeout))
+            if timeout is not None:
+                raise subprocess.TimeoutExpired(['synthetic-child'], timeout)
+        def kill(self):
+            events.append('kill')
+    monkeypatch.setattr(smoke_driver.subprocess, 'run', stop)
+    with pytest.raises(AssertionError if primary_failure else type(stop_error)) as raised:
+        try:
+            if primary_failure:
+                raise original
+        finally:
+            smoke_driver.stop_smoke_processes(['synthetic-stop'], Child(), env={}, cwd='.',
+                                             preserve_failure=sys.exc_info()[1] is not None)
+    assert raised.value is (original if primary_failure else stop_error)
+    assert events == ['stop', ('wait', 15), 'kill', ('wait', None)]
+    assert 'Smoke process cleanup failed' in capsys.readouterr().err
+
+
+@pytest.mark.parametrize('primary_failure', [False, True])
+def test_locked_workspace_preserves_primary_failure_after_log_capture(smoke_driver, tmp_path, monkeypatch, primary_failure):
+    from types import SimpleNamespace
+    root, evidence = tmp_path / 'synthetic', tmp_path / 'evidence'
+    root.mkdir()
+    evidence.mkdir()
+    (root / 'synthetic-server.log').write_text('Invented process log')
+    cleanup_error = PermissionError('Invented locked temporary directory')
+    original = AssertionError('Invented original smoke failure')
+    def cleanup():
+        raise cleanup_error
+    monkeypatch.setattr(smoke_driver, 'TemporaryDirectory',
+                        lambda **kwargs: SimpleNamespace(name=str(root), cleanup=cleanup))
+    with pytest.raises(AssertionError if primary_failure else PermissionError) as raised:
+        with smoke_driver.smoke_workspace(evidence):
+            if primary_failure:
+                raise original
+    assert raised.value is (original if primary_failure else cleanup_error)
+    assert (evidence / 'process-logs/synthetic-server.log').read_text() == 'Invented process log'

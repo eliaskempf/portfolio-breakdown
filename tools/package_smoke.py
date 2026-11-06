@@ -303,13 +303,36 @@ def windows_browser_command(executable, installation, workspace):
             '--data-dir', str(workspace)]
 
 
+def stop_smoke_processes(command, child, *, env, cwd, preserve_failure):
+    errors = []
+    try:
+        subprocess.run(command, env=env, cwd=cwd, capture_output=True, check=True, timeout=30)
+    except Exception as exc:
+        errors.append(exc)
+    try:
+        if child.poll() is None:
+            try:
+                child.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+    except Exception as exc:
+        errors.append(exc)
+    for error in errors:
+        print(f'Smoke process cleanup failed: {error}', file=sys.stderr)
+    if errors and not preserve_failure:
+        raise errors[0]
+
+
 @contextmanager
 def smoke_workspace(evidence):
-    with TemporaryDirectory(prefix='portfolio smoke ü ') as temporary:
-        root = Path(temporary)
+    temporary = TemporaryDirectory(prefix='portfolio smoke ü ')
+    root = Path(temporary.name)
+    try:
+        yield root
+    finally:
+        preserve_failure = sys.exc_info()[1] is not None
         try:
-            yield root
-        finally:
             if evidence is not None:
                 # These processes use only this smoke's invented workspace/state.
                 # Copy their logs before temporary-directory cleanup, including
@@ -323,6 +346,13 @@ def smoke_workspace(evidence):
                             shutil.copyfile(log, destination / log.name)
                         except OSError as exc:
                             print(f'Could not preserve smoke process log: {exc}', file=sys.stderr)
+        finally:
+            try:
+                temporary.cleanup()
+            except OSError as exc:
+                print(f'Smoke workspace cleanup failed: {exc}', file=sys.stderr)
+                if not preserve_failure:
+                    raise
 
 
 def smoke(command, evidence=None, *, installation='source'):
@@ -540,14 +570,8 @@ def _smoke(command, evidence, installation):
             finally:
                 # A later GUI launch can still own the workspace after the first
                 # foreground child exited. Stop that managed instance as well.
-                subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,
-                               capture_output=True, timeout=30)
-                if child.poll() is None:
-                    try:
-                        child.wait(timeout=15)
-                    except subprocess.TimeoutExpired:
-                        child.kill()
-                        child.wait()
+                stop_smoke_processes(command + ['--data-dir', str(workspace), '--stop'], child,
+                                     env=env, cwd=root, preserve_failure=sys.exc_info()[1] is not None)
     from history_package_smoke import smoke as history_smoke
     history_smoke(command, evidence)
     print('Installed application browser, navigation and lifecycle checks passed.')
