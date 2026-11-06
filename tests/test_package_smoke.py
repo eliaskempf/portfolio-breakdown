@@ -1,6 +1,7 @@
 """Smoke-driver regressions use synthetic launchers and process failures."""
 import importlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -32,6 +33,47 @@ def test_missing_gui_entry_cannot_use_other_installation(smoke_driver, tmp_path,
     (tmp_path / other_name).write_bytes(b'Synthetic wrong launcher')
     with pytest.raises(AssertionError, match=f'Missing console-free {installation} desktop entry'):
         smoke_driver.windows_gui_entry(tmp_path / 'portfolio-app.exe', installation)
+
+
+@pytest.mark.parametrize('installation', ['wheel', 'frozen'])
+def test_windows_browser_smoke_selects_background_launch(smoke_driver, tmp_path, monkeypatch, installation):
+    from portfolio_app.window import main
+    name = 'portfolio-desktop.exe' if installation == 'wheel' else 'Portfolio Breakdown.exe'
+    (tmp_path / name).write_bytes(b'Synthetic launcher')
+    command = smoke_driver.windows_browser_command(tmp_path / 'portfolio-app.exe', installation, tmp_path / 'workspace')
+    monkeypatch.setattr(sys, 'argv', command)
+    monkeypatch.setattr(sys, 'frozen', installation == 'frozen', raising=False)
+    monkeypatch.setenv('PORTFOLIO_STATE_DIR', str(tmp_path / 'state'))
+    monkeypatch.setattr('portfolio_app.window.configure_logging', lambda: None)
+    launches = []
+    monkeypatch.setattr('portfolio_app.app.start_desktop', lambda *a, **k: launches.append((a, k)))
+    monkeypatch.setattr('portfolio_app.app.run_server', lambda *a, **k: pytest.fail('Smoke entered foreground server'))
+    main()
+    assert len(launches) == 1
+    assert launches[0][1] == {'demo': True, 'browser': False}
+
+
+def test_wheel_browser_entry_detaches_and_stops(smoke_driver, tmp_path, monkeypatch):
+    from portfolio_app.launcher import request_instance, stop_instance
+    state, workspace = tmp_path / 'state', tmp_path / 'synthetic workspace'
+    monkeypatch.setenv('PORTFOLIO_STATE_DIR', str(state))
+    if os.name == 'nt':
+        executable = Path(sys.executable).parent / 'portfolio-app.exe'
+    else:
+        executable = tmp_path / 'portfolio-app.exe'
+        (tmp_path / 'portfolio-desktop.exe').write_bytes(b'Synthetic launcher placeholder')
+    command = smoke_driver.windows_browser_command(executable, 'wheel', workspace)
+    if os.name != 'nt':
+        # Exercise the same window/browser dispatch on hosts without a Windows stub.
+        command = [sys.executable, '-m', 'portfolio_app.window', *command[1:]]
+    try:
+        result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, timeout=90)
+        assert result.returncode == 0, result.stderr
+        info = request_instance(workspace)
+        assert info and info['ready'] and info['demo']
+    finally:
+        stop_instance(workspace)
+    assert request_instance(workspace) is None
 
 
 @pytest.mark.parametrize('arguments', [

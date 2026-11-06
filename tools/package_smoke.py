@@ -280,6 +280,15 @@ def windows_gui_entry(executable, installation):
     return gui
 
 
+def windows_browser_command(executable, installation, workspace):
+    gui = windows_gui_entry(executable, installation)
+    # An unfrozen wheel follows source launch semantics: detachment is explicit.
+    # Frozen launchers detach by default and retain their existing smoke contract.
+    background = ['--desktop'] if installation == 'wheel' else []
+    return [str(gui), '--browser', *background, '--offline-demo', '--demo', '--no-browser',
+            '--data-dir', str(workspace)]
+
+
 @contextmanager
 def smoke_workspace(evidence):
     with TemporaryDirectory(prefix='portfolio smoke ü ') as temporary:
@@ -488,11 +497,10 @@ def _smoke(command, evidence, installation):
                 assert (workspace / 'holdings.csv').read_bytes() == saved
                 assert not list((state / 'sessions').glob('*.json'))
                 if os.name == 'nt' and installation != 'source':
-                    gui = windows_gui_entry(command[0], installation)
                     # Browser fallback detaches; the standalone window is tested
                     # separately and intentionally stays alive until it is closed.
-                    desktop = subprocess.run([str(gui), '--browser', '--offline-demo', '--demo', '--no-browser',
-                                              '--data-dir', str(workspace)], env=env, cwd=root, timeout=90)
+                    desktop = subprocess.run(windows_browser_command(command[0], installation, workspace),
+                                             env=env, cwd=root, timeout=90)
                     assert desktop.returncode == 0
                     gui_url = wait_for_instance(state, None)
                     with browser_page(evidence, 'windows-browser-entry') as page:
@@ -517,9 +525,11 @@ def _smoke(command, evidence, installation):
                     print(exc.stderr, file=sys.stderr)
                 raise
             finally:
+                # A later GUI launch can still own the workspace after the first
+                # foreground child exited. Stop that managed instance as well.
+                subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,
+                               capture_output=True, timeout=30)
                 if child.poll() is None:
-                    subprocess.run(command + ['--data-dir', str(workspace), '--stop'], env=env, cwd=root,
-                                   capture_output=True, timeout=30)
                     try:
                         child.wait(timeout=15)
                     except subprocess.TimeoutExpired:
