@@ -255,7 +255,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         st.session_state['main_tabs'] = 'Positions' if holdings.empty and not feature_active and not security_active else 'Overview'
     from portfolio_app.tour import prepare_tour, render_tour
     prepare_tour()
-    tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or actual_active else []) + ['Monitoring']
+    tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or actual_active else []) + ['Monitoring', 'Taxes']
     if st.session_state['main_tabs'] not in tab_names:
         st.session_state['main_tabs'] = 'Overview'
     tabs = st.tabs(tab_names,
@@ -263,9 +263,13 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     overview, exposure, positions, rebalance = tabs[:4]
     from portfolio_app.monitoring_ui import watch_monitoring, render_monitoring, render_alert_dialog
     watch_monitoring(data_dir, demo=offline_demo, disabled=tour_active())
+    if tabs[-2].open:
+        with tabs[-2]:
+            render_monitoring(data_dir, holdings, journal, demo=offline_demo)
     if tabs[-1].open:
         with tabs[-1]:
-            render_monitoring(data_dir, holdings, journal, demo=offline_demo)
+            from portfolio_app.tax_ui import render_taxes
+            render_taxes(data_dir, holdings, journal, funds, valued, demo=offline_demo)
     from portfolio_app.notifications_ui import notification_bell
     notifications_panel = notification_bell(notifications_slot, data_dir, funds, valued, status,
         demo=offline_demo, cache_warning=price_service.cache_warning,

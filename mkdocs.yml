@@ -54,6 +54,7 @@ nav:
   - Analysis:
       - Exposure and ETFs: exposure.md
       - Prices and performance: performance.md
+      - Vorabpauschale estimates: taxes.md
       - Analytics and risk: analytics.md
       - Monitoring and alerts: monitoring.md
       - Futures and leverage: futures.md
