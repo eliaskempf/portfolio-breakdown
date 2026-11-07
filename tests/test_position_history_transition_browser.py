@@ -8,8 +8,8 @@ import time
 from urllib.request import urlopen
 
 import pytest
-from portfolio_app.account_journal import save_journal
-from portfolio_app.history_observations import save_observations, ObservationStore, Observation
+from portfolio_app.ledger.account_journal import save_journal
+from portfolio_app.performance.history_observations import save_observations, ObservationStore, Observation
 from test_history_download import setup
 from browser_support import settle
 
@@ -31,13 +31,13 @@ def test_position_view_switches_clear_old_content_and_keep_card_geometry(tmp_pat
 from pathlib import Path
 import time
 import streamlit as st
-from portfolio_app.positions import read_snapshot
-from portfolio_app.position_ui import request_position, render_position_dialog
-from portfolio_app.history import HistoryResult
-from portfolio_app.presentation import apply_style
-from portfolio_app.personal_history_refresh import refresher, RefreshStatus
-import portfolio_app.history_view as history
-import portfolio_app.position_detail as detail
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.interface.views.positions.position_ui import request_position, render_position_dialog
+from portfolio_app.market.history import HistoryResult
+from portfolio_app.interface.shared.presentation import apply_style
+from portfolio_app.performance.personal_history_refresh import refresher, RefreshStatus
+import portfolio_app.performance.history_view as history
+import portfolio_app.interface.views.positions.position_detail as detail
 root=Path(__file__).parent
 if not hasattr(history, '_test_original'):
     history._test_original=history.history_view
@@ -150,7 +150,7 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             # Evidence arriving while Price is selected updates the shared row
             # without a chart switch or a whole-dialog remount.
             from dataclasses import replace
-            from portfolio_app.history_observations import load_observations
+            from portfolio_app.performance.history_observations import load_observations
             dialog.get_by_role('radio', name='History', exact=True).click(); settle(page)
             dialog.get_by_role('radio', name='Price', exact=True).click(); settle(page)
             annualized = metrics.filter(has_text='Annualized return').get_by_test_id('stMetricValue')

@@ -10,7 +10,7 @@ from urllib.request import urlopen
 
 from playwright.sync_api import expect, sync_playwright
 
-from portfolio_app.demo import create_demo_data
+from portfolio_app.demo_data.demo import create_demo_data
 from portfolio_app.settings import theme_options
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,8 +24,8 @@ def main():
         create_demo_data(work / 'demo', live=False)
         app = work / 'app.py'
         app.write_text('''from pathlib import Path
-from portfolio_app.ui import render_app
-from portfolio_app.prices import PriceService, StaticProvider
+from portfolio_app.interface.ui import render_app
+from portfolio_app.market.prices import PriceService, StaticProvider
 directory = Path(__file__).parent / 'demo'
 render_app(directory, demo=True,
            price_service=PriceService(StaticProvider(directory / 'demo_prices.json')))

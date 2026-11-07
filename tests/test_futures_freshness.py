@@ -5,19 +5,19 @@ from datetime import datetime, timedelta, timezone
 from threading import Event
 
 import pytest
-from portfolio_app import account_journal as ledger
-from portfolio_app.account_observations import bind_mark, current_marks
-from portfolio_app.actual_portfolio import journal_positions
-from portfolio_app.automatic_settlements import apply_archived_settlements
-from portfolio_app.derivative_market import make_contract
-from portfolio_app.derivative_types import PriceObservation
-from portfolio_app.futures_clock import business_date
-from portfolio_app.futures_quotes import QuoteCollector, latest_quotes, read_quotes, record_result
-from portfolio_app.futures_valuation import select_valuations, freshness
-from portfolio_app.holdings import DataError
-from portfolio_app.settlement_archive import SettlementArchive
-from portfolio_app.valuation import value_holdings
-from portfolio_app.positions import read_snapshot
+from portfolio_app.ledger import account_journal as ledger
+from portfolio_app.ledger.account_observations import bind_mark, current_marks
+from portfolio_app.portfolio.actual_portfolio import journal_positions
+from portfolio_app.derivatives.automatic_settlements import apply_archived_settlements
+from portfolio_app.derivatives.derivative_market import make_contract
+from portfolio_app.derivatives.derivative_types import PriceObservation
+from portfolio_app.derivatives.futures_clock import business_date
+from portfolio_app.derivatives.futures_quotes import QuoteCollector, latest_quotes, read_quotes, record_result
+from portfolio_app.derivatives.futures_valuation import select_valuations, freshness
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.derivatives.settlement_archive import SettlementArchive
+from portfolio_app.portfolio.valuation import value_holdings
+from portfolio_app.portfolio.positions import read_snapshot
 from test_actual_portfolio import invented
 
 NOW = datetime(2026, 1, 7, 12, tzinfo=timezone.utc)
@@ -103,7 +103,7 @@ def test_retrieval_cannot_freshen_old_quote_and_failures_retain_age(tmp_path):
 
 
 def test_concurrent_old_response_and_equal_time_revision_do_not_replace_new_price(tmp_path):
-    from portfolio_app.futures_valuation import load_valuations
+    from portfolio_app.derivatives.futures_valuation import load_valuations
     _, journal, contract = setup(tmp_path)
     fresh = quote(contract)
     record_result(tmp_path,contract,fresh,'',attempted_at=NOW,now=NOW)
@@ -163,7 +163,7 @@ def test_partial_close_roll_and_closed_leg_do_not_reuse_wrong_contract_quote(tmp
 
 
 def test_missing_corrupt_quotes_and_voided_settlements_keep_honest_fallback(tmp_path):
-    from portfolio_app.futures_valuation import load_valuations
+    from portfolio_app.derivatives.futures_valuation import load_valuations
     _, journal, contract = setup(tmp_path)
     journal = ledger.append_events(journal, [
         ledger.Event('settled','2026-01-06','settlement',position_id='p',price=1050),
@@ -178,8 +178,8 @@ def test_missing_corrupt_quotes_and_voided_settlements_keep_honest_fallback(tmp_
 
 
 def test_closed_roll_history_does_not_qualify_fresh_open_investment(tmp_path):
-    from portfolio_app.futures_investments import investment_positions
-    from portfolio_app.futures_valuation import summarize_freshness
+    from portfolio_app.derivatives.futures_investments import investment_positions
+    from portfolio_app.derivatives.futures_valuation import summarize_freshness
     from test_futures_investments import grouped
     service, journal, contract = grouped(tmp_path)
     next_contract = replace(contract,expiry='2027-06-18')

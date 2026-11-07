@@ -3,8 +3,8 @@ from pathlib import Path
 import json
 import pytest
 from streamlit.testing.v1 import AppTest
-from portfolio_app.futures_returns import RETURN_FILE, load_return_history
-from portfolio_app.holdings import DataError
+from portfolio_app.studies.futures_returns import RETURN_FILE, load_return_history
+from portfolio_app.portfolio.holdings import DataError
 from test_futures_returns import write_synthetic_return_history
 from test_ui import by_label
 
@@ -14,8 +14,8 @@ def test_cached_chart_and_periods_without_network_or_position_pnl(tmp_path):
     before = (tmp_path / RETURN_FILE).read_bytes()
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_position_ui import render_index_chart
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.interface.views.studies.futures_position_ui import render_index_chart
 render_index_chart(FuturePosition(), Path({str(tmp_path)!r}))
 ''').run()
     assert not app.exception
@@ -40,8 +40,8 @@ def test_missing_and_invalid_proxy_history_is_not_fabricated(tmp_path):
         load_return_history(tmp_path)
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_position_ui import render_index_chart
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.interface.views.studies.futures_position_ui import render_index_chart
 render_index_chart(FuturePosition(), Path({str(tmp_path)!r}))
 ''').run()
     assert not app.exception and not app.get('plotly_chart')

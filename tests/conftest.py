@@ -3,10 +3,10 @@ from datetime import datetime, timezone
 import pytest
 
 from synthetic_sample import create_sample_data
-from portfolio_app.holdings import load_holdings
-from portfolio_app.prices import PriceService, StaticProvider
-from portfolio_app.taxonomy import load_classifications
-from portfolio_app.valuation import value_holdings
+from portfolio_app.portfolio.holdings import load_holdings
+from portfolio_app.market.prices import PriceService, StaticProvider
+from portfolio_app.exposure.taxonomy import load_classifications
+from portfolio_app.portfolio.valuation import value_holdings
 
 
 @pytest.fixture(autouse=True)
@@ -62,14 +62,14 @@ def stateful_layout_test_support(monkeypatch):
 def no_background_network(monkeypatch):
     # UI tests use synthetic workspaces even when exercising the live-mode UI.
     # Background refresh is tested separately with injected offline providers.
-    from portfolio_app.etf_refresh import coordinator
+    from portfolio_app.funds.etf_refresh import coordinator
     monkeypatch.setattr(coordinator, 'schedule', lambda *args, **kwargs: False)
-    from portfolio_app.settlement_collection import collector
+    from portfolio_app.derivatives.settlement_collection import collector
     monkeypatch.setattr(collector, 'schedule', lambda *args, **kwargs: False)
-    from portfolio_app.futures_quotes import collector as quotes
+    from portfolio_app.derivatives.futures_quotes import collector as quotes
     monkeypatch.setattr(quotes, 'schedule', lambda *args, **kwargs: False)
-    from portfolio_app.derivative_market import make_contract
-    monkeypatch.setattr('portfolio_app.contract_maturity_ui.listed_contracts',
+    from portfolio_app.derivatives.derivative_market import make_contract
+    monkeypatch.setattr('portfolio_app.interface.views.derivatives.contract_maturity_ui.listed_contracts',
         lambda product: tuple(make_contract(product, day) for day in ('2027-03-19','2027-06-18')))
 
 

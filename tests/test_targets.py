@@ -1,9 +1,9 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.label_comparison import Label, compare_labels
-from portfolio_app.targets import add_target_columns, target_exposures, target_totals
-from portfolio_app.valuation import value_holdings
+from portfolio_app.exposure.label_comparison import Label, compare_labels
+from portfolio_app.portfolio.targets import add_target_columns, target_exposures, target_totals
+from portfolio_app.portfolio.valuation import value_holdings
 
 
 @pytest.fixture

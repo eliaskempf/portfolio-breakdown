@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from portfolio_app import locking
+from portfolio_app.workspace import locking
 
 
 @pytest.mark.parametrize('code,expected', [(errno.EACCES, BlockingIOError), (errno.EIO, OSError)])

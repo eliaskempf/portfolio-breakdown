@@ -9,9 +9,9 @@ import time
 from urllib.request import urlopen
 
 import pytest
-from portfolio_app import account_journal as ledger
-from portfolio_app.generalized_studies_ui import save_study_settings
-from portfolio_app.leverage_settings import load_leverage_settings
+from portfolio_app.ledger import account_journal as ledger
+from portfolio_app.interface.views.studies.generalized_studies_ui import save_study_settings
+from portfolio_app.funds.leverage_settings import load_leverage_settings
 from test_actual_portfolio import invented
 from test_generalized_studies_ui import config
 from test_leveraged_funds import invented_workspace
@@ -36,12 +36,12 @@ import sys
 sys.path.insert(0, {str(Path(__file__).parent)!r})
 from pathlib import Path
 import streamlit as st
-from portfolio_app.account_journal import load_journal
-from portfolio_app.account_activity_ui import render_activity
-from portfolio_app.portfolio_exposure_ui import render_leverage_editor
-from portfolio_app.positions import read_snapshot
-from portfolio_app.generalized_studies_ui import render_generalized_studies
-from portfolio_app.stock_ui import render_stock_exposure
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.interface.views.history.account_activity_ui import render_activity
+from portfolio_app.interface.views.exposure.portfolio_exposure_ui import render_leverage_editor
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.interface.views.studies.generalized_studies_ui import render_generalized_studies
+from portfolio_app.interface.views.exposure.stock_ui import render_stock_exposure
 from test_stock_exposure import sources, funds
 root=Path({str(tmp_path)!r})
 st.set_page_config(layout='wide')

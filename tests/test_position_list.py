@@ -1,9 +1,9 @@
 from test_ui import position_action
 """Position navigation and rename tests use invented local data only."""
 
-from portfolio_app.holdings import load_holdings
-from portfolio_app.position_list import list_context
-from portfolio_app.positions import read_snapshot
+from portfolio_app.portfolio.holdings import load_holdings
+from portfolio_app.interface.views.positions.position_list import list_context
+from portfolio_app.portfolio.positions import read_snapshot
 from test_instrument_ui import launch_editor
 from test_ui import by_label
 

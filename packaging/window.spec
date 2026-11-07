@@ -5,11 +5,14 @@ if sys.platform != "win32":
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 from portfolio_app.settings import BRANDING_ASSETS
+from portfolio_app.privacy import PRIVATE_PARTS
 
 root = Path(SPECPATH).parent
 assets = root / 'src' / 'portfolio_app' / 'assets'
 datas = collect_data_files('streamlit')
-datas += [(str(path), 'portfolio_app') for path in (root / 'src/portfolio_app').glob('*.py')]
+datas += [(str(path), str(Path('portfolio_app') / path.parent.relative_to(root / 'src/portfolio_app')))
+          for path in sorted((root / 'src/portfolio_app').rglob('*.py'))
+          if not set(path.relative_to(root / 'src/portfolio_app').parts) & (PRIVATE_PARTS | {'__pycache__'})]
 datas += [(str(assets / name), 'portfolio_app/assets') for name in BRANDING_ASSETS if (assets / name).is_file()]
 datas += [(str(root / 'src/portfolio_app/intro_frontend/index.html'), 'portfolio_app/intro_frontend')]
 datas += copy_metadata('portfolio-breakdown', recursive=True)

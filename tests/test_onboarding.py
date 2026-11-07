@@ -1,9 +1,9 @@
 """Optional setup uses invented names and never overwrites an existing portfolio."""
 import pytest
-from portfolio_app.onboarding import initial_categories, save_initial_categories
-from portfolio_app.allocation import load_allocation
-from portfolio_app.holdings import DataError
-from portfolio_app.positions import save_position
+from portfolio_app.interface.views.onboarding.onboarding import initial_categories, save_initial_categories
+from portfolio_app.portfolio.allocation import load_allocation
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.portfolio.positions import save_position
 
 
 def test_categories_can_have_unknown_or_parent_relative_targets(tmp_path):

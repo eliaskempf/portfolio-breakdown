@@ -5,10 +5,10 @@ from decimal import Decimal as D
 
 import pandas as pd
 
-from portfolio_app.account_journal import Journal, Account, Event
-from portfolio_app.history_observations import ObservationStore, Observation, CoverageReview, HistoryScope
-from portfolio_app.history_status import position_history_statuses
-from portfolio_app.security_history import SecurityBook, SecurityEvent as E, history_fingerprint
+from portfolio_app.ledger.account_journal import Journal, Account, Event
+from portfolio_app.performance.history_observations import ObservationStore, Observation, CoverageReview, HistoryScope
+from portfolio_app.performance.history_status import position_history_statuses
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent as E, history_fingerprint
 
 TODAY = date(2025, 1, 5)  # Sunday: never require an invented Sunday stock quote.
 
@@ -63,7 +63,7 @@ def test_latest_price_without_fx_is_not_hidden_behind_an_older_supported_endpoin
 
 
 def test_no_chart_points_and_one_shared_calculation_for_all_positions(monkeypatch):
-    import portfolio_app.history_status as module
+    import portfolio_app.performance.history_status as module
     holdings, journal, observations = fixture()
     original = module.history_view
     contexts = []
@@ -78,7 +78,7 @@ def test_no_chart_points_and_one_shared_calculation_for_all_positions(monkeypatc
 
 
 def test_account_history_and_missing_cash_are_not_security_purchase_gaps():
-    from portfolio_app.account_journal import CashLink
+    from portfolio_app.ledger.account_journal import CashLink
     journal = Journal(accounts=(Account('cash-account', 'Invented account'),),
         cash_links=(CashLink('cash-account', 'EUR', 'linked'),),
         events=(Event('cash-open', '2024-01-01', 'cash_open', 'cash-account', 'EUR', D(100)),))
@@ -112,7 +112,7 @@ def test_unknown_fees_require_transaction_review_even_with_matching_balances():
 
 
 def test_method_restriction_is_separate_from_confirmed_transactions_and_prices():
-    from portfolio_app.history_diagnostics import HistoryIssue, issue_kind
+    from portfolio_app.performance.history_diagnostics import HistoryIssue, issue_kind
     reason = HistoryIssue('Arbitrary translated text', 'irr_multiple')
     assert issue_kind(reason) == 'irr_multiple'
     assert str(reason) == 'Arbitrary translated text'
@@ -131,7 +131,7 @@ def test_method_restriction_is_separate_from_confirmed_transactions_and_prices()
 
 
 def test_missing_snapshot_cost_fx_does_not_unconfirm_transactions():
-    from portfolio_app.cost_basis import component
+    from portfolio_app.performance.cost_basis import component
     holdings,journal,store=fixture()
     book=next(b for b in journal.securities if b.position_id=='ready')
     opening=replace(book.records[0],costs=(component(2,20,'USD','2024-01-01'),))

@@ -4,10 +4,10 @@ from decimal import Decimal as D
 
 import pytest
 
-from portfolio_app.account_journal import Account, Event, Journal, replay
-from portfolio_app.history_observations import HistoryScope, ObservationStore
-from portfolio_app.personal_performance import HistoryCalculation, calculate_history, value_at
-from portfolio_app.holdings import DataError
+from portfolio_app.ledger.account_journal import Account, Event, Journal, replay
+from portfolio_app.performance.history_observations import HistoryScope, ObservationStore
+from portfolio_app.performance.personal_performance import HistoryCalculation, calculate_history, value_at
+from portfolio_app.portfolio.holdings import DataError
 
 
 def newly_funded():
@@ -48,8 +48,8 @@ def test_ordinary_opening_balance_never_proves_zero_before_it(amount):
 @pytest.mark.parametrize('fee', [0, 1])
 @pytest.mark.parametrize('second_currency', [False, True])
 def test_first_day_linked_purchase_counts_cash_and_funding_once(start, include_security, fee, second_currency):
-    from portfolio_app.security_history import Charge, SecurityBook, SecurityEvent
-    from portfolio_app.history_observations import Observation
+    from portfolio_app.ledger.security_history import Charge, SecurityBook, SecurityEvent
+    from portfolio_app.performance.history_observations import Observation
     events = (SecurityEvent('empty', 'opening', '2024-01-02', source='confirmed_zero_start'),
               SecurityEvent('buy', 'buy', '2024-01-02', sequence=1, quantity=1, price=100,
                             currency='EUR', charges=(Charge(D(fee), 'EUR'),), charges_known=True))
@@ -88,9 +88,9 @@ def test_inception_cannot_contradict_earlier_activity_or_existing_balances():
 
 
 def test_first_day_import_zero_opening_agrees_with_account_inception(tmp_path):
-    from portfolio_app.account_journal import save_journal, load_journal
-    from portfolio_app.history_commands import reconstruction_candidate
-    from portfolio_app.security_history import SecurityBook, SecurityEvent
+    from portfolio_app.ledger.account_journal import save_journal, load_journal
+    from portfolio_app.ledger.history_commands import reconstruction_candidate
+    from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent
     buy = SecurityEvent('buy', 'buy', '2024-01-03', quantity=1, price=100, currency='EUR', charges_known=True)
     book = reconstruction_candidate(SecurityBook('stock', 'invented', ('0', '', ''), account_id='a',
         records=(buy,)), ('buy',), starts_at_zero=True)
@@ -106,8 +106,8 @@ def test_first_day_import_zero_opening_agrees_with_account_inception(tmp_path):
 
 
 def test_note_correction_retains_confirmed_zero_inception():
-    from portfolio_app.account_activity import correct_entry
-    from portfolio_app.account_inception import account_inceptions
+    from portfolio_app.ledger.account_activity import correct_entry
+    from portfolio_app.ledger.account_inception import account_inceptions
     corrected = correct_entry(newly_funded(), 'zero', {'note': 'Invented clarification'})
     assert account_inceptions(corrected) == {'a': '2024-01-03'}
     assert corrected.events[-1].replaces == 'zero'
@@ -131,8 +131,8 @@ def test_internal_transfer_across_mixed_opening_boundaries_is_not_profit():
 
 @pytest.mark.parametrize('kind', ['transfer_in', 'inventory_in'])
 def test_first_day_external_security_inflow_is_a_contribution(kind):
-    from portfolio_app.security_history import SecurityBook, SecurityEvent
-    from portfolio_app.history_observations import Observation
+    from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent
+    from portfolio_app.performance.history_observations import Observation
     fields = {'amount': D(100), 'currency': 'EUR'} if kind == 'transfer_in' else {
         'valuation_amount': D(100), 'valuation_currency': 'EUR', 'flow_classification': 'external'}
     entries = (SecurityEvent('empty', 'opening', '2024-01-02', source='confirmed_zero_start'),
@@ -149,8 +149,8 @@ def test_first_day_external_security_inflow_is_a_contribution(kind):
 
 
 def test_internal_security_transfer_with_mixed_openings_keeps_terminal_value():
-    from portfolio_app.security_history import SecurityBook, SecurityEvent
-    from portfolio_app.history_observations import Observation
+    from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent
+    from portfolio_app.performance.history_observations import Observation
     old_events = (SecurityEvent('old-open', 'opening', '2024-01-01', quantity=1, amount=100, currency='EUR'),
                   SecurityEvent('move', 'transfer', '2024-01-02', quantity=1, other_position_id='new'))
     old = SecurityBook('old', 'invented', ('1', '100', 'EUR'), records=old_events,
@@ -171,8 +171,8 @@ def test_internal_security_transfer_with_mixed_openings_keeps_terminal_value():
 
 
 def test_first_day_reward_still_requires_confirmed_charges():
-    from portfolio_app.security_history import SecurityBook, SecurityEvent
-    from portfolio_app.history_observations import Observation
+    from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent
+    from portfolio_app.performance.history_observations import Observation
     entries = (SecurityEvent('empty', 'opening', '2024-01-02', source='confirmed_zero_start'),
                SecurityEvent('reward', 'reward', '2024-01-02', quantity=1,
                              valuation_amount=100, valuation_currency='EUR', charges_known=False))
@@ -187,8 +187,8 @@ def test_first_day_reward_still_requires_confirmed_charges():
 
 
 def test_fee_paid_with_existing_asset_cannot_disappear_at_new_account_boundary():
-    from portfolio_app.security_history import AssetCharge, SecurityBook, SecurityEvent
-    from portfolio_app.history_observations import Observation
+    from portfolio_app.ledger.security_history import AssetCharge, SecurityBook, SecurityEvent
+    from portfolio_app.performance.history_observations import Observation
     old_events = (SecurityEvent('old-open', 'opening', '2024-01-01', quantity=10, amount=100, currency='EUR'),)
     new_events = (SecurityEvent('new-zero', 'opening', '2024-01-02', source='confirmed_zero_start'),
         SecurityEvent('buy', 'buy', '2024-01-02', sequence=1, quantity=1, price=100, currency='EUR',
@@ -211,9 +211,9 @@ def test_fee_paid_with_existing_asset_cannot_disappear_at_new_account_boundary()
 
 @pytest.mark.parametrize('explicit', [True, False])
 def test_future_snapshot_does_not_imply_zero_contracts_after_account_start(explicit):
-    from portfolio_app.account_journal import PositionSpec
-    from portfolio_app.derivative_types import ContractSpec
-    from portfolio_app.history_observations import Observation
+    from portfolio_app.ledger.account_journal import PositionSpec
+    from portfolio_app.derivatives.derivative_types import ContractSpec
+    from portfolio_app.performance.history_observations import Observation
     contract = ContractSpec('SYNTH', '2024-12-20', 'EUR', D(1), D(1))
     opening = Event('zero', '2024-01-01', 'cash_open', 'a', 'EUR', D(0) if explicit else D(100),
                     source='confirmed_zero_start' if explicit else 'manual')
@@ -238,7 +238,7 @@ def test_future_snapshot_does_not_imply_zero_contracts_after_account_start(expli
 
 def test_new_account_ui_saves_explicit_funding_without_changing_existing_account(tmp_path):
     from datetime import date
-    from portfolio_app.account_journal import load_journal, save_journal
+    from portfolio_app.ledger.account_journal import load_journal, save_journal
     from test_actual_portfolio import invented
     from test_accounts_ui import launch_actual
     from test_ui import by_label, activate

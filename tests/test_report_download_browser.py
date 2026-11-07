@@ -12,7 +12,7 @@ from urllib.request import urlopen
 import pytest
 
 from browser_support import settle, settle_layout
-from portfolio_app.statement_diagnostics import layout_report
+from portfolio_app.ingestion.statement_diagnostics import layout_report
 from test_consors_pdf import statement
 
 playwright = pytest.importorskip('playwright.sync_api')
@@ -30,8 +30,8 @@ import time
 from pathlib import Path
 import streamlit as st
 from streamlit.runtime.media_file_manager import MediaFileManager
-from portfolio_app.consors_pdf import parse_consors_batch
-from portfolio_app.transaction_import_ui import _statement_details
+from portfolio_app.ingestion.consors_pdf import parse_consors_batch
+from portfolio_app.interface.views.ingestion.transaction_import_ui import _statement_details
 
 root = Path(__file__).parent
 if not hasattr(MediaFileManager, '_synthetic_report_gate'):

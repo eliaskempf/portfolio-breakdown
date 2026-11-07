@@ -3,7 +3,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from synthetic_sample import create_sample_data
-from portfolio_app.futures_workspace import fork_futures_workspace, load_sandbox
+from portfolio_app.studies.futures_workspace import fork_futures_workspace, load_sandbox
 from test_ui import activate, by_label
 
 
@@ -18,8 +18,8 @@ def open_analysis(app, mode):
 def launch(directory, *, with_history=True, open_futures=True):
     from datetime import date
     from test_futures_returns import write_synthetic_return_history
-    from portfolio_app.futures_returns import RETURN_FILE
-    from portfolio_app.futures_reference import REFERENCE_FILE
+    from portfolio_app.studies.futures_returns import RETURN_FILE
+    from portfolio_app.studies.futures_reference import REFERENCE_FILE
     import json
     sandbox = load_sandbox(directory)
     if sandbox:
@@ -35,7 +35,7 @@ def launch(directory, *, with_history=True, open_futures=True):
 
     app = AppTest.from_string(
         'from pathlib import Path\n'
-        'from portfolio_app.ui import render_app\n'
+        'from portfolio_app.interface.ui import render_app\n'
         f'render_app(Path({str(directory)!r}), demo=True, ignore_selection=True)\n', default_timeout=20,
     ).run()
     if sandbox and open_futures:
@@ -124,9 +124,9 @@ def test_missing_valuation_still_allows_futures_pnl_and_ordinary_workspace_has_n
 
 
 def test_comparison_uses_reference_direction_and_saves_inputs(tmp_path):
-    from portfolio_app.futures_reference import refresh_references
+    from portfolio_app.studies.futures_reference import refresh_references
     from test_futures_comparison import synthetic_reference_html
-    from portfolio_app.futures_workspace import load_comparison
+    from portfolio_app.studies.futures_workspace import load_comparison
     source = create_sample_data(tmp_path / 'synthetic-source')
     sandbox = fork_futures_workspace(source, tmp_path / 'synthetic-sandbox')
     ecb, ibkr = synthetic_reference_html()
@@ -157,8 +157,8 @@ def test_comparison_uses_reference_direction_and_saves_inputs(tmp_path):
 def test_dated_settlement_entry_expiry_and_proxy_survive_save(tmp_path):
     from datetime import date, timedelta
     import json
-    from portfolio_app.futures_market import QUOTE_FILE, VOL_FILE
-    from portfolio_app.futures_workspace import load_comparison
+    from portfolio_app.studies.futures_market import QUOTE_FILE, VOL_FILE
+    from portfolio_app.studies.futures_workspace import load_comparison
     source = create_sample_data(tmp_path / 'synthetic-source')
     sandbox = fork_futures_workspace(source, tmp_path / 'synthetic-sandbox')
     today = date.today()
@@ -197,8 +197,8 @@ def test_dated_settlement_entry_expiry_and_proxy_survive_save(tmp_path):
 def test_historical_quarters_change_dates_and_persist_without_changing_position(tmp_path):
     import json
     from test_futures_history import synthetic_history_snapshot, historical_position
-    from portfolio_app.futures_history_data import HISTORY_FILE
-    from portfolio_app.futures_workspace import save_sandbox, load_historical
+    from portfolio_app.studies.futures_history_data import HISTORY_FILE
+    from portfolio_app.studies.futures_workspace import save_sandbox, load_historical
     source = create_sample_data(tmp_path / 'synthetic-source')
     sandbox = fork_futures_workspace(source, tmp_path / 'synthetic-sandbox')
     _, revision = load_sandbox(sandbox)
@@ -227,7 +227,7 @@ def test_historical_quarters_change_dates_and_persist_without_changing_position(
 
 
 def test_rolling_charts_horizon_controls_and_saved_restart(tmp_path):
-    from portfolio_app.futures_workspace import save_sandbox, load_comparison
+    from portfolio_app.studies.futures_workspace import save_sandbox, load_comparison
     from test_futures_rolling import position
     sandbox = fork_futures_workspace(create_sample_data(tmp_path/'source'), tmp_path/'sandbox')
     _, revision = load_sandbox(sandbox)
@@ -257,7 +257,7 @@ def test_rolling_charts_horizon_controls_and_saved_restart(tmp_path):
 
 
 def test_rolling_requires_history_or_explicit_manual_return(tmp_path):
-    from portfolio_app.futures_workspace import save_sandbox
+    from portfolio_app.studies.futures_workspace import save_sandbox
     from test_futures_rolling import position
     sandbox = fork_futures_workspace(create_sample_data(tmp_path/'source'), tmp_path/'sandbox')
     _, revision = load_sandbox(sandbox)
@@ -277,8 +277,8 @@ def test_rolling_requires_history_or_explicit_manual_return(tmp_path):
 
 def test_ecb_spread_is_shared_saved_and_available_without_implied_history(tmp_path):
     import json
-    from portfolio_app.futures_workspace import save_sandbox, load_comparison
-    from portfolio_app.futures_history_data import HISTORY_FILE
+    from portfolio_app.studies.futures_workspace import save_sandbox, load_comparison
+    from portfolio_app.studies.futures_history_data import HISTORY_FILE
     from test_futures_history import historical_position, synthetic_history_snapshot
     sandbox = fork_futures_workspace(create_sample_data(tmp_path/'source'), tmp_path/'sandbox')
     _, revision = load_sandbox(sandbox)
@@ -312,8 +312,8 @@ def test_ecb_spread_is_shared_saved_and_available_without_implied_history(tmp_pa
 
 def test_all_futures_views_share_live_assumptions_without_saving(tmp_path):
     import json
-    from portfolio_app.futures_workspace import save_sandbox
-    from portfolio_app.futures_history_data import HISTORY_FILE
+    from portfolio_app.studies.futures_workspace import save_sandbox
+    from portfolio_app.studies.futures_history_data import HISTORY_FILE
     from test_futures_history import historical_position, synthetic_history_snapshot
     sandbox = fork_futures_workspace(create_sample_data(tmp_path/'source'), tmp_path/'sandbox')
     _, revision = load_sandbox(sandbox)
@@ -351,9 +351,9 @@ def test_all_futures_views_share_live_assumptions_without_saving(tmp_path):
 
 def test_newer_ecb_snapshot_does_not_block_or_leak_into_forward_comparison(tmp_path):
     import json
-    from portfolio_app.futures_workspace import save_sandbox
-    from portfolio_app.futures_reference import REFERENCE_FILE
-    from portfolio_app.futures_history_data import HISTORY_FILE
+    from portfolio_app.studies.futures_workspace import save_sandbox
+    from portfolio_app.studies.futures_reference import REFERENCE_FILE
+    from portfolio_app.studies.futures_history_data import HISTORY_FILE
     from test_futures_history import historical_position, synthetic_history_snapshot
     sandbox = fork_futures_workspace(create_sample_data(tmp_path/'source'), tmp_path/'sandbox')
     _, revision = load_sandbox(sandbox)

@@ -2,10 +2,10 @@
 from dataclasses import replace
 import json
 import pytest
-from portfolio_app.futures import FuturePosition, close_contract, funded_strategy_positions, futures_scenarios, summarize_future
-from portfolio_app.futures_workspace import load_sandbox, save_sandbox
-from portfolio_app.holdings import DataError
-from portfolio_app.position_list import overview_position_rows
+from portfolio_app.studies.futures import FuturePosition, close_contract, funded_strategy_positions, futures_scenarios, summarize_future
+from portfolio_app.studies.futures_workspace import load_sandbox, save_sandbox
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.interface.views.positions.position_list import overview_position_rows
 from test_portfolio_exposure import CONFIG, invented, calculate
 from test_portfolio_exposure_ui import synthetic_workspace
 from test_futures_ui import launch
@@ -110,8 +110,8 @@ def test_funded_ui_roundtrip_negative_chart_and_closed_position(tmp_path):
 
 
 def test_future_category_survives_display_name_changes():
-    from portfolio_app.allocation import Allocation
-    from portfolio_app.portfolio_exposure import calculate_portfolio_exposure, strategy_exposure
+    from portfolio_app.portfolio.allocation import Allocation
+    from portfolio_app.exposure.portfolio_exposure import calculate_portfolio_exposure, strategy_exposure
     renamed = Allocation(tuple(replace(bucket, name='Renamed allocation') if bucket.id == 'core' else bucket for bucket in CONFIG.buckets))
     p = strategy()
     before = calculate(future=p)

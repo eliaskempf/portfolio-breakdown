@@ -5,11 +5,11 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from portfolio_app.analytics import snapshot_analytics
-from portfolio_app.analytics_cache import AnalyticsCache
-from portfolio_app.fundamentals import (Fundamentals, FundamentalsService, FundFee, Metric, apply_fund_metadata,
+from portfolio_app.analytics.analytics import snapshot_analytics
+from portfolio_app.analytics.analytics_cache import AnalyticsCache
+from portfolio_app.analytics.fundamentals import (Fundamentals, FundamentalsService, FundFee, Metric, apply_fund_metadata,
     normalize_info, load_fee_overrides, save_fee_override)
-from portfolio_app.holdings import DataError
+from portfolio_app.portfolio.holdings import DataError
 
 
 def positions():
@@ -175,7 +175,7 @@ def test_fundamentals_service_round_trip_and_corrupt_cache(tmp_path):
 
 def test_yahoo_fund_adapter_isolates_partial_failures(monkeypatch):
     import yfinance as yf
-    from portfolio_app.fundamentals import YahooFundamentalsProvider
+    from portfolio_app.analytics.fundamentals import YahooFundamentalsProvider
     class FundData:
         fund_operations = pd.DataFrame({'FFF': [.002]}, index=['Annual Report Expense Ratio'])
         equity_holdings = pd.DataFrame({'FFF': [21., 3.]}, index=['Price/Earnings', 'Price/Book'])

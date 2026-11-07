@@ -2,12 +2,12 @@
 from datetime import datetime, timezone, timedelta
 from types import SimpleNamespace
 
-from portfolio_app import background_ui, settlement_archive_ui
+from portfolio_app.interface.shared import background_ui; from portfolio_app.interface.views.derivatives import settlement_archive_ui
 
 
 def test_settlement_polling_defers_changed_data_but_not_collection(monkeypatch, tmp_path):
     import streamlit as st
-    from portfolio_app import futures_quotes, futures_valuation
+    from portfolio_app.derivatives import futures_quotes; from portfolio_app.derivatives import futures_valuation
     state = {'position_edit_dialog': True}
     monkeypatch.setattr(st, 'session_state', state)
     ticks, refreshes, scheduled = [], [], []

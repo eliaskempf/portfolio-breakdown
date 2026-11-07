@@ -3,10 +3,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
 import pytest
-from portfolio_app import account_journal as ledger
-from portfolio_app.automatic_settlements import apply_archived_settlements
-from portfolio_app.derivative_market import make_contract
-from portfolio_app.settlement_archive import SettlementArchive
+from portfolio_app.ledger import account_journal as ledger
+from portfolio_app.derivatives.automatic_settlements import apply_archived_settlements
+from portfolio_app.derivatives.derivative_market import make_contract
+from portfolio_app.derivatives.settlement_archive import SettlementArchive
 from test_settlement_collection import workspace, quote, join
 
 
@@ -102,7 +102,7 @@ def test_manual_records_voids_and_source_corrections_are_preserved(tmp_path):
 
 def test_cached_price_is_applied_when_network_refresh_is_not_due(tmp_path):
     from datetime import datetime,timezone
-    from portfolio_app.settlement_collection import SettlementCollector,_save_status
+    from portfolio_app.derivatives.settlement_collection import SettlementCollector,_save_status
     journal,contract=workspace(tmp_path)
     now=datetime(2026,1,7,12,tzinfo=timezone.utc)
     _save_status(tmp_path,contract.id,{'attempted_at':now.isoformat(),'dates':{}})

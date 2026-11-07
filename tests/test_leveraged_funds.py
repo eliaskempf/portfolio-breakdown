@@ -4,11 +4,11 @@ import json
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.holdings import DataError
-from portfolio_app.leverage_settings import (FundFactor, LeverageSettings, MarginLiability,
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.funds.leverage_settings import (FundFactor, LeverageSettings, MarginLiability,
     load_leverage_settings, save_leverage_settings, requires_legacy_eur)
-from portfolio_app.leveraged_funds_ui import update_fund_factor
-from portfolio_app.positions import read_snapshot
+from portfolio_app.interface.views.funds.leveraged_funds_ui import update_fund_factor
+from portfolio_app.portfolio.positions import read_snapshot
 
 
 def invented_workspace(directory, currency='EUR'):
@@ -105,8 +105,8 @@ def test_renderer_read_only_with_unknown_and_short_factor(tmp_path):
     before = {p: p.read_bytes() for p in tmp_path.glob('*') if p.is_file()}
     app = AppTest.from_string('''
 from pathlib import Path
-from portfolio_app.positions import read_snapshot
-from portfolio_app.leveraged_funds_ui import render_leveraged_funds
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.interface.views.funds.leveraged_funds_ui import render_leveraged_funds
 directory = Path(__import__('os').environ['SYNTHETIC_FUND_WORKSPACE'])
 render_leveraged_funds(directory, read_snapshot(directory / 'holdings.csv').holdings)
 ''')
@@ -126,8 +126,8 @@ def test_renderer_saves_inverse_factor_in_gbp_with_source_and_reference(tmp_path
     invented_workspace(tmp_path, 'GBP')
     app = AppTest.from_string('''
 from pathlib import Path
-from portfolio_app.positions import read_snapshot
-from portfolio_app.leveraged_funds_ui import render_leveraged_funds
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.interface.views.funds.leveraged_funds_ui import render_leveraged_funds
 directory = Path(__import__('os').environ['SYNTHETIC_FUND_WORKSPACE'])
 render_leveraged_funds(directory, read_snapshot(directory / 'holdings.csv').holdings)
 ''')
@@ -138,7 +138,7 @@ render_leveraged_funds(directory, read_snapshot(directory / 'holdings.csv').hold
         calls.append(args[1])
         return update_fund_factor(*args, **kwargs, freeze_keys=lambda *_: None)
     with patch.dict(os.environ, {'SYNTHETIC_FUND_WORKSPACE': str(tmp_path)}), \
-            patch('portfolio_app.leveraged_funds_ui.update_fund_factor', side_effect=save):
+            patch('portfolio_app.interface.views.funds.leveraged_funds_ui.update_fund_factor', side_effect=save):
         app.run()
         app.text_input[0].input('-2')
         app.text_input[1].input('Invented issuer factsheet')

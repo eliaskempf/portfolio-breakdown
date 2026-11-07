@@ -2,9 +2,9 @@
 from time import monotonic
 
 from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
-from portfolio_app.positions import read_snapshot
-from portfolio_app.account_journal import load_journal
-from portfolio_app.security_history import effective_holdings
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.ledger.security_history import effective_holdings
 
 from test_import_browser import import_page
 from test_csv_transaction_import_browser import upload, settle, playwright

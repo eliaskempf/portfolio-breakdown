@@ -1,12 +1,12 @@
 """Public identifiers and invented positions; no working portfolio data."""
 import pandas as pd
 
-from portfolio_app.instruments import Instrument
-from portfolio_app.transaction_matching import holding_matches, suggested_listing, instrument_fields
+from portfolio_app.market.instruments import Instrument
+from portfolio_app.ingestion.transaction_matching import holding_matches, suggested_listing, instrument_fields
 
 
 def test_snapshot_index_normalizes_once_and_rebuilds_after_metadata_changes(monkeypatch):
-    import portfolio_app.transaction_matching as matching
+    import portfolio_app.ingestion.transaction_matching as matching
     holdings = pd.DataFrame([dict(position_id=f'p{i}', id=f'asset-{i}', name=f'Invented {i}',
         ticker=f'T{i}', isin='', instrument_type='equity') for i in range(100)])
     original, calls = matching.normalized_query, []
@@ -53,7 +53,7 @@ def test_ambiguous_equity_and_token_symbol_requires_selection():
 
 
 def test_holding_and_listing_labels_do_not_add_empty_or_currency_suffixes():
-    from portfolio_app.transaction_matching import holding_label, listing_label
+    from portfolio_app.ingestion.transaction_matching import holding_label, listing_label
     assert holding_label({'name':'Bitcoin', 'account':''}) == 'Bitcoin'
     assert holding_label({'name':'Bitcoin', 'account':'Invented wallet'}) == 'Bitcoin · Invented wallet'
     listing = Instrument('LTC-EUR', 'Litecoin EUR', kind='CRYPTOCURRENCY')

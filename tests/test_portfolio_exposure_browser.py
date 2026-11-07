@@ -3,8 +3,8 @@ from dataclasses import asdict
 import json
 import re
 
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_workspace import SANDBOX_FILE
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.studies.futures_workspace import SANDBOX_FILE
 from test_ux_browser import ux_page as ux_page, playwright
 from browser_support import settle, settle_layout, select_tab
 
@@ -171,7 +171,7 @@ def test_funded_strategy_value_return_close_and_negative_chart(ux_page):
                               quote_date='2026-08-05', reference_price=5.1, contract_expiry='2026-12-18',
                               entry_date='2026-07-01', entry_reference_price=5., entry_price_source='https://example.test/entry')
     (directory / SANDBOX_FILE).write_text(json.dumps(dict(version=2, simulation=True, instrument='FMWN', position=asdict(position))))
-    from portfolio_app.futures_mtm import refresh_settlements
+    from portfolio_app.derivatives.futures_mtm import refresh_settlements
     from test_futures_mtm import quote
     refresh_settlements(directory, position, fetch=lambda day, expiry: quote(day.isoformat(), 5. if day.isoformat() == position.entry_date else 5.1))
     page.reload()
@@ -290,7 +290,7 @@ def test_future_signed_beta_and_core_contribution(ux_page):
 def test_linked_future_hatching_exposure_sunburst_and_company_shock(ux_page):
     page, directory = ux_page
     from test_future_proxy_exposure import write_proxy
-    from portfolio_app.positions import read_snapshot
+    from portfolio_app.portfolio.positions import read_snapshot
     holdings = directory / 'holdings.csv'
     lines = holdings.read_text().splitlines()
     holdings.write_text(lines[0] + ',instrument_type\n' + '\n'.join(line + (',etf' if 'SYNTH-A' in line else ',equity') for line in lines[1:]) + '\n')

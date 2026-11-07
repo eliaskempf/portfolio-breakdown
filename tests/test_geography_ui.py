@@ -7,7 +7,7 @@ import yaml
 
 from test_etf_selection import multi_fund_workspace as multi_fund_workspace, effective
 from test_ui import by_label, launch, theme_view
-from portfolio_app.label_comparison import Label
+from portfolio_app.exposure.label_comparison import Label
 
 
 @pytest.fixture

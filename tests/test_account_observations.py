@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from portfolio_app.account_journal import Account, Event, Journal, PositionSpec, append_event, append_events, replay
-from portfolio_app.account_observations import (
+from portfolio_app.ledger.account_journal import Account, Event, Journal, PositionSpec, append_event, append_events, replay
+from portfolio_app.ledger.account_observations import (
     FILE, BoundPriceObservation, bind_mark, current_marks, load_observations, save_observations,
 )
-from portfolio_app.derivative_types import ContractSpec, PriceObservation
-from portfolio_app.holdings import DataError
+from portfolio_app.derivatives.derivative_types import ContractSpec, PriceObservation
+from portfolio_app.portfolio.holdings import DataError
 
 
 def invented():
@@ -164,7 +164,7 @@ def test_duplicate_pairs_future_marks_and_invalid_fingerprint_fail_load(tmp_path
 
 
 def test_manual_cross_rate_can_invert_either_leg():
-    from portfolio_app.account_observations import manual_rate
+    from portfolio_app.ledger.account_observations import manual_rate
     rates = {('EUR','USD'): {'rate':'1.2'}, ('EUR','GBP'): {'rate':'.8'}}
     assert manual_rate(rates, 'GBP', 'USD') == pytest.approx(1.5)
     assert manual_rate(rates, 'USD', 'GBP') == pytest.approx(2/3)

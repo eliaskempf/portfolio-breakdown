@@ -2,11 +2,11 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.exposure_analysis import prepare_exposures, select_sources
-from portfolio_app.etf import load_funds
-from portfolio_app.holdings import load_holdings
-from portfolio_app.prices import PriceService, StaticProvider
-from portfolio_app.valuation import value_holdings
+from portfolio_app.exposure.exposure_analysis import prepare_exposures, select_sources
+from portfolio_app.funds.etf import load_funds
+from portfolio_app.portfolio.holdings import load_holdings
+from portfolio_app.market.prices import PriceService, StaticProvider
+from portfolio_app.portfolio.valuation import value_holdings
 from test_etf_selection import multi_fund_workspace as multi_fund_workspace
 
 

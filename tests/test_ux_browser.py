@@ -330,7 +330,7 @@ def ux_page(tmp_path):
         ticker: dict(price=price, currency='EUR', observed_at='2026-09-01T12:00:00+00:00')
         for ticker, price in [('SYNTH-A', 100), ('SYNTH-B', 50), ('SYNTH-C', 80)]}, 'fx': {}}))
     app = tmp_path / 'app.py'
-    app.write_text('from pathlib import Path\nfrom portfolio_app.ui import render_app\n'
+    app.write_text('from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n'
                    'render_app(Path(__file__).parent, demo=True)\n')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
@@ -535,7 +535,7 @@ def test_position_details_edit_cancel_and_preserved_filter(ux_page):
     quantity.fill('99'); quantity.press('Tab')
     page.get_by_role('dialog').get_by_role('button', name='Cancel', exact=True).click()
     playwright.expect(page.get_by_role('dialog')).to_have_count(0)
-    from portfolio_app.positions import read_snapshot
+    from portfolio_app.portfolio.positions import read_snapshot
     assert read_snapshot(directory / 'holdings.csv').holdings.shares.tolist() == [2., 3., 1.]
     page.set_viewport_size({'width': 700, 'height': 900})
     playwright.expect(page.get_by_test_id('stSidebar')).to_have_count(0)
@@ -689,9 +689,9 @@ def test_tiny_labels_reappear_when_scoped_and_losses_are_red(ux_page):
 
 def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page):
     page, directory = ux_page
-    from portfolio_app.account_journal import load_journal
-    from portfolio_app.security_history import effective_holdings
-    from portfolio_app.positions import read_snapshot
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.ledger.security_history import effective_holdings
+    from portfolio_app.portfolio.positions import read_snapshot
     runs = page.streamlit_reruns
     runs.click(page, page.get_by_role('tab', name='Positions', exact=True))
     runs.click(page, page.get_by_role('table', name='Positions', exact=True).locator('tr[data-position-id="fund-a"]'))
@@ -750,11 +750,11 @@ def test_personal_history_is_visible_with_periods_ending_today(ux_page):
     from dataclasses import replace
     from datetime import date, timedelta
     from decimal import Decimal as D
-    from portfolio_app.account_journal import Journal, save_journal
-    from portfolio_app.history_commands import book_for
-    from portfolio_app.history_observations import HistoryScope, Observation, ObservationStore, CoverageReview, save_observations
-    from portfolio_app.positions import read_snapshot
-    from portfolio_app.security_history import SecurityEvent, history_fingerprint
+    from portfolio_app.ledger.account_journal import Journal, save_journal
+    from portfolio_app.ledger.history_commands import book_for
+    from portfolio_app.performance.history_observations import HistoryScope, Observation, ObservationStore, CoverageReview, save_observations
+    from portfolio_app.portfolio.positions import read_snapshot
+    from portfolio_app.ledger.security_history import SecurityEvent, history_fingerprint
     page,directory=ux_page
     today=date.today();start=today-timedelta(days=365)
     rows=read_snapshot(directory/'holdings.csv').holdings
@@ -782,7 +782,7 @@ def test_personal_history_is_visible_with_periods_ending_today(ux_page):
     full_return=metric.get_by_test_id('stMetricValue').inner_text()
     page.get_by_text('1M',exact=True).click()
     from browser_support import settle
-    from portfolio_app.history_view import period_start
+    from portfolio_app.performance.history_view import period_start
     settle(page)
     playwright.expect(metric.get_by_test_id('stMetricValue')).to_have_text(full_return)
     chart=page.get_by_test_id('stPlotlyChart').first.locator('.js-plotly-plot')

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from portfolio_app.instruments import Instrument, InstrumentSearch, catalog_search, merge_search_results, normalize_results, parse_isin_candidates, result_groups, valid_isin
+from portfolio_app.market.instruments import Instrument, InstrumentSearch, catalog_search, merge_search_results, normalize_results, parse_isin_candidates, result_groups, valid_isin
 
 
 @pytest.mark.parametrize("value,expected", [
@@ -37,7 +37,7 @@ def test_search_blank_does_not_call_network_and_isin_query_fills_identifier(monk
         assert kwargs["timeout"] == 10
         return SimpleNamespace(quotes=[{"symbol": "ENR.DE", "shortname": "Siemens Energy", "quoteType": "EQUITY"}])
 
-    monkeypatch.setattr("portfolio_app.instruments.yf.Search", search)
+    monkeypatch.setattr("portfolio_app.market.instruments.yf.Search", search)
     provider = InstrumentSearch(tmp_path)
     assert provider.search("  ") == []
     assert calls == []
@@ -47,8 +47,8 @@ def test_search_blank_does_not_call_network_and_isin_query_fills_identifier(monk
 @pytest.mark.parametrize("reverse_symbol,expected", [("NVDA", "US67066G1040"), ("NVD.DE", "")])
 def test_details_require_exact_listing_reverse_isin_match(monkeypatch, tmp_path, reverse_symbol, expected):
     ticker = SimpleNamespace(get_info=lambda: {"currency": "USD"}, get_isin=lambda: "US67066G1040")
-    monkeypatch.setattr("portfolio_app.instruments.yf.Ticker", lambda symbol: ticker)
-    monkeypatch.setattr("portfolio_app.instruments.lookup_isin_candidates", lambda query: ["US67066G1040"])
+    monkeypatch.setattr("portfolio_app.market.instruments.yf.Ticker", lambda symbol: ticker)
+    monkeypatch.setattr("portfolio_app.market.instruments.lookup_isin_candidates", lambda query: ["US67066G1040"])
     provider = InstrumentSearch(tmp_path)
     monkeypatch.setattr(provider, "search", lambda query: [Instrument(reverse_symbol, "NVIDIA")])
     result = provider.details(Instrument("NVDA", "NVIDIA"))
@@ -60,8 +60,8 @@ def test_optional_metadata_failure_keeps_search_result(monkeypatch, tmp_path):
     def fail(*args):
         raise ConnectionError("offline")
 
-    monkeypatch.setattr("portfolio_app.instruments.yf.Ticker", lambda symbol: SimpleNamespace(get_info=fail, get_isin=fail))
-    monkeypatch.setattr("portfolio_app.instruments.lookup_isin_candidates", fail)
+    monkeypatch.setattr("portfolio_app.market.instruments.yf.Ticker", lambda symbol: SimpleNamespace(get_info=fail, get_isin=fail))
+    monkeypatch.setattr("portfolio_app.market.instruments.lookup_isin_candidates", fail)
     listing = Instrument("ENR.DE", "Siemens Energy")
     assert InstrumentSearch(tmp_path).details(listing) == listing
 
@@ -70,7 +70,7 @@ def test_search_failure_is_not_silently_an_empty_result(monkeypatch, tmp_path):
     def fail(*args, **kwargs):
         raise ConnectionError("offline")
 
-    monkeypatch.setattr("portfolio_app.instruments.yf.Search", fail)
+    monkeypatch.setattr("portfolio_app.market.instruments.yf.Search", fail)
     with pytest.raises(ConnectionError):
         InstrumentSearch(tmp_path).search("Example")
 
@@ -110,7 +110,7 @@ def test_catalog_survives_provider_failure(monkeypatch, tmp_path):
     def fail(*args, **kwargs):
         raise ConnectionError("offline")
 
-    monkeypatch.setattr("portfolio_app.instruments.yf.Search", fail)
+    monkeypatch.setattr("portfolio_app.market.instruments.yf.Search", fail)
     provider = InstrumentSearch(tmp_path)
     assert provider.search("vaneck")[0].ticker == "VVSM.DE"
     assert "unavailable" in provider.last_error
@@ -126,7 +126,7 @@ def test_gold_etc_catalog_identifiers_and_alias_survive_outage(monkeypatch, tmp_
     def fail(*args, **kwargs):
         raise ConnectionError("offline")
 
-    monkeypatch.setattr("portfolio_app.instruments.yf.Search", fail)
+    monkeypatch.setattr("portfolio_app.market.instruments.yf.Search", fail)
     results = InstrumentSearch(tmp_path).search(query)
     assert len(results) == 1
     listing = results[0]
@@ -140,7 +140,7 @@ def test_verified_gold_etc_overrides_provider_mutualfund_category(monkeypatch, t
         {"symbol": "INVENTED-FUND", "shortname": "EUWAX Gold II", "quoteType": "MUTUALFUND"},
         {"symbol": "INVENTED-OPTION", "quoteType": "OPTION"},
     ]
-    monkeypatch.setattr("portfolio_app.instruments.yf.Search", lambda *args, **kwargs: SimpleNamespace(quotes=quotes))
+    monkeypatch.setattr("portfolio_app.market.instruments.yf.Search", lambda *args, **kwargs: SimpleNamespace(quotes=quotes))
     # No catalog keyword match: normalization must recognize the exact listing
     # without treating arbitrary funds or similarly named securities as gold.
     results = InstrumentSearch(tmp_path).search("precious metals")
@@ -152,7 +152,7 @@ def test_verified_gold_etc_overrides_provider_mutualfund_category(monkeypatch, t
 @pytest.mark.parametrize("by_name", [False, True])
 def test_crypto_search_includes_eur_when_provider_only_returns_usd(monkeypatch, tmp_path, symbol, name, by_name):
     quotes = [{"symbol": f"{symbol}-USD", "shortname": f"{name} USD", "quoteType": "CRYPTOCURRENCY"}]
-    monkeypatch.setattr("portfolio_app.instruments.yf.Search", lambda *args, **kwargs: SimpleNamespace(quotes=quotes))
+    monkeypatch.setattr("portfolio_app.market.instruments.yf.Search", lambda *args, **kwargs: SimpleNamespace(quotes=quotes))
     results = InstrumentSearch(tmp_path).search(name if by_name else symbol)
     assert [item.ticker for item in results] == [f"{symbol}-EUR", f"{symbol}-USD"]
     assert all(item.kind == "CRYPTOCURRENCY" and not item.isin for item in results)
@@ -181,13 +181,13 @@ def test_grouping_deduplicates_tickers_without_merging_names_or_invalid_isins():
 
 @pytest.mark.parametrize('identifier,expected', [('US0378331005', 'US0378331005'), ('US0378331006', ''), (None, '')])
 def test_details_use_valid_exact_ticker_metadata_before_optional_isin_lookup(monkeypatch, tmp_path, identifier, expected):
-    monkeypatch.setattr('portfolio_app.instruments.yf.Ticker', lambda symbol:
+    monkeypatch.setattr('portfolio_app.market.instruments.yf.Ticker', lambda symbol:
         SimpleNamespace(get_info=lambda: {'currency': 'USD', 'isin': identifier}))
     queries = []
     def lookup(query):
         queries.append(query)
         return []
-    monkeypatch.setattr('portfolio_app.instruments.lookup_isin_candidates', lookup)
+    monkeypatch.setattr('portfolio_app.market.instruments.lookup_isin_candidates', lookup)
     result = InstrumentSearch(tmp_path).details(Instrument('AAPL', 'Apple Inc.'))
     assert result.isin == expected
     assert result.currency == 'USD'

@@ -3,14 +3,14 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.allocation import (Allocation, Bucket, analysis_targets, ignore_empty_by_bucket,
+from portfolio_app.portfolio.allocation import (Allocation, Bucket, analysis_targets, ignore_empty_by_bucket,
                                      load_allocation, macro_table, migrate, migration_preview, validate_allocation)
-from portfolio_app.balances import patch_holdings
-from portfolio_app.holdings import DataError, parse_holdings
-from portfolio_app.positions import read_snapshot
-from portfolio_app.scoped_rebalancing import portfolio_contribution, sleeve_positions
-from portfolio_app.storage import revision
-from portfolio_app.rebalancing import prepare_rebalance, minimum_trades, RebalanceError
+from portfolio_app.portfolio.balances import patch_holdings
+from portfolio_app.portfolio.holdings import DataError, parse_holdings
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.portfolio.scoped_rebalancing import portfolio_contribution, sleeve_positions
+from portfolio_app.workspace.storage import revision
+from portfolio_app.portfolio.rebalancing import prepare_rebalance, minimum_trades, RebalanceError
 
 
 def invented():
@@ -60,7 +60,7 @@ def test_interrupted_activation_retains_legacy_semantics(tmp_path, monkeypatch):
     path.write_text('id,name,shares,portfolio,target_allocation\na,Invented,1,Sleeve,1\n')
     snap = read_snapshot(path)
     config, preview = migration_preview(snap.holdings)
-    import portfolio_app.allocation as module
+    import portfolio_app.portfolio.allocation as module
     original = module.save_allocation
     monkeypatch.setattr(module, 'save_allocation', lambda *a, **k: (_ for _ in ()).throw(OSError('interrupted')))
     with pytest.raises(OSError):
@@ -184,8 +184,8 @@ def test_cap_denominators_change_actual_capacity(config):
 
 def test_manual_price_fractional_crypto_fx_and_missing_quote():
     from datetime import datetime, timezone
-    from portfolio_app.prices import Quote, PriceService
-    from portfolio_app.valuation import value_holdings
+    from portfolio_app.market.prices import Quote, PriceService
+    from portfolio_app.portfolio.valuation import value_holdings
     now = datetime(2026, 9, 20, 12, tzinfo=timezone.utc)
     class Provider:
         def price(self, ticker):
@@ -204,7 +204,7 @@ def test_manual_price_fractional_crypto_fx_and_missing_quote():
 
 
 def test_balance_update_blocks_purchases_already_in_snapshot(tmp_path):
-    from portfolio_app.purchases import save_purchase_batch
+    from portfolio_app.portfolio.purchases import save_purchase_batch
     path = tmp_path / 'holdings.csv'
     path.write_text('id,name,shares,acquisition_price,acquisition_currency\na,Invented,1,10,EUR\n')
     patch_holdings(path, {'position-0': {'shares': '2', 'holdings_confirmed_on': '2026-01-05'}}, expected_revision=revision(path), replacement=True)

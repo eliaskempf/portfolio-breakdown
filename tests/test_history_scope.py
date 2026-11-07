@@ -3,10 +3,10 @@ from dataclasses import replace
 from decimal import Decimal as D
 import pandas as pd
 
-from portfolio_app.account_journal import Account, CashLink, Event, Journal
-from portfolio_app.allocation import Allocation, Bucket
-from portfolio_app.history_scope import category_history_scope
-from portfolio_app.security_history import SecurityBook
+from portfolio_app.ledger.account_journal import Account, CashLink, Event, Journal
+from portfolio_app.portfolio.allocation import Allocation, Bucket
+from portfolio_app.performance.history_scope import category_history_scope
+from portfolio_app.ledger.security_history import SecurityBook
 
 
 def fixture():

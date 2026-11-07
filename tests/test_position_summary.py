@@ -5,10 +5,10 @@ import pytest
 
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.account_journal import save_journal
-from portfolio_app.history_observations import HistoryScope, save_observations
-from portfolio_app.personal_performance import calculate_history
-from portfolio_app.presentation import return_percent
+from portfolio_app.ledger.account_journal import save_journal
+from portfolio_app.performance.history_observations import HistoryScope, save_observations
+from portfolio_app.performance.personal_performance import calculate_history
+from portfolio_app.interface.shared.presentation import return_percent
 from test_personal_performance import journal, observed
 from test_ui import by_label
 
@@ -28,8 +28,8 @@ def launch(tmp_path, *, history=True, complete=True, estimated=False):
         save_observations(tmp_path, store, None)
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.position_detail import render_position_detail
-from portfolio_app.positions import read_snapshot
+from portfolio_app.interface.views.positions.position_detail import render_position_detail
+from portfolio_app.portfolio.positions import read_snapshot
 path = Path({str(tmp_path)!r})
 row = read_snapshot(path/'holdings.csv').holdings.assign(
     current_value_reporting=300., unrealized_gain_reporting=220., cost_basis_reporting=80., return_pct=275.).iloc[0]
@@ -91,7 +91,7 @@ def test_applied_history_shows_gain_and_return_without_confirmation(tmp_path):
 @pytest.mark.parametrize('retired_by', ['another-position', 'workspace-switch'])
 def test_retired_history_selector_ignores_queued_callback(tmp_path, monkeypatch, retired_by):
     from copy import deepcopy
-    from portfolio_app.position_ui import request_position
+    from portfolio_app.interface.views.positions.position_ui import request_position
     app, _ = launch(tmp_path)
     by_label(app.get('button_group'), 'History type').set_value('Price').run()
     assert app.session_state['position_history_preferences'] == {'holding': 'Price'}
@@ -99,7 +99,7 @@ def test_retired_history_selector_ignores_queued_callback(tmp_path, monkeypatch,
     metadata = app.session_state._state._state._new_widget_state.widget_metadata[widget.proto.id]
     state = dict(position_edit_selected='holding', position_edit_history_mode_holding='Price',
                  position_history_preferences={'holding': 'Price', 'other': 'Holdings'})
-    monkeypatch.setattr('portfolio_app.position_detail.st.session_state', state)
+    monkeypatch.setattr('portfolio_app.interface.views.positions.position_detail.st.session_state', state)
     if retired_by == 'another-position':
         request_position('other', local=False)
     else:

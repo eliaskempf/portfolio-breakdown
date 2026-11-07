@@ -7,11 +7,11 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 import pytest
 
-from portfolio_app import dws, ishares
-from portfolio_app.etf import FundSnapshot, fund_classifications, load_funds
-from portfolio_app.etf_sources import SOURCES, Source, install_snapshot, refresh_snapshot
-from portfolio_app.holdings import DataError
-from portfolio_app.stock_exposure import stock_exposure
+from portfolio_app.funds.providers import dws; from portfolio_app.funds.providers import ishares
+from portfolio_app.funds.etf import FundSnapshot, fund_classifications, load_funds
+from portfolio_app.funds.etf_sources import SOURCES, Source, install_snapshot, refresh_snapshot
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.exposure.stock_exposure import stock_exposure
 
 
 def dws_export(weights=(60, 39, 1)):

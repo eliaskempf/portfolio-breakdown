@@ -5,15 +5,15 @@ from decimal import Decimal as D
 import pytest
 
 from consors_audit_fixtures import BUY, FREE, SALE, LOSS_SALE, SUPPLEMENTARY_DETAILS, TAX_PAGE, LEGACY, COMPANY_FOOTER, text_pdf
-from portfolio_app.account_journal import Journal, load_journal, save_journal
-from portfolio_app.consors_pdf import parse_consors_pdf, parse_consors_batch
-from portfolio_app.gain_components import security_gain_components
-from portfolio_app.history_commands import reconstruction_candidate, save_history
-from portfolio_app.history_observations import ObservationStore
-from portfolio_app.holdings import DataError
-from portfolio_app.positions import read_snapshot
-from portfolio_app.security_history import effective_holdings, replay_securities, selected_events
-from portfolio_app.transaction_imports import save_pdf_drafts, identity_review_required
+from portfolio_app.ledger.account_journal import Journal, load_journal, save_journal
+from portfolio_app.ingestion.consors_pdf import parse_consors_pdf, parse_consors_batch
+from portfolio_app.performance.gain_components import security_gain_components
+from portfolio_app.ledger.history_commands import reconstruction_candidate, save_history
+from portfolio_app.performance.history_observations import ObservationStore
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ledger.security_history import effective_holdings, replay_securities, selected_events
+from portfolio_app.ingestion.transaction_imports import save_pdf_drafts, identity_review_required
 
 
 @pytest.fixture
@@ -186,7 +186,7 @@ def test_wkn_only_legacy_matches_stored_wkn(workspace):
 def test_report_numbers_map_to_local_filenames_even_for_blocked_and_duplicate_files(workspace, monkeypatch):
     from types import SimpleNamespace
     from streamlit.testing.v1 import AppTest
-    import portfolio_app.transaction_import_ui as ui
+    import portfolio_app.interface.views.ingestion.transaction_import_ui as ui
 
     source = text_pdf((*FREE, COMPANY_FOOTER))
     files = [SimpleNamespace(name=name, size=len(raw), getvalue=lambda raw=raw: raw)
@@ -197,10 +197,10 @@ def test_report_numbers_map_to_local_filenames_even_for_blocked_and_duplicate_fi
     monkeypatch.setattr(ui.st, 'download_button', lambda *a, **kw: download.update(kw))
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.account_journal import load_journal
-from portfolio_app.positions import read_snapshot
-from portfolio_app.history_commands import book_for
-from portfolio_app.transaction_import_ui import render_pdf_import
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ledger.history_commands import book_for
+from portfolio_app.interface.views.ingestion.transaction_import_ui import render_pdf_import
 root=Path({str(workspace)!r})
 snapshot=read_snapshot(root/'holdings.csv')
 journal,revision=load_journal(root)

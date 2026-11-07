@@ -4,13 +4,13 @@ from decimal import Decimal as D
 import math
 import pytest
 
-from portfolio_app.demo_history import create_history_demo
-from portfolio_app.account_journal import load_journal, replay
-from portfolio_app.history_observations import load_observations, HistoryScope
-from portfolio_app.personal_performance import calculate_history
-from portfolio_app.positions import read_snapshot
-from portfolio_app.security_history import effective_holdings
-from portfolio_app.holdings import DataError
+from portfolio_app.demo_data.demo_history import create_history_demo
+from portfolio_app.ledger.account_journal import load_journal, replay
+from portfolio_app.performance.history_observations import load_observations, HistoryScope
+from portfolio_app.performance.personal_performance import calculate_history
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ledger.security_history import effective_holdings
+from portfolio_app.portfolio.holdings import DataError
 
 
 def test_demo_has_reconciled_holdings_and_independent_portfolio_return(tmp_path):

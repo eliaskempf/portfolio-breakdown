@@ -6,8 +6,8 @@ import os
 import re
 import pytest
 from test_import_browser import import_page
-from portfolio_app.account_journal import load_journal
-from portfolio_app.security_history import replay_securities
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.ledger.security_history import replay_securities
 from browser_support import settle_layout, settle as render_settle
 
 playwright = pytest.importorskip('playwright.sync_api')
@@ -46,7 +46,7 @@ def open_existing_import(page):
 
 
 def test_closed_new_holding_category_survives_browser_review(import_page):
-    from portfolio_app.positions import read_snapshot
+    from portfolio_app.portfolio.positions import read_snapshot
     page, path = import_page
     path.parent.mkdir(exist_ok=True)
     path.with_name('allocation.yaml').write_text('version: 2\nbuckets:\n'
@@ -86,7 +86,7 @@ def test_closed_new_holding_category_survives_browser_review(import_page):
 
 
 def listing_field(page, asset):
-    from portfolio_app.transaction_csv import digest
+    from portfolio_app.ingestion.transaction_csv import digest
     return page.locator(f'[class*="{digest(asset)[:12]}_listing_"][class*="_picker"]').get_by_role('button').first
 
 
@@ -203,10 +203,10 @@ def test_excluding_all_rows_has_explicit_save_and_reopens(import_page):
 def test_changed_sources_show_fields_and_require_individual_decisions(import_page, removal, invalid_pending):
     from dataclasses import replace
     from decimal import Decimal
-    from portfolio_app.history_commands import correct_transaction, remove_transactions, save_history
-    from portfolio_app.positions import read_snapshot
-    from portfolio_app.transaction_csv import read_csv
-    from portfolio_app.transaction_import_commands import save_transaction_import
+    from portfolio_app.ledger.history_commands import correct_transaction, remove_transactions, save_history
+    from portfolio_app.portfolio.positions import read_snapshot
+    from portfolio_app.ingestion.transaction_csv import read_csv
+    from portfolio_app.ledger.transaction_import_commands import save_transaction_import
     page, path = import_page
     header = 'reference,date,type,asset,quantity,amount,currency\n'
     original = read_csv(header+'a,2024-01-02,buy,AUR,10,100,EUR\nb,2024-01-03,buy,AUR,5,60,EUR\n')
@@ -309,7 +309,7 @@ def test_simple_upload_apply_edit_and_remove_in_normal_transactions(import_page)
 
 def test_estimated_checkpoint_requires_explicit_reconciliation(import_page):
     from test_inventory_imports import row, estimate
-    from portfolio_app.transaction_csv import FIELDS_V2
+    from portfolio_app.ingestion.transaction_csv import FIELDS_V2
     page, path = import_page
     stream=StringIO(); writer=csv.DictWriter(stream,fieldnames=FIELDS_V2); writer.writeheader(); writer.writerow(row('balance',**estimate()).facts)
     upload(page, stream.getvalue().encode())
@@ -328,7 +328,7 @@ def test_estimated_checkpoint_requires_explicit_reconciliation(import_page):
 
 @pytest.mark.parametrize('width', [1440, 390])
 def test_listing_popup_search_selection_dismissal_and_navigation(import_page, width):
-    from portfolio_app.positions import read_snapshot
+    from portfolio_app.portfolio.positions import read_snapshot
     page, path = import_page
     page.set_viewport_size({'width': width, 'height': 1000})
     upload(page, b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-02,buy,BTC,1,100,EUR\n')
@@ -408,8 +408,8 @@ def test_mixed_portfolio_finds_eur_pairs_missing_from_initial_suggestions(import
     # Simulate broad search returning only USD; exact pair lookup returns EUR.
     script = path.parent.parent/'app.py'
     script.write_text('''
-from portfolio_app.instruments import Instrument
-import portfolio_app.transaction_mapping_ui as mapping_ui
+from portfolio_app.market.instruments import Instrument
+import portfolio_app.interface.views.ingestion.transaction_mapping_ui as mapping_ui
 def synthetic_search(query, cache_dir, demo):
     ticker = query if '-' in query else query+'-USD'
     return [Instrument(ticker, ticker, kind='CRYPTOCURRENCY')], ''

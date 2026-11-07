@@ -146,6 +146,9 @@ correction stays separate from transaction reconciliation.
 
 ## Architecture and verification
 
+See the [package ownership and complete module move map](package-layout.md) for
+source navigation and the procedure for transferring active flat-layout work.
+
 Business logic is independent of Streamlit:
 
 ```text
@@ -371,7 +374,7 @@ are supported.
 
 ## Shared list presentation
 
-`src/portfolio_app/list_ui.py` defines the shared read-only list component,
+`src/portfolio_app/interface/shared/list_ui.py` defines the shared read-only list component,
 column formatting, taxonomy badges, sorting, row actions and scrolling policy.
 Overview allocations/performance, position lists, Exposure assets and source
 contributions, ETF constituent lists, and Suggested trades use it. Keep

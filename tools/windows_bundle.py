@@ -114,7 +114,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Prepare the Windows CI runtime for native smoke tests.')
     parser.add_argument('--ensure-runtime', action='store_true', required=True)
     parser.parse_args()
-    from portfolio_app.window import runtime_available
+    from portfolio_app.runtime.window import runtime_available
     if not runtime_available():
         bootstrapper = signed_bootstrapper(Path('dist/windows-prerequisites').resolve())
         subprocess.run([str(bootstrapper), '/silent', '/install'], check=True, timeout=300)

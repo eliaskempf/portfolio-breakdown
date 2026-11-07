@@ -6,8 +6,8 @@ import sys
 
 import pytest
 
-from portfolio_app.demo import create_demo_data
-from portfolio_app.holdings import DataError
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.privacy import ICON_FILES, DEMO_IMAGE_FILES, check_index, content_problem, path_problem
 
 REPO = Path(__file__).resolve().parents[1]
@@ -37,7 +37,7 @@ def test_private_paths_are_blocked(filename):
 
 @pytest.mark.parametrize("filename", [
     "README.md", "AGENTS.md", "pyproject.toml", "uv.lock", ".gitignore", ".python-version",
-    "src/portfolio_app/holdings.py", "tests/test_holdings.py", ".githooks/pre-commit",
+    "src/portfolio_app/portfolio/holdings.py", "tests/test_holdings.py", ".githooks/pre-commit",
     "LICENSE", "docs/release-plan.md", ".github/workflows/candidate.yml",
     *sorted(ICON_FILES | DEMO_IMAGE_FILES), "packaging/portfolio.spec",
 ])

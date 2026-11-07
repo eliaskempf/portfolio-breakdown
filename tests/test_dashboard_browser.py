@@ -24,10 +24,10 @@ def grid_url(tmp_path_factory):
     app.write_text('''
 import pandas as pd
 import streamlit as st
-from portfolio_app.allocation import Allocation, Bucket
-from portfolio_app.presentation import apply_style
-from portfolio_app.strategic_ui import render_strategic_overview
-from portfolio_app.search_widget import render_search_box
+from portfolio_app.portfolio.allocation import Allocation, Bucket
+from portfolio_app.interface.shared.presentation import apply_style
+from portfolio_app.interface.views.portfolio.strategic_ui import render_strategic_overview
+from portfolio_app.interface.shared.search_widget import render_search_box
 st.set_page_config(layout="wide")
 apply_style()
 config = Allocation((Bucket("first category:α", "First category", target=.65),

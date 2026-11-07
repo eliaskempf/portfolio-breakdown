@@ -1,16 +1,16 @@
 """The public demo is deterministic, offline, valued and ready to rebalance."""
 import pytest
 
-from portfolio_app.allocation import analysis_targets, load_allocation, macro_table
-from portfolio_app.demo import create_demo_data, LIVE_EXAMPLES
-from portfolio_app.etf import load_funds
-from portfolio_app.exposure_analysis import prepare_exposures
-from portfolio_app.holdings import load_holdings
-from portfolio_app.performance import position_performance
-from portfolio_app.prices import PriceService, StaticProvider
-from portfolio_app.rebalancing import minimum_trades, prepare_rebalance
-from portfolio_app.scoped_rebalancing import portfolio_contribution
-from portfolio_app.valuation import value_holdings
+from portfolio_app.portfolio.allocation import analysis_targets, load_allocation, macro_table
+from portfolio_app.demo_data.demo import create_demo_data, LIVE_EXAMPLES
+from portfolio_app.funds.etf import load_funds
+from portfolio_app.exposure.exposure_analysis import prepare_exposures
+from portfolio_app.portfolio.holdings import load_holdings
+from portfolio_app.performance.performance import position_performance
+from portfolio_app.market.prices import PriceService, StaticProvider
+from portfolio_app.portfolio.rebalancing import minimum_trades, prepare_rebalance
+from portfolio_app.portfolio.scoped_rebalancing import portfolio_contribution
+from portfolio_app.portfolio.valuation import value_holdings
 
 
 def test_demo_targets_gaps_performance_and_plans(tmp_path):
@@ -57,8 +57,8 @@ def test_demo_breakdown_conserves_each_source_and_labels_synthetic_weights(tmp_p
 
 
 def test_live_demo_sizes_once_from_quotes_and_preserves_targets_and_edits(tmp_path):
-    from portfolio_app.demo import initialize_live_demo, live_demo_pending, LIVE_EXAMPLES
-    from portfolio_app.positions import read_snapshot, save_position
+    from portfolio_app.demo_data.demo import initialize_live_demo, live_demo_pending, LIVE_EXAMPLES
+    from portfolio_app.portfolio.positions import read_snapshot, save_position
     live = create_demo_data(tmp_path / 'live', live=True)
     offline = create_demo_data(tmp_path / 'offline')
     prices = PriceService(StaticProvider(offline / 'demo_prices.json'))
@@ -96,9 +96,9 @@ def test_live_demo_sizes_once_from_quotes_and_preserves_targets_and_edits(tmp_pa
 
 
 def test_demo_geography_and_sector_coverage(tmp_path):
-    from portfolio_app.etf import fund_classifications
-    from portfolio_app.geography import UNKNOWN, geography_allocations, geography_table, resolve_geography
-    from portfolio_app.taxonomy import load_classifications, paths_for, UNCLASSIFIED
+    from portfolio_app.funds.etf import fund_classifications
+    from portfolio_app.exposure.geography import UNKNOWN, geography_allocations, geography_table, resolve_geography
+    from portfolio_app.exposure.taxonomy import load_classifications, paths_for, UNCLASSIFIED
     create_demo_data(tmp_path)
     holdings = load_holdings(tmp_path / 'holdings.csv')
     funds = load_funds(tmp_path / 'etfs')
@@ -129,10 +129,10 @@ def test_demo_geography_and_sector_coverage(tmp_path):
 
 
 def test_live_demo_provider_installation_and_retry(tmp_path):
-    from portfolio_app.etf import fund_classifications
-    from portfolio_app.etf_refresh import RefreshCoordinator, read_json
-    from portfolio_app.etf_sources import Source, install_snapshot
-    from portfolio_app.geography import resolve_geography, UNKNOWN
+    from portfolio_app.funds.etf import fund_classifications
+    from portfolio_app.funds.etf_refresh import RefreshCoordinator, read_json
+    from portfolio_app.funds.etf_sources import Source, install_snapshot
+    from portfolio_app.exposure.geography import resolve_geography, UNKNOWN
     offline = create_demo_data(tmp_path / 'offline')
     live = create_demo_data(tmp_path / 'live', live=True)
     fixtures = {fund.isin: fund for fund in load_funds(offline / 'etfs')}

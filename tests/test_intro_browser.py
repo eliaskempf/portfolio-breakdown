@@ -12,8 +12,8 @@ from urllib.request import urlopen
 
 import pytest
 
-from portfolio_app.demo import create_demo_data
-from portfolio_app.positions import read_snapshot
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.settings import theme_options
 from browser_support import settle
 
@@ -32,8 +32,8 @@ def intro_server(tmp_path_factory):
     app = directory / 'app.py'
     app.write_text('''
 from pathlib import Path
-from portfolio_app.ui import render_app
-from portfolio_app.prices import PriceService, StaticProvider
+from portfolio_app.interface.ui import render_app
+from portfolio_app.market.prices import PriceService, StaticProvider
 render_app(Path(__file__).parent / 'empty', demo_dir=Path(__file__).parent / 'demo', intro=True,
            price_service=PriceService(StaticProvider(Path(__file__).parent / 'demo' / 'demo_prices.json')))
 ''', encoding='utf-8')
@@ -79,7 +79,7 @@ def select_workspace(page, name):
 
 
 def test_native_startup_asset_plays_centered_without_a_server(intro_page):
-    from portfolio_app.window import startup_html
+    from portfolio_app.runtime.window import startup_html
     page, _, _ = intro_page
     page.set_content(startup_html())
     page.wait_for_function('window.BreakdownIntro?.playing')
@@ -95,7 +95,7 @@ def test_native_startup_asset_plays_centered_without_a_server(intro_page):
 
 
 def open_window_splash(page, url, content='<p>Loading synthetic app</p>'):
-    from portfolio_app.window_splash import startup_html
+    from portfolio_app.runtime.window_splash import startup_html
     page.route(url + '/__portfolio_window__', lambda route: route.fulfill(content_type='text/html', body=startup_html()))
     page.route(url + '/synthetic-app', lambda route: route.fulfill(content_type='text/html', body=content))
     page.goto(url + '/__portfolio_window__')
@@ -159,7 +159,7 @@ def test_window_splash_slow_start_has_a_way_to_show_app(intro_page):
 
 
 def test_window_splash_reveals_actual_welcome_and_navigation(intro_page):
-    from portfolio_app.window_splash import startup_html
+    from portfolio_app.runtime.window_splash import startup_html
     page, url, _ = intro_page
     page.route(url + '/__portfolio_window__', lambda route: route.fulfill(content_type='text/html', body=startup_html()))
     page.goto(url + '/__portfolio_window__')
@@ -174,7 +174,7 @@ def test_window_splash_reveals_actual_welcome_and_navigation(intro_page):
 
 
 def test_window_splash_reveals_actual_input_error(intro_page):
-    from portfolio_app.window_splash import startup_html
+    from portfolio_app.runtime.window_splash import startup_html
     page, url, directory = intro_page
     workspace = directory / 'empty'
     workspace.mkdir(exist_ok=True)
@@ -189,7 +189,7 @@ def test_window_splash_reveals_actual_input_error(intro_page):
 
 
 def test_window_controls_and_skip_intro(intro_page):
-    from portfolio_app.window_splash import startup_html
+    from portfolio_app.runtime.window_splash import startup_html
     page, url, _ = intro_page
     page.route(url + '/__portfolio_window__', lambda route: route.fulfill(content_type='text/html', body=startup_html(False)))
     page.goto(url + '/__portfolio_window__')
@@ -284,7 +284,7 @@ def test_reduced_motion_and_narrow_welcome(intro_page):
 
 def test_intro_automatically_continues_when_animation_resource_fails(intro_page):
     page, url, _ = intro_page
-    page.route('**/component/portfolio_app.intro.portfolio_breakdown_intro/**', lambda route: route.abort())
+    page.route('**/component/portfolio_app.interface.views.onboarding.intro.portfolio_breakdown_intro/**', lambda route: route.abort())
     page.goto(url)
     playwright.expect(page.get_by_role('button', name='Skip intro', exact=True)).to_have_count(0)
     playwright.expect(page.get_by_role('dialog')).to_be_visible(timeout=15000)
@@ -299,7 +299,7 @@ def test_package_smoke_waits_for_intro_completion(intro_page, monkeypatch, block
     if block_animation:
         # The supported eight-second fallback exceeds a normal DOM assertion's
         # five seconds. First-script completion cannot acknowledge this phase.
-        page.route('**/component/portfolio_app.intro.portfolio_breakdown_intro/**', lambda route: route.abort())
+        page.route('**/component/portfolio_app.interface.views.onboarding.intro.portfolio_breakdown_intro/**', lambda route: route.abort())
     runs = StreamlitReruns(page, settle=settle_app, timeout_ms=20000)
     with page.expect_websocket(predicate=lambda socket: '/_stcore/stream' in socket.url):
         page.goto(url)

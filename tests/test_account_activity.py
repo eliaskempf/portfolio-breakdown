@@ -4,9 +4,9 @@ from decimal import Decimal
 
 import pytest
 
-from portfolio_app import account_journal as ledger
-from portfolio_app.account_activity import accounting_effects, activity_rows, correct_entry, entry_label, related_entries
-from portfolio_app.holdings import DataError
+from portfolio_app.ledger import account_journal as ledger
+from portfolio_app.ledger.account_activity import accounting_effects, activity_rows, correct_entry, entry_label, related_entries
+from portfolio_app.portfolio.holdings import DataError
 from test_actual_portfolio import invented
 
 

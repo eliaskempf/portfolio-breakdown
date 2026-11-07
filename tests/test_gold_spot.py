@@ -5,11 +5,11 @@ import json
 import pandas as pd
 import pytest
 
-from portfolio_app.gold_prices import SpotGoldProvider, fetch_gold_quote, parse_gold_quote
-from portfolio_app.holdings import DataError, metadata_dimensions, parse_holdings
-from portfolio_app.physical_assets import GOLD_SPOT_KEY, GRAMS_PER_TROY_OUNCE
-from portfolio_app.prices import PriceService, Quote
-from portfolio_app.valuation import value_holdings
+from portfolio_app.market.gold_prices import SpotGoldProvider, fetch_gold_quote, parse_gold_quote
+from portfolio_app.portfolio.holdings import DataError, metadata_dimensions, parse_holdings
+from portfolio_app.portfolio.physical_assets import GOLD_SPOT_KEY, GRAMS_PER_TROY_OUNCE
+from portfolio_app.market.prices import PriceService, Quote
+from portfolio_app.portfolio.valuation import value_holdings
 
 NOW = datetime(2026, 1, 5, tzinfo=timezone.utc)
 
@@ -97,7 +97,7 @@ def test_spot_adapter_preserves_metadata_and_delegates_other_requests(monkeypatc
         assert request.full_url == 'https://api.gold-api.com/price/XAU'
         assert timeout == 10
         return Response()
-    monkeypatch.setattr('portfolio_app.gold_prices.urlopen', fetch)
+    monkeypatch.setattr('portfolio_app.market.gold_prices.urlopen', fetch)
     market = SyntheticProvider()
     provider = SpotGoldProvider(market)
     assert provider.price(GOLD_SPOT_KEY) == Quote(2000., 'USD', NOW)

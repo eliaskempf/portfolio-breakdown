@@ -1,0 +1,87 @@
+"""Small application/workspace controls, separate from portfolio calculations."""
+from pathlib import Path
+from base64 import b64encode
+import threading
+
+import streamlit as st
+
+from portfolio_app.settings import app_version, icon_path
+from portfolio_app.interface.shared.view_state import reset_workspace
+
+
+def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
+    """Workspace selection and global actions; no persistent portfolio writes."""
+    from portfolio_app.interface.views.onboarding.tour import active, demo_directory
+    touring = active()
+    if touring:
+        data_dir, demo = demo_directory(), True
+    with st.container(key='app_header'):
+        with st.container(horizontal=True, vertical_alignment='center', gap='small'):
+            with st.container(width='stretch'):
+                icon = icon_path('portfolio-breakdown.svg')
+                image = f'<img alt="" src="data:image/svg+xml;base64,{b64encode(icon.read_bytes()).decode()}" />' if icon else ''
+                st.html(f'<div class="app-brand">{image}<span>Breakdown</span></div>')
+            if demo_dir is not None:
+                # Keep the widget default stable across reruns. Changing index
+                # from 0 to None lets the browser clear an implicit selection.
+                if st.session_state.get('active_portfolio') is None:
+                    st.session_state['active_portfolio'] = 'Demo portfolio' if demo else 'My portfolio'
+                workspace = st.selectbox('Portfolio workspace', ['My portfolio', 'Demo portfolio'], help='Switch between your local portfolio and the separate demonstration workspace.',
+                    index=None, key='active_portfolio', label_visibility='collapsed', width=200, disabled=touring)
+                demo = workspace == 'Demo portfolio'
+                if demo and not touring:
+                    data_dir = demo_dir
+                context = (str(data_dir.resolve()), demo)
+                if not touring and st.session_state.get('portfolio_workspace_context') != context:
+                    from portfolio_app.interface.views.onboarding.tour import workspace_changed
+                    workspace_changed(demo=demo)
+                    reset_workspace()
+                    st.session_state['portfolio_workspace_context'] = context
+            offline = demo and not (data_dir / '.live-demo').exists()
+            refresh = st.button('Refresh prices', help='Request updated quotes and exchange rates. Unavailable in the synthetic offline demo.', icon=':material/refresh:', type='tertiary', disabled=offline)
+            notifications = st.container(key='header_notifications', width=44)
+            if touring:
+                st.button('Portfolio settings', icon=':material/tune:', disabled=True)
+                st.button('?', disabled=True)
+                settings = None
+            else:
+                settings = st.popover('Portfolio settings', help='Portfolio display preferences and local workspace controls.', icon=':material/tune:', key='workspace_settings', on_change='rerun')
+                with settings:
+                    st.caption('Appearance: choose Light, Dark or System from the top-right app menu.')
+                with st.popover('?', help='Help and demo guide', key='help_menu', on_change='rerun'):
+                    from portfolio_app.runtime.documentation import guide_url
+                    from portfolio_app.interface.views.onboarding.tour import request_tour
+                    st.button('Take the tour', on_click=request_tour, args=('demo' if demo else 'manual',),
+                              kwargs={'replay': True})
+                    if guide_url() is None:
+                        st.warning('The guide bundled with this app is unavailable. Reinstall the complete app to restore version-matched help.')
+                    else:
+                        st.link_button('User guide', guide_url(), icon=':material/menu_book:')
+                        st.link_button('Getting started', guide_url('getting-started/'))
+                        st.link_button('Categories and targets', guide_url('allocation/'))
+                        st.link_button('ETF breakdowns', guide_url('exposure/'))
+                        st.link_button('Monitoring and alerts', guide_url('monitoring/'))
+                    if demo and not touring:
+                        st.caption('Invented holdings and buy-ins. Demo changes reset on restart.')
+                        st.caption('Synthetic offline prices.' if offline else 'Public market quotes and history; availability varies.')
+    return data_dir, demo, refresh, settings, notifications
+
+
+def workspace_info(active: Path, persistent: Path, *, demo: bool) -> None:
+    with st.expander('App & workspace'):
+        st.caption(f'Portfolio Breakdown {app_version()} · GPL-3.0-only')
+        st.caption('Temporary demo folder' if demo else 'Portfolio folder')
+        st.code(str(active.resolve()), language=None)
+        if st.button('Open data folder', help='Open the active portfolio’s local storage folder in the file manager.'):
+            from portfolio_app.runtime.desktop import open_folder
+            try:
+                open_folder(active)
+            except OSError as exc:
+                st.error(f'Could not open the folder: {exc}')
+        st.caption('Create backup saves a complete archive while the app runs. Closing the app window stops it; closing a browser tab does not.')
+        if st.button('Stop application', help='Stop this local app process; saved portfolio files remain on disk.'):
+            from portfolio_app.runtime.launcher import stop_instance
+            st.info('Stopping the local application. You can close this tab.')
+            timer = threading.Timer(.5, stop_instance, args=(persistent,))
+            timer.daemon = True
+            timer.start()

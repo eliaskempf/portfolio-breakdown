@@ -6,12 +6,12 @@ from threading import Event
 
 import pytest
 
-from portfolio_app.account_journal import save_journal, load_journal
-from portfolio_app.history_observations import Observation, ObservationStore, load_observations, save_observations
-from portfolio_app.history_scope import can_start_history_chart
-from portfolio_app.market_data import RequestCoordinator
-from portfolio_app.personal_history_refresh import HistoryRefresher
-from portfolio_app.personal_market import merge_download
+from portfolio_app.ledger.account_journal import save_journal, load_journal
+from portfolio_app.performance.history_observations import Observation, ObservationStore, load_observations, save_observations
+from portfolio_app.performance.history_scope import can_start_history_chart
+from portfolio_app.market.market_data import RequestCoordinator
+from portfolio_app.performance.personal_history_refresh import HistoryRefresher
+from portfolio_app.performance.personal_market import merge_download
 from test_history_download import setup
 from test_market_data import finish
 
@@ -112,7 +112,7 @@ def test_only_reconstructed_scopes_default_to_loading_chart(tmp_path, jobs):
 
 
 def test_archive_revision_bypasses_success_cooldown(tmp_path, jobs, monkeypatch):
-    from portfolio_app.settlement_archive import SettlementArchive
+    from portfolio_app.derivatives.settlement_archive import SettlementArchive
     journal, scope = setup(tmp_path)
     revision = ['first']
     monkeypatch.setattr(SettlementArchive, 'revision', lambda self: revision[0])
@@ -126,7 +126,7 @@ def test_archive_revision_bypasses_success_cooldown(tmp_path, jobs, monkeypatch)
     revision[0] = 'corrected'
     assert refresh.request(tmp_path, journal, scope, 'EUR').pending
     finish(jobs, tmp_path)
-    from portfolio_app.history_observations import active_observations
+    from portfolio_app.performance.history_observations import active_observations
     store, _ = load_observations(tmp_path)
     assert calls == ['first', 'corrected']
     assert len(store.observations) == 2 and active_observations(store)[0].amount == 13
@@ -154,7 +154,7 @@ def test_journal_change_during_download_is_not_merged(tmp_path, jobs):
 
 
 def test_completed_checklist_request_covers_position_subset(tmp_path,jobs):
-    from portfolio_app.account_journal import Account,Event
+    from portfolio_app.ledger.account_journal import Account,Event
     journal,scope=setup(tmp_path)
     journal=replace(journal,accounts=(Account('cash','Invented cash'),),
         events=(Event('opening','2023-12-31','cash_open','cash','EUR',D(100)),))

@@ -1,6 +1,6 @@
 """Normal-app futures entry with an explicitly invented portfolio."""
 from streamlit.testing.v1 import AppTest
-from portfolio_app.account_journal import load_journal, save_journal
+from portfolio_app.ledger.account_journal import load_journal, save_journal
 from test_actual_portfolio import invented
 from test_ui import by_label, activate
 
@@ -8,8 +8,8 @@ from test_ui import by_label, activate
 def launch_actual(tmp_path):
     return AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.ui import render_app
-from portfolio_app.prices import PriceService, StaticProvider
+from portfolio_app.interface.ui import render_app
+from portfolio_app.market.prices import PriceService, StaticProvider
 root=Path({str(tmp_path)!r})
 render_app(root, demo=False, ignore_selection=True, price_service=PriceService(StaticProvider(root/'demo_prices.json')))
 ''',default_timeout=20).run()
@@ -65,7 +65,7 @@ def test_add_future_from_normal_position_dialog(tmp_path):
 
 def test_normal_lifecycle_settlement_partial_close_roll_and_manual_tax(tmp_path):
     from datetime import date
-    from portfolio_app.account_journal import replay
+    from portfolio_app.ledger.account_journal import replay
     _, journal, _ = invented(tmp_path)
     save_journal(tmp_path, journal, None)
     app = launch_actual(tmp_path)
@@ -101,10 +101,10 @@ def test_normal_lifecycle_settlement_partial_close_roll_and_manual_tax(tmp_path)
 
 
 def test_normal_list_opens_actual_position_in_shared_popup(tmp_path):
-    from portfolio_app.positions import read_snapshot
-    from portfolio_app.position_list import list_context, position_rows
-    from portfolio_app.actual_portfolio import journal_positions
-    from portfolio_app.portfolio import prepare_portfolio
+    from portfolio_app.portfolio.positions import read_snapshot
+    from portfolio_app.interface.views.positions.position_list import list_context, position_rows
+    from portfolio_app.portfolio.actual_portfolio import journal_positions
+    from portfolio_app.portfolio.portfolio import prepare_portfolio
     service, journal, _ = invented(tmp_path)
     save_journal(tmp_path, journal, None)
     snapshot = read_snapshot(tmp_path/'holdings.csv')
@@ -123,7 +123,7 @@ def test_normal_list_opens_actual_position_in_shared_popup(tmp_path):
 
 def test_backdated_cash_reconciliation_preserves_later_deposit_and_settlement(tmp_path):
     from datetime import date
-    from portfolio_app.account_journal import Event, append_events, replay
+    from portfolio_app.ledger.account_journal import Event, append_events, replay
 
     _, journal, _ = invented(tmp_path)
     journal = append_events(journal, (
@@ -152,8 +152,8 @@ def test_backdated_cash_reconciliation_preserves_later_deposit_and_settlement(tm
 
 def test_cash_deposit_keeps_prior_settlements_eligible(tmp_path):
     from datetime import date
-    from portfolio_app.account_journal import replay
-    from portfolio_app.settlement_backfill import settlement_days
+    from portfolio_app.ledger.account_journal import replay
+    from portfolio_app.derivatives.settlement_backfill import settlement_days
 
     _, journal, _ = invented(tmp_path)
     save_journal(tmp_path, journal, None)

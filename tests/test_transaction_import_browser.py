@@ -1,9 +1,9 @@
 """Only independently generated PDF statements and synthetic portfolios."""
 import pytest
 
-from portfolio_app.account_journal import load_journal
-from portfolio_app.positions import read_snapshot
-from portfolio_app.security_history import effective_holdings
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ledger.security_history import effective_holdings
 from test_consors_pdf import statement
 from test_transaction_dialog_browser import transaction_page, watch_dialog  # noqa: F401
 from browser_support import settle, settle_layout
@@ -325,7 +325,7 @@ def test_unresolved_financial_rows_offer_diagnostics_but_no_save(transaction_pag
 
 def test_stale_pdf_review_keeps_draft_and_rejects_save(transaction_page):
     from consors_audit_fixtures import FREE, text_pdf
-    from portfolio_app.account_journal import save_journal
+    from portfolio_app.ledger.account_journal import save_journal
     from dataclasses import replace
     page, root = transaction_page
     dialog = page.get_by_role('dialog')
@@ -411,8 +411,8 @@ def test_excluding_one_statement_survives_selecting_another_row(transaction_page
 
 def test_pdf_partial_sale_of_three_units_reviews_and_applies(transaction_page):
     from consors_audit_fixtures import text_pdf
-    from portfolio_app.account_journal import Journal,save_journal
-    from portfolio_app.security_history import replay_securities
+    from portfolio_app.ledger.account_journal import Journal,save_journal
+    from portfolio_app.ledger.security_history import replay_securities
     from decimal import Decimal
     page,root=transaction_page
     # Remove the fixture's invented pending trade, so this tests only the two
@@ -444,9 +444,9 @@ def test_pdf_partial_sale_of_three_units_reviews_and_applies(transaction_page):
 def test_bulk_removal_select_all_previews_and_preserves_originals(transaction_page, applied):
     from dataclasses import replace
     from decimal import Decimal
-    from portfolio_app.account_journal import save_journal
-    from portfolio_app.history_commands import reconstruction_candidate
-    from portfolio_app.security_history import SecurityEvent, current_records
+    from portfolio_app.ledger.account_journal import save_journal
+    from portfolio_app.ledger.history_commands import reconstruction_candidate
+    from portfolio_app.ledger.security_history import SecurityEvent, current_records
     page, root = transaction_page
     journal, revision = load_journal(root)
     book = journal.securities[0]
@@ -490,8 +490,8 @@ def test_bulk_removal_select_all_previews_and_preserves_originals(transaction_pa
 
 def test_double_click_edits_selected_transaction_after_sorting_without_dropdown(transaction_page):
     from dataclasses import replace
-    from portfolio_app.account_journal import save_journal
-    from portfolio_app.security_history import SecurityEvent
+    from portfolio_app.ledger.account_journal import save_journal
+    from portfolio_app.ledger.security_history import SecurityEvent
     page, root = transaction_page
     journal, revision = load_journal(root)
     book = journal.securities[0]
@@ -529,8 +529,8 @@ def test_double_click_edits_selected_transaction_after_sorting_without_dropdown(
 
 def test_bulk_selection_includes_offscreen_transactions(transaction_page):
     from dataclasses import replace
-    from portfolio_app.account_journal import save_journal
-    from portfolio_app.security_history import SecurityEvent, current_records
+    from portfolio_app.ledger.account_journal import save_journal
+    from portfolio_app.ledger.security_history import SecurityEvent, current_records
     page, root = transaction_page
     journal, revision = load_journal(root)
     book = journal.securities[0]

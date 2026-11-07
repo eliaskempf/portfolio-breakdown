@@ -60,7 +60,7 @@ def test_linked_entry_layout_tooltips_and_save(ux_page):
         page.get_by_role('button', name='Resume unsaved edit', exact=True).click()
     dialog.get_by_role('button', name='Save position', exact=True).click()
     playwright.expect(dialog).to_have_count(0)
-    from portfolio_app.holdings import load_holdings
+    from portfolio_app.portfolio.holdings import load_holdings
     saved = load_holdings(directory / 'holdings.csv').iloc[-1]
     assert saved['name'] == 'Invented browser addition' and saved.shares == 4
     assert saved.acquisition_price == 25
@@ -91,7 +91,7 @@ def test_purchase_table_paste_and_draft_resume(ux_page):
     playwright.expect(total).to_have_value('563')
     dialog.get_by_role('button', name='Save position', exact=True).click()
     playwright.expect(dialog).to_have_count(0)
-    from portfolio_app.holdings import load_holdings
+    from portfolio_app.portfolio.holdings import load_holdings
     saved = load_holdings(directory / 'holdings.csv').iloc[-1]
     assert saved.shares == 5 and saved.acquisition_price == 112.6
     assert len(json.loads(saved.purchase_history)[0]['purchases']) == 2

@@ -8,15 +8,15 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 import pytest
 
-from portfolio_app.aggregation import aggregate, aggregate_dimension
-from portfolio_app.etf import (
+from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension
+from portfolio_app.funds.etf import (
     FundSnapshot, effective_exposure_table, expand_etfs, fund_breakdown,
     load_funds, matching_fund, snapshot_age_days, validate_constituents,
 )
-from portfolio_app.exposures import normalize_exposures
-from portfolio_app.grouping import InstrumentGroup, group_classifications, group_exposures, group_members_table
-from portfolio_app.holdings import DataError
-from portfolio_app.vaneck import parse_holdings, refresh_snapshot
+from portfolio_app.exposure.exposures import normalize_exposures
+from portfolio_app.portfolio.grouping import InstrumentGroup, group_classifications, group_exposures, group_members_table
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.funds.providers.vaneck import parse_holdings, refresh_snapshot
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ def test_partial_weights_and_source_values_are_conserved(fund, positions):
 
 
 def test_smh_group_candidates_respect_listing_identity_and_snapshot(fund, positions):
-    from portfolio_app.etf import smh_group_candidates
+    from portfolio_app.funds.etf import smh_group_candidates
 
     positions = positions.copy()
     positions.loc[positions.id == "my-nvidia", "ticker"] = "NVD.DE"
@@ -135,7 +135,7 @@ def test_grouping_multiple_accounts_and_empty_selections(fund, positions):
 
 
 def test_target_expansion_conserves_etf_residual_and_direct_targets(fund, positions):
-    from portfolio_app.targets import target_exposures
+    from portfolio_app.portfolio.targets import target_exposures
 
     positions["target_allocation"] = [.2, .5, float("nan")]
     targets = target_exposures(positions, [fund], lookthrough=True)
@@ -172,7 +172,7 @@ def test_generic_classification_and_missing_constituents(fund, positions):
 
 
 def test_fund_table_uses_same_resolved_classifications_as_exposure_pipeline(fund, positions):
-    from portfolio_app.etf_ui import classified_fund_table
+    from portfolio_app.interface.views.funds.etf_ui import classified_fund_table
 
     classifications = {"my-nvidia": {"sector": (("Synthetic sector", "Synthetic branch"),)}}
     positions = positions.copy()
@@ -187,7 +187,7 @@ def test_fund_table_uses_same_resolved_classifications_as_exposure_pipeline(fund
 
 
 def test_selected_label_comparison_combines_direct_and_fund_exposures(fund, positions):
-    from portfolio_app.label_comparison import Label, compare_labels
+    from portfolio_app.exposure.label_comparison import Label, compare_labels
 
     classifications = {
         "my-nvidia": {"labels": (("Synthetic group", "Branch A"),)},

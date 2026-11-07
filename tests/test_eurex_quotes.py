@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 import json
 
 import pytest
-from portfolio_app.derivative_market import CATALOG, make_contract
-from portfolio_app.eurex_quotes import fetch_quote, monthly_notation, parse_quote, HOST
-from portfolio_app.holdings import DataError
+from portfolio_app.derivatives.derivative_market import CATALOG, make_contract
+from portfolio_app.derivatives.eurex_quotes import fetch_quote, monthly_notation, parse_quote, HOST
+from portfolio_app.portfolio.holdings import DataError
 
 NOW = datetime(2026, 10, 15, 12, tzinfo=timezone.utc)
 

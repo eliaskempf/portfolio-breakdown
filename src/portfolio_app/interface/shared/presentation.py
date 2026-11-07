@@ -1,0 +1,159 @@
+"""Shared visual styling for the local app; no portfolio calculations."""
+
+from portfolio_app.interface.shared.currency_display import money
+
+from html import escape
+from math import isfinite
+
+import streamlit as st
+from portfolio_app.settings import GAIN_COLOR, LOSS_COLOR
+
+from portfolio_app.interface.shared.grid_interactions import install_grid_interactions
+from portfolio_app.interface.shared.metric_interactions import toggle_gain_unit
+
+CSS = """
+<style>
+.block-container {max-width:1440px;padding:2rem 2.5rem 3rem;}
+[data-testid="stHeader"] {background:transparent;}
+/* Keep native, keyboard-accessible field help beside its label, not at the
+   far edge of the input. Use semantic test IDs instead of generated classes. */
+[data-testid="stWidgetLabel"] > div:has(> [data-testid="stTooltipIcon"]) {flex:0 0 auto;margin-inline-start:6px;}
+.st-key-app_header {border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent);padding-bottom:16px;margin-bottom:8px;}
+.app-brand {display:flex;align-items:center;gap:12px;font-size:1.85rem;font-weight:650;letter-spacing:-.5px;}
+.app-brand img {width:56px;height:56px;flex-shrink:0;}
+/* Keep the bell's text available to assistive technology without a visible label. */
+.st-key-header_notifications [data-testid="stPopoverButton"] [data-testid="stMarkdownContainer"] {position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
+/* Hide the chevron wrapper, preserving the decorative bell icon itself. */
+.st-key-header_notifications [data-testid="stPopoverButton"] [aria-hidden="true"]:not([data-testid="stIconMaterial"]) {display:none;}
+.st-key-header_notifications [data-testid="stPopoverButton"] {position:relative;padding:0;}
+.st-key-header_notifications [data-testid="stIconMaterial"] {position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:20px;line-height:1;}
+.st-key-header_notifications [data-testid="stPopoverButton"]::after {content:none;position:absolute;right:7px;top:7px;width:8px;height:8px;border-radius:50%;background:#d04755;box-shadow:0 0 0 2px var(--st-background-color);pointer-events:none;}
+.st-key-app_header [data-testid="stHorizontalBlock"] {flex-wrap:wrap;gap:12px;}
+.stDialog > div:has(.st-key-welcome_personal) {width:min(880px,calc(100vw - 32px))!important;max-width:880px;margin:clamp(24px,12vh,120px) auto!important;}
+.st-key-welcome_demo,.st-key-welcome_personal {padding:24px!important;border-radius:16px!important;min-height:285px;}
+.st-key-welcome_demo {background:color-mix(in srgb,#5470c6 12%,transparent);border-color:#5470c6!important;}
+.st-key-welcome_personal {background:color-mix(in srgb,#4aa9b3 7%,transparent);}
+.welcome-symbol {font-size:2.5rem;line-height:1.1;color:#5470c6;margin-bottom:12px;}
+.st-key-welcome_demo .welcome-symbol {width:40px;height:40px;border-radius:50%;background:conic-gradient(#5470c6 0deg 220deg,#4aa9b3 220deg 310deg,#9a6dd7 310deg);font-size:0;}
+.st-key-welcome_personal .welcome-symbol {color:#4aa9b3;}
+.st-key-demo_loading {max-width:38rem;margin:clamp(2rem,8vh,6rem) auto;}
+h1 {font-size:1.8rem!important;letter-spacing:-.5px;font-weight:600!important;padding-bottom:.4rem!important;}
+h2 {font-size:1.15rem!important;font-weight:600!important;}
+h3 {font-size:1rem!important;font-weight:600!important;}
+[data-testid="stMetric"] {border:1px solid color-mix(in srgb,currentColor 14%,transparent);border-radius:6px;padding:16px 18px;}
+[data-testid="stMetricValue"] {font-size:1.7rem;font-weight:600;font-variant-numeric:tabular-nums;}
+[data-testid="stMetricLabel"] {font-size:.8rem;opacity:.75;}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetric"] > div {display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:16px;align-items:center;}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetricLabel"] {grid-column:1 / -1;}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetricValue"] {grid-column:1;grid-row:2;}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetric"] > div > div:has(> [data-testid="stMetricDelta"]) {grid-column:2;grid-row:2;margin-top:0;flex-wrap:wrap;}
+.st-key-overview_allocation {container-type:inline-size;}
+/* A non-wrapping Streamlit row defaults to overflow:auto. This is a heading,
+   not a scroll viewport; allow help and focus outlines beyond its line box. */
+.st-key-overview_allocation .st-key-overview_allocation_heading {overflow:visible;}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"], .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"] {cursor:pointer;}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"]:hover, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:hover {filter:brightness(.85);}
+:is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"]:focus-visible, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
+.st-key-exposure_theme_results {container-type:inline-size;}
+.st-key-exposure_toolbar [data-testid="stColumn"] {min-width:0;}
+@container(max-width:860px) {
+  .st-key-overview_allocation [data-testid="stHorizontalBlock"]:not(.st-key-overview_allocation_heading) {flex-direction:column;align-items:stretch;}
+  .st-key-overview_allocation [data-testid="stColumn"] {width:100%!important;flex:1 1 100%;min-width:0;}
+  .st-key-exposure_theme_results [data-testid="stHorizontalBlock"] {flex-direction:column;align-items:stretch;}
+  .st-key-exposure_theme_results [data-testid="stColumn"] {width:100%!important;flex:1 1 100%;min-width:0;}
+}
+[class*="st-key-gain_positive_"] [data-testid="stMetricValue"] {color:var(--st-green-text-color,__GAIN_COLOR__);}
+[class*="st-key-gain_negative_"] [data-testid="stMetricValue"] {color:var(--st-red-text-color,__LOSS_COLOR__);}
+[data-testid="stTabs"] [role="tablist"] {gap:24px;border-bottom:1px solid color-mix(in srgb,currentColor 14%,transparent);margin:4px 0 20px;}
+[data-testid="stTabs"] [role="tab"] {padding:10px 0;font-size:.9rem;font-weight:500;}
+[data-testid="stForm"] {border-radius:6px;padding:20px;}
+[data-testid="stButton"] button,[data-testid="stFormSubmitButton"] button {border-radius:5px;font-weight:500;}
+/* The popover replaces its chevron when opening. Keep the click target on the
+   stable button so the detached icon cannot be mistaken for an outside click. */
+[data-testid="stPopoverButton"] * {pointer-events:none;}
+[data-testid="stExpander"] {border-radius:6px!important;}
+[data-testid="stDataFrame"] {border-radius:5px;overflow:hidden;}
+[data-testid="stPlotlyChart"] {border-radius:6px;}
+.allocation-total {display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;border-bottom:1px solid color-mix(in srgb,currentColor 16%,transparent);padding:10px 0;font-size:.9rem;font-weight:600;}
+.brand {font-size:1.1rem;font-weight:650;letter-spacing:-.25px;padding:4px 0 16px;}
+.empty-state {border:1px solid color-mix(in srgb,currentColor 14%,transparent);border-radius:6px;padding:32px;}
+[data-testid="stAppDeployButton"] {display:none;}
+@media(max-width:700px) {[data-testid="stHorizontalBlock"]{flex-wrap:wrap}[data-testid="stColumn"]{min-width:min(100%,260px)}.block-container{padding:3.5rem 1rem 2rem}h1{font-size:1.5rem!important}[data-testid="stMetric"]{padding:10px}}
+</style>
+""".replace("__GAIN_COLOR__", GAIN_COLOR).replace("__LOSS_COLOR__", LOSS_COLOR)
+
+
+def mark_view_ready() -> None:
+    """Signal completed empty/error views too, without adding layout space."""
+    st.html('<style data-portfolio-view-ready="true">/* View rendered */</style>')
+
+
+def apply_style() -> None:
+    st.html(CSS)
+    install_grid_interactions()
+
+
+def workspace_header(demo: bool) -> None:
+    st.title("Portfolio")
+
+
+def empty_overview() -> None:
+    st.info("Open Positions and choose Add position to get started.")
+
+
+def allocation_total(label: str, value: float) -> None:
+    st.html(f'<div class="allocation-total"><span>{escape(label)}</span><span>{money(value)} · 100%</span></div>')
+
+
+def performance_metric(label: str, value: str, amount, *, key: str, qualified=False, help=None) -> None:
+    """Keep signed performance readable even without colour or a known cost."""
+    tone = 'positive' if amount is not None and amount > 0 else 'negative' if amount is not None and amount < 0 else 'neutral'
+    if qualified:
+        tone = 'neutral'
+    with st.container(key=f'gain_{tone}_{key}'):
+        st.metric(label, value, help=help)
+
+
+def return_percent(value) -> str:
+    """Format a percentage return with direction, without a duplicate sign."""
+    if value is None or not isfinite(value):
+        return '—'
+    arrow = '↑ ' if value > 0 else '↓ ' if value < 0 else ''
+    return f'{arrow}{abs(value):,.2f}%'
+
+
+def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False, freshness=None, known=None, twr=None, twr_estimated=False, freshness_rows=None, twr_help=''):
+    """One value card with an adjacent, optionally clickable unrealized gain."""
+    gain = performance.return_pct if percent else performance.gain_reporting
+    gain_text = ('N/A · Cash balance' if performance.cash_only else 'Unavailable') if gain is None else return_percent(gain) if percent else money(gain, signed=True)
+    if known is not None:
+        gain = (100*twr if twr is not None else None) if percent else known.amount
+        gain_text = ('—' if gain is None else return_percent(gain)) if percent else (
+            'N/A · Cash balance' if gain is None and performance.cash_only else
+            'Unavailable' if gain is None else money(gain, signed=True))
+    from portfolio_app.interface.shared.freshness_ui import render_freshness
+    from portfolio_app.derivatives.futures_valuation import summarize_freshness
+    gain_help = ('Estimated TWR: uses supplied transaction estimates.' if twr_estimated else '') if percent else (
+        known.coverage_help if known is not None and known.coverage_note == 'Estimated gain' else '')
+    if percent and twr_help:
+        gain_help = ' '.join(part for part in (gain_help, twr_help) if part)
+    known_help = (f'TWR: all recorded history. Contributions and withdrawals are excluded from investment profit. {gain_help}'
+                  if percent else f'Total known gain: realized + unrealized + recorded income, less costs once. Valued {known.as_of}; quote/FX dates in price details. Click for full-history TWR. {gain_help}') if known is not None else ''
+    def render(rows):
+        current_freshness = summarize_freshness(rows) if rows is not None else freshness
+        with st.container(key=key):
+            st.metric(label or ('Priced value' if missing else 'Current value'), money(value),
+                      delta=gain_text, delta_color=('inverse' if percent and gain < 0 else 'normal') if gain and not (current_freshness and current_freshness[2]) else 'off', delta_arrow='off',
+                      help=(known_help if known is not None else
+                           ('Assets minus debt. Gain includes holdings performance and net futures P&L. ' if strategy_gain else
+                            'Current holdings value and gain on recorded costs. ') +
+                           f'{missing} missing prices. Performance coverage: {performance.coverage}. Click gain to switch amount / %.'))
+            if known is not None and known.partial and known.coverage_note != 'Estimated gain':
+                st.caption(known.coverage_note, help=known.coverage_help)
+            if current_freshness and current_freshness[0]:
+                st.caption(current_freshness[0], help=current_freshness[1])
+    render_freshness(freshness_rows, render)
+    if on_toggle_gain:
+        toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain, container_key=key,
+                         tooltip=(('TWR · All history · Click for amount' if percent else 'Total gain · Click for TWR')
+                                  + (' · '+gain_help if gain_help else '')) if known is not None else None)

@@ -2,7 +2,7 @@
 import pandas as pd
 import pytest
 from test_risk import held, history, market, TODAY
-from portfolio_app.risk import risk_analytics
+from portfolio_app.analytics.risk import risk_analytics
 
 
 def calculate(contracts, equity=120., missing=False):
@@ -81,9 +81,9 @@ def test_proxy_must_share_sample_and_embedded_fund_leverage_is_not_multiplied_ag
 
 def test_analytics_loader_includes_proxy_and_preserves_fixed_equity(tmp_path):
     from dataclasses import replace
-    from portfolio_app.analytics_service import load_risk
-    from portfolio_app.futures import FuturePosition
-    from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
+    from portfolio_app.analytics.analytics_service import load_risk
+    from portfolio_app.studies.futures import FuturePosition
+    from portfolio_app.exposure.portfolio_exposure import calculate_portfolio_exposure
     positions=held(['stock'],[100.])
     positions['position_id']='owned:stock'
     positions['reporting_currency']='EUR'

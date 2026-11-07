@@ -5,11 +5,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_comparison import ComparisonSettings, simulate_comparison, simulate_trajectory
-from portfolio_app.futures_history import HistoricalSettings, historical_projection, quarterly_legs
-from portfolio_app.futures_history_data import HISTORY_FILE, parse_estr_history, refresh_history, unpack_history
-from portfolio_app.holdings import DataError
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.studies.futures_comparison import ComparisonSettings, simulate_comparison, simulate_trajectory
+from portfolio_app.studies.futures_history import HistoricalSettings, historical_projection, quarterly_legs
+from portfolio_app.studies.futures_history_data import HISTORY_FILE, parse_estr_history, refresh_history, unpack_history
+from portfolio_app.portfolio.holdings import DataError
 
 
 def synthetic_history_snapshot():
@@ -119,7 +119,7 @@ def test_ecb_history_identity_percent_conversion_and_duplicate_rejection():
 
 
 def test_history_refresh_is_atomic_when_rate_coverage_is_incomplete(tmp_path):
-    from portfolio_app.risk_data import AdjustedHistory
+    from portfolio_app.analytics.risk_data import AdjustedHistory
     prices, rates = unpack_history(synthetic_history_snapshot())
     class Service:
         def get(self, ticker, years, refresh):

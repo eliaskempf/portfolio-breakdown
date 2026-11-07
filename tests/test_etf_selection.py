@@ -173,7 +173,7 @@ def test_interrupted_render_restores_missing_filter_widget_state(multi_fund_work
     key = app.session_state['filter_holdings_widget']
     # Recreate a session whose remembered selection survived widget cleanup.
     app = AppTest.from_string(
-        'from pathlib import Path\nfrom portfolio_app.ui import render_app\n'
+        'from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n'
         f'render_app(Path({str(multi_fund_workspace)!r}), demo=True)\n',
         default_timeout=15,
     )

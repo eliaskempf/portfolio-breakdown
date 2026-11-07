@@ -4,11 +4,11 @@ from dataclasses import replace
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.account_journal import save_journal, Journal
-from portfolio_app.positions import read_snapshot
-from portfolio_app.security_history import SecurityBook, SecurityEvent as E
-from portfolio_app.history_observations import Observation, ObservationStore, HistoryScope, CoverageReview,save_observations
-from portfolio_app.security_history import history_fingerprint
+from portfolio_app.ledger.account_journal import save_journal, Journal
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent as E
+from portfolio_app.performance.history_observations import Observation, ObservationStore, HistoryScope, CoverageReview,save_observations
+from portfolio_app.ledger.security_history import history_fingerprint
 
 
 def fixture(tmp_path):
@@ -26,8 +26,8 @@ def fixture(tmp_path):
 
 def launch(tmp_path):
     return AppTest.from_string(f'''from pathlib import Path
-from portfolio_app.history_ui import render_position_history
-from portfolio_app.positions import read_snapshot
+from portfolio_app.interface.views.history.history_ui import render_position_history
+from portfolio_app.portfolio.positions import read_snapshot
 path=Path({str(tmp_path)!r})
 render_position_history(path,read_snapshot(path/'holdings.csv').holdings.iloc[0])
 ''',default_timeout=15).run()
@@ -38,8 +38,8 @@ def label(elements,value):
 
 
 def transaction_rows(directory):
-    from portfolio_app.account_journal import load_journal
-    from portfolio_app.history_ui import _transaction_table, _visible_records
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.interface.views.history.history_ui import _transaction_table, _visible_records
     journal, _ = load_journal(directory)
     if not journal.securities:
         return _transaction_table([], None)
@@ -48,8 +48,8 @@ def transaction_rows(directory):
 
 
 def open_transaction_editor(app, directory):
-    from portfolio_app.account_journal import load_journal
-    from portfolio_app.history_ui import _key, _visible_records
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.interface.views.history.history_ui import _key, _visible_records
     book = load_journal(directory)[0].securities[0]
     records = _visible_records(book)
     event = next((e for e in records if e.kind != 'opening'), records[0])
@@ -68,7 +68,7 @@ def test_history_views_and_incomplete_new_transaction_render(tmp_path):
     label(app.text_input,'Quantity').set_value('1').run()
     label(app.button,'Save transaction').click().run()
     assert not app.exception
-    from portfolio_app.account_journal import load_journal
+    from portfolio_app.ledger.account_journal import load_journal
     book=load_journal(tmp_path)[0].securities[0]
     assert len(book.records)==2 and book.active_ids==('opening',)
     label(app.button,'Review against portfolio').click().run()
@@ -89,7 +89,7 @@ def test_snapshot_only_history_has_no_empty_chart(tmp_path):
 
 
 def test_save_rejects_concurrent_history_change_and_retains_draft(tmp_path):
-    from portfolio_app.account_journal import load_journal
+    from portfolio_app.ledger.account_journal import load_journal
     fixture(tmp_path)
     app = launch(tmp_path)
     label(app.button, 'Add buy').click().run()
@@ -113,7 +113,7 @@ def test_opening_form_saves_evidence_without_changing_balances(tmp_path):
     label(app.button,'Add starting balance').click().run()
     label(app.button,'Save starting balance').click().run()
     assert not app.exception
-    from portfolio_app.account_journal import load_journal
+    from portfolio_app.ledger.account_journal import load_journal
     book=load_journal(tmp_path)[0].securities[0]
     assert not book.active and book.records[0].quantity == 10
     label(app.button,'Review against portfolio').click().run()
@@ -126,8 +126,8 @@ def test_opening_form_saves_evidence_without_changing_balances(tmp_path):
 
 def test_buys_and_sells_save_before_starting_balance_and_review_from_zero(tmp_path):
     from datetime import date
-    from portfolio_app.account_journal import load_journal
-    from portfolio_app.security_history import effective_holdings
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.ledger.security_history import effective_holdings
     (tmp_path/'holdings.csv').write_text('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,15.5,EUR\n')
     app=launch(tmp_path)
     assert transaction_rows(tmp_path).empty
@@ -170,8 +170,8 @@ def test_buys_and_sells_save_before_starting_balance_and_review_from_zero(tmp_pa
 @pytest.mark.parametrize('explicit_fee', [False, True])
 def test_manual_fee_defaults_follow_trade_and_explicit_details_survive_edits(tmp_path, kind, explicit_fee):
     from datetime import date
-    from portfolio_app.account_journal import load_journal
-    from portfolio_app.security_history import Charge
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.ledger.security_history import Charge
     fixture(tmp_path)
     app = launch(tmp_path)
     label(app.button, 'Add '+kind).click().run()
@@ -210,8 +210,8 @@ def test_review_can_leave_portfolio_unchanged(tmp_path):
 
 
 def test_fee_confirmation_repairs_old_draft_without_changing_holding(tmp_path):
-    from portfolio_app.account_journal import load_journal
-    from portfolio_app.security_history import Charge, effective_holdings
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.ledger.security_history import Charge, effective_holdings
     (tmp_path/'holdings.csv').write_text('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,10.5,EUR\n')
     event=E('old-buy','buy','2024-01-02',quantity=D(10),price=D(10),currency='EUR',charges=(Charge(D(5),'EUR'),))
     book=SecurityBook('position-0','invented',('10','10.5','EUR'),records=(event,))
@@ -236,7 +236,7 @@ def test_fee_confirmation_repairs_old_draft_without_changing_holding(tmp_path):
 
 
 def test_review_cash_names_and_one_explicit_apply_action(tmp_path):
-    from portfolio_app.account_journal import Account, Event, load_journal, replay
+    from portfolio_app.ledger.account_journal import Account, Event, load_journal, replay
     (tmp_path/'holdings.csv').write_text('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,10,EUR\n')
     account='synthetic-internal-account-id'
     trade=E('buy','buy','2024-01-02',quantity=D(5),price=D(12),currency='EUR',charges_known=True)
@@ -262,7 +262,7 @@ def test_review_cash_names_and_one_explicit_apply_action(tmp_path):
 
 
 def test_unknown_fees_stay_unknown_until_explicit_zero(tmp_path):
-    from portfolio_app.account_journal import load_journal
+    from portfolio_app.ledger.account_journal import load_journal
     (tmp_path/'holdings.csv').write_text('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,1,10,EUR\n')
     app=launch(tmp_path)
     label(app.button,'Add buy').click().run()
@@ -281,7 +281,7 @@ def test_unknown_fees_stay_unknown_until_explicit_zero(tmp_path):
 
 
 def test_gross_and_cash_total_entry_do_not_double_count_fees(tmp_path):
-    from portfolio_app.account_journal import load_journal
+    from portfolio_app.ledger.account_journal import load_journal
     for kind,mode,amount in [('buy','Trade value (excluding fees)','100'),
                              ('buy','Total paid (including fees)','105'),
                              ('sell','Trade value (excluding fees)','100'),
@@ -301,7 +301,7 @@ def test_gross_and_cash_total_entry_do_not_double_count_fees(tmp_path):
 
 
 def test_review_can_supply_missing_historical_fx_before_activation(tmp_path):
-    from portfolio_app.account_journal import load_journal
+    from portfolio_app.ledger.account_journal import load_journal
     (tmp_path/'holdings.csv').write_text('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,9,EUR\n')
     trade=E('buy','buy','2024-01-02',quantity=D(10),price=D(10),currency='USD',charges_known=True)
     book=SecurityBook('position-0','invented',('10','9','EUR'),records=(trade,))
@@ -319,8 +319,8 @@ def test_review_can_supply_missing_historical_fx_before_activation(tmp_path):
 
 
 def test_internal_boundary_is_not_a_selectable_transaction(tmp_path):
-    from portfolio_app.history_commands import reconstruction_candidate
-    from portfolio_app.account_journal import load_journal
+    from portfolio_app.ledger.history_commands import reconstruction_candidate
+    from portfolio_app.ledger.account_journal import load_journal
     (tmp_path/'holdings.csv').write_text('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,2,10,EUR\n')
     trades=(E('a','buy','2024-01-02',quantity=D(1),price=D(10),currency='EUR',charges_known=True),
             E('b','buy','2024-02-02',quantity=D(1),price=D(10),currency='EUR',charges_known=True))
@@ -338,8 +338,8 @@ def test_internal_boundary_is_not_a_selectable_transaction(tmp_path):
 
 
 def test_direct_editor_preserves_precision_and_retains_original(tmp_path):
-    from portfolio_app.account_journal import load_journal
-    from portfolio_app.security_history import Charge
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.ledger.security_history import Charge
     (tmp_path/'holdings.csv').write_text('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,10,10,EUR\n')
     trade=E('a','buy','2024-01-02',quantity=D(10),amount=D('1326.999906'),currency='EUR',charges=(Charge(D(1),'EUR'),),charges_known=True)
     book=SecurityBook('position-0','invented',('10','10','EUR'),records=(trade,))
@@ -384,7 +384,7 @@ def test_transfer_entry_uses_holding_names_and_preserves_destination_identity(tm
     label(app.text_input, 'Fee').set_value('0').run()
     label(app.button, 'Save transaction').click().run()
     assert not app.exception
-    from portfolio_app.account_journal import load_journal
+    from portfolio_app.ledger.account_journal import load_journal
     event = load_journal(tmp_path)[0].securities[0].records[-1]
     assert event.kind == 'transfer' and event.other_position_id == 'position-1'
 
@@ -392,9 +392,9 @@ def test_transfer_entry_uses_holding_names_and_preserves_destination_identity(tm
 def test_prepared_history_reuses_results_and_invalidates_financial_inputs(tmp_path, monkeypatch):
     from dataclasses import replace
     from test_history_view import fixture as chart_fixture
-    import portfolio_app.history_view as charts
-    import portfolio_app.input_cache as cache
-    from portfolio_app.history_ui import prepared_history_view
+    import portfolio_app.performance.history_view as charts
+    import portfolio_app.interface.shared.input_cache as cache
+    from portfolio_app.interface.views.history.history_ui import prepared_history_view
     monkeypatch.setattr(cache.st, 'session_state', {})
     journal, scope, store = chart_fixture()
     calls = []
@@ -421,8 +421,8 @@ def test_prepared_history_reuses_results_and_invalidates_financial_inputs(tmp_pa
 
 
 def test_summary_cache_does_not_replace_chart_cache(tmp_path, monkeypatch):
-    from portfolio_app import input_cache
-    from portfolio_app.history_ui import prepared_history_view
+    from portfolio_app.interface.shared import input_cache
+    from portfolio_app.interface.views.history.history_ui import prepared_history_view
     from test_history_view import fixture
     monkeypatch.setattr(input_cache.st, 'session_state', {})
     journal, scope, store = fixture()
@@ -433,8 +433,8 @@ def test_summary_cache_does_not_replace_chart_cache(tmp_path, monkeypatch):
 
 
 def test_twr_only_summary_cache_cannot_replace_annualized_results(tmp_path, monkeypatch):
-    from portfolio_app import input_cache, personal_performance
-    from portfolio_app.history_ui import prepared_history_view
+    from portfolio_app.interface.shared import input_cache; from portfolio_app.performance import personal_performance
+    from portfolio_app.interface.views.history.history_ui import prepared_history_view
     from test_history_view import fixture
     monkeypatch.setattr(input_cache.st, 'session_state', {})
     journal, scope, store = fixture()
@@ -458,7 +458,7 @@ def test_twr_only_summary_cache_cannot_replace_annualized_results(tmp_path, monk
 
 
 def test_direct_editor_keeps_concurrent_revision_guard(tmp_path):
-    from portfolio_app.account_journal import load_journal
+    from portfolio_app.ledger.account_journal import load_journal
     fixture(tmp_path)
     app = launch(tmp_path)
     open_transaction_editor(app, tmp_path)
@@ -476,9 +476,9 @@ def test_direct_editor_keeps_concurrent_revision_guard(tmp_path):
 
 def test_automatic_history_consumes_prepared_summary_and_rebuilds_on_new_evidence(tmp_path, monkeypatch):
     from types import SimpleNamespace
-    import portfolio_app.history_ui as ui
-    import portfolio_app.gain_accounting as gains
-    import portfolio_app.personal_history_refresh as refresh
+    import portfolio_app.interface.views.history.history_ui as ui
+    import portfolio_app.performance.gain_accounting as gains
+    import portfolio_app.performance.personal_history_refresh as refresh
     fixture(tmp_path)
     calls, rendered = [], []
     original = gains.summarize_known_gain
@@ -495,10 +495,10 @@ from pathlib import Path
 from dataclasses import replace
 import pandas as pd
 import streamlit as st
-from portfolio_app.allocation import Allocation, Bucket
-from portfolio_app.positions import read_snapshot
-from portfolio_app.history_ui import prepare_portfolio_history, render_portfolio_history
-from portfolio_app.history_observations import save_observations
+from portfolio_app.portfolio.allocation import Allocation, Bucket
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.interface.views.history.history_ui import prepare_portfolio_history, render_portfolio_history
+from portfolio_app.performance.history_observations import save_observations
 root = Path({str(tmp_path)!r})
 holdings = read_snapshot(root / 'holdings.csv').holdings.assign(bucket_id='core')
 current = holdings.assign(current_value_reporting=120, unrealized_gain_reporting=20)
@@ -523,10 +523,10 @@ render_portfolio_history(root, prepared, automatic=True)
 def test_interval_switches_reuse_ledgers_and_previous_points(tmp_path, monkeypatch):
     from datetime import date
     from test_history_view import fixture as chart_fixture
-    import portfolio_app.history_ui as ui
-    import portfolio_app.history_view as charts
-    import portfolio_app.personal_performance as performance
-    import portfolio_app.input_cache as cache
+    import portfolio_app.interface.views.history.history_ui as ui
+    import portfolio_app.performance.history_view as charts
+    import portfolio_app.performance.personal_performance as performance
+    import portfolio_app.interface.shared.input_cache as cache
     monkeypatch.setattr(cache.st, 'session_state', {})
     class FixedDate(date):
         @classmethod
@@ -557,8 +557,8 @@ def test_interval_switches_reuse_ledgers_and_previous_points(tmp_path, monkeypat
 def test_reused_context_expires_for_workspace_currency_date_and_evidence(tmp_path, monkeypatch):
     from datetime import date
     from test_history_view import fixture as chart_fixture
-    import portfolio_app.history_ui as ui
-    import portfolio_app.input_cache as cache
+    import portfolio_app.interface.views.history.history_ui as ui
+    import portfolio_app.interface.shared.input_cache as cache
     monkeypatch.setattr(cache.st, 'session_state', {})
     journal, scope, store = chart_fixture()
     def context(directory=tmp_path, journal=journal, revision='synthetic', target='EUR'):

@@ -6,10 +6,10 @@ import json
 
 import pytest
 
-from portfolio_app import account_journal as ledger
-from portfolio_app.derivative_types import ContractSpec, PriceObservation
-from portfolio_app.holdings import DataError
-from portfolio_app.settlement_archive import FILE, SettlementArchive, reconciliation_rows
+from portfolio_app.ledger import account_journal as ledger
+from portfolio_app.derivatives.derivative_types import ContractSpec, PriceObservation
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.derivatives.settlement_archive import FILE, SettlementArchive, reconciliation_rows
 
 
 @pytest.fixture
@@ -211,7 +211,7 @@ def test_reconciliation_missing_retrieval_does_not_hide_manual_mismatch(tmp_path
 
 
 def test_workspace_backup_restores_entire_archive_with_versions(tmp_path, contract):
-    from portfolio_app.backup import create_backup, inspect_backup, commit_restore
+    from portfolio_app.workspace.backup import create_backup, inspect_backup, commit_restore
     source = tmp_path / 'invented-workspace'
     archive = SettlementArchive(source)
     archive.record(contract, quote(contract))
@@ -231,7 +231,7 @@ def test_workspace_backup_restores_entire_archive_with_versions(tmp_path, contra
 
 def test_external_edit_during_atomic_write_is_preserved(tmp_path, contract, monkeypatch):
     from contextlib import contextmanager
-    import portfolio_app.settlement_archive as module
+    import portfolio_app.derivatives.settlement_archive as module
     archive = SettlementArchive(tmp_path)
     archive.record(contract, quote(contract))
     stage = module.staged_text

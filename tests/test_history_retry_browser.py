@@ -11,8 +11,8 @@ from urllib.request import urlopen
 import pytest
 
 from browser_support import settle
-from portfolio_app.account_journal import load_journal, save_journal
-from portfolio_app.history_observations import load_observations, save_observations
+from portfolio_app.ledger.account_journal import load_journal, save_journal
+from portfolio_app.performance.history_observations import load_observations, save_observations
 from test_history_download import setup
 
 playwright = pytest.importorskip('playwright.sync_api')
@@ -28,13 +28,13 @@ from pathlib import Path
 from datetime import date, timedelta
 from dataclasses import replace
 import streamlit as st, time, threading
-from portfolio_app.history import HistoryResult
-from portfolio_app.history_observations import Observation, HistoryScope, load_observations, save_observations
-from portfolio_app.account_journal import load_journal
-from portfolio_app.personal_history_refresh import RefreshStatus
-import portfolio_app.market_history_ui as market
-import portfolio_app.history_ui as personal
-import portfolio_app.personal_history_refresh as refresh_module
+from portfolio_app.market.history import HistoryResult
+from portfolio_app.performance.history_observations import Observation, HistoryScope, load_observations, save_observations
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.performance.personal_history_refresh import RefreshStatus
+import portfolio_app.interface.views.history.market_history_ui as market
+import portfolio_app.interface.views.history.history_ui as personal
+import portfolio_app.performance.personal_history_refresh as refresh_module
 root=Path(__file__).parent
 def count(name):
     path=root/name

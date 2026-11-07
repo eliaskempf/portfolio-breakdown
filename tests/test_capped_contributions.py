@@ -5,7 +5,7 @@ from itertools import product
 import numpy as np
 import pytest
 
-from portfolio_app.rebalancing import RebalanceError, balanced_cash_tradeoffs
+from portfolio_app.portfolio.rebalancing import RebalanceError, balanced_cash_tradeoffs
 from test_rebalancing import portfolio
 
 
@@ -90,7 +90,7 @@ def test_caps_validate_selected_ids_fractions_and_subcent_capacity():
 
 def test_capped_solver_timeout_does_not_present_an_unproven_plan(monkeypatch):
     from types import SimpleNamespace
-    monkeypatch.setattr('portfolio_app.capped_contributions.milp', lambda *a, **kw: SimpleNamespace(status=1, x=None))
+    monkeypatch.setattr('portfolio_app.portfolio.capped_contributions.milp', lambda *a, **kw: SimpleNamespace(status=1, x=None))
     p = portfolio([80., 10., 10.], [.4, .3, .3])
     with pytest.raises(RebalanceError, match='did not prove'):
         balanced_cash_tradeoffs(p, 100, eligible_position_ids={'row-0', 'row-1', 'row-2'},

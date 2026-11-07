@@ -5,17 +5,17 @@ from io import StringIO
 import csv
 import pytest
 
-from portfolio_app.account_journal import Journal, journal_to_dict, journal_from_dict, replay
-from portfolio_app.transaction_csv import normalize, read_csv, FIELDS_V2
-from portfolio_app.csv_transaction_imports import prepare_import
-from portfolio_app.transaction_import_commands import prepare_positions, save_transaction_import
-from portfolio_app.positions import read_snapshot
-from portfolio_app.holdings import DataError
-from portfolio_app.security_history import replay_securities, selected_events
-from portfolio_app.gain_components import security_gain_components
-from portfolio_app.gain_accounting import summarize_known_gain
-from portfolio_app.history_observations import HistoryScope, ObservationStore
-from portfolio_app.personal_performance import external_flows, coverage_reasons
+from portfolio_app.ledger.account_journal import Journal, journal_to_dict, journal_from_dict, replay
+from portfolio_app.ingestion.transaction_csv import normalize, read_csv, FIELDS_V2
+from portfolio_app.ingestion.csv_transaction_imports import prepare_import
+from portfolio_app.ledger.transaction_import_commands import prepare_positions, save_transaction_import
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.ledger.security_history import replay_securities, selected_events
+from portfolio_app.performance.gain_components import security_gain_components
+from portfolio_app.performance.gain_accounting import summarize_known_gain
+from portfolio_app.performance.history_observations import HistoryScope, ObservationStore
+from portfolio_app.performance.personal_performance import external_flows, coverage_reasons
 from test_csv_transaction_imports import holdings, MAPPING, row as old_row
 
 
@@ -202,7 +202,7 @@ def test_estimated_valuation_quality_propagates_into_reward_cost():
 
 
 def test_imported_checkpoint_correction_preserves_receipt():
-    from portfolio_app.history_commands import correct_transaction
+    from portfolio_app.ledger.history_commands import correct_transaction
     j=activate([row('balance',**estimate())]).journal
     book=j.securities[0]
     corrected=correct_transaction(book,book.active_ids[0],quantity=D(4))
@@ -213,7 +213,7 @@ def test_imported_checkpoint_correction_preserves_receipt():
 
 
 def test_quantity_diagnostics_do_not_need_cost_or_invent_starting_inventory():
-    from portfolio_app.transaction_evidence import movement_totals
+    from portfolio_app.ledger.transaction_evidence import movement_totals
     records=[row('receipt','inventory_in',quantity='5'),
         row('move','transfer',quantity='2',counter_account_id='Vault',fee_amount='',fee_asset_id='AUR'),
         row('undated','reward',quantity='1',timestamp_utc=''),row('balance',quantity='99')]
@@ -247,8 +247,8 @@ def test_estimate_sources_do_not_hide_duplicate_economic_movements():
 
 
 def test_checkpoint_backup_roundtrip_preserves_unknown_cost_and_estimate_source(tmp_path):
-    from portfolio_app.account_journal import load_journal
-    from portfolio_app.backup import create_backup,inspect_backup,commit_restore
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.workspace.backup import create_backup,inspect_backup,commit_restore
     source=tmp_path/'source';source.mkdir()
     snapshot=prepare_positions(source,[dict(position_key='desk',id='aur',name='Aurora',account='Desk')],expected_holdings_revision=None)
     r=row('checkpoint',**estimate(cost_quantity='8'))
@@ -269,8 +269,8 @@ def test_estimated_external_values_are_qualified_instead_of_blocked():
 
 
 def test_checkpoint_model_rejects_cash_and_cost_on_zero_units():
-    from portfolio_app.security_history import SecurityEvent, SecurityBook
-    from portfolio_app.cost_basis import component
+    from portfolio_app.ledger.security_history import SecurityEvent, SecurityBook
+    from portfolio_app.performance.cost_basis import component
     with pytest.raises(DataError,match='not a cash transaction'):
         SecurityEvent('bad','checkpoint','2024-03-31',quantity=D(1),amount=D(12),currency='EUR')
     event=SecurityEvent('bad','checkpoint','2024-03-31',costs=(component(0,12,'EUR'),))
@@ -279,6 +279,6 @@ def test_checkpoint_model_rejects_cash_and_cost_on_zero_units():
 
 
 def test_malformed_cost_provenance_is_rejected_as_data_error():
-    from portfolio_app.cost_basis import validate_components
+    from portfolio_app.performance.cost_basis import validate_components
     for parts in ([None],[dict(shares='1',amount='2',currency='EUR',quality='estimated',source=7)]):
         with pytest.raises(DataError):validate_components(parts)

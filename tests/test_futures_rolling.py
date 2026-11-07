@@ -5,10 +5,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_comparison import ComparisonSettings, cash_growth, comparison_dates
-from portfolio_app.futures_rolling import rolling_calendar, simulate_rolling
-from portfolio_app.holdings import DataError
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.studies.futures_comparison import ComparisonSettings, cash_growth, comparison_dates
+from portfolio_app.studies.futures_rolling import rolling_calendar, simulate_rolling
+from portfolio_app.portfolio.holdings import DataError
 
 
 def position():
@@ -106,8 +106,8 @@ def test_no_contract_has_only_cash_growth_even_with_execution_costs():
 
 
 def test_long_horizon_dates_validation_and_settings_persistence(tmp_path):
-    from portfolio_app.demo import create_demo_data
-    from portfolio_app.futures_workspace import fork_futures_workspace, load_comparison, save_comparison
+    from portfolio_app.demo_data.demo import create_demo_data
+    from portfolio_app.studies.futures_workspace import fork_futures_workspace, load_comparison, save_comparison
     s = settings(rolling_years=30, index_return=.04, roll_fee_per_side=2.)
     assert comparison_dates(s, position())[1].isoformat() == '2055-01-02'
     sandbox = fork_futures_workspace(create_demo_data(tmp_path/'source'), tmp_path/'sandbox')
@@ -123,8 +123,8 @@ def test_long_horizon_dates_validation_and_settings_persistence(tmp_path):
 
 
 def test_single_contract_and_rolling_share_price_growth_financing_and_costs():
-    from portfolio_app.futures_rolling import simulate_holding
-    from portfolio_app.futures_comparison import futures_price_drift
+    from portfolio_app.studies.futures_rolling import simulate_holding
+    from portfolio_app.studies.futures_comparison import futures_price_drift
     s = settings(rolling=False, months=1, until_expiry=False, index_return=.06,
                  financing_rate=.03, roll_fee_per_side=2., scale_margin=False)
     _, curve, rolls = simulate_holding(position(), s, paths=1)
@@ -139,7 +139,7 @@ def test_single_contract_and_rolling_share_price_growth_financing_and_costs():
 
 
 def test_single_contract_cannot_silently_continue_past_expiry():
-    from portfolio_app.futures_rolling import simulate_holding
+    from portfolio_app.studies.futures_rolling import simulate_holding
     with pytest.raises(DataError, match='end by expiry'):
         simulate_holding(position(), settings(rolling=False, until_expiry=False, months=12), paths=1)
 
@@ -148,7 +148,7 @@ def test_single_contract_cannot_silently_continue_past_expiry():
 @pytest.mark.parametrize('contracts', [1, -1])
 @pytest.mark.parametrize('capital', [100., 4000.])
 def test_index_comparison_is_fully_funded_same_paths_and_independent_of_futures(rolling, contracts, capital):
-    from portfolio_app.futures_rolling import simulate_holding
+    from portfolio_app.studies.futures_rolling import simulate_holding
     s = settings(rolling=rolling, comparison_capital=capital, financing_rate=.03,
                  roll_fee_per_side=10., scale_margin=False)
     p = replace(position(), contracts=contracts)

@@ -4,9 +4,9 @@ from dataclasses import replace
 import pandas as pd
 import pytest
 
-from portfolio_app.account_journal import Event, append_events
-from portfolio_app.derivative_types import PriceObservation
-from portfolio_app.investment_history import pnl_breakdown, settlement_history
+from portfolio_app.ledger.account_journal import Event, append_events
+from portfolio_app.derivatives.derivative_types import PriceObservation
+from portfolio_app.derivatives.investment_history import pnl_breakdown, settlement_history
 from test_futures_investments import grouped, project
 
 
@@ -61,7 +61,7 @@ def test_realized_and_unrealized_exclude_pending_claim_double_count(tmp_path, re
 
 
 def test_history_retains_old_expiry_final_settlement_and_snapshot_boundary(tmp_path):
-    from portfolio_app.account_journal import PositionSpec, add_contract, add_position
+    from portfolio_app.ledger.account_journal import PositionSpec, add_contract, add_position
     _, journal, contract = grouped(tmp_path)
     old = replace(contract, expiry='2026-01-05')
     journal = replace(journal, contracts=(old,),
@@ -108,7 +108,7 @@ def test_entry_based_fifo_partial_close_and_reversal(tmp_path, sign, reporting, 
 
 @pytest.mark.parametrize('snapshot', [False, True])
 def test_roll_and_expiry_preserve_total_and_cost_reconciliation(tmp_path, snapshot):
-    from portfolio_app.account_journal import PositionSpec, add_contract, add_position, roll
+    from portfolio_app.ledger.account_journal import PositionSpec, add_contract, add_position, roll
     service, journal, contract = grouped(tmp_path)
     if snapshot:
         journal = replace(journal, events=tuple(replace(e, kind='snapshot') if e.id == 'open' else e

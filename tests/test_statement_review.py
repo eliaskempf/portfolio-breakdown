@@ -3,10 +3,10 @@ from decimal import Decimal
 
 import pytest
 
-from portfolio_app.consors_pdf import parse_consors_pdf, local_review_rows
-from portfolio_app.transaction_imports import as_event, save_pdf_drafts
-from portfolio_app.account_journal import load_journal
-from portfolio_app.positions import read_snapshot
+from portfolio_app.ingestion.consors_pdf import parse_consors_pdf, local_review_rows
+from portfolio_app.ingestion.transaction_imports import as_event, save_pdf_drafts
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.portfolio.positions import read_snapshot
 from test_consors_pdf import statement
 from test_transaction_imports import setup
 
@@ -66,7 +66,7 @@ def test_per_statement_confirmation_does_not_confirm_the_rest_of_the_batch(tmp_p
 
 
 def test_confirmation_for_one_similar_trade_does_not_allow_another(tmp_path):
-    from portfolio_app.holdings import DataError
+    from portfolio_app.portfolio.holdings import DataError
     snapshot,journal,revision=setup(tmp_path)
     first=parse_consors_pdf(statement())
     second=parse_consors_pdf(statement())
@@ -80,7 +80,7 @@ def test_confirmation_for_one_similar_trade_does_not_allow_another(tmp_path):
 
 
 def test_report_does_not_call_valid_commission_a_failed_zero_fee_check():
-    from portfolio_app.statement_diagnostics import layout_report
+    from portfolio_app.ingestion.statement_diagnostics import layout_report
     report=layout_report([statement()])
     assert 'Statement charges: reconciled exactly.' in report
     assert 'Automatic zero fees: review required.' not in report

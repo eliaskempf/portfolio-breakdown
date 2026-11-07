@@ -2,11 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from portfolio_app.demo import create_demo_data
-from portfolio_app.holdings import DataError
-from portfolio_app.launcher import workspace_lease
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.runtime.launcher import workspace_lease
 from portfolio_app.settings import workspace_path
-from portfolio_app.workspace import copy_workspace, inventory
+from portfolio_app.workspace.workspace import copy_workspace, inventory
 
 
 def test_default_is_independent_of_launch_directory(tmp_path, monkeypatch):
@@ -59,7 +59,7 @@ def test_copy_detects_source_changes(tmp_path, monkeypatch):
         result = original(*args, **kwargs)
         (source / 'changed.txt').write_text('synthetic concurrent change')
         return result
-    monkeypatch.setattr('portfolio_app.workspace.shutil.copytree', changing)
+    monkeypatch.setattr('portfolio_app.workspace.workspace.shutil.copytree', changing)
     with pytest.raises(DataError, match='changed during copy'):
         copy_workspace(source, tmp_path / 'destination')
     assert not (tmp_path / 'destination').exists()

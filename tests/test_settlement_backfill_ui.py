@@ -3,7 +3,7 @@ from datetime import date
 
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app import account_journal as ledger
+from portfolio_app.ledger import account_journal as ledger
 from test_futures_investments import grouped
 from test_settlement_backfill import observed
 from test_ui import by_label
@@ -14,14 +14,14 @@ def test_retrieve_review_save_and_repeat_is_idempotent(tmp_path,monkeypatch):
     ledger.save_journal(tmp_path,journal,None)
     def quote(directory,contract,day):
         if day == '2026-01-05':
-            from portfolio_app.holdings import DataError
+            from portfolio_app.portfolio.holdings import DataError
             raise DataError('Invented missing price')
         return observed(contract,day)
-    monkeypatch.setattr('portfolio_app.settlement_backfill_ui.fetch_archived',quote)
+    monkeypatch.setattr('portfolio_app.interface.views.derivatives.settlement_backfill_ui.fetch_archived',quote)
     app=AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.account_journal import load_journal
-from portfolio_app.settlement_backfill_ui import render_settlement_backfill
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.interface.views.derivatives.settlement_backfill_ui import render_settlement_backfill
 root=Path({str(tmp_path)!r})
 journal,revision=load_journal(root)
 render_settlement_backfill(root,journal,revision,['p'],key='test_backfill_')

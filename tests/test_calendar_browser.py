@@ -10,7 +10,7 @@ import time
 from urllib.request import urlopen
 
 import pytest
-from portfolio_app.display_preferences import load_preferences
+from portfolio_app.workspace.display_preferences import load_preferences
 
 playwright = pytest.importorskip('playwright.sync_api')
 from browser_support import settle
@@ -22,7 +22,7 @@ def calendar_page(tmp_path, request):
     script.write_text('''from pathlib import Path
 from datetime import date
 import streamlit as st
-from portfolio_app.calendar_ui import configure_calendar
+from portfolio_app.interface.shared.calendar_ui import configure_calendar
 configure_calendar(Path(__file__).parent, st.container())
 chosen=st.date_input('Invented date', value=date(2026,1,7), min_value=date(2026,1,1), max_value=date(2026,1,31))
 st.text(chosen.isoformat())

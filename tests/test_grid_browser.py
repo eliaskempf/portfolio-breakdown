@@ -27,7 +27,7 @@ def grid_url(tmp_path_factory):
     app.write_text('''
 import pandas as pd
 import streamlit as st
-from portfolio_app.presentation import apply_style
+from portfolio_app.interface.shared.presentation import apply_style
 st.set_page_config(layout="wide")
 apply_style()
 st.html('<div style="height:350px">Synthetic keyboard test</div>')

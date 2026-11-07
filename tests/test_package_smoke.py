@@ -37,24 +37,24 @@ def test_missing_gui_entry_cannot_use_other_installation(smoke_driver, tmp_path,
 
 @pytest.mark.parametrize('installation', ['wheel', 'frozen'])
 def test_windows_browser_smoke_selects_background_launch(smoke_driver, tmp_path, monkeypatch, installation):
-    from portfolio_app.window import main
+    from portfolio_app.runtime.window import main
     name = 'portfolio-desktop.exe' if installation == 'wheel' else 'Portfolio Breakdown.exe'
     (tmp_path / name).write_bytes(b'Synthetic launcher')
     command = smoke_driver.windows_browser_command(tmp_path / 'portfolio-app.exe', installation, tmp_path / 'workspace')
     monkeypatch.setattr(sys, 'argv', command)
     monkeypatch.setattr(sys, 'frozen', installation == 'frozen', raising=False)
     monkeypatch.setenv('PORTFOLIO_STATE_DIR', str(tmp_path / 'state'))
-    monkeypatch.setattr('portfolio_app.window.configure_logging', lambda: None)
+    monkeypatch.setattr('portfolio_app.runtime.window.configure_logging', lambda: None)
     launches = []
-    monkeypatch.setattr('portfolio_app.app.start_desktop', lambda *a, **k: launches.append((a, k)))
-    monkeypatch.setattr('portfolio_app.app.run_server', lambda *a, **k: pytest.fail('Smoke entered foreground server'))
+    monkeypatch.setattr('portfolio_app.runtime.app.start_desktop', lambda *a, **k: launches.append((a, k)))
+    monkeypatch.setattr('portfolio_app.runtime.app.run_server', lambda *a, **k: pytest.fail('Smoke entered foreground server'))
     main()
     assert len(launches) == 1
     assert launches[0][1] == {'demo': True, 'browser': False}
 
 
 def test_wheel_browser_entry_detaches_and_stops(smoke_driver, tmp_path, monkeypatch):
-    from portfolio_app.launcher import request_instance, stop_instance
+    from portfolio_app.runtime.launcher import request_instance, stop_instance
     state, workspace = tmp_path / 'state', tmp_path / 'synthetic workspace'
     monkeypatch.setenv('PORTFOLIO_STATE_DIR', str(state))
     if os.name == 'nt':

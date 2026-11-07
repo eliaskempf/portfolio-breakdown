@@ -4,12 +4,12 @@ from decimal import Decimal
 import pytest
 
 from consors_audit_fixtures import FREE, DOCUMENT_REFERENCE, text_pdf
-from portfolio_app.account_journal import load_journal
-from portfolio_app.consors_pdf import parse_consors_pdf
-from portfolio_app.holdings import DataError
-from portfolio_app.positions import read_snapshot
-from portfolio_app.statement_diagnostics import layout_report
-from portfolio_app.transaction_imports import REVIEW_CHARGES, save_pdf_drafts
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.ingestion.consors_pdf import parse_consors_pdf
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ingestion.statement_diagnostics import layout_report
+from portfolio_app.ingestion.transaction_imports import REVIEW_CHARGES, save_pdf_drafts
 
 
 # Generated, deliberately invalid account data; never a real account literal.

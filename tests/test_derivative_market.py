@@ -5,10 +5,10 @@ import json
 
 import pytest
 
-from portfolio_app.derivative_market import (CATALOG, SettlementCache, discover_contracts,
+from portfolio_app.derivatives.derivative_market import (CATALOG, SettlementCache, discover_contracts,
     fetch_settlement, make_contract, manual_contract, manual_mark, statistics_request)
-from portfolio_app.holdings import DataError
-from portfolio_app.storage import revision
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.workspace.storage import revision
 
 
 def synthetic_statistics(product='FMWN'):

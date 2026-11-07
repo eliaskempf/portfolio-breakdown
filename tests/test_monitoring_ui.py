@@ -3,18 +3,18 @@ from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.monitoring_service import monitoring_for
-from portfolio_app.monitoring_store import load_monitoring
-from portfolio_app.monitoring import SeriesSpec
+from portfolio_app.monitoring.monitoring_service import monitoring_for
+from portfolio_app.monitoring.monitoring_store import load_monitoring
+from portfolio_app.monitoring.monitoring import SeriesSpec
 from test_ui import by_label
 
 
 def test_heartbeat_observes_aliased_workspace_completion(tmp_path, monkeypatch):
     from threading import Event
     from types import SimpleNamespace
-    from portfolio_app import market_data, monitoring_service, monitoring_ui
-    from portfolio_app.market_data import RequestCoordinator
-    from portfolio_app.monitoring_store import save_rule
+    from portfolio_app.market import market_data; from portfolio_app.monitoring import monitoring_service; from portfolio_app.interface.views.monitoring import monitoring_ui
+    from portfolio_app.market.market_data import RequestCoordinator
+    from portfolio_app.monitoring.monitoring_store import save_rule
     from test_monitoring import rule
 
     (tmp_path / 'parent').mkdir()
@@ -65,8 +65,8 @@ def launch(tmp_path, *, seed='INVENTED'):
 from pathlib import Path
 import pandas as pd
 import streamlit as st
-from portfolio_app.monitoring_ui import render_monitoring
-from portfolio_app.account_journal import Journal
+from portfolio_app.interface.views.monitoring.monitoring_ui import render_monitoring
+from portfolio_app.ledger.account_journal import Journal
 root=Path(st.session_state.directory)
 held=pd.DataFrame([dict(position_id='invented',ticker='INVENTED',name='Invented security',instrument_type='equity')])
 render_monitoring(root,held,Journal(),demo=True)
@@ -114,7 +114,7 @@ def test_msci_has_no_intraday_option_and_account_limits_require_input(tmp_path):
 
 
 def test_route_switches_to_saved_rule_without_widget_mutation(tmp_path):
-    from portfolio_app.monitoring_store import save_rule
+    from portfolio_app.monitoring.monitoring_store import save_rule
     from test_monitoring import rule
     save_rule(tmp_path,rule())
     app=launch(tmp_path)
@@ -148,7 +148,7 @@ def test_historical_chart_uses_full_warmup_and_never_creates_events(tmp_path):
     import base64
     import numpy as np
     import pandas as pd
-    from portfolio_app.monitoring import MarketSeries, utc_now
+    from portfolio_app.monitoring.monitoring import MarketSeries, utc_now
     app=launch(tmp_path)
     dates=pd.bdate_range('1990-01-01','2026-10-09')
     values=tuple(100.+i*.01 for i in range(len(dates)))

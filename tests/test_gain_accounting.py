@@ -6,20 +6,20 @@ from decimal import Decimal as D
 import pandas as pd
 import pytest
 
-from portfolio_app.account_journal import Account, Event, Journal, replay
-from portfolio_app.gain_accounting import current_component_values, summarize_known_gain
-from portfolio_app.gain_components import security_gain_components
-from portfolio_app.history_commands import reconstruction_candidate
-from portfolio_app.history_observations import CoverageReview, HistoryScope, Observation as O, ObservationStore
-from portfolio_app.history_view import history_view
-from portfolio_app.personal_performance import calculate_history, ExternalFlow, time_weighted
-from portfolio_app.security_history import Charge, SecurityBook, SecurityEvent as E, effective_holdings, history_fingerprint, replay_securities
+from portfolio_app.ledger.account_journal import Account, Event, Journal, replay
+from portfolio_app.performance.gain_accounting import current_component_values, summarize_known_gain
+from portfolio_app.performance.gain_components import security_gain_components
+from portfolio_app.ledger.history_commands import reconstruction_candidate
+from portfolio_app.performance.history_observations import CoverageReview, HistoryScope, Observation as O, ObservationStore
+from portfolio_app.performance.history_view import history_view
+from portfolio_app.performance.personal_performance import calculate_history, ExternalFlow, time_weighted
+from portfolio_app.ledger.security_history import Charge, SecurityBook, SecurityEvent as E, effective_holdings, history_fingerprint, replay_securities
 
 START, END = '2024-01-01', '2025-01-01'
 
 
 def test_internal_account_transfer_needs_no_transfer_date_fx_for_combined_gain():
-    from portfolio_app.account_journal import Account, Event
+    from portfolio_app.ledger.account_journal import Account, Event
     journal = Journal(accounts=(Account('a', 'Invented A'), Account('b', 'Invented B')), events=(
         Event('open-a', START, 'cash_open', account_id='a', currency='USD', amount=100),
         Event('open-b', START, 'cash_open', account_id='b', currency='USD', amount=0),
@@ -123,8 +123,8 @@ def test_complete_liquidation_and_removed_row_preserve_gain_and_xirr():
 
 
 def test_removed_closed_gain_remains_in_disjoint_category_comparison():
-    from portfolio_app.allocation import Allocation, Bucket
-    from portfolio_app.gain_comparison import known_category_performance
+    from portfolio_app.portfolio.allocation import Allocation, Bucket
+    from portfolio_app.performance.gain_comparison import known_category_performance
     j=Journal(version=2,securities=(book(E('o','opening',START),
         E('b','buy','2024-02-01',quantity=1,price=100,currency='EUR',charges_known=True),
         E('s','sell','2024-07-01',quantity=1,price=120,currency='EUR',charges_known=True)),))
@@ -139,8 +139,8 @@ def test_removed_closed_gain_remains_in_disjoint_category_comparison():
 
 
 def test_summary_security_account_association_does_not_turn_it_into_account_equity():
-    from portfolio_app.allocation import Allocation, Bucket
-    from portfolio_app.gain_comparison import known_category_performance
+    from portfolio_app.portfolio.allocation import Allocation, Bucket
+    from portfolio_app.performance.gain_comparison import known_category_performance
     j=Journal(accounts=(Account('a','Invented'),))
     rows=pd.DataFrame([dict(position_id='summary',name='Invented security',shares=1,
         bucket_id='core',account_id='a',journal_managed=False,current_value_reporting=120,
@@ -336,7 +336,7 @@ def test_cost_reconciliation_is_not_a_fabricated_cash_flow_or_lifetime_profit():
 
 
 def test_cost_reconciliation_needs_no_dated_fx_for_market_returns_or_unrelated_scopes():
-    from portfolio_app.personal_performance import HistoryCalculation
+    from portfolio_app.performance.personal_performance import HistoryCalculation
     correction = E('fix', 'cost', '2024-07-01', amount=90, currency='USD')
     stock = book(E('o', 'opening', START, quantity=10, amount=80, currency='EUR'), correction)
     other = book(E('other-open', 'opening', START, quantity=1, amount=100, currency='EUR'), identity='other')
@@ -383,8 +383,8 @@ def test_first_day_account_fee_and_external_deposit_are_not_lost_in_opening_clos
 
 
 def test_first_day_futures_fee_is_included_before_and_after_settlement():
-    from portfolio_app.account_journal import PositionSpec
-    from portfolio_app.derivative_types import ContractSpec
+    from portfolio_app.ledger.account_journal import PositionSpec
+    from portfolio_app.derivatives.derivative_types import ContractSpec
     contract=ContractSpec('INVENTED','2025-03-20','EUR',D(10),D(1))
     j=Journal(accounts=(Account('a','Invented'),),contracts=(contract,),positions=(PositionSpec('f','a',contract.id),),
         events=(Event('o',START,'cash_open','a','EUR',D(1000)),
@@ -426,7 +426,7 @@ def test_journal_negative_equity_blocks_returns_after_recovery_but_preserves_gai
         Event('income','2024-12-01','cash_adjust','a','EUR',D(100))))
     scope=HistoryScope(accounts=('a',))
     obs=replace(observations(j,scope),classifications=(('income','income'),))
-    from portfolio_app.personal_performance import value_at
+    from portfolio_app.performance.personal_performance import value_at
     assert value_at(j,scope,obs,'2024-06-01','EUR').amount == -50
     r=calculate_history(j,scope,obs,START,END)
     assert r.ending_value == 50 and r.total_gain == -50
@@ -443,7 +443,7 @@ def test_journal_negative_equity_blocks_returns_after_recovery_but_preserves_gai
 
 @pytest.mark.parametrize('movement', ['price','fx'])
 def test_price_or_fx_evidence_of_negative_equity_blocks_returns(movement):
-    from portfolio_app.personal_performance import value_at
+    from portfolio_app.performance.personal_performance import value_at
     j=Journal(version=2,securities=(book(E('o','opening',START,quantity=1,amount=100,currency='EUR')),),
         accounts=(Account('a','Invented'),),events=(
             Event('cash',START,'cash_open','a','EUR',D(0)),
@@ -481,8 +481,8 @@ def test_negative_cash_covered_by_assets_is_not_negative_portfolio_equity():
 
 @pytest.mark.parametrize('with_price', [False, True])
 def test_partial_gain_reuses_dated_ledger_without_changing_supported_components(monkeypatch, with_price):
-    from portfolio_app.personal_performance import HistoryCalculation
-    import portfolio_app.gain_components as components
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+    import portfolio_app.performance.gain_components as components
     # Missing opening cost forces the component fallback, including before the
     # income event. Query out of order so cached future cash cannot leak back.
     journal = Journal(version=2, securities=(book(

@@ -5,15 +5,15 @@ from io import StringIO
 import csv
 import pytest
 
-from portfolio_app.account_journal import Journal, journal_from_dict, journal_to_dict, replay
-from portfolio_app.holdings import DataError, parse_holdings
-from portfolio_app.transaction_csv import FIELDS, normalize, read_csv
-from portfolio_app.csv_transaction_imports import prepare_import
-from portfolio_app.security_history import replay_securities
-from portfolio_app.gain_components import security_gain_components
-from portfolio_app.gain_accounting import summarize_known_gain
-from portfolio_app.history_observations import HistoryScope, ObservationStore
-from portfolio_app.personal_performance import external_flows
+from portfolio_app.ledger.account_journal import Journal, journal_from_dict, journal_to_dict, replay
+from portfolio_app.portfolio.holdings import DataError, parse_holdings
+from portfolio_app.ingestion.transaction_csv import FIELDS, normalize, read_csv
+from portfolio_app.ingestion.csv_transaction_imports import prepare_import
+from portfolio_app.ledger.security_history import replay_securities
+from portfolio_app.performance.gain_components import security_gain_components
+from portfolio_app.performance.gain_accounting import summarize_known_gain
+from portfolio_app.performance.history_observations import HistoryScope, ObservationStore
+from portfolio_app.performance.personal_performance import external_flows
 
 
 def row(number, kind='buy', **fields):
@@ -97,8 +97,8 @@ def test_evidence_only_and_idempotence_and_correction():
 @pytest.mark.parametrize('selected', [False, True])
 def test_batch_assembly_hashes_linearly_and_validates_books_once(monkeypatch, selected):
     from datetime import date, timedelta
-    from portfolio_app.security_history import SecurityBook
-    from portfolio_app.transaction_csv import TransactionRow
+    from portfolio_app.ledger.security_history import SecurityBook
+    from portfolio_app.ingestion.transaction_csv import TransactionRow
     count = 180
     rows = tuple(normalize(dict(schema_version='1',source_id='invented',event_id=str(i),
         timestamp_utc=(date(2020,1,1)+timedelta(days=i)).isoformat()+'T09:00:00Z',
@@ -186,8 +186,8 @@ def test_subset_swap_needs_valuation_but_whole_scope_does_not():
 
 
 def test_third_asset_fee_and_received_lot_order():
-    from portfolio_app.security_history import SecurityBook,SecurityEvent,SecurityLot
-    from portfolio_app.cost_basis import component
+    from portfolio_app.ledger.security_history import SecurityBook,SecurityEvent,SecurityLot
+    from portfolio_app.performance.cost_basis import component
     # A separate inventory pays the fee; the swap must not debit its sent asset twice.
     rows=list(scenario()[:4])
     rows[3]=normalize({**rows[3].raw,'fee_asset_id':'ORB','fee_amount':'0.25'})
@@ -226,7 +226,7 @@ def test_correcting_retained_only_revision_replaces_active_ancestor():
 
 
 def test_v2_wire_shape_stays_compatible():
-    from portfolio_app.security_history import SecurityBook,SecurityEvent
+    from portfolio_app.ledger.security_history import SecurityBook,SecurityEvent
     b=SecurityBook('p','a',('0','',''),records=(SecurityEvent('open','opening','2024-01-01'),),active_ids=('open',))
     raw=journal_to_dict(Journal(version=2,securities=(b,)))
     assert 'transaction_imports' not in raw
@@ -281,7 +281,7 @@ def test_duplicate_review_identifies_pairs_and_does_not_repeat_for_unrelated_new
 
 
 def test_received_swap_and_income_are_useful_history_without_a_cash_buy():
-    from portfolio_app.history_scope import can_start_history_chart
+    from portfolio_app.performance.history_scope import can_start_history_chart
     j=activated().journal
     assert can_start_history_chart(j,HistoryScope(('orb',)))
     bad=normalize({**scenario()[0].raw,'timestamp_utc':'2024-04-01T09:00:00.123456789Z'})
@@ -289,7 +289,7 @@ def test_received_swap_and_income_are_useful_history_without_a_cash_buy():
 
 
 def test_linked_cash_is_explicit_and_internal_payments_cancel():
-    from portfolio_app.account_journal import Account,Event
+    from portfolio_app.ledger.account_journal import Account,Event
     j=Journal(accounts=(Account('funding','Invented cash'),),events=(Event('cash-open','2024-03-31','cash_open','funding','EUR',D(300)),))
     rows=scenario()
     result=prepare_import(j,holdings(),rows,MAPPING,cash_accounts={'Desk':'funding'},selected_ids=[r.identity for r in rows],starts_at_zero=True)
@@ -300,7 +300,7 @@ def test_linked_cash_is_explicit_and_internal_payments_cancel():
 
 
 def test_sub_cent_linked_cash_is_not_silently_rounded():
-    from portfolio_app.account_journal import Account,Event
+    from portfolio_app.ledger.account_journal import Account,Event
     j=Journal(accounts=(Account('funding','Invented cash'),),events=(Event('cash-open','2024-03-31','cash_open','funding','EUR',D(300)),))
     row=normalize({**scenario()[0].raw,'gross_amount':'100.004'})
     with pytest.raises(DataError,match='sub-cent'):

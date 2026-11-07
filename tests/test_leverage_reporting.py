@@ -6,16 +6,16 @@ import json
 import pandas as pd
 import pytest
 
-from portfolio_app.allocation import Allocation, Bucket
-from portfolio_app.exposure_planning import plan_exposure
-from portfolio_app.exposure_presentation import exposure_positions
-from portfolio_app.exposure_targets import ExposureTargets, exposure_gaps
-from portfolio_app.futures import FuturePosition, funded_strategy_positions, summarize_future
-from portfolio_app.holdings import DataError, parse_holdings
-from portfolio_app.performance import summarize_performance
-from portfolio_app.portfolio import prepare_portfolio
-from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
-from portfolio_app.prices import PriceService, StaticProvider
+from portfolio_app.portfolio.allocation import Allocation, Bucket
+from portfolio_app.exposure.exposure_planning import plan_exposure
+from portfolio_app.exposure.exposure_presentation import exposure_positions
+from portfolio_app.exposure.exposure_targets import ExposureTargets, exposure_gaps
+from portfolio_app.studies.futures import FuturePosition, funded_strategy_positions, summarize_future
+from portfolio_app.portfolio.holdings import DataError, parse_holdings
+from portfolio_app.performance.performance import summarize_performance
+from portfolio_app.portfolio.portfolio import prepare_portfolio
+from portfolio_app.exposure.portfolio_exposure import calculate_portfolio_exposure
+from portfolio_app.market.prices import PriceService, StaticProvider
 
 
 CONFIG = Allocation((Bucket('core', 'Invented core'),))

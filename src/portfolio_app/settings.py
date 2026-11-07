@@ -15,6 +15,11 @@ DARK_BACKGROUND = '#11151c'
 BRANDING_ASSETS = ('portfolio-breakdown.svg', 'portfolio-breakdown.png', 'favicon.svg', 'favicon.ico')
 
 
+def package_path(*parts: str) -> Path:
+    """Locate shipped scripts/resources independently of a consumer's directory."""
+    return Path(__file__).parent.joinpath(*parts)
+
+
 def app_version() -> str:
     return version(APP_ID)
 

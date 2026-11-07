@@ -4,10 +4,10 @@ import json
 
 import pytest
 
-from portfolio_app.futures_financing import (FINANCING_FILE, financing_url, implied_forward_carry,
+from portfolio_app.studies.futures_financing import (FINANCING_FILE, financing_url, implied_forward_carry,
     load_financing_history, parse_financing, refresh_financing_history)
-from portfolio_app.futures_market import EUREX_URL
-from portfolio_app.holdings import DataError
+from portfolio_app.studies.futures_market import EUREX_URL
+from portfolio_app.portfolio.holdings import DataError
 
 
 def synthetic_curve(day=date(2001, 1, 3), rate=.015):

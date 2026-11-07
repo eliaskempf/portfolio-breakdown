@@ -6,18 +6,18 @@ import json
 import pandas as pd
 import pytest
 
-from portfolio_app.etf import FundSnapshot, expand_etfs, load_funds, matching_fund, validate_constituents
-from portfolio_app.etf_discovery import Discovery, ISHARES_CATALOG, ISHARES_GERMAN_CATALOG, DWS_SITEMAP, source_from_url
-from portfolio_app.etf_refresh import RefreshCoordinator, read_json
-from portfolio_app.etf_setup import prepare_draft, save_draft, snapshot_writer
-from portfolio_app.etf_sources import install_snapshot, refresh_snapshot, Source
-from portfolio_app.fund_summary import maturity_band, composition_summary
-from portfolio_app.holdings import DataError
-from portfolio_app.imports import ImportOptions, normalize_table, combine_drafts, save_import
-from portfolio_app.instruments import valid_isin
-from portfolio_app.ishares import parse_holdings_json
-from portfolio_app.positions import read_snapshot
-from portfolio_app.stock_exposure import stock_exposure
+from portfolio_app.funds.etf import FundSnapshot, expand_etfs, load_funds, matching_fund, validate_constituents
+from portfolio_app.funds.etf_discovery import Discovery, ISHARES_CATALOG, ISHARES_GERMAN_CATALOG, DWS_SITEMAP, source_from_url
+from portfolio_app.funds.etf_refresh import RefreshCoordinator, read_json
+from portfolio_app.funds.etf_setup import prepare_draft, save_draft, snapshot_writer
+from portfolio_app.funds.etf_sources import install_snapshot, refresh_snapshot, Source
+from portfolio_app.funds.fund_summary import maturity_band, composition_summary
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.ingestion.imports import ImportOptions, normalize_table, combine_drafts, save_import
+from portfolio_app.market.instruments import valid_isin
+from portfolio_app.funds.providers.ishares import parse_holdings_json
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.exposure.stock_exposure import stock_exposure
 
 
 def invented_isin(number):
@@ -192,8 +192,8 @@ def test_manual_review_partial_weights_lock_and_stale_edit(tmp_path):
 
 
 def test_manual_snapshot_keeps_source_choice_for_registered_isin(tmp_path, monkeypatch):
-    from portfolio_app.etf_refresh import supported
-    from portfolio_app.etf_sources import SOURCES, source_for
+    from portfolio_app.funds.etf_refresh import supported
+    from portfolio_app.funds.etf_sources import SOURCES, source_for
     provider = Provider()
     source = Discovery(provider).resolve({'isin': FUND})[1]
     monkeypatch.setitem(SOURCES, FUND, source)
@@ -233,7 +233,7 @@ def test_bond_types_propagate_and_do_not_enter_company_exposure(tmp_path):
     fund = install_snapshot(tmp_path / 'etfs', FUND, fetch=Provider())
     owned = pd.DataFrame([{'id': 'fund', 'position_id': 'p', 'name': 'Invented fund', 'isin': FUND,
                           'ticker': '', 'shares': 2, 'current_value_reporting': 100., 'instrument_type': 'etf'}])
-    from portfolio_app.exposures import normalize_exposures
+    from portfolio_app.exposure.exposures import normalize_exposures
     expanded = expand_etfs(normalize_exposures(owned), [fund], owned)
     assert expanded.value.sum() == pytest.approx(100)
     assert expanded.instrument_type.tolist() == ['bond', 'bond', 'cash']
@@ -266,10 +266,10 @@ def test_provider_verified_aliases_ignore_ambiguous_suggestions():
 
 
 def test_synthetic_basket_is_separate_signed_and_not_company_or_country_exposure(tmp_path):
-    from portfolio_app.etf_sources import publish_snapshot
-    from portfolio_app.exposures import normalize_exposures
-    from portfolio_app.company_merges import inventory
-    from portfolio_app.etf import fund_classifications
+    from portfolio_app.funds.etf_sources import publish_snapshot
+    from portfolio_app.exposure.exposures import normalize_exposures
+    from portfolio_app.exposure.company_merges import inventory
+    from portfolio_app.funds.etf import fund_classifications
     rate_isin = invented_isin(333)
     economic = pd.DataFrame([dict(constituent_id='overnight:invented', name='Invented overnight exposure', isin='', ticker='',
         weight=1., instrument_type='overnight_rate', exposure_kind='non_equity', market_currency='EUR')])
@@ -295,7 +295,7 @@ def test_synthetic_basket_is_separate_signed_and_not_company_or_country_exposure
     assert expanded.exposure_kind.tolist() == ['non_equity']
     assert all('geography' not in labels for labels in fund_classifications({}, [loaded], owned).values())
     assert saved.basket.weight.sum() == pytest.approx(1)
-    from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
+    from portfolio_app.exposure.portfolio_exposure import calculate_portfolio_exposure
     owned['reporting_currency'] = 'EUR'
     result = calculate_portfolio_exposure(owned, [loaded])
     assert result.exposure_complete
@@ -320,7 +320,7 @@ def test_discovery_deduplicates_accounts_and_obeys_other_writer(tmp_path):
 
 
 def test_old_and_future_drafts_and_local_classification_priority(tmp_path):
-    from portfolio_app.etf import fund_classifications
+    from portfolio_app.funds.etf import fund_classifications
     from datetime import timedelta
     provider = Provider()
     fund = install_snapshot(tmp_path / 'etfs', FUND, fetch=provider)
@@ -358,7 +358,7 @@ def test_later_wkn_import_attaches_verified_alias_to_existing_snapshot(tmp_path)
 
 
 def test_cash_in_equity_fund_is_not_declared_equity():
-    from portfolio_app.exposures import normalize_exposures
+    from portfolio_app.exposure.exposures import normalize_exposures
     constituents = pd.DataFrame([dict(constituent_id='share', name='Invented share', ticker='', isin='', weight=.9, instrument_type='equity'),
                                  dict(constituent_id='cash', name='Invented cash', ticker='', isin='', weight=.1, instrument_type='cash')])
     fund = FundSnapshot('invented', 'Invented equity fund', FUND, (), date(2026, 1, 2), '', constituents, equity_fund=True)
@@ -372,8 +372,8 @@ def test_cash_in_equity_fund_is_not_declared_equity():
 
 def test_workspace_copy_preserves_basket_and_refuses_external_basket(tmp_path):
     import yaml
-    from portfolio_app.etf_sources import publish_snapshot
-    from portfolio_app.workspace import copy_workspace, inventory
+    from portfolio_app.funds.etf_sources import publish_snapshot
+    from portfolio_app.workspace.workspace import copy_workspace, inventory
     directory = tmp_path / 'synthetic source'
     fund = install_snapshot(directory / 'etfs', FUND, fetch=Provider())
     (directory / 'holdings.csv').write_text(f'id,name,isin,shares\nfund,Invented fund,{FUND},1\n', encoding='utf-8')

@@ -10,7 +10,7 @@ from test_ui import by_label, launch as launch_app, activate
 
 def launch(path):
     return launch_app(path, tab="Rebalance", subtab="Plan")
-from portfolio_app.rebalance_ui import MODES
+from portfolio_app.interface.views.portfolio.rebalance_ui import MODES
 
 
 @pytest.fixture

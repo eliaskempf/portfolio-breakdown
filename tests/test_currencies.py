@@ -2,9 +2,9 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.history import normalize_history
-from portfolio_app.prices import YahooProvider
-from portfolio_app.risk import eur_prices
+from portfolio_app.market.history import normalize_history
+from portfolio_app.market.prices import YahooProvider
+from portfolio_app.analytics.risk import eur_prices
 
 
 @pytest.mark.parametrize('quoted,currency,expected', [

@@ -28,9 +28,9 @@ def test_missing_history_list_opens_empty_transactions(ux_page):
 
 
 def test_history_filter_and_review_navigation(ux_page):
-    from portfolio_app.account_journal import Journal, save_journal, load_journal
-    from portfolio_app.history_observations import CoverageReview, HistoryScope, Observation, ObservationStore, save_observations
-    from portfolio_app.security_history import SecurityBook, SecurityEvent, history_fingerprint
+    from portfolio_app.ledger.account_journal import Journal, save_journal, load_journal
+    from portfolio_app.performance.history_observations import CoverageReview, HistoryScope, Observation, ObservationStore, save_observations
+    from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent, history_fingerprint
     page, root = ux_page
     start, end = '2024-01-01', date.today().isoformat()
     books = tuple(SecurityBook(identity, instrument, (str(shares), str(cost), 'EUR'),
@@ -67,9 +67,9 @@ def test_checklist_loads_prices_without_opening_each_position(tmp_path):
     import time
     from urllib.request import urlopen
     from test_history_download import setup
-    from portfolio_app.account_journal import save_journal, load_journal
-    from portfolio_app.history_observations import ObservationStore, CoverageReview, save_observations, load_observations
-    from portfolio_app.security_history import history_fingerprint
+    from portfolio_app.ledger.account_journal import save_journal, load_journal
+    from portfolio_app.performance.history_observations import ObservationStore, CoverageReview, save_observations, load_observations
+    from portfolio_app.ledger.security_history import history_fingerprint
     from browser_support import settle
     journal,scope=setup(tmp_path)
     save_journal(tmp_path,journal,None)
@@ -80,10 +80,10 @@ def test_checklist_loads_prices_without_opening_each_position(tmp_path):
 from pathlib import Path
 from decimal import Decimal
 import time
-from portfolio_app.positions import read_snapshot
-from portfolio_app.history_status_ui import render_history_status_list
-from portfolio_app.history_observations import Observation
-import portfolio_app.personal_market as market
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.interface.views.history.history_status_ui import render_history_status_list
+from portfolio_app.performance.history_observations import Observation
+import portfolio_app.performance.personal_market as market
 root=Path(__file__).parent
 if not hasattr(market,'_invented_checklist'):
     def prices(ticker,identity,start,end):

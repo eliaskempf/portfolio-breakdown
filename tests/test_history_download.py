@@ -6,12 +6,12 @@ from decimal import Decimal as D
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.account_journal import Journal
-from portfolio_app.history_commands import reconstruction_candidate
-from portfolio_app.history_observations import HistoryScope, Observation, ObservationStore, load_observations
-from portfolio_app.history_view import history_view
-from portfolio_app.personal_market import download_scope_observations
-from portfolio_app.security_history import SecurityBook, SecurityEvent, Charge
+from portfolio_app.ledger.account_journal import Journal
+from portfolio_app.ledger.history_commands import reconstruction_candidate
+from portfolio_app.performance.history_observations import HistoryScope, Observation, ObservationStore, load_observations
+from portfolio_app.performance.history_view import history_view
+from portfolio_app.performance.personal_market import download_scope_observations
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent, Charge
 
 
 def setup(root):
@@ -24,7 +24,7 @@ def setup(root):
 
 
 def test_loader_uses_observed_and_recorded_currencies_and_keeps_manual_values(tmp_path, monkeypatch):
-    import portfolio_app.personal_market as market
+    import portfolio_app.performance.personal_market as market
     journal, scope = setup(tmp_path)
     original = Observation('manual', 'price', 'position-0', '2024-01-02', D(9), 'USD')
     store = ObservationStore((original,))
@@ -45,8 +45,8 @@ def test_loader_uses_observed_and_recorded_currencies_and_keeps_manual_values(tm
 
 
 def test_empty_history_load_action_fetches_through_today_without_review_or_journal_changes(tmp_path, monkeypatch):
-    import portfolio_app.personal_market as market
-    from portfolio_app.account_journal import save_journal, load_journal
+    import portfolio_app.performance.personal_market as market
+    from portfolio_app.ledger.account_journal import save_journal, load_journal
     journal, scope = setup(tmp_path)
     save_journal(tmp_path, journal, None)
     assert not history_view(journal, scope, ObservationStore(), today=date.today()).useful
@@ -58,9 +58,9 @@ def test_empty_history_load_action_fetches_through_today_without_review_or_journ
     monkeypatch.setattr(market, 'fetch_security_prices', fetch)
     monkeypatch.setattr(market, 'fetch_fx', lambda *a: ())
     app = AppTest.from_string(f'''from pathlib import Path
-from portfolio_app.account_journal import load_journal
-from portfolio_app.history_observations import HistoryScope
-from portfolio_app.history_ui import render_history_results
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.performance.history_observations import HistoryScope
+from portfolio_app.interface.views.history.history_ui import render_history_results
 root = Path({str(tmp_path)!r})
 render_history_results(root, load_journal(root)[0], HistoryScope(('position-0',)), key='test_')
 ''', default_timeout=20).run()
@@ -78,7 +78,7 @@ render_history_results(root, load_journal(root)[0], HistoryScope(('position-0',)
 
 
 def test_partial_download_keeps_prices_and_exposes_missing_fx(tmp_path, monkeypatch):
-    import portfolio_app.personal_market as market
+    import portfolio_app.performance.personal_market as market
     journal, scope = setup(tmp_path)
     price = Observation('price', 'price', 'position-0', '2024-01-02', D(10), 'USD', source='Invented feed')
     monkeypatch.setattr(market, 'fetch_security_prices', lambda *a: (price,))
@@ -92,8 +92,8 @@ def test_partial_download_keeps_prices_and_exposes_missing_fx(tmp_path, monkeypa
 
 
 def test_receiving_account_download_includes_currency_from_fx_leg(tmp_path, monkeypatch):
-    import portfolio_app.personal_market as market
-    from portfolio_app.account_journal import Account, Event
+    import portfolio_app.performance.personal_market as market
+    from portfolio_app.ledger.account_journal import Account, Event
     setup(tmp_path)
     journal = Journal(version=2, accounts=(Account('a', 'Invented source'), Account('b', 'Invented destination')),
         events=(Event('fx', '2024-01-02', 'fx', account_id='a', currency='USD', amount=D(10),
@@ -110,10 +110,10 @@ def test_receiving_account_download_includes_currency_from_fx_leg(tmp_path, monk
 
 
 def test_accepted_futures_archive_marks_correct_values_without_cash_events(tmp_path,monkeypatch):
-    from portfolio_app.account_journal import save_journal,load_journal
-    from portfolio_app.derivative_types import PriceObservation
-    from portfolio_app.settlement_archive import SettlementArchive
-    from portfolio_app.personal_performance import calculate_history
+    from portfolio_app.ledger.account_journal import save_journal,load_journal
+    from portfolio_app.derivatives.derivative_types import PriceObservation
+    from portfolio_app.derivatives.settlement_archive import SettlementArchive
+    from portfolio_app.performance.personal_performance import calculate_history
     from test_account_journal import invented,event,trade
     journal=replace(invented(),events=(event('opening','cash_open',account_id='broker',currency='EUR',amount=1000),
         trade('buy',1,100),event('settled','settlement',date='2026-01-06',position_id='future',price=110)))
@@ -123,7 +123,7 @@ def test_accepted_futures_archive_marks_correct_values_without_cash_events(tmp_p
     archive=SettlementArchive(tmp_path)
     for stamp,price in [('2026-01-05',100),('2026-01-06',110),('2026-01-07',112)]:
         archive.record(contract,PriceObservation(contract.id,stamp,D(price),source='Invented archive'))
-    import portfolio_app.personal_market as market
+    import portfolio_app.performance.personal_market as market
     monkeypatch.setattr(market,'fetch_security_prices',lambda *a: (_ for _ in ()).throw(AssertionError('No security download needed')))
     store,errors=download_scope_observations(tmp_path,journal,scope,ObservationStore(),'2026-01-05','2026-01-07','EUR')
     result=calculate_history(journal,scope,store,'2026-01-05','2026-01-07')

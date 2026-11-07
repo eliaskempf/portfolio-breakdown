@@ -5,9 +5,9 @@ import os
 
 import pytest
 
-from portfolio_app import account_journal as ledger
-from portfolio_app import settlement_archive_ui as ui
-from portfolio_app.futures_quotes import record_result, collector as quotes
+from portfolio_app.ledger import account_journal as ledger
+from portfolio_app.interface.views.derivatives import settlement_archive_ui as ui
+from portfolio_app.derivatives.futures_quotes import record_result, collector as quotes
 from test_futures_freshness import setup, quote, NOW
 
 
@@ -22,7 +22,7 @@ def test_watcher_ignores_ticks_starts_retrievals_and_notices_but_defers_new_pric
     observed = quote(contract)
     record(observed)
     clock = [NOW]; allowed = [True]; callbacks = []; reruns = []; scheduled = []
-    import portfolio_app.futures_valuation as valuation
+    import portfolio_app.derivatives.futures_valuation as valuation
     monkeypatch.setattr(valuation, 'utc_now', lambda: clock[0])
     monkeypatch.setattr(ui, 'refresh_allowed', lambda: allowed[0])
     monkeypatch.setattr(ui.collector, 'schedule', lambda *a, **k: scheduled.append('settlement') or True)

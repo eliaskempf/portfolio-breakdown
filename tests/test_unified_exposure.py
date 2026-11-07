@@ -5,9 +5,9 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
-from portfolio_app.exposure_workspace import analysis_sources, analysis_contributions, analytical_signature
-from portfolio_app.exposure_tables import asset_exposure_table, exposure_sources
-from portfolio_app.leverage_settings import MarginLiability
+from portfolio_app.exposure.exposure_workspace import analysis_sources, analysis_contributions, analytical_signature
+from portfolio_app.exposure.exposure_tables import asset_exposure_table, exposure_sources
+from portfolio_app.funds.leverage_settings import MarginLiability
 from test_future_proxy_exposure import fixture, calculate, write_proxy
 from test_portfolio_exposure_ui import synthetic_workspace
 from test_futures_ui import launch
@@ -85,7 +85,7 @@ def test_cache_signature_changes_with_facts_but_not_age():
 
 @pytest.mark.parametrize('measure', ['Market exposure', 'Funded value'])
 def test_unified_views_lazy_details_and_tour_restoration(tmp_path, measure):
-    from portfolio_app.futures_workspace import load_sandbox, save_sandbox
+    from portfolio_app.studies.futures_workspace import load_sandbox, save_sandbox
     _, directory = synthetic_workspace(tmp_path)
     write_proxy(directory)
     future, revision = load_sandbox(directory)
@@ -135,7 +135,7 @@ def test_rerun_search_and_view_change_reuse_exposure_calculation(tmp_path):
 def test_actual_account_exposure_and_funded_views(tmp_path):
     from test_actual_portfolio import invented
     from test_accounts_ui import launch_actual
-    from portfolio_app.account_journal import save_journal
+    from portfolio_app.ledger.account_journal import save_journal
     _, journal, _ = invented(tmp_path)
     save_journal(tmp_path, journal, None)
     app = launch_actual(tmp_path)
@@ -150,8 +150,8 @@ def test_actual_account_exposure_and_funded_views(tmp_path):
 
 
 def test_partial_fund_preserves_known_subtotal_without_inventing_total():
-    from portfolio_app.exposure_presentation import exposure_positions
-    from portfolio_app.strategic import strategic_summary
+    from portfolio_app.exposure.exposure_presentation import exposure_positions
+    from portfolio_app.portfolio.strategic import strategic_summary
     from test_portfolio_exposure import CONFIG
     frame, fund, future = fixture()
     frame.loc[frame.position_id.eq('fund'), 'exposure_kind'] = 'unknown'
@@ -180,8 +180,8 @@ def test_partial_fund_preserves_known_subtotal_without_inventing_total():
 
 @pytest.mark.parametrize('known_only', [False, True])
 def test_closed_unassigned_holding_has_zero_exposure_and_does_not_hide_gaps(known_only):
-    from portfolio_app.exposure_presentation import exposure_positions
-    from portfolio_app.strategic import strategic_summary
+    from portfolio_app.exposure.exposure_presentation import exposure_positions
+    from portfolio_app.portfolio.strategic import strategic_summary
     from test_portfolio_exposure import CONFIG
     config = replace(CONFIG, buckets=tuple(replace(b, target=target)
         for b, target in zip(CONFIG.buckets, (.6, .3, .1))))

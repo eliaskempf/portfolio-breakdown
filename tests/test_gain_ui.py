@@ -5,16 +5,16 @@ from decimal import Decimal as D
 import json
 import pytest
 
-from portfolio_app.account_journal import Journal, save_journal
-from portfolio_app.cost_basis import fingerprint
-from portfolio_app.history_observations import CoverageReview, HistoryScope, ObservationStore, save_observations
-from portfolio_app.positions import read_snapshot
-from portfolio_app.security_history import Charge, SecurityBook, SecurityEvent as E, history_fingerprint
+from portfolio_app.ledger.account_journal import Journal, save_journal
+from portfolio_app.performance.cost_basis import fingerprint
+from portfolio_app.performance.history_observations import CoverageReview, HistoryScope, ObservationStore, save_observations
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ledger.security_history import Charge, SecurityBook, SecurityEvent as E, history_fingerprint
 from test_ui import launch, by_label, activate
 
 
 def test_allocation_explains_full_history_twr_gap_even_when_recent_return_is_known(tmp_path):
-    from portfolio_app.history_observations import Observation
+    from portfolio_app.performance.history_observations import Observation
     (tmp_path/'holdings.csv').write_text(
         'position_key,id,name,ticker,shares,acquisition_price,acquisition_currency\n'
         'synthetic-position,synthetic-asset,Invented investment,SYNTH,2,100,EUR\n')
@@ -45,7 +45,7 @@ def test_allocation_explains_full_history_twr_gap_even_when_recent_return_is_kno
 @pytest.mark.parametrize('remove_current_row', [False, True])
 @pytest.mark.parametrize('estimated', [False, True])
 def test_fully_liquidated_history_has_shared_gain_without_current_quote(tmp_path, remove_current_row, estimated, monkeypatch):
-    import portfolio_app.personal_performance as performance
+    import portfolio_app.performance.personal_performance as performance
     xirr_calls = []
     original_xirr = performance.xirr
     def counted(*args, **kwargs):

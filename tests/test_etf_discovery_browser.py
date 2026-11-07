@@ -14,8 +14,8 @@ from urllib.request import urlopen
 import pandas as pd
 import pytest
 
-from portfolio_app.etf import FundSnapshot
-from portfolio_app.etf_sources import install_snapshot, publish_snapshot
+from portfolio_app.funds.etf import FundSnapshot
+from portfolio_app.funds.etf_sources import install_snapshot, publish_snapshot
 from test_etf_discovery import Provider, FUND, invented_isin
 from browser_support import settle_layout
 
@@ -47,8 +47,8 @@ def fund_page(tmp_path):
         f'rate,Invented overnight fund,{rate_isin},1,etf,100,EUR,2026-01-02,units\n')
     app = tmp_path / 'app.py'
     app.write_text('''from pathlib import Path
-from portfolio_app.ui import render_app
-from portfolio_app.prices import PriceService, UnavailableProvider
+from portfolio_app.interface.ui import render_app
+from portfolio_app.market.prices import PriceService, UnavailableProvider
 render_app(Path(__file__).parent, demo=True, price_service=PriceService(UnavailableProvider()))
 ''')
     with socket.socket() as sock:

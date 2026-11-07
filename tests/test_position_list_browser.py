@@ -11,7 +11,7 @@ from urllib.request import urlopen
 
 import pytest
 
-from portfolio_app.holdings import load_holdings
+from portfolio_app.portfolio.holdings import load_holdings
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -27,8 +27,8 @@ def position_page(tmp_path):
     app.write_text('''
 from pathlib import Path
 import streamlit as st
-from portfolio_app.positions import read_snapshot
-from portfolio_app.position_ui import render_position_editor
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.interface.views.positions.position_ui import render_position_editor
 st.set_page_config(layout='wide')
 path = Path(__file__).parent / 'holdings.csv'
 render_position_editor(path, read_snapshot(path), [], demo=True, embedded=True)
@@ -109,7 +109,7 @@ def test_keyboard_and_edit_button_open_rows_and_back_returns_to_list(position_pa
 
 def test_metric_columns_sort_numerically_keep_missing_last_and_preserve_identity(position_page):
     from dataclasses import asdict
-    from portfolio_app.list_ui import HTML, JS, ListColumn
+    from portfolio_app.interface.shared.list_ui import HTML, JS, ListColumn
     page, _ = position_page
     # Execute the actual component renderer with invented metric values. AppTest
     # separately verifies that the controls supply these columns and row values.

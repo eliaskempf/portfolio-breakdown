@@ -3,8 +3,8 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.allocation import Allocation, Bucket
-from portfolio_app.strategic import bucket_positions, strategic_summary, strategic_tree
+from portfolio_app.portfolio.allocation import Allocation, Bucket
+from portfolio_app.portfolio.strategic import bucket_positions, strategic_summary, strategic_tree
 
 
 @pytest.fixture
@@ -98,7 +98,7 @@ def test_unassigned_and_account_rows_remain_independent(positions, config):
 
 
 def test_icon_palette_follows_actual_allocation_not_category_ids(positions, config):
-    from portfolio_app.charts import strategic_colors
+    from portfolio_app.interface.shared.charts import strategic_colors
     tree = strategic_tree(positions, config)
     colors = dict(zip(tree.label, strategic_colors(tree, config)))
     assert colors['Long term'] == '#5470c6'

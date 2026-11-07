@@ -13,7 +13,7 @@ import pytest
 from streamlit.proto.BackMsg_pb2 import BackMsg
 
 from browser_support import StreamlitReruns, settle
-from portfolio_app.account_journal import save_journal
+from portfolio_app.ledger.account_journal import save_journal
 from test_history_download import setup
 
 playwright = pytest.importorskip('playwright.sync_api')
@@ -28,10 +28,10 @@ from pathlib import Path
 from threading import Event, Thread
 import streamlit as st
 from streamlit.runtime.scriptrunner.script_runner import ScriptRunner
-from portfolio_app.account_journal import load_journal
-from portfolio_app.history_observations import HistoryScope, Observation
-import portfolio_app.history_ui as history
-import portfolio_app.personal_market as market
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.performance.history_observations import HistoryScope, Observation
+import portfolio_app.interface.views.history.history_ui as history
+import portfolio_app.performance.personal_market as market
 root = Path(ROOT)
 
 @st.cache_resource
@@ -216,7 +216,7 @@ import json
 from threading import Event, Thread
 import streamlit as st
 from streamlit.runtime.state.session_state import SessionState
-from portfolio_app.metric_interactions import toggle_gain_unit, toggle_metric_value
+from portfolio_app.interface.shared.metric_interactions import toggle_gain_unit, toggle_metric_value
 
 @st.cache_resource
 def controls():

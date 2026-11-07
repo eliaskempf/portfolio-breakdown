@@ -6,15 +6,15 @@ import json
 import pandas as pd
 import pytest
 
-from portfolio_app.cost_basis import (FIELD, active_components, aggregate_component, component, encode_components,
+from portfolio_app.performance.cost_basis import (FIELD, active_components, aggregate_component, component, encode_components,
     estimate_missing, freeze_historical, resolve_cost, supplied_conversion)
-from portfolio_app.fx import current_rate, HistoricalFX
-from portfolio_app.holdings import DataError, metadata_dimensions, parse_holdings
-from portfolio_app.portfolio import prepare_portfolio
-from portfolio_app.portfolio_settings import load_settings, save_settings
-from portfolio_app.positions import read_snapshot, save_position
-from portfolio_app.prices import PriceService, Quote
-from portfolio_app.purchases import save_purchase_batch
+from portfolio_app.market.fx import current_rate, HistoricalFX
+from portfolio_app.portfolio.holdings import DataError, metadata_dimensions, parse_holdings
+from portfolio_app.portfolio.portfolio import prepare_portfolio
+from portfolio_app.portfolio.portfolio_settings import load_settings, save_settings
+from portfolio_app.portfolio.positions import read_snapshot, save_position
+from portfolio_app.market.prices import PriceService, Quote
+from portfolio_app.portfolio.purchases import save_purchase_batch
 
 NOW = datetime(2026, 9, 7, 12, tzinfo=timezone.utc)
 
@@ -149,7 +149,7 @@ def test_metadata_roundtrip_and_cost_replacement(tmp_path):
 
 
 def test_fractional_csv_roundtrip_preserves_conversions_and_detects_edits(tmp_path, prices):
-    from portfolio_app.balances import patch_holdings
+    from portfolio_app.portfolio.balances import patch_holdings
     path = tmp_path / 'holdings.csv'
     # An invented fractional quantity has more digits on disk than the
     # numeric holdings parser retains. Saving FX must preserve the original.
@@ -198,9 +198,9 @@ def test_settings_default_revision_and_roundtrip(tmp_path):
 
 
 def test_live_demo_initialization_uses_selected_cost_currency(tmp_path):
-    from portfolio_app.demo import create_demo_data, initialize_live_demo
-    from portfolio_app.prices import StaticProvider
-    from portfolio_app.valuation import value_holdings
+    from portfolio_app.demo_data.demo import create_demo_data, initialize_live_demo
+    from portfolio_app.market.prices import StaticProvider
+    from portfolio_app.portfolio.valuation import value_holdings
     live = create_demo_data(tmp_path / 'live', live=True)
     offline = create_demo_data(tmp_path / 'invented-quotes')
     prices = PriceService(StaticProvider(offline / 'demo_prices.json'))
@@ -279,14 +279,14 @@ def test_future_dates_and_invalid_settings_are_rejected(historical, tmp_path):
 
 
 def test_cost_component_quantity_must_reconcile():
-    from portfolio_app.cost_basis import read_details
+    from portfolio_app.performance.cost_basis import read_details
     raw = dict(version=1, summary=['2','100','USD'], components=[component(1,100,'USD')])
     with pytest.raises(DataError):
         read_details(json.dumps(raw))
 
 
 def test_reporting_risk_histories_and_foreign_cash(tmp_path):
-    from portfolio_app.risk_data import RiskHistoryService, AdjustedHistory
+    from portfolio_app.analytics.risk_data import RiskHistoryService, AdjustedHistory
     dates = pd.date_range('2026-01-01', periods=3)
     class Provider:
         def fetch(self, ticker, years):
@@ -302,7 +302,7 @@ def test_reporting_risk_histories_and_foreign_cash(tmp_path):
 
 
 def test_price_chart_uses_historical_fx_without_changing_native_data():
-    from portfolio_app.history import HistoryResult, convert_price_history
+    from portfolio_app.market.history import HistoryResult, convert_price_history
     original = HistoryResult(('2026-09-01','2026-09-02'), (100,120), 'USD')
     rates = HistoryResult(original.dates, (.9,.8), 'EUR')
     result = convert_price_history(original, 'EUR', {'USD': rates})
@@ -312,7 +312,7 @@ def test_price_chart_uses_historical_fx_without_changing_native_data():
 
 
 def test_estimate_status_flows_through_grouped_performance(prices):
-    from portfolio_app.performance_allocation import performance_exposures, add_performance_column
+    from portfolio_app.performance.performance_allocation import performance_exposures, add_performance_column
     frame = holding()
     parts = estimate_missing(active_components(frame.iloc[0]), 'EUR', prices)
     frame[FIELD] = encode_components(parts, frame.iloc[0])

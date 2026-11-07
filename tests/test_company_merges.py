@@ -5,12 +5,12 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from portfolio_app.company_merges import MergeSettings, build_plan, load_company_names, load_settings, save_settings
-from portfolio_app.etf import FundSnapshot, expand_etfs, effective_exposure_table, fund_classifications
-from portfolio_app.exposures import normalize_exposures
-from portfolio_app.holdings import DataError, parse_holdings
-from portfolio_app.stock_exposure import stock_exposure
-from portfolio_app.targets import target_exposures
+from portfolio_app.exposure.company_merges import MergeSettings, build_plan, load_company_names, load_settings, save_settings
+from portfolio_app.funds.etf import FundSnapshot, expand_etfs, effective_exposure_table, fund_classifications
+from portfolio_app.exposure.exposures import normalize_exposures
+from portfolio_app.portfolio.holdings import DataError, parse_holdings
+from portfolio_app.exposure.stock_exposure import stock_exposure
+from portfolio_app.portfolio.targets import target_exposures
 
 
 def universe(names=('Invented Photon NV', 'INVENTED PHOTON'), isins=('ZZ1111111111', ''), third=False):

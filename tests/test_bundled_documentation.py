@@ -6,7 +6,7 @@ from urllib.request import urlopen
 
 import pytest
 
-from portfolio_app.documentation import documentation_server, guide_url
+from portfolio_app.runtime.documentation import documentation_server, guide_url
 
 
 @pytest.mark.parametrize('platform', ['linux', 'win32', 'darwin'])
@@ -67,7 +67,7 @@ def test_unavailable_help_explains_recovery_and_keeps_tour(tmp_path, monkeypatch
     monkeypatch.setenv('PORTFOLIO_DOCS_URL', '')
     app = AppTest.from_string(
         'from pathlib import Path\n'
-        'from portfolio_app.workspace_ui import app_header\n'
+        'from portfolio_app.interface.views.workspace.workspace_ui import app_header\n'
         f'app_header(Path({str(tmp_path)!r}), None, demo=False)\n'
     ).run()
     assert not app.exception

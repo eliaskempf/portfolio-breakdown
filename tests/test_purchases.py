@@ -6,9 +6,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from portfolio_app.holdings import DataError, load_holdings, metadata_dimensions
-from portfolio_app.positions import read_snapshot, save_position
-from portfolio_app.purchases import (
+from portfolio_app.portfolio.holdings import DataError, load_holdings, metadata_dimensions
+from portfolio_app.portfolio.positions import read_snapshot, save_position
+from portfolio_app.portfolio.purchases import (
     HISTORY_COLUMN, parse_purchase_text, read_opening, read_purchase_history,
     repeated_batch, save_purchase_batch, summarize_purchases, validate_purchases,
 )

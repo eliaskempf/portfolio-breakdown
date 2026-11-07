@@ -3,12 +3,12 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.etf import load_funds
-from portfolio_app.grouping import InstrumentGroup, group_classifications
-from portfolio_app.holdings import parse_holdings
-from portfolio_app.label_comparison import Label, compare_labels
-from portfolio_app.performance import position_performance
-from portfolio_app.performance_allocation import performance_exposures, add_performance_column
+from portfolio_app.funds.etf import load_funds
+from portfolio_app.portfolio.grouping import InstrumentGroup, group_classifications
+from portfolio_app.portfolio.holdings import parse_holdings
+from portfolio_app.exposure.label_comparison import Label, compare_labels
+from portfolio_app.performance.performance import position_performance
+from portfolio_app.performance.performance_allocation import performance_exposures, add_performance_column
 
 
 def source():

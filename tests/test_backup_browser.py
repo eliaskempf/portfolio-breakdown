@@ -9,11 +9,11 @@ import time
 
 import pytest
 
-from portfolio_app.demo import create_demo_data
-from portfolio_app.launcher import request_instance
-from portfolio_app.portfolio_settings import save_settings
-from portfolio_app.workspace import inventory
-from portfolio_app.workspace_selection import selection
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.runtime.launcher import request_instance
+from portfolio_app.portfolio.portfolio_settings import save_settings
+from portfolio_app.workspace.workspace import inventory
+from portfolio_app.workspace.workspace_selection import selection
 from browser_support import select_tab, settle
 
 playwright = pytest.importorskip('playwright.sync_api')
@@ -28,10 +28,10 @@ def backup_app(tmp_path):
     view = tmp_path / 'offline_view.py'
     view.write_text('''import argparse
 from pathlib import Path
-from portfolio_app.ui import render_app
-from portfolio_app.prices import PriceService, StaticProvider
-from portfolio_app.workspace_selection import selection
-from portfolio_app.etf_refresh import coordinator
+from portfolio_app.interface.ui import render_app
+from portfolio_app.market.prices import PriceService, StaticProvider
+from portfolio_app.workspace.workspace_selection import selection
+from portfolio_app.funds.etf_refresh import coordinator
 coordinator.schedule = lambda *a, **kw: False
 parser = argparse.ArgumentParser()
 parser.add_argument('--data-dir', type=Path)
@@ -44,10 +44,10 @@ render_app(args.data_dir, demo_dir=args.demo_dir,
 ''')
     supervisor = tmp_path / 'supervisor.py'
     supervisor.write_text(f'''from pathlib import Path
-import portfolio_app.app as app
+import portfolio_app.runtime.app as app
 real = app.run_server
 def run(command, *args, **kwargs):
-    command[command.index(str(Path(app.__file__).with_name('ui.py')))] = {str(view)!r}
+    command[command.index(str(app.package_path('ui.py')))] = {str(view)!r}
     return real(command, *args, **kwargs)
 app.run_server = run
 app.main()
@@ -67,7 +67,7 @@ app.main()
             time.sleep(.1)
         raise AssertionError('Synthetic launcher did not become ready')
     def stop():
-        from portfolio_app.launcher import stop_instance
+        from portfolio_app.runtime.launcher import stop_instance
         assert stop_instance(workspace)
         children[-1].wait(timeout=15)
     try:
@@ -122,7 +122,7 @@ def test_archive_review_cancel_switch_restart_and_tabs(backup_app, tmp_path):
             dialog.get_by_role('button', name='Download backup').click()
         archive = tmp_path / 'invented.portfolio-backup.zip'
         downloaded.value.save_as(archive)
-        from portfolio_app.backup import inspect_backup
+        from portfolio_app.workspace.backup import inspect_backup
         draft = inspect_backup(archive.read_bytes())
         assert draft.digests == before
         draft.close()

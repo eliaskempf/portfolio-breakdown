@@ -3,17 +3,17 @@ import json
 
 import pytest
 
-from portfolio_app.account_journal import Journal, save_journal
-from portfolio_app.history_publication import INTENT, publish_positions_and_history, recover_publication
-from portfolio_app.holdings import DataError
-from portfolio_app.storage import revision
+from portfolio_app.ledger.account_journal import Journal, save_journal
+from portfolio_app.ledger.history_publication import INTENT, publish_positions_and_history, recover_publication
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.workspace.storage import revision
 
 
 @pytest.mark.parametrize('before_newline', ['\n', '\r\n'])
 @pytest.mark.parametrize('after_newline', ['\n', '\r\n'])
 @pytest.mark.parametrize('stage', ['before_journal', 'after_journal'])
 def test_interruption_restores_exact_original_bytes(tmp_path, monkeypatch, before_newline, after_newline, stage):
-    import portfolio_app.account_journal as journals
+    import portfolio_app.ledger.account_journal as journals
     holdings = tmp_path/'holdings.csv'
     holdings.write_bytes(('id,name,shares\nold,Invented,2\n'.replace('\n', before_newline)).encode())
     save_journal(tmp_path, Journal(), None)
@@ -49,7 +49,7 @@ def test_recovery_refuses_external_edits_including_newline_changes(tmp_path, une
 
 
 def test_legacy_windows_intent_recovers_translated_crlf(tmp_path, monkeypatch):
-    import portfolio_app.history_publication as publication
+    import portfolio_app.ledger.history_publication as publication
     monkeypatch.setattr(publication.os, 'linesep', '\r\n')
     after = 'id,name,shares\r\nnew,Invented,3\r\n'
     (tmp_path/'holdings.csv').write_bytes(after.replace('\n', '\r\n').encode())

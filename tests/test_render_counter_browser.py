@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from threading import Event, local
 
-from portfolio_app import atomic_file, locking
+from portfolio_app.workspace import atomic_file; from portfolio_app.workspace import locking
 import test_refresh_stability_browser as refresh
 from test_futures_freshness_browser import preview_script
 
@@ -11,7 +11,7 @@ from test_futures_freshness_browser import preview_script
 def counter_code(root):
     # Execute the actual generated fixture code in separate ScriptRunner globals.
     script = preview_script(root)
-    return compile(script[script.index('from portfolio_app.atomic_file import'):
+    return compile(script[script.index('from portfolio_app.workspace.atomic_file import'):
                           script.index('render_app(root,')], '<preview-counter>', 'exec')
 
 

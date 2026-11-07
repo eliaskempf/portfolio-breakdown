@@ -8,7 +8,7 @@ import sys
 from tempfile import TemporaryDirectory
 import time
 
-from portfolio_app.launcher import request_instance, ready
+from portfolio_app.runtime.launcher import request_instance, ready
 
 
 def wait(check, timeout=90):

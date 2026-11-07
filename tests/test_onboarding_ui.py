@@ -1,8 +1,8 @@
 """First-use choices use isolated, invented workspaces and existing save flows."""
 import pytest
 
-from portfolio_app.demo import create_demo_data
-from portfolio_app.positions import read_snapshot
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.portfolio.positions import read_snapshot
 from test_startup import launch_workspaces
 from test_ui import activate, by_label
 
@@ -70,18 +70,18 @@ def test_import_choice_and_workspace_switch_clear_first_use_state(tmp_path):
 def test_live_demo_uses_normal_market_mode_and_preserves_workspace_isolation(tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
     from test_ui import activate
-    from portfolio_app.history import HistoryResult
+    from portfolio_app.market.history import HistoryResult
     from types import SimpleNamespace
     personal = tmp_path / 'invented-personal'
     live = create_demo_data(tmp_path / 'live', live=True)
     fixture = create_demo_data(tmp_path / 'offline')
     calls = []
-    monkeypatch.setattr('portfolio_app.etf_refresh.coordinator.schedule',
+    monkeypatch.setattr('portfolio_app.funds.etf_refresh.coordinator.schedule',
                         lambda *a, **kw: calls.append(kw['demo']))
     app = AppTest.from_string(
         'from pathlib import Path\n'
-        'from portfolio_app.ui import render_app\n'
-        'from portfolio_app.prices import PriceService, StaticProvider\n'
+        'from portfolio_app.interface.ui import render_app\n'
+        'from portfolio_app.market.prices import PriceService, StaticProvider\n'
         f'prices = PriceService(StaticProvider(Path({str(fixture / "demo_prices.json")!r})))\n'
         f'render_app(Path({str(personal)!r}), demo_dir=Path({str(live)!r}), demo=True, price_service=prices)\n',
         default_timeout=15,
@@ -100,7 +100,7 @@ def test_live_demo_uses_normal_market_mode_and_preserves_workspace_isolation(tmp
         requested.append(directory)
         return SimpleNamespace(get=lambda *a, **kw: HistoryResult(note='Injected public-history path'),
                                pending=lambda *a: False)
-    monkeypatch.setattr('portfolio_app.position_detail.history_for', history)
+    monkeypatch.setattr('portfolio_app.interface.views.positions.position_detail.history_for', history)
     snapshot = read_snapshot(live / 'holdings.csv')
     app.session_state['position_edit_selected'] = snapshot.holdings.position_id.iloc[0]
     app.session_state['position_edit_dialog'] = True
@@ -115,8 +115,8 @@ def test_live_demo_uses_normal_market_mode_and_preserves_workspace_isolation(tmp
 
 def test_live_demo_loading_failure_retry_and_ready_preserve_workspace(tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
-    from portfolio_app.prices import PriceService, StaticProvider, UnavailableProvider
-    from portfolio_app.demo import live_demo_pending
+    from portfolio_app.market.prices import PriceService, StaticProvider, UnavailableProvider
+    from portfolio_app.demo_data.demo import live_demo_pending
     import streamlit as st
 
     personal = tmp_path / 'invented-personal'
@@ -124,13 +124,13 @@ def test_live_demo_loading_failure_retry_and_ready_preserve_workspace(tmp_path, 
     fixture = create_demo_data(tmp_path / 'offline')
     seed = (live / 'holdings.csv').read_bytes()
     phase = {'pending': True, 'ready': False}
-    monkeypatch.setattr('portfolio_app.etf_refresh.coordinator.schedule', lambda *a, **kw: None)
-    monkeypatch.setattr('portfolio_app.ui.market_coordinator.pending', lambda *a: phase['pending'])
-    monkeypatch.setattr('portfolio_app.ui.prices_for', lambda *a: PriceService(
+    monkeypatch.setattr('portfolio_app.funds.etf_refresh.coordinator.schedule', lambda *a, **kw: None)
+    monkeypatch.setattr('portfolio_app.interface.ui.market_coordinator.pending', lambda *a: phase['pending'])
+    monkeypatch.setattr('portfolio_app.interface.ui.prices_for', lambda *a: PriceService(
         StaticProvider(fixture / 'demo_prices.json') if phase['ready'] else UnavailableProvider()))
-    monkeypatch.setattr('portfolio_app.ui.render_strategic_overview', lambda *a, **kw: st.write('Invented overview ready'))
+    monkeypatch.setattr('portfolio_app.interface.ui.render_strategic_overview', lambda *a, **kw: st.write('Invented overview ready'))
     app = AppTest.from_string(
-        'from pathlib import Path\nfrom portfolio_app.ui import render_app\n'
+        'from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n'
         f'render_app(Path({str(personal)!r}), demo_dir=Path({str(live)!r}))\n', default_timeout=15).run()
     by_label(app.button, 'Explore demo').click().run()
     assert not app.exception and not app.tabs
@@ -161,7 +161,7 @@ def test_recovery_controls_remain_available_with_invalid_holdings(tmp_path):
     from streamlit.testing.v1 import AppTest
     (tmp_path / 'holdings.csv').write_text('id,name,shares\ninvented,Invented broken input,invalid\n', encoding='utf-8')
     app = AppTest.from_string(
-        'from pathlib import Path\nfrom portfolio_app.ui import render_app\n'
+        'from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n'
         f'render_app(Path({str(tmp_path)!r}), demo=True)\n', default_timeout=15,
     ).run()
     assert not app.exception and app.error
@@ -169,9 +169,9 @@ def test_recovery_controls_remain_available_with_invalid_holdings(tmp_path):
 
 
 def test_guided_categories_targets_and_first_physical_position(tmp_path):
-    from portfolio_app.allocation import load_allocation
-    from portfolio_app.prices import PriceService, UnavailableProvider
-    from portfolio_app.valuation import value_holdings
+    from portfolio_app.portfolio.allocation import load_allocation
+    from portfolio_app.market.prices import PriceService, UnavailableProvider
+    from portfolio_app.portfolio.valuation import value_holdings
     personal = tmp_path / 'invented-personal'
     app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
     by_label(app.button, 'Start my portfolio').click().run()
@@ -209,7 +209,7 @@ def test_guided_categories_targets_and_first_physical_position(tmp_path):
 
 
 def test_guided_optional_targets_and_finish_later(tmp_path):
-    from portfolio_app.allocation import load_allocation
+    from portfolio_app.portfolio.allocation import load_allocation
     personal = tmp_path / 'invented-personal'
     app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
     by_label(app.button, 'Start my portfolio').click().run()
@@ -229,8 +229,8 @@ def test_guided_optional_targets_and_finish_later(tmp_path):
 
 def test_physical_unit_change_clears_amounts_and_edit_keeps_unit(tmp_path):
     from test_ui import position_action
-    from portfolio_app.prices import PriceService, UnavailableProvider
-    from portfolio_app.valuation import value_holdings
+    from portfolio_app.market.prices import PriceService, UnavailableProvider
+    from portfolio_app.portfolio.valuation import value_holdings
     personal = tmp_path / 'invented-personal'
     app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
     by_label(app.button, 'Start my portfolio').click().run()
@@ -265,8 +265,8 @@ def test_existing_physical_holding_with_unknown_unit_is_not_assigned_ounces(tmp_
     path.write_text('id,name,shares,instrument_type\nmetal,Invented unspecified metal,10,physical\n', encoding='utf-8')
     app = AppTest.from_string(
         'from pathlib import Path\nimport streamlit as st\n'
-        'from portfolio_app.positions import read_snapshot\n'
-        'from portfolio_app.position_ui import render_position_form\n'
+        'from portfolio_app.portfolio.positions import read_snapshot\n'
+        'from portfolio_app.interface.views.positions.position_ui import render_position_form\n'
         f'path=Path({str(path)!r})\n'
         'st.session_state["position_edit_selected"]="position-0"\n'
         'render_position_form(path,read_snapshot(path),[],action="Edit position")\n', default_timeout=15,
@@ -280,7 +280,7 @@ def test_existing_physical_holding_with_unknown_unit_is_not_assigned_ounces(tmp_
 
 
 def test_guided_confirmation_saves_only_after_continue(tmp_path):
-    from portfolio_app.allocation import load_allocation
+    from portfolio_app.portfolio.allocation import load_allocation
     personal = tmp_path / 'invented-personal'
     app = launch_workspaces(personal, create_demo_data(tmp_path / 'demo'))
     by_label(app.button, 'Start my portfolio').click().run()
@@ -307,8 +307,8 @@ def test_guided_duplicate_remove_partial_targets_and_skip(tmp_path):
 
 
 def test_physical_gold_spot_save_edit_and_explicit_manual_switch(tmp_path):
-    from portfolio_app.prices import PriceService
-    from portfolio_app.valuation import value_holdings
+    from portfolio_app.market.prices import PriceService
+    from portfolio_app.portfolio.valuation import value_holdings
     from test_ui import position_action
     from datetime import datetime, timezone
     from types import SimpleNamespace

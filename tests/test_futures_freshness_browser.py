@@ -10,13 +10,13 @@ import time
 from urllib.request import urlopen
 
 import pytest
-from portfolio_app import account_journal as ledger
-from portfolio_app.automatic_settlements import apply_archived_settlements
-from portfolio_app.derivative_market import make_contract
-from portfolio_app.derivative_types import PriceObservation
-from portfolio_app.futures_clock import business_date
-from portfolio_app.futures_quotes import record_result
-from portfolio_app.settlement_archive import SettlementArchive
+from portfolio_app.ledger import account_journal as ledger
+from portfolio_app.derivatives.automatic_settlements import apply_archived_settlements
+from portfolio_app.derivatives.derivative_market import make_contract
+from portfolio_app.derivatives.derivative_types import PriceObservation
+from portfolio_app.derivatives.futures_clock import business_date
+from portfolio_app.derivatives.futures_quotes import record_result
+from portfolio_app.derivatives.settlement_archive import SettlementArchive
 from test_futures_investments import grouped
 from browser_support import StreamlitReruns, settle
 
@@ -43,13 +43,13 @@ def preview_script(root):
     return f'''
 from pathlib import Path
 from types import SimpleNamespace
-from portfolio_app.ui import render_app
-from portfolio_app.prices import PriceService, StaticProvider
-from portfolio_app.history import HistoryResult
-from portfolio_app.futures_quotes import collector as quotes
-from portfolio_app.settlement_collection import collector as settlements
-from portfolio_app.etf_refresh import coordinator
-import portfolio_app.market_history_ui as charts
+from portfolio_app.interface.ui import render_app
+from portfolio_app.market.prices import PriceService, StaticProvider
+from portfolio_app.market.history import HistoryResult
+from portfolio_app.derivatives.futures_quotes import collector as quotes
+from portfolio_app.derivatives.settlement_collection import collector as settlements
+from portfolio_app.funds.etf_refresh import coordinator
+import portfolio_app.interface.views.history.market_history_ui as charts
 quotes.schedule = lambda *a, **kw: False
 settlements.schedule = lambda *a, **kw: False
 coordinator.schedule = lambda *a, **kw: False
@@ -57,11 +57,11 @@ charts.history_for = lambda _: SimpleNamespace(get=lambda *a, **kw: HistoryResul
     ('2026-01-02','2026-01-05','2026-01-06'), (100., 105., 98.), 'EUR', 'cached',
     '2026-01-07', 'Invented market context'), pending=lambda *a: False)
 root = Path({str(root)!r})
-import portfolio_app.futures_valuation as valuation
+import portfolio_app.derivatives.futures_valuation as valuation
 from datetime import datetime
 valuation.utc_now = lambda: datetime.fromisoformat((root/'clock.txt').read_text())
-from portfolio_app.atomic_file import staged_text
-from portfolio_app.locking import write_lock
+from portfolio_app.workspace.atomic_file import staged_text
+from portfolio_app.workspace.locking import write_lock
 count = root/'app-renders.txt'
 # Fast full reruns can overlap before either reaches render_app. Keep the
 # diagnostic integer readable by polling tests and serialize every increment.

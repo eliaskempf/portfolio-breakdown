@@ -2,8 +2,8 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.investment_presentation import investment_exposure, investment_risk_positions
-from portfolio_app.portfolio_exposure import PortfolioExposure
+from portfolio_app.derivatives.investment_presentation import investment_exposure, investment_risk_positions
+from portfolio_app.exposure.portfolio_exposure import PortfolioExposure
 
 
 def invented_views():
@@ -89,10 +89,10 @@ def test_presentation_keeps_external_debt_and_does_not_restore_fully_attributed_
 
 
 def test_grouped_investment_normal_overview_and_navigation(tmp_path):
-    from portfolio_app.account_journal import InvestmentSpec, save_journal
-    from portfolio_app.futures_investments import assign_investment
-    from portfolio_app.position_list import list_context
-    from portfolio_app.positions import read_snapshot
+    from portfolio_app.ledger.account_journal import InvestmentSpec, save_journal
+    from portfolio_app.derivatives.futures_investments import assign_investment
+    from portfolio_app.interface.views.positions.position_list import list_context
+    from portfolio_app.portfolio.positions import read_snapshot
     from test_actual_portfolio import invented
     from test_accounts_ui import launch_actual
     from test_ui import activate, by_label
@@ -120,9 +120,9 @@ def test_grouped_investment_normal_overview_and_navigation(tmp_path):
 @pytest.mark.parametrize('quantity', [2, 10, -10])
 def test_actual_investment_leverage_uses_notional_and_preserves_settlement_equity(tmp_path, quantity):
     from dataclasses import replace
-    from portfolio_app.account_journal import Event, append_events
-    from portfolio_app.derivative_types import PriceObservation
-    from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
+    from portfolio_app.ledger.account_journal import Event, append_events
+    from portfolio_app.derivatives.derivative_types import PriceObservation
+    from portfolio_app.exposure.portfolio_exposure import calculate_portfolio_exposure
     from test_futures_investments import grouped, project
 
     service, journal, contract = grouped(tmp_path)

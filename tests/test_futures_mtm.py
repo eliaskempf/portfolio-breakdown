@@ -2,9 +2,9 @@
 from dataclasses import replace
 import json
 import pytest
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_mtm import MTM_FILE, daily_mtm, load_settlements, mtm_stats, refresh_settlements
-from portfolio_app.holdings import DataError
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.derivatives.futures_mtm import MTM_FILE, daily_mtm, load_settlements, mtm_stats, refresh_settlements
+from portfolio_app.portfolio.holdings import DataError
 
 
 def position(**changes):

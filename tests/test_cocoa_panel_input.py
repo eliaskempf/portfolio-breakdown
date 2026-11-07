@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from portfolio_app.cocoa_diagnostics import HostedPanelInput
+from portfolio_app.runtime.cocoa_diagnostics import HostedPanelInput
 
 
 @pytest.fixture
@@ -102,8 +102,8 @@ def test_press_never_repeats_an_action_even_if_callback_times_out(panel, code):
 
 
 def test_not_ready_button_keeps_confirmation_pending_without_duplicate_input(panel):
-    from portfolio_app.cocoa_diagnostics import PanelNotReady
-    from portfolio_app.desktop_controls import CocoaPanelSequence
+    from portfolio_app.runtime.cocoa_diagnostics import PanelNotReady
+    from portfolio_app.runtime.desktop_controls import CocoaPanelSequence
     client, app, attributes, refs, presses = panel
     sequence = CocoaPanelSequence()
     sequence.advance(panel_ready=True, location_ready=False, selected=False)

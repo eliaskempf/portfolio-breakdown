@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 
-from portfolio_app.charts import correlation_chart
+from portfolio_app.interface.shared.charts import correlation_chart
 
 
 def test_compact_correlations_keep_full_hover_names_and_undefined_cash():

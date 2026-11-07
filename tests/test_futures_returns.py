@@ -5,9 +5,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.futures_returns import RETURN_FILE, estimate_index_return, load_return_estimate, refresh_return_history
-from portfolio_app.holdings import DataError
-from portfolio_app.risk_data import AdjustedHistory
+from portfolio_app.studies.futures_returns import RETURN_FILE, estimate_index_return, load_return_estimate, refresh_return_history
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.analytics.risk_data import AdjustedHistory
 
 
 def invented_returns(as_of='2025-01-02'):

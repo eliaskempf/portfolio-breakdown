@@ -9,7 +9,7 @@ from urllib.request import urlopen
 
 import pytest
 
-from portfolio_app.positions import read_snapshot
+from portfolio_app.portfolio.positions import read_snapshot
 from browser_support import StreamlitReruns, settle
 
 playwright = pytest.importorskip('playwright.sync_api')
@@ -21,7 +21,7 @@ def import_page(tmp_path, request):
     delayed_navigation = getattr(request, 'param', None) == 'delayed_navigation'
     gate = '''
 import time
-import portfolio_app.presentation as presentation
+import portfolio_app.interface.shared.presentation as presentation
 if not hasattr(presentation, '_synthetic_empty_overview'):
     presentation._synthetic_empty_overview = presentation.empty_overview
     def gated_overview():
@@ -35,8 +35,8 @@ if not hasattr(presentation, '_synthetic_empty_overview'):
     presentation.empty_overview = gated_overview
 ''' if delayed_navigation else ''
     app.write_text('from pathlib import Path\n' + gate + '''
-from portfolio_app.ui import render_app
-from portfolio_app.prices import PriceService, UnavailableProvider
+from portfolio_app.interface.ui import render_app
+from portfolio_app.market.prices import PriceService, UnavailableProvider
 render_app(Path(__file__).parent / 'synthetic-portfolio', demo=True,
            price_service=PriceService(UnavailableProvider()))
 ''')

@@ -2,17 +2,17 @@
 from dataclasses import replace
 from datetime import timedelta
 
-from portfolio_app.monitoring import Evaluation
-from portfolio_app.monitoring_service import MonitoringService
-from portfolio_app.monitoring_store import save_rule, load_monitoring, record_evaluations
+from portfolio_app.monitoring.monitoring import Evaluation
+from portfolio_app.monitoring.monitoring_service import MonitoringService
+from portfolio_app.monitoring.monitoring_store import save_rule, load_monitoring, record_evaluations
 from test_monitoring import rule, history, NOW
 
 
 def test_factory_alias_shares_service_and_background_completion(tmp_path, monkeypatch):
     from threading import Event
-    from portfolio_app import monitoring_service
-    from portfolio_app.market_data import RequestCoordinator
-    from portfolio_app.monitoring import SeriesSpec
+    from portfolio_app.monitoring import monitoring_service
+    from portfolio_app.market.market_data import RequestCoordinator
+    from portfolio_app.monitoring.monitoring import SeriesSpec
 
     (tmp_path / 'parent').mkdir()
     directory = tmp_path / 'invented-demo'
@@ -71,9 +71,9 @@ def test_intraday_does_not_reconstruct_missed_signals(tmp_path):
 
 
 def test_account_service_logs_actual_inputs_only_without_backfill(tmp_path):
-    from portfolio_app.monitoring import Rule
+    from portfolio_app.monitoring.monitoring import Rule
     from test_account_margin import fixture, security_reserve, DAY
-    from portfolio_app.account_journal import Event, append_event
+    from portfolio_app.ledger.account_journal import Event, append_event
     journal,held,valued=fixture()
     journal=security_reserve(journal,held,'1')
     journal=append_event(journal,Event('debt',DAY,'debt_open',account_id='broker',currency='EUR',amount=700,reference='invented'))
@@ -91,10 +91,10 @@ def test_account_service_logs_actual_inputs_only_without_backfill(tmp_path):
 
 def account_workspace(directory, *, manual=True):
     import json
-    from portfolio_app.account_journal import Account, Journal, Event, append_events, save_journal
-    from portfolio_app.account_margin import bind_holding
-    from portfolio_app.positions import read_snapshot
-    from portfolio_app.monitoring import Rule
+    from portfolio_app.ledger.account_journal import Account, Journal, Event, append_events, save_journal
+    from portfolio_app.derivatives.account_margin import bind_holding
+    from portfolio_app.portfolio.positions import read_snapshot
+    from portfolio_app.monitoring.monitoring import Rule
     directory.joinpath('holdings.csv').write_text(
         'id,name,ticker,shares,instrument_type,position_key,manual_price,manual_price_currency,manual_price_date,quantity_unit\n'
         + ('synthetic,Invented security,,10,equity,security,100,EUR,2026-10-12,shares\n' if manual else

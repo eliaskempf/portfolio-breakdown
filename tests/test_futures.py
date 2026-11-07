@@ -6,11 +6,11 @@ import sys
 import pandas as pd
 import pytest
 
-from portfolio_app.app import main
-from portfolio_app.demo import create_demo_data
-from portfolio_app.futures import FuturePosition, futures_scenarios, summarize_future
-from portfolio_app.futures_workspace import SANDBOX_FILE, fork_futures_workspace, load_sandbox, save_sandbox
-from portfolio_app.holdings import DataError
+from portfolio_app.runtime.app import main
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.studies.futures import FuturePosition, futures_scenarios, summarize_future
+from portfolio_app.studies.futures_workspace import SANDBOX_FILE, fork_futures_workspace, load_sandbox, save_sandbox
+from portfolio_app.portfolio.holdings import DataError
 
 
 def invented_holdings():
@@ -173,7 +173,7 @@ def test_cli_forks_then_launches_destination(tmp_path, monkeypatch):
         assert '--server.port=8599' in command
         return 0
     monkeypatch.setattr(sys, 'argv', ['portfolio-app', '--data-dir', str(source), '--fork-futures', str(destination), '--server.port=8599'])
-    monkeypatch.setattr('portfolio_app.app.run_server', run)
+    monkeypatch.setattr('portfolio_app.runtime.app.run_server', run)
     with pytest.raises(SystemExit) as result:
         main()
     assert result.value.code == 0

@@ -4,13 +4,16 @@ from importlib.metadata import version
 import sys
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 from portfolio_app.settings import BRANDING_ASSETS
+from portfolio_app.privacy import PRIVATE_PARTS
 
 if sys.platform not in {'linux', 'darwin'}:
     raise RuntimeError('Build on the target Linux/macOS host.')
 root = Path(SPECPATH).parent
 assets = root / 'src/portfolio_app/assets'
 datas = collect_data_files('streamlit') + collect_data_files('webview')
-datas += [(str(p), 'portfolio_app') for p in (root / 'src/portfolio_app').glob('*.py')]
+datas += [(str(p), str(Path('portfolio_app') / p.parent.relative_to(root / 'src/portfolio_app')))
+          for p in sorted((root / 'src/portfolio_app').rglob('*.py'))
+          if not set(p.relative_to(root / 'src/portfolio_app').parts) & (PRIVATE_PARTS | {'__pycache__'})]
 datas += [(str(assets / n), 'portfolio_app/assets') for n in BRANDING_ASSETS]
 datas += [(str(root / 'src/portfolio_app/intro_frontend/index.html'), 'portfolio_app/intro_frontend')]
 datas += copy_metadata('portfolio-breakdown', recursive=True) + copy_metadata('pywebview', recursive=True)

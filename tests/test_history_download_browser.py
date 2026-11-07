@@ -9,7 +9,7 @@ from urllib.request import urlopen
 
 import pytest
 
-from portfolio_app.account_journal import save_journal, load_journal
+from portfolio_app.ledger.account_journal import save_journal, load_journal
 from test_history_download import setup
 from browser_support import settle
 
@@ -27,10 +27,10 @@ from pathlib import Path
 import streamlit as st
 from datetime import date, timedelta
 from decimal import Decimal
-from portfolio_app.account_journal import load_journal
-from portfolio_app.history_observations import HistoryScope, Observation
-from portfolio_app.history_ui import render_history_results
-import portfolio_app.personal_market as market
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.performance.history_observations import HistoryScope, Observation
+from portfolio_app.interface.views.history.history_ui import render_history_results
+import portfolio_app.performance.personal_market as market
 root = Path({str(tmp_path)!r})
 def prices(ticker, identity, start, end):
     import time
@@ -42,8 +42,8 @@ def prices(ticker, identity, start, end):
 market.fetch_security_prices = prices
 market.fetch_fx = lambda source, target, start, end: (Observation('fx', 'fx', source+'/'+target, start, Decimal(1), source, target=target, source='Invented FX'),)
 if {mode!r} == 'position':
-    from portfolio_app.position_ui import request_position, render_position_dialog
-    from portfolio_app.positions import read_snapshot
+    from portfolio_app.interface.views.positions.position_ui import request_position, render_position_dialog
+    from portfolio_app.portfolio.positions import read_snapshot
     st.button('Open position', on_click=request_position, args=('position-0',))
     render_position_dialog(root/'holdings.csv', read_snapshot(root/'holdings.csv'), {{ }}, demo=False)
 else:

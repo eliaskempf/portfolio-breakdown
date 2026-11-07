@@ -3,11 +3,11 @@ from pathlib import Path
 import sys
 
 if sys.platform == 'win32' and sys.argv[1:2] == ['--internal-window-server']:
-    from portfolio_app.window import main
+    from portfolio_app.runtime.window import main
 elif sys.platform == 'win32' and Path(sys.executable).stem == 'Portfolio Breakdown':
-    from portfolio_app.gui import main
+    from portfolio_app.runtime.gui import main
 else:
-    from portfolio_app.app import main
+    from portfolio_app.runtime.app import main
     # The console companion retains headless/CLI diagnostics and browser mode.
     if '--browser' in sys.argv:
         sys.argv.remove('--browser')

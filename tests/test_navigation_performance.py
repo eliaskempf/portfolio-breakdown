@@ -5,19 +5,19 @@ from unittest.mock import patch
 from streamlit.testing.v1 import AppTest
 
 from synthetic_sample import create_sample_data as create_demo_data
-from portfolio_app.positions import read_snapshot
+from portfolio_app.portfolio.positions import read_snapshot
 from test_ui import activate, by_label
 
 
 def app_for(path):
     return AppTest.from_string(
-        f'from pathlib import Path\nfrom portfolio_app.ui import render_app\nrender_app(Path({str(path)!r}), demo=True)',
+        f'from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\nrender_app(Path({str(path)!r}), demo=True)',
         default_timeout=10).run()
 
 
 def test_overview_and_category_saves_skip_hidden_views(tmp_path):
     create_demo_data(tmp_path)
-    with patch('portfolio_app.ui.render_analysis') as exposure, patch('portfolio_app.ui.render_rebalancing') as rebalance:
+    with patch('portfolio_app.interface.ui.render_analysis') as exposure, patch('portfolio_app.interface.ui.render_rebalancing') as rebalance:
         app = app_for(tmp_path)
         assert not app.exception
         assert not exposure.called and not rebalance.called
@@ -53,7 +53,7 @@ def test_closed_dialog_skips_history_loader(tmp_path):
     app = app_for(tmp_path)
     for key, value in dict(position_edit_selected='position-0', position_edit_action='Details', position_edit_dialog=True).items():
         app.session_state[key] = value
-    with patch('portfolio_app.position_detail.render_position_detail') as detail:
+    with patch('portfolio_app.interface.views.positions.position_detail.render_position_detail') as detail:
         app.run()
         assert detail.call_count == 1
         detail.reset_mock()
@@ -66,7 +66,7 @@ def test_closed_dialog_skips_history_loader(tmp_path):
 
 def test_cached_inputs_reload_external_edits(tmp_path):
     create_demo_data(tmp_path)
-    with patch('portfolio_app.input_cache.read_snapshot', wraps=read_snapshot) as reads:
+    with patch('portfolio_app.interface.shared.input_cache.read_snapshot', wraps=read_snapshot) as reads:
         app = app_for(tmp_path)
         app.run()
         assert reads.call_count == 1

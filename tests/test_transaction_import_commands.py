@@ -3,11 +3,11 @@ from dataclasses import replace
 from pathlib import Path
 import pytest
 
-from portfolio_app.account_journal import load_journal
-from portfolio_app.holdings import DataError
-from portfolio_app.positions import read_snapshot
-from portfolio_app.transaction_import_commands import prepare_positions, save_transaction_import
-from portfolio_app.security_history import replay_securities, effective_holdings
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ledger.transaction_import_commands import prepare_positions, save_transaction_import
+from portfolio_app.ledger.security_history import replay_securities, effective_holdings
 from test_csv_transaction_imports import scenario, MAPPING
 
 
@@ -57,7 +57,7 @@ def test_failed_publish_preserves_balances_and_stale_revision(tmp_path,monkeypat
 
 
 def test_backup_restore_v3(tmp_path):
-    from portfolio_app.backup import create_backup,inspect_backup,commit_restore
+    from portfolio_app.workspace.backup import create_backup,inspect_backup,commit_restore
     source=tmp_path/'source';source.mkdir()
     snapshot=setup(source);save(source,snapshot)
     draft=inspect_backup(create_backup(source))
@@ -68,7 +68,7 @@ def test_backup_restore_v3(tmp_path):
 
 
 def test_changed_valuation_evidence_requires_review(tmp_path):
-    from portfolio_app.history_observations import save_observations,ObservationStore,Observation
+    from portfolio_app.performance.history_observations import save_observations,ObservationStore,Observation
     snapshot=setup(tmp_path)
     save_observations(tmp_path,ObservationStore((Observation('fx','fx','USD/EUR','2024-04-01',1,'USD',target='EUR'),)),None)
     with pytest.raises(DataError,match='Valuation evidence'):
@@ -77,8 +77,8 @@ def test_changed_valuation_evidence_requires_review(tmp_path):
 
 
 def test_manual_followup_preserves_imported_movements(tmp_path):
-    from portfolio_app.history_commands import save_history
-    from portfolio_app.security_history import append_evidence,SecurityEvent
+    from portfolio_app.ledger.history_commands import save_history
+    from portfolio_app.ledger.security_history import append_evidence,SecurityEvent
     from decimal import Decimal
     snapshot=setup(tmp_path);save(tmp_path,snapshot)
     journal,revision=load_journal(tmp_path)
@@ -92,8 +92,8 @@ def test_manual_followup_preserves_imported_movements(tmp_path):
 
 
 def test_combined_application_records_reconciliation_audit(tmp_path):
-    from portfolio_app.csv_transaction_imports import prepare_import
-    from portfolio_app.security_history import security_history_fingerprint
+    from portfolio_app.ingestion.csv_transaction_imports import prepare_import
+    from portfolio_app.ledger.security_history import security_history_fingerprint
     snapshot = setup(tmp_path)
     rows = scenario()
     preview = prepare_import(load_journal(tmp_path)[0], snapshot.holdings, rows, MAPPING,
@@ -116,19 +116,19 @@ def test_application_needs_no_completeness_metadata(tmp_path):
 
 
 def test_imported_economic_event_removal_includes_every_leg(tmp_path):
-    from portfolio_app.history_commands import remove_transactions
+    from portfolio_app.ledger.history_commands import remove_transactions
     snapshot = setup(tmp_path)
     result = save(tmp_path, snapshot)
     book = next(b for b in result.journal.securities if b.position_id == 'vault')
     swap = next(e for e in book.records if e.kind == 'swap')
-    from portfolio_app.history_commands import changed_positions
+    from portfolio_app.ledger.history_commands import changed_positions
     candidate = remove_transactions(book, [swap.id])
     assert changed_positions(result.journal, (candidate,)) == {'vault', 'orb'}
 
 
 def test_listing_connection_is_staged_and_applies_with_history(tmp_path):
-    from portfolio_app.instruments import Instrument
-    from portfolio_app.transaction_import_commands import positions_content
+    from portfolio_app.market.instruments import Instrument
+    from portfolio_app.ledger.transaction_import_commands import positions_content
     snapshot = setup(tmp_path)
     before = (tmp_path/'holdings.csv').read_bytes()
     listing = Instrument('AUR-EUR', 'Invented Aurora', kind='CRYPTOCURRENCY', currency='EUR')
@@ -143,7 +143,7 @@ def test_listing_connection_is_staged_and_applies_with_history(tmp_path):
 
 
 def test_failed_history_publication_rolls_back_staged_listing(tmp_path, monkeypatch):
-    from portfolio_app.instruments import Instrument
+    from portfolio_app.market.instruments import Instrument
     snapshot = setup(tmp_path)
     before = (tmp_path/'holdings.csv').read_bytes()
     original = Path.replace
@@ -159,7 +159,7 @@ def test_failed_history_publication_rolls_back_staged_listing(tmp_path, monkeypa
 
 
 def test_reviewed_import_applies_all_legs_without_separate_confirmations(tmp_path):
-    from portfolio_app.csv_transaction_imports import prepare_import
+    from portfolio_app.ingestion.csv_transaction_imports import prepare_import
     snapshot = setup(tmp_path)
     rows = scenario()
     preview = prepare_import(load_journal(tmp_path)[0], snapshot.holdings, rows, MAPPING,
@@ -170,8 +170,8 @@ def test_reviewed_import_applies_all_legs_without_separate_confirmations(tmp_pat
 
 
 def categorized_import(directory):
-    from portfolio_app.storage import revision
-    from portfolio_app.transaction_csv import read_csv
+    from portfolio_app.workspace.storage import revision
+    from portfolio_app.ingestion.transaction_csv import read_csv
     (directory/'allocation.yaml').write_text('version: 2\nbuckets:\n'
         '  - {id: root, name: Invented root, target: 1}\n'
         '  - {id: leaf, name: Invented category, parent: root, target: 1}\n')
@@ -202,7 +202,7 @@ def test_new_closed_import_retains_category_and_existing_targets(tmp_path):
 
 @pytest.mark.parametrize('change', ['revision', 'removed', 'parent'])
 def test_changed_or_nonleaf_category_blocks_atomic_application(tmp_path, change):
-    from portfolio_app.storage import revision
+    from portfolio_app.workspace.storage import revision
     rows, options = categorized_import(tmp_path)
     before = (tmp_path/'holdings.csv').read_bytes()
     if change == 'revision':

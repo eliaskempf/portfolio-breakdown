@@ -5,7 +5,7 @@ import math
 import pytest
 from scipy.optimize import brentq
 
-from portfolio_app.personal_performance import ExternalFlow,xirr
+from portfolio_app.performance.personal_performance import ExternalFlow,xirr
 
 
 def solve(amounts, days=None):
@@ -72,7 +72,7 @@ def test_unique_positive_root_with_complex_pair_has_known_independent_answer(pos
 
 @pytest.mark.parametrize('length', [91, 201, 501])
 def test_long_schedule_certifies_known_unique_root_without_term_count_limit(monkeypatch, length):
-    import portfolio_app.history_irr as module
+    import portfolio_app.performance.history_irr as module
     # (x-p)*(x²-0.6x+4.09)*(1+x+...+x^(length-1)). The latter factors
     # have no positive real roots, so the only admissible root is p.
     p = D('1.2')
@@ -93,7 +93,7 @@ def test_long_schedule_certifies_known_unique_root_without_term_count_limit(monk
 
 def test_long_irregular_savings_and_withdrawals_verify_full_schedule(monkeypatch):
     from decimal import localcontext
-    import portfolio_app.history_irr as module
+    import portfolio_app.performance.history_irr as module
     days = [0, *(13*i+i%3 for i in range(1, 401)), 5300]
     amounts = [D(-1000), *(D(15) if i%3 == 0 else D(-30) for i in range(1, 401))]
     with localcontext() as context:
@@ -125,7 +125,7 @@ def test_long_multiple_root_schedule_never_passes_investment_certificate():
 
 
 def test_calculation_limit_has_its_own_diagnostic(monkeypatch):
-    import portfolio_app.history_irr as module
+    import portfolio_app.performance.history_irr as module
     original = module._Budget
     monkeypatch.setattr(module, '_Budget', lambda: original(remaining=0))
     value, reason = solve([-100, 40, -20, 100])
@@ -135,7 +135,7 @@ def test_calculation_limit_has_its_own_diagnostic(monkeypatch):
 
 def test_prefix_interval_bounds_enclose_direct_high_precision_evaluation():
     from decimal import localcontext
-    from portfolio_app.history_irr import _prefix_bounds, _Budget
+    from portfolio_app.performance.history_irr import _prefix_bounds, _Budget
     terms = ((0, D('-1e30')), (7, D('3e30')), (400, D('-2e30')))
     low, high = D('-.0001'), D('.0002')
     with localcontext() as context:

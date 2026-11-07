@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.rebalancing import (
+from portfolio_app.portfolio.rebalancing import (
     RebalanceError, allocate_new_money, cash_tradeoffs, ignore_empty_positions,
     minimum_new_money, minimum_trades, prepare_rebalance,
 )
@@ -208,7 +208,7 @@ def test_invalid_trade_limit(value):
 
 
 def test_unproven_optimizer_result_is_never_presented_as_minimum(monkeypatch):
-    monkeypatch.setattr("portfolio_app.rebalancing.milp", lambda *a, **kw: SimpleNamespace(status=1, x=None))
+    monkeypatch.setattr("portfolio_app.portfolio.rebalancing.milp", lambda *a, **kw: SimpleNamespace(status=1, x=None))
     with pytest.raises(RebalanceError, match="did not prove"):
         minimum_trades(portfolio([60, 40], [.5, .5]))
 
@@ -276,7 +276,7 @@ def test_empty_selection_requires_no_cash_and_invalid_ids_are_rejected():
 
 
 def test_spread_balances_remaining_gaps_using_existing_holdings():
-    from portfolio_app.rebalancing import spread_new_money
+    from portfolio_app.portfolio.rebalancing import spread_new_money
     p = portfolio([80., 10., 10., 0.], [.4, .3, .2, .1], tolerance=0)
     plan = spread_new_money(p, 100, eligible_position_ids={"row-0", "row-1", "row-2"})
     assert plan.trade_count == 3
@@ -286,7 +286,7 @@ def test_spread_balances_remaining_gaps_using_existing_holdings():
 
 
 def test_spread_target_weights_apply_to_contribution_not_existing_holdings():
-    from portfolio_app.rebalancing import spread_new_money
+    from portfolio_app.portfolio.rebalancing import spread_new_money
     p = portfolio([80., 10., 10.], [.4, .3, .3])
     plan = spread_new_money(p, 100, eligible_position_ids={"row-0", "row-2"}, method="target")
     assert plan.table["Trade"].tolist() == pytest.approx([57.14, 0, 42.86])
@@ -294,7 +294,7 @@ def test_spread_target_weights_apply_to_contribution_not_existing_holdings():
 
 
 def test_spread_no_new_positions_and_zero_targets():
-    from portfolio_app.rebalancing import spread_new_money
+    from portfolio_app.portfolio.rebalancing import spread_new_money
     p = portfolio([80., 20., 0.], [.6, .4, 0])
     ids = {"row-0", "row-1", "row-2"}
     plan = spread_new_money(p, 100, eligible_position_ids=ids, no_new_positions=True)
@@ -307,7 +307,7 @@ def test_spread_no_new_positions_and_zero_targets():
 
 
 def test_spread_rejects_unusable_budgets_and_selections():
-    from portfolio_app.rebalancing import spread_new_money
+    from portfolio_app.portfolio.rebalancing import spread_new_money
     p = portfolio([80., 20.], [.6, .4])
     for amount in (0, -1, float("nan"), float("inf"), .001, 1e-10):
         with pytest.raises(RebalanceError):
@@ -317,7 +317,7 @@ def test_spread_rejects_unusable_budgets_and_selections():
 
 
 def test_spread_small_contribution_into_large_portfolio_preserves_real_cents():
-    from portfolio_app.rebalancing import spread_new_money
+    from portfolio_app.portfolio.rebalancing import spread_new_money
     p = portfolio([10_000_000., 10_000_000.], [.5, .5])
     plan = spread_new_money(p, .02, eligible_position_ids={"row-0", "row-1"})
     assert plan.trade_count == 2
@@ -333,7 +333,7 @@ def test_spread_small_contribution_into_large_portfolio_preserves_real_cents():
 ])
 @pytest.mark.parametrize("selected", [{"row-0", "row-1", "row-2"}, {"row-0", "row-2"}])
 def test_target_gap_split_matches_independent_cent_enumeration(values, targets, cash, selected):
-    from portfolio_app.rebalancing import spread_new_money
+    from portfolio_app.portfolio.rebalancing import spread_new_money
     p = portfolio(values, targets, tolerance=0)
     plan = spread_new_money(p, cash, eligible_position_ids=selected)
     final_total = p.total + cash
@@ -351,7 +351,7 @@ def test_target_gap_split_matches_independent_cent_enumeration(values, targets, 
 
 
 def test_balancing_splits_cash_where_absolute_metric_prefers_one_trade():
-    from portfolio_app.rebalancing import spread_new_money
+    from portfolio_app.portfolio.rebalancing import spread_new_money
     p = portfolio([80., 10., 10.], [.4, .3, .3], tolerance=0)
     selected = {"row-0", "row-1", "row-2"}
     original = allocate_new_money(p, 20, max_trades=3, eligible_position_ids=selected)
@@ -366,7 +366,7 @@ def test_balancing_splits_cash_where_absolute_metric_prefers_one_trade():
 
 
 def test_balancing_tolerance_only_changes_reported_status_and_no_new_is_enforced():
-    from portfolio_app.rebalancing import spread_new_money
+    from portfolio_app.portfolio.rebalancing import spread_new_money
     values, targets = [80., 20., 0.], [.4, .4, .2]
     selected = {"row-0", "row-1", "row-2"}
     strict = spread_new_money(portfolio(values, targets, tolerance=0), 100,
@@ -386,7 +386,7 @@ def test_balancing_tolerance_only_changes_reported_status_and_no_new_is_enforced
 @pytest.mark.parametrize("limit", [1, 2, 3])
 @pytest.mark.parametrize("minimum", [1, 2, 3])
 def test_minimum_buy_and_trade_caps_match_exhaustive_integer_optimum(buy_all, limit, minimum):
-    from portfolio_app.rebalancing import balanced_cash_tradeoffs
+    from portfolio_app.portfolio.rebalancing import balanced_cash_tradeoffs
     # Includes a target-zero row and a large shortfall; all data is invented.
     p = portfolio([.08, .01, .03, .01], [.2, .5, 0, .3], tolerance=0)
     if buy_all and (limit < 3 or minimum * 3 > 8):
@@ -416,7 +416,7 @@ def test_minimum_buy_and_trade_caps_match_exhaustive_integer_optimum(buy_all, li
 
 
 def test_buy_every_selected_even_overweight_and_exact_minimum_budget():
-    from portfolio_app.rebalancing import balanced_cash_tradeoffs
+    from portfolio_app.portfolio.rebalancing import balanced_cash_tradeoffs
     p = portfolio([80., 10., 10.], [.4, .3, .3])
     ids = {"row-0", "row-1", "row-2"}
     plan = balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, minimum_purchase=25, buy_all=True)[0]
@@ -430,7 +430,7 @@ def test_buy_every_selected_even_overweight_and_exact_minimum_budget():
 
 
 def test_trade_comparison_uses_squared_gaps_even_when_band_error_is_equal():
-    from portfolio_app.rebalancing import balanced_cash_tradeoffs
+    from portfolio_app.portfolio.rebalancing import balanced_cash_tradeoffs
     p = portfolio([80., 10., 10.], [.4, .3, .3], tolerance=100)
     plans = balanced_cash_tradeoffs(p, 20, eligible_position_ids={"row-0", "row-1", "row-2"}, minimum_purchase=5)
     assert [plan.trade_count for plan in plans] == [1, 2]
@@ -440,7 +440,7 @@ def test_trade_comparison_uses_squared_gaps_even_when_band_error_is_equal():
 
 
 def test_minimum_buy_input_restrictions_and_no_new_conflict():
-    from portfolio_app.rebalancing import balanced_cash_tradeoffs
+    from portfolio_app.portfolio.rebalancing import balanced_cash_tradeoffs
     p = portfolio([80., 20., 0.], [.4, .4, .2])
     ids = {"row-0", "row-1", "row-2"}
     with pytest.raises(RebalanceError, match="conflicts with No new positions"):

@@ -4,9 +4,9 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from portfolio_app import currency_display
-from portfolio_app.charts import bar_chart, chart_config, hierarchy_chart, pie_chart
-from portfolio_app.money import euros, format_money
+from portfolio_app.interface.shared import currency_display
+from portfolio_app.interface.shared.charts import bar_chart, chart_config, hierarchy_chart, pie_chart
+from portfolio_app.interface.shared.money import euros, format_money
 
 
 @pytest.mark.parametrize('currency,symbol', [('EUR', '€'), ('USD', '$'), ('GBP', '£')])

@@ -16,7 +16,7 @@ def activate(app, tab, subtab=None):
 def launch(data_dir, tab="Exposure", subtab=None):
     app = AppTest.from_string(
         "from pathlib import Path\n"
-        "from portfolio_app.ui import render_app\n"
+        "from portfolio_app.interface.ui import render_app\n"
         f"render_app(Path({str(data_dir)!r}), demo=True)\n",
         default_timeout=15,
     ).run()
@@ -130,7 +130,7 @@ def test_optional_smh_grouping_stock_choice_lookthrough_and_filters(grouped_data
 
 
 def test_smh_group_uses_fund_labels_and_shows_original_members(grouped_data):
-    from portfolio_app.label_comparison import Label
+    from portfolio_app.exposure.label_comparison import Label
 
     app = launch(grouped_data)
     theme_view(app, 'selected_labels')
@@ -262,8 +262,8 @@ def test_empty_holdings(tmp_path):
 def test_provider_failures_do_not_crash_app(sample_data_dir):
     app = AppTest.from_string(
         "from pathlib import Path\n"
-        "from portfolio_app.ui import render_app\n"
-        "from portfolio_app.prices import PriceService\n"
+        "from portfolio_app.interface.ui import render_app\n"
+        "from portfolio_app.market.prices import PriceService\n"
         "class OfflineProvider:\n"
         "    def price(self, ticker):\n"
         "        raise ConnectionError('test provider offline')\n"
@@ -291,9 +291,9 @@ def test_zero_positions_and_missing_classifications(tmp_path, sample_data_dir):
 
 
 def test_actual_streamlit_entrypoint(monkeypatch, sample_data_dir):
-    import portfolio_app.ui
+    import portfolio_app.interface.ui
 
-    script = Path(portfolio_app.ui.__file__)
+    script = Path(portfolio_app.interface.ui.__file__)
     monkeypatch.setattr(sys, "argv", [str(script), "--data-dir", str(sample_data_dir), "--demo", "--skip-intro"])
     app = AppTest.from_file(script, default_timeout=15).run()
     assert not app.exception
@@ -322,7 +322,7 @@ def test_target_column_is_optional_and_not_a_filter(tmp_path, sample_data_dir):
 
 def test_etf_breakdown_and_look_through(tmp_path, sample_data_dir):
     import json
-    from portfolio_app.etf import load_funds
+    from portfolio_app.funds.etf import load_funds
 
     shutil.copytree(sample_data_dir / "etfs", tmp_path / "etfs")
     constituents = load_funds(tmp_path / "etfs")[0].constituents
@@ -375,7 +375,7 @@ def test_plain_smh_with_ucits_isin_is_actionable(tmp_path, sample_data_dir):
 
 def test_show_tickers_preserves_merged_hierarchy_leaf_across_exchanges(tmp_path, sample_data_dir):
     import json
-    from portfolio_app.etf import load_funds
+    from portfolio_app.funds.etf import load_funds
 
     shutil.copytree(sample_data_dir / "etfs", tmp_path / "etfs")
     weight = load_funds(tmp_path / "etfs")[0].constituents.set_index("ticker").loc["NVDA", "weight"]
@@ -403,7 +403,7 @@ def test_show_tickers_preserves_merged_hierarchy_leaf_across_exchanges(tmp_path,
 
 
 def test_stale_snapshot_warning_and_update_failure(monkeypatch, sample_data_dir):
-    import portfolio_app.etf_ui as etf_ui
+    import portfolio_app.interface.views.funds.etf_ui as etf_ui
 
     monkeypatch.setattr(etf_ui, "snapshot_age_days", lambda fund: 10)
 
@@ -413,8 +413,8 @@ def test_stale_snapshot_warning_and_update_failure(monkeypatch, sample_data_dir)
     monkeypatch.setattr(etf_ui, "refresh_snapshot", failed_update)
     app = AppTest.from_string(
         "from pathlib import Path\n"
-        "from portfolio_app.etf import load_funds\n"
-        "from portfolio_app.etf_ui import render_snapshot_controls\n"
+        "from portfolio_app.funds.etf import load_funds\n"
+        "from portfolio_app.interface.views.funds.etf_ui import render_snapshot_controls\n"
         f"render_snapshot_controls(load_funds(Path({str(sample_data_dir / 'etfs')!r})))\n"
     ).run()
     assert not app.exception
@@ -425,13 +425,13 @@ def test_stale_snapshot_warning_and_update_failure(monkeypatch, sample_data_dir)
 
 
 def test_snapshot_update_button_success(monkeypatch, sample_data_dir):
-    import portfolio_app.etf_ui as etf_ui
+    import portfolio_app.interface.views.funds.etf_ui as etf_ui
 
     monkeypatch.setattr(etf_ui, "refresh_snapshot", lambda fund: fund)
     app = AppTest.from_string(
         "from pathlib import Path\n"
-        "from portfolio_app.etf import load_funds\n"
-        "from portfolio_app.etf_ui import render_snapshot_controls\n"
+        "from portfolio_app.funds.etf import load_funds\n"
+        "from portfolio_app.interface.views.funds.etf_ui import render_snapshot_controls\n"
         f"render_snapshot_controls(load_funds(Path({str(sample_data_dir / 'etfs')!r})))\n"
     ).run()
     by_label(app.button, "Update from VanEck").click().run()
@@ -440,7 +440,7 @@ def test_snapshot_update_button_success(monkeypatch, sample_data_dir):
 
 
 def test_create_position_from_empty_app_and_reopen(tmp_path, sample_data_dir):
-    from portfolio_app.holdings import load_holdings
+    from portfolio_app.portfolio.holdings import load_holdings
 
     # No holdings or classifications file is needed to create the first position.
     app = launch(tmp_path)
@@ -468,7 +468,7 @@ def test_create_position_from_empty_app_and_reopen(tmp_path, sample_data_dir):
 
 
 def test_edit_position_updates_total_shares_buy_in_and_currency(tmp_path, sample_data_dir):
-    from portfolio_app.holdings import load_holdings
+    from portfolio_app.portfolio.holdings import load_holdings
 
     shutil.copy(sample_data_dir / "demo_prices.json", tmp_path)
     (tmp_path / "holdings.csv").write_text(
@@ -547,7 +547,7 @@ def test_new_position_is_visible_after_filters_were_cleared(tmp_path, sample_dat
 
 
 def test_new_buy_in_requires_currency_but_legacy_amount_is_not_guessed(tmp_path, sample_data_dir):
-    from portfolio_app.holdings import load_holdings
+    from portfolio_app.portfolio.holdings import load_holdings
 
     shutil.copy(sample_data_dir / "demo_prices.json", tmp_path)
     path = tmp_path / "holdings.csv"

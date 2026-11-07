@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.analytics_service import load_risk
-from portfolio_app.risk import risk_analytics
+from portfolio_app.analytics.analytics_service import load_risk
+from portfolio_app.analytics.risk import risk_analytics
 from test_actual_risk import SyntheticService, actual, future, qualified, row
 from test_risk import TODAY, held, history, market
 
@@ -91,7 +91,7 @@ def test_missing_future_history_keeps_funded_subset_capital(tmp_path):
 
 
 def test_sandbox_funded_future_can_supply_its_own_subset_capital(tmp_path):
-    from portfolio_app.futures import FuturePosition
+    from portfolio_app.studies.futures import FuturePosition
     positions = held([], [])
     positions['reporting_currency'] = pd.Series(dtype=str)
     position = FuturePosition(entry_price=1., mark_price=1., reference_capital_eur=20.)

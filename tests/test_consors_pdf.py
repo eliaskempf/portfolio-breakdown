@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 
 pdf = pytest.importorskip('pymupdf')
-from portfolio_app.consors_pdf import parse_consors_pdf, parse_consors_batch
+from portfolio_app.ingestion.consors_pdf import parse_consors_pdf, parse_consors_batch
 
 
 def statement(*, sale=False, fees=True, taxes=False, quantity='2,00000', price='50,00',

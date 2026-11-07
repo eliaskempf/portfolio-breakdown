@@ -9,8 +9,8 @@ import json
 
 import pytest
 
-from portfolio_app.holdings import DataError
-from portfolio_app import launcher
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.runtime import launcher
 
 
 def test_focus_requires_authentication_and_post(tmp_path):
@@ -34,7 +34,7 @@ def test_old_browser_instance_is_reopened_not_stopped(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(launcher, 'request_instance', lambda directory, action='status':
                         calls.append(action) or dict(demo=False, url='http://127.0.0.1:1234'))
-    monkeypatch.setattr('portfolio_app.desktop.open_browser', lambda url: calls.append(url))
+    monkeypatch.setattr('portfolio_app.runtime.desktop.open_browser', lambda url: calls.append(url))
     assert launcher.open_existing(tmp_path, demo=False, browser=True, focus=True)
     assert calls == ['status', 'http://127.0.0.1:1234']
 

@@ -1,10 +1,10 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.aggregation import aggregate_dimension
-from portfolio_app.charts import hierarchy_table
-from portfolio_app.display_names import display_name, compact_fund_name, instrument_name, named_holdings
-from portfolio_app.instruments import Instrument, result_groups
+from portfolio_app.exposure.aggregation import aggregate_dimension
+from portfolio_app.interface.shared.charts import hierarchy_table
+from portfolio_app.interface.shared.display_names import display_name, compact_fund_name, instrument_name, named_holdings
+from portfolio_app.market.instruments import Instrument, result_groups
 
 
 @pytest.mark.parametrize("raw,expected", [

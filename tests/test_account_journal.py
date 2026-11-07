@@ -5,13 +5,13 @@ import json
 
 import pytest
 
-from portfolio_app.account_journal import (
+from portfolio_app.ledger.account_journal import (
     Account, CashLink, Event, HoldingLink, Journal, MarginRequirement, PositionSpec,
     add_account, add_contract, add_position, append_event, append_events,
     effective_events, load_journal, replay, roll, save_journal,
 )
-from portfolio_app.derivative_types import ContractSpec, PriceObservation, decimal, money
-from portfolio_app.holdings import DataError
+from portfolio_app.derivatives.derivative_types import ContractSpec, PriceObservation, decimal, money
+from portfolio_app.portfolio.holdings import DataError
 
 DAY = '2026-01-05'
 
@@ -318,7 +318,7 @@ def test_convenience_additions_preserve_identity():
 
 
 def test_parsed_journal_cache_tracks_exact_content_and_keeps_callers_isolated(tmp_path, monkeypatch):
-    import portfolio_app.account_journal as module
+    import portfolio_app.ledger.account_journal as module
     original = module.journal_from_dict
     calls = []
     def counted(raw):
@@ -349,8 +349,8 @@ def test_parsed_journal_cache_tracks_exact_content_and_keeps_callers_isolated(tm
 
 
 def test_journal_cache_does_not_share_mutable_nested_costs(tmp_path):
-    from portfolio_app.cost_basis import component
-    from portfolio_app.security_history import SecurityBook, SecurityEvent
+    from portfolio_app.performance.cost_basis import component
+    from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent
     opening = SecurityEvent('open', 'opening', '2024-01-01', quantity=D(2),
         costs=(component(2, 20, 'EUR'),))
     j = Journal(version=2, securities=(SecurityBook('holding', 'invented', ('2', '10', 'EUR'),

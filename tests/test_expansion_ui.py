@@ -6,8 +6,8 @@ from test_ui import launch as launch_app, by_label, activate
 
 def launch(path):
     return launch_app(path, tab="Rebalance", subtab="Targets")
-from portfolio_app.allocation import Allocation, Bucket, migrate, migration_preview
-from portfolio_app.positions import read_snapshot
+from portfolio_app.portfolio.allocation import Allocation, Bucket, migrate, migration_preview
+from portfolio_app.portfolio.positions import read_snapshot
 
 
 def workspace(tmp_path, sample_data_dir):

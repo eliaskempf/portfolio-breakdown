@@ -4,12 +4,12 @@ from decimal import Decimal as D
 
 import pytest
 
-from portfolio_app.account_journal import Journal, load_journal
-from portfolio_app.csv_transaction_imports import prepare_import
-from portfolio_app.history_observations import CoverageReview, HistoryScope, Observation, ObservationStore
-from portfolio_app.personal_performance import calculate_history, external_flows
-from portfolio_app.security_history import history_fingerprint
-from portfolio_app.transaction_csv import normalize
+from portfolio_app.ledger.account_journal import Journal, load_journal
+from portfolio_app.ingestion.csv_transaction_imports import prepare_import
+from portfolio_app.performance.history_observations import CoverageReview, HistoryScope, Observation, ObservationStore
+from portfolio_app.performance.personal_performance import calculate_history, external_flows
+from portfolio_app.ledger.security_history import history_fingerprint
+from portfolio_app.ingestion.transaction_csv import normalize
 from test_csv_transaction_imports import holdings, MAPPING
 
 
@@ -42,12 +42,12 @@ def test_csv_reward_and_unit_expense_use_audited_daily_returns_through_liquidati
 def test_pdf_pending_review_and_csv_evidence_coexist_without_activating_each_other(tmp_path):
     from test_transaction_imports import setup
     from test_consors_pdf import statement
-    from portfolio_app.consors_pdf import parse_consors_pdf
-    from portfolio_app.transaction_imports import save_pdf_drafts
-    from portfolio_app.transaction_import_commands import save_transaction_import
-    from portfolio_app.positions import read_snapshot
-    from portfolio_app.history_commands import reconstruction_candidate, save_history
-    from portfolio_app.security_history import effective_holdings
+    from portfolio_app.ingestion.consors_pdf import parse_consors_pdf
+    from portfolio_app.ingestion.transaction_imports import save_pdf_drafts
+    from portfolio_app.ledger.transaction_import_commands import save_transaction_import
+    from portfolio_app.portfolio.positions import read_snapshot
+    from portfolio_app.ledger.history_commands import reconstruction_candidate, save_history
+    from portfolio_app.ledger.security_history import effective_holdings
     snapshot, journal, revision = setup(tmp_path)
     save_pdf_drafts(tmp_path, snapshot.holdings.iloc[0], journal, revision, snapshot,
                     [parse_consors_pdf(statement())], charges_known=True)
@@ -73,9 +73,9 @@ def test_pdf_pending_review_and_csv_evidence_coexist_without_activating_each_oth
 
 def test_unmapped_evidence_does_not_invalidate_unrelated_scoped_history():
     from test_daily_twr import example, trade, START, END
-    from portfolio_app.security_history import security_history_fingerprint
-    from portfolio_app.transaction_csv import ImportReceipt
-    from portfolio_app.personal_performance import coverage_reasons
+    from portfolio_app.ledger.security_history import security_history_fingerprint
+    from portfolio_app.ingestion.transaction_csv import ImportReceipt
+    from portfolio_app.performance.personal_performance import coverage_reasons
     journal, scope, store = example((trade('buy', 'buy', '2024-01-02', 100),), prices=((END, 110),))
     store = replace(store, reviews=(CoverageReview('scoped', scope, START, END,
                     security_history_fingerprint(journal, 'invented')),))
@@ -89,7 +89,7 @@ def test_unmapped_evidence_does_not_invalidate_unrelated_scoped_history():
 
 def test_invalid_pending_correction_keeps_original_scope_for_review():
     from test_csv_transaction_imports import activated, scenario
-    from portfolio_app.personal_performance import coverage_reasons
+    from portfolio_app.performance.personal_performance import coverage_reasons
     original = scenario()[0]
     invalid = normalize({**original.facts, 'timestamp_utc': ''})
     journal = prepare_import(activated().journal, holdings(), [invalid], {}, correction_ids=[invalid.identity]).journal
@@ -101,8 +101,8 @@ def test_saved_csv_enables_returns_without_inventing_market_inputs(tmp_path):
     from datetime import date
     from test_transaction_import_commands import setup
     from test_csv_transaction_imports import scenario
-    from portfolio_app.history_status import position_history_statuses
-    from portfolio_app.transaction_import_commands import save_transaction_import
+    from portfolio_app.performance.history_status import position_history_statuses
+    from portfolio_app.ledger.transaction_import_commands import save_transaction_import
 
     snapshot = setup(tmp_path)
     rows = scenario()[:1]  # Invented purchase: 10 units for 100 plus a fee of 2.

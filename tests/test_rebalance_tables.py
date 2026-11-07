@@ -2,8 +2,8 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.allocation import Allocation, Bucket, macro_table
-from portfolio_app.rebalance_tables import allocation_table, category_budgets, portfolio_impact, position_labels, suggested_trades
+from portfolio_app.portfolio.allocation import Allocation, Bucket, macro_table
+from portfolio_app.portfolio.rebalance_tables import allocation_table, category_budgets, portfolio_impact, position_labels, suggested_trades
 
 
 @pytest.fixture

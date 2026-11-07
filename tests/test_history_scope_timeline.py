@@ -4,11 +4,11 @@ from datetime import date
 
 import pytest
 
-from portfolio_app.account_journal import Account, Event, Journal
-from portfolio_app.gain_accounting import scope_dates
-from portfolio_app.history_observations import CoverageReview, HistoryScope, Observation, ObservationStore
-from portfolio_app.history_view import history_view
-from portfolio_app.security_history import Charge, SecurityBook, SecurityEvent, history_fingerprint
+from portfolio_app.ledger.account_journal import Account, Event, Journal
+from portfolio_app.performance.gain_accounting import scope_dates
+from portfolio_app.performance.history_observations import CoverageReview, HistoryScope, Observation, ObservationStore
+from portfolio_app.performance.history_view import history_view
+from portfolio_app.ledger.security_history import Charge, SecurityBook, SecurityEvent, history_fingerprint
 
 
 @pytest.mark.parametrize('scope_kind', ['account', 'security_fee'])
@@ -70,7 +70,7 @@ def test_receiving_position_includes_transfer_date_from_source_book():
 
 
 def test_separate_fee_negative_equity_withholds_direct_and_chart_returns():
-    from portfolio_app.personal_performance import calculate_history, known_negative_equity_dates, value_at
+    from portfolio_app.performance.personal_performance import calculate_history, known_negative_equity_dates, value_at
     events = (SecurityEvent('zero', 'opening', '2024-01-01'),
         SecurityEvent('buy', 'buy', '2024-01-02', quantity=1, price=10, currency='EUR', charges_known=True),
         SecurityEvent('sell', 'sell', '2024-01-03', quantity=1, price=10, currency='EUR', charges_known=True,
@@ -112,7 +112,7 @@ def test_selected_month_cannot_publish_a_return_before_a_later_missing_event():
 
 @pytest.mark.parametrize('movement', ['swap', 'asset_fee'])
 def test_csv_companion_position_dates_include_later_atomic_movements(movement):
-    from portfolio_app.security_history import AssetCharge
+    from portfolio_app.ledger.security_history import AssetCharge
     opening = SecurityEvent('source-open', 'opening', '2024-01-01', quantity=2, amount=20, currency='EUR')
     event = (SecurityEvent('swap', 'swap', '2024-01-03', quantity=1,
                           other_position_id='destination', received_quantity=1)

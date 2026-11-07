@@ -6,8 +6,8 @@ import os
 
 import pytest
 
-from portfolio_app.history_observations import Observation, ObservationStore, load_observations
-from portfolio_app.holdings import DataError
+from portfolio_app.performance.history_observations import Observation, ObservationStore, load_observations
+from portfolio_app.portfolio.holdings import DataError
 
 
 def content(amount=10):
@@ -16,7 +16,7 @@ def content(amount=10):
 
 
 def test_repeated_loads_parse_once_and_preserve_immutable_evidence(tmp_path, monkeypatch):
-    import portfolio_app.history_observations as module
+    import portfolio_app.performance.history_observations as module
     module._observations_from_bytes.cache_clear()
     path = tmp_path / module.FILE
     path.write_text(content())

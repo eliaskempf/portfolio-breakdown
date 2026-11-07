@@ -4,9 +4,9 @@ from dataclasses import replace
 
 import pytest
 
-from portfolio_app.account_journal import load_journal, replay, save_journal
-from portfolio_app.position_list import list_context
-from portfolio_app.positions import read_snapshot
+from portfolio_app.ledger.account_journal import load_journal, replay, save_journal
+from portfolio_app.interface.views.positions.position_list import list_context
+from portfolio_app.portfolio.positions import read_snapshot
 from test_accounts_ui import launch_actual
 from test_futures_investments import grouped
 from test_ui import activate, by_label
@@ -108,7 +108,7 @@ def test_dialog_record_transaction_is_scoped_and_refreshes_after_save(tmp_path):
 
 
 def test_dialog_reloads_changed_journal_before_edit(tmp_path):
-    from portfolio_app.account_journal import Event,append_events
+    from portfolio_app.ledger.account_journal import Event,append_events
     app,_=start(tmp_path)
     journal,revision=load_journal(tmp_path)
     journal=append_events(journal,[Event('external-tax','2026-01-03','tax',position_id='p',amount=25)])
@@ -119,7 +119,7 @@ def test_dialog_reloads_changed_journal_before_edit(tmp_path):
 
 
 def test_pending_cash_in_dialog_is_limited_to_this_investment(tmp_path):
-    from portfolio_app.account_journal import Event, PositionSpec, add_position, append_events
+    from portfolio_app.ledger.account_journal import Event, PositionSpec, add_position, append_events
     _,journal,contract=grouped(tmp_path)
     journal=add_position(journal,PositionSpec('other','a',contract.id))
     journal=append_events(journal,[
@@ -139,7 +139,7 @@ def test_pending_cash_in_dialog_is_limited_to_this_investment(tmp_path):
 
 
 def test_edit_button_and_settlement_history_in_normal_popup(tmp_path):
-    from portfolio_app.account_journal import Event, append_events
+    from portfolio_app.ledger.account_journal import Event, append_events
     _,journal,_=grouped(tmp_path)
     journal=append_events(journal,[Event('daily','2026-01-03','settlement',position_id='p',price=1010)])
     save_journal(tmp_path,journal,None)

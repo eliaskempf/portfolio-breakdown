@@ -5,15 +5,15 @@ from dataclasses import replace
 import pandas as pd
 import pytest
 
-from portfolio_app.aggregation import classify_exposures
-from portfolio_app.demo import create_demo_data, LIVE_EXAMPLES
-from portfolio_app.etf import load_funds, fund_classifications
-from portfolio_app.exposure_analysis import prepare_exposures
-from portfolio_app.holdings import load_holdings
-from portfolio_app.prices import PriceService, StaticProvider
-from portfolio_app.sector_classification import NO_SECTOR, sector_classifications
-from portfolio_app.taxonomy import load_classifications, paths_for, UNCLASSIFIED
-from portfolio_app.valuation import value_holdings
+from portfolio_app.exposure.aggregation import classify_exposures
+from portfolio_app.demo_data.demo import create_demo_data, LIVE_EXAMPLES
+from portfolio_app.funds.etf import load_funds, fund_classifications
+from portfolio_app.exposure.exposure_analysis import prepare_exposures
+from portfolio_app.portfolio.holdings import load_holdings
+from portfolio_app.market.prices import PriceService, StaticProvider
+from portfolio_app.exposure.sector_classification import NO_SECTOR, sector_classifications
+from portfolio_app.exposure.taxonomy import load_classifications, paths_for, UNCLASSIFIED
+from portfolio_app.portfolio.valuation import value_holdings
 
 
 @pytest.mark.parametrize('expanded', [False, True])

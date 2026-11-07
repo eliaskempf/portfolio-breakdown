@@ -2,7 +2,7 @@
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.instruments import Instrument
+from portfolio_app.market.instruments import Instrument
 
 
 def listing_key(app, asset):
@@ -22,10 +22,10 @@ def set_listing(app, asset, ticker):
 
 def mapping_app(directory, currency):
     from pathlib import Path
-    from portfolio_app.account_journal import Journal
-    from portfolio_app.positions import read_snapshot
-    from portfolio_app.transaction_csv import read_csv
-    from portfolio_app.transaction_mapping_ui import render_mapping
+    from portfolio_app.ledger.account_journal import Journal
+    from portfolio_app.portfolio.positions import read_snapshot
+    from portfolio_app.ingestion.transaction_csv import read_csv
+    from portfolio_app.interface.views.ingestion.transaction_mapping_ui import render_mapping
     root = Path(directory)
     rows = read_csv('reference,date,type,asset,quantity,amount,currency\n'
                     'invented-a,2024-01-01,buy,ADA,1,10,EUR\n'
@@ -37,7 +37,7 @@ def mapping_app(directory, currency):
 @pytest.mark.parametrize('currency', ['EUR', 'GBP'])
 @pytest.mark.parametrize('available', [True, False])
 def test_mixed_portfolio_fetches_preferred_currency_and_keeps_manual_choice(tmp_path, monkeypatch, currency, available):
-    import portfolio_app.transaction_mapping_ui as ui
+    import portfolio_app.interface.views.ingestion.transaction_mapping_ui as ui
     (tmp_path/'holdings.csv').write_text(
         'id,name,ticker,instrument_type,shares\n'
         'invented-stock,Invented Company,INVENTED,equity,1\n'
@@ -61,7 +61,7 @@ def test_mixed_portfolio_fetches_preferred_currency_and_keeps_manual_choice(tmp_
 
 
 def test_preferred_currency_does_not_resolve_ambiguous_assets_or_replace_existing_listing(tmp_path, monkeypatch):
-    import portfolio_app.transaction_mapping_ui as ui
+    import portfolio_app.interface.views.ingestion.transaction_mapping_ui as ui
     (tmp_path/'holdings.csv').write_text(
         'id,name,ticker,instrument_type,shares\n'
         'invented-stock,Invented Company,INVENTED,equity,1\n'
@@ -82,7 +82,7 @@ def test_preferred_currency_does_not_resolve_ambiguous_assets_or_replace_existin
 
 
 def test_existing_preferred_pair_and_unrelated_crypto_results_need_no_extra_lookup(tmp_path, monkeypatch):
-    import portfolio_app.transaction_mapping_ui as ui
+    import portfolio_app.interface.views.ingestion.transaction_mapping_ui as ui
     (tmp_path/'holdings.csv').write_text(
         'id,name,ticker,instrument_type,shares\n'
         'invented-stock,Invented Company,INVENTED,equity,1\n')

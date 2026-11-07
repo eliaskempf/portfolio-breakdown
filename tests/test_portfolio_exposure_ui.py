@@ -4,11 +4,11 @@ import json
 
 import pytest
 
-from portfolio_app.allocation import save_allocation
-from portfolio_app.futures_workspace import fork_futures_workspace, load_sandbox, save_sandbox
-from portfolio_app.exposure_targets import load_exposure_targets
-from portfolio_app.leverage_settings import LeverageSettings, MarginLiability, save_leverage_settings
-from portfolio_app.positions import read_snapshot
+from portfolio_app.portfolio.allocation import save_allocation
+from portfolio_app.studies.futures_workspace import fork_futures_workspace, load_sandbox, save_sandbox
+from portfolio_app.exposure.exposure_targets import load_exposure_targets
+from portfolio_app.funds.leverage_settings import LeverageSettings, MarginLiability, save_leverage_settings
+from portfolio_app.portfolio.positions import read_snapshot
 from test_futures_ui import launch
 from test_portfolio_exposure import CONFIG
 from test_ui import activate, by_label, list_frame
@@ -86,7 +86,7 @@ def test_large_exposure_chart_keeps_largest_signed_contributions():
     from streamlit.testing.v1 import AppTest
     app = AppTest.from_string('''
 import pandas as pd
-from portfolio_app.portfolio_exposure_ui import signed_chart
+from portfolio_app.interface.views.exposure.portfolio_exposure_ui import signed_chart
 frame = pd.DataFrame({'Category': ['Invented ' + str(i) for i in range(100)], 'Exposure': [-1000.] + list(range(1, 100))})
 signed_chart(frame, 'Category', 'Exposure', 'synthetic_chart')
 ''').run()
@@ -124,8 +124,8 @@ def test_overview_summary_scope_and_future_visibility(tmp_path):
 
 
 def test_ordinary_workflow_enablement_and_chart_policy_independence(tmp_path):
-    from portfolio_app.exposure_targets import ExposureTargets, save_exposure_targets
-    from portfolio_app.leverage_settings import load_leverage_settings
+    from portfolio_app.exposure.exposure_targets import ExposureTargets, save_exposure_targets
+    from portfolio_app.funds.leverage_settings import load_leverage_settings
     source, _ = synthetic_workspace(tmp_path)
     before = {name: (source/name).read_bytes() for name in ['holdings.csv', 'allocation.yaml']}
     app = launch(source, open_futures=False)
@@ -166,8 +166,8 @@ def test_ordinary_workflow_enablement_and_chart_policy_independence(tmp_path):
 
 
 def test_active_future_cannot_disable_and_planner_requires_declared_collateral(tmp_path):
-    from portfolio_app.exposure_targets import ExposureTargets, save_exposure_targets
-    from portfolio_app.leverage_settings import load_leverage_settings
+    from portfolio_app.exposure.exposure_targets import ExposureTargets, save_exposure_targets
+    from portfolio_app.funds.leverage_settings import load_leverage_settings
     _, sandbox = synthetic_workspace(tmp_path)
     pos, rev = load_sandbox(sandbox)
     save_sandbox(sandbox, replace(pos, reference_capital_eur=10000.), rev)
@@ -203,7 +203,7 @@ def test_partial_exposure_uses_compact_status_and_optional_readable_details():
     from streamlit.testing.v1 import AppTest
     app = AppTest.from_string('''
 import pandas as pd
-from portfolio_app.portfolio_exposure_ui import render_exposure_coverage
+from portfolio_app.interface.views.exposure.portfolio_exposure_ui import render_exposure_coverage
 rows = pd.DataFrame([dict(source_position_id='opaque-synthetic-position', asset_name='Invented component',
     status='Unknown composition', market_exposure_reporting=None)])
 sources = pd.DataFrame([dict(position_id='opaque-synthetic-position', name='Invented fund')])

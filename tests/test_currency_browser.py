@@ -56,7 +56,7 @@ def test_currency_review_estimates_and_all_main_tabs(ux_page):
 
 @pytest.mark.parametrize('currency,symbol', [('USD', '$'), ('GBP', '£')])
 def test_tour_returns_to_reporting_currency_and_plan(ux_page, currency, symbol):
-    from portfolio_app.portfolio_settings import save_settings
+    from portfolio_app.portfolio.portfolio_settings import save_settings
     page, directory = ux_page
     quotes = json.loads((directory / 'demo_prices.json').read_text())
     quotes['fx'] = {c: dict(price=r, currency='EUR', observed_at='2026-09-01T12:00:00+00:00')

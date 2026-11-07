@@ -5,7 +5,7 @@ import pytest
 import yaml
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.demo import create_demo_data
+from portfolio_app.demo_data.demo import create_demo_data
 from test_ui import by_label, launch, theme_view
 
 
@@ -38,8 +38,8 @@ def test_sector_default_arrives_with_metadata_without_overriding_user_choice(tmp
     path.write_text(yaml.safe_dump(initial))
     app = AppTest.from_string(
         'import pandas as pd\nfrom pathlib import Path\n'
-        'from portfolio_app.label_ui import render_label_comparison\n'
-        'from portfolio_app.taxonomy import load_classifications\n'
+        'from portfolio_app.interface.views.exposure.label_ui import render_label_comparison\n'
+        'from portfolio_app.exposure.taxonomy import load_classifications\n'
         f'render_label_comparison(pd.DataFrame([dict(asset_id="invented", asset_name="Invented company", value=100., ticker="SYN")]), load_classifications(Path({str(path)!r})))\n',
     ).run()
     assert not app.exception
@@ -63,7 +63,7 @@ def test_failed_first_download_has_visible_retry_direction(tmp_path):
     status.write_text(json.dumps({'ZZ9999999999': {'status': 'unavailable', 'error': 'Invented outage'}}))
     app = AppTest.from_string(
         'from pathlib import Path\n'
-        'from portfolio_app.etf_refresh_ui import render_refresh_status, refresh_revision\n'
+        'from portfolio_app.interface.views.funds.etf_refresh_ui import render_refresh_status, refresh_revision\n'
         f'p = Path({str(tmp_path)!r})\nrender_refresh_status(p, [], refresh_revision(p))\n',
     ).run()
     assert not app.exception

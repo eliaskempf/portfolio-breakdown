@@ -5,12 +5,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_comparison import ComparisonSettings
-from portfolio_app.futures_funding import FundingPolicy, FundingStudy, prepare_replay, replay_policy, trailing_volatility
-from portfolio_app.futures_funding_data import FundingHistory, load_funding_history, load_funding_settings, save_funding_settings
-from portfolio_app.futures_funding_study import historical_windows, paired_window, run_funding_study, short_horizon_moves
-from portfolio_app.holdings import DataError
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.studies.futures_comparison import ComparisonSettings
+from portfolio_app.studies.futures_funding import FundingPolicy, FundingStudy, prepare_replay, replay_policy, trailing_volatility
+from portfolio_app.studies.futures_funding_data import FundingHistory, load_funding_history, load_funding_settings, save_funding_settings
+from portfolio_app.studies.futures_funding_study import historical_windows, paired_window, run_funding_study, short_horizon_moves
+from portfolio_app.portfolio.holdings import DataError
 
 
 def position(**kw):

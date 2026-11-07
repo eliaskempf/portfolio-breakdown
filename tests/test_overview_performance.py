@@ -1,12 +1,12 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.allocation import Allocation, Bucket
-from portfolio_app.performance import position_performance
-from portfolio_app.strategic import strategic_performance
-from portfolio_app.holdings import parse_holdings, metadata_dimensions
-from portfolio_app.positions import read_snapshot, save_position
-from portfolio_app.display_names import instrument_name
+from portfolio_app.portfolio.allocation import Allocation, Bucket
+from portfolio_app.performance.performance import position_performance
+from portfolio_app.portfolio.strategic import strategic_performance
+from portfolio_app.portfolio.holdings import parse_holdings, metadata_dimensions
+from portfolio_app.portfolio.positions import read_snapshot, save_position
+from portfolio_app.interface.shared.display_names import instrument_name
 
 
 def test_category_performance_uses_total_cost_and_disjoint_source_rows():
@@ -50,7 +50,7 @@ def test_existing_instrument_inherits_short_name_for_new_account(tmp_path):
 
 
 def test_duplicate_category_labels_and_reserved_names_are_unambiguous():
-    from portfolio_app.strategic import category_labels
+    from portfolio_app.portfolio.strategic import category_labels
     config = Allocation((Bucket('a', 'Portfolio'), Bucket('b', 'Portfolio'), Bucket('c', 'Unassigned')))
     labels = category_labels(config)
     assert len(set(labels.values())) == 3
