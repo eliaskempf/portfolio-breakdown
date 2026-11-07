@@ -130,7 +130,8 @@ def result_for(candidate, year, manual, market, *, forecast=False, override=None
         issues.append('Investment-fund status needs review')
     provider_splits = tuple((day, Decimal(ratio)) for day, ratio in market.get('splits', ()))
     relevant = lambda events: tuple((day, ratio) for day, ratio in events
-        if any(l.quantity and (not l.acquired or l.acquired < day) for l in lots))
+        if f'{year}-01-01' <= day <= f'{year}-12-31'
+        and any(l.quantity and (not l.acquired or l.acquired < day) for l in lots))
     if relevant(provider_splits) != relevant(candidate.holding.splits):
         # Manual EUR prices/distributions may use the reviewed ending share unit.
         if not manual.get('split_units_reviewed'):

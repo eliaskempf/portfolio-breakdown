@@ -34,3 +34,18 @@ def test_reviewed_lots_require_unchanged_history(tmp_path):
     override = {'fingerprint': 'a'*64, 'lots': [{'quantity': '10', 'acquired': '2025-07-01'}]}
     assert result_for(item, 2025, manual, {}, override=override, fingerprint='b'*64)[1].gross is None
     assert result_for(item, 2025, manual, {}, override=override, fingerprint='a'*64)[1].gross == D('8.86')
+
+
+def test_only_splits_within_the_calculation_year_need_price_reconciliation(tmp_path):
+    from dataclasses import replace
+    from portfolio_app.vorabpauschale import TaxLot
+    rows, journal = create_tax_sample(tmp_path)
+    item = candidates(rows, journal, '2025-12-31')[0]
+    raw, _ = load_inputs(tmp_path)
+    manual = raw['funds'][evidence_key(2025, item.instrument)]
+    # Both inputs already use the units established by the earlier split.
+    old = replace(item.holding, lots=(TaxLot(D(100), '2023-01-01'),),
+                  splits=(('2024-06-01', D(2)),))
+    assert result_for(replace(item, holding=old), 2025, manual, {})[1].gross == D('177.10')
+    current = replace(old, splits=(('2025-06-01', D(2)),))
+    assert result_for(replace(item, holding=current), 2025, manual, {})[1].gross is None
