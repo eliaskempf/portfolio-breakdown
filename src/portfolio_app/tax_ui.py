@@ -11,12 +11,12 @@ from portfolio_app.holdings import DataError
 from portfolio_app.input_cache import cached_input, file_stamp
 from portfolio_app.tax_evidence import (FILE, load_inputs, save_inputs, evidence_key, read_market,
     request_market, cache_path)
-from portfolio_app.tax_service import candidates, result_for, combined, observation_market, index_observations
+from portfolio_app.tax_service import candidates, result_for, combined, observation_market, index_observations, distribution_evidence
 from portfolio_app.vorabpauschale import RULES, EXEMPTIONS, CHURCH_RATES, GUIDANCE, LAW, number, estimate_tax, cents
 
 EXEMPTION_LABELS = ['None / not applied', 'Mixed fund · 15%', 'Equity fund · 30%',
                     'Property fund · 60%', 'Foreign property fund · 80%']
-DISTRIBUTIONS = ['Unknown', 'Accumulating / no distributions', 'Market history', 'Manual total']
+DISTRIBUTIONS = ['Automatic', 'Unknown', 'Accumulating / no distributions', 'Market history', 'Manual total']
 
 
 def money(value):
@@ -39,36 +39,37 @@ def _review(directory, raw, revision, item, year, manual, market, lots, fingerpr
     token = sha256((key+item.key+str(revision)).encode()).hexdigest()[:16]
     prefix = 'tax_review_'+token+'_'
     with st.form(prefix+'form'):
-        st.caption('EUR per share · Prices and distributions must use the ending share unit.')
-        is_fund = st.checkbox('Investment fund', value=item.is_fund or manual.get('is_fund', False), key=prefix+'fund')
-        a, b = st.columns(2)
-        start = a.text_input('Year-start price override', value=manual.get('start_price') or '',
-                             placeholder=str(market.get('start_price') or 'Missing'), key=prefix+'start')
-        end = b.text_input('Year-end price override', value=manual.get('end_price') or '',
-                           placeholder=str(market.get('end_price') or 'Missing'), key=prefix+'end')
-        basis_options = ['Market-price estimate', 'Redemption prices', 'Statutory market-price fallback']
-        basis = st.selectbox('Price basis', basis_options, index=basis_options.index(manual.get('price_basis', basis_options[0])), key=prefix+'basis')
-        default_mode = manual.get('distribution_mode', 'Market history' if market.get('distribution_count', 0) else 'Unknown')
-        mode = st.selectbox('Distributions', DISTRIBUTIONS, index=DISTRIBUTIONS.index(default_mode), key=prefix+'mode',
+        st.caption('EUR per share')
+        is_fund = True if item.is_fund else st.checkbox('Investment fund', value=manual.get('is_fund', False), key=prefix+'fund')
+        with st.expander('Price overrides'):
+            a, b = st.columns(2)
+            start = a.text_input('Year-start price override', value=manual.get('start_price') or '',
+                                 placeholder=str(market.get('start_price') or 'Missing'), key=prefix+'start')
+            end = b.text_input('Year-end price override', value=manual.get('end_price') or '',
+                               placeholder=str(market.get('end_price') or 'Missing'), key=prefix+'end')
+            basis_options = ['Market-price estimate', 'Redemption prices', 'Statutory market-price fallback']
+            basis = st.selectbox('Price basis', basis_options, index=basis_options.index(manual.get('price_basis', basis_options[0])), key=prefix+'basis')
+        default_mode = manual.get('distribution_mode', 'Automatic')
+        mode = st.selectbox('Payouts (Ausschüttungen)', DISTRIBUTIONS, index=DISTRIBUTIONS.index(default_mode), key=prefix+'mode',
             help='Whole-year gross distributions per share, including payments before acquisition. An empty download does not prove zero.')
         a, b = st.columns(2)
-        total = a.text_input('Annual distribution override', value=manual.get('distributions') or '', key=prefix+'distribution',
+        total = a.text_input('Annual payout override', value=manual.get('distributions') or '', key=prefix+'distribution',
                              help='Used with Manual total. For the ongoing year, enter the amount observed so far.')
-        expected = b.text_input('Additional expected distributions', value=manual.get('expected_distributions') or '0', key=prefix+'expected', disabled=year < date.today().year)
+        expected = b.text_input('Additional expected payouts', value=manual.get('expected_distributions') or '0', key=prefix+'expected', disabled=year < date.today().year)
         exemption = st.selectbox('Teilfreistellung', list(EXEMPTIONS), index=EXEMPTIONS.index(Decimal(manual.get('exemption', '0'))),
                                 format_func=lambda value: EXEMPTION_LABELS[EXEMPTIONS.index(value)], key=prefix+'exemption')
         source = st.text_input('Evidence / assumption', value=manual.get('source', ''), key=prefix+'source',
             help='Identify the fund document or state the assumption. Manual entries are not independently verified.')
         split_review = st.checkbox('Split quantities and per-share units reviewed', value=manual.get('split_units_reviewed', False), key=prefix+'split') if item.holding.splits or market.get('splits') else False
-        st.markdown('Remaining acquisition lots')
-        ownership_key = evidence_key(year, item.key)
-        override = raw.get('ownership', {}).get(ownership_key)
-        use_lots = st.checkbox('Use reviewed remaining lots', value=bool(override), key=prefix+'use_lots',
-                              help='A calculator-only assumption. Portfolio transactions and balances remain unchanged. Re-review after history changes.')
-        rows = override['lots'] if override else [{'quantity': str(l.quantity), 'acquired': l.acquired or ''} for l in lots]
-        table = pd.DataFrame([{'Shares': row['quantity'], 'Acquired': row.get('acquired') or ''} for row in rows], columns=['Shares', 'Acquired'])
-        edited = st.data_editor(table, num_rows='dynamic', hide_index=True, key=prefix+'lots',
-                               column_config={'Acquired': st.column_config.TextColumn(help='YYYY-MM-DD; any known date before the calculation year suffices for older shares.')})
+        with st.expander('Acquisition lots'):
+            ownership_key = evidence_key(year, item.key)
+            override = raw.get('ownership', {}).get(ownership_key)
+            use_lots = st.checkbox('Use reviewed remaining lots', value=bool(override), key=prefix+'use_lots',
+                                  help='A calculator-only assumption. Portfolio transactions and balances remain unchanged. Re-review after history changes.')
+            rows = override['lots'] if override else [{'quantity': str(l.quantity), 'acquired': l.acquired or ''} for l in lots]
+            table = pd.DataFrame([{'Shares': row['quantity'], 'Acquired': row.get('acquired') or ''} for row in rows], columns=['Shares', 'Acquired'])
+            edited = st.data_editor(table, num_rows='dynamic', hide_index=True, key=prefix+'lots',
+                                   column_config={'Acquired': st.column_config.TextColumn(help='YYYY-MM-DD; any known date before the calculation year suffices for older shares.')})
         if st.form_submit_button('Save tax inputs'):
             try:
                 update = deepcopy(raw)
@@ -93,25 +94,41 @@ def _review(directory, raw, revision, item, year, manual, market, lots, fingerpr
                 else:
                     update['ownership'].pop(ownership_key, None)
                 save_inputs(directory, update, revision)
+                st.session_state.pop('tax_edit_target', None)
                 st.rerun()
             except (DataError, ValueError) as exc:
                 st.error(str(exc))
 
 
+
+def _close_edit():
+    st.session_state.pop('tax_edit_target', None)
+
+
+@st.dialog('Fund tax inputs', width='large', on_dismiss=_close_edit)
+def _edit_inputs(directory, raw, revision, entry, year, fingerprint):
+    item, manual, market, inputs, result, lots = entry
+    st.markdown(f'**{item.name}** · {item.account}')
+    if result.issues:
+        st.caption(' · '.join(result.issues))
+    elif market.get('distribution_policy') == 'Accumulating':
+        st.caption('Accumulating · payouts €0')
+    _review(directory, raw, revision, item, year, manual, market, lots, fingerprint)
+
+
 def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=False):
-    st.subheader('Vorabpauschale')
     try:
         raw, revision = cached_input('tax_inputs', file_stamp(directory/FILE), lambda: load_inputs(directory))
-        a, b = st.columns([1, 3])
+        with st.container(key='tax_toolbar'):
+            title, year_slot, filter_slot, settings_slot, refresh_slot = st.columns([3, 1, 1.1, 1.3, 1], vertical_alignment='bottom')
+        title.subheader('Vorabpauschale')
         years = [y for y in reversed(RULES) if y <= date.today().year]
-        year = a.selectbox('Calculation year', years, key='tax_year')
+        year = year_slot.selectbox('Calculation year', years, key='tax_year', label_visibility='collapsed')
         forecast = year == date.today().year
         boundary = min(f'{year}-12-31', date.today().isoformat())
         fingerprint = sha256(repr((journal, holdings.to_dict('records'))).encode()).hexdigest()
         all_items = cached_input('tax_candidates', (fingerprint, boundary, repr(funds)),
             lambda: candidates(holdings, journal, boundary, funds, valued))
-        # Current quotes change independently of ownership; don't cache them with
-        # journal facts. Candidate projection itself does not depend on prices.
         if forecast and valued is not None:
             from dataclasses import replace
             prices = {r['position_id']: r for r in valued.to_dict('records')}
@@ -125,99 +142,119 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
                     price = None
                 refreshed.append(replace(item, current_price=price, quote_date=str(quote.get('price_observed_at', ''))[:10]))
             all_items = tuple(refreshed)
-        include_other = b.checkbox('Include instruments needing fund classification', key='tax_include_other')
-        items = [c for c in all_items if include_other or c.is_fund or raw['funds'].get(evidence_key(year, c.instrument), {}).get('is_fund')]
-        accounts = sorted({c.account for c in items})
-        account_key = 'tax_accounts_'+str(year)
-        if account_key in st.session_state:
-            st.session_state[account_key] = [a for a in st.session_state[account_key] if a in accounts]
-        chosen_accounts = st.multiselect('Broker / account', accounts, default=accounts, key=account_key)
-        items = [c for c in items if c.account in chosen_accounts]
-        options = {c.key: c for c in items}
-        scope_key = sha256(repr((year, tuple(options))).encode()).hexdigest()[:16]
-        selected = st.multiselect('ETFs', list(options), default=list(options), format_func=lambda k: options[k].label, key='tax_funds_'+scope_key)
+        with filter_slot.popover('Filter', width='stretch'):
+            include_other = st.checkbox('Include unclassified funds', key='tax_include_other')
+            items = [c for c in all_items if include_other or c.is_fund or raw['funds'].get(evidence_key(year, c.instrument), {}).get('is_fund')]
+            accounts = sorted({c.account for c in items})
+            account_key = 'tax_accounts_'+str(year)
+            if account_key in st.session_state:
+                st.session_state[account_key] = [a for a in st.session_state[account_key] if a in accounts]
+            chosen_accounts = st.multiselect('Broker / account', accounts, default=accounts, key=account_key)
+            items = [c for c in items if c.account in chosen_accounts]
+            options = {c.key: c for c in items}
+            scope_key = sha256(repr((year, tuple(options))).encode()).hexdigest()[:16]
+            selected = st.multiselect('ETFs', list(options), default=list(options), format_func=lambda k: options[k].label, key='tax_funds_'+scope_key)
         items = [options[k] for k in selected]
-        if not items:
-            st.caption('Select investment funds. Missing classifications can be reviewed above.')
-            return
         selection = (str(directory), year, tuple(selected))
         st.session_state['tax_selection'] = selection
         if st.session_state.get('tax_allowance_scope') != selection:
             st.session_state['tax_allowance_scope'] = selection
             st.session_state['tax_allowance'] = 0.
-        a, b = st.columns(2)
-        allowance = a.number_input(f'Available allowance · {year+1} (€)', min_value=0., step=100., key='tax_allowance',
-                                   help='Available for this selection only; deducted once. No loss offsets are modelled.')
-        church = b.selectbox('Church tax', list(CHURCH_RATES), index=CHURCH_RATES.index(Decimal(raw['settings'].get('church_rate', '0'))),
-                            format_func=lambda r: f'{r:.0%}', key='tax_church')
+        with settings_slot.popover('Tax settings', width='stretch'):
+            allowance = st.number_input(f'Available allowance · {year+1} (€)', min_value=0., step=100., key='tax_allowance',
+                help='Remaining allowance for the selected funds in the receipt year. Applied once; changing the scope resets it.')
+            church = st.selectbox('Church tax', list(CHURCH_RATES), index=CHURCH_RATES.index(Decimal(raw['settings'].get('church_rate', '0'))),
+                format_func=lambda r: f'{r:.0%}', key='tax_church')
         if church != Decimal(raw['settings'].get('church_rate', '0')):
             update = deepcopy(raw)
             update['settings']['church_rate'] = str(church)
             save_inputs(directory, update, revision)
             raw, revision = load_inputs(directory)
-        if forecast:
-            st.caption(f'Forecast · holdings through {boundary} · unchanged prices/shares to year-end · receipt {RULES[year].receipt_date}')
-        else:
-            st.caption(f'Historical estimate · receipt {RULES[year].receipt_date}')
-        retry = st.button('Refresh tax evidence', disabled=demo, key='tax_refresh')
+        retry = refresh_slot.button('Refresh', icon=':material/refresh:',
+            disabled=demo, key='tax_refresh', help='Refresh prices and fund payouts')
+        if not items:
+            st.caption('No funds selected · adjust Filter')
+            return
         from portfolio_app.history_observations import load_observations
-        observations = cached_input('tax_observations', file_stamp(directory/'history-observations.json'), lambda: index_observations(load_observations(directory)[0]))
+        from portfolio_app.fundamentals import load_fee_overrides
+        observations = cached_input('tax_observations', file_stamp(directory/'history-observations.json'),
+            lambda: index_observations(load_observations(directory)[0]))
+        policies = cached_input('tax_policies', file_stamp(directory/'fund-fees.json'), lambda: load_fee_overrides(directory/'fund-fees.json'))
         prepared, requested, pending = [], set(), False
         for item in items:
             manual = raw['funds'].get(evidence_key(year, item.instrument), {})
-            market = cached_input('tax_market:'+evidence_key(year, item.instrument), file_stamp(cache_path(directory, year, item.instrument)),
-                                  lambda: read_market(directory, year, item.instrument))
-            if not market:
-                market = observation_market(item, observations, year, boundary)
-            needs_market = (not manual.get('start_price') or
-                (not manual.get('end_price') and not (forecast and item.current_price is not None)) or
-                manual.get('distribution_mode', 'Unknown') in ('Unknown', 'Market history'))
-            if item.instrument not in requested and not demo and needs_market and (item.is_fund or manual.get('is_fund')):
-                requested.add(item.instrument)
-                pending |= request_market(directory, year, item.instrument, item.ticker, force=retry)
+            fetched = cached_input('tax_market:'+evidence_key(year, item.instrument), file_stamp(cache_path(directory, year, item.instrument)),
+                lambda: read_market(directory, year, item.instrument))
+            recorded = observation_market(item, observations, year, boundary)
+            # A failed fetch must not hide valid observations already in history.
+            market = dict(recorded, **{k: v for k, v in fetched.items() if v is not None})
+            market = distribution_evidence(item, year, market, policies)
             inputs, result, lots = result_for(item, year, manual, market, forecast=forecast,
                 override=raw.get('ownership', {}).get(evidence_key(year, item.key)), fingerprint=fingerprint)
+            needs_market = inputs.start_price is None or inputs.end_price is None or inputs.distributions is None
+            # Revalidate dated payout observations when no manual/policy evidence supplies them.
+            needs_market |= manual.get('distribution_mode', 'Automatic') in ('Automatic', 'Market history') and market.get('distribution_policy') != 'Accumulating'
+            if item.instrument not in requested and not demo and (needs_market or retry) and (item.is_fund or manual.get('is_fund')):
+                requested.add(item.instrument)
+                pending |= request_market(directory, year, item.instrument, item.ticker, force=retry)
             prepared.append((item, manual, market, inputs, result, lots))
         gross, tax, count, total = combined([p[4] for p in prepared], Decimal(str(allowance)), church)
         a, b, c = st.columns(3)
-        a.metric('Estimated tax' if count == total else 'Partial tax subtotal', money(tax.total) if count else 'Unavailable')
-        b.metric('Vorabpauschale', money(gross) if count else 'Unavailable')
-        c.metric('Taxable amount', money(tax.taxable) if count else 'Unavailable')
-        st.caption(f'{count}/{total} calculated · before loss offsets · Teilfreistellung per fund')
+        a.metric('Estimated tax' if count == total else 'Partial tax subtotal', money(tax.total) if count else '—',
+            help='Capital gains tax, solidarity surcharge and selected church tax, after the available allowance. No loss offsets.')
+        b.metric('Vorabpauschale', money(gross) if count else '—', help='Fund amount before Teilfreistellung.')
+        c.metric('Taxable amount', money(tax.taxable) if count else '—', help='After each fund’s selected Teilfreistellung, before allowance.')
+        st.caption(f'{"Forecast" if forecast else "Historical estimate"} · market prices · {count}/{total} calculated · receipt {RULES[year].receipt_date}')
         rows = []
         for item, manual, market, inputs, result, lots in prepared:
-            rows.append({'ETF': item.name, 'Account': item.account,
-                'Vorabpauschale': money(result.gross), 'Taxable': money(result.taxable),
-                'Tax before allowance': money(estimate_tax(result.taxable, church_rate=church).total) if result.taxable is not None else 'Unavailable',
-                'Basis': inputs.basis, 'Price date': item.quote_date if forecast and item.current_price is not None and not manual.get('end_price') else market.get('end_date', ''),
-                'Status': '; '.join(result.issues) or ('Forecast' if forecast else 'Calculated')})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch')
-        with st.expander('Tax breakdown and calculation'):
-            st.write({'Capital gains tax': money(tax.capital_tax), 'Solidarity surcharge': money(tax.solidarity),
-                      'Church tax': money(tax.church_tax), 'Allowance used': money(tax.allowance_used),
-                      'Basiszins': f'{RULES[year].basis_rate:.2%}'})
-            st.caption('Market history is an approximation. No future trades are assumed; expected distributions are entered per fund. No tax is posted.')
-            st.markdown(f'[§18 InvStG]({LAW}) · [BMF calculation guidance]({GUIDANCE}) · [Annual rate]({RULES[year].source})')
-            st.markdown('[Teilfreistellung](https://www.gesetze-im-internet.de/invstg_2018/__20.html) · [Tax formula](https://www.gesetze-im-internet.de/estg/__32d.html) · [Solidarity surcharge](https://www.gesetze-im-internet.de/solzg_1995/__4.html)')
-            st.caption('German private investor, ordinary investment funds. Changes of residence or tax classification, mergers, liquidations and transfers to another owner require separate review.')
-        with st.expander('Review inputs'):
+            rows.append({'Fund': item.name, 'Account': item.account,
+                'Vorabpauschale': float(result.gross) if result.gross is not None else None,
+                'Tax before allowance': float(estimate_tax(result.taxable, church_rate=church).total) if result.taxable is not None else None,
+                'Status': '; '.join(result.issues) or ('Accumulating' if market.get('distribution_policy') == 'Accumulating' else 'Calculated')})
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch',
+            column_config={name: st.column_config.NumberColumn(format='€ %.2f') for name in ('Vorabpauschale', 'Tax before allowance')})
+        missing = next((entry for entry in prepared if entry[4].issues), None)
+        if missing and st.button('Resolve missing inputs', key='tax_resolve'):
+            st.session_state['tax_edit_target'] = (year, missing[0].key)
+        with st.expander('Fund details'):
             lookup = {p[0].key: p for p in prepared}
-            review = st.selectbox('ETF / account to review', list(lookup), format_func=lambda k: lookup[k][0].label, key='tax_review_selected_'+sha256(repr(selected).encode()).hexdigest()[:16])
-            item, manual, market, inputs, result, lots = lookup[review]
-            st.write({'Year-start price': money(inputs.start_price), 'Year-end price': money(inputs.end_price),
-                      'Distributions per share': money(inputs.distributions), 'Annual amount per share': str(result.per_share) if result.per_share is not None else 'Unavailable',
-                      'Weighted shares': str(result.weighted_shares) if result.weighted_shares is not None else 'Unavailable'})
+            review = st.selectbox('Fund / account', list(lookup), format_func=lambda k: lookup[k][0].label,
+                key='tax_review_selected_'+sha256(repr(selected).encode()).hexdigest()[:16])
+            entry = lookup[review]
+            item, manual, market, inputs, result, lots = entry
+            st.dataframe(pd.DataFrame([
+                ('Year-start price', money(inputs.start_price), market.get('start_date', '')),
+                ('Year-end price', money(inputs.end_price), item.quote_date if forecast and item.current_price is not None and not manual.get('end_price') else market.get('end_date', '')),
+                ('Payouts per share', money(inputs.distributions), market.get('distribution_policy', 'Downloaded' if market.get('distribution_count') else '')),
+                ('Teilfreistellung', f'{inputs.exemption:.0%}', ''),
+                ('Price basis', inputs.basis, ''),
+            ], columns=['Input', 'Value', 'Evidence']), hide_index=True, width='stretch')
+            if st.button('Edit inputs', key='tax_edit'):
+                st.session_state['tax_edit_target'] = (year, item.key)
+            if market.get('distribution_source'):
+                st.markdown(f'[Income policy]({market["distribution_source"]}) · verified {market["distribution_verified_on"]}')
             if market.get('source'):
                 st.caption(market['source'])
             if market.get('error'):
                 st.caption(market['error'])
-            if market.get('distribution_note'):
-                st.caption(market['distribution_note'])
-            _review(directory, raw, revision, item, year, manual, market, lots, fingerprint)
+        with st.expander('Calculation and sources'):
+            st.dataframe(pd.DataFrame([
+                ('Capital gains tax', money(tax.capital_tax)), ('Solidarity surcharge', money(tax.solidarity)),
+                ('Church tax', money(tax.church_tax)), ('Allowance used', money(tax.allowance_used)),
+                ('Basiszins', f'{RULES[year].basis_rate:.2%}'),
+            ], columns=['Component', 'Amount']), hide_index=True, width='stretch')
+            st.caption('Current-year forecasts keep holdings and prices unchanged. Observed payouts plus any additional expected payouts are used. Market prices are estimates; no tax is posted.')
+            st.markdown(f'[§18 InvStG]({LAW}) · [BMF guidance]({GUIDANCE}) · [Basiszins]({RULES[year].source})')
+            st.markdown('[Teilfreistellung](https://www.gesetze-im-internet.de/invstg_2018/__20.html) · [Tax formula](https://www.gesetze-im-internet.de/estg/__32d.html) · [Solidarity surcharge](https://www.gesetze-im-internet.de/solzg_1995/__4.html)')
         cache = st.session_state.get('parsed_inputs', {})
         for stale in [k for k in cache if k.startswith('tax_market:')][:-128]:
             cache.pop(stale, None)
         if pending:
             _poll(directory, selection, tuple(requested))
+        target = st.session_state.get('tax_edit_target')
+        if target and target[0] == year and target[1] in lookup:
+            _edit_inputs(directory, raw, revision, lookup[target[1]], year, fingerprint)
+        elif target:
+            _close_edit()
     except (DataError, ValueError) as exc:
         st.error(str(exc))

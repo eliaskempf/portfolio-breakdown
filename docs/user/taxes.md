@@ -3,12 +3,15 @@
 **Taxes → Vorabpauschale** estimates the annual fund amount and its German
 private-investor tax charge. Select a calculation year, broker/accounts and ETFs.
 The result includes capital gains tax, solidarity surcharge and optional church
-tax. It does not book transactions or claim to reproduce a bank's tax statement.
+tax. Results come first; **Filter** selects accounts and funds, **Tax settings**
+contains the allowance and church tax, and **Fund details → Edit inputs** opens
+overrides for one fund. It does not book transactions or claim to reproduce a
+bank's tax statement.
 
 Completed years use ownership at 31 December. The current-year forecast keeps
 current shares and the latest available price unchanged through year-end, with
 no future trades. It uses observed distributions plus any additional expected
-amount entered in **Review inputs**. The price date and forecast basis remain
+amount entered in **Edit inputs**. The price date and forecast basis remain
 visible. The supported calculation years are 2018–2026; a new year needs its own
 published rate, never the previous year's rate.
 
@@ -26,17 +29,25 @@ combining accounts; allocation sleeves are not separate tax depots.
 Year-start and year-end **redemption prices** are the legally preferred fund
 prices. Market prices are the statutory fallback when no redemption price is set
 (or it is not set continuously at least monthly). Otherwise the app's market
-prices are an explicitly labelled approximation. **Review inputs** accepts EUR
+prices are an explicitly labelled approximation. **Edit inputs** accepts EUR
 per-share price overrides and an evidence source or assumption. Foreign-currency
 market observations are converted using dated ECB reference rates, with the last
 published rate on or before non-publication days (at most seven days old).
 
 Distributions mean the fund's whole-year gross distributions per share, including
 payments before you acquired shares. They are not just your personal net cash
-receipts. Downloaded fund observations remain separate from transactions. An
-empty download does not prove zero: select **Accumulating / no distributions**
-when applicable, enter a **Manual total**, or explicitly select **Market history**
-to use its observed amount as an assumption. For a forecast, a manual total is
+receipts. **Automatic** uses downloaded gross payouts for distributing funds and
+zero payouts for a verified accumulating share class. The calculator reuses the
+app's existing issuer metadata and private verified income-policy overrides by
+exact share class. A dated policy supports its verification year and later years;
+it does not silently certify earlier years. Its source and verification date are
+shown in **Fund details**. Conflicting payout observations require review.
+
+Downloaded fund observations remain separate from transactions. An empty download
+without a known accumulating policy does not prove zero. **Resolve missing inputs**
+opens the affected fund. Select **Accumulating / no distributions** when applicable,
+enter a **Manual total**, or explicitly select **Market history** to use the observed
+amount as an assumption. Manual overrides take precedence. For a forecast, a manual total is
 observed distributions so far; additional expected distributions are added once.
 Market distributions use provider event dates, which may differ from payment
 dates. Supply the annual EUR total for a more precise calculation. A quote in
@@ -52,7 +63,7 @@ history; changing the history requires another review. Historical selection
 includes zero-share and retained closed positions. Unlinked histories need their
 fund status reviewed and may lack a usable name or price listing.
 
-**Include instruments needing fund classification** exposes positions whose
+**Filter → Include unclassified funds** exposes positions whose
 investment-fund status is not known. Confirm **Investment fund** in their review
 before including their amounts. An ETF name or an investment taxonomy does not
 establish tax classification.

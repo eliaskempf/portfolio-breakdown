@@ -28,12 +28,36 @@ def state_path() -> Path:
     return Path(override).expanduser().resolve() if override else user_state_path(APP_ID, appauthor=False)
 
 
+THEME_SETTINGS = {
+    'client.toolbarMode': 'viewer', 'theme.primaryColor': PRIMARY_COLOR,
+    'theme.light.primaryColor': PRIMARY_COLOR, 'theme.dark.primaryColor': PRIMARY_COLOR,
+    'theme.baseRadius': 'small', 'theme.light.backgroundColor': LIGHT_BACKGROUND,
+    'theme.light.secondaryBackgroundColor': '#f4f5f7', 'theme.light.textColor': '#202632',
+    'theme.dark.backgroundColor': DARK_BACKGROUND, 'theme.dark.secondaryBackgroundColor': '#1a202b',
+    'theme.dark.textColor': '#e3e7ef',
+}
+
+
 def theme_options() -> list[str]:
-    # Chrome is sent when the browser session starts, before UI code executes.
-    return ['--client.toolbarMode=viewer', f'--theme.primaryColor={PRIMARY_COLOR}', '--theme.baseRadius=small',
-            f'--theme.light.backgroundColor={LIGHT_BACKGROUND}', '--theme.light.secondaryBackgroundColor=#f4f5f7',
-            '--theme.light.textColor=#202632', f'--theme.dark.backgroundColor={DARK_BACKGROUND}',
-            '--theme.dark.secondaryBackgroundColor=#1a202b', '--theme.dark.textColor=#e3e7ef']
+    return [f'--{key}={value}' for key, value in THEME_SETTINGS.items()]
+
+
+def ensure_app_theme() -> None:
+    """Keep direct Streamlit launches consistent with the application launcher.
+
+    Streamlit sends the theme before executing a script. If a launch omitted our
+    settings, rerun before drawing widgets so the next session message carries
+    the app theme. Preserve the user's light/dark choice.
+    """
+    import streamlit as st
+    from streamlit import config
+    changed = False
+    for key, value in THEME_SETTINGS.items():
+        if config.get_option(key) != value:
+            config.set_option(key, value)
+            changed = True
+    if changed:
+        st.rerun()
 
 
 def icon_path(filename: str = 'portfolio-breakdown.png') -> Path | None:

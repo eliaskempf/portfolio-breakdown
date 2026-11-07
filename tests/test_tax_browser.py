@@ -43,18 +43,30 @@ def test_tax_year_broker_selection_review_and_navigation(tmp_path):
             page.goto(f'http://127.0.0.1:{port}')
             page.get_by_role('tab', name='Taxes', exact=True).click(); settle(page)
             page.get_by_role('heading', name='Vorabpauschale', exact=True).wait_for()
+            # Direct Streamlit launch deliberately omits theme flags. The app
+            # must enforce its own accent before any result controls appear.
+            assert page.get_by_role('tab', name='Taxes', exact=True).evaluate('(el) => getComputedStyle(el).color') == 'rgb(84, 112, 198)'
+            assert not page.get_by_role('spinbutton', name='Available allowance · 2026 (€)', exact=True).is_visible()
             page.get_by_role('combobox', name='Calculation year', exact=True).click()
             page.get_by_role('option', name='2025', exact=True).click(); settle(page)
             playwright.expect(page.get_by_text('€442.75', exact=True)).to_be_visible()
             # Removing a broker updates the total and resets an entered allowance.
+            page.get_by_role('button', name='Tax settings', exact=True).click()
             allowance = page.get_by_role('spinbutton', name='Available allowance · 2026 (€)', exact=True)
             allowance.fill('100'); allowance.press('Enter'); settle(page)
             playwright.expect(page.get_by_text('€55.36', exact=True)).to_be_visible()
+            page.get_by_role('button', name='Tax settings', exact=True).click()
+            page.get_by_role('button', name='Filter', exact=True).click()
             account = page.get_by_test_id('stMultiSelect').filter(has=page.get_by_text('Broker / account', exact=True))
             account.get_by_role('button', name='Remove Invented broker B').click(); settle(page)
             playwright.expect(page.get_by_text('€354.20', exact=True)).to_be_visible()
+            page.get_by_role('button', name='Filter', exact=True).click()
+            page.get_by_role('button', name='Tax settings', exact=True).click()
             playwright.expect(allowance).to_have_value('0.00')
-            page.get_by_text('Review inputs', exact=True).click(); settle(page)
+            page.get_by_role('button', name='Tax settings', exact=True).click()
+            page.get_by_text('Fund details', exact=True).click(); settle(page)
+            page.get_by_role('button', name='Edit inputs', exact=True).click(); settle(page)
+            page.get_by_text('Price overrides', exact=True).click(); settle(page)
             page.get_by_role('textbox', name='Year-start price override', exact=True).fill('101')
             page.get_by_role('textbox', name='Evidence / assumption', exact=True).fill('Invented browser assumption')
             page.get_by_role('button', name='Save tax inputs', exact=True).click(); settle(page)
@@ -68,6 +80,15 @@ def test_tax_year_broker_selection_review_and_navigation(tmp_path):
             page.get_by_role('tab', name='Taxes', exact=True).click(); settle(page)
             playwright.expect(page.get_by_text('€560.00', exact=True)).to_be_visible()
             assert not page.get_by_test_id('stException').count()
+            assert page.get_by_test_id('stMetric').first.bounding_box()['y'] < 500
+            for theme in ('Dark', 'Light'):
+                page.get_by_role('button', name='Main menu', exact=True).click()
+                page.get_by_test_id(f'stMainMenuItem-theme-{theme}').click()
+                page.keyboard.press('Escape'); settle(page)
+                assert page.get_by_role('tab', name='Taxes', exact=True).evaluate('(el) => getComputedStyle(el).color') == 'rgb(84, 112, 198)'
+            page.reload(); settle(page)
+            page.get_by_role('tab', name='Taxes', exact=True).click(); settle(page)
+            assert page.get_by_role('tab', name='Taxes', exact=True).evaluate('(el) => getComputedStyle(el).color') == 'rgb(84, 112, 198)'
             assert (data/'account-journal.json').read_bytes() == before
             browser.close()
     finally:

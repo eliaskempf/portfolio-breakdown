@@ -101,3 +101,25 @@ def test_quote_subunits_do_not_silently_set_distribution_units():
     assert D(data['start_price']) == 100 and D(data['end_price']) == 110
     assert data['distributions'] is None
     assert prepare_inputs(2025, {}, data).distributions is None
+
+
+def test_distributing_fund_download_is_used_automatically():
+    from portfolio_app.tax_evidence import download_market
+    class Provider:
+        history_metadata = {'currency': 'USD'}
+        def history(self, **kwargs):
+            assert kwargs['actions'] and not kwargs['auto_adjust']
+            return frame([('2025-01-02', 200, 0, 0), ('2025-06-02', 220, 4, 0), ('2025-12-30', 240, 0, 0)])
+    rates = {day: {'USD': D(2)} for day in ('2025-01-02', '2025-06-02', '2025-12-30')}
+    market = download_market('SYNTHETIC', 2025, today=date(2026, 1, 2), factory=lambda ticker: Provider(), fx_loader=lambda day: rates)
+    inputs = prepare_inputs(2025, {}, market)
+    assert inputs.distributions == D(2)
+    assert inputs.start_price == 100 and inputs.end_price == 120
+
+
+def test_accumulation_conflict_requires_review_and_manual_overrides_win():
+    market = dict(start_price='100', end_price='110', distribution_policy='Accumulating', distribution_count=1, distributions='1')
+    assert prepare_inputs(2025, {}, market).issues
+    manual = {'distribution_mode': 'Manual total', 'distributions': '2'}
+    inputs = prepare_inputs(2025, manual, market)
+    assert inputs.distributions == 2 and not inputs.issues

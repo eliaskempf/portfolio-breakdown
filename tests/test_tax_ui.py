@@ -38,6 +38,7 @@ def test_save_review_and_forecast(tmp_path):
     by_label(app.selectbox, 'Calculation year').set_value(2026).run()
     assert by_label(app.metric, 'Vorabpauschale').value == '€560.00'
     by_label(app.selectbox, 'Church tax').set_value(D('.09')).run()
+    by_label(app.button, 'Edit inputs').click().run()
     by_label(app.text_input, 'Year-start price override').set_value('120')
     by_label(app.text_input, 'Evidence / assumption').set_value('Invented edited assumption')
     by_label(app.button, 'Save tax inputs').click().run()
@@ -67,3 +68,25 @@ def test_inputs_survive_navigation(tmp_path):
     assert by_label(app.selectbox, 'Calculation year').value == 2025
     assert by_label(app.number_input, 'Available allowance · 2026 (€)').value == 50
     assert not app.exception
+
+
+def test_default_view_keeps_optional_inputs_out_of_main_form(tmp_path):
+    app = launch(tmp_path)
+    assert not app.text_input
+    assert len(app.metric) == 3
+
+
+def test_accumulating_funds_calculate_automatically_with_existing_metadata(tmp_path, monkeypatch):
+    from portfolio_app.fundamentals import FundFee
+    from portfolio_app.tax_evidence import save_inputs
+    app = launch(tmp_path)
+    raw, revision = load_inputs(tmp_path)
+    for value in raw['funds'].values():
+        value.pop('distribution_mode')
+    save_inputs(tmp_path, raw, revision)
+    policy = FundFee(.001, 'https://example.invalid/invented-policy', '2025-01-01', accumulating=True)
+    monkeypatch.setattr('portfolio_app.fundamentals.PUBLIC_FEES', dict(SYNTHETIC001=policy, SYNTHETIC002=policy))
+    app.run()
+    assert not app.exception and not app.error
+    assert by_label(app.metric, 'Vorabpauschale').value == '€560.00'
+    assert not any(b.label == 'Resolve missing inputs' for b in app.button)

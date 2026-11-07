@@ -31,6 +31,8 @@ from portfolio_app.application import (historical_for, load_leverage_context, pr
 
 
 def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None, intro: bool = False, ignore_selection: bool = False) -> None:
+    from portfolio_app.settings import ensure_app_theme
+    ensure_app_theme()
     st.session_state['position_dialog_host_ready'] = False
     from portfolio_app.settings import icon_path
     from portfolio_app.workspace_ui import app_header, workspace_info

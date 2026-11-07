@@ -31,6 +31,10 @@ without introductory paragraphs or repeated explanations.
   aligned with the section they affect and use space to communicate hierarchy.
 - Preserve established styling and shared components. Improve density, placement
   and consistency before adding decorative elements, new panels or new navigation.
+  The shared app theme in `settings.py` applies to both the launcher and direct
+  Streamlit entrypoints. `render_app` repairs missing launch theme settings before
+  drawing widgets, preserving the user's light/dark choice. Preview launches must
+  retain the same blue accent; verify it in the browser, including after reload.
 - Import review must identify the affected statement, show the specific unresolved
   source rows locally, and offer a decision for that statement. Do not ask users
   to certify a batch with a blanket checkbox or infer a problem from an absent

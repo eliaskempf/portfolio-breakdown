@@ -56,6 +56,11 @@ h3 {font-size:1rem!important;font-weight:600!important;}
 :is(.st-key-overview_value,.st-key-exposure_value,.st-key-position_summary_value,[class*="st-key-history_value_"]) [data-testid="stMetricDelta"][role="button"]:focus-visible, .st-key-equity_exposure_metric [data-testid="stMetricValue"][role="button"]:focus-visible {outline:2px solid currentColor;outline-offset:3px;}
 .st-key-exposure_theme_results {container-type:inline-size;}
 .st-key-exposure_toolbar [data-testid="stColumn"] {min-width:0;}
+.st-key-tax_toolbar [data-testid="stColumn"] {min-width:0;}
+@media(max-width:700px) {
+  .st-key-tax_toolbar [data-testid="stColumn"] {flex:1 1 145px!important;min-width:130px!important;}
+  .st-key-tax_toolbar [data-testid="stColumn"]:first-child {flex-basis:100%!important;}
+}
 @container(max-width:860px) {
   .st-key-overview_allocation [data-testid="stHorizontalBlock"]:not(.st-key-overview_allocation_heading) {flex-direction:column;align-items:stretch;}
   .st-key-overview_allocation [data-testid="stColumn"] {width:100%!important;flex:1 1 100%;min-width:0;}

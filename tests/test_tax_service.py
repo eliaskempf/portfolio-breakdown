@@ -49,3 +49,29 @@ def test_only_splits_within_the_calculation_year_need_price_reconciliation(tmp_p
     assert result_for(replace(item, holding=old), 2025, manual, {})[1].gross == D('177.10')
     current = replace(old, splits=(('2025-06-01', D(2)),))
     assert result_for(replace(item, holding=current), 2025, manual, {})[1].gross is None
+
+
+def test_verified_accumulating_policy_is_reused_without_manual_inputs(tmp_path, monkeypatch):
+    from portfolio_app.fundamentals import FundFee
+    from portfolio_app.tax_service import distribution_evidence
+    rows, journal = create_tax_sample(tmp_path)
+    item = candidates(rows, journal, '2025-12-31')[0]
+    policy = FundFee(.001, 'https://example.invalid/invented-fund', '2025-01-01', accumulating=True)
+    monkeypatch.setattr('portfolio_app.fundamentals.PUBLIC_FEES', {item.instrument: policy})
+    market = distribution_evidence(item, 2025, {'start_price': '100', 'end_price': '110'})
+    inputs, result, _ = result_for(item, 2025, {}, market)
+    assert inputs.distributions == 0 and result.gross == D('177.10')
+    assert market['distribution_source'] == policy.source
+    # Today's policy must not silently certify an earlier year's policy.
+    assert not distribution_evidence(item, 2024, {}).get('distribution_policy')
+
+
+def test_private_policy_override_precedes_public_accumulation(tmp_path, monkeypatch):
+    from portfolio_app.fundamentals import FundFee
+    from portfolio_app.tax_service import distribution_evidence
+    rows, journal = create_tax_sample(tmp_path)
+    item = candidates(rows, journal, '2025-12-31')[0]
+    policy = FundFee(.001, 'https://example.invalid/invented-fund', '2025-01-01', accumulating=True)
+    monkeypatch.setattr('portfolio_app.fundamentals.PUBLIC_FEES', {item.instrument: policy})
+    from dataclasses import replace
+    assert not distribution_evidence(item, 2025, {}, {'isin:'+item.instrument: replace(policy, accumulating=False)})

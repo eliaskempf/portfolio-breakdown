@@ -41,7 +41,7 @@ def validate_inputs(raw):
         for field in ('start_price', 'end_price', 'distributions', 'expected_distributions', 'exemption'):
             if value.get(field) not in (None, ''):
                 number(value[field], field)
-        if value.get('distribution_mode', 'Unknown') not in ('Unknown', 'Accumulating / no distributions', 'Market history', 'Manual total'):
+        if value.get('distribution_mode', 'Automatic') not in ('Automatic', 'Unknown', 'Accumulating / no distributions', 'Market history', 'Manual total'):
             raise ValueError('Invalid distributions')
         if value.get('price_basis', 'Market-price estimate') not in ('Market-price estimate', 'Redemption prices', 'Statutory market-price fallback'):
             raise ValueError('Invalid price basis')
@@ -204,9 +204,18 @@ def prepare_inputs(year, manual, market, *, forecast=False, current_price=None):
         value = manual.get(field)
         return number(value, field) if value not in ('', None) else (
             number(market[field], field) if market.get(field) is not None else None)
-    mode = manual.get('distribution_mode', 'Market history' if market.get('distribution_count', 0) else 'Unknown')
+    mode = manual.get('distribution_mode', 'Automatic')
     distributions = None
-    if mode == 'Accumulating / no distributions':
+    issues = ()
+    if mode == 'Automatic':
+        if market.get('distribution_policy') == 'Accumulating':
+            if market.get('distribution_count', 0):
+                issues = ('Payout observations conflict with accumulating share class',)
+            else:
+                distributions = ZERO
+        elif market.get('distribution_count', 0) and market.get('distributions') is not None:
+            distributions = number(market['distributions'])
+    elif mode == 'Accumulating / no distributions':
         distributions = ZERO
     elif mode == 'Manual total' and manual.get('distributions') not in (None, ''):
         distributions = number(manual['distributions'])
@@ -221,4 +230,4 @@ def prepare_inputs(year, manual, market, *, forecast=False, current_price=None):
     explicit_prices = all(manual.get(f) not in (None, '') for f in ('start_price', 'end_price'))
     basis = manual.get('price_basis', 'Market-price estimate') if explicit_prices else 'Market-price estimate'
     return FundInputs(year, chosen('start_price'), end_price, distributions,
-                      manual.get('exemption', '0'), basis)
+                      manual.get('exemption', '0'), basis, issues)

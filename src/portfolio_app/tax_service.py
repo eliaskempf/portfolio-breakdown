@@ -139,6 +139,22 @@ def result_for(candidate, year, manual, market, *, forecast=False, override=None
     return inputs, calculate_fund(inputs, lots, ownership_issues=issues), lots
 
 
+def distribution_evidence(candidate, year, market, overrides=None):
+    """Reuse exact-share-class income policy already verified by the app.
+
+    A dated policy supports its verification year onward, not an unverified past year.
+    This is separate from tax classification and an empty payout download.
+    """
+    from portfolio_app.fundamentals import PUBLIC_FEES
+    overrides = overrides or {}
+    policy = overrides.get('isin:'+candidate.instrument) or overrides.get('ticker:'+candidate.ticker)
+    policy = policy or PUBLIC_FEES.get(candidate.instrument)
+    if policy and policy.accumulating and int(policy.verified_on[:4]) <= year:
+        return dict(market, distribution_policy='Accumulating',
+                    distribution_source=policy.source, distribution_verified_on=policy.verified_on)
+    return market
+
+
 def combined(results, allowance=ZERO, church_rate=ZERO):
     available = [r for r in results if r.gross is not None]
     gross = sum((r.gross for r in available), ZERO)
