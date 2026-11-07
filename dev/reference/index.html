@@ -339,6 +339,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and upgrade notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -463,7 +491,7 @@
   <span class="md-ellipsis">
     
   
-    Import holdings
+    Import holdings and transactions
   
 
     
@@ -609,6 +637,62 @@
     
   
     Analytics and risk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring and alerts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../futures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Futures and leverage
   
 
     
@@ -1193,7 +1277,7 @@
 
 
 <blockquote>
-<p><strong>Development documentation</strong> · app 0.1.0 · source <code>95240af3c6834ce984dd9c9e6843e539086b0fd4</code></p>
+<p><strong>Development documentation</strong> · app 0.2.0 · source <code>b810ada068f870d1319373d5258f456777f389f6</code></p>
 </blockquote>
 <h1 id="data-formats">Data formats</h1>
 <p>Use the task guides for normal app operation. This page describes private file
@@ -1206,7 +1290,11 @@ examples here are invented; instrument identities are public metadata.</p>
 <code>account</code>, <code>acquisition_currency</code>, and <code>target_allocation</code>. The app-managed
 <code>purchase_history</code> column stores bulk-entry records and is excluded from filters
 and allocations. Other additional text columns become metadata filters and allocation
-dimensions. Shares must be finite and nonnegative; zero-share positions are
+dimensions. Calculation output names are reserved: these include <code>position_id</code>,
+<code>asset_id</code>, <code>asset_name</code>, <code>value</code>, <code>source_*</code>, <code>direct_or_indirect</code>,
+<code>analysis_asset_*</code>, <code>reporting_currency</code> and calculated price, FX, value, cost,
+gain and performance fields. A conflicting column produces an error identifying
+the name to change; the application never renames or rewrites it automatically. Shares must be finite and nonnegative; zero-share positions are
 allowed. Acquisition price is optional and is displayed as entered.</p>
 <pre><code class="language-csv">id,name,ticker,isin,shares,acquisition_price,portfolio,account
 example,Example Company,DEMO,,1,10.00,Demo portfolio,Demo account
@@ -1254,7 +1342,9 @@ portfolio current comparison and gap blank while preserving known targets.</p>
 investment. Its current value is zero without requiring a quote, and its target
 contributes to its labels immediately. Add classification labels for new assets
 in the private YAML file; otherwise they appear under Unclassified.</p>
-<p>The header’s <strong>Portfolio settings → Hide empty positions</strong> changes only visibility in Positions and Exposure.
+<p>Zero-unit positions are hidden by default. The header’s <strong>Portfolio settings → Show sold positions</strong>
+reveals them in Overview’s positions list, Positions and Exposure, including planned positions with no units.
+History, realized gains and targets are retained.
 The separate Rebalance option <strong>Exclude empty positions and redistribute targets</strong>
 removes zero-share rows from the planning calculation. Their combined target is divided equally among
 remaining unique asset IDs within each category (or the whole legacy portfolio),

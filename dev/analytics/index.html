@@ -16,7 +16,7 @@
         <link rel="prev" href="../performance/">
       
       
-        <link rel="next" href="../allocation/">
+        <link rel="next" href="../monitoring/">
       
       
         
@@ -339,6 +339,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and upgrade notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -463,7 +491,7 @@
   <span class="md-ellipsis">
     
   
-    Import holdings
+    Import holdings and transactions
   
 
     
@@ -697,6 +725,62 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring and alerts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../futures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Futures and leverage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1137,7 +1221,7 @@
 
 
 <blockquote>
-<p><strong>Development documentation</strong> · app 0.1.0 · source <code>95240af3c6834ce984dd9c9e6843e539086b0fd4</code></p>
+<p><strong>Development documentation</strong> · app 0.2.0 · source <code>b810ada068f870d1319373d5258f456777f389f6</code></p>
 </blockquote>
 <h1 id="analytics">Analytics and risk</h1>
 <p>Overview Analytics follows the selected strategic category and optional account
@@ -1145,9 +1229,25 @@ filter. Position search and Exposure filters do not change that scope. Positions
 also offers Valuation, Income &amp; fees and Risk views, with definitions and sources
 under Key metrics. Blank metrics mean unavailable, not zero.</p>
 <h2 id="risk">Historical risk</h2>
-<p>Choose <strong>Calculate risk</strong>. The default is three years against <code>IUSQ.DE</code>, a global
-equity ETF proxy. Options offers the benchmark and one-, three- or five-year
-windows. Read the sample size, exclusions and coverage alongside each result.</p>
+<p>Choose <strong>Calculate risk</strong>. The default is three years against <strong>MSCI ACWI Net
+Return</strong>, using direct index levels in the portfolio reporting currency. Net
+return reinvests dividends after index-assumed withholding tax, without ETF fees
+or personal taxes. Currency translation does not hedge currency risk.
+Options offers the benchmark and one-, three- or five-year windows.</p>
+<p>Usable cached index history takes priority over switching sources. If direct
+index history is unavailable or has fewer than 52 weekly returns, the calculation
+uses the adjusted <code>IUSQ.DE</code> ETF history in the reporting currency. The benchmark
+label changes to <strong>MSCI ACWI · ETF proxy</strong> and <strong>ETF benchmark fallback</strong> appears
+beside the estimate. Sources are never stitched. Custom benchmark tickers do not
+fall back automatically. The direct reference is <code>MSCI:892400:NETR</code>.</p>
+<p>Coverage and exclusions appear in a compact status beside <strong>Details</strong>, which
+contains the sample dates, calculation basis and sources. The correlation heatmap
+is visible above the holdings risk table; <strong>Expand</strong> enlarges it and shows full
+names. Full names remain available on hover in compact mode. Blank cells mean
+undefined correlation, not zero. <strong>Columns</strong> controls the table's risk measures.
+Positions with no defined correlations, such as cash in the reporting currency,
+are omitted from the heatmap but remain in the risk calculations and holdings
+table. Foreign-currency cash remains visible when its FX returns vary.</p>
 <p>The calculation applies <strong>today's weights held constant</strong> to historical weekly
 returns. It is a hypothetical allocation, not your personal historical portfolio
 return or a forecast. It uses dividend/split-adjusted prices and historical FX to
@@ -1162,7 +1262,40 @@ portfolio estimate; negative contributions can reflect diversification.</p>
 history are excluded. Covered weights are renormalized; missing valuations prevent
 claiming whole-portfolio coverage. Funds use their own histories, not expanded
 constituents. Category risk still uses the selected benchmark, even for non-equity
-categories. Borrowing, liabilities and net-equity leverage are not modeled.</p>
+categories. Version 0.2.0 also supports <a href="../futures/">actual-account leverage</a>
+in EUR/USD/GBP with net-equity denominators, as described below. The separate
+legacy simulation remains EUR-only.</p>
+<p>Integrated account risk also shows a <strong>covered-holdings estimate</strong> when some
+histories are missing or too short. Covered positions retain their weights against
+whole-portfolio net equity, including signed futures notionals and debt; these
+weights are not renormalized. The displayed beta, volatility and correlation omit
+the excluded positions, whose count appears beside the estimate and names and
+reasons under <strong>Details → Risk coverage &amp; sources</strong>. Excluded positions can increase or decrease actual
+risk. Positive, complete net equity and at least 52 common weekly returns are
+still required.</p>
+<p>When you select a category or filter accounts, the main metrics are <strong>Subset
+beta</strong>, <strong>Subset volatility (annualized)</strong> and benchmark correlation. Ordinary
+subsets normalize the covered holdings to their own net value, including any
+selected debt. Unselected debt is not assigned to the subset. For example, a
+subset worth 20% of portfolio equity with beta 1.5 has standalone beta 1.5 and
+contributes 0.3 to portfolio beta. The view shows that contribution
+separately below the main metrics, using whole-portfolio net equity.</p>
+<p>Subsets containing futures use their selected funded capital, including cash
+attributed to the investment and unsettled claims counted once. Signed notional
+remains the future's risk weight numerator. Missing histories do not shrink this
+capital base. A bare contract's notional, margin requirement or unsettled gain
+does not establish a standalone capital base: select its funded investment or
+include its backing capital. Without a positive, fully valued base, standalone
+metrics remain unavailable while a supported portfolio beta contribution is
+still shown. Contributions use the subset's common history sample; comparisons
+across categories need matching dates and coverage to add up exactly.</p>
+<p>For reviewed equivalent equity listings, risk can use another venue's adjusted
+history when the held listing has fewer than 52 benchmark-matched weekly returns.
+Vertiv's <code>49V.DE</code> can use its same-share US listing <code>VRT</code>. Historical FX converts
+that history into the reporting currency; prices from different listings are
+never stitched together. Coverage sources identify the substitution. This does
+not change the held ticker or its current valuation, and does not apply to funds
+or futures proxies.</p>
 <h2 id="metrics">Valuation, income and costs</h2>
 <p>Aggregate P/E is <code>sum(value) / sum(value / PE)</code> for covered profitable direct
 stocks. It excludes nonpositive ratios and fund-reported P/E. Fund ratios remain
@@ -1231,13 +1364,13 @@ older than 90 days is flagged; removing an override restores issuer/provider dat
         
         
           
-          <a href="../allocation/" class="md-footer__link md-footer__link--next" aria-label="Next: Categories and targets">
+          <a href="../monitoring/" class="md-footer__link md-footer__link--next" aria-label="Next: Monitoring and alerts">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Categories and targets
+                Monitoring and alerts
               </div>
             </div>
             <div class="md-footer__button md-icon">

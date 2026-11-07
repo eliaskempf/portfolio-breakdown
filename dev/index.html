@@ -395,6 +395,34 @@
   
   
     <li class="md-nav__item">
+      <a href="releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and upgrade notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="getting-started/" class="md-nav__link">
         
   
@@ -519,7 +547,7 @@
   <span class="md-ellipsis">
     
   
-    Import holdings
+    Import holdings and transactions
   
 
     
@@ -665,6 +693,62 @@
     
   
     Analytics and risk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring and alerts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="futures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Futures and leverage
   
 
     
@@ -1091,13 +1175,13 @@
 
 
 <blockquote>
-<p><strong>Development documentation</strong> · app 0.1.0 · source <code>95240af3c6834ce984dd9c9e6843e539086b0fd4</code></p>
+<p><strong>Development documentation</strong> · app 0.2.0 · source <code>b810ada068f870d1319373d5258f456777f389f6</code></p>
 </blockquote>
 <h1 id="home">Portfolio Breakdown</h1>
 <p>Understand what you own, how it is allocated, and how a proposed contribution
 would change it. Portfolio Breakdown runs locally, in a standalone window or
 in your browser. It supports current holdings, hierarchical categories, ETF exposure and planning; it does
-not execute trades or maintain tax accounts.</p>
+not execute trades or calculate taxes.</p>
 <p>Start with <a href="install/#install">installation</a>, then
 <a href="getting-started/#first-portfolio">explore the demo or create an empty portfolio</a>.
 For an existing holdings report, use the <a href="import/#import">reviewed import</a>.</p>
@@ -1134,8 +1218,24 @@ For an existing holdings report, use the <a href="import/#import">reviewed impor
 <td><a href="analytics/#risk">Analytics</a></td>
 </tr>
 <tr>
+<td>Track moving averages and account thresholds</td>
+<td><a href="monitoring/">Monitoring and alerts</a></td>
+</tr>
+<tr>
 <td>Preview a contribution or rebalance</td>
 <td><a href="rebalance/#planning">Rebalance</a></td>
+</tr>
+<tr>
+<td>Review transaction history and reconstructed balances</td>
+<td><a href="import/#transactions">Import transactions</a></td>
+</tr>
+<tr>
+<td>Record futures and account financing</td>
+<td><a href="futures/">Futures and leverage</a></td>
+</tr>
+<tr>
+<td>Upgrade an existing installation</td>
+<td><a href="releases/">Release and upgrade notes</a></td>
 </tr>
 <tr>
 <td>Back up, restore or move your data</td>
@@ -1152,9 +1252,11 @@ For an existing holdings report, use the <a href="import/#import">reviewed impor
 channel. <strong>Development</strong> follows ongoing work. <strong>Candidate</strong> and <strong>release</strong>
 copies refer to fixed source commits. Use the help linked by your installed
 version; a newer development guide may describe different controls.</p>
-<p>This guide covers the v1 feature set, including holdings import and extended ETF
-support. It does not describe the separate futures sandbox. A package version
-alone may be shared by several candidates: the source commit distinguishes them.</p>
+<p>This guide covers version 0.2.0, including optional transaction history,
+personal performance, monitoring, and actual-account recording in EUR/USD/GBP.
+The <a href="releases/">release notes</a> explain the changes and upgrade precautions.
+A package version alone may be shared by several candidates: the source commit
+distinguishes them.</p>
 
 
 

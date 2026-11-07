@@ -27,7 +27,7 @@
     
     
       
-        <title>Import holdings - Portfolio Breakdown</title>
+        <title>Import holdings and transactions - Portfolio Breakdown</title>
       
     
     
@@ -108,7 +108,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Import holdings
+              Import holdings and transactions
             
           </span>
         </div>
@@ -339,6 +339,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and upgrade notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -472,7 +500,7 @@
   <span class="md-ellipsis">
     
   
-    Import holdings
+    Import holdings and transactions
   
 
     
@@ -490,7 +518,7 @@
   <span class="md-ellipsis">
     
   
-    Import holdings
+    Import holdings and transactions
   
 
     
@@ -534,6 +562,34 @@
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transactions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Import transactions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Import transactions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#transaction-csv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transaction CSV
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -678,6 +734,62 @@
     
   
     Analytics and risk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring and alerts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../futures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Futures and leverage
   
 
     
@@ -1097,6 +1209,34 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#transactions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Import transactions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Import transactions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#transaction-csv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transaction CSV
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1115,20 +1255,23 @@
 
 
 <blockquote>
-<p><strong>Development documentation</strong> · app 0.1.0 · source <code>95240af3c6834ce984dd9c9e6843e539086b0fd4</code></p>
+<p><strong>Development documentation</strong> · app 0.2.0 · source <code>b810ada068f870d1319373d5258f456777f389f6</code></p>
 </blockquote>
-<h1 id="import">Import a holdings report</h1>
-<p>The importer is experimental and requires an <strong>empty portfolio</strong>. It accepts
-current holdings reports, not transaction ledgers or ongoing synchronization.
-For existing positions use <a href="../positions/#balances">Update balances</a>.</p>
+<h1 id="import">Import holdings and transactions</h1>
+<p><strong>Positions → Import</strong> opens transaction import. Transactions can be imported into
+an existing or empty portfolio; review their mappings and reconstructed balances
+before applying. See <a href="#transactions">Import transactions</a>.</p>
+<p>Choose <strong>Holdings snapshot</strong> to initialize an <strong>empty portfolio</strong> from a current
+holdings report. For replacement balances in existing positions, use
+<a href="../positions/#balances">Update balances</a>. Neither import performs ongoing synchronization.</p>
 <h2 id="review">Export and review</h2>
 <p>FinanzManager-compatible column recognition is provisional: no specific tester
 export/version has been verified. Look for a current depot/holdings report and
 <strong>Bericht exportieren</strong>. Available formats and columns depend on your version.
 Use CSV, delimited TXT/TSV or Excel XLS/XLSX. QIF and PDF are unsupported.</p>
 <ol>
-<li>In <strong>Positions</strong>, choose <strong>Position tools → Import portfolio</strong> (or the empty-list
-   <strong>Import portfolio — experimental</strong> button) and upload one or more files, for example separate depot reports.</li>
+<li>In <strong>Positions</strong>, choose <strong>Import → Holdings snapshot</strong> (or the empty-list
+   <strong>Import holdings</strong> button) and upload one or more files, for example separate depot reports.</li>
 <li>Check worksheet, header row, delimiter, encoding and German/English number
    formatting. Inspect the preview before trusting suggested mappings.</li>
 <li>Map instrument name and quantity. When both Bank and FinanzManager quantities
@@ -1160,6 +1303,149 @@ Quantity, buy-in, identity and allocation assignments stay saved. A connected
 ticker is not a guarantee that quotes will be available.</p>
 <p>ETF discovery can separately use issuer-confirmed identity to install a
 <a href="../exposure/#sources">breakdown</a>; import review itself stays offline.</p>
+<h2 id="transactions">Import transactions</h2>
+<h3 id="transaction-csv">Transaction CSV</h3>
+<p>Choose <strong>Positions → Import</strong>; <strong>Transactions</strong> is selected by default. Upload a CSV, map its
+assets to existing holdings or new positions, then review the transactions and
+forward-reconstructed balances. New positions are created only when you apply.
+An optional price listing connects normal current and historical market data.
+Existing holdings are matched by identifier, name, ISIN or ticker; crypto symbols
+also match ticker pairs such as <code>BTC-EUR</code>. Ambiguous matches require a choice.
+New assets receive exact listing suggestions, preferring the reporting currency.
+Crypto listings are checked for that currency in mixed portfolios too; other
+quote currencies remain available when no matching pair is found.
+Click the price-listing field to open its searchable popup. Suggestions appear
+immediately, with the reporting currency first; type a name, ticker or ISIN to
+search in the same popup. Each result shows its ticker, currency and exchange.
+Choosing a result updates the field and closes the popup. Escape or clicking
+outside keeps the previous selection. Suggestions, names and types
+remain editable; listing changes are saved together with applied transactions.
+The listing label identifies the quote pair; its quote currency is not added to
+the holding name. The <strong>Holding</strong> dropdown contains existing holdings and <strong>New
+position</strong>. Selecting <strong>New position</strong> splits that cell into the dropdown and an
+editable holding name beside it. The holding dropdown selects the destination;
+the price-listing popup selects the market-data source.
+Edited names survive listing changes and navigation. Automatically suggested types
+can be reviewed under <strong>Asset types &amp; categories</strong>. Each new holding has a separate
+<strong>Category</strong> choice, initially <strong>Unassigned</strong>, using the portfolio's leaf categories.
+This also assigns fully sold holdings and their retained history. Type and price
+listing never choose a category automatically. Existing holdings keep their
+categories and targets; new position targets remain undecided. Category choices
+survive <strong>Back to import</strong>. If categories or targets change during review, reload
+and review again; an unavailable category must be changed explicitly before
+application. Create categories in <strong>Rebalance → Targets</strong> when needed.
+<strong>Show transactions for</strong> filters the review
+table by asset, including received exchange legs and asset fees. It does not
+exclude transactions from the import.</p>
+<p>Before upload, there is no review to cancel. After upload, <strong>Discard review</strong> clears
+the file and unsaved choices and returns to the uploader. Changing tabs retains
+the draft. Saved transactions are not deleted by discarding their review.</p>
+<p>The template has seven columns:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>reference</code></td>
+<td>Stable unique reference across your transaction files; retain it when correcting a row.</td>
+</tr>
+<tr>
+<td><code>date</code></td>
+<td>Transaction date, <code>YYYY-MM-DD</code>.</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td><code>buy</code>, <code>sell</code>, <code>income</code>, <code>fee</code>, <code>exchange</code>, <code>transfer_in</code>, <code>transfer_out</code>, or <code>opening</code>.</td>
+</tr>
+<tr>
+<td><code>asset</code></td>
+<td>The asset to map to a holding.</td>
+</tr>
+<tr>
+<td><code>quantity</code></td>
+<td>Positive units; zero for cash income/fees.</td>
+</tr>
+<tr>
+<td><code>amount</code></td>
+<td>Trade consideration excluding fees, income value, external transfer value, or starting acquisition cost. Blank means unknown.</td>
+</tr>
+<tr>
+<td><code>currency</code></td>
+<td>Currency of the amount.</td>
+</tr>
+</tbody>
+</table>
+<p>Optional columns are <code>fee</code>, <code>fee_currency</code>, <code>fee_asset</code>, <code>received_asset</code>,
+<code>received_quantity</code>, <code>acquisition_cost</code>, <code>acquisition_currency</code>, <code>order</code>,
+<code>estimated</code> and <code>note</code>. Exchange rows need the received asset and quantity.
+In-kind income adds units; cash income has zero quantity. A fee with positive
+quantity is paid in that asset; a cash fee has zero quantity and a monetary amount.
+For a transfer in, <code>amount</code> is its boundary valuation and <code>acquisition_cost</code> is
+its carried basis. These values need not match. <code>opening</code> is a starting balance,
+not a purchase or contribution. Split and tax events are also supported.</p>
+<p>Omitting the optional fee column declares no additional fees. If included, blank
+fees remain unknown; enter zero when none were paid. <code>estimated=yes</code> marks supplied
+amounts as estimates. Do not use zero to represent an unknown value. File order is
+the initial order for same-day transactions; supply <code>order</code> when a different
+execution order is known. Dates are not converted into invented execution times.
+When dependent transactions on one day come from separate files or incompatible
+clocks, <strong>Review same-day order</strong> shows the affected entries before balance
+review. Enter distinct order numbers, earlier first, and choose <strong>Use reviewed
+order</strong>. Original timestamps remain retained; PDF statement times without a
+timezone are never treated as UTC. Already applied history keeps its accepted
+order until an explicit review changes it.</p>
+<p>Use <strong>Save evidence only</strong> to retain the upload without changing active balances.
+Mapped transactions appear in the usual Transactions view. Saved imports for new
+positions can be reopened from the import screen. <strong>Review against portfolio</strong>
+opens the same reconciliation screen used for manual and PDF transaction history.
+<strong>Back to import</strong> retains the mapping and name edits. Reviewing writes nothing;
+the apply action saves the reviewed holdings and history together.
+For assets without a recorded starting balance, it previews zero holdings before
+the first movement and states that assumption beside the apply actions. Applying
+confirms that starting point. If the export begins after you already held assets,
+choose <strong>Import options → Before the first transaction → Earlier holdings</strong> and supply an opening balance in
+the CSV or the holding's History before applying.
+The ending reference is only a comparison; it never supplies a balancing opening.</p>
+<p>The comparison shows whether units and acquisition costs match current holdings.
+The final apply action accepts the displayed reconstruction; a matching balance
+does not itself prove completeness because missing movements can cancel out.
+Similar transactions are shown once as a group, with all entries retained by
+default. Open the group to exclude pending entries; balances recompute from that
+selection. The final apply action accepts the selection, without separate pairwise
+acknowledgments. Excluded source evidence remains saved. The group shows whether
+all entries reconcile to an existing holding; a new holding's zero placeholder is
+never presented as an independently recorded ending balance.
+Different recorded execution times distinguish otherwise identical transactions.
+When either entry has only a date, matching economic details still appear in the
+similar-transactions group.</p>
+<p><strong>Apply history</strong> makes the reviewed ledger authoritative for the resulting
+holding. For multiple holdings, accept each displayed balance and choose
+<strong>Apply reviewed holdings</strong>. Each acceptance advances to the next unreviewed
+holding; reviewed holdings are marked in the selector. You can revisit them
+without accepting them again. Nothing is applied until every holding is reviewed
+and you choose the final apply action. There is no separate completeness declaration.
+Estimates stay labelled, and missing prices or amounts still limit their dependent
+metrics. Application replaces the managed balance; it does not add the same
+trades to the existing snapshot again.</p>
+<p>After import, use the normal <strong>Transactions</strong> list to edit or remove entries,
+regardless of whether they came from CSV, PDF or manual entry. Exchanges, transfers
+and fees paid from another asset are reviewed with all affected holdings. Original
+evidence remains retained. Reimporting the same references does not duplicate
+transactions or undo later edits/removals. Moving rows within an export keeps
+their previously accepted order; use an explicit <code>order</code> to correct chronology.
+Changed source rows show their changed fields and require approval individually,
+including a warning when they replace a later edit or removal. Economically similar rows from different sources require a
+review rather than automatic deletion.</p>
+<p>Prepare wallet/staking movements and personal approximations before import when
+one asset-level history is sufficient. Preserve fees and income once, and retain
+unknown facts as unknown. The application does not infer economic meaning from
+export labels. Older transaction formats, checkpoints and unresolved inventory
+records remain readable for compatibility. The separate asset-history diagnostic
+is retired; all results use normal history, daily TWR and annualized XIRR.</p>
 
 
 

@@ -339,6 +339,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and upgrade notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -463,7 +491,7 @@
   <span class="md-ellipsis">
     
   
-    Import holdings
+    Import holdings and transactions
   
 
     
@@ -609,6 +637,62 @@
     
   
     Analytics and risk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring and alerts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../futures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Futures and leverage
   
 
     
@@ -875,6 +959,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Locate the workspace">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#futures-and-account-records-development" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        History, futures and account records
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -924,6 +1025,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Privacy and network access">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#transaction-history-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transaction-history compatibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1123,6 +1241,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Locate the workspace">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#futures-and-account-records-development" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        History, futures and account records
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1173,6 +1308,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Privacy and network access">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#transaction-history-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transaction-history compatibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -1193,7 +1345,7 @@
 
 
 <blockquote>
-<p><strong>Development documentation</strong> · app 0.1.0 · source <code>95240af3c6834ce984dd9c9e6843e539086b0fd4</code></p>
+<p><strong>Development documentation</strong> · app 0.2.0 · source <code>b810ada068f870d1319373d5258f456777f389f6</code></p>
 </blockquote>
 <h1 id="storage">Storage, privacy and recovery</h1>
 <h2 id="location">Locate the workspace</h2>
@@ -1225,11 +1377,86 @@
 remember a different active folder for the same shortcut (see below).
 For a custom launch directory, see <a href="../install/#commands">advanced launch options</a>.</p>
 <p>The workspace contains <code>holdings.csv</code> (including saved purchase/cost records),
-optional <code>portfolio.yaml</code> currency settings, <code>classifications.yaml</code>, strategic
+optional <code>portfolio.yaml</code> currency settings, <code>display-preferences.json</code> calendar
+preferences, <code>classifications.yaml</code>, strategic
 <code>allocation.yaml</code>, ETF snapshots under <code>etfs/</code>, private overrides, <code>.cache</code> and
 per-document <code>.backups</code>. Keep the whole directory private. App-managed saves
 validate data, check file revisions and back up previous files before atomic
 replacement. Those backups do not protect against loss of the entire drive.</p>
+<h3 id="futures-and-account-records-development">History, futures and account records</h3>
+<p>Version 0.2.0 also keeps these private documents in the same
+workspace:</p>
+<table>
+<thead>
+<tr>
+<th>Document</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>monitoring.json</code></td>
+<td>Saved rules and revisions, recorded metric observations, alert episodes and read/acknowledgment state</td>
+</tr>
+<tr>
+<td><code>account-journal.json</code></td>
+<td>Optional securities records, reviewed history selections and dated capital allocations; accounts, exact contract definitions, position identities, dated transactions and corrections, cash/holding bindings, collateral reservations and entered margin requirements</td>
+</tr>
+<tr>
+<td><code>settlement-archive.json</code></td>
+<td>Durable exact-contract daily settlement observations, retained source revisions and accepted prices</td>
+</tr>
+<tr>
+<td><code>settlement-collection.json</code></td>
+<td>Last automatic collection attempts and dated source availability</td>
+</tr>
+<tr>
+<td><code>history-observations.json</code></td>
+<td>Dated prices, FX, manual total/boundary valuations, correction history and scope coverage reviews</td>
+</tr>
+<tr>
+<td><code>account-observations.json</code></td>
+<td>Dated valuation marks and manual FX observations; these do not post cash</td>
+</tr>
+<tr>
+<td><code>generalized-study-settings.json</code></td>
+<td>Named hypothetical scenarios, cash reserves, policies and input assumptions</td>
+</tr>
+<tr>
+<td><code>leverage-settings.json</code></td>
+<td>Existing leverage settings, legacy liabilities and documented fund exposure factors</td>
+</tr>
+</tbody>
+</table>
+<p>Daily settlements are archived separately from the journal and included in
+workspace backups. Clearing <code>.cache</code> does not remove this archive; closing or
+rolling a position retains its history. Archive writes retain observation versions
+in the document rather than creating a full per-download backup copy. Other
+public history downloads may remain in caches. Eligible daily futures settlements
+are applied automatically from the archive using their recorded quantities and
+clearing basis; duplicate dates and manual corrections are preserved. Other market
+observations do not create transactions. Missing or failed downloads do not justify
+reconstructing account balances from estimated prices. Keep the whole workspace,
+including caches and study inputs, private.</p>
+<p>When existing cash is adopted by an account, its original holding identity is
+retained and linked to one native account balance. Account cash replaces that
+holding's valuation contribution. Subsequent balance changes belong in
+<strong>Futures → Cash &amp; financing</strong>, not a second cash holding or an ordinary holdings
+edit. Linking assets may save persistent position keys without changing their
+quantities. Security collateral reservations reference owned share/unit quantities;
+they do not create additional assets.</p>
+<p>Transactions preserve original native-currency amounts. Corrections retain the
+original entries and append replacement/reversal facts. A snapshot can start
+accounting at a known cash balance and clearing basis without inventing older
+transactions. Delayed cash remains a recorded claim until an explicit receipt or
+payment. Changing reporting currency changes valuation, not saved native amounts.</p>
+<p>Legacy <code>futures-sandbox.json</code> and its comparison/history/funding settings remain
+separate simulation documents. They are not automatically converted into actual
+positions. Adopting a legacy liability records its existing debt and marks the
+old record as already included, preserving the original settings while preventing
+duplicate debt. Use the app's reviewed saves to preserve these relationships;
+copying individual account files between unrelated holdings workspaces can leave
+invalid references. See <a href="../futures/">Futures and leverage</a> for the workflows.</p>
 <h2 id="backup">Back up and restore</h2>
 <p>Open <strong>Portfolio settings → Create backup</strong> while <strong>My portfolio</strong> is selected.
 Wait for verification, then choose <strong>Download backup</strong> and save the
@@ -1239,6 +1466,10 @@ portfolio unchanged. Unsaved forms are not included.</p>
 <p>The versioned archive preserves saved holdings and purchase-cost components/FX,
 reporting currency, categories and targets, classifications, ETF holdings and
 substitute baskets, overrides, portfolio caches and hidden document backups.
+It also preserves the account journal,
+valuation observations, collateral/account bindings, named study settings and
+legacy sandbox documents. Restore validates account references against the saved
+holdings; it does not promote simulated positions into real transactions.
 Runtime locks and temporary files are excluded. The app briefly coordinates
 persistent writes while capturing a consistent snapshot; network requests and
 compression do not hold that barrier. Close external editors first: they cannot
@@ -1317,10 +1548,31 @@ issuer ETF data. Search text and selected instrument identifiers go to providers
 position quantities and purchase costs are not sent as part of those lookups.
 Import files and review drafts are processed locally. The explicit offline demo
 avoids market requests; normal demo mode uses the network.</p>
+<p>Futures data requests use public product, contract, date, FX and explicitly chosen
+proxy identifiers. Account cash, contract quantities and manually entered taxes
+are stored locally; no broker connection is required. Market downloads, account
+transaction entry and hypothetical studies are separate operations. Futures
+transaction CSV import is not supported; enter futures transactions manually.</p>
 <p>Do not commit personal holdings, accounts, costs, targets, classifications,
 imports, screenshots, reports, caches, backups or credentials. The entire <code>data/</code>
 directory and personal <code>handoff.md</code> are private. Contributor checks are described in <a href="../development/">Source development</a>.
 An automated scan cannot recognize all personal details.</p>
+<h3 id="transaction-history-compatibility">Transaction-history compatibility</h3>
+<p>Opening a legacy workspace does not convert its purchase batches or rewrite the
+journal. Securities-history saves use account journal version 5; dated
+allocations require at least version 2. Saves retain a private backup. Versions
+1–5 remain readable, and existing native futures events preserve their meaning. Older
+application versions may not read the current journal;
+use a compatible application or restore the complete pre-upgrade backup into a
+separate workspace. Do not replace only the journal while retaining newer history.</p>
+<p>History-managed CSV rows retain their source snapshot and metadata. Current
+financial balances are projected from the journal, so the CSV alone is not a
+current-balance export. Back up the entire workspace. Draft evidence, original
+records, observations, coverage reviews and closed positions are included. A
+failed first activation may leave stable position keys, but never a partially
+applied trade or duplicate cash posting.</p>
+<p>See the <a href="../releases/#upgrade-020">version 0.2.0 upgrade notes</a> before updating or
+downgrading an installation.</p>
 
 
 

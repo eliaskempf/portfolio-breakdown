@@ -1,0 +1,2096 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Local portfolio analysis — user guide">
+      
+      
+      
+        <link rel="canonical" href="https://eliaskempf.github.io/portfolio-breakdown/dev/futures/">
+      
+      
+        <link rel="prev" href="../monitoring/">
+      
+      
+        <link rel="next" href="../allocation/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Futures and leverage - Portfolio Breakdown</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#futures-and-leverage-development" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Portfolio Breakdown" class="md-header__button md-logo" aria-label="Portfolio Breakdown" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Portfolio Breakdown
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Futures and leverage
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Portfolio Breakdown" class="md-nav__button md-logo" aria-label="Portfolio Breakdown" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Portfolio Breakdown
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start here
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Setup
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install and run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and upgrade notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first portfolio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Holdings
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Holdings
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../positions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Positions and buy-ins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../import/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Import holdings and transactions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analysis
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Analysis
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../exposure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exposure and ETFs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prices and performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../analytics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analytics and risk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring and alerts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Futures and leverage
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Futures and leverage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#add-an-actual-futures-position" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Add an actual futures position
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#investment-capital-and-contract-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Investment capital and contract history
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#account-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Account history
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roll-from-position-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roll from position details
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pl-and-settlement-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P&amp;L and settlement history
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="P&amp;L and settlement history">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#automatic-history-archive-and-comparisons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Automatic history archive and comparisons
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#retrieve-missed-daily-settlements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Retrieve missed daily settlements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cash-settlement-and-exposure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cash, settlement and exposure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#marks-and-free-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Marks and free data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#market-history-in-position-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Market history in position details
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#margin-accounts-and-collateral" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Margin accounts and collateral
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exposure-risk-and-planning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exposure, risk and planning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#studies-in-the-normal-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Studies in the normal workspace
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#legacy-eur-sandbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Legacy EUR sandbox
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planning
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Planning
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../allocation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Categories and targets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rebalance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rebalance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Help
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Help
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage and recovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data formats
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Source development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#add-an-actual-futures-position" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Add an actual futures position
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#investment-capital-and-contract-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Investment capital and contract history
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#account-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Account history
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roll-from-position-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roll from position details
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pl-and-settlement-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P&amp;L and settlement history
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="P&amp;L and settlement history">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#automatic-history-archive-and-comparisons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Automatic history archive and comparisons
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#retrieve-missed-daily-settlements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Retrieve missed daily settlements
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cash-settlement-and-exposure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cash, settlement and exposure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#marks-and-free-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Marks and free data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#market-history-in-position-details" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Market history in position details
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#margin-accounts-and-collateral" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Margin accounts and collateral
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exposure-risk-and-planning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exposure, risk and planning
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#studies-in-the-normal-workspace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Studies in the normal workspace
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#legacy-eur-sandbox" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Legacy EUR sandbox
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<blockquote>
+<p><strong>Development documentation</strong> · app 0.2.0 · source <code>b810ada068f870d1319373d5258f456777f389f6</code></p>
+</blockquote>
+<h1 id="futures-and-leverage-development">Futures and leverage</h1>
+<p>Version 0.2.0 supports manually recorded futures and account balances in the
+normal portfolio workspace. EUR, USD and GBP are supported as account,
+contract-settlement and reporting currencies. No broker connection or order execution is involved.
+Futures transactions are entered manually; transaction CSV imports are deferred.</p>
+<h2 id="add-an-actual-futures-position">Add an actual futures position</h2>
+<p>Open <strong>Positions → Add position → Future</strong>. Choose <strong>New opening trade</strong> or
+<strong>Already-open position snapshot</strong>, then enter the date, exact contract maturity,
+signed whole contracts and price. Positive quantities are long; negative
+quantities are short. Select a listed product or supply a manual contract's
+currency, point multiplier and tick. Verify the exact maturity rather than
+assuming that a product code identifies one contract. Listed products offer the
+actual maturities published by Eurex, with no preselected contract. Rolls offer
+only later listed maturities. <strong>Historical / manual maturity…</strong> permits an expired
+or otherwise unlisted exact contract; verify that date from your trade records.
+If the listing source is unavailable, only the explicit manual option is offered.</p>
+<p>Select an account or create one. If its cash already appears in Holdings, choose
+<strong>Adopt existing cash</strong>: the account balance replaces that holding's contribution
+instead of creating another asset. Otherwise enter cash that is not already
+recorded elsewhere. For a <strong>New opening trade</strong>, <strong>Account start</strong> defaults to <strong>Existing balance</strong>, a dated
+snapshot that leaves earlier account history unknown. Choose <strong>Newly funded account</strong>
+only when funding began from a confirmed zero account balance. Enter <strong>Funding date</strong>
+and a positive <strong>Initial contribution</strong> in the account currency; the funding date
+must be no later than the trade date. This records zero inception
+and the dated contribution separately. The contribution must come from outside
+the tracked scope; use <strong>Transfer</strong> for cash moving between included accounts.
+Enter cash only, not a broker's account net liquidation value. Use zero when there
+is no cash to record in an existing-balance snapshot. An account can subsequently have separate
+EUR, USD and GBP balances under <strong>Futures → Cash &amp; financing</strong>.
+An <strong>Already-open position snapshot</strong> creates an existing-balance account;
+it cannot establish a new account's complete opening trade history. For an account
+funded before a later contract snapshot, equity and returns before that snapshot
+remain unknown even when the earlier cash balance is known.</p>
+<p>For an existing position, enter its <strong>last settled price / clearing basis</strong> and
+current cash at the snapshot date. That cash already includes earlier settlements;
+do not enter those gains again. Earlier transaction performance remains unknown.
+For a new trade, enter the actual fill and any opening fees. Optional category
+and index-holdings proxy choices control classification and approximate exposure.
+Choose <strong>Review changes</strong>, inspect the proposal, then <strong>Save reviewed changes</strong>.
+The record persists in the existing workspace without a sandbox marker.</p>
+<h2 id="investment-capital-and-contract-history">Investment capital and contract history</h2>
+<p>The normal entry form also asks for an <strong>Investment name</strong> and <strong>Initial allocated
+capital</strong> in the contract's settlement currency. This declares how much existing
+account cash belongs to the investment. It neither creates a deposit nor buys the
+contract's notional. Zero is allowed; monetary P&amp;L remains available, while a
+percentage return requires positive initial capital. Collateral remains an
+independent account reservation and is not added to investment value.</p>
+<p>Overview and Positions show one persistent investment row across contract rolls:</p>
+<pre><code class="language-text">investment capital value = allocated principal + recorded cumulative net P&amp;L
+recorded net P&amp;L = realized trading P&amp;L + unrealized trading P&amp;L − fees − entered taxes + net attributed interest
+reference return = recorded net P&amp;L / fixed initial allocated capital
+</code></pre>
+<p>Explicitly attributed interest is included in net P&amp;L. Account-level expenses
+without a contract attribution remain outside investment performance. The gain
+includes closed contracts and pending payments; posting a settlement or receiving
+pending cash changes its location, not the gain. Market exposure remains separate.
+For example, an invented €20,000 allocation and €1,000 net gain display as a
+€21,000 investment with €1,000 gain and 5% reference return, regardless of how much
+of that gain has already settled into cash. If the account also contains €3,000
+unallocated cash, that appears separately. Attributed cash is counted only once.</p>
+<p>Select the investment in Overview or Positions to open <strong>Position details</strong>,
+using the same popup as ordinary holdings. The summary shows capital value, net
+P&amp;L and market exposure. <strong>Chart</strong>, <strong>Settlements</strong> and <strong>Contract history</strong> switch
+the content, while <strong>Edit position</strong>, <strong>Record transaction</strong> and <strong>Roll contracts</strong>
+open separate action forms. <strong>Back to position</strong> returns to the selected view.
+Closed expiries remain in contract history. The holdings list keeps
+its capital-value columns; futures exposure is available in the popup and the
+Overview <strong>Market exposure</strong> view. Switching between market exposure and capital
+allocation changes the chart and category summary; the positions list always
+keeps actual investment values and capital percentages. A roll retains the investment's name,
+initial capital and cumulative performance. Separate investments can use the same
+account; each has its own capital attribution. Shared capital pools across
+investments are not currently modeled.</p>
+<p>Under <strong>Futures → Positions &amp; transactions</strong>, <strong>Edit investment allocation</strong>
+changes total allocated principal, excluding gains and losses. Its difference
+from initial capital is net funding, not profit. The initial reference stays fixed;
+this percentage is neither time-weighted nor annualized. A cash deposit/withdrawal
+must still be recorded separately when actual account cash changes. An account
+withdrawal can leave a negative unallocated remainder: this is an allocation
+shortfall to reconcile, not an additional loan.</p>
+<p>Existing journals retain their original account and contract records without
+automatic allocation. Choose <strong>Group an existing contract history as an
+investment</strong> to supply a name and capital at the recorded start. Explicitly linked
+rolls join the same investment. For an already-open snapshot, its opening cash
+already includes earlier settlements; performance before the snapshot stays
+unknown. EUR, USD and GBP amounts are converted at current reporting FX. These
+investment gains do not reconstruct historical FX gains on allocated capital.</p>
+<h2 id="account-history">Account history</h2>
+<p>Recorded opening balances, contracts, trades, rolls, cash movements, income, fees
+and taxes determine account history, including closed contracts. There is no
+separate account-history confirmation. Earlier activity before an opening
+snapshot remains unknown. Missing settlement prices and transaction amounts are
+checked separately; downloading prices does not settle cash or change transactions.</p>
+<h2 id="roll-from-position-details">Roll from position details</h2>
+<p>Open a futures investment and click <strong>Roll contracts</strong>. Select the current
+contract, roll date and number of contracts. Under <strong>Close the current contract</strong>,
+enter its executed closing price. Under <strong>Open the new maturity</strong>, enter the exact
+later maturity and its executed opening price. Enter the total roll fees once.</p>
+<p><strong>Review roll</strong> shows both contract legs and resulting account cash. <strong>Save roll</strong>
+records both legs together. The same signed quantity opens in the new maturity;
+a partial roll leaves the remaining contracts in the old one. The price difference
+between expiries establishes the new basis, not an immediate profit. Investment
+identity, capital allocation and cumulative performance are retained. This records
+executed transactions; it does not send orders to a broker.</p>
+<p>Use <strong>Record transaction</strong> in the popup for settlements, increases/reductions,
+closes, fees and optional manually recorded tax payments. The <strong>Edit position</strong>
+button at the top of the popup opens <strong>Edit allocation</strong>, which changes the investment name or attributed principal. Account-wide cash, financing,
+collateral and corrections remain available under <strong>Futures</strong>.</p>
+<h2 id="pl-and-settlement-history">P&amp;L and settlement history</h2>
+<p>The headline <strong>Net P&amp;L</strong> remains the investment's cumulative gain across open
+and closed contracts, after attributed fees, interest and manually entered taxes.
+The gain shown in Overview and Positions uses this same figure. <strong>Return</strong> divides
+it by fixed initial allocated capital; it is not a return on contract notional or
+current margin. With zero initial capital, gain is available but return is not.</p>
+<p>The compact breakdown beneath Net P&amp;L and the expanded <strong>Position details</strong> use:</p>
+<ul>
+<li><strong>Unrealized P&amp;L</strong>: entry-to-current-mark trading P&amp;L for quantities still held,
+  including their daily settlements. Recording a settlement does not reset it.</li>
+<li><strong>Realized P&amp;L</strong>: entry-to-exit trading P&amp;L for closed quantities, matched FIFO.
+  Partial closes realize only the closed lots. Final settlement closes all lots.
+  A roll realizes the old contract and starts the new one at its execution price.</li>
+</ul>
+<p>Both figures exclude costs. Position details show their net fees, interest and
+entered-tax adjustment to reconcile to Net P&amp;L. These are performance labels, not
+tax calculations. Daily cash settlement is a separate accounting dimension:
+settlement and later receipt of pending cash never add to total gain a second time.
+Reporting amounts use current FX; snapshots measure from the recorded snapshot
+basis, with earlier performance unknown.</p>
+<p>Choose <strong>Settlements</strong> to see every effective daily/final settlement across the
+investment's contract history: date, expiry, signed quantity at settlement, price,
+<strong>Settlement P&amp;L</strong>, currency and cash status. Expand <strong>Posting details</strong> for the
+value date, actual posting date, source and notes.
+Corrections update this effective view while the original journal facts remain
+preserved. Closing trades contribute to realized P&amp;L but are not daily settlements.
+Available daily settlement prices automatically create dated settlement entries
+for eligible recorded positions. Their source and automatic origin remain visible
+in <strong>Posting details</strong>. Other valuation marks do not create settlement transactions.</p>
+<h3 id="automatic-history-archive-and-comparisons">Automatic history archive and comparisons</h3>
+<p>While the normal app is open, eligible contracts collect available daily settlement
+history in the background. Startup fills missing dates within the previous 31
+calendar days; a daily refresh rechecks the most recent week for source revisions.
+Collection begins checking today at the published settlement reference time
+(17:30 Europe/Berlin for the curated products). This is not a promised publication
+time: the source must actually publish the requested daily settlement. Pending
+publication retries every 15 minutes during the first two hours, then hourly for
+recent dates; older gaps retry daily. History checks distinguish awaiting
+publication, unavailable history and failed requests. Active contracts and recently closed or
+rolled legs are eligible. Weekends and final-settlement dates are excluded;
+source holidays or unavailable historical records remain visible gaps. Accepted
+daily prices can update dated valuation immediately. Cash posting waits until
+the business date has ended in Europe/Berlin, without another 24-hour delay.
+Eligible archived prices are also applied at startup. The journal dates cash to
+the settlement business date, after that day’s recorded trades, and updates the
+clearing basis once. The same ledger
+calculation updates investment P&amp;L and value without counting the cash gain twice.
+No fees, taxes or final-settlement transactions are inferred.</p>
+<p>Saved observations survive cache clearing and closing or rolling the position.
+Existing exact-contract settlement caches migrate into the archive. Source
+revisions preserve the accepted price and both versions; they never rewrite
+existing transactions. Manually corrected or voided settlement dates are not
+recreated. Snapshot dates and periods already covered by a later cash balance or
+reconciliation are skipped to avoid duplicating included gains. The notification bell
+flags source changes, recorded-price differences and unavailable downloads.</p>
+<p>Open <strong>Settlements → History checks</strong> in position details, or <strong>Futures → Settlement
+history</strong> for all contract histories. <strong>Check source history</strong> compares any selected
+period of up to 31 days against newly retrieved observations. The table compares
+archived, retrieved and recorded prices. <strong>Use retrieved price in archive</strong> accepts
+a source revision into the archive only; correcting an account transaction remains
+a separate reviewed action. Observation versions retain source and retrieval time.
+Free historical coverage is incomplete, so unavailable dates still require verified
+manual records. Collection does not run while the app is closed.</p>
+<h3 id="retrieve-missed-daily-settlements">Retrieve missed daily settlements</h3>
+<p>Open the investment’s <strong>Settlements → Retrieve settlements</strong>. Select the exact
+contract and a range of up to 31 calendar days ending before today, then retrieve.
+The app uses free Eurex prices and displays each weekday as available, unavailable,
+already recorded or ineligible. Weekend dates are skipped; missing weekdays are
+not assumed to be exchange holidays. Availability varies by contract and date;
+this is not a complete long-term historical archive.</p>
+<p>Select available dates to record, inspect each day’s quantity and settlement P&amp;L,
+then choose <strong>Review settlements → Save settlements</strong> if they have not already
+been applied automatically. Existing entries are skipped. This manual backfill
+posts selected daily settlements after that day’s recorded trades, with cash
+posted on the business date. For different cash value
+dates, use <strong>Record transaction</strong> instead. Final/expiry-day settlements stay manual.</p>
+<p>Backfill uses historical quantities, including partial closes and contract rolls,
+and skips existing daily/final settlements. An opening snapshot already includes
+its clearing date and earlier settlements; those dates cannot be posted again.
+Gaps before a later opening cash balance, or on/before a cash reconciliation,
+require manual reconciliation because the recorded cash may already include them.
+The original journal entries and sources remain preserved.</p>
+<p>To reconstruct a trade opened last week, record its actual opening date and fill,
+with account cash from that date before the trade’s fees and later settlements.
+Then retrieve and review the missing days. If using today’s cash and clearing
+basis instead, record an <strong>Already-open position snapshot</strong>; earlier performance
+cannot be recovered merely by downloading past market prices.</p>
+<h2 id="cash-settlement-and-exposure">Cash, settlement and exposure</h2>
+<p>The account journal distinguishes wealth from contractual exposure:</p>
+<pre><code class="language-text">open-contract unsettled P&amp;L = sum of signed lot quantities × multiplier × (mark − clearing basis)
+signed futures exposure = signed open contracts × multiplier × mark
+net equity = ordinary assets + account cash + unsettled claims − explicit loans
+</code></pre>
+<p>Amounts are recorded in their native currencies and translated for reporting.
+Futures notional is never added to wealth or deducted as a purchase price.
+Changing reporting currency does not rewrite native transactions. Foreign cash,
+claims and debt can change reporting value with FX; FX does not create a gain
+on the full futures notional by itself. Missing valuations or FX remain unknown.</p>
+<p>Under <strong>Futures → Positions &amp; transactions</strong>, record settlements, signed increases
+or reductions, full closes, rolls, final settlement, fees and optional tax
+payments/withholding. Reductions match recorded lots FIFO for application P&amp;L
+attribution; this is not tax-lot accounting. A roll closes one expiry and opens
+another. Its price gap establishes the new clearing basis rather than generating
+an immediate gain or loss. Closing a contract retains the account's cash.</p>
+<p>A settlement posting moves the price change since the clearing basis into cash
+and resets that basis. A later mark therefore adds only the subsequent unsettled
+change. When the cash value date is later, the journal retains a receivable or
+payable until <strong>Receive pending cash</strong> records its payment. Transfers can also
+remain in transit. Passing the value date alone does not post a receipt.</p>
+<p>Fees and manually entered taxes reduce wealth once, either through cash or an
+outstanding payable. Tax records are optional amounts entered by the user: the
+app does not calculate taxes, infer a jurisdiction or give tax advice. Recorded
+transactions can be reversed while retaining their original facts; dependent
+entries may need correction first.</p>
+<p>Under <strong>Positions &amp; transactions → Recorded transactions</strong>, filter by account,
+investment/contract, action or date. The journal shows readable names, applicable
+amounts, quantities, prices and correction status. A dated claim is distinct from
+a received cash payment. Internal identifiers and source details are under
+<strong>Entry provenance</strong>.</p>
+<p>Select <strong>Transaction details → Correct entry</strong> to edit prefilled facts, compare
+the original and replacement, and choose <strong>Review correction → Save correction</strong>.
+The replacement cancels the original's accounting effect and supplies corrected
+facts in one revision-checked write; both records remain in history. Changed
+inputs or a concurrently updated journal require another review. <strong>Cancel
+correction</strong> discards the draft. <strong>Reverse only</strong> explicitly removes an entry's
+effect without a replacement. Invalid dependent histories block saving and show
+later entries to review. Linked rolls and collateral entries direct you to their
+source workflows rather than allowing partial edits.</p>
+<p>For example, with invented values: €20,000 cash, two contracts at 1,000 points,
+€10 per point and €8 fees leave €19,992 cash. A mark of 1,010 creates €200
+unsettled P&amp;L, so equity is €20,192. Posting that settlement leaves €20,192 cash
+and zero unsettled P&amp;L at 1,010. Reserving €4,000 as collateral does not change
+any of those wealth totals.</p>
+<h2 id="marks-and-free-data">Marks and free data</h2>
+<p>While the normal app is open, held curated contracts refresh from the free,
+15-minute-delayed quote service behind Eurex's public product pages. Refreshes
+run every five minutes during the weekday trading window and hourly outside it.
+Failures back off for 5, 15 and then 60 minutes. <strong>Refresh prices</strong> retries now.
+Collection does not run while the app is closed.</p>
+<p>A timestamped exact-contract trade changes unsettled P&amp;L, investment capital
+value and signed exposure. It never posts cash or changes the clearing basis.
+When the corresponding daily settlement posts, settled and unsettled amounts
+change location without creating a second gain. A newer market quote remains
+selected when an earlier settlement arrives late.</p>
+<p>The supported lookup covers FMWN (EUR), FMWO (USD), FMWB (GBP), FESX, FDAX,
+FDXM, FDXS (EUR) and FTUK (GBP). Each request verifies the product, monthly series,
+canonical expiry, currency and multiplier. MSCI quote-feed maturity labels use a
+different date from the statistics listing; the adapter verifies their unique
+monthly series without altering the recorded contract expiry. It never substitutes
+an index, ETF, daily contract or nearby maturity.</p>
+<p>Availability depends on actual trading in that maturity. The website sometimes
+returns settlement-like last prices without trade volume; those do not qualify
+as intraday quotes. Deferred maturities and thinly traded products can therefore
+remain at a dated settlement or recorded price. This public website is not a
+guaranteed API or a promise of real-time data.</p>
+<p>Routine delayed quotes show no age label; their source time and delay remain in
+the value/P&amp;L help. Settlement and market-closed details use a small <strong>ⓘ</strong> beside
+the position name; click it or use the keyboard to see the date and market status.
+Technical source details remain in the position view. Other affected
+values retain <strong>Stale</strong>, <strong>Manual</strong>, <strong>Recorded</strong>, <strong>Revised</strong>, or <strong>No price</strong> labels. Conflicting prices at the
+same quote time retain the first observation with neutral styling until a newer
+quote or manual mark resolves valuation. Quotes become stale after 30 minutes
+of scheduled trading time: closed overnight hours, weekends and published exchange
+holidays do not age a recent closing quote. While the market is closed, the latest
+available trade from its latest completed session uses compact <strong>Market closed</strong>
+details instead of a stale warning, even if the last trade preceded the close by
+more than 30 minutes. Its timestamp remains available; it is not presented as an
+official closing price. Quotes from an earlier session, conflicting prices and
+failed refreshes retain their qualifications. The trading-age rule resumes at reopening.
+The latest session's official settlement also retains normal gain coloring while
+the market is closed; it is qualified again when trading reopens. Manual marks
+and execution-price fallbacks remain qualified.</p>
+<p>The exemption uses the curated Eurex product schedules and published 2026–2030
+common holidays (FTSE 100-specific closures are verified for 2026 only). Currency
+payment holidays are not exchange closures. Unknown schedules and expiry days
+fall back to the strict wall-clock rule. See the
+<a href="https://www.eurex.com/ex-en/trade/trading-calendar/holiday-regulations">Eurex calendar</a>.
+Date-only marks and recorded prices always disclose their business date. Stale/fallback-dependent P&amp;L retains its value and sign with neutral styling.
+Portfolio and category summaries indicate affected futures; closed contract legs
+do not make an open investment stale. Expand a row's freshness label, or open its
+help, for source time, retrieval time, declared delay and any refresh failure.
+Downloading the same observation again never makes its price time newer.
+Freshness labels and gain coloring update in place as time passes. Background
+checks leave the selected view and open position dialog intact. New prices and
+settlements update portfolio amounts after the dialog closes; its displayed
+observation continues to age while it is open. Source failures and recovery
+update in Notifications without refreshing the page.</p>
+<p><strong>Futures → Marks &amp; FX</strong> keeps manual marks and FX separate from transactions.
+Fetch an exact-contract settlement or save a dated manual mark and source.
+<strong>Save mark only</strong> changes valuation; it does not post settlement cash. A verified
+newer automatic quote may supersede a manual mark, while an ambiguous same-day
+comparison keeps the valid manual mark. Manual records remain preserved.</p>
+<p>Automatic quote history and collection status are private workspace files,
+separate from manual observations, settlement archives and account transactions.
+Failures retain earlier observations. Source revisions preserve history and never
+silently correct account postings. Free settlement history is incomplete; verified
+manual records remain available for gaps and unsupported contracts.</p>
+<h2 id="market-history-in-position-details">Market history in position details</h2>
+<p><strong>Chart</strong> is the default view in the futures popup. It uses the same
+chart, period controls, background loading, cache and retry behavior as ordinary
+holdings. This shows market context, separate from your recorded settlements,
+contract valuation and personal P&amp;L.</p>
+<p>The curated references are:</p>
+<table>
+<thead>
+<tr>
+<th>Contract</th>
+<th>Chart reference</th>
+<th>Convention / units</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>FDAX, FDXM, FDXS</td>
+<td>DAX (<code>^GDAXI</code>)</td>
+<td>Gross total return; index points, EUR index</td>
+</tr>
+<tr>
+<td>FESX</td>
+<td>EURO STOXX 50 (<code>^STOXX50E</code>)</td>
+<td>Price return; index points, EUR index</td>
+</tr>
+<tr>
+<td>FTUK</td>
+<td>FTSE 100 (<code>^FTSE</code>)</td>
+<td>Price return; index points, GBP index</td>
+</tr>
+<tr>
+<td>FMWN</td>
+<td>MSCI World, directly from MSCI</td>
+<td>Net total return; index points, EUR index</td>
+</tr>
+<tr>
+<td>FMWO</td>
+<td>MSCI World, directly from MSCI</td>
+<td>Net total return; index points, USD index</td>
+</tr>
+<tr>
+<td>FMWB</td>
+<td>MSCI World, directly from MSCI</td>
+<td>Net total return; index points, GBP index</td>
+</tr>
+</tbody>
+</table>
+<p>MSCI World daily index levels come directly from the public chart service behind
+<a href="https://www.msci.com/end-of-day-history">MSCI’s index data tools</a>, requesting
+index 990100, net total return (<code>NETR</code>) and the contract’s EUR/USD/GBP currency.
+The response must confirm all three identifiers. This is the actual index series,
+not an ETF approximation. Other configured index histories use Yahoo Finance.</p>
+<p>MSCI <strong>Max</strong> requests daily history from 2000; earlier history is not included.
+The chart shows the first and last returned observation dates. This public chart
+endpoint is not a guaranteed data service. If it fails, verified cached history
+remains visibly stale or the chart reports unavailable; it never silently falls
+back to an ETF. The adapter does not populate settlement or risk data.</p>
+<p>All these index charts retain native index points and display their currency and
+return convention. Changing portfolio reporting currency does not convert their
+levels into cash prices. Ordinary holdings retain their existing portfolio/native
+currency controls and historical FX conversion.</p>
+<p>Automatic mapping requires a recognized Eurex product, matching currency and
+return convention. A custom or unmatched contract has no inferred reference.
+Under <strong>Chart details</strong>, an explicit <strong>Chart reference</strong> selection provides a
+comparison for the current session. The chart subtitle labels it <strong>Comparison</strong>.
+The expanded details explain that its match to the contract is unverified.
+This selection does not change the saved contract, look-through proxy, risk inputs
+or account records. Rolls of the same
+product share a reference; investments spanning different markets have a market
+selector in <strong>Chart details</strong> rather than a spliced chart. Source, retrieval time,
+coverage and interpretation notes also live there; stale or unavailable history
+remains visible beside the chart.</p>
+<p>Charts do not represent futures prices, carry, contract quantities, leverage,
+roll costs or personal returns. Unavailable history stays unavailable; stale
+cached history is labelled and can be retried. Unexpected source currencies
+withhold the reference chart rather than relabelling prices.</p>
+<h2 id="margin-accounts-and-collateral">Margin accounts and collateral</h2>
+<p>For an account without a futures position, open <strong>Positions → Position tools →
+Accounts &amp; futures</strong>, then <strong>Cash &amp; financing → Create account</strong>. This opens the
+same account workflow without requiring a placeholder contract.
+It offers the same <strong>Existing balance</strong> and <strong>Newly funded account</strong> choices.
+The latter requires a <strong>Funding date</strong> no later than the balance date and a
+positive external <strong>Initial contribution</strong>; a snapshot alone does not prove zero
+before inception.</p>
+<p><strong>Cash &amp; financing</strong> records opening balances, reconciliations, deposits,
+withdrawals, transfers, actual currency-conversion legs, existing loans,
+borrowing, repayment and interest. A reconciliation records the difference needed
+to reach the entered balance on its selected date; later cash movements remain
+intact. It is not classified as a futures gain. Negative
+cash is a signed cash balance, not an automatically duplicated loan. Record a
+separate loan only when it is a separate obligation. Borrowing increases cash and
+debt equally; principal repayment decreases both. Interest is a separate expense.
+Ordinary security purchases and sales do not acquire transaction bookkeeping
+through this account workflow.</p>
+<p>New deposits and withdrawals are explicit cash flows, so they do not prevent
+retrieval of earlier missing settlements. Older untyped cash adjustments retain
+their original records and are conservatively treated as reconciliations when
+checking settlement eligibility.</p>
+<p>Under <strong>Collateral</strong>, link an existing security holding to its owning account,
+reserve shares/units or native cash, and enter a haircut. Security reservations
+retain fractional quantities and cannot exceed the units owned. Their eligibility
+uses current valuation after the haircut. The security itself remains an ordinary
+asset counted once; a reservation is not another holding or an expense.</p>
+<p>Enter dated initial and maintenance requirements in their currencies. Coverage
+compares the explicitly pledged assets with those entered requirements; it is
+not broker buying power or a prediction of a margin call. Foreign collateral can
+support declared coverage after conversion and haircut, but does not automatically
+supply settlement-currency cash. Pending transfers and payments are displayed
+separately. Missing valuation/FX withholds unsupported coverage totals.</p>
+<p><strong>Adopt existing liability</strong> moves a legacy EUR liability into the account
+journal as existing debt, with no cash deposit. Its original settings remain
+preserved and are excluded from duplicate portfolio totals. Adopt remaining
+legacy liabilities before switching their workspace to non-EUR reporting.</p>
+<h2 id="exposure-risk-and-planning">Exposure, risk and planning</h2>
+<p>Capital targets retain their existing meaning. Exposure targets specify their
+basis, category composition and overall multiple. Futures contribute signed
+notional; gross exposure is calculated before long/short netting. An explicitly
+linked ETF can approximate underlying index holdings, with unresolved weights
+kept visible rather than renormalized away. Category filters do not replace the
+whole-portfolio net-equity denominator for portfolio impact.
+Risk analytics additionally shows standalone subset beta and volatility using
+the selected investment's funded capital. Ordinary selected holdings normalize
+their covered net values; futures use selected backing capital with unsettled
+claims counted once. A bare contract without backing capital still has a
+portfolio beta contribution, but no standalone capital-based risk estimate.</p>
+<p>Documented fund factors describe approximate current leveraged/inverse ETF
+exposure. They create neither shareholder debt nor additional wealth. Risk uses
+the fund's own return history without applying its embedded leverage again.
+Futures risk uses a compatible native-currency history and translates native
+variation; cash and claims retain their separate FX risk. Available proxy coverage
+is narrower than contract-entry coverage. Incomplete compatible history excludes
+that position and shows a labelled estimate for covered holdings with the same
+whole-portfolio net-equity denominator. Exclusions are shown beside the estimate;
+another index is never silently substituted. Missing positions can increase or
+decrease actual risk, so this is not a complete portfolio-risk estimate.</p>
+<p>Actual-futures plans require permitted positions, integer limits, categories,
+initial-margin assumptions and fees. Funding is checked separately by account and
+currency. Unsettled losses and pending debits reserve cash; unposted gains and
+pending receipts are unavailable. Recorded account totals remain a fixed
+requirement floor; other open positions in a planned account need their own
+declared margin coverage. The planner shows remaining gaps or infeasibility and does not
+transfer funds, convert currencies, borrow or execute trades. Funded holdings
+continue to use the capital planner.</p>
+<h2 id="studies-in-the-normal-workspace">Studies in the normal workspace</h2>
+<p>Open <strong>Futures → Studies</strong> and select a recorded position or a manual scenario
+contract. This copies inputs into a hypothetical experiment. Enter scenario bank
+and broker cash by EUR/USD/GBP, opening FX, optional dedicated noncash collateral,
+margin, credit/debit interest, execution costs and manually scheduled payments.
+Do not include the same scenario asset in both cash and noncash collateral.
+Running a study never changes actual holdings or account transactions.</p>
+<p>Position, horizon, mode and <strong>Run study</strong> sit above the results. Detailed contract,
+cash/collateral, funding/cost and history assumptions are grouped below them.
+Policy components and path accounting are expandable. Changing inputs invalidates
+the displayed generalized-study result until another run. Saved scenarios retain
+all their explicit inputs and evidence requirements. Legacy sandbox funding
+studies similarly keep reserve and candidate controls beside results, with policy
+rules and history settings below; any retained prior result is marked stale.</p>
+<p>Available modes are <strong>Forward Monte Carlo</strong>, <strong>Rolling Monte Carlo</strong>,
+<strong>Historical settlements</strong>, <strong>Historical proxy reconstruction</strong> and
+<strong>Funding policy cohorts</strong>. Rolling modes need an explicit roll calendar.
+Historical modes require dated observations and identified sources. Free proxy
+and dated FX downloads are available, but downloading an ETF does not establish
+that it matches a contract's underlying index, currency or price/net/gross-return
+convention. An incompatible proxy cannot silently substitute for the index.
+Effective carry is an explicit reconstruction assumption, not a second cash
+financing charge applied to observed futures prices.</p>
+<p>Funding policies use finite reserves, ordered source currencies, target amounts
+or maintenance buffers, optional notional scaling, resets, transfer delays and
+re-entry. Conversion occurs at dispatch; converted funds acquire the destination
+currency's FX exposure while in transit. The maintenance/liquidity check precedes
+transfer arrival, so an arrival cannot retroactively prevent a close. The
+normal-workspace model closes strictly below maintenance, or beyond the explicitly
+allowed settlement-currency debit. Equality with maintenance alone does not close
+the position. Foreign collateral does not automatically pay variation margin.
+Endpoint positions close without re-entry; losses and deficits are not clipped
+to zero. Optional excess withdrawals use the declared delay and costs.</p>
+<p>Forward FX uses the supplied constant rates; no stochastic FX calibration is
+implied. Historical funding cohorts translate observation dates to the scenario
+start and rebase historical FX movements to opening FX. Credit/debit rates and
+optional dated overrides remain explicit assumptions. Free bank-rate references
+can populate bank yield; they do not determine broker financing charges.</p>
+<p>Policy comparisons use matching paths and opening reserves, with event tables
+and reconciliation of market P&amp;L, FX, interest, costs and entered payments.
+Cash/index benchmarks use the same starting reporting capital; the index stays
+long and invested after futures exit. Those benchmarks exclude the futures fee
+and manual-tax schedule. Settlement-only paths do not manufacture a total-return
+index benchmark. Overlapping historical cohorts are dependent observations,
+not independent forecast probabilities. These are close-to-close scenarios,
+not intraday liquidation or broker-account reconstructions.</p>
+<p>Save named study settings explicitly. Calculation results remain session data;
+changing inputs invalidates the displayed result. Data provenance, proxy
+qualifications and uncovered periods remain part of interpreting a study.</p>
+<h2 id="legacy-eur-sandbox">Legacy EUR sandbox</h2>
+<p>Earlier FMWN experiments remain separate from actual accounts. Their saved
+simulations are not automatically promoted into executed trades. To create an
+independent legacy sandbox, stop the source portfolio and choose a new destination:</p>
+<pre><code class="language-sh">uv run portfolio-app --data-dir /path/to/portfolio --fork-futures /path/to/new-sandbox
+</code></pre>
+<p>The source is preserved; the copy contains a simulated FMWN position. Existing
+sandboxes open with <code>--data-dir</code>. Review dated prices, funding and assumptions.
+The legacy views retain <strong>Funding policies</strong>, <strong>Stress &amp; history</strong> and
+<strong>Investment outcomes</strong>, with the saved mock editor separate from study inputs.</p>
+<p>The legacy funded-strategy formula remains reference capital plus net funding
+plus closed/current contract P&amp;L less fees. Reference capital stays fixed;
+funding changes wealth rather than gain. Daily MTM shows observed settlements for
+the current contract at constant quantity and cannot reconstruct all historical
+fills or cash postings. Legacy comparisons retain their EUR proxy, quarterly roll
+and ECB/manual-financing conventions. Their funding studies retain the historical
+maintenance-before-receipt ordering and do not become actual account history.</p>
+<p>Legacy sandbox integration remains EUR-only. When actual journal accounts are
+present, the sandbox stays a separate simulation rather than an extra actual
+portfolio position. Keep its simulation capital out of the real account journal.</p>
+<p>All account records, observations, legacy settings and study settings are private
+workspace data. See <a href="../storage/">Storage, privacy and recovery</a> for backup and
+revision protection.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../monitoring/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Monitoring and alerts">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Monitoring and alerts
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../allocation/" class="md-footer__link md-footer__link--next" aria-label="Next: Categories and targets">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Categories and targets
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.footer", "search.highlight"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

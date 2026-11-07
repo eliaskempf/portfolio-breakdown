@@ -339,6 +339,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and upgrade notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -463,7 +491,7 @@
   <span class="md-ellipsis">
     
   
-    Import holdings
+    Import holdings and transactions
   
 
     
@@ -609,6 +637,62 @@
     
   
     Analytics and risk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring and alerts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../futures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Futures and leverage
   
 
     
@@ -844,6 +928,24 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -860,6 +962,36 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#startup-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Startup logs
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -1010,6 +1142,25 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#startup-logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Startup logs
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -1026,7 +1177,7 @@
 
 
 <blockquote>
-<p><strong>Development documentation</strong> · app 0.1.0 · source <code>95240af3c6834ce984dd9c9e6843e539086b0fd4</code></p>
+<p><strong>Development documentation</strong> · app 0.2.0 · source <code>b810ada068f870d1319373d5258f456777f389f6</code></p>
 </blockquote>
 <h1 id="troubleshooting">Troubleshooting</h1>
 <table>
@@ -1051,7 +1202,7 @@
 </tr>
 <tr>
 <td>Package fails to start</td>
-<td>Keep <code>_internal</code> beside the executable; try <code>--foreground</code> for diagnostics. Desktop startup logs are private per-user state files.</td>
+<td>Keep the complete application folder together, including its <code>_internal</code> or <code>_internal-&lt;build&gt;</code> runtime. On Windows, try <strong>Portfolio Breakdown (browser)</strong> in the Start menu. See startup logs below.</td>
 </tr>
 <tr>
 <td>Source changes do not appear</td>
@@ -1078,8 +1229,8 @@
 <td>Inspect <a href="../exposure/#other">coverage, source date and support</a>. A partial or absent breakdown is not a zero holding.</td>
 </tr>
 <tr>
-<td>Import is unavailable</td>
-<td>It requires an empty portfolio. Use Update balances for existing holdings.</td>
+<td>Holdings snapshot import is unavailable</td>
+<td>Only holdings snapshots require an empty portfolio. Choose Transactions to import trades into existing holdings, or Update balances to replace current quantities.</td>
 </tr>
 <tr>
 <td>Wrong imported decimals or rows</td>
@@ -1107,9 +1258,19 @@
 </tr>
 </tbody>
 </table>
+<h2 id="startup-logs">Startup logs</h2>
+<p>On Windows, the normal <strong>Portfolio Breakdown</strong> shortcut opens the app window;
+<strong>Portfolio Breakdown (browser)</strong> opens it in your default browser. Both use the
+same local server, so switching presentation may not resolve a server failure.</p>
+<p>The window's startup error shows the actual log folder. To open the default
+location, paste <code>%LOCALAPPDATA%\portfolio-breakdown\window</code> into File Explorer's
+address bar. Look at the newest <code>window-*.log</code> files: the launcher and server can
+write separate logs. Browser-launch diagnostics are in
+<code>%LOCALAPPDATA%\portfolio-breakdown\launcher.log</code>.</p>
 <p>If reporting a problem, provide the app version/source commit, operating system,
 action and a minimal invented reproduction. Review diagnostics before sharing.
-Do not attach private workspace files, logs or portfolio screenshots. A successful
+Share only relevant error lines after removing personal paths and portfolio details;
+do not attach complete private logs, workspace files or portfolio screenshots. A successful
 server health response confirms liveness only; check the actual affected view.</p>
 
 

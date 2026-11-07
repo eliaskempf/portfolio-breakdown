@@ -16,7 +16,7 @@
         <link rel="prev" href="..">
       
       
-        <link rel="next" href="../getting-started/">
+        <link rel="next" href="../releases/">
       
       
         
@@ -447,6 +447,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and upgrade notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -571,7 +599,7 @@
   <span class="md-ellipsis">
     
   
-    Import holdings
+    Import holdings and transactions
   
 
     
@@ -717,6 +745,62 @@
     
   
     Analytics and risk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring and alerts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../futures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Futures and leverage
   
 
     
@@ -1193,7 +1277,7 @@
 
 
 <blockquote>
-<p><strong>Development documentation</strong> · app 0.1.0 · source <code>95240af3c6834ce984dd9c9e6843e539086b0fd4</code></p>
+<p><strong>Development documentation</strong> · app 0.2.0 · source <code>b810ada068f870d1319373d5258f456777f389f6</code></p>
 </blockquote>
 <h1 id="install">Install and run</h1>
 <h2 id="packaged">Packaged application</h2>
@@ -1216,15 +1300,16 @@ intro while the app loads. <strong>F11</strong> switches between maximized and b
 borderless mode also has an Exit button. Links to other sites open in your normal
 browser. Closing the app window stops its owned server. Launching again focuses
 the existing window for that workspace. The portable alternative is to extract
-the Windows application ZIP and run <code>Portfolio Breakdown.exe</code>; keep <code>_internal</code>
-and all other files beside it. <code>--browser</code> selects the browser fallback.</p>
+the Windows application ZIP and run <code>Portfolio Breakdown.exe</code>; keep the complete
+extracted folder, including its <code>_internal-&lt;build&gt;</code> runtime directory. <code>--browser</code>
+selects the browser fallback.</p>
 <p><strong>Linux (Ubuntu 22.04/24.04 x64):</strong> install the <code>.deb</code> with your package manager
 and launch <strong>Portfolio Breakdown Experimental</strong> from the applications menu.
 The package retains the name <code>portfolio-breakdown-experimental</code>. Check the release
 notes for that installer’s acceptance status and desktop limitations.</p>
 <p>For browser mode, extract the application <code>.tar.gz</code> archive and run
 <code>./portfolio-app</code>. Keep its whole folder together.</p>
-<p><strong>macOS (experimental):</strong> on Apple Silicon with macOS 14 or later, open the DMG
+<p><strong>macOS (experimental):</strong> on Apple Silicon with macOS 15 or later, open the DMG
 and drag <strong>Portfolio Breakdown Experimental</strong> into <strong>Applications</strong>, then launch
 it there. Python is bundled; installing Python or uv is unnecessary. Intel Macs are
 not supported. This installer has ad-hoc integrity signing only, without a
@@ -1283,6 +1368,9 @@ Packaged browser launches normally run in the background.
 suppresses automatic browser opening. Stop an existing instance before changing
 its command-line demo/live launch mode.</p>
 <h2 id="update">Update or remove</h2>
+<p>Read the <a href="../releases/#upgrade-020">version 0.2.0 release and upgrade notes</a>
+before updating an existing workspace, especially if you will apply transaction
+history or record futures/accounts.</p>
 <ol>
 <li>Stop the old app and <a href="../storage/#backup">back up the workspace</a>.</li>
 <li>Run the new Windows Setup, install the new Ubuntu <code>.deb</code> with
@@ -1382,13 +1470,13 @@ and preview instructions.</p>
         
         
           
-          <a href="../getting-started/" class="md-footer__link md-footer__link--next" aria-label="Next: Your first portfolio">
+          <a href="../releases/" class="md-footer__link md-footer__link--next" aria-label="Next: Release and upgrade notes">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Your first portfolio
+                Release and upgrade notes
               </div>
             </div>
             <div class="md-footer__button md-icon">

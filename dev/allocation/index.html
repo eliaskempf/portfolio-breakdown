@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://eliaskempf.github.io/portfolio-breakdown/dev/allocation/">
       
       
-        <link rel="prev" href="../analytics/">
+        <link rel="prev" href="../futures/">
       
       
         <link rel="next" href="../rebalance/">
@@ -339,6 +339,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and upgrade notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../getting-started/" class="md-nav__link">
         
   
@@ -463,7 +491,7 @@
   <span class="md-ellipsis">
     
   
-    Import holdings
+    Import holdings and transactions
   
 
     
@@ -609,6 +637,62 @@
     
   
     Analytics and risk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring and alerts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../futures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Futures and leverage
   
 
     
@@ -1137,7 +1221,7 @@
 
 
 <blockquote>
-<p><strong>Development documentation</strong> · app 0.1.0 · source <code>95240af3c6834ce984dd9c9e6843e539086b0fd4</code></p>
+<p><strong>Development documentation</strong> · app 0.2.0 · source <code>b810ada068f870d1319373d5258f456777f389f6</code></p>
 </blockquote>
 <h1 id="categories">Categories and targets</h1>
 <h2 id="targets">Build the strategic tree</h2>
@@ -1170,6 +1254,39 @@ the category selector, or the chart center returns to a parent. Parent rows
 include descendants: adding parent and child values double-counts them.
 Missing prices suppress complete percentages; the chart represents known value.
 Exposure filters and ETF expansion do not alter strategic ownership.</p>
+<p>With leverage enabled, <strong>Market exposure</strong> is the first and default allocation
+view in Overview. It shows current exposure value, current share, target share and <strong>Gap (pp)</strong>, where
+positive means overweight (current minus target). <strong>Capital allocation</strong> remains
+available with its own capital targets; exposure targets are not cash targets.
+When no separate exposure policy is saved, Market exposure compares against your
+existing category and position target percentages. For example, 35% current
+exposure against a 40% target gives a −5 pp gap. This composition comparison
+requires no target leverage multiple and does not create target currency amounts
+or change saved percentages. A separately saved market-exposure policy takes
+precedence; an equity-only or invalid policy is not replaced by this fallback.
+Use <strong>Edit</strong> beside either table heading to edit the percentages used there.
+Hover over the heading for its measure definition. Exposure targets are a separate policy under
+<strong>Rebalance → Targets → Exposure targets</strong>: choose a desired total multiple of
+portfolio net equity and category composition. Capital targets stay unchanged.</p>
+<p>Target amounts always use the saved whole-portfolio policy. Within a selected
+category, current percentages divide by its current exposure, and target
+percentages divide by its desired exposure. The Overview gap is the difference
+between these displayed percentages. Monetary exposure gaps in Rebalance remain
+target minus current exposure; they are not cash purchase budgets. Signed exposures stay
+signed, and percentages are unavailable when their total is zero or negative.
+At a leaf category the comparison shows the category total; exposure targets do
+not imply individual position targets. A saved equity-only policy is labeled as
+such and is not compared against the broader Market exposure view. Switching its
+universe to Total market requires an explicit save in the exposure target editor.</p>
+<p>Data-coverage details appear when hovering over category names. Unassigned means
+no strategic category is assigned; an empty zero-value/zero-exposure row is hidden.
+Offsetting long and short exposures remain represented even if their net is zero.
+The <strong>Notifications</strong> bell beside <strong>Portfolio settings</strong> holds stale ETF snapshots, manual-price notices,
+valuation/performance gaps and refresh problems. Tooltips explain metrics and
+table columns without adding paragraphs to the overview.
+A dot marks unread notices. Opening the panel marks current notices as seen;
+new, changed or recurring notices light it again. Seen state is separate per
+portfolio for the current browser session; notices remain available after reading.</p>
 <h2 id="classifications">Analytical labels are separate</h2>
 <p>Strategic categories are a non-overlapping ownership tree. Analytical taxonomies
 can describe several aspects of the same asset, such as sector, theme and
@@ -1221,7 +1338,7 @@ planning. See <a href="../exposure/#filters">Exposure</a> for analytical filteri
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../analytics/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Analytics and risk">
+          <a href="../futures/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Futures and leverage">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1231,7 +1348,7 @@ planning. See <a href="../exposure/#filters">Exposure</a> for analytical filteri
                 Previous
               </span>
               <div class="md-ellipsis">
-                Analytics and risk
+                Futures and leverage
               </div>
             </div>
           </a>

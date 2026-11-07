@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://eliaskempf.github.io/portfolio-breakdown/dev/getting-started/">
       
       
-        <link rel="prev" href="../install/">
+        <link rel="prev" href="../releases/">
       
       
         <link rel="next" href="../positions/">
@@ -319,6 +319,34 @@
     
   
     Install and run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and upgrade notes
   
 
     
@@ -643,7 +671,7 @@
   <span class="md-ellipsis">
     
   
-    Import holdings
+    Import holdings and transactions
   
 
     
@@ -789,6 +817,62 @@
     
   
     Analytics and risk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring and alerts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../futures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Futures and leverage
   
 
     
@@ -1337,12 +1421,12 @@
 
 
 <blockquote>
-<p><strong>Development documentation</strong> · app 0.1.0 · source <code>95240af3c6834ce984dd9c9e6843e539086b0fd4</code></p>
+<p><strong>Development documentation</strong> · app 0.2.0 · source <code>b810ada068f870d1319373d5258f456777f389f6</code></p>
 </blockquote>
 <h1 id="first-portfolio">Your first portfolio</h1>
 <p>This walkthrough follows the app tour: understand an allocation, look inside
-funds, inspect positions, then try a contribution plan. Afterwards, switch to
-your own workspace, save a holding and make a backup. If you have not installed
+funds, inspect positions, try a contribution plan, then explore Monitoring.
+Afterwards, switch to your own workspace, save a holding and make a backup. If you have not installed
 the app, start with <a href="../install/#install">Install and run</a>.</p>
 <h2 id="demo">Explore a temporary demo</h2>
 <p>Launch the installed app from your shortcut and choose <strong>Explore demo</strong> in the
@@ -1369,7 +1453,13 @@ or personal portfolio. Use <strong>Back</strong>, <strong>Next</strong>, or the 
 highlighted chart when invited. Risk and a €500 contribution example are
 calculated for you. <strong>Finish</strong>, <strong>Skip tour</strong>, or <strong>Escape</strong> returns to your
 original workspace and view, including filters, without changing saved holdings
-or targets. You can then repeat these actions yourself:</p>
+or targets, Monitoring rules, or alert acknowledgments.</p>
+<p>The Monitoring chapter first shows a plain MSCI World / 200-session SMA chart.
+It then configures an invented example; <strong>Next</strong> saves it only in the temporary
+tour workspace. Review its triggered condition, then try <strong>Acknowledge alert</strong>.
+The +10% threshold is chosen to demonstrate a trigger on synthetic history; it
+is not a suggested investment rule. Tour rules disappear when you leave.
+You can then repeat these actions yourself:</p>
 <h3 id="1-understand-overview">1. Understand Overview</h3>
 <ol>
 <li>Open <strong>Overview → Allocation</strong>. The offline demo starts at about €93,184,
@@ -1414,9 +1504,9 @@ read <a href="../exposure/#look-through">Exposure and ETFs</a> before interpreti
 <p>Open <strong>Positions</strong> and select a row for details and available price history.
 Use its pencil to edit, or <strong>Add position</strong> to try a new holding. A demo edit
 changes only the temporary demo. <strong>Position tools</strong> also offers <strong>Bulk add
-purchases</strong>, <strong>Update balances</strong>, <strong>Connect live prices</strong> and <strong>Import portfolio</strong>
-(experimental). Import requires an empty portfolio, so try that after switching
-to your own empty workspace below.</p>
+purchases</strong>, <strong>Update balances</strong>, <strong>Connect live prices</strong> and <strong>Import</strong>.
+Import opens transactions and works with existing holdings. Its <strong>Holdings snapshot</strong>
+option initializes an empty portfolio from a current holdings report.</p>
 <p>A price chart is instrument history, not your return history. <strong>Update balances</strong>
 replaces current quantities; <strong>Bulk add purchases</strong> adds purchases or calculates
 the cost of shares already held. These are different actions. See
@@ -1469,9 +1559,8 @@ valuation status. A blank price is unknown, not zero. For an asset without a
 quote, provide a dated manual price under <strong>More details</strong>. For physical gold,
 choose <strong>Physical asset → Gold spot price</strong> and enter fine-gold weight; see
 <a href="../positions/#physical-gold">physical gold</a>.</p>
-<p>For a holdings report, keep the portfolio empty and choose <strong>Position tools →
-Import portfolio</strong> (experimental), or the empty-list <strong>Import portfolio —
-experimental</strong> button. Upload, map and review the report before
+<p>For a holdings report, keep the portfolio empty and choose <strong>Import →
+Holdings snapshot</strong>, or the empty-list <strong>Import holdings</strong> button. Upload, map and review the report before
 <strong>Import reviewed positions</strong>. Check number formats, units and dates; saving
 cannot be undone by canceling the review afterwards. FinanzManager recognition
 is provisional. See <a href="../import/#import">Import</a> for supported files and later
@@ -1530,7 +1619,7 @@ System appearance. Hover or keyboard-focus help controls for units and scope.</p
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../install/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Install and run">
+          <a href="../releases/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Release and upgrade notes">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1540,7 +1629,7 @@ System appearance. Hover or keyboard-focus help controls for units and scope.</p
                 Previous
               </span>
               <div class="md-ellipsis">
-                Install and run
+                Release and upgrade notes
               </div>
             </div>
           </a>
