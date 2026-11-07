@@ -74,7 +74,47 @@ render_app(root, demo=False, ignore_selection=True, price_service=PriceService(S
 
 
 @pytest.fixture
-def futures_page(tmp_path):
+def chart_finish_delivery(request, monkeypatch):
+    """Omit a Chart finish from the driver observer, keeping real app rendering."""
+    if not getattr(request, 'param', False):
+        yield
+        return
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+    sent, received = StreamlitReruns._sent, StreamlitReruns._received
+    counts = {}
+    state = dict(scope=None, omit=False, omitted=False)
+    def _sent(self, payload):
+        message = BackMsg.FromString(payload)
+        if message.WhichOneof('type') == 'rerun_script':
+            rerun = message.rerun_script
+            if rerun.fragment_id and not rerun.is_auto_rerun:
+                counts[rerun.fragment_id] = counts.get(rerun.fragment_id, 0) + 1
+                # Settlements -> Contract history -> Chart in the same dialog.
+                if counts[rerun.fragment_id] == 3:
+                    state['scope'] = rerun.fragment_id
+        sent(self, payload)
+    def _received(self, payload):
+        message = ForwardMsg.FromString(payload)
+        kind = message.WhichOneof('type')
+        if kind == 'new_session':
+            state['omit'] = bool(state['scope']
+                                 and state['scope'] in message.new_session.fragment_ids_this_run
+                                 and not state['omitted'])
+        elif (kind == 'script_finished' and state['omit']
+              and message.script_finished in (ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY,
+                                               ForwardMsg.FINISHED_EARLY_FOR_RERUN)):
+            state.update(omit=False, omitted=True)
+            return
+        received(self, payload)
+    monkeypatch.setattr(StreamlitReruns, '_sent', _sent)
+    monkeypatch.setattr(StreamlitReruns, '_received', _received)
+    yield
+    assert state['omitted'], 'Missing-finish regression did not exercise its fault'
+
+
+@pytest.fixture
+def futures_page(tmp_path, chart_finish_delivery):
     root = tmp_path/'synthetic'
     journal,contract = preview_workspace(root)
     script = tmp_path/'preview.py'
@@ -107,6 +147,7 @@ def futures_page(tmp_path):
         process.terminate();process.wait(timeout=10)
 
 
+@pytest.mark.parametrize('chart_finish_delivery', [False, True], indirect=True)
 def test_stale_fresh_failure_settlement_and_popup_navigation(futures_page):
     page,root,journal,contract=futures_page
     row=page.locator('tr[data-position-id="investment:synthetic"]')
@@ -127,13 +168,19 @@ def test_stale_fresh_failure_settlement_and_popup_navigation(futures_page):
     assert dialog.locator('[class*="st-key-gain_positive_"]').count()==0
     for view in ['Settlements','Contract history','Chart']:
         dialog.get_by_text(view,exact=True).first.click();settle(page)
+        if view == 'Settlements':
+            playwright.expect(dialog.get_by_role('button', name='Retrieve settlements')).to_be_visible()
+        elif view == 'Contract history':
+            playwright.expect(dialog.get_by_text('Contract accounting and price sources', exact=True)).to_be_visible()
+        else:
+            playwright.expect(dialog.locator('.js-plotly-plot')).to_have_count(1)
     dialog.get_by_role('button',name='Close',exact=True).filter(has_text='Close').click();settle(page)
     playwright.expect(dialog).to_have_count(0)
     # This synthetic workspace without a quote still displays a dated
     # execution fallback, never an unqualified positive current valuation.
     saved_quotes = root/'invented-saved-quotes.json'
     (root/'futures-quotes.json').rename(saved_quotes)
-    page.reruns.click(page,page.get_by_role('button',name='Refresh prices'))
+    page.reruns.click_full_rerun(page,page.get_by_role('button',name='Refresh prices'))
     row=page.locator('tr[data-position-id="investment:synthetic"]')
     playwright.expect(row.locator('summary')).to_contain_text('Recorded')
     assert row.locator('td.positive,td.negative').count()==0

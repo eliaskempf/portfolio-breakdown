@@ -262,3 +262,107 @@ def test_full_request_cannot_supersede_an_active_text_commit():
     runs._received(ForwardMsg(script_finished=ForwardMsg.FINISHED_SUCCESSFULLY).SerializeToString())
     assert runs.error is None and not runs._commit_complete and not runs.idle
     assert set(runs._pending) == {'invented-editor'}
+
+
+@pytest.mark.parametrize('outcome', ['success', 'fragment', 'automatic', 'unrelated', 'early', 'early-fragment', 'newer', 'older-full', 'later-full'])
+def test_explicit_full_refresh_requires_its_replacement_render(outcome):
+    from contextlib import contextmanager
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+    calls = []
+    runs = StreamlitReruns(SimpleNamespace(on=lambda *a: None),
+                          settle=lambda *a, **kw: calls.append('settle'))
+    old = BackMsg()
+    old.rerun_script.fragment_id = 'old-dialog'
+    runs._sent(old.SerializeToString())
+    runs._completed_once = True
+    # A later fragment finished, but the old dialog finish was never received.
+    # Ordinary readiness must still reject this state.
+    assert not runs.idle
+    event = SimpleNamespace(value=None)
+    class Socket:
+        @contextmanager
+        def expect_event(self, name, *, predicate, timeout):
+            assert name == 'framesent' and 0 < timeout <= runs.timeout_ms
+            self.predicate = predicate
+            yield event
+            if event.value is None:
+                raise playwright.TimeoutError('No nonautomatic request')
+        def wait_for_event(self, *a, **kw):
+            raise playwright.TimeoutError('Replacement render not acknowledged')
+    runs.socket = Socket()
+    def click(**kwargs):
+        calls.append('click')
+        if outcome == 'older-full':
+            older = BackMsg()
+            older.rerun_script.SetInParent()
+            runs._sent(older.SerializeToString())
+            older_start = ForwardMsg()
+            older_start.new_session.script_run_id = 'older-full'
+            runs._received(older_start.SerializeToString())
+            runs._received(ForwardMsg(script_finished=ForwardMsg.FINISHED_SUCCESSFULLY).SerializeToString())
+        request = BackMsg()
+        request.rerun_script.SetInParent()
+        if outcome == 'fragment':
+            request.rerun_script.fragment_id = 'fragment-only'
+        request.rerun_script.is_auto_rerun = outcome == 'automatic'
+        payload = request.SerializeToString()
+        runs._sent(payload)
+        if runs.socket.predicate(payload):
+            event.value = payload
+        start = ForwardMsg()
+        start.new_session.script_run_id = 'replacement'
+        if outcome in ('fragment', 'unrelated'):
+            start.new_session.fragment_ids_this_run.append('fragment-only')
+        runs._received(start.SerializeToString())
+        if outcome == 'newer':
+            runs._sent(old.SerializeToString())
+        finish = (ForwardMsg.FINISHED_EARLY_FOR_RERUN if outcome in ('early', 'early-fragment', 'older-full', 'later-full') else
+                  ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY if start.new_session.fragment_ids_this_run else
+                  ForwardMsg.FINISHED_SUCCESSFULLY)
+        runs._received(ForwardMsg(script_finished=finish).SerializeToString())
+        if outcome in ('early-fragment', 'older-full', 'later-full'):
+            start.new_session.fragment_ids_this_run.append('continuation')
+            runs._received(start.SerializeToString())
+            runs._received(ForwardMsg(script_finished=ForwardMsg.FINISHED_FRAGMENT_RUN_SUCCESSFULLY).SerializeToString())
+        if outcome == 'later-full':
+            later = BackMsg()
+            later.rerun_script.SetInParent()
+            runs._sent(later.SerializeToString())
+            del start.new_session.fragment_ids_this_run[:]
+            start.new_session.script_run_id = 'later-full'
+            runs._received(start.SerializeToString())
+            runs._received(ForwardMsg(script_finished=ForwardMsg.FINISHED_SUCCESSFULLY).SerializeToString())
+    control = SimpleNamespace(click=click)
+    if outcome == 'success':
+        runs.click_full_rerun(None, control)
+        assert runs.idle and calls == ['settle', 'click', 'settle']
+    else:
+        with pytest.raises((AssertionError, playwright.TimeoutError)):
+            runs.click_full_rerun(None, control)
+        assert calls.count('click') == 1
+        if outcome == 'newer':
+            assert set(runs._pending) == {'old-dialog'}
+
+
+@pytest.mark.parametrize('blocked', ['active-edit', 'incomplete-edit', 'error'])
+def test_full_refresh_rejects_text_commit_or_error_before_click(blocked):
+    runs = StreamlitReruns(SimpleNamespace(on=lambda *a: None),
+                          settle=lambda *a, **kw: pytest.fail('Must reject before settling'))
+    if blocked == 'active-edit':
+        runs.expected = ('invented', 'after')
+    elif blocked == 'incomplete-edit':
+        runs._commit_request = object()
+    else:
+        runs.error = 'Invented protocol error'
+    with pytest.raises(AssertionError):
+        runs.click_full_rerun(None, SimpleNamespace(click=lambda **kw: pytest.fail('Must not click')))
+
+
+def test_full_refresh_rejects_error_received_during_dom_settle():
+    def settle(*a, **kw):
+        runs.error = 'Invented compile failure during settle'
+    runs = StreamlitReruns(SimpleNamespace(on=lambda *a: None), settle=settle)
+    runs.socket = object()
+    with pytest.raises(AssertionError, match='compile failure'):
+        runs.click_full_rerun(None, SimpleNamespace(click=lambda **kw: pytest.fail('Must not click')))

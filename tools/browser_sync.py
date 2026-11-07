@@ -23,6 +23,7 @@ from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 class _Request:
     scope: str
     is_auto: bool
+    full_success: bool = False
 
 
 class StreamlitReruns:
@@ -141,6 +142,8 @@ class StreamlitReruns:
                         if self._pending.get(scope) is request:
                             del self._pending[scope]
                             self._early_scopes.discard(scope)
+                            if not scopes and not scope:
+                                request.full_success = True
                             if request is self._commit_request:
                                 self._commit_complete = True
                     self._active = None
@@ -200,6 +203,42 @@ class StreamlitReruns:
                                       timeout=self._remaining(deadline)):
             control.click(timeout=self._remaining(deadline))
         self._ready(page, deadline)
+
+    def click_full_rerun(self, page, control):
+        """Start an explicit full refresh that supersedes older navigation work.
+
+        Unlike serialized navigation, this action intentionally replaces pending
+        fragment work. A stopped Streamlit runner can lose its finish event.
+        Require a settled DOM and the actual full request, then acknowledge its
+        replacement render. Never use this boundary during a text commitment.
+        """
+        assert self.expected is None and (self._commit_request is None or self._commit_complete), (
+            'Full refresh cannot interrupt a text commit')
+        assert self.error is None, self.error
+        assert self.socket is not None, 'Install StreamlitReruns before navigating'
+        deadline = time.monotonic() + self.timeout_ms / 1000
+        self.settle(page, timeout=self._remaining(deadline))
+        assert self.error is None, self.error
+        action_request = None
+        def requested(payload):
+            nonlocal action_request
+            message = BackMsg.FromString(payload)
+            if (message.WhichOneof('type') == 'rerun_script'
+                    and not message.rerun_script.is_auto_rerun):
+                # _sent was registered before this one-action listener. Retain
+                # its identity even if later requests replace the pending scope.
+                action_request = self._pending.get(message.rerun_script.fragment_id)
+                return True
+            return False
+        with self.socket.expect_event('framesent', predicate=requested,
+                                      timeout=self._remaining(deadline)) as event:
+            control.click(timeout=self._remaining(deadline))
+        assert self.error is None, self.error
+        request = BackMsg.FromString(event.value).rerun_script
+        assert not request.fragment_id, 'Full refresh sent a fragment request'
+        self._ready(page, deadline)
+        assert action_request is not None and action_request.full_success, (
+            'Full refresh did not finish its own full render')
 
     def _diagnostic_state(self):
         # Scope identities only: never include widget values or page contents.
