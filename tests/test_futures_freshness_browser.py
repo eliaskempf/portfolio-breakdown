@@ -73,7 +73,7 @@ render_app(root, demo=False, ignore_selection=True, price_service=PriceService(S
 '''
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def chart_finish_delivery(request, monkeypatch):
     """Omit a Chart finish from the driver observer, keeping real app rendering."""
     if not getattr(request, 'param', False):
@@ -114,7 +114,7 @@ def chart_finish_delivery(request, monkeypatch):
 
 
 @pytest.fixture
-def futures_page(tmp_path, chart_finish_delivery):
+def futures_page(tmp_path):
     root = tmp_path/'synthetic'
     journal,contract = preview_workspace(root)
     script = tmp_path/'preview.py'
