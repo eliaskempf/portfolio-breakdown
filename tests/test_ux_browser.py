@@ -595,19 +595,28 @@ def test_overview_list_matches_positions_and_opens_sorted_filtered_rows(ux_page)
 
 
 def test_dismissed_draft_resumes_and_stale_edit_cannot_overwrite(ux_page):
+    from streamlit.proto.BackMsg_pb2 import BackMsg
     page, directory = ux_page
-    page.get_by_role('tab', name='Positions', exact=True).click()
+    runs = page.streamlit_reruns
+    runs.click(page, page.get_by_role('tab', name='Positions', exact=True))
     table = page.get_by_role('table', name='Positions', exact=True)
-    table.get_by_role('button', name='Edit Invented Global · First', exact=True).click()
+    runs.click(page, table.get_by_role('button', name='Edit Invented Global · First', exact=True))
     dialog = page.get_by_role('dialog')
     quantity = dialog.get_by_role('textbox', name='Quantity held (total)', exact=True)
-    quantity.fill('7'); quantity.press('Tab')
+    runs.commit_text(page, quantity, '7')
     playwright.expect(quantity).to_have_value('7')
-    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
-    page.keyboard.press('Escape')
+    def dismissal(payload):
+        message = BackMsg.FromString(payload)
+        return message.WhichOneof('type') == 'rerun_script' and not message.rerun_script.is_auto_rerun
+    with runs.socket.expect_event('framesent', predicate=dismissal, timeout=runs.timeout_ms):
+        page.keyboard.press('Escape')
+    runs.wait()
+    settle(page)
     playwright.expect(dialog).to_have_count(0)
     page.screenshot(path=str(directory / 'dismissed.png'))
-    page.get_by_role('button', name='Resume unsaved edit', exact=True).click()
+    # Wait for the resumed form's complete render before simulating another
+    # writer. A visible quantity can still belong to a superseded dialog tree.
+    runs.click(page, page.get_by_role('button', name='Resume unsaved edit', exact=True))
     quantity = page.get_by_role('dialog').get_by_role('textbox', name='Quantity held (total)', exact=True)
     playwright.expect(quantity).to_have_value('7')
     path = directory / 'holdings.csv'

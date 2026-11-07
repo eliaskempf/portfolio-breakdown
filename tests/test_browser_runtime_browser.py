@@ -13,7 +13,20 @@ from browser_runtime import browser_session
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_reused_browser_has_fresh_contexts_and_storage():
+@pytest.fixture
+def isolated_pool(browser_pool):
+    # Test reuse with a known lifecycle. The session pool may be on its final
+    # allowed use after unrelated tests, where replacement is required.
+    # Keep the session's Playwright driver; close only its idle browser leases.
+    for browser in browser_pool.available.values():
+        if browser.is_connected():
+            browser.close()
+    browser_pool.available.clear()
+    browser_pool.uses.clear()
+    return browser_pool
+
+
+def test_reused_browser_has_fresh_contexts_and_storage(isolated_pool):
     with browser_session() as runner:
         first = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
         raw = first.raw
@@ -30,8 +43,8 @@ def test_reused_browser_has_fresh_contexts_and_storage():
         assert context.cookies() == [] and context.pages == []
 
 
-def test_reuse_recycles_process_before_trace_storage_grows_without_bound(browser_pool, monkeypatch):
-    monkeypatch.setattr(browser_pool, 'max_uses', 2)
+def test_reuse_recycles_process_before_trace_storage_grows_without_bound(isolated_pool, monkeypatch):
+    monkeypatch.setattr(isolated_pool, 'max_uses', 2)
     raw = []
     for _ in range(3):
         with browser_session() as runner:

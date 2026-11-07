@@ -59,6 +59,9 @@ class Evidence:
                             details = dict(scope=msg.rerun_script.fragment_id, automatic=msg.rerun_script.is_auto_rerun)
                         if kind == 'script_finished':
                             details = dict(status=msg.script_finished)
+                        if kind == 'new_session':
+                            details = dict(scopes=list(msg.new_session.fragment_ids_this_run),
+                                           run=msg.new_session.script_run_id)
                         self.event('sent' if sent else 'received', message=kind, **details)
                     except Exception:
                         pass
