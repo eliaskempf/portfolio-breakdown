@@ -189,8 +189,13 @@ def _render_history_view(row, data_dir, journal, has_history, *, demo, allocatio
         default = 'Holdings' if useful else 'Price'
 
     def remember():
+        # Another queued callback may already have opened a different position
+        # or workspace and retired this selector's widget state.
+        selected = st.session_state.get(key)
+        if selected not in ('Holdings', 'Price'):
+            return
         preferences = dict(st.session_state.get('position_history_preferences', {}))
-        preferences[row.position_id] = st.session_state[key]
+        preferences[row.position_id] = selected
         st.session_state['position_history_preferences'] = preferences
 
     mode = st.segmented_control('History type', ['Holdings', 'Price'], default=default,

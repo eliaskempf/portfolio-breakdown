@@ -86,3 +86,27 @@ def test_applied_history_shows_gain_and_return_without_confirmation(tmp_path):
     by_label(app.get('button_group'), 'History type').set_value('Price').run()
     assert headlines(app) == before
     assert not any(c.value == 'History not confirmed' for c in app.caption)
+
+
+@pytest.mark.parametrize('retired_by', ['another-position', 'workspace-switch'])
+def test_retired_history_selector_ignores_queued_callback(tmp_path, monkeypatch, retired_by):
+    from copy import deepcopy
+    from portfolio_app.position_ui import request_position
+    app, _ = launch(tmp_path)
+    by_label(app.get('button_group'), 'History type').set_value('Price').run()
+    assert app.session_state['position_history_preferences'] == {'holding': 'Price'}
+    widget = by_label(app.get('button_group'), 'History type')
+    metadata = app.session_state._state._state._new_widget_state.widget_metadata[widget.proto.id]
+    state = dict(position_edit_selected='holding', position_edit_history_mode_holding='Price',
+                 position_history_preferences={'holding': 'Price', 'other': 'Holdings'})
+    monkeypatch.setattr('portfolio_app.position_detail.st.session_state', state)
+    if retired_by == 'another-position':
+        request_position('other', local=False)
+    else:
+        state.clear()
+    assert 'position_edit_history_mode_holding' not in state
+    before = deepcopy(state)
+    # Streamlit snapshots changed callbacks before dispatch. An earlier opener
+    # can retire this widget before its already-queued callback is invoked.
+    metadata.callback(*(metadata.callback_args or ()), **(metadata.callback_kwargs or {}))
+    assert state == before
