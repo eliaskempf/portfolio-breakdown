@@ -2,8 +2,8 @@
 
 Understand what you own, how it is allocated, and how a proposed contribution
 would change it. Portfolio Breakdown runs locally, in a standalone window or
-in your browser. It supports current holdings, hierarchical categories, ETF exposure and planning; it does
-not execute trades or calculate taxes.
+in your browser. It supports current holdings, hierarchical categories, ETF
+exposure, planning and Vorabpauschale estimates. It does not execute trades.
 
 Start with [installation](install.md#install), then
 [explore the demo or create an empty portfolio](getting-started.md#first-portfolio).
@@ -21,6 +21,7 @@ For an existing holdings report, use the [reviewed import](import.md#import).
 | Preview a contribution or rebalance | [Rebalance](rebalance.md#planning) |
 | Review transaction history and reconstructed balances | [Import transactions](import.md#transactions) |
 | Record futures and account financing | [Futures and leverage](futures.md) |
+| Estimate the annual Vorabpauschale and associated tax | [Vorabpauschale estimates](taxes.md) |
 | Upgrade an existing installation | [Release and upgrade notes](releases.md) |
 | Back up, restore or move your data | [Storage and recovery](storage.md#backup) |
 | Resolve a problem | [Troubleshooting](troubleshooting.md#troubleshooting) |
@@ -32,8 +33,9 @@ channel. **Development** follows ongoing work. **Candidate** and **release**
 copies refer to fixed source commits. Use the help linked by your installed
 version; a newer development guide may describe different controls.
 
-This guide covers version 0.2.0, including optional transaction history,
-personal performance, monitoring, and actual-account recording in EUR/USD/GBP.
+This guide covers version 0.2.1, including Vorabpauschale estimates, optional
+transaction history, personal performance, monitoring, and actual-account
+recording in EUR/USD/GBP.
 The [release notes](releases.md) explain the changes and upgrade precautions.
 A package version alone may be shared by several candidates: the source commit
 distinguishes them.

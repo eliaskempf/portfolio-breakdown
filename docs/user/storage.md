@@ -214,5 +214,5 @@ records, observations, coverage reviews and closed positions are included. A
 failed first activation may leave stable position keys, but never a partially
 applied trade or duplicate cash posting.
 
-See the [version 0.2.0 upgrade notes](releases.md#upgrade-020) before updating or
+See the [version 0.2.1 upgrade notes](releases.md#upgrade-021) before updating or
 downgrading an installation.

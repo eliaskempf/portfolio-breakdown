@@ -361,6 +361,9 @@ def test_promotion_uploads_identical_tested_bytes(tmp_path):
         assert api.uploaded[name] == (tmp_path / platform / name).read_bytes()
     assert api.mutations[-1][0] == '/releases/42'
     assert api.mutations[-1][1]['draft'] is False
+    notes_url = 'https://github.com/invented/project/blob/' + 'a' * 40 + '/docs/user/releases.md'
+    assert notes_url in api.mutations[-1][1]['body']
+    assert '[Release and upgrade notes for v0.1.0]' in api.mutations[-1][1]['body']
 
 
 def rewrite_candidate_manifest(folder, **changes):
@@ -569,7 +572,8 @@ def test_setup_lifecycle_checks_exact_payload_preservation_and_cleans_failure(tm
     import sys
     candidate, reference = tmp_path / 'candidate', tmp_path / 'portable'
     candidate.mkdir(); reference.mkdir()
-    installer = candidate / 'portfolio-breakdown-0.2.0-windows-x64-setup.exe'
+    current_version = release_build.tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']['version']
+    installer = candidate / f'portfolio-breakdown-{current_version}-windows-x64-setup.exe'
     installer.write_bytes(b'Invented setup bytes')
     for name in ('portfolio-app.exe', 'Portfolio Breakdown.exe', 'LICENSE'):
         (reference / name).write_bytes(('Invented payload: ' + name).encode())
@@ -594,7 +598,7 @@ def test_setup_lifecycle_checks_exact_payload_preservation_and_cleans_failure(tm
     workspace = owned / 'preserved workspace ü'
     installation = owned / 'installed app é'
     monkeypatch.setattr(release_build.subprocess, 'check_output',
-                        lambda *a, **kw: '0.1.0\n' if failure == 'old-version' else '0.2.0\n')
+                        lambda *a, **kw: '0.0.0\n' if failure == 'old-version' else current_version + '\n')
     def run(command, **kwargs):
         calls.append(command)
         if command[0] in {str(installer), str(previous_setup)}:

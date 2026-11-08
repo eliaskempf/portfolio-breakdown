@@ -28,8 +28,9 @@ key features are:
 Current holdings remain usable without transactions. Optional dated snapshots and
 reviewed transaction history support personal value, cash-flow and return analysis
 when the required evidence is available. Missing history is never reconstructed
-automatically. The app does not connect to brokerage accounts, execute trades,
-or calculate taxes. Automatic ETF breakdowns are limited to
+automatically. The app also provides [Vorabpauschale estimates](docs/user/taxes.md)
+for supported fund years. It does not connect to brokerage accounts or execute
+trades. Automatic ETF breakdowns are limited to
 supported providers, and underlying holdings data may be missing or incomplete.
 
 ## How to use
@@ -76,13 +77,14 @@ The [user guide](docs/user/index.md) covers imports, calculations, backups, trou
 and other features. Installed versions also include offline documentation, accessible through
 **? → User guide**.
 
-## Version 0.2.0
+## Version 0.2.1
 
-Version 0.2.0 adds reviewed transaction history, personal performance analysis,
-monitoring, and manually recorded futures and margin accounts in EUR, USD and
-GBP. Read the [release and upgrade notes](docs/user/releases.md) before updating
-an existing workspace. No broker connection is required. See the
-[futures and leverage guide](docs/user/futures.md) for scope, accounting and setup.
+Version 0.2.1 adds **Taxes → Vorabpauschale**, with annual estimates, a labelled
+current-year forecast and reviewable fund inputs. It also organizes the source
+into responsibility-based Python packages while retaining launch commands and
+existing portfolio behavior. Read the [release and upgrade notes](docs/user/releases.md)
+before updating, and the [package move map](docs/user/package-layout.md) when
+transferring source changes from the old layout.
 
 ## Disclaimer
 
