@@ -188,12 +188,14 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
             recorded = observation_market(item, observations, year, boundary)
             # A failed fetch must not hide valid observations already in history.
             market = dict(recorded, **{k: v for k, v in fetched.items() if v is not None})
-            market = distribution_evidence(item, year, market, policies)
+            market = distribution_evidence(item, market, policies)
             inputs, result, lots = result_for(item, year, manual, market, forecast=forecast,
                 override=raw.get('ownership', {}).get(evidence_key(year, item.key)), fingerprint=fingerprint)
             needs_market = inputs.start_price is None or inputs.end_price is None or inputs.distributions is None
             # Revalidate dated payout observations when no manual/policy evidence supplies them.
             needs_market |= manual.get('distribution_mode', 'Automatic') in ('Automatic', 'Market history') and market.get('distribution_policy') != 'Accumulating'
+            if not lots and not item.holding.issues:
+                needs_market = False
             if item.instrument not in requested and not demo and (needs_market or retry) and (item.is_fund or manual.get('is_fund')):
                 requested.add(item.instrument)
                 pending |= request_market(directory, year, item.instrument, item.ticker, force=retry)
@@ -210,7 +212,8 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
             rows.append({'Fund': item.name, 'Account': item.account,
                 'Vorabpauschale': float(result.gross) if result.gross is not None else None,
                 'Tax before allowance': float(estimate_tax(result.taxable, church_rate=church).total) if result.taxable is not None else None,
-                'Status': '; '.join(result.issues) or ('Accumulating' if market.get('distribution_policy') == 'Accumulating' else 'Calculated')})
+                'Status': '; '.join(result.issues) or ('No shares at year-end' if not lots and not forecast else
+                    'Accumulating' if market.get('distribution_policy') == 'Accumulating' else 'Calculated')})
         st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch',
             column_config={name: st.column_config.NumberColumn(format='€ %.2f') for name in ('Vorabpauschale', 'Tax before allowance')})
         missing = next((entry for entry in prepared if entry[4].issues), None)

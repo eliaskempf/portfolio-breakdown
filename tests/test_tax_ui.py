@@ -84,9 +84,12 @@ def test_accumulating_funds_calculate_automatically_with_existing_metadata(tmp_p
     for value in raw['funds'].values():
         value.pop('distribution_mode')
     save_inputs(tmp_path, raw, revision)
-    policy = FundFee(.001, 'https://example.invalid/invented-policy', '2025-01-01', accumulating=True)
+    policy = FundFee(.001, 'https://example.invalid/invented-policy', '2026-01-01', accumulating=True)
     monkeypatch.setattr('portfolio_app.fundamentals.PUBLIC_FEES', dict(SYNTHETIC001=policy, SYNTHETIC002=policy))
     app.run()
     assert not app.exception and not app.error
     assert by_label(app.metric, 'Vorabpauschale').value == '€560.00'
+    assert not any(b.label == 'Resolve missing inputs' for b in app.button)
+    by_label(app.selectbox, 'Calculation year').set_value(2025).run()
+    assert by_label(app.metric, 'Vorabpauschale').value == '€442.75'
     assert not any(b.label == 'Resolve missing inputs' for b in app.button)

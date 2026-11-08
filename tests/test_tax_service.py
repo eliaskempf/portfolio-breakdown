@@ -1,5 +1,6 @@
 """Portfolio selection never changes tax ownership or duplicates allowances."""
 from decimal import Decimal as D
+import pytest
 from tax_sample import create_tax_sample
 from portfolio_app.tax_service import candidates, result_for, combined
 from portfolio_app.tax_evidence import load_inputs, evidence_key
@@ -58,12 +59,12 @@ def test_verified_accumulating_policy_is_reused_without_manual_inputs(tmp_path, 
     item = candidates(rows, journal, '2025-12-31')[0]
     policy = FundFee(.001, 'https://example.invalid/invented-fund', '2025-01-01', accumulating=True)
     monkeypatch.setattr('portfolio_app.fundamentals.PUBLIC_FEES', {item.instrument: policy})
-    market = distribution_evidence(item, 2025, {'start_price': '100', 'end_price': '110'})
+    market = distribution_evidence(item, {'start_price': '100', 'end_price': '110'})
     inputs, result, _ = result_for(item, 2025, {}, market)
     assert inputs.distributions == 0 and result.gross == D('177.10')
     assert market['distribution_source'] == policy.source
-    # Today's policy must not silently certify an earlier year's policy.
-    assert not distribution_evidence(item, 2024, {}).get('distribution_policy')
+    # A verification timestamp is not the policy's effective-from date.
+    assert distribution_evidence(item, {})['distribution_policy'] == 'Accumulating'
 
 
 def test_private_policy_override_precedes_public_accumulation(tmp_path, monkeypatch):
@@ -74,4 +75,24 @@ def test_private_policy_override_precedes_public_accumulation(tmp_path, monkeypa
     policy = FundFee(.001, 'https://example.invalid/invented-fund', '2025-01-01', accumulating=True)
     monkeypatch.setattr('portfolio_app.fundamentals.PUBLIC_FEES', {item.instrument: policy})
     from dataclasses import replace
-    assert not distribution_evidence(item, 2025, {}, {'isin:'+item.instrument: replace(policy, accumulating=False)})
+    assert not distribution_evidence(item, {}, {'isin:'+item.instrument: replace(policy, accumulating=False)})
+
+
+@pytest.mark.parametrize('year', [2018, 2020, 2023, 2025, 2026])
+def test_policy_verification_date_does_not_gate_calculation_year(tmp_path, monkeypatch, year):
+    from dataclasses import replace
+    from portfolio_app.fundamentals import FundFee
+    from portfolio_app.tax_service import distribution_evidence
+    from portfolio_app.vorabpauschale import TaxLot
+    rows, journal = create_tax_sample(tmp_path)
+    item = candidates(rows, journal, '2025-12-31')[0]
+    item = replace(item, holding=replace(item.holding, lots=(TaxLot(D(100), '2010-01-01'),)))
+    policy = FundFee(.001, 'https://example.invalid/invented-policy', '2026-01-01', accumulating=True)
+    monkeypatch.setattr('portfolio_app.fundamentals.PUBLIC_FEES', {item.instrument: policy})
+    evidence = distribution_evidence(item, {'start_price': '100', 'end_price': '110'})
+    assert result_for(item, year, {}, evidence)[1].gross > 0
+    assert result_for(item, year, {'distribution_mode': 'Manual total', 'distributions': '10'}, evidence)[1].gross == 0
+    # A different share class without policy evidence must remain unknown.
+    other = replace(item, instrument='SYNTHETIC-UNCLASSIFIED')
+    unknown = distribution_evidence(other, {'start_price': '100', 'end_price': '110'})
+    assert result_for(other, year, {}, unknown)[1].gross is None

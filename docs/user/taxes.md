@@ -39,9 +39,11 @@ payments before you acquired shares. They are not just your personal net cash
 receipts. **Automatic** uses downloaded gross payouts for distributing funds and
 zero payouts for a verified accumulating share class. The calculator reuses the
 app's existing issuer metadata and private verified income-policy overrides by
-exact share class. A dated policy supports its verification year and later years;
-it does not silently certify earlier years. Its source and verification date are
-shown in **Fund details**. Conflicting payout observations require review.
+exact share class. The verification date records when metadata was checked, not
+when the share-class policy began. Calculations use that known policy across the
+selected history; supply a year-specific override if the policy changed. Its
+source and verification date are shown in **Fund details**. Conflicting payout
+observations require review.
 
 Downloaded fund observations remain separate from transactions. An empty download
 without a known accumulating policy does not prove zero. **Resolve missing inputs**
@@ -58,6 +60,9 @@ Prices, distributions and quantities must use consistent share units. Downloads
 reverse provider split normalization and normalize to the calculation boundary.
 Conflicting split evidence requires review. Missing acquisition dates, unexplained
 balance replacements or unsupported events leave the affected result unavailable.
+An applied confirmation that ownership began with the first recorded purchase
+establishes zero holdings before that purchase. An ordinary later balance snapshot
+does not establish earlier ownership, even when its recorded balance is zero.
 Reviewed remaining lots can supply a calculator-only assumption without changing
 history; changing the history requires another review. Historical selection
 includes zero-share and retained closed positions. Unlinked histories need their

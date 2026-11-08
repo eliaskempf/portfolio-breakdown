@@ -1,6 +1,7 @@
 """Synthetic quantity histories; deliberately no acquisition costs are needed."""
 from dataclasses import replace
 from decimal import Decimal as D
+import pytest
 
 from portfolio_app.security_history import SecurityBook, SecurityEvent as E, SecurityLot
 from portfolio_app.tax_history import project_holdings
@@ -129,3 +130,39 @@ def test_preyear_incoming_transfer_proves_full_year_ownership():
     h, = project(book(events=(opening(day='2023-12-31'), trade('incoming', 'transfer_in', '2024-08-01', '10'))))
     assert h.lots[0].acquired == '2024-08-01'
     assert calculate_fund(FundInputs(2025, D(100), D(110), D(0)), h.lots).gross == D('17.71')
+
+
+@pytest.mark.parametrize('year', [2018, 2023, 2025])
+def test_confirmed_first_purchase_establishes_zero_in_earlier_years(year):
+    start = replace(opening(day=f'{year+1}-06-01'), source='confirmed_zero_start')
+    h, = project(book(events=(start, trade('first', 'buy', f'{year+1}-06-02', '10'))), as_of=f'{year}-12-31')
+    assert not h.issues and not h.lots
+    # No annual price or payout evidence is needed for a confirmed empty position.
+    assert calculate_fund(FundInputs(year), h.lots, ownership_issues=h.issues).gross == 0
+
+
+def test_later_ordinary_zero_snapshot_does_not_prove_earlier_zero_ownership():
+    h, = project(book(events=(opening(day='2024-06-01'),)), as_of='2023-12-31')
+    assert h.issues
+
+
+def test_unapplied_zero_start_cannot_establish_preownership():
+    start = replace(opening(day='2024-06-01'), source='confirmed_zero_start')
+    b = book(events=(start, trade('first', 'buy', '2024-06-02', '10')))
+    h, = project(replace(b, active_ids=('first',)), as_of='2023-12-31')
+    assert h.issues
+
+
+def test_incoming_transfer_conflicting_with_later_zero_start_remains_blocked():
+    a = book(events=(opening(qty='10', day='2022-12-31'),
+        trade('move', 'transfer', '2023-12-01', '10', other_position_id='b')))
+    b = book('b', 'two', (replace(opening('b', day='2024-06-01'), source='confirmed_zero_start'),))
+    _, destination = project(a, b, as_of='2023-12-31')
+    assert destination.issues
+
+
+def test_future_confirmed_zero_sleeve_does_not_block_existing_depot_holdings():
+    a = book(events=(opening(qty='10', day='2022-12-31'),))
+    b = book('b', 'one', (replace(opening('b', day='2024-06-01'), source='confirmed_zero_start'),))
+    holding, = project(a, b, as_of='2023-12-31')
+    assert not holding.issues and sum(l.quantity for l in holding.lots) == 10

@@ -39,10 +39,20 @@ def project_holdings(books, as_of, identities=None, depots=None):
     lots = defaultdict(deque)
     openings = defaultdict(set)
     initialized, balances, split_seen = set(), {}, set()
+    confirmed_empty_before = set()
     events = []
     for b in books:
         positions[keys[b.position_id]].append(b.position_id)
-        for e in selected_events(b):
+        selected = selected_events(b)
+        if selected:
+            first = selected[0]
+            # This explicit confirmation means ownership began with the recorded
+            # purchases. A later ordinary snapshot, even a zero one, says no such
+            # thing about earlier years. Only use selected/applied evidence.
+            if (first.kind == 'opening' and first.source == 'confirmed_zero_start'
+                    and first.date > as_of and not first.quantity and not first.lots):
+                confirmed_empty_before.add(b.position_id)
+        for e in selected:
             if e.date <= as_of:
                 events.append((b, e))
                 if e.kind == 'opening':
@@ -140,6 +150,8 @@ def project_holdings(books, as_of, identities=None, depots=None):
             issues[key].append('Unsupported event requires tax review')
     for book in books:
         if book.position_id not in initialized:
+            if book.position_id in confirmed_empty_before and not balances.get(book.position_id, ZERO):
+                continue
             issues[keys[book.position_id]].append('Ownership at the calculation boundary is unknown')
     # A grouped depot needs compatible opening boundaries before shared FIFO.
     for key, members in positions.items():
