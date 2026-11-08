@@ -16,6 +16,8 @@
         <link rel="prev" href="../reference/">
       
       
+        <link rel="next" href="../package-layout/">
+      
       
         
       
@@ -607,6 +609,34 @@
     
   
     Prices and performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../taxes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vorabpauschale estimates
   
 
     
@@ -1330,6 +1360,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../package-layout/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Package layout and feature transfers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1609,7 +1667,7 @@
 
 
 <blockquote>
-<p><strong>Development documentation</strong> · app 0.2.0 · source <code>b810ada068f870d1319373d5258f456777f389f6</code></p>
+<p><strong>Development documentation</strong> · app 0.2.1 · source <code>cae488d5524e049a586ccf1c0d7b7c8430d4adb1</code></p>
 </blockquote>
 <h1 id="source-development">Source development</h1>
 <p>This page is for contributors working in a source checkout. Installed-app users
@@ -1640,7 +1698,11 @@ without introductory paragraphs or repeated explanations.</p>
   messages and avoid stacks of captions above or below a result. Keep controls
   aligned with the section they affect and use space to communicate hierarchy.</li>
 <li>Preserve established styling and shared components. Improve density, placement
-  and consistency before adding decorative elements, new panels or new navigation.</li>
+  and consistency before adding decorative elements, new panels or new navigation.
+  The shared app theme in <code>settings.py</code> applies to both the launcher and direct
+  Streamlit entrypoints. <code>render_app</code> repairs missing launch theme settings before
+  drawing widgets, preserving the user's light/dark choice. Preview launches must
+  retain the same blue accent; verify it in the browser, including after reload.</li>
 <li>Import review must identify the affected statement, show the specific unresolved
   source rows locally, and offer a decision for that statement. Do not ask users
   to certify a batch with a blanket checkbox or infer a problem from an absent
@@ -1748,6 +1810,8 @@ claim that applied records prove the absence of omitted real-world transactions.
 Legacy completeness records remain readable but do not gate results. Market-data
 correction stays separate from transaction reconciliation.</p>
 <h2 id="architecture-and-verification">Architecture and verification</h2>
+<p>See the <a href="../package-layout/">package ownership and complete module move map</a> for
+source navigation and the procedure for transferring active flat-layout work.</p>
 <p>Business logic is independent of Streamlit:</p>
 <pre><code class="language-text">holdings → reporting-currency valuation → normalized exposures → optional ETF expansion → classifications
          → hierarchical aggregation → charts and tables
@@ -1948,7 +2012,7 @@ and closes; an opening snapshot does not reconstruct pre-snapshot gains.
 Strategic category targets, instrument price history and historical risk analysis
 are supported.</p>
 <h2 id="shared-list-presentation">Shared list presentation</h2>
-<p><code>src/portfolio_app/list_ui.py</code> defines the shared read-only list component,
+<p><code>src/portfolio_app/interface/shared/list_ui.py</code> defines the shared read-only list component,
 column formatting, taxonomy badges, sorting, row actions and scrolling policy.
 Overview allocations/performance, position lists, Exposure assets and source
 contributions, ETF constituent lists, and Suggested trades use it. Keep
@@ -2343,6 +2407,22 @@ before requesting cross-boundary monetary evidence.</p>
             </div>
           </a>
         
+        
+          
+          <a href="../package-layout/" class="md-footer__link md-footer__link--next" aria-label="Next: Package layout and feature transfers">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Package layout and feature transfers
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
         
       </nav>
     

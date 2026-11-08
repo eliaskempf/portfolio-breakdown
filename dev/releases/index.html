@@ -399,6 +399,56 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#version-021" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version 0.2.1
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Version 0.2.1">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#vorabpauschale-estimates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vorabpauschale estimates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#source-organization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source organization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#upgrade-021" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrade from 0.2.0
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#version-020" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -728,6 +778,34 @@
     
   
     Prices and performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../taxes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vorabpauschale estimates
   
 
     
@@ -1176,6 +1254,34 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../package-layout/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Package layout and feature transfers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -1208,6 +1314,56 @@
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#version-021" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version 0.2.1
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Version 0.2.1">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#vorabpauschale-estimates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vorabpauschale estimates
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#source-organization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Source organization
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#upgrade-021" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrade from 0.2.0
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#version-020" class="md-nav__link">
@@ -1299,9 +1455,48 @@
 
 
 <blockquote>
-<p><strong>Development documentation</strong> · app 0.2.0 · source <code>b810ada068f870d1319373d5258f456777f389f6</code></p>
+<p><strong>Development documentation</strong> · app 0.2.1 · source <code>cae488d5524e049a586ccf1c0d7b7c8430d4adb1</code></p>
 </blockquote>
 <h1 id="releases">Release and upgrade notes</h1>
+<h2 id="version-021">Version 0.2.1</h2>
+<p>Version 0.2.1 adds Vorabpauschale estimates and reorganizes the Python source into
+responsibility-based packages. Existing holdings, transaction history, allocation,
+exposure and rebalancing behavior remain available through the same launch commands.</p>
+<h3 id="vorabpauschale-estimates">Vorabpauschale estimates</h3>
+<p><strong>Taxes → Vorabpauschale</strong> estimates annual fund amounts and associated tax for
+calculation years 2018–2026. Select accounts and funds, inspect missing evidence,
+and review fund inputs when automatic observations are insufficient. Completed
+years use year-end ownership; the current year is an explicitly labelled forecast.</p>
+<p>The calculator reuses applied ownership history and exact-share-class income
+policies across supported years. It keeps market observations, manual assumptions
+and confirmed facts distinguishable. Optional settings cover partial exemption,
+available allowance and church tax. Missing inputs remain visible, and totals
+are marked partial when selected funds cannot be calculated. Results do not
+create transactions or reproduce a bank's tax statement. See
+<a href="../taxes/">Vorabpauschale estimates</a> for supported inputs, forecast assumptions,
+limitations and calculation sources.</p>
+<h3 id="source-organization">Source organization</h3>
+<p>Python modules now live in subpackages for portfolio calculations, exposure,
+fund providers, ledgers, performance, taxes, interfaces and runtime services.
+Installed commands and retained executable entrypoints remain unchanged. Internal
+Python import paths have changed; contributors should use the
+<a href="../package-layout/">complete move map and feature-transfer procedure</a>, including
+its special handling for edits to retained launch adapters.</p>
+<h3 id="upgrade-021">Upgrade from 0.2.0</h3>
+<p>Stop the old app, make a complete <a href="../storage/#backup">workspace backup</a>, then
+follow the <a href="../install/#update">platform update instructions</a>. Verify that the
+new application reports version 0.2.1 and check the selected workspace before
+retiring the previous installation. The package restructure does not move or
+rewrite private portfolio data, and the calculator does not alter the journal.</p>
+<p>Reviewed tax inputs and settings are stored privately in <code>tax-inputs.json</code>;
+downloaded observations use <code>.cache/tax/</code>. Include them in complete workspace
+backups. Opening Taxes does not establish that missing ownership or distributions
+were zero. Review incomplete results and any assumptions before relying on an
+estimate. If upgrading from 0.1.0, also follow the
+<a href="#upgrade-020">history and account upgrade precautions</a>.</p>
+<p>For rollback, retain the old application and restore the complete pre-upgrade
+backup into a separate directory. Keep the newer workspace intact so that later
+changes and tax inputs are not lost.</p>
 <h2 id="version-020">Version 0.2.0</h2>
 <p>Version 0.2.0 extends current-holdings analysis with optional transaction history,
 personal performance, monitoring, and manually recorded futures and accounts.
