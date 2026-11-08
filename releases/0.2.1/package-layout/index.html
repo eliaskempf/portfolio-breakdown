@@ -1,0 +1,3028 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Local portfolio analysis — user guide">
+      
+      
+      
+        <link rel="canonical" href="https://eliaskempf.github.io/portfolio-breakdown/candidates/cae488d5524e049a586ccf1c0d7b7c8430d4adb1/package-layout/">
+      
+      
+        <link rel="prev" href="../development/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Package layout and feature transfers - Portfolio Breakdown</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#package-layout-and-transferring-feature-work" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Portfolio Breakdown" class="md-header__button md-logo" aria-label="Portfolio Breakdown" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Portfolio Breakdown
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Package layout and feature transfers
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Portfolio Breakdown" class="md-nav__button md-logo" aria-label="Portfolio Breakdown" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Portfolio Breakdown
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start here
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Setup
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install and run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release and upgrade notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Your first portfolio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Holdings
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Holdings
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../positions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Positions and buy-ins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../import/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Import holdings and transactions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analysis
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Analysis
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../exposure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exposure and ETFs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prices and performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../taxes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vorabpauschale estimates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../analytics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Analytics and risk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../monitoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Monitoring and alerts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../futures/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Futures and leverage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Planning
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Planning
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../allocation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Categories and targets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rebalance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rebalance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Help
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Help
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage and recovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data formats
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Source development
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Package layout and feature transfers
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Package layout and feature transfers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ownership
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-entrypoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported entrypoints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transferring-active-work-from-the-flat-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transferring active work from the flat layout
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Transferring active work from the flat layout">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#common-adjustments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common adjustments
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#complete-flat-layout-move-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete flat-layout move map
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ownership
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-entrypoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported entrypoints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transferring-active-work-from-the-flat-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transferring active work from the flat layout
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Transferring active work from the flat layout">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#common-adjustments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common adjustments
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#complete-flat-layout-move-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complete flat-layout move map
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<blockquote>
+<p><strong>Frozen candidate documentation</strong> · app 0.2.1 · source <code>cae488d5524e049a586ccf1c0d7b7c8430d4adb1</code></p>
+</blockquote>
+<h1 id="package-layout-and-transferring-feature-work">Package layout and transferring feature work</h1>
+<p>The application is one installable Python package. Subpackages organize existing
+responsibilities; they do not define separate services, distributions or plugins.
+Use explicit imports from implementation modules. Package initializers do not
+load feature implementations, register providers or start background services.</p>
+<h2 id="ownership">Ownership</h2>
+<table>
+<thead>
+<tr>
+<th>Package</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>portfolio</code></td>
+<td>Holdings, positions, valuation, allocation, targets and rebalancing</td>
+</tr>
+<tr>
+<td><code>exposure</code></td>
+<td>Normalized exposures, taxonomy, aggregation and classifications</td>
+</tr>
+<tr>
+<td><code>funds</code> / <code>funds.providers</code></td>
+<td>ETF snapshots, expansion, discovery, refresh and isolated provider parsing</td>
+</tr>
+<tr>
+<td><code>ledger</code></td>
+<td>Account/security facts, replay, corrections and recoverable publication</td>
+</tr>
+<tr>
+<td><code>performance</code></td>
+<td>Cost basis, gains, historical evidence, coverage, TWR and IRR</td>
+</tr>
+<tr>
+<td><code>analytics</code></td>
+<td>Fundamentals, concentration, risk and associated service/cache ownership</td>
+</tr>
+<tr>
+<td><code>derivatives</code></td>
+<td>Actual contracts, observations, margin, settlements and valuation</td>
+</tr>
+<tr>
+<td><code>studies</code></td>
+<td>Hypothetical scenarios, historical reconstruction and the legacy futures sandbox</td>
+</tr>
+<tr>
+<td><code>market</code></td>
+<td>Prices, FX, market-price history, listing lookup and request coordination</td>
+</tr>
+<tr>
+<td><code>ingestion</code></td>
+<td>CSV/PDF readers, normalization, matching and import reconstruction</td>
+</tr>
+<tr>
+<td><code>taxes</code></td>
+<td>Investment-fund tax estimates, acquisition-month projection and tax-specific evidence</td>
+</tr>
+<tr>
+<td><code>monitoring</code></td>
+<td>Rules, observations, scheduling, presentation models and alert persistence</td>
+</tr>
+<tr>
+<td><code>workspace</code></td>
+<td>Shared storage mechanics, locking, backups, selection and activation</td>
+</tr>
+<tr>
+<td><code>runtime</code></td>
+<td>Launch, server/desktop lifetime, documentation serving and OS integration</td>
+</tr>
+<tr>
+<td><code>demo_data</code></td>
+<td>Explicitly synthetic portfolio and history builders</td>
+</tr>
+<tr>
+<td><code>interface.shared</code></td>
+<td>Reusable controls, charts, formatting, notifications and session state</td>
+</tr>
+<tr>
+<td><code>interface.views</code></td>
+<td>Feature views, grouped by the domain presented</td>
+</tr>
+</tbody>
+</table>
+<p><code>application.py</code> remains the portfolio preparation/composition boundary.
+<code>settings.py</code> owns shared identity, settings and package resource paths.
+<code>privacy.py</code> remains independently executable by the Git hook. Resources remain
+in <code>assets/</code> and <code>intro_frontend/</code> at the package root.</p>
+<p>Market-price history is distinct from account/security replay and portfolio
+performance history. Actual derivative wealth remains separate from hypothetical
+study results. Shared file-writing mechanics belong to <code>workspace</code>; feature-specific
+persistence and publication stay with their feature. Pure exposure and performance
+presentation transformations stay beside their calculations. Moving modules does
+not move calculations into Streamlit or change the documented financial pipeline.</p>
+<p>The directory name <code>ingestion</code> intentionally avoids <code>imports</code>, which the privacy
+checker reserves for private data. Keep that protection enabled.</p>
+<h2 id="supported-entrypoints">Supported entrypoints</h2>
+<p>The installed commands <code>portfolio-app</code>, <code>portfolio-window</code>, <code>portfolio-desktop</code>
+and <code>portfolio-check-private</code> retain their names and arguments. Root modules
+<code>app</code>, <code>window</code>, <code>gui</code>, <code>ui</code>, <code>intro_preview</code>, <code>demo_history</code>, <code>etf_sources</code> and
+<code>vaneck</code> retain executable adapters for existing commands and script paths.
+<code>portfolio_app.ui.render_app</code> also remains available.</p>
+<p>Internal code and test patches must use the canonical implementation paths below.
+Adapters are not copies of their implementations and do not alias old modules in
+<code>sys.modules</code>. Patching an adapter's exported function does not patch globals used
+inside the implementation. For example, patch
+<code>portfolio_app.runtime.app.run_server</code>, not <code>portfolio_app.app.run_server</code>.</p>
+<p>Use <code>settings.package_path(...)</code> for resources or executable scripts rooted in the
+package; a moved module's <code>__file__</code> no longer identifies that root. Preserve
+function-local imports that defer expensive work or break dependency cycles.</p>
+<h2 id="transferring-active-work-from-the-flat-layout">Transferring active work from the flat layout</h2>
+<p>This procedure supports active feature work based on the pre-migration <code>main</code>.
+It does not require reconstructing historical branches or changing another
+session's worktree. Identify the feature owner and source state first; a dirty or
+divergent worktree alone does not establish that its work is active or belongs to
+the current task.</p>
+<ol>
+<li>Record the original feature branch, commit, common base and source changes in
+   external working notes. Review which changes belong to the feature.</li>
+<li>Create a separate integration branch/worktree from the feature tip. Keep the
+   original branch/worktree intact. For committed work, a typical sequence is:</li>
+</ol>
+<p><code>sh
+   git worktree add -b integrate/my-feature ../my-feature-integration feature/my-feature
+   cd ../my-feature-integration
+   git merge --no-commit --no-ff main</code></p>
+<p>Here <code>main</code> must already contain the complete package migration. A pending
+   migration branch may instead be used for a rehearsal; record its exact commit.
+   Merge both histories. Do not cherry-pick the migration onto a stale base.</p>
+<ol>
+<li>If the source has uncommitted feature work, copy and verify the deliberately
+   selected tracked edits and required new source files into the integration
+   worktree <strong>before merging</strong>. Preserve file additions, deletions and executable
+   bits. Review and checkpoint that work there with the normal privacy checks.
+   Do not copy private data, local configuration or unrelated changes. Do not
+   stash, reset or clean the source worktree.</li>
+<li>Let Git apply recognized rename/edit combinations. Inspect
+   <code>git diff --name-status --find-renames</code> and <code>git status</code>. Resolve unrecognized
+   moves using the table below; retain one canonical implementation. Do not
+   resurrect the old file to silence an import error.
+   <strong>Handle retained adapters explicitly:</strong> the eight adapter paths still exist,
+   so Git may treat their old implementations as edits to those adapters rather
+   than as moves. If the feature touched one of them, compare its original diff
+   against the common base and port its implementation changes to the canonical
+   destination. Then restore the thin adapter from migrated <code>main</code> in the
+   integration worktree. Verify both files even if Git reported a clean merge;
+   feature code must not accidentally remain in an adapter.</li>
+<li>Reconcile new imports, package-member imports, mock/monkeypatch strings,
+   generated Streamlit code, subprocess arguments and resource/script paths.
+   New files have no rename history: place them according to the ownership table
+   and update their callers. A genuine overlapping edit requires reviewing both
+   changes, even when Git resolves the path automatically.</li>
+<li>Inspect the combined diff against migrated <code>main</code>. Run affected feature tests,
+   then the required integration checks from the development and release guides.
+   Use the integration worktree's own uv environment, an independent preview port
+   and generated synthetic data. Check staged privacy and contents before the
+   integration commit. Do not retire the original worktree until the owner has
+   confirmed the transferred result.</li>
+</ol>
+<h3 id="common-adjustments">Common adjustments</h3>
+<p>An edit to <code>holdings.py</code> belongs in <code>portfolio/holdings.py</code>; its import becomes:</p>
+<pre><code class="language-python">from portfolio_app.portfolio.holdings import DataError
+</code></pre>
+<p>A feature adding a new market provider places it under <code>market/</code> and updates its
+callers even though Git has no old file to match. A generated Streamlit script
+must use the same canonical imports as ordinary source. The stable root <code>ui.py</code>
+script can still be used by existing launch commands.</p>
+<p>An existing test patch such as <code>portfolio_app.prices.PriceService</code> becomes
+<code>portfolio_app.market.prices.PriceService</code>. Continue patching the name where the
+consumer looks it up; if a consumer imported the class into its own module,
+patch that consumer's new module path instead.</p>
+<p>If both histories alter the same import or function, combine the feature behavior
+with the new canonical path. Never select one complete side merely to clear the
+conflict. Use the existing feature tests to establish that its behavior survived.</p>
+<h2 id="complete-flat-layout-move-map">Complete flat-layout move map</h2>
+<p>Old paths are relative to <code>src/portfolio_app/</code>; destinations are relative to that
+same directory. Filenames and function/class names are retained. An adapter means
+the old executable path is intentionally retained, while code lives at the listed
+destination. Unchanged root modules are included so every original module is
+accounted for. New feature modules should follow the ownership rules above rather
+than extend this historical map.</p>
+<table>
+<thead>
+<tr>
+<th>Old module</th>
+<th>Canonical implementation</th>
+<th>Old path retained</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>__init__.py</code></td>
+<td><code>__init__.py</code></td>
+<td>Unchanged</td>
+</tr>
+<tr>
+<td><code>account_activity.py</code></td>
+<td><code>ledger/account_activity.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>account_activity_ui.py</code></td>
+<td><code>interface/views/history/account_activity_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>account_inception.py</code></td>
+<td><code>ledger/account_inception.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>account_journal.py</code></td>
+<td><code>ledger/account_journal.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>account_margin.py</code></td>
+<td><code>derivatives/account_margin.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>account_margin_ui.py</code></td>
+<td><code>interface/views/derivatives/account_margin_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>account_observations.py</code></td>
+<td><code>ledger/account_observations.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>account_planning.py</code></td>
+<td><code>derivatives/account_planning.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>account_timeline.py</code></td>
+<td><code>ledger/account_timeline.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>accounts_ui.py</code></td>
+<td><code>interface/views/derivatives/accounts_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>actual_portfolio.py</code></td>
+<td><code>portfolio/actual_portfolio.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>aggregation.py</code></td>
+<td><code>exposure/aggregation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>allocation.py</code></td>
+<td><code>portfolio/allocation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>allocation_ui.py</code></td>
+<td><code>interface/views/portfolio/allocation_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>amundi.py</code></td>
+<td><code>funds/providers/amundi.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>analytics.py</code></td>
+<td><code>analytics/analytics.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>analytics_cache.py</code></td>
+<td><code>analytics/analytics_cache.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>analytics_service.py</code></td>
+<td><code>analytics/analytics_service.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>analytics_ui.py</code></td>
+<td><code>interface/views/analytics/analytics_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>app.py</code></td>
+<td><code>runtime/app.py</code></td>
+<td>Adapter</td>
+</tr>
+<tr>
+<td><code>application.py</code></td>
+<td><code>application.py</code></td>
+<td>Unchanged</td>
+</tr>
+<tr>
+<td><code>atomic_file.py</code></td>
+<td><code>workspace/atomic_file.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>automatic_settlements.py</code></td>
+<td><code>derivatives/automatic_settlements.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>background_ui.py</code></td>
+<td><code>interface/shared/background_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>backup.py</code></td>
+<td><code>workspace/backup.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>backup_ui.py</code></td>
+<td><code>interface/views/workspace/backup_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>balances.py</code></td>
+<td><code>portfolio/balances.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>calendar_ui.py</code></td>
+<td><code>interface/shared/calendar_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>capped_contributions.py</code></td>
+<td><code>portfolio/capped_contributions.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>category_setup_ui.py</code></td>
+<td><code>interface/views/onboarding/category_setup_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>chart_hover.py</code></td>
+<td><code>interface/shared/chart_hover.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>chart_inspection.py</code></td>
+<td><code>interface/shared/chart_inspection.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>chart_navigation.py</code></td>
+<td><code>interface/shared/chart_navigation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>charts.py</code></td>
+<td><code>interface/shared/charts.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>cocoa_diagnostics.py</code></td>
+<td><code>runtime/cocoa_diagnostics.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>company_analysis.py</code></td>
+<td><code>exposure/company_analysis.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>company_merge_ui.py</code></td>
+<td><code>interface/views/exposure/company_merge_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>company_merges.py</code></td>
+<td><code>exposure/company_merges.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>consors_pdf.py</code></td>
+<td><code>ingestion/consors_pdf.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>constituents.py</code></td>
+<td><code>funds/constituents.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>contract_maturity_ui.py</code></td>
+<td><code>interface/views/derivatives/contract_maturity_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>contributions.py</code></td>
+<td><code>portfolio/contributions.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>cost_basis.py</code></td>
+<td><code>performance/cost_basis.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>costs.py</code></td>
+<td><code>portfolio/costs.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>countries.py</code></td>
+<td><code>exposure/countries.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>csv_import_batch.py</code></td>
+<td><code>ingestion/csv_import_batch.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>csv_transaction_import_ui.py</code></td>
+<td><code>interface/views/ingestion/csv_transaction_import_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>csv_transaction_imports.py</code></td>
+<td><code>ingestion/csv_transaction_imports.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>currencies.py</code></td>
+<td><code>market/currencies.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>currency_display.py</code></td>
+<td><code>interface/shared/currency_display.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>currency_ui.py</code></td>
+<td><code>interface/views/workspace/currency_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>demo.py</code></td>
+<td><code>demo_data/demo.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>demo_history.py</code></td>
+<td><code>demo_data/demo_history.py</code></td>
+<td>Adapter</td>
+</tr>
+<tr>
+<td><code>derivative_market.py</code></td>
+<td><code>derivatives/derivative_market.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>derivative_types.py</code></td>
+<td><code>derivatives/derivative_types.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>desktop.py</code></td>
+<td><code>runtime/desktop.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>desktop_controls.py</code></td>
+<td><code>runtime/desktop_controls.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>desktop_probe.py</code></td>
+<td><code>runtime/desktop_probe.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>dialog_runtime.py</code></td>
+<td><code>interface/shared/dialog_runtime.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>display_names.py</code></td>
+<td><code>interface/shared/display_names.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>display_preferences.py</code></td>
+<td><code>workspace/display_preferences.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>documentation.py</code></td>
+<td><code>runtime/documentation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>dws.py</code></td>
+<td><code>funds/providers/dws.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>etf.py</code></td>
+<td><code>funds/etf.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>etf_discovery.py</code></td>
+<td><code>funds/etf_discovery.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>etf_refresh.py</code></td>
+<td><code>funds/etf_refresh.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>etf_refresh_ui.py</code></td>
+<td><code>interface/views/funds/etf_refresh_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>etf_selection.py</code></td>
+<td><code>interface/views/funds/etf_selection.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>etf_setup.py</code></td>
+<td><code>funds/etf_setup.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>etf_setup_ui.py</code></td>
+<td><code>interface/views/funds/etf_setup_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>etf_sources.py</code></td>
+<td><code>funds/etf_sources.py</code></td>
+<td>Adapter</td>
+</tr>
+<tr>
+<td><code>etf_ui.py</code></td>
+<td><code>interface/views/funds/etf_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>eurex_quotes.py</code></td>
+<td><code>derivatives/eurex_quotes.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>exposure_analysis.py</code></td>
+<td><code>exposure/exposure_analysis.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>exposure_assets_ui.py</code></td>
+<td><code>interface/views/exposure/exposure_assets_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>exposure_plan_ui.py</code></td>
+<td><code>interface/views/exposure/exposure_plan_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>exposure_planning.py</code></td>
+<td><code>exposure/exposure_planning.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>exposure_presentation.py</code></td>
+<td><code>exposure/exposure_presentation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>exposure_tables.py</code></td>
+<td><code>exposure/exposure_tables.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>exposure_target_presentation.py</code></td>
+<td><code>exposure/exposure_target_presentation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>exposure_targets.py</code></td>
+<td><code>exposure/exposure_targets.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>exposure_ui.py</code></td>
+<td><code>interface/views/exposure/exposure_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>exposure_workspace.py</code></td>
+<td><code>exposure/exposure_workspace.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>exposures.py</code></td>
+<td><code>exposure/exposures.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>filtering.py</code></td>
+<td><code>portfolio/filtering.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>freshness_ui.py</code></td>
+<td><code>interface/shared/freshness_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>freshness_view.py</code></td>
+<td><code>interface/shared/freshness_view.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>fund_summary.py</code></td>
+<td><code>funds/fund_summary.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>fundamentals.py</code></td>
+<td><code>analytics/fundamentals.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>future_entry_help.py</code></td>
+<td><code>interface/views/derivatives/future_entry_help.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>future_projections.py</code></td>
+<td><code>studies/future_projections.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures.py</code></td>
+<td><code>studies/futures.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_assumptions_ui.py</code></td>
+<td><code>interface/views/studies/futures_assumptions_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_chart_reference.py</code></td>
+<td><code>derivatives/futures_chart_reference.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_chart_ui.py</code></td>
+<td><code>interface/views/derivatives/futures_chart_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_clock.py</code></td>
+<td><code>derivatives/futures_clock.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_comparison.py</code></td>
+<td><code>studies/futures_comparison.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_comparison_ui.py</code></td>
+<td><code>interface/views/studies/futures_comparison_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_financing.py</code></td>
+<td><code>studies/futures_financing.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_funding.py</code></td>
+<td><code>studies/futures_funding.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_funding_data.py</code></td>
+<td><code>studies/futures_funding_data.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_funding_study.py</code></td>
+<td><code>studies/futures_funding_study.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_funding_ui.py</code></td>
+<td><code>interface/views/studies/futures_funding_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_history.py</code></td>
+<td><code>studies/futures_history.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_history_data.py</code></td>
+<td><code>studies/futures_history_data.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_history_ui.py</code></td>
+<td><code>interface/views/studies/futures_history_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_investments.py</code></td>
+<td><code>derivatives/futures_investments.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_market.py</code></td>
+<td><code>studies/futures_market.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_market_ui.py</code></td>
+<td><code>interface/views/studies/futures_market_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_mtm.py</code></td>
+<td><code>derivatives/futures_mtm.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_mtm_ui.py</code></td>
+<td><code>interface/views/derivatives/futures_mtm_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_position_ui.py</code></td>
+<td><code>interface/views/studies/futures_position_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_presentation.py</code></td>
+<td><code>derivatives/futures_presentation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_pricing.py</code></td>
+<td><code>studies/futures_pricing.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_proxy.py</code></td>
+<td><code>studies/futures_proxy.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_quotes.py</code></td>
+<td><code>derivatives/futures_quotes.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_reference.py</code></td>
+<td><code>studies/futures_reference.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_returns.py</code></td>
+<td><code>studies/futures_returns.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_rolling.py</code></td>
+<td><code>studies/futures_rolling.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_sessions.py</code></td>
+<td><code>derivatives/futures_sessions.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_ui.py</code></td>
+<td><code>interface/views/studies/futures_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_valuation.py</code></td>
+<td><code>derivatives/futures_valuation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>futures_workspace.py</code></td>
+<td><code>studies/futures_workspace.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>fx.py</code></td>
+<td><code>market/fx.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>gain_accounting.py</code></td>
+<td><code>performance/gain_accounting.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>gain_comparison.py</code></td>
+<td><code>performance/gain_comparison.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>gain_components.py</code></td>
+<td><code>performance/gain_components.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>generalized_studies.py</code></td>
+<td><code>studies/generalized_studies.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>generalized_studies_ui.py</code></td>
+<td><code>interface/views/studies/generalized_studies_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>geography.py</code></td>
+<td><code>exposure/geography.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>geography_ui.py</code></td>
+<td><code>interface/views/exposure/geography_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>gold_prices.py</code></td>
+<td><code>market/gold_prices.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>grid_interactions.py</code></td>
+<td><code>interface/shared/grid_interactions.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>group_ui.py</code></td>
+<td><code>interface/views/portfolio/group_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>grouping.py</code></td>
+<td><code>portfolio/grouping.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>gui.py</code></td>
+<td><code>runtime/gui.py</code></td>
+<td>Adapter</td>
+</tr>
+<tr>
+<td><code>history.py</code></td>
+<td><code>market/history.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_commands.py</code></td>
+<td><code>ledger/history_commands.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_data_ui.py</code></td>
+<td><code>interface/views/history/history_data_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_diagnostics.py</code></td>
+<td><code>performance/history_diagnostics.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_flows.py</code></td>
+<td><code>performance/history_flows.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_irr.py</code></td>
+<td><code>performance/history_irr.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_observations.py</code></td>
+<td><code>performance/history_observations.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_order.py</code></td>
+<td><code>ledger/history_order.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_publication.py</code></td>
+<td><code>ledger/history_publication.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_review_ui.py</code></td>
+<td><code>interface/views/history/history_review_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_scope.py</code></td>
+<td><code>performance/history_scope.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_status.py</code></td>
+<td><code>performance/history_status.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_status_ui.py</code></td>
+<td><code>interface/views/history/history_status_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_twr.py</code></td>
+<td><code>performance/history_twr.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_ui.py</code></td>
+<td><code>interface/views/history/history_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_valuation.py</code></td>
+<td><code>performance/history_valuation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>history_view.py</code></td>
+<td><code>performance/history_view.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>holdings.py</code></td>
+<td><code>portfolio/holdings.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>import_readers.py</code></td>
+<td><code>ingestion/import_readers.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>import_state.py</code></td>
+<td><code>interface/shared/import_state.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>import_ui.py</code></td>
+<td><code>interface/views/ingestion/import_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>imports.py</code></td>
+<td><code>ingestion/imports.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>input_cache.py</code></td>
+<td><code>interface/shared/input_cache.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>instrument_ui.py</code></td>
+<td><code>interface/shared/instrument_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>instruments.py</code></td>
+<td><code>market/instruments.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>intro.py</code></td>
+<td><code>interface/views/onboarding/intro.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>intro_preview.py</code></td>
+<td><code>interface/views/onboarding/intro_preview.py</code></td>
+<td>Adapter</td>
+</tr>
+<tr>
+<td><code>investment_detail_ui.py</code></td>
+<td><code>interface/views/derivatives/investment_detail_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>investment_history.py</code></td>
+<td><code>derivatives/investment_history.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>investment_presentation.py</code></td>
+<td><code>derivatives/investment_presentation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>investment_ui.py</code></td>
+<td><code>interface/views/derivatives/investment_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>ishares.py</code></td>
+<td><code>funds/providers/ishares.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>label_comparison.py</code></td>
+<td><code>exposure/label_comparison.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>label_presentation.py</code></td>
+<td><code>exposure/label_presentation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>label_ui.py</code></td>
+<td><code>interface/views/exposure/label_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>launcher.py</code></td>
+<td><code>runtime/launcher.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>leverage_settings.py</code></td>
+<td><code>funds/leverage_settings.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>leveraged_funds_ui.py</code></td>
+<td><code>interface/views/funds/leveraged_funds_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>liabilities_ui.py</code></td>
+<td><code>interface/views/studies/liabilities_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>list_ui.py</code></td>
+<td><code>interface/shared/list_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>listing_picker.py</code></td>
+<td><code>interface/shared/listing_picker.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>listing_quality.py</code></td>
+<td><code>market/listing_quality.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>locking.py</code></td>
+<td><code>workspace/locking.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>market_data.py</code></td>
+<td><code>market/market_data.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>market_history_ui.py</code></td>
+<td><code>interface/views/history/market_history_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>metric_interactions.py</code></td>
+<td><code>interface/shared/metric_interactions.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>money.py</code></td>
+<td><code>interface/shared/money.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>monitoring.py</code></td>
+<td><code>monitoring/monitoring.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>monitoring_catalog.py</code></td>
+<td><code>monitoring/monitoring_catalog.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>monitoring_market.py</code></td>
+<td><code>monitoring/monitoring_market.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>monitoring_presentation.py</code></td>
+<td><code>monitoring/monitoring_presentation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>monitoring_service.py</code></td>
+<td><code>monitoring/monitoring_service.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>monitoring_store.py</code></td>
+<td><code>monitoring/monitoring_store.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>monitoring_ui.py</code></td>
+<td><code>interface/views/monitoring/monitoring_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>msci_history.py</code></td>
+<td><code>market/msci_history.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>notification_model.py</code></td>
+<td><code>interface/shared/notification_model.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>notifications_ui.py</code></td>
+<td><code>interface/shared/notifications_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>onboarding.py</code></td>
+<td><code>interface/views/onboarding/onboarding.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>onboarding_ui.py</code></td>
+<td><code>interface/views/onboarding/onboarding_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>performance.py</code></td>
+<td><code>performance/performance.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>performance_allocation.py</code></td>
+<td><code>performance/performance_allocation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>performance_ui.py</code></td>
+<td><code>interface/views/portfolio/performance_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>personal_history_refresh.py</code></td>
+<td><code>performance/personal_history_refresh.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>personal_market.py</code></td>
+<td><code>performance/personal_market.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>personal_performance.py</code></td>
+<td><code>performance/personal_performance.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>physical_assets.py</code></td>
+<td><code>portfolio/physical_assets.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>planning_ui.py</code></td>
+<td><code>interface/shared/planning_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>portfolio.py</code></td>
+<td><code>portfolio/portfolio.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>portfolio_analytics_ui.py</code></td>
+<td><code>interface/views/analytics/portfolio_analytics_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>portfolio_exposure.py</code></td>
+<td><code>exposure/portfolio_exposure.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>portfolio_exposure_ui.py</code></td>
+<td><code>interface/views/exposure/portfolio_exposure_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>portfolio_settings.py</code></td>
+<td><code>portfolio/portfolio_settings.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>position_detail.py</code></td>
+<td><code>interface/views/positions/position_detail.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>position_entry.py</code></td>
+<td><code>portfolio/position_entry.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>position_entry_ui.py</code></td>
+<td><code>interface/views/positions/position_entry_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>position_list.py</code></td>
+<td><code>interface/views/positions/position_list.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>position_metrics_ui.py</code></td>
+<td><code>interface/views/analytics/position_metrics_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>position_summary.py</code></td>
+<td><code>performance/position_summary.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>position_ui.py</code></td>
+<td><code>interface/views/positions/position_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>positions.py</code></td>
+<td><code>portfolio/positions.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>posix_window.py</code></td>
+<td><code>runtime/posix_window.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>posix_window_process.py</code></td>
+<td><code>runtime/posix_window_process.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>presentation.py</code></td>
+<td><code>interface/shared/presentation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>prices.py</code></td>
+<td><code>market/prices.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>privacy.py</code></td>
+<td><code>privacy.py</code></td>
+<td>Unchanged</td>
+</tr>
+<tr>
+<td><code>provider_data.py</code></td>
+<td><code>funds/providers/provider_data.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>purchase_ui.py</code></td>
+<td><code>interface/views/positions/purchase_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>purchases.py</code></td>
+<td><code>portfolio/purchases.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>rebalance_results_ui.py</code></td>
+<td><code>interface/views/portfolio/rebalance_results_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>rebalance_tables.py</code></td>
+<td><code>portfolio/rebalance_tables.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>rebalance_ui.py</code></td>
+<td><code>interface/views/portfolio/rebalance_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>rebalancing.py</code></td>
+<td><code>portfolio/rebalancing.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>risk.py</code></td>
+<td><code>analytics/risk.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>risk_data.py</code></td>
+<td><code>analytics/risk_data.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>scoped_rebalancing.py</code></td>
+<td><code>portfolio/scoped_rebalancing.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>scoped_ui.py</code></td>
+<td><code>interface/views/portfolio/scoped_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>search_widget.py</code></td>
+<td><code>interface/shared/search_widget.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>sector_classification.py</code></td>
+<td><code>exposure/sector_classification.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>security_history.py</code></td>
+<td><code>ledger/security_history.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>settings.py</code></td>
+<td><code>settings.py</code></td>
+<td>Unchanged</td>
+</tr>
+<tr>
+<td><code>settlement_archive.py</code></td>
+<td><code>derivatives/settlement_archive.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>settlement_archive_ui.py</code></td>
+<td><code>interface/views/derivatives/settlement_archive_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>settlement_backfill.py</code></td>
+<td><code>derivatives/settlement_backfill.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>settlement_backfill_ui.py</code></td>
+<td><code>interface/views/derivatives/settlement_backfill_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>settlement_collection.py</code></td>
+<td><code>derivatives/settlement_collection.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>spdr.py</code></td>
+<td><code>funds/providers/spdr.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>state_lifecycle.py</code></td>
+<td><code>interface/shared/state_lifecycle.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>statement_diagnostics.py</code></td>
+<td><code>ingestion/statement_diagnostics.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>stock_exposure.py</code></td>
+<td><code>exposure/stock_exposure.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>stock_ui.py</code></td>
+<td><code>interface/views/exposure/stock_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>storage.py</code></td>
+<td><code>workspace/storage.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>strategic.py</code></td>
+<td><code>portfolio/strategic.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>strategic_ui.py</code></td>
+<td><code>interface/views/portfolio/strategic_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>study_market.py</code></td>
+<td><code>studies/study_market.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>target_ui.py</code></td>
+<td><code>interface/shared/target_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>targets.py</code></td>
+<td><code>portfolio/targets.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>taxonomy.py</code></td>
+<td><code>exposure/taxonomy.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>tour.py</code></td>
+<td><code>interface/views/onboarding/tour.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>tour_monitoring.py</code></td>
+<td><code>interface/views/onboarding/tour_monitoring.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>tour_spotlight.py</code></td>
+<td><code>interface/views/onboarding/tour_spotlight.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>tour_state.py</code></td>
+<td><code>interface/views/onboarding/tour_state.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>tour_steps.py</code></td>
+<td><code>interface/views/onboarding/tour_steps.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>tour_style.py</code></td>
+<td><code>interface/views/onboarding/tour_style.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>transaction_csv.py</code></td>
+<td><code>ingestion/transaction_csv.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>transaction_evidence.py</code></td>
+<td><code>ledger/transaction_evidence.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>transaction_fields_ui.py</code></td>
+<td><code>interface/views/history/transaction_fields_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>transaction_import_commands.py</code></td>
+<td><code>ledger/transaction_import_commands.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>transaction_import_ui.py</code></td>
+<td><code>interface/views/ingestion/transaction_import_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>transaction_imports.py</code></td>
+<td><code>ingestion/transaction_imports.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>transaction_list_ui.py</code></td>
+<td><code>interface/views/history/transaction_list_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>transaction_mapping_ui.py</code></td>
+<td><code>interface/views/ingestion/transaction_mapping_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>transaction_matching.py</code></td>
+<td><code>ingestion/transaction_matching.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>transaction_review_ui.py</code></td>
+<td><code>interface/views/ingestion/transaction_review_ui.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>ui.py</code></td>
+<td><code>interface/ui.py</code></td>
+<td>Adapter</td>
+</tr>
+<tr>
+<td><code>ui_help.py</code></td>
+<td><code>interface/shared/ui_help.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>valuation.py</code></td>
+<td><code>portfolio/valuation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>vaneck.py</code></td>
+<td><code>funds/providers/vaneck.py</code></td>
+<td>Adapter</td>
+</tr>
+<tr>
+<td><code>vanguard.py</code></td>
+<td><code>funds/providers/vanguard.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>view_state.py</code></td>
+<td><code>interface/shared/view_state.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>window.py</code></td>
+<td><code>runtime/window.py</code></td>
+<td>Adapter</td>
+</tr>
+<tr>
+<td><code>window_process.py</code></td>
+<td><code>runtime/window_process.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>window_splash.py</code></td>
+<td><code>runtime/window_splash.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>workspace.py</code></td>
+<td><code>workspace/workspace.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>workspace_activation.py</code></td>
+<td><code>workspace/workspace_activation.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>workspace_lock.py</code></td>
+<td><code>workspace/workspace_lock.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>workspace_selection.py</code></td>
+<td><code>workspace/workspace_selection.py</code></td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>workspace_ui.py</code></td>
+<td><code>interface/views/workspace/workspace_ui.py</code></td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../development/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Source development">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Source development
+              </div>
+            </div>
+          </a>
+        
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.footer", "search.highlight"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
