@@ -4,14 +4,14 @@ from dataclasses import replace
 import pandas as pd
 import pytest
 
-from portfolio_app.analytics_service import load_risk
-from portfolio_app.risk_data import AdjustedHistory, RiskHistoryService, equity_risk_history
+from portfolio_app.analytics.analytics_service import load_risk
+from portfolio_app.analytics.risk_data import AdjustedHistory, RiskHistoryService, equity_risk_history
 from test_risk import TODAY, held, history, market
 
 
 @pytest.fixture
 def listing_pair(monkeypatch):
-    monkeypatch.setattr('portfolio_app.risk_data.EQUITY_HISTORY_ALTERNATIVES',
+    monkeypatch.setattr('portfolio_app.analytics.risk_data.EQUITY_HISTORY_ALTERNATIVES',
                         {'LOCAL': ('SYNTHETIC-IDENTITY', 'PRIMARY')})
 
 

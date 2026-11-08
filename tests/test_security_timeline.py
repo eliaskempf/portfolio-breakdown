@@ -6,8 +6,8 @@ from decimal import Decimal as D
 
 import pytest
 
-from portfolio_app.holdings import DataError
-from portfolio_app.security_history import SecurityEvent as E, SecurityLot, SecurityTimeline, replay_securities
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.ledger.security_history import SecurityEvent as E, SecurityLot, SecurityTimeline, replay_securities
 from test_security_history import book, opening
 from test_csv_transaction_imports import activated
 from test_history_account_reuse import mixed_journal
@@ -81,7 +81,7 @@ def test_fresh_replay_still_honors_same_day_sequence_cutoff():
 
 
 def test_full_cash_then_forward_chart_keeps_bounded_snapshots_and_two_passes(monkeypatch):
-    from portfolio_app.security_history import Charge
+    from portfolio_app.ledger.security_history import Charge
     begin = date(2024, 1, 1)
     count = SecurityTimeline.MAX_SNAPSHOTS * 3
     events = tuple(E(f'invented-{n}', 'buy', (begin+timedelta(days=n)).isoformat(),

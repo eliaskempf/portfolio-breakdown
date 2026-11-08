@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.exposure_tables import asset_exposure_table, complete_exposures, exposure_sources
+from portfolio_app.exposure.exposure_tables import asset_exposure_table, complete_exposures, exposure_sources
 
 
 def test_complete_asset_view_merges_sources_and_keeps_unclassified():
@@ -105,7 +105,7 @@ def test_grouped_totals_keep_residuals_zero_and_unknown_sources_distinct():
 
 
 def test_compact_previews_cap_sources_without_changing_exposure_percentages():
-    from portfolio_app.exposure_assets_ui import source_previews
+    from portfolio_app.interface.views.exposure.exposure_assets_ui import source_previews
     selected = pd.DataFrame([dict(position_id=f'p{i}', name=f'Invented Fund {i}', account='', current_value_reporting=1000.) for i in range(6)])
     exposures = pd.DataFrame([dict(asset_id='a', asset_name='Invented Company', ticker='', source_position_id=f'p{i}',
                                     direct_or_indirect='indirect', value=float((i + 1) * 10)) for i in range(6)])

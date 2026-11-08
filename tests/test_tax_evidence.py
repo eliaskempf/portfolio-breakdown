@@ -4,8 +4,8 @@ from decimal import Decimal as D
 import pandas as pd
 import pytest
 
-from portfolio_app.holdings import DataError
-from portfolio_app.tax_evidence import (market_from_frame, to_eur, parse_ecb, prepare_inputs,
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.taxes.tax_evidence import (market_from_frame, to_eur, parse_ecb, prepare_inputs,
     load_inputs, save_inputs, read_market, request_market)
 
 
@@ -104,7 +104,7 @@ def test_quote_subunits_do_not_silently_set_distribution_units():
 
 
 def test_distributing_fund_download_is_used_automatically():
-    from portfolio_app.tax_evidence import download_market
+    from portfolio_app.taxes.tax_evidence import download_market
     class Provider:
         history_metadata = {'currency': 'USD'}
         def history(self, **kwargs):

@@ -6,14 +6,14 @@ import json
 import pandas as pd
 import pytest
 
-from portfolio_app import amundi, ishares
-from portfolio_app.etf import fund_breakdown, load_funds, matching_fund
-from portfolio_app.etf_discovery import Discovery, ISHARES_CATALOG, source_from_url
-from portfolio_app.etf_setup import prepare_draft, save_draft
-from portfolio_app.etf_sources import Source, download, install_snapshot, refresh_snapshot, retrieve_snapshot
-from portfolio_app.holdings import DataError
-from portfolio_app.instruments import InstrumentSearch, catalog_search, result_groups
-from portfolio_app.stock_exposure import stock_exposure
+from portfolio_app.funds.providers import amundi; from portfolio_app.funds.providers import ishares
+from portfolio_app.funds.etf import fund_breakdown, load_funds, matching_fund
+from portfolio_app.funds.etf_discovery import Discovery, ISHARES_CATALOG, source_from_url
+from portfolio_app.funds.etf_setup import prepare_draft, save_draft
+from portfolio_app.funds.etf_sources import Source, download, install_snapshot, refresh_snapshot, retrieve_snapshot
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.market.instruments import InstrumentSearch, catalog_search, result_groups
+from portfolio_app.exposure.stock_exposure import stock_exposure
 from test_etf_discovery import Provider, holdings_json, metadata, point, invented_isin
 
 
@@ -26,7 +26,7 @@ def test_verified_search_alias_survives_remote_failure(monkeypatch, tmp_path, is
         quotes = [] if remote == 'empty' else [dict(symbol=ticker if remote == 'duplicate' else 'INVENTED',
                                                     quoteType='ETF' if remote == 'duplicate' else 'MUTUALFUND')]
         return SimpleNamespace(quotes=quotes)
-    monkeypatch.setattr('portfolio_app.instruments.yf.Search', search)
+    monkeypatch.setattr('portfolio_app.market.instruments.yf.Search', search)
     result = InstrumentSearch(tmp_path).search(isin)
     assert len(result) == 1 and result[0].ticker == ticker
     assert result[0].isin == isin and result[0].currency == 'EUR'
@@ -84,10 +84,10 @@ def test_bond_fallback_preserves_whole_fund_weights_and_explicit_other():
     assert len(frame) == 10 and frame.weight.tolist() == pytest.approx([.02] * 10)
     assert frame.maturity.eq('2030-01-02').all() and frame.instrument_type.eq('bond').all()
     assert 'Partial breakdown' in notes
-    from portfolio_app.etf import FundSnapshot
+    from portfolio_app.funds.etf import FundSnapshot
     fund = FundSnapshot('invented', 'Invented bonds', invented_isin(55), (), stamp, '', frame)
     assert fund_breakdown(fund).weight.iloc[-1] == pytest.approx(.8)
-    from portfolio_app.fund_summary import composition_summary
+    from portfolio_app.funds.fund_summary import composition_summary
     summary = composition_summary(fund, 'Issuer')
     assert summary.loc[summary.Issuer.eq('Other'), 'Fund allocation %'].item() == pytest.approx(80)
     _, full, notes = ishares.parse_holdings_json(bond_payload(consistent=True), allow_partial_bonds=True)
@@ -165,8 +165,8 @@ def test_amundi_install_reload_refresh_and_economic_separation(tmp_path):
     owned = pd.DataFrame([dict(id='fund', position_id='p', name='Invented fund', isin=amundi.ISIN,
                               shares=1, current_value_reporting=100., instrument_type='etf')])
     assert stock_exposure(owned, [fund]).stock_value == 0
-    from portfolio_app.exposures import normalize_exposures
-    from portfolio_app.etf import expand_etfs
+    from portfolio_app.exposure.exposures import normalize_exposures
+    from portfolio_app.funds.etf import expand_etfs
     expanded = expand_etfs(normalize_exposures(owned), [fund], owned)
     assert expanded.value.sum() == 100 and expanded.instrument_type.tolist() == ['overnight_rate']
     assert expanded.asset_id.tolist() == ['overnight:eur-estr']
@@ -221,7 +221,7 @@ def test_downloader_keeps_get_default_and_supports_read_only_post(monkeypatch):
         calls.append(request)
         assert timeout == 25
         return Response()
-    monkeypatch.setattr('portfolio_app.etf_sources.urlopen', open_request)
+    monkeypatch.setattr('portfolio_app.funds.etf_sources.urlopen', open_request)
     download('https://example.invalid')
     download('https://example.invalid', json_body={'productIds': ['invented']})
     assert calls[0].get_method() == 'GET'

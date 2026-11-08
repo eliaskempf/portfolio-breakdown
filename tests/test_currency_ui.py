@@ -1,9 +1,9 @@
 """Currency flows in the release interface, with invented workspaces only."""
 import pytest
-from portfolio_app.demo import create_demo_data
-from portfolio_app.portfolio_settings import load_settings, save_settings
-from portfolio_app.positions import read_snapshot
-from portfolio_app.cost_basis import active_components, resolve_cost
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.portfolio.portfolio_settings import load_settings, save_settings
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.performance.cost_basis import active_components, resolve_cost
 from test_startup import launch_workspaces
 from test_ui import by_label, launch, position_action, activate
 from test_onboarding_ui import add_category

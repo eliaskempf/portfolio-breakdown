@@ -1,14 +1,14 @@
 """Synthetic integer plans with actual-account funding boundaries."""
 from dataclasses import replace
 import pytest
-from portfolio_app.account_journal import Event, append_events, MarginRequirement
-from portfolio_app.account_planning import plan_account_futures
-from portfolio_app.actual_portfolio import journal_positions
-from portfolio_app.allocation import Allocation, Bucket
-from portfolio_app.exposure_targets import ExposureTargets
-from portfolio_app.portfolio import prepare_portfolio
-from portfolio_app.positions import read_snapshot
-from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
+from portfolio_app.ledger.account_journal import Event, append_events, MarginRequirement
+from portfolio_app.derivatives.account_planning import plan_account_futures
+from portfolio_app.portfolio.actual_portfolio import journal_positions
+from portfolio_app.portfolio.allocation import Allocation, Bucket
+from portfolio_app.exposure.exposure_targets import ExposureTargets
+from portfolio_app.portfolio.portfolio import prepare_portfolio
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.exposure.portfolio_exposure import calculate_portfolio_exposure
 from test_actual_portfolio import invented
 
 
@@ -50,8 +50,8 @@ def test_account_total_requirement_is_floor_not_added_twice(tmp_path):
 
 
 def test_unselected_open_contract_requires_explicit_margin(tmp_path):
-    from portfolio_app.account_journal import PositionSpec
-    from portfolio_app.holdings import DataError
+    from portfolio_app.ledger.account_journal import PositionSpec
+    from portfolio_app.portfolio.holdings import DataError
     journal,valued,allocation,result,target=setup(tmp_path)
     journal=replace(journal,positions=(*journal.positions, PositionSpec('other','a',journal.contracts[0].id,'core')))
     journal=append_events(journal,[Event('other-open','2026-01-02','trade',account_id='a',position_id='other',quantity=1,price=1000)])

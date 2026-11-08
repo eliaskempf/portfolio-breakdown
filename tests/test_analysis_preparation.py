@@ -6,10 +6,10 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from portfolio_app.company_analysis import prepare_company_analysis
-from portfolio_app.company_merges import MergeSettings
-from portfolio_app.exposure_presentation import prepare_market_analysis
-from portfolio_app.futures import FuturePosition
+from portfolio_app.exposure.company_analysis import prepare_company_analysis
+from portfolio_app.exposure.company_merges import MergeSettings
+from portfolio_app.exposure.exposure_presentation import prepare_market_analysis
+from portfolio_app.studies.futures import FuturePosition
 from test_company_merges import universe
 from test_portfolio_exposure import CONFIG, calculate, invented
 

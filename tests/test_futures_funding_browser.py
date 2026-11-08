@@ -21,7 +21,7 @@ playwright = pytest.importorskip('playwright.sync_api')
 def funding_page(tmp_path):
     data = synthetic_funding_workspace(tmp_path)
     script = tmp_path/'preview.py'
-    script.write_text('from pathlib import Path\nfrom portfolio_app.ui import render_app\n'
+    script.write_text('from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n'
                       f'render_app(Path({str(data)!r}), demo=True, ignore_selection=True)\n')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]

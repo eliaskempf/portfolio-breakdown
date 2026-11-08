@@ -7,15 +7,15 @@ from types import SimpleNamespace
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.account_journal import Journal
-from portfolio_app.history_data_ui import (
+from portfolio_app.ledger.account_journal import Journal
+from portfolio_app.interface.views.history.history_data_ui import (
     missing_inputs, readable_reasons, save_manual_observation, scope_names, scoped_observations,
 )
-from portfolio_app.history_observations import (
+from portfolio_app.performance.history_observations import (
     HistoryScope, Observation, ObservationStore, active_observations, load_observations, save_observations,
 )
-from portfolio_app.holdings import DataError
-from portfolio_app.security_history import SecurityBook, SecurityEvent
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent
 
 
 def fixture(tmp_path):
@@ -96,9 +96,9 @@ def test_public_editor_is_lazy_and_has_no_coverage_checkbox(tmp_path):
     app = AppTest.from_string(f'''
 from pathlib import Path
 from types import SimpleNamespace
-from portfolio_app.account_journal import Journal
-from portfolio_app.history_observations import ObservationStore, HistoryScope
-from portfolio_app.history_data_ui import render_history_data
+from portfolio_app.ledger.account_journal import Journal
+from portfolio_app.performance.history_observations import ObservationStore, HistoryScope
+from portfolio_app.interface.views.history.history_data_ui import render_history_data
 render_history_data(Path({str(tmp_path)!r}),Journal(),HistoryScope(),ObservationStore(),None,
                     SimpleNamespace(), 'EUR','test_')
 ''').run()
@@ -111,10 +111,10 @@ def test_price_form_has_readable_scope_and_explicit_replace_button(tmp_path):
     fixture(tmp_path)
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.account_journal import Journal
-from portfolio_app.security_history import SecurityBook
-from portfolio_app.history_observations import load_observations, HistoryScope
-from portfolio_app.history_data_ui import _market_form, scope_names
+from portfolio_app.ledger.account_journal import Journal
+from portfolio_app.ledger.security_history import SecurityBook
+from portfolio_app.performance.history_observations import load_observations, HistoryScope
+from portfolio_app.interface.views.history.history_data_ui import _market_form, scope_names
 path=Path({str(tmp_path)!r})
 book=SecurityBook('position-0','invented',('1','10','USD'))
 journal=Journal(version=2,securities=(book,))
@@ -135,7 +135,7 @@ _market_form(path,journal,scope,store,revision,scope_names(path,journal,scope),'
 
 
 def test_advanced_flow_values_and_cash_classification_keep_readable_labels(tmp_path):
-    from portfolio_app.account_journal import Account, Event, save_journal
+    from portfolio_app.ledger.account_journal import Account, Event, save_journal
     journal = Journal(version=2, accounts=(Account('account-private-id', 'Invented account'),), events=(
         Event('open', '2024-01-01', 'cash_open', account_id='account-private-id', currency='EUR', amount=D(100)),
         Event('payment-private-id', '2024-01-02', 'cash_flow', account_id='account-private-id', currency='EUR', amount=D(20)),
@@ -145,9 +145,9 @@ def test_advanced_flow_values_and_cash_classification_keep_readable_labels(tmp_p
     app = AppTest.from_string(f'''
 from pathlib import Path
 from types import SimpleNamespace
-from portfolio_app.account_journal import load_journal
-from portfolio_app.history_observations import HistoryScope, load_observations
-from portfolio_app.history_data_ui import _advanced, scope_names
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.performance.history_observations import HistoryScope, load_observations
+from portfolio_app.interface.views.history.history_data_ui import _advanced, scope_names
 path=Path({str(tmp_path)!r})
 journal,_=load_journal(path)
 scope=HistoryScope(accounts=('account-private-id',))
@@ -183,10 +183,10 @@ def test_instrument_level_price_is_corrected_instead_of_creating_competing_posit
     save_observations(tmp_path, store, revision)
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.account_journal import Journal
-from portfolio_app.security_history import SecurityBook
-from portfolio_app.history_observations import load_observations, HistoryScope
-from portfolio_app.history_data_ui import _market_form, scope_names
+from portfolio_app.ledger.account_journal import Journal
+from portfolio_app.ledger.security_history import SecurityBook
+from portfolio_app.performance.history_observations import load_observations, HistoryScope
+from portfolio_app.interface.views.history.history_data_ui import _market_form, scope_names
 path=Path({str(tmp_path)!r})
 journal=Journal(version=2,securities=(SecurityBook('position-0','invented',('1','10','USD')),))
 scope=HistoryScope(('position-0',))
@@ -203,7 +203,7 @@ _market_form(path,journal,scope,store,revision,scope_names(path,journal,scope),'
 
 
 def test_price_correction_retains_quote_provenance_and_manual_download_precedence(tmp_path):
-    from portfolio_app.personal_market import merge_download
+    from portfolio_app.performance.personal_market import merge_download
     original = Observation('download', 'price', 'position-0', '2024-01-02', D(10), 'USD',
         source='Invented exchange feed', listing='SYNTH', calendar='XNYS', exchange_timezone='America/New_York')
     store = ObservationStore((original,))
@@ -223,15 +223,15 @@ def test_price_correction_retains_quote_provenance_and_manual_download_precedenc
 
 
 def test_new_manual_quote_source_is_protected_without_changing_holding_listing(tmp_path):
-    from portfolio_app.personal_market import merge_download
+    from portfolio_app.performance.personal_market import merge_download
     (tmp_path/'holdings.csv').write_text('id,name,shares,ticker\ninvented,Invented asset,1,HELD\n')
     before = (tmp_path/'holdings.csv').read_bytes()
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.account_journal import Journal
-from portfolio_app.security_history import SecurityBook
-from portfolio_app.history_observations import load_observations, HistoryScope
-from portfolio_app.history_data_ui import _market_form, scope_names
+from portfolio_app.ledger.account_journal import Journal
+from portfolio_app.ledger.security_history import SecurityBook
+from portfolio_app.performance.history_observations import load_observations, HistoryScope
+from portfolio_app.interface.views.history.history_data_ui import _market_form, scope_names
 path=Path({str(tmp_path)!r})
 journal=Journal(version=2,securities=(SecurityBook('position-0','invented',('1','10','USD')),))
 scope=HistoryScope(('position-0',))

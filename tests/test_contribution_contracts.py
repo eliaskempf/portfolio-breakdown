@@ -4,14 +4,14 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from portfolio_app.etf import FundSnapshot, expand_etfs
-from portfolio_app.exposures import normalize_exposures, project_contributions
-from portfolio_app.futures import FuturePosition
-from portfolio_app.future_projections import capital_position, capital_contribution, exposure_source, risk_position
-from portfolio_app.holdings import DataError
-from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
-from portfolio_app.stock_exposure import stock_exposure
-from portfolio_app.targets import target_exposures
+from portfolio_app.funds.etf import FundSnapshot, expand_etfs
+from portfolio_app.exposure.exposures import normalize_exposures, project_contributions
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.studies.future_projections import capital_position, capital_contribution, exposure_source, risk_position
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.exposure.portfolio_exposure import calculate_portfolio_exposure
+from portfolio_app.exposure.stock_exposure import stock_exposure
+from portfolio_app.portfolio.targets import target_exposures
 
 
 def source():

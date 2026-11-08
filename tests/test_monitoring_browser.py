@@ -12,7 +12,7 @@ from urllib.request import urlopen
 import pytest
 
 from test_monitoring_service import account_workspace
-from portfolio_app.monitoring_store import load_monitoring
+from portfolio_app.monitoring.monitoring_store import load_monitoring
 from browser_support import settle
 
 playwright = pytest.importorskip('playwright.sync_api')
@@ -27,15 +27,15 @@ def monitoring_page(tmp_path):
     from datetime import date
     path=root/'holdings.csv'
     path.write_text(path.read_text().replace('2026-10-12',date.today().isoformat()))
-    from portfolio_app.account_journal import load_journal, save_journal
+    from portfolio_app.ledger.account_journal import load_journal, save_journal
     from dataclasses import replace
     journal, revision=load_journal(root)
     save_journal(root,replace(journal,accounts=journal.accounts[:1],events=journal.events[:1]),revision)
     app=tmp_path/'app.py'
     app.write_text('''
 from pathlib import Path
-from portfolio_app.ui import render_app
-from portfolio_app.prices import PriceService, StaticProvider
+from portfolio_app.interface.ui import render_app
+from portfolio_app.market.prices import PriceService, StaticProvider
 root=Path(__file__).parent/'synthetic'
 render_app(root,demo=True,ignore_selection=True,price_service=PriceService(StaticProvider(root/'demo_prices.json')))
 ''')
@@ -137,8 +137,8 @@ def test_indicator_browse_save_and_notification_destination(monitoring_page):
 
 
 def test_alerts_arrive_on_every_tab_without_global_status_or_banners(monitoring_page):
-    from portfolio_app.monitoring import Evaluation
-    from portfolio_app.monitoring_store import record_evaluations, rule_from_dict
+    from portfolio_app.monitoring.monitoring import Evaluation
+    from portfolio_app.monitoring.monitoring_store import record_evaluations, rule_from_dict
     page,url,root=monitoring_page
     page.goto(url)
     dialog=page.get_by_role('dialog',name='Monitoring alert')

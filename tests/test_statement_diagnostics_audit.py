@@ -5,8 +5,8 @@ import pymupdf
 import pytest
 
 from consors_audit_fixtures import FREE, SALE, LOSS_SALE, SUPPLEMENTARY_DETAILS, TAX_PAGE, TAX_INFORMATION, DOCUMENT_REFERENCE, text_pdf, with_margin_reference
-from portfolio_app.consors_pdf import parse_consors_pdf, parse_consors_batch
-from portfolio_app.statement_diagnostics import layout_report
+from portfolio_app.ingestion.consors_pdf import parse_consors_pdf, parse_consors_batch
+from portfolio_app.ingestion.statement_diagnostics import layout_report
 
 
 @pytest.mark.parametrize('secret', ['PRIVATE_SENTINEL_PERSON', 'secret@example.invalid',
@@ -42,7 +42,7 @@ def test_malformed_pdf_never_leaks_native_exception(raw, capfd):
 def test_parser_exception_is_fixed_message(monkeypatch):
     def fail(*args):
         raise ValueError('PRIVATE_SENTINEL raw private text')
-    monkeypatch.setattr('portfolio_app.consors_pdf._rows', fail)
+    monkeypatch.setattr('portfolio_app.ingestion.consors_pdf._rows', fail)
     assert parse_consors_pdf(b'synthetic').issues == (
         'PDF could not be read. Use a text-based, unencrypted statement.',)
 
@@ -64,12 +64,12 @@ def test_scanned_encrypted_and_page_limit_documents():
 
 def test_file_and_batch_limits_are_checked_before_parsing(monkeypatch):
     source = text_pdf(FREE)
-    monkeypatch.setattr('portfolio_app.consors_pdf.MAX_BYTES', len(source))
+    monkeypatch.setattr('portfolio_app.ingestion.consors_pdf.MAX_BYTES', len(source))
     assert parse_consors_pdf(source).zero_statement_charges
     assert parse_consors_pdf(source+b' ').issues == ('PDF exceeds the size limit.',)
     with pytest.raises(ValueError, match='100 statements'):
         parse_consors_batch([source]*101)
-    monkeypatch.setattr('portfolio_app.consors_pdf.MAX_BATCH_BYTES', len(source)*2)
+    monkeypatch.setattr('portfolio_app.ingestion.consors_pdf.MAX_BATCH_BYTES', len(source)*2)
     assert len(parse_consors_batch([source,source])) == 2
     with pytest.raises(ValueError, match='100 MB'):
         parse_consors_batch([source,source,b' '])

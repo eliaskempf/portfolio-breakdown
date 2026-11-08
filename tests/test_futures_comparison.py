@@ -6,16 +6,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_comparison import ComparisonSettings, cash_growth, evaluate_paths, simulate_comparison
-from portfolio_app.futures_reference import parse_references, refresh_references, load_references
-from portfolio_app.futures_workspace import (SANDBOX_FILE, load_sandbox, switch_to_fmwn,
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.studies.futures_comparison import ComparisonSettings, cash_growth, evaluate_paths, simulate_comparison
+from portfolio_app.studies.futures_reference import parse_references, refresh_references, load_references
+from portfolio_app.studies.futures_workspace import (SANDBOX_FILE, load_sandbox, switch_to_fmwn,
     load_comparison, save_comparison)
-from portfolio_app.holdings import DataError
+from portfolio_app.portfolio.holdings import DataError
 
 
 def test_shared_financing_proxy_validates_combined_rate():
-    from portfolio_app.futures_comparison import financing_from_estr
+    from portfolio_app.studies.futures_comparison import financing_from_estr
     assert financing_from_estr(.0125, .0075) == pytest.approx(.02)
     assert financing_from_estr(-.005, 0.) == -.005
     for rate, spread in [(.20, .01), (-.10, -.01), (float('nan'), 0.)]:
@@ -27,7 +27,7 @@ def test_shared_financing_proxy_validates_combined_rate():
 
 def test_retired_implied_settings_migrate_without_rewriting_file(tmp_path):
     import json
-    from portfolio_app.futures_workspace import COMPARISON_FILE
+    from portfolio_app.studies.futures_workspace import COMPARISON_FILE
     path = tmp_path / COMPARISON_FILE
     path.write_text(json.dumps(dict(financing_source='implied', financing_rate=.09)))
     before = path.read_bytes()
@@ -43,8 +43,8 @@ def test_retired_implied_settings_migrate_without_rewriting_file(tmp_path):
 def test_ecb_start_reference_uses_history_when_current_snapshot_is_in_future(tmp_path):
     import json
     from datetime import date
-    from portfolio_app.futures_reference import estr_reference_for_start
-    from portfolio_app.futures_history_data import HISTORY_FILE
+    from portfolio_app.studies.futures_reference import estr_reference_for_start
+    from portfolio_app.studies.futures_history_data import HISTORY_FILE
     from test_futures_history import synthetic_history_snapshot
     snapshot = dict(estr_rate=.08, estr_reference_date='2003-10-01')
     start = date(2003, 9, 30)
@@ -191,7 +191,7 @@ def test_comparison_persistence_revision_and_no_overwrite(tmp_path):
 
 
 def test_cash_grid_resolves_opening_margin_and_intermediate_cash_amounts():
-    from portfolio_app.futures_comparison import collateral_grid
+    from portfolio_app.studies.futures_comparison import collateral_grid
     p = replace(position(), margin_per_contract=5200., maintenance_per_contract=4500.)
     settings = ComparisonSettings(fees_per_contract=12., comparison_capital=12345.)
     grid = collateral_grid(p, settings)
@@ -207,7 +207,7 @@ def test_cash_grid_resolves_opening_margin_and_intermediate_cash_amounts():
 
 
 def test_cash_grid_uses_stressed_signed_quantity_and_rolling_execution_costs():
-    from portfolio_app.futures_comparison import collateral_grid
+    from portfolio_app.studies.futures_comparison import collateral_grid
     p = position(contracts=-2)
     s = ComparisonSettings(rolling=True, margin_stress=1.5, roll_fee_per_side=7., roll_slippage_points=.03,
                            fees_per_contract=900., capital_min=1000., capital_max=18000.)

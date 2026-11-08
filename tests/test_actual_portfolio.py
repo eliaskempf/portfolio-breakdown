@@ -6,14 +6,14 @@ import json
 import pandas as pd
 import pytest
 
-from portfolio_app.account_journal import Account, CashLink, Event, Journal, PositionSpec, append_events, save_journal
-from portfolio_app.derivative_types import ContractSpec, PriceObservation
-from portfolio_app.actual_portfolio import journal_positions, freeze_position_keys
-from portfolio_app.holdings import DataError, parse_holdings
-from portfolio_app.portfolio import prepare_portfolio
-from portfolio_app.prices import PriceService, StaticProvider
-from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
-from portfolio_app.positions import read_snapshot, save_position
+from portfolio_app.ledger.account_journal import Account, CashLink, Event, Journal, PositionSpec, append_events, save_journal
+from portfolio_app.derivatives.derivative_types import ContractSpec, PriceObservation
+from portfolio_app.portfolio.actual_portfolio import journal_positions, freeze_position_keys
+from portfolio_app.portfolio.holdings import DataError, parse_holdings
+from portfolio_app.portfolio.portfolio import prepare_portfolio
+from portfolio_app.market.prices import PriceService, StaticProvider
+from portfolio_app.exposure.portfolio_exposure import calculate_portfolio_exposure
+from portfolio_app.portfolio.positions import read_snapshot, save_position
 
 
 def invented(tmp_path):
@@ -61,7 +61,7 @@ def test_identity_adoption_blocks_old_cash_editor_and_survives_restart(tmp_path)
     save_journal(tmp_path,journal,None)
     with pytest.raises(DataError,match='Accounts'):
         save_position(tmp_path/'holdings.csv',{'shares':'21000'},expected_revision=frozen.revision,position_id='position-0')
-    from portfolio_app.workspace import validate_workspace
+    from portfolio_app.workspace.workspace import validate_workspace
     validate_workspace(tmp_path)
 
 
@@ -136,7 +136,7 @@ def test_zero_foreign_future_claim_preserves_notional_fx_requirement(tmp_path):
 
 
 def test_unknown_foreign_cash_is_not_a_zero_balance(tmp_path):
-    from portfolio_app.security_history import SecurityBook, SecurityEvent
+    from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent
     service, journal, _ = invented(tmp_path)
     (tmp_path/'demo_prices.json').write_text(json.dumps({'prices': {}, 'fx': {}}))
     service = PriceService(StaticProvider(tmp_path/'demo_prices.json'))
@@ -154,8 +154,8 @@ def test_unknown_foreign_cash_is_not_a_zero_balance(tmp_path):
 
 
 def test_zero_value_closed_investment_retains_fx_for_recorded_loss(tmp_path):
-    from portfolio_app.account_journal import InvestmentSpec
-    from portfolio_app.futures_investments import investment_positions
+    from portfolio_app.ledger.account_journal import InvestmentSpec
+    from portfolio_app.derivatives.futures_investments import investment_positions
     service, _, _ = invented(tmp_path)
     contract = ContractSpec('SYNTH-USD', '2027-03-19', 'USD', 1, 1)
     journal = Journal(accounts=(Account('a', 'Invented account'),), contracts=(contract,),

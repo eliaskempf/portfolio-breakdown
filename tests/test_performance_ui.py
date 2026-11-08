@@ -102,7 +102,7 @@ def test_label_performance_toggle_and_detail_use_cost_weighted_return(tmp_path, 
     assert app.tabs[1].dataframe[-1].value["Performance coverage"].tolist() == ["Complete"]
     by_label(app.get("button_group"), "Performance display").set_value("€").run()
     assert app.tabs[1].dataframe[-1].value.Performance.tolist() == [-40]
-    from portfolio_app.label_comparison import Label
+    from portfolio_app.exposure.label_comparison import Label
     by_label(app.selectbox, "Detail view").set_value((Label("labels", ("Group A",)).key,)).run()
     assert not app.exception
     assert app.tabs[1].dataframe[-1].value.Performance.tolist() == [40, -80]

@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.risk import DEFAULT_BENCHMARK
-from portfolio_app.risk_data import (
+from portfolio_app.analytics.risk import DEFAULT_BENCHMARK
+from portfolio_app.analytics.risk_data import (
     AdjustedHistory, MarketRiskHistoryProvider, RiskHistoryService, benchmark_risk_history,
 )
 
@@ -98,7 +98,7 @@ def test_explicit_custom_benchmark_is_never_substituted():
 
 
 def test_unavailable_index_and_proxy_keep_source_disclosure_without_crashing(tmp_path):
-    from portfolio_app.analytics_service import load_risk
+    from portfolio_app.analytics.analytics_service import load_risk
     held = pd.DataFrame(dict(id=['a'], name=['Invented equity'], ticker=['SYNTH-A'], shares=[1.],
         instrument_type=['equity'], current_value_reporting=[100.], quote_currency=['EUR']))
     def fail(*args, **kwargs):

@@ -12,8 +12,8 @@ from urllib.request import urlopen
 import pytest
 
 from browser_support import settle
-from portfolio_app.account_journal import load_journal, save_journal, Journal
-from portfolio_app.security_history import SecurityBook, SecurityEvent
+from portfolio_app.ledger.account_journal import load_journal, save_journal, Journal
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent
 from decimal import Decimal
 from test_ux_browser import ux_page  # noqa: F401
 
@@ -36,14 +36,14 @@ def transaction_page(tmp_path, request):
 from pathlib import Path
 import time
 import streamlit as st
-from portfolio_app.input_cache import load_inputs
+from portfolio_app.interface.shared.input_cache import load_inputs
 from portfolio_app.application import prepare_application, select_price_service
-from portfolio_app.position_ui import request_position, render_position_dialog
-from portfolio_app.history import HistoryResult
-from portfolio_app.presentation import apply_style
-import portfolio_app.position_detail as detail
-import portfolio_app.history_ui as history
-from portfolio_app.personal_history_refresh import refresher, RefreshStatus
+from portfolio_app.interface.views.positions.position_ui import request_position, render_position_dialog
+from portfolio_app.market.history import HistoryResult
+from portfolio_app.interface.shared.presentation import apply_style
+import portfolio_app.interface.views.positions.position_detail as detail
+import portfolio_app.interface.views.history.history_ui as history
+from portfolio_app.performance.personal_history_refresh import refresher, RefreshStatus
 refresher.request=lambda *a,**k:RefreshStatus()
 root=Path(__file__).parent
 if not hasattr(history, '_test_preview'):
@@ -297,7 +297,7 @@ def test_clean_open_and_close_do_not_rebuild_portfolio(transaction_page, native)
 
 @pytest.mark.parametrize('transaction_page', ['fees', 'fx'], indirect=True)
 def test_review_repairs_and_apply_share_dialog_refresh_boundary(transaction_page):
-    from portfolio_app.history_observations import load_observations
+    from portfolio_app.performance.history_observations import load_observations
     page, root = transaction_page
     original, _ = load_journal(root)
     dialog = page.get_by_role('dialog')
@@ -316,8 +316,8 @@ def test_review_repairs_and_apply_share_dialog_refresh_boundary(transaction_page
     assert load_journal(root)[0].securities[0].records[0] == original.securities[0].records[0]
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     assert not dialog.get_by_role('button', name='Confirm complete history', exact=True).count()
-    from portfolio_app.history_observations import HistoryScope
-    from portfolio_app.personal_performance import coverage_reasons
+    from portfolio_app.performance.history_observations import HistoryScope
+    from portfolio_app.performance.personal_performance import coverage_reasons
     saved = load_journal(root)[0]
     review = saved.securities[0].reviews[-1]
     assert review.date and not review.complete_through

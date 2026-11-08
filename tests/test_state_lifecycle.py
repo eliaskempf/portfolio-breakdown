@@ -2,7 +2,7 @@
 import pytest
 from datetime import date
 
-from portfolio_app.state_lifecycle import FEATURES, capture_tour, retained_inputs, transition
+from portfolio_app.interface.shared.state_lifecycle import FEATURES, capture_tour, retained_inputs, transition
 
 
 def state():
@@ -64,7 +64,7 @@ def test_monitoring_navigation_retains_drafts_without_reassigning_buttons():
 
 def test_remount_is_restored_until_view_dispatch_completes(monkeypatch):
     from types import SimpleNamespace
-    from portfolio_app import view_state
+    from portfolio_app.interface.shared import view_state
     class RecordedState(dict):
         def __setitem__(self, key, value):
             writes.append(key)
@@ -88,7 +88,7 @@ def test_remount_is_restored_until_view_dispatch_completes(monkeypatch):
 
 def test_import_review_remount_restores_current_values_once(monkeypatch):
     from types import SimpleNamespace
-    from portfolio_app import view_state
+    from portfolio_app.interface.shared import view_state
 
     class RecordedState(dict):
         def __setitem__(self, key, value):

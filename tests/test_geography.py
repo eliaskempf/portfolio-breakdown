@@ -4,13 +4,13 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from portfolio_app.etf import FundSnapshot, expand_etfs, fund_classifications
-from portfolio_app.exposures import normalize_exposures
-from portfolio_app.geography import (
+from portfolio_app.funds.etf import FundSnapshot, expand_etfs, fund_classifications
+from portfolio_app.exposure.exposures import normalize_exposures
+from portfolio_app.exposure.geography import (
     UNKNOWN, country_lookup, geography_allocations, geography_path, geography_table, resolve_geography,
 )
-from portfolio_app.label_comparison import Label, compare_labels
-from portfolio_app.company_merges import MergeSettings, build_plan
+from portfolio_app.exposure.label_comparison import Label, compare_labels
+from portfolio_app.exposure.company_merges import MergeSettings, build_plan
 
 
 def holdings():

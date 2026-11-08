@@ -3,16 +3,16 @@ from datetime import date
 
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app import contract_maturity_ui as ui
-from portfolio_app.derivative_market import make_contract
-from portfolio_app.holdings import DataError
+from portfolio_app.interface.views.derivatives import contract_maturity_ui as ui
+from portfolio_app.derivatives.derivative_market import make_contract
+from portfolio_app.portfolio.holdings import DataError
 from test_ui import by_label
 
 
 def launch(*, product='FMWN', after=None):
     return AppTest.from_string(f'''
 import streamlit as st
-from portfolio_app.contract_maturity_ui import maturity_input
+from portfolio_app.interface.views.derivatives.contract_maturity_ui import maturity_input
 value = maturity_input({product!r}, key='maturity_', after={after!r})
 st.session_state['chosen'] = value
 ''').run()

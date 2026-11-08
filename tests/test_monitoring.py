@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 import pandas as pd
 import pytest
 
-from portfolio_app.holdings import DataError
-from portfolio_app.monitoring import Rule, SeriesSpec, MarketSeries, Evaluation, evaluate_series, indicator_frame, evaluate_account
-from portfolio_app.monitoring_market import yahoo_series
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.monitoring.monitoring import Rule, SeriesSpec, MarketSeries, Evaluation, evaluate_series, indicator_frame, evaluate_account
+from portfolio_app.monitoring.monitoring_market import yahoo_series
 
 NOW = datetime(2026, 10, 12, 12, tzinfo=timezone.utc)
 
@@ -75,7 +75,7 @@ def test_no_signal_from_stale_currency_mismatch_or_incomplete_history():
 
 
 def test_equality_and_approaching_band_are_percentage_points():
-    from portfolio_app.monitoring import condition
+    from portfolio_app.monitoring.monitoring import condition
     r = rule()
     assert [condition(v,r) for v in (-2.,-1.5,-1.,-.9)] == ['triggered','approaching','approaching','normal']
     r = replace(r,direction='above',threshold=60,warning_band=5)
@@ -103,7 +103,7 @@ def test_yahoo_finalization_subunits_adjustment_and_real_quote_timestamp():
 
 def test_account_ltv_uses_canonical_debt_selected_assets_and_fx():
     from test_account_margin import fixture, security_reserve, DAY
-    from portfolio_app.account_journal import Event, append_events, MarginRequirement
+    from portfolio_app.ledger.account_journal import Event, append_events, MarginRequirement
     journal,held,valued = fixture()
     journal = security_reserve(journal,held,'1')
     journal = append_events(journal, (
@@ -145,7 +145,7 @@ def test_empty_provider_placeholders_are_not_closing_observations():
 def test_provider_does_not_force_lazy_intraday_metadata(monkeypatch):
     from collections.abc import Mapping
     from types import SimpleNamespace
-    from portfolio_app.monitoring_market import MonitoringProvider
+    from portfolio_app.monitoring.monitoring_market import MonitoringProvider
     import yfinance
     class Metadata(Mapping):
         def __iter__(self):
@@ -159,7 +159,7 @@ def test_provider_does_not_force_lazy_intraday_metadata(monkeypatch):
 
 
 def test_monitoring_catalog_separates_fixed_benchmarks_from_owned_market_assets():
-    from portfolio_app.monitoring_catalog import BENCHMARKS, portfolio_instruments
+    from portfolio_app.monitoring.monitoring_catalog import BENCHMARKS, portfolio_instruments
     assert {s.split(':')[1] for s in BENCHMARKS}=={'990100','891800','892400'}
     held=pd.DataFrame([dict(ticker=t,name=n,shares=q,instrument_type=k) for t,n,q,k in [
         ('ZZ','Invented Z',1,'equity'),('AA','Invented A',2,'etf'),('ZZ','Invented Z',3,'equity'),
@@ -168,7 +168,7 @@ def test_monitoring_catalog_separates_fixed_benchmarks_from_owned_market_assets(
 
 
 def test_alert_copy_describes_condition_and_actual_observation():
-    from portfolio_app.monitoring_presentation import alert_details, observation_time
+    from portfolio_app.monitoring.monitoring_presentation import alert_details, observation_time
     condition_text, observed=alert_details(rule(),{'value':-3.25})
     assert 'at least 2% below its 3-session SMA' in condition_text
     assert '3.25% below' in observed

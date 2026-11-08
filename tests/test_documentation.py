@@ -9,9 +9,9 @@ import sys
 
 import pytest
 
-from portfolio_app.demo import create_demo_data
+from portfolio_app.demo_data.demo import create_demo_data
 from portfolio_app.privacy import DEMO_IMAGE_FILES, path_problem
-from portfolio_app.workspace import inventory
+from portfolio_app.workspace.workspace import inventory
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = spec_from_file_location('docs_site', ROOT / 'tools/docs_site.py')
@@ -210,8 +210,9 @@ def test_public_site_contract():
     info = docs.check_site(ROOT / 'dist/docs-test')
     assert info['topics'] == docs.TOPICS
     pages = [name for name in info['files'] if name.endswith('.html')]
-    assert len(pages) == 19
+    assert len(pages) == 20
     assert 'taxes/index.html' in pages
+    assert 'package-layout/index.html' in pages
     assert 'releases/index.html' in pages
     assert 'monitoring/index.html' in pages
     assert info['topics']['monitoring'] == 'monitoring/#monitoring'

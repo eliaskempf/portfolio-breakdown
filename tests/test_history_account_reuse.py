@@ -4,11 +4,11 @@ from decimal import Decimal as D
 
 import pytest
 
-from portfolio_app.account_journal import Account, Journal, replay
-from portfolio_app.history_observations import ObservationStore
-from portfolio_app.holdings import DataError
-from portfolio_app.personal_performance import HistoryCalculation
-from portfolio_app.security_history import Charge, SecurityBook, SecurityEvent, cash_postings
+from portfolio_app.ledger.account_journal import Account, Journal, replay
+from portfolio_app.performance.history_observations import ObservationStore
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.performance.personal_performance import HistoryCalculation
+from portfolio_app.ledger.security_history import Charge, SecurityBook, SecurityEvent, cash_postings
 from test_account_journal import invented, trade, event
 
 
@@ -34,8 +34,8 @@ def mixed_journal():
 
 
 def test_reuse_preserves_corrections_fees_debt_and_explicit_receipts(monkeypatch):
-    import portfolio_app.personal_performance as module
-    import portfolio_app.account_journal as ledger
+    import portfolio_app.performance.personal_performance as module
+    import portfolio_app.ledger.account_journal as ledger
     journal = mixed_journal()
     calculation = HistoryCalculation(journal, ObservationStore())
     postings_calls, replay_calls = [], []
@@ -80,8 +80,8 @@ def test_full_replay_still_validates_adopted_liabilities_after_dated_query():
 
 def test_dense_timeline_is_one_pass_bounded_and_prior_movements_stay_immutable(monkeypatch):
     from datetime import date, timedelta
-    import portfolio_app.account_journal as ledger
-    from portfolio_app.account_timeline import AccountTimeline
+    import portfolio_app.ledger.account_journal as ledger
+    from portfolio_app.ledger.account_timeline import AccountTimeline
     start = date(2020, 1, 1)
     events = tuple(ledger.Event(str(i), (start+timedelta(days=i)).isoformat(),
         'cash_open' if not i else 'interest', 'a', 'EUR', D(1000) if not i else D(1)) for i in range(1001))

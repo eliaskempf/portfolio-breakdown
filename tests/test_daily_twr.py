@@ -3,10 +3,10 @@ from dataclasses import replace
 from decimal import Decimal as D
 import pytest
 
-from portfolio_app.account_journal import Journal, Account, Event
-from portfolio_app.security_history import SecurityBook, SecurityEvent as E, Charge, history_fingerprint
-from portfolio_app.history_observations import Observation as O, ObservationStore, CoverageReview, HistoryScope
-from portfolio_app.personal_performance import calculate_history, HistoryCalculation
+from portfolio_app.ledger.account_journal import Journal, Account, Event
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent as E, Charge, history_fingerprint
+from portfolio_app.performance.history_observations import Observation as O, ObservationStore, CoverageReview, HistoryScope
+from portfolio_app.performance.personal_performance import calculate_history, HistoryCalculation
 
 START, END = '2024-01-01', '2024-01-10'
 
@@ -116,8 +116,8 @@ def test_liquidation_reentry_and_negative_equity_gate():
 
 
 def test_missing_daily_boundary_offers_the_original_dated_price_correction():
-    from portfolio_app.history_view import history_view
-    from portfolio_app.history_data_ui import missing_inputs
+    from portfolio_app.performance.history_view import history_view
+    from portfolio_app.interface.views.history.history_data_ui import missing_inputs
     from datetime import date
     j,scope,store=example((trade('buy','buy','2024-01-03',100),),quantity=1,prices=((START,100),(END,110)))
     view=history_view(j,scope,store,'All',today=date.fromisoformat(END))

@@ -5,12 +5,12 @@ from decimal import Decimal as D
 
 import pytest
 
-from portfolio_app.account_journal import Account, Event, Journal
-from portfolio_app.history_observations import Observation as O, ObservationStore, CoverageReview, HistoryScope, rate
-from portfolio_app.history_valuation import valuation_fx
-from portfolio_app.history_view import history_view
-from portfolio_app.personal_performance import calculate_history, value_at, convert
-from portfolio_app.security_history import SecurityBook, SecurityEvent as E, Charge, history_fingerprint
+from portfolio_app.ledger.account_journal import Account, Event, Journal
+from portfolio_app.performance.history_observations import Observation as O, ObservationStore, CoverageReview, HistoryScope, rate
+from portfolio_app.performance.history_valuation import valuation_fx
+from portfolio_app.performance.history_view import history_view
+from portfolio_app.performance.personal_performance import calculate_history, value_at, convert
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent as E, Charge, history_fingerprint
 
 FRIDAY, SUNDAY, MONDAY, TUESDAY = '2024-01-05', '2024-01-07', '2024-01-08', '2024-01-09'
 

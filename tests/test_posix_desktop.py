@@ -10,9 +10,9 @@ import time
 
 import pytest
 
-from portfolio_app.holdings import DataError
-from portfolio_app.posix_window import PosixWindowPresentation, navigation_allowed
-from portfolio_app.posix_window_process import internal_command
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.runtime.posix_window import PosixWindowPresentation, navigation_allowed
+from portfolio_app.runtime.posix_window_process import internal_command
 
 
 @pytest.mark.parametrize('url,main,expected', [
@@ -65,7 +65,7 @@ def test_parent_eof_stops_owned_server_and_descendants_only(tmp_path, gate):
         'p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(90)"])\n'
         f'open({str(marker)!r}, "w").write(str(os.getpid()) + " " + str(p.pid))\n'
         'time.sleep(90)\n')
-    code = ('import sys\nfrom portfolio_app.posix_window_process import supervise\n'
+    code = ('import sys\nfrom portfolio_app.runtime.posix_window_process import supervise\n'
             f'sys.exit(supervise([sys.executable, {str(script)!r}], sys.stdin.buffer))')
     unrelated = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(90)'])
     supervisor = subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE)
@@ -120,7 +120,7 @@ def test_linux_installer_only_owns_application_paths(tmp_path, monkeypatch):
 
 
 def test_self_test_rejects_real_workspace_arguments(monkeypatch):
-    from portfolio_app.window import main
+    from portfolio_app.runtime.window import main
     monkeypatch.setattr(sys, 'argv', ['app', '--native-self-test', 'invented', 'render', '--data-dir', 'private'])
     with pytest.raises(SystemExit, match='Usage'):
         main()
@@ -136,7 +136,7 @@ def test_experiment_paths_are_narrowly_allowlisted():
 
 def test_windowed_posix_bootloader_recovers_inherited_pipe(monkeypatch):
     from io import BytesIO
-    from portfolio_app.window import control_input
+    from portfolio_app.runtime.window import control_input
     monkeypatch.setattr(sys, 'stdin', None)
     monkeypatch.setattr(os, 'name', 'posix')
     pipe = BytesIO(b'start\n')
@@ -151,7 +151,7 @@ def test_windowed_posix_bootloader_recovers_inherited_pipe(monkeypatch):
 def test_qt6_download_accept_and_cancel(tmp_path, accept):
     selected = str(tmp_path / 'invented-download.txt') if accept else ''
     from types import SimpleNamespace
-    from portfolio_app.posix_window import save_qt_download
+    from portfolio_app.runtime.posix_window import save_qt_download
     calls = []
     download = SimpleNamespace(suggestedFileName=lambda: 'invented.txt',
         setDownloadDirectory=lambda value: calls.append(('directory', value)),
@@ -164,7 +164,7 @@ def test_qt6_download_accept_and_cancel(tmp_path, accept):
 
 @pytest.mark.skipif(os.name != 'posix', reason='POSIX process supervision')
 def test_natural_server_exit_preserves_exit_code_without_buffered_pipe_deadlock():
-    code = ('import sys; from portfolio_app.posix_window_process import supervise; '
+    code = ('import sys; from portfolio_app.runtime.posix_window_process import supervise; '
             'sys.exit(supervise([sys.executable, "-c", "raise SystemExit(7)"], sys.stdin.buffer))')
     child = subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
@@ -183,7 +183,7 @@ def test_natural_server_exit_preserves_exit_code_without_buffered_pipe_deadlock(
 
 @pytest.mark.parametrize('state,allowed', [('Z', True), ('Z+', True), ('S', False)])
 def test_darwin_permission_error_only_ignored_for_dead_group(monkeypatch, state, allowed):
-    from portfolio_app.posix_window_process import signal_owned_group
+    from portfolio_app.runtime.posix_window_process import signal_owned_group
     monkeypatch.setattr(sys, 'platform', 'darwin')
     def denied(*args):
         raise PermissionError('synthetic denied signal')
@@ -197,7 +197,7 @@ def test_darwin_permission_error_only_ignored_for_dead_group(monkeypatch, state,
 
 
 def test_cocoa_panel_waits_for_location_sheet_and_selected_path():
-    from portfolio_app.desktop_controls import CocoaPanelSequence
+    from portfolio_app.runtime.desktop_controls import CocoaPanelSequence
     sequence = CocoaPanelSequence()
     def step(panel=False, location=False, selected=False):
         return sequence.advance(panel_ready=panel, location_ready=location, selected=selected)
@@ -274,7 +274,7 @@ def test_launch_services_needs_no_input_automation_flags(tmp_path, monkeypatch, 
 @pytest.mark.parametrize('hosted', [False, True])
 def test_cocoa_path_input_only_uses_disposable_host_clipboard(hosted):
     from types import SimpleNamespace
-    from portfolio_app.desktop_controls import cocoa_path_input
+    from portfolio_app.runtime.desktop_controls import cocoa_path_input
     calls = []
     clipboard = SimpleNamespace(
         clearContents=lambda: calls.append('clear'),
@@ -294,7 +294,7 @@ def test_cocoa_path_input_only_uses_disposable_host_clipboard(hosted):
 @pytest.mark.parametrize('missing', ['PORTFOLIO_TEST_PANEL_EVIDENCE', 'PORTFOLIO_TEST_HOSTED_INPUT',
                                    'GITHUB_ACTIONS', 'RUNNER_ENVIRONMENT'])
 def test_cocoa_evidence_requires_all_hosted_opt_ins(monkeypatch, tmp_path, missing):
-    from portfolio_app.cocoa_diagnostics import PanelEvidence, enabled
+    from portfolio_app.runtime.cocoa_diagnostics import PanelEvidence, enabled
     for key, value in [('PORTFOLIO_TEST_PANEL_EVIDENCE', '1'), ('PORTFOLIO_TEST_HOSTED_INPUT', '1'),
                        ('GITHUB_ACTIONS', 'true'), ('RUNNER_ENVIRONMENT', 'github-hosted')]:
         monkeypatch.setenv(key, value)

@@ -5,12 +5,12 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
-from portfolio_app.account_journal import Journal
-from portfolio_app.history_observations import CoverageReview, HistoryScope, ObservationStore
-from portfolio_app.history_valuation import closed_interval, listing_calendar, price_at
-from portfolio_app.personal_market import fetch_security_prices, merge_download
-from portfolio_app.personal_performance import calculate_history
-from portfolio_app.security_history import SecurityBook, SecurityEvent, history_fingerprint
+from portfolio_app.ledger.account_journal import Journal
+from portfolio_app.performance.history_observations import CoverageReview, HistoryScope, ObservationStore
+from portfolio_app.performance.history_valuation import closed_interval, listing_calendar, price_at
+from portfolio_app.performance.personal_market import fetch_security_prices, merge_download
+from portfolio_app.performance.personal_performance import calculate_history
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent, history_fingerprint
 
 
 def stuttgart_prices():

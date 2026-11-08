@@ -5,11 +5,11 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.allocation import Allocation, Bucket
-from portfolio_app.exposure_target_presentation import market_target_summary
-from portfolio_app.exposure_targets import ExposureTargets, save_exposure_targets
-from portfolio_app.holdings import DataError
-from portfolio_app.portfolio_exposure import PortfolioExposure
+from portfolio_app.portfolio.allocation import Allocation, Bucket
+from portfolio_app.exposure.exposure_target_presentation import market_target_summary
+from portfolio_app.exposure.exposure_targets import ExposureTargets, save_exposure_targets
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.exposure.portfolio_exposure import PortfolioExposure
 
 
 CONFIG = Allocation((Bucket('risk', 'Invented risk'), Bucket('stock', 'Invented stock', 'risk'),
@@ -75,7 +75,7 @@ def launch(directory):
     return AppTest.from_string('''
 from pathlib import Path
 import streamlit as st
-from portfolio_app.exposure_target_presentation import render_market_target_summary
+from portfolio_app.exposure.exposure_target_presentation import render_market_target_summary
 from test_exposure_target_presentation import CONFIG, invented_result
 table = render_market_target_summary(invented_result(), CONFIG, Path(st.session_state.directory), '',
     open_targets=lambda: st.session_state.update(opened=True))
@@ -100,7 +100,7 @@ def test_overview_target_controls_unset_legacy_and_market(tmp_path):
     assert 'equity only' in app.button[0].help
     assert not app.dataframe
     assert app.button[0].label == 'Edit'
-    from portfolio_app.exposure_targets import load_exposure_targets
+    from portfolio_app.exposure.exposure_targets import load_exposure_targets
     _, revision = load_exposure_targets(tmp_path, CONFIG)
     save_exposure_targets(tmp_path, TARGET, CONFIG, revision)
     app.run()
@@ -164,8 +164,8 @@ def test_zero_unassigned_hidden_but_cash_and_offsetting_exposures_remain():
 
 
 def test_overview_requires_measure_and_never_falls_back_to_capital_targets(tmp_path):
-    from portfolio_app.allocation import save_allocation
-    from portfolio_app.positions import read_snapshot
+    from portfolio_app.portfolio.allocation import save_allocation
+    from portfolio_app.portfolio.positions import read_snapshot
     from test_futures_ui import launch as launch_app
     from test_portfolio_exposure import CONFIG as categories
     from test_portfolio_exposure_ui import synthetic_workspace
@@ -175,7 +175,7 @@ def test_overview_requires_measure_and_never_falls_back_to_capital_targets(tmp_p
     categories = replace(categories, buckets=tuple(replace(b, target=t)
         for b, t in zip(categories.buckets, (.2, .3, .5))))
     path = workspace/'allocation.yaml'
-    from portfolio_app.storage import revision
+    from portfolio_app.workspace.storage import revision
     save_allocation(path, categories, read_snapshot(workspace/'holdings.csv').holdings, revision(path))
     target = ExposureTargets(1.5, 'composition', {'core': .8, 'stocks': .2, 'cash': 0.}, version=2, universe='market')
     save_exposure_targets(workspace, target, categories, None)
@@ -195,9 +195,9 @@ def test_overview_requires_measure_and_never_falls_back_to_capital_targets(tmp_p
 
 
 def test_existing_percentages_compare_with_exposure_without_leverage_policy(tmp_path):
-    from portfolio_app.allocation import save_allocation
-    from portfolio_app.positions import read_snapshot
-    from portfolio_app.storage import revision
+    from portfolio_app.portfolio.allocation import save_allocation
+    from portfolio_app.portfolio.positions import read_snapshot
+    from portfolio_app.workspace.storage import revision
     from test_futures_ui import launch as launch_app
     from test_portfolio_exposure import CONFIG as categories
     from test_portfolio_exposure_ui import synthetic_workspace
@@ -233,7 +233,7 @@ def test_invalid_saved_policy_does_not_silently_use_existing_percentages(tmp_pat
 from pathlib import Path
 import pandas as pd
 import streamlit as st
-from portfolio_app.exposure_target_presentation import render_market_target_summary
+from portfolio_app.exposure.exposure_target_presentation import render_market_target_summary
 from test_exposure_target_presentation import CONFIG, invented_result
 fallback = pd.DataFrame({'Target (%)': [75.]})
 result = render_market_target_summary(invented_result(), CONFIG, Path(st.session_state.directory), '', composition_table=fallback)

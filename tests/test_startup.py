@@ -5,10 +5,10 @@ import sys
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.app import main
-from portfolio_app.demo import create_demo_data
-from portfolio_app.holdings import load_holdings
-from portfolio_app.positions import read_snapshot, save_position
+from portfolio_app.runtime.app import main
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.portfolio.holdings import load_holdings
+from portfolio_app.portfolio.positions import read_snapshot, save_position
 from test_ui import by_label, activate
 
 
@@ -35,7 +35,7 @@ def test_each_launch_gets_editable_fresh_demo_and_preserves_personal_data(tmp_pa
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "argv", ["portfolio-app"])
-    monkeypatch.setattr("portfolio_app.app.run_server", run)
+    monkeypatch.setattr("portfolio_app.runtime.app.run_server", run)
     for _ in range(2):
         with pytest.raises(SystemExit) as result:
             main()
@@ -58,7 +58,7 @@ def test_demo_flag_never_resets_custom_personal_directory(tmp_path, monkeypatch)
         return 0
 
     monkeypatch.setattr(sys, "argv", ["portfolio-app", "--demo", "--data-dir", str(tmp_path), "--server.port=8510"])
-    monkeypatch.setattr("portfolio_app.app.run_server", run)
+    monkeypatch.setattr("portfolio_app.runtime.app.run_server", run)
     with pytest.raises(SystemExit):
         main()
     assert original.read_text() == "Existing data remains untouched"
@@ -73,7 +73,7 @@ def test_interrupted_start_cleans_temporary_demo(tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "argv", ["portfolio-app"])
-    monkeypatch.setattr("portfolio_app.app.run_server", interrupt)
+    monkeypatch.setattr("portfolio_app.runtime.app.run_server", interrupt)
     with pytest.raises(SystemExit) as result:
         main()
     assert result.value.code == 130
@@ -83,8 +83,8 @@ def test_interrupted_start_cleans_temporary_demo(tmp_path, monkeypatch):
 def launch_workspaces(personal, demo, *, start_demo=False):
     return AppTest.from_string(
         "from pathlib import Path\n"
-        "from portfolio_app.ui import render_app\n"
-        "from portfolio_app.prices import PriceService, StaticProvider\n"
+        "from portfolio_app.interface.ui import render_app\n"
+        "from portfolio_app.market.prices import PriceService, StaticProvider\n"
         f"prices = PriceService(StaticProvider(Path({str(demo / 'demo_prices.json')!r})))\n"
         f"render_app(Path({str(personal)!r}), demo_dir=Path({str(demo)!r}), demo={start_demo!r}, price_service=prices)\n",
         default_timeout=15,

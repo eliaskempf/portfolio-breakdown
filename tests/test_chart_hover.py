@@ -1,6 +1,6 @@
 """Shared inspection formats synthetic values without changing financial data."""
 import plotly.graph_objects as go
-from portfolio_app.chart_hover import chart_hover
+from portfolio_app.interface.shared.chart_hover import chart_hover
 
 
 def test_lines_share_date_cursor_without_interpolation_or_rounding_data():
@@ -44,8 +44,8 @@ def test_numeric_scatter_keeps_point_inspection():
 
 
 def test_monetary_history_axes_share_symbols_and_keep_values_exact():
-    from portfolio_app.chart_hover import money_history_axes
-    from portfolio_app.money import format_money
+    from portfolio_app.interface.shared.chart_hover import money_history_axes
+    from portfolio_app.interface.shared.money import format_money
     for currency, prefix in [('EUR', '€'), ('USD', '$'), ('GBP', '£'), ('KRW', 'KRW ')]:
         figure = go.Figure(go.Scatter(x=['2024-01-01', '2024-01-02'], y=[1234.56789, 1500], mode='lines', name='Price'))
         chart_hover(money_history_axes(figure, currency))

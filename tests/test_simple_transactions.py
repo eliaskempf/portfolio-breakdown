@@ -5,16 +5,16 @@ import json
 
 import pytest
 
-from portfolio_app.account_journal import Journal, load_journal, journal_from_dict, journal_to_dict
-from portfolio_app.csv_transaction_imports import prepare_import, event_for
-from portfolio_app.history_commands import correct_transaction, remove_transactions, save_history
-from portfolio_app.history_observations import HistoryScope, Observation, ObservationStore, CoverageReview
-from portfolio_app.holdings import DataError, parse_holdings
-from portfolio_app.personal_performance import calculate_history
-from portfolio_app.positions import read_snapshot
-from portfolio_app.security_history import SecurityEvent, SecurityBook, replay_securities, history_fingerprint
-from portfolio_app.transaction_csv import read_csv
-from portfolio_app.transaction_import_commands import save_transaction_import, positions_content
+from portfolio_app.ledger.account_journal import Journal, load_journal, journal_from_dict, journal_to_dict
+from portfolio_app.ingestion.csv_transaction_imports import prepare_import, event_for
+from portfolio_app.ledger.history_commands import correct_transaction, remove_transactions, save_history
+from portfolio_app.performance.history_observations import HistoryScope, Observation, ObservationStore, CoverageReview
+from portfolio_app.portfolio.holdings import DataError, parse_holdings
+from portfolio_app.performance.personal_performance import calculate_history
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ledger.security_history import SecurityEvent, SecurityBook, replay_securities, history_fingerprint
+from portfolio_app.ingestion.transaction_csv import read_csv
+from portfolio_app.ledger.transaction_import_commands import save_transaction_import, positions_content
 
 HEADER = 'reference,date,type,asset,quantity,amount,currency'
 MAPPING = {('Portfolio','AUR'):'aur', ('Portfolio','ORB'):'orb'}
@@ -48,7 +48,7 @@ def test_simple_format_dates_order_and_sparse_roundtrip():
 
 @pytest.mark.parametrize('source', ['manual','consors_pdf:synthetic','transaction_csv_v3'])
 def test_entry_source_does_not_change_calculations_or_rows(source):
-    from portfolio_app.history_ui import _transaction_table
+    from portfolio_app.interface.views.history.history_ui import _transaction_table
     items = rows('b,2024-01-02,buy,AUR,10,100,EUR\ns,2024-01-03,sell,AUR,2,25,EUR\n')
     original = applied(items)
     journal = replace(original, securities=tuple(replace(b, records=tuple(
@@ -70,8 +70,8 @@ def test_entry_source_does_not_change_calculations_or_rows(source):
 
 def test_pdf_csv_and_manual_normalize_same_purchase():
     from test_consors_pdf import statement
-    from portfolio_app.consors_pdf import parse_consors_pdf
-    from portfolio_app.transaction_imports import as_event
+    from portfolio_app.ingestion.consors_pdf import parse_consors_pdf
+    from portfolio_app.ingestion.transaction_imports import as_event
     pdf=as_event(parse_consors_pdf(statement(fees=False)),charges_known=True)
     csv=event_for(rows('p,2024-02-07,buy,AUR,2,100,EUR\n')[0],MAPPING)
     manual=SecurityEvent('manual','buy','2024-02-07',quantity=2,amount=100,currency='EUR',charges_known=True)
@@ -141,7 +141,7 @@ def test_overlapping_export_preserves_edits_removals_and_stored_identities(tmp_p
 
 
 def test_reimport_matches_legacy_zero_fee_without_changing_receipt_identity():
-    from portfolio_app.transaction_csv import TransactionRow, retain_import_interpretations
+    from portfolio_app.ingestion.transaction_csv import TransactionRow, retain_import_interpretations
     original = rows('b,2024-01-02,buy,AUR,10,100,EUR,0.00\n', ',fee')[0]
     legacy = TransactionRow(original.raw, {**original.facts, 'fee_currency': 'EUR'})
     journal = applied([legacy])
@@ -166,7 +166,7 @@ def test_explicit_order_change_requires_correction_and_preserves_original_eviden
 
 
 def test_changed_amount_keeps_accepted_implicit_order_and_requires_correction():
-    from portfolio_app.transaction_csv import retain_import_interpretations
+    from portfolio_app.ingestion.transaction_csv import retain_import_interpretations
     original = rows('a,2024-01-02,buy,AUR,1,10,EUR\nb,2024-01-02,buy,AUR,2,20,EUR\n')
     journal = applied(original)
     changed = rows('b,2024-01-02,buy,AUR,2,21,EUR\n')
@@ -181,8 +181,8 @@ def test_changed_amount_keeps_accepted_implicit_order_and_requires_correction():
 
 
 def test_excluded_csv_correction_preserves_the_applied_predecessor():
-    from portfolio_app.history_commands import exclude_transactions
-    from portfolio_app.security_history import current_records
+    from portfolio_app.ledger.history_commands import exclude_transactions
+    from portfolio_app.ledger.security_history import current_records
     items = rows('b,2024-01-02,buy,AUR,10,100,EUR\n')
     journal = applied(items)
     accepted = journal.securities[0]
@@ -224,7 +224,7 @@ def test_estimates_enable_normal_returns_but_missing_prices_still_block():
 
 
 def test_atomic_new_positions_roll_back_on_journal_failure(tmp_path, monkeypatch):
-    import portfolio_app.account_journal as journals
+    import portfolio_app.ledger.account_journal as journals
     def fail(*args,**kwargs):raise OSError('Invented disk failure')
     monkeypatch.setattr(journals,'save_journal',fail)
     items=rows('b,2024-01-02,buy,AUR,10,100,EUR\n')
@@ -246,7 +246,7 @@ def test_interrupted_publication_recovers_before_reads(tmp_path):
 
 def test_unrelated_evidence_cannot_change_existing_capital():
     from test_gain_accounting import book, E, START, END, observations, summarize_known_gain
-    from portfolio_app.transaction_csv import ImportReceipt
+    from portfolio_app.ingestion.transaction_csv import ImportReceipt
     journal=Journal(version=2,securities=(book(E('o','opening',START),
         E('b','buy','2024-02-01',quantity=10,amount=100,currency='EUR',charges_known=True),
         E('move','transfer','2024-07-01',quantity=4,other_position_id='other')),
@@ -259,7 +259,7 @@ def test_unrelated_evidence_cannot_change_existing_capital():
 
 
 def test_cost_estimate_qualifies_gain_without_qualifying_returns():
-    from portfolio_app.gain_accounting import summarize_known_gain
+    from portfolio_app.performance.gain_accounting import summarize_known_gain
     items=rows('o,2024-01-01,opening,AUR,10,80,EUR,yes\n',',estimated')
     journal=applied(items)
     scope=HistoryScope(('aur',))
@@ -274,7 +274,7 @@ def test_cost_estimate_qualifies_gain_without_qualifying_returns():
 
 
 def test_corrected_import_backup_roundtrip_preserves_inert_legacy_settings(tmp_path):
-    from portfolio_app.backup import create_backup, inspect_backup, commit_restore
+    from portfolio_app.workspace.backup import create_backup, inspect_backup, commit_restore
     source=tmp_path/'source';source.mkdir()
     items=rows('b,2024-01-02,buy,AUR,10,100,EUR\n')
     save_transaction_import(source,items,MAPPING,expected_journal_revision=None,expected_holdings_revision=None,
@@ -293,7 +293,7 @@ def test_corrected_import_backup_roundtrip_preserves_inert_legacy_settings(tmp_p
 
 
 def test_later_review_keeps_removed_import_resolved(tmp_path):
-    from portfolio_app.history_commands import reconstruction_candidate
+    from portfolio_app.ledger.history_commands import reconstruction_candidate
     items=rows('b,2024-01-02,buy,AUR,10,100,EUR\ns,2024-01-03,sell,AUR,2,25,EUR\n')
     save_transaction_import(tmp_path,items,MAPPING,expected_journal_revision=None,expected_holdings_revision=None,
         additions=ADDITIONS,selected_ids=[r.identity for r in items],starts_at_zero=True,
@@ -304,14 +304,14 @@ def test_later_review_keeps_removed_import_resolved(tmp_path):
     assert candidate.records[-1].kind == 'void' and candidate.records[-1].id in candidate.active_ids
     reviewed=replace(journal,securities=(candidate,))
     assert replay_securities(reviewed.securities).positions['aur'].quantity == 10
-    from portfolio_app.personal_performance import coverage_reasons
+    from portfolio_app.performance.personal_performance import coverage_reasons
     assert 'Unapplied transaction evidence requires review' not in coverage_reasons(
         reviewed,HistoryScope(('aur',)),ObservationStore(),'2024-01-01','2024-01-04')
 
 
 def test_failed_publication_preserves_existing_documents(tmp_path, monkeypatch):
-    from portfolio_app.account_journal import save_journal
-    import portfolio_app.account_journal as journals
+    from portfolio_app.ledger.account_journal import save_journal
+    import portfolio_app.ledger.account_journal as journals
     original='position_key,id,name,shares,account\nold,old,Invented existing,2,Portfolio\n'
     (tmp_path/'holdings.csv').write_text(original)
     save_journal(tmp_path,Journal(),None)
@@ -330,7 +330,7 @@ def test_failed_publication_preserves_existing_documents(tmp_path, monkeypatch):
 
 
 def test_estimated_internal_exchange_does_not_qualify_whole_portfolio_return():
-    from portfolio_app.personal_performance import estimated_return_inputs
+    from portfolio_app.performance.personal_performance import estimated_return_inputs
     items=rows('b,2024-01-02,buy,AUR,10,100,EUR,,,no\n'
                'x,2024-01-03,exchange,AUR,2,25,EUR,ORB,4,yes\n',
                ',received_asset,received_quantity,estimated')
@@ -341,8 +341,8 @@ def test_estimated_internal_exchange_does_not_qualify_whole_portfolio_return():
 
 
 def test_bulk_removal_validates_final_state_of_interdependent_books(tmp_path):
-    from portfolio_app.account_journal import save_journal
-    from portfolio_app.history_commands import preview_activation
+    from portfolio_app.ledger.account_journal import save_journal
+    from portfolio_app.ledger.history_commands import preview_activation
     (tmp_path/'holdings.csv').write_text('position_key,id,name,shares,account\na,asset,Invented,0,A\nb,asset,Invented,0,B\n')
     a_events=(SecurityEvent('a-open','opening','2024-01-01'),
         SecurityEvent('buy','buy','2024-01-02',quantity=10,amount=100,currency='EUR',charges_known=True),
@@ -362,7 +362,7 @@ def test_bulk_removal_validates_final_state_of_interdependent_books(tmp_path):
 
 
 def test_starting_balance_looks_the_same_with_csv_or_manual_costs():
-    from portfolio_app.history_ui import _transaction_table
+    from portfolio_app.interface.views.history.history_ui import _transaction_table
     csv=event_for(rows('o,2024-01-01,opening,AUR,10,100,EUR\n')[0],MAPPING)
     manual=SecurityEvent('manual','opening','2024-01-01',quantity=10,amount=100,currency='EUR',charges_known=True)
     book=SecurityBook('aur','aur',('0','',''))
@@ -372,7 +372,7 @@ def test_starting_balance_looks_the_same_with_csv_or_manual_costs():
 
 
 def test_normal_review_preserves_checkpoint_without_inventing_zero_start():
-    from portfolio_app.history_commands import reconstruction_candidate
+    from portfolio_app.ledger.history_commands import reconstruction_candidate
     from test_inventory_imports import activate,row,estimate
     journal=activate([row('balance',**estimate())]).journal
     book=journal.securities[0]

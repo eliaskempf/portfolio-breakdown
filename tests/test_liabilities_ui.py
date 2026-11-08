@@ -4,9 +4,9 @@ from dataclasses import replace
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.holdings import DataError
-from portfolio_app.leverage_settings import MarginLiability, LeverageSettings, FundFactor, load_leverage_settings, save_leverage_settings
-from portfolio_app.liabilities_ui import update_liability
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.funds.leverage_settings import MarginLiability, LeverageSettings, FundFactor, load_leverage_settings, save_leverage_settings
+from portfolio_app.interface.views.studies.liabilities_ui import update_liability
 from test_ui import by_label
 
 
@@ -29,7 +29,7 @@ def test_update_one_liability_preserves_factors_and_checks_revision(tmp_path):
 def test_named_form_adds_unknown_edits_zero_and_removes(tmp_path):
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.liabilities_ui import render_liabilities
+from portfolio_app.interface.views.studies.liabilities_ui import render_liabilities
 render_liabilities(Path({str(tmp_path)!r}))
 ''').run()
     by_label(app.text_input, 'Liability name').set_value('Invented loan')
@@ -58,8 +58,8 @@ def test_unavailable_legacy_fund_retained_until_explicit_removal(tmp_path):
     before = (tmp_path / 'leverage-settings.json').read_bytes()
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.positions import read_snapshot
-from portfolio_app.leveraged_funds_ui import render_leveraged_funds
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.interface.views.funds.leveraged_funds_ui import render_leveraged_funds
 directory=Path({str(tmp_path)!r})
 render_leveraged_funds(directory, read_snapshot(directory/'holdings.csv').holdings)
 ''').run()

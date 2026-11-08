@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.label_comparison import (
+from portfolio_app.exposure.label_comparison import (
     Label, available_labels, compare_labels, comparison_assets, comparison_tree, immediate_children,
     label_memberships, matching_labels,
 )

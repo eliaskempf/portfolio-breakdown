@@ -8,15 +8,15 @@ from typing import NamedTuple
 
 import pandas as pd
 
-from portfolio_app.allocation import Allocation, analysis_targets
-from portfolio_app.etf import FundSnapshot
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_workspace import load_sandbox
-from portfolio_app.leverage_settings import LeverageSettings, load_leverage_settings, requires_leverage
-from portfolio_app.portfolio import prepare_portfolio
-from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
-from portfolio_app.positions import HoldingsSnapshot
-from portfolio_app.prices import PriceService, StaticProvider, UnavailableProvider
+from portfolio_app.portfolio.allocation import Allocation, analysis_targets
+from portfolio_app.funds.etf import FundSnapshot
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.studies.futures_workspace import load_sandbox
+from portfolio_app.funds.leverage_settings import LeverageSettings, load_leverage_settings, requires_leverage
+from portfolio_app.portfolio.portfolio import prepare_portfolio
+from portfolio_app.exposure.portfolio_exposure import calculate_portfolio_exposure
+from portfolio_app.portfolio.positions import HoldingsSnapshot
+from portfolio_app.market.prices import PriceService, StaticProvider, UnavailableProvider
 
 
 class PortfolioInputs(NamedTuple):
@@ -45,7 +45,7 @@ def load_leverage_context(directory, reporting_currency):
     sandbox = load_sandbox(directory)
     future = sandbox[0] if sandbox else None
     settings, _ = load_leverage_settings(directory, future=future)
-    from portfolio_app.account_journal import load_journal
+    from portfolio_app.ledger.account_journal import load_journal
     journal, journal_revision = load_journal(directory)
     actual = bool(journal.accounts)
     legacy_debt = tuple(x for x in settings.liabilities if x.id not in journal.adopted_liability_ids)
@@ -67,16 +67,16 @@ def select_price_service(directory, *, offline_demo=False, supplied=None, live_p
             provider = UnavailableProvider()
         return PriceService(provider)
     if live_prices is None:
-        from portfolio_app.market_data import prices_for
+        from portfolio_app.market.market_data import prices_for
         live_prices = prices_for
     return live_prices(directory)
 
 
 def historical_for(directory, *, demo=False):
-    from portfolio_app.fx import HistoricalFX
-    from portfolio_app.market_data import coordinator
+    from portfolio_app.market.fx import HistoricalFX
+    from portfolio_app.market.market_data import coordinator
     if demo:
-        from portfolio_app.fx import DatedRate
+        from portfolio_app.market.fx import DatedRate
         class OfflineFX:
             def get(self, source, target, day):
                 # Explicitly invented history, never used for live portfolios.
@@ -119,7 +119,7 @@ def prepare_application(inputs, prices, *, refresh=False, reporting_currency='EU
     valued = prepare_portfolio(source, prices, refresh=refresh,
                                reporting_currency=reporting_currency, historical=historical)
     stale = valued.price_status.isin(['cached fallback', 'stale']) | valued.fx_status.isin(['cached fallback', 'stale'])
-    from portfolio_app.performance import cash_balance_only
+    from portfolio_app.performance.performance import cash_balance_only
     missing_cost = valued.shares.gt(0) & ~cash_balance_only(valued) & valued.unrealized_gain_reporting.isna()
     problems = valued.loc[valued.shares.gt(0) & (missing_cost | valued.current_value_reporting.isna() | stale),
                           ['name', 'performance_note', 'valuation_note']].copy()

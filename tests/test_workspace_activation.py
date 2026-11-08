@@ -4,13 +4,13 @@ from threading import Event
 
 import pytest
 
-from portfolio_app.backup import create_backup, inspect_backup, commit_restore
-from portfolio_app.demo import create_demo_data
-from portfolio_app.holdings import DataError
-from portfolio_app.launcher import instance, request_instance, workspace_lease
-from portfolio_app.workspace import inventory
-from portfolio_app.workspace_activation import WorkspaceActivation
-from portfolio_app.workspace_selection import selection, selection_file
+from portfolio_app.workspace.backup import create_backup, inspect_backup, commit_restore
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.runtime.launcher import instance, request_instance, workspace_lease
+from portfolio_app.workspace.workspace import inventory
+from portfolio_app.workspace.workspace_activation import WorkspaceActivation
+from portfolio_app.workspace.workspace_selection import selection, selection_file
 
 
 def test_activate_alias_restart_and_original_bypass(tmp_path):
@@ -46,7 +46,7 @@ def test_failed_activation_retains_original_and_restored_files(tmp_path, monkeyp
     try:
         with workspace_lease(launch), WorkspaceActivation(launch) as owner:
             def fail(*args): raise OSError('Invented disk failure')
-            monkeypatch.setattr('portfolio_app.workspace_activation.save_selection', fail)
+            monkeypatch.setattr('portfolio_app.workspace.workspace_activation.save_selection', fail)
             with pytest.raises(OSError): owner.activate(target, 0, draft.digests)
             assert owner.current.directory == launch == selection(launch).directory
             with workspace_lease(target): pass
@@ -96,7 +96,7 @@ def test_activation_failure_removes_provisional_alias(tmp_path, monkeypatch):
     with workspace_lease(launch), WorkspaceActivation(launch) as owner:
         with instance(launch, 'http://127.0.0.1:1', Event(), demo=False, activation=owner):
             def fail(*args): raise OSError('Invented selection-write failure')
-            monkeypatch.setattr('portfolio_app.workspace_activation.save_selection', fail)
+            monkeypatch.setattr('portfolio_app.workspace.workspace_activation.save_selection', fail)
             response = request_instance(launch, 'activate', payload=dict(directory=str(target), generation=0, digests=inventory(target)))
             assert response['error']
             assert request_instance(target) is None

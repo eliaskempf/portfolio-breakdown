@@ -5,13 +5,13 @@ import json
 import pandas as pd
 import pytest
 
-from portfolio_app.generalized_studies import (
+from portfolio_app.studies.generalized_studies import (
     CashPool, Collateral, InterestRate, Observation, Roll, ScenarioContract,
     ScenarioInput, ScheduledPayment, StudyPolicy, compare_policies, forward_paths,
     funding_cohorts, reconstruct, replay,
 )
-from portfolio_app.generalized_studies_ui import load_study_settings, save_study_settings
-from portfolio_app.holdings import DataError
+from portfolio_app.interface.views.studies.generalized_studies_ui import load_study_settings, save_study_settings
+from portfolio_app.portfolio.holdings import DataError
 
 
 def scenario(**kwargs):

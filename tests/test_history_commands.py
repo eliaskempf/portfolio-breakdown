@@ -4,11 +4,11 @@ from decimal import Decimal as D
 import json
 import pytest
 
-from portfolio_app.account_journal import load_journal, journal_to_dict
-from portfolio_app.history_commands import book_for, save_history
-from portfolio_app.holdings import DataError
-from portfolio_app.positions import read_snapshot, save_position
-from portfolio_app.security_history import SecurityEvent as E, append_evidence, effective_holdings
+from portfolio_app.ledger.account_journal import load_journal, journal_to_dict
+from portfolio_app.ledger.history_commands import book_for, save_history
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.portfolio.positions import read_snapshot, save_position
+from portfolio_app.ledger.security_history import SecurityEvent as E, append_evidence, effective_holdings
 
 
 def setup(tmp_path):
@@ -25,9 +25,9 @@ def setup(tmp_path):
 
 @pytest.mark.parametrize('quantity, expected_cost', [(D(10), None), (D(0), 0)])
 def test_history_comparison_without_cost_evidence_only_reports_zero_for_empty_position(tmp_path, quantity, expected_cost):
-    from portfolio_app.account_journal import Journal
-    from portfolio_app.history_commands import history_comparisons
-    from portfolio_app.security_history import SecurityLot
+    from portfolio_app.ledger.account_journal import Journal
+    from portfolio_app.ledger.history_commands import history_comparisons
+    from portfolio_app.ledger.security_history import SecurityLot
     _, snapshot, book = setup(tmp_path)
     opening = E('unknown-opening', 'opening', '2024-03-01', quantity=quantity,
                 lots=(SecurityLot('unknown-lot', quantity, (), date='2024-01-01'),) if quantity else ())
@@ -39,7 +39,7 @@ def test_history_comparison_without_cost_evidence_only_reports_zero_for_empty_po
 
 
 def test_pending_removal_preserves_accepted_partial_fills_but_new_fills_need_review(tmp_path):
-    from portfolio_app.history_commands import remove_transactions
+    from portfolio_app.ledger.history_commands import remove_transactions
     path, snapshot, book = setup(tmp_path)
     fill = replace(book.records[-1], id='second-fill', sequence=1)
     pending = E('pending-fee', 'fee', '2024-03-01', amount=1, currency='EUR')
@@ -62,8 +62,8 @@ def test_pending_removal_preserves_accepted_partial_fills_but_new_fills_need_rev
 
 @pytest.mark.parametrize('source', ['manual', 'consors_pdf:invented'])
 def test_rejecting_pending_correction_keeps_predecessor_visible_and_editable(tmp_path, source):
-    from portfolio_app.history_commands import correct_transaction, exclude_transactions
-    from portfolio_app.security_history import current_records
+    from portfolio_app.ledger.history_commands import correct_transaction, exclude_transactions
+    from portfolio_app.ledger.security_history import current_records
     path, snapshot, book = setup(tmp_path)
     book = replace(book, records=tuple(replace(e, source=source) for e in book.records))
     saved = save_history(tmp_path, book, expected_journal_revision=None, expected_holdings_revision=snapshot.revision,
@@ -134,7 +134,7 @@ def test_failed_journal_publish_leaves_source_balance_intact(tmp_path,monkeypatc
 
 
 def test_version_one_roundtrip_does_not_claim_migration():
-    from portfolio_app.account_journal import Journal,journal_from_dict
+    from portfolio_app.ledger.account_journal import Journal,journal_from_dict
     raw=journal_to_dict(Journal())
     assert 'securities' not in raw and 'capital_history' not in raw
     assert journal_from_dict(raw).version==1
@@ -145,10 +145,10 @@ def test_history_backup_restore_preserves_evidence_and_observations(tmp_path):
     path,snapshot,book=setup(directory)
     save_history(directory,book,expected_journal_revision=None,expected_holdings_revision=snapshot.revision,
                  activate=True,accept_balance_change=True)
-    from portfolio_app.history_observations import Observation,ObservationStore,save_observations,load_observations
+    from portfolio_app.performance.history_observations import Observation,ObservationStore,save_observations,load_observations
     observations=ObservationStore((Observation('price','price',book.position_id,'2024-01-01',D(10),'EUR'),))
     save_observations(directory,observations,None)
-    from portfolio_app.backup import create_backup,inspect_backup,commit_restore
+    from portfolio_app.workspace.backup import create_backup,inspect_backup,commit_restore
     archive=create_backup(directory)
     draft=inspect_backup(archive)
     destination=tmp_path/'synthetic-restored'
@@ -167,13 +167,13 @@ def test_unknown_opening_fifo_cost_can_be_manually_reconciled_without_inventing_
         activate=True,accept_balance_change=True)
     row=effective_holdings(read_snapshot(path).holdings,journal.securities).iloc[0]
     assert row.shares==11 and row.acquisition_price==10
-    from portfolio_app.security_history import replay_securities
+    from portfolio_app.ledger.security_history import replay_securities
     assert not replay_securities(journal.securities).positions[book.position_id].lots[0].exact
 
 
 def test_applied_position_remains_usable_when_unapplied_evidence_is_added(tmp_path):
-    from portfolio_app.personal_performance import coverage_reasons
-    from portfolio_app.history_observations import HistoryScope, ObservationStore
+    from portfolio_app.performance.personal_performance import coverage_reasons
+    from portfolio_app.performance.history_observations import HistoryScope, ObservationStore
     path,snapshot,book=setup(tmp_path)
     journal=save_history(tmp_path,book,expected_journal_revision=None,expected_holdings_revision=snapshot.revision,
         activate=True,accept_balance_change=True)
@@ -184,7 +184,7 @@ def test_applied_position_remains_usable_when_unapplied_evidence_is_added(tmp_pa
 
 
 def test_zero_start_requires_confirmation_and_is_not_a_purchase(tmp_path):
-    from portfolio_app.history_commands import reconstruction_candidate
+    from portfolio_app.ledger.history_commands import reconstruction_candidate
     path,snapshot,book=setup(tmp_path)
     draft=replace(book,records=(book.records[1],),active_ids=())
     with pytest.raises(DataError,match='Starting holding unknown'):
@@ -200,7 +200,7 @@ def test_zero_start_requires_confirmation_and_is_not_a_purchase(tmp_path):
 
 
 def test_undated_evidence_cannot_be_reconstructed_from_an_assumed_date(tmp_path):
-    from portfolio_app.history_commands import reconstruction_candidate
+    from portfolio_app.ledger.history_commands import reconstruction_candidate
     path,snapshot,book=setup(tmp_path)
     draft=replace(book,records=(E('undated','buy',quantity=D(1)),),active_ids=())
     with pytest.raises(DataError,match='Supply dates'):
@@ -208,8 +208,8 @@ def test_undated_evidence_cannot_be_reconstructed_from_an_assumed_date(tmp_path)
 
 
 def test_correction_preserves_authority_precision_and_other_fees(tmp_path):
-    from portfolio_app.history_commands import correct_transaction
-    from portfolio_app.security_history import Charge
+    from portfolio_app.ledger.history_commands import correct_transaction
+    from portfolio_app.ledger.security_history import Charge
     path,snapshot,book=setup(tmp_path)
     original=replace(book.records[1],amount=D('20'),price=D(10),charges=(Charge(D('1.123456'),'USD','2024-02-02'),Charge(D('2.987654'),'EUR',kind='tax')),charges_known=True)
     book=replace(book,records=(book.records[0],original))
@@ -225,8 +225,8 @@ def test_correction_preserves_authority_precision_and_other_fees(tmp_path):
 
 
 def test_bulk_removal_retains_evidence_and_does_not_apply_pending_entries(tmp_path):
-    from portfolio_app.history_commands import remove_transactions
-    from portfolio_app.security_history import current_records
+    from portfolio_app.ledger.history_commands import remove_transactions
+    from portfolio_app.ledger.security_history import current_records
     path, snapshot, book = setup(tmp_path)
     journal = save_history(tmp_path, book, expected_journal_revision=None,
         expected_holdings_revision=snapshot.revision)
@@ -246,8 +246,8 @@ def test_bulk_removal_retains_evidence_and_does_not_apply_pending_entries(tmp_pa
 
 
 def test_removing_pending_correction_reviews_applied_ancestor_and_keeps_other_pending(tmp_path):
-    from portfolio_app.history_commands import correct_transaction, remove_transactions
-    from portfolio_app.security_history import current_records
+    from portfolio_app.ledger.history_commands import correct_transaction, remove_transactions
+    from portfolio_app.ledger.security_history import current_records
     path, snapshot, book = setup(tmp_path)
     save_history(tmp_path, book, expected_journal_revision=None,
         expected_holdings_revision=snapshot.revision, activate=True)
@@ -273,7 +273,7 @@ def test_removing_pending_correction_reviews_applied_ancestor_and_keeps_other_pe
 
 
 def test_bulk_removing_all_trades_keeps_zero_boundary_and_invalid_subset_is_rejected(tmp_path):
-    from portfolio_app.history_commands import reconstruction_candidate, remove_transactions
+    from portfolio_app.ledger.history_commands import reconstruction_candidate, remove_transactions
     path, snapshot, book = setup(tmp_path)
     events = (E('b', 'buy', '2024-02-01', quantity=3, price=10, currency='EUR', charges_known=True),
               E('s', 'sell', '2024-03-01', quantity=1, price=12, currency='EUR', charges_known=True))
@@ -296,8 +296,8 @@ def test_bulk_removing_all_trades_keeps_zero_boundary_and_invalid_subset_is_reje
 
 
 def test_removal_requires_accepting_linked_cash_changes(tmp_path):
-    from portfolio_app.account_journal import Account, Event, Journal, save_journal, replay
-    from portfolio_app.history_commands import remove_transactions
+    from portfolio_app.ledger.account_journal import Account, Event, Journal, save_journal, replay
+    from portfolio_app.ledger.history_commands import remove_transactions
     path, snapshot, book = setup(tmp_path)
     journal = Journal(version=2, accounts=(Account('a', 'Invented account'),),
         events=(Event('cash', '2024-01-01', 'cash_open', 'a', 'EUR', D(100)),))
@@ -321,9 +321,9 @@ def test_removal_requires_accepting_linked_cash_changes(tmp_path):
 
 
 def test_removal_does_not_silently_change_other_holding():
-    from portfolio_app.history_commands import remove_transactions, changed_positions
-    from portfolio_app.security_history import SecurityBook
-    from portfolio_app.account_journal import Journal
+    from portfolio_app.ledger.history_commands import remove_transactions, changed_positions
+    from portfolio_app.ledger.security_history import SecurityBook
+    from portfolio_app.ledger.account_journal import Journal
     opening = E('open', 'opening', '2024-01-01', quantity=1, amount=10, currency='EUR')
     other_open = E('other-open', 'opening', '2024-01-01')
     event = E('transfer', 'transfer', '2024-01-02', quantity=1, other_position_id='other')

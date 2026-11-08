@@ -11,8 +11,8 @@ from urllib.request import urlopen
 import pytest
 
 from browser_support import settle
-from portfolio_app.account_journal import save_journal
-from portfolio_app.history_observations import save_observations
+from portfolio_app.ledger.account_journal import save_journal
+from portfolio_app.performance.history_observations import save_observations
 from test_weekend_valuation_fx import example
 
 playwright = pytest.importorskip('playwright.sync_api')
@@ -21,7 +21,7 @@ playwright = pytest.importorskip('playwright.sync_api')
 @pytest.mark.parametrize('venue,timezone', [('NYQ', 'America/New_York'), ('STU', 'Europe/Berlin')])
 def test_friday_fx_provenance_and_monday_return_render(tmp_path, venue, timezone):
     journal, scope, store = example()
-    from portfolio_app.history_valuation import listing_calendar
+    from portfolio_app.performance.history_valuation import listing_calendar
     calendar, zone = listing_calendar({'exchangeName': venue, 'exchangeTimezoneName': timezone})
     store = replace(store, observations=tuple(replace(o, calendar=calendar, exchange_timezone=zone)
         if o.kind == 'price' else o for o in store.observations))
@@ -34,10 +34,10 @@ def test_friday_fx_provenance_and_monday_return_render(tmp_path, venue, timezone
 from pathlib import Path
 from datetime import date
 import streamlit as st
-from portfolio_app.account_journal import load_journal
-from portfolio_app.history_observations import load_observations, HistoryScope
-from portfolio_app.history_view import history_view
-from portfolio_app.history_ui import render_history_results
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.performance.history_observations import load_observations, HistoryScope
+from portfolio_app.performance.history_view import history_view
+from portfolio_app.interface.views.history.history_ui import render_history_results
 root=Path(__file__).parent
 journal,_=load_journal(root)
 store,revision=load_observations(root)

@@ -9,9 +9,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from portfolio_app.holdings import DataError
-from portfolio_app.window import WindowPresentation, navigation_action
-from portfolio_app.window_process import contained_child, gated_command
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.runtime.window import WindowPresentation, navigation_action
+from portfolio_app.runtime.window_process import contained_child, gated_command
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +42,7 @@ def test_missing_platform_fails_before_gui_import(monkeypatch):
 
 def test_missing_runtime_has_actionable_browser_fallback(monkeypatch):
     monkeypatch.setattr(sys, 'platform', 'win32')
-    monkeypatch.setattr('portfolio_app.window.runtime_available', lambda: False)
+    monkeypatch.setattr('portfolio_app.runtime.window.runtime_available', lambda: False)
     with pytest.raises(DataError, match='--browser'):
         WindowPresentation().prepare()
 
@@ -61,7 +61,7 @@ def test_gated_command_preserves_arguments(monkeypatch):
 @pytest.mark.parametrize('override', [[], ['--theme.base=light'], ['--theme.base', 'light']])
 def test_window_defaults_to_dark_without_overriding_explicit_theme(monkeypatch, override):
     captured = []
-    monkeypatch.setattr('portfolio_app.window_process.contained_child', captured.append)
+    monkeypatch.setattr('portfolio_app.runtime.window_process.contained_child', captured.append)
     command = ['python', '-m', 'streamlit', 'run', 'synthetic.py', *override, '--', '--demo']
     presentation = WindowPresentation()
     presentation.child(command)
@@ -74,7 +74,7 @@ def test_window_defaults_to_dark_without_overriding_explicit_theme(monkeypatch, 
 
 def test_skip_intro_skips_both_window_and_streamlit(monkeypatch):
     captured = []
-    monkeypatch.setattr('portfolio_app.window_process.contained_child', captured.append)
+    monkeypatch.setattr('portfolio_app.runtime.window_process.contained_child', captured.append)
     presentation = WindowPresentation()
     presentation.child(['python', '-m', 'streamlit', 'run', 'synthetic.py', '--', '--skip-intro'])
     assert not presentation.show_intro
@@ -105,7 +105,7 @@ def test_assignment_failure_never_releases_start_gate(monkeypatch):
 
 def test_real_pipe_child_gracefully_stops_and_workspace_is_preserved(tmp_path):
     """Runs the exact gated server on Linux too; only the Job API is substituted."""
-    from portfolio_app.launcher import ready, choose_port
+    from portfolio_app.runtime.launcher import ready, choose_port
     class NoJob:
         def assign(self, child):
             pass
@@ -138,23 +138,23 @@ def test_real_pipe_child_gracefully_stops_and_workspace_is_preserved(tmp_path):
 
 
 def test_child_gate_eof_never_imports_streamlit(monkeypatch):
-    from portfolio_app.window import server_child
-    monkeypatch.setattr('portfolio_app.window.control_input', lambda: BytesIO())
+    from portfolio_app.runtime.window import server_child
+    monkeypatch.setattr('portfolio_app.runtime.window.control_input', lambda: BytesIO())
     server_child()
 
 
 def test_browser_fallback_delegates_without_loading_webview(monkeypatch):
-    from portfolio_app.window import main
+    from portfolio_app.runtime.window import main
     calls = []
-    monkeypatch.setattr('portfolio_app.window.configure_logging', lambda: None)
+    monkeypatch.setattr('portfolio_app.runtime.window.configure_logging', lambda: None)
     monkeypatch.setattr(sys, 'argv', ['portfolio-window', '--browser', '--offline-demo'])
-    monkeypatch.setattr('portfolio_app.app.main', lambda **kwargs: calls.append((kwargs, list(sys.argv))))
+    monkeypatch.setattr('portfolio_app.runtime.app.main', lambda **kwargs: calls.append((kwargs, list(sys.argv))))
     main()
     assert calls == [({}, ['portfolio-window', '--offline-demo'])]
 
 
 def test_job_platform_guard_and_native_child_cleanup(tmp_path):
-    from portfolio_app.window_process import Job
+    from portfolio_app.runtime.window_process import Job
     if sys.platform != 'win32':
         with pytest.raises(DataError, match='requires Windows'):
             Job()
@@ -326,12 +326,12 @@ def test_native_close_in_progress_is_not_destroyed_again(monkeypatch):
 
 
 def test_frozen_browser_relaunch_keeps_dispatch_flag(monkeypatch):
-    from portfolio_app.window import main
+    from portfolio_app.runtime.window import main
     calls = []
-    monkeypatch.setattr('portfolio_app.window.configure_logging', lambda: None)
+    monkeypatch.setattr('portfolio_app.runtime.window.configure_logging', lambda: None)
     monkeypatch.setattr(sys, 'frozen', True, raising=False)
     monkeypatch.setattr(sys, 'argv', ['portfolio-window.exe', '--browser', '--offline-demo'])
-    monkeypatch.setattr('portfolio_app.app.main', lambda **kwargs: calls.append((kwargs, list(sys.argv))))
+    monkeypatch.setattr('portfolio_app.runtime.app.main', lambda **kwargs: calls.append((kwargs, list(sys.argv))))
     main()
     assert calls == [({}, ['portfolio-window.exe', '--offline-demo', '--browser'])]
 
@@ -340,7 +340,7 @@ def test_native_navigation_and_popup_handlers_keep_window_on_app(monkeypatch):
     monkeypatch.setattr(WindowPresentation, '_install_window_controls', lambda self: None)
     monkeypatch.setattr(WindowPresentation, '_install_startup_document', lambda *args: None)
     opened = []
-    monkeypatch.setattr('portfolio_app.desktop.open_browser', opened.append)
+    monkeypatch.setattr('portfolio_app.runtime.desktop.open_browser', opened.append)
     class NativeEvent(Event):
         def __isub__(self, function):
             self.handlers.remove(function)
@@ -438,7 +438,7 @@ def test_windows_use_distinct_temporary_profiles(monkeypatch):
 @pytest.mark.parametrize('error_code', [109, 232, 6])
 def test_windows_parent_monitor_never_blocks_in_crt_read(monkeypatch, error_code):
     import ctypes
-    from portfolio_app.window import wait_for_parent_close
+    from portfolio_app.runtime.window import wait_for_parent_close
     sleeps = []
     responses = iter([True, True, False])
     def peek(*args):
@@ -448,7 +448,7 @@ def test_windows_parent_monitor_never_blocks_in_crt_read(monkeypatch, error_code
     monkeypatch.setattr(ctypes, 'WinDLL', lambda *a, **kw: SimpleNamespace(PeekNamedPipe=peek), raising=False)
     monkeypatch.setattr(ctypes, 'get_last_error', lambda: error_code, raising=False)
     monkeypatch.setattr(ctypes, 'WinError', lambda error: OSError(error, 'Synthetic pipe error'), raising=False)
-    monkeypatch.setattr('portfolio_app.window.time.sleep', sleeps.append)
+    monkeypatch.setattr('portfolio_app.runtime.window.time.sleep', sleeps.append)
     stream = SimpleNamespace(fileno=lambda: 123, read=lambda: pytest.fail('Blocking read would stall native imports'))
     if error_code == 6:
         with pytest.raises(OSError):

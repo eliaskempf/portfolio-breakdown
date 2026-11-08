@@ -2,11 +2,11 @@
 from decimal import Decimal
 import pandas as pd
 import pytest
-from portfolio_app.performance import position_performance, summarize_performance
+from portfolio_app.performance.performance import position_performance, summarize_performance
 from portfolio_app.application import PortfolioInputs, prepare_application
-from portfolio_app.positions import read_snapshot
-from portfolio_app.actual_portfolio import journal_positions
-from portfolio_app.account_journal import Event, append_events
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.portfolio.actual_portfolio import journal_positions
+from portfolio_app.ledger.account_journal import Event, append_events
 from test_actual_portfolio import invented
 from test_accounts_ui import launch_actual
 from test_ui import by_label, activate
@@ -73,7 +73,7 @@ def test_normal_app_cash_has_no_buy_in_warning_and_no_invented_gain(tmp_path):
 
 
 def test_missing_cash_fx_remains_a_valuation_problem(tmp_path):
-    from portfolio_app.prices import PriceService, UnavailableProvider
+    from portfolio_app.market.prices import PriceService, UnavailableProvider
     invented(tmp_path)
     snapshot=read_snapshot(tmp_path/'holdings.csv')
     prepared=prepare_application(PortfolioInputs(snapshot,None,{},[]),PriceService(UnavailableProvider()),reporting_currency='USD')

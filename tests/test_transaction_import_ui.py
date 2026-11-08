@@ -7,7 +7,7 @@ from test_transaction_mapping_ui import listing_value
 def category_import_app(directory):
     from pathlib import Path
     import streamlit as st
-    from portfolio_app.csv_transaction_import_ui import render_transaction_import
+    from portfolio_app.interface.views.ingestion.csv_transaction_import_ui import render_transaction_import
     st.session_state['import_tx_content'] = ('invented.csv',
         b'reference,date,type,asset,quantity,amount,currency\n'
         b'b,2024-01-01,buy,AUR,2,20,EUR\ns,2024-01-02,sell,AUR,2,30,EUR\n')
@@ -15,7 +15,7 @@ def category_import_app(directory):
 
 
 def test_new_import_category_is_optional_persistent_and_independent_of_type(tmp_path):
-    from portfolio_app.positions import read_snapshot
+    from portfolio_app.portfolio.positions import read_snapshot
     (tmp_path/'allocation.yaml').write_text('version: 2\nbuckets:\n'
         '  - {id: leaf, name: Invented category, target: 1}\n')
     app = AppTest.from_function(category_import_app, args=(str(tmp_path),)).run()
@@ -57,15 +57,15 @@ def test_received_swap_income_fee_and_valuation_are_visible(tmp_path):
     snapshot=setup(tmp_path);save(tmp_path,snapshot)
     def script(directory):
         from pathlib import Path
-        from portfolio_app.positions import read_snapshot
-        from portfolio_app.history_ui import render_position_history
+        from portfolio_app.portfolio.positions import read_snapshot
+        from portfolio_app.interface.views.history.history_ui import render_position_history
         root=Path(directory)
         row=read_snapshot(root/'holdings.csv').holdings.query("position_id == 'orb'").iloc[0]
         render_position_history(root,row)
     app=AppTest.from_function(script,args=(str(tmp_path),)).run()
     assert not app.exception
-    from portfolio_app.account_journal import load_journal
-    from portfolio_app.history_ui import _transaction_table
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.interface.views.history.history_ui import _transaction_table
     journal, _ = load_journal(tmp_path)
     book = next(b for b in journal.securities if b.position_id == 'orb')
     table = _transaction_table([e for e in book.records if e.kind != 'opening'], book)
@@ -82,7 +82,7 @@ def test_received_swap_income_fee_and_valuation_are_visible(tmp_path):
 
 def test_checkpoint_history_shows_estimates_and_unknown_observation(tmp_path):
     from test_inventory_imports import row, estimate
-    from portfolio_app.transaction_import_commands import prepare_positions, save_transaction_import
+    from portfolio_app.ledger.transaction_import_commands import prepare_positions, save_transaction_import
     snapshot=prepare_positions(tmp_path,[dict(position_key='desk',id='aur',name='Aurora',account='Desk')],expected_holdings_revision=None)
     r=row('balance',**estimate())
     save_transaction_import(tmp_path,[r],{('Desk','AUR'):'desk'},expected_journal_revision=None,
@@ -90,14 +90,14 @@ def test_checkpoint_history_shows_estimates_and_unknown_observation(tmp_path):
         comparison_date='2024-04-01',accept_checkpoints=True)
     def script(directory):
         from pathlib import Path
-        from portfolio_app.positions import read_snapshot
-        from portfolio_app.history_ui import render_position_history
+        from portfolio_app.portfolio.positions import read_snapshot
+        from portfolio_app.interface.views.history.history_ui import render_position_history
         root=Path(directory)
         render_position_history(root,read_snapshot(root/'holdings.csv').holdings.iloc[0])
     app=AppTest.from_function(script,args=(str(tmp_path),)).run()
     assert not app.exception
-    from portfolio_app.account_journal import load_journal
-    from portfolio_app.history_ui import _transaction_table
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.interface.views.history.history_ui import _transaction_table
     book = load_journal(tmp_path)[0].securities[0]
     table = _transaction_table(list(book.records), book)
     assert table.iloc[0]['Transaction']=='Balance checkpoint'
@@ -110,8 +110,8 @@ def test_checkpoint_history_shows_estimates_and_unknown_observation(tmp_path):
 
 
 def test_legacy_timestamp_order_is_editable_without_rounding(tmp_path):
-    from portfolio_app.account_journal import load_journal
-    from portfolio_app.history_ui import _key
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.interface.views.history.history_ui import _key
     snapshot=setup(tmp_path);save(tmp_path,snapshot)
     journal,_=load_journal(tmp_path)
     book=next(b for b in journal.securities if b.position_id=='vault')
@@ -120,8 +120,8 @@ def test_legacy_timestamp_order_is_editable_without_rounding(tmp_path):
     def script(directory,identity):
         from pathlib import Path
         import streamlit as st
-        from portfolio_app.history_ui import render_position_history,_key
-        from portfolio_app.positions import read_snapshot
+        from portfolio_app.interface.views.history.history_ui import render_position_history,_key
+        from portfolio_app.portfolio.positions import read_snapshot
         root=Path(directory);key=_key(root,'vault')
         st.session_state.setdefault(key+'screen','edit')
         st.session_state.setdefault(key+'edit_record',identity)
@@ -142,7 +142,7 @@ def test_mixed_starting_balance_and_new_exchange_destination_can_be_reviewed(tmp
     def script(directory):
         from pathlib import Path
         import streamlit as st
-        from portfolio_app.csv_transaction_import_ui import render_transaction_import
+        from portfolio_app.interface.views.ingestion.csv_transaction_import_ui import render_transaction_import
         st.session_state['import_tx_content']=('invented.csv',
             b'reference,date,type,asset,quantity,amount,currency,received_asset,received_quantity\n'
             b'o,2024-01-01,opening,AUR,10,100,EUR,,\n'
@@ -160,7 +160,7 @@ def test_mixed_starting_balance_and_new_exchange_destination_can_be_reviewed(tmp
 
 
 def test_crypto_symbol_maps_to_existing_pair_without_creating_duplicate(tmp_path):
-    from portfolio_app.transaction_import_commands import prepare_positions
+    from portfolio_app.ledger.transaction_import_commands import prepare_positions
     prepare_positions(tmp_path, [dict(position_key='invented-position', id='invented-bitcoin',
         name='Bitcoin', account='Invented wallet', instrument_type='crypto', ticker='BTC-EUR')],
         expected_holdings_revision=None)
@@ -168,7 +168,7 @@ def test_crypto_symbol_maps_to_existing_pair_without_creating_duplicate(tmp_path
     def script(directory):
         from pathlib import Path
         import streamlit as st
-        from portfolio_app.csv_transaction_import_ui import render_transaction_import
+        from portfolio_app.interface.views.ingestion.csv_transaction_import_ui import render_transaction_import
         st.session_state['import_tx_content'] = ('invented.csv',
             b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-01,buy,BTC,1,100,EUR\n')
         render_transaction_import(Path(directory), demo=True)
@@ -180,9 +180,9 @@ def test_crypto_symbol_maps_to_existing_pair_without_creating_duplicate(tmp_path
 
 
 def test_new_crypto_uses_verified_live_pair_in_reporting_currency(tmp_path, monkeypatch):
-    from portfolio_app.instruments import Instrument
-    from portfolio_app.transaction_import_commands import prepare_positions
-    import portfolio_app.transaction_mapping_ui as mapping_ui
+    from portfolio_app.market.instruments import Instrument
+    from portfolio_app.ledger.transaction_import_commands import prepare_positions
+    import portfolio_app.interface.views.ingestion.transaction_mapping_ui as mapping_ui
     prepare_positions(tmp_path, [dict(position_key='invented-position', id='invented-bitcoin',
         name='Bitcoin', account='Invented wallet', instrument_type='crypto', ticker='BTC-EUR')],
         expected_holdings_revision=None)
@@ -196,7 +196,7 @@ def test_new_crypto_uses_verified_live_pair_in_reporting_currency(tmp_path, monk
     def script(directory):
         from pathlib import Path
         import streamlit as st
-        from portfolio_app.csv_transaction_import_ui import render_transaction_import
+        from portfolio_app.interface.views.ingestion.csv_transaction_import_ui import render_transaction_import
         st.session_state['import_tx_content'] = ('invented.csv',
             b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-01,buy,XYZ,1,100,EUR\n')
         render_transaction_import(Path(directory))

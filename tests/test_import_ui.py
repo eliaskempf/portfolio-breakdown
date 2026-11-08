@@ -4,8 +4,8 @@ from io import BytesIO
 from streamlit.testing.v1 import AppTest
 from test_ui import activate, by_label
 
-from portfolio_app.demo import create_demo_data
-from portfolio_app.positions import read_snapshot
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.portfolio.positions import read_snapshot
 
 
 class Upload(BytesIO):
@@ -15,7 +15,7 @@ class Upload(BytesIO):
 def launch(tmp_path, monkeypatch, content=None, *, workspaces=False):
     if content is None:
         content = b'Name;Quantity;WKN;Kurs;Kursdatum;Waehrung\nInvented fund;2,5;000123;12,00;2026-01-02;EUR\n'
-    monkeypatch.setattr('portfolio_app.import_ui.st.file_uploader', lambda *args, **kwargs: [Upload(content)] if kwargs.get('accept_multiple_files') else None)
+    monkeypatch.setattr('portfolio_app.interface.views.ingestion.import_ui.st.file_uploader', lambda *args, **kwargs: [Upload(content)] if kwargs.get('accept_multiple_files') else None)
     directory = tmp_path / 'portfolio'
     suffix = ''
     if workspaces:
@@ -24,8 +24,8 @@ def launch(tmp_path, monkeypatch, content=None, *, workspaces=False):
         suffix = f', demo_dir=Path({str(demo)!r})'
     app = AppTest.from_string(
         'from pathlib import Path\n'
-        'from portfolio_app.ui import render_app\n'
-        'from portfolio_app.prices import PriceService, UnavailableProvider\n'
+        'from portfolio_app.interface.ui import render_app\n'
+        'from portfolio_app.market.prices import PriceService, UnavailableProvider\n'
         f'render_app(Path({str(directory)!r}), demo=True, price_service=PriceService(UnavailableProvider()){suffix})\n',
         default_timeout=20,
     ).run()
@@ -140,7 +140,7 @@ def test_review_controls_and_rows_survive_navigation_without_uploader(tmp_path, 
     app.run()
     # A remounted uploader does not restore its UploadedFile widgets. The draft
     # must retain bytes separately; this also exercises a genuine unmount.
-    monkeypatch.setattr('portfolio_app.import_state.st.file_uploader', lambda *a, **kw: [])
+    monkeypatch.setattr('portfolio_app.interface.shared.import_state.st.file_uploader', lambda *a, **kw: [])
     activate(app, 'Overview')
     activate(app, 'Positions')
     assert not app.exception
@@ -159,7 +159,7 @@ def test_review_controls_and_rows_survive_navigation_without_uploader(tmp_path, 
 def test_replacement_upload_requires_fresh_review(tmp_path, monkeypatch):
     app, path = launch(tmp_path, monkeypatch, b'Name;Quantity\nInvented first;1\n')
     confirm_units(app)
-    monkeypatch.setattr('portfolio_app.import_state.st.file_uploader',
+    monkeypatch.setattr('portfolio_app.interface.shared.import_state.st.file_uploader',
                         lambda *a, **kw: [Upload(b'Name;Quantity\nInvented replacement;7\n')])
     app.run()
     assert not app.exception

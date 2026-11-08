@@ -3,8 +3,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from portfolio_app.holdings import DataError, load_holdings, metadata_dimensions
-from portfolio_app.positions import read_snapshot, save_position
+from portfolio_app.portfolio.holdings import DataError, load_holdings, metadata_dimensions
+from portfolio_app.portfolio.positions import read_snapshot, save_position
 
 
 @pytest.fixture

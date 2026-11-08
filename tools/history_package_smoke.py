@@ -13,14 +13,14 @@ from tempfile import TemporaryDirectory
 
 def create_acceptance_workspace(directory: Path):
     """Create an isolated, offline history fixture, never a user's workspace."""
-    from portfolio_app.demo_history import create_history_demo
-    from portfolio_app.account_journal import load_journal, replay
-    from portfolio_app.history_commands import correct_transaction, save_history
-    from portfolio_app.history_observations import load_observations, save_observations, Observation
-    from portfolio_app.positions import read_snapshot
-    from portfolio_app.security_history import replay_securities
-    from portfolio_app.transaction_csv import read_csv
-    from portfolio_app.transaction_import_commands import save_transaction_import
+    from portfolio_app.demo_data.demo_history import create_history_demo
+    from portfolio_app.ledger.account_journal import load_journal, replay
+    from portfolio_app.ledger.history_commands import correct_transaction, save_history
+    from portfolio_app.performance.history_observations import load_observations, save_observations, Observation
+    from portfolio_app.portfolio.positions import read_snapshot
+    from portfolio_app.ledger.security_history import replay_securities
+    from portfolio_app.ingestion.transaction_csv import read_csv
+    from portfolio_app.ledger.transaction_import_commands import save_transaction_import
 
     today = date.today()
     create_history_demo(directory, end=today)
@@ -76,8 +76,8 @@ def create_acceptance_workspace(directory: Path):
 def smoke(command, evidence=None):
     from playwright.sync_api import sync_playwright, expect
     from package_smoke import wait_for_instance, settle_app
-    from portfolio_app.backup import inspect_backup
-    from portfolio_app.workspace import inventory
+    from portfolio_app.workspace.backup import inspect_backup
+    from portfolio_app.workspace.workspace import inventory
 
     with TemporaryDirectory(prefix='portfolio history acceptance ü ') as temporary:
         # macOS temporary paths commonly traverse /var -> /private/var. The
@@ -204,7 +204,7 @@ def smoke(command, evidence=None):
                     page.get_by_role('tab', name='Overview', exact=True).wait_for()
                     inspect_views(page)
                     # The original launch path must reopen the remembered restored workspace.
-                    from portfolio_app.launcher import request_instance
+                    from portfolio_app.runtime.launcher import request_instance
                     from unittest.mock import patch
                     with patch.dict(os.environ, {'PORTFOLIO_STATE_DIR': str(state)}):
                         assert request_instance(workspace)['workspace']['directory'] == str(restored)

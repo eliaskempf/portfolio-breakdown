@@ -2,8 +2,8 @@
 from decimal import Decimal as D
 import pytest
 from tax_sample import create_tax_sample
-from portfolio_app.tax_service import candidates, result_for, combined
-from portfolio_app.tax_evidence import load_inputs, evidence_key
+from portfolio_app.taxes.tax_service import candidates, result_for, combined
+from portfolio_app.taxes.tax_evidence import load_inputs, evidence_key
 
 
 def test_broker_groups_and_combined_sum(tmp_path):
@@ -39,7 +39,7 @@ def test_reviewed_lots_require_unchanged_history(tmp_path):
 
 def test_only_splits_within_the_calculation_year_need_price_reconciliation(tmp_path):
     from dataclasses import replace
-    from portfolio_app.vorabpauschale import TaxLot
+    from portfolio_app.taxes.vorabpauschale import TaxLot
     rows, journal = create_tax_sample(tmp_path)
     item = candidates(rows, journal, '2025-12-31')[0]
     raw, _ = load_inputs(tmp_path)
@@ -53,12 +53,12 @@ def test_only_splits_within_the_calculation_year_need_price_reconciliation(tmp_p
 
 
 def test_verified_accumulating_policy_is_reused_without_manual_inputs(tmp_path, monkeypatch):
-    from portfolio_app.fundamentals import FundFee
-    from portfolio_app.tax_service import distribution_evidence
+    from portfolio_app.analytics.fundamentals import FundFee
+    from portfolio_app.taxes.tax_service import distribution_evidence
     rows, journal = create_tax_sample(tmp_path)
     item = candidates(rows, journal, '2025-12-31')[0]
     policy = FundFee(.001, 'https://example.invalid/invented-fund', '2025-01-01', accumulating=True)
-    monkeypatch.setattr('portfolio_app.fundamentals.PUBLIC_FEES', {item.instrument: policy})
+    monkeypatch.setattr('portfolio_app.analytics.fundamentals.PUBLIC_FEES', {item.instrument: policy})
     market = distribution_evidence(item, {'start_price': '100', 'end_price': '110'})
     inputs, result, _ = result_for(item, 2025, {}, market)
     assert inputs.distributions == 0 and result.gross == D('177.10')
@@ -68,12 +68,12 @@ def test_verified_accumulating_policy_is_reused_without_manual_inputs(tmp_path, 
 
 
 def test_private_policy_override_precedes_public_accumulation(tmp_path, monkeypatch):
-    from portfolio_app.fundamentals import FundFee
-    from portfolio_app.tax_service import distribution_evidence
+    from portfolio_app.analytics.fundamentals import FundFee
+    from portfolio_app.taxes.tax_service import distribution_evidence
     rows, journal = create_tax_sample(tmp_path)
     item = candidates(rows, journal, '2025-12-31')[0]
     policy = FundFee(.001, 'https://example.invalid/invented-fund', '2025-01-01', accumulating=True)
-    monkeypatch.setattr('portfolio_app.fundamentals.PUBLIC_FEES', {item.instrument: policy})
+    monkeypatch.setattr('portfolio_app.analytics.fundamentals.PUBLIC_FEES', {item.instrument: policy})
     from dataclasses import replace
     assert not distribution_evidence(item, {}, {'isin:'+item.instrument: replace(policy, accumulating=False)})
 
@@ -81,14 +81,14 @@ def test_private_policy_override_precedes_public_accumulation(tmp_path, monkeypa
 @pytest.mark.parametrize('year', [2018, 2020, 2023, 2025, 2026])
 def test_policy_verification_date_does_not_gate_calculation_year(tmp_path, monkeypatch, year):
     from dataclasses import replace
-    from portfolio_app.fundamentals import FundFee
-    from portfolio_app.tax_service import distribution_evidence
-    from portfolio_app.vorabpauschale import TaxLot
+    from portfolio_app.analytics.fundamentals import FundFee
+    from portfolio_app.taxes.tax_service import distribution_evidence
+    from portfolio_app.taxes.vorabpauschale import TaxLot
     rows, journal = create_tax_sample(tmp_path)
     item = candidates(rows, journal, '2025-12-31')[0]
     item = replace(item, holding=replace(item.holding, lots=(TaxLot(D(100), '2010-01-01'),)))
     policy = FundFee(.001, 'https://example.invalid/invented-policy', '2026-01-01', accumulating=True)
-    monkeypatch.setattr('portfolio_app.fundamentals.PUBLIC_FEES', {item.instrument: policy})
+    monkeypatch.setattr('portfolio_app.analytics.fundamentals.PUBLIC_FEES', {item.instrument: policy})
     evidence = distribution_evidence(item, {'start_price': '100', 'end_price': '110'})
     assert result_for(item, year, {}, evidence)[1].gross > 0
     assert result_for(item, year, {'distribution_mode': 'Manual total', 'distributions': '10'}, evidence)[1].gross == 0

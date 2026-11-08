@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from portfolio_app.holdings import DataError
+from portfolio_app.portfolio.holdings import DataError
 
 
 def create_sample_data(directory: Path) -> Path:

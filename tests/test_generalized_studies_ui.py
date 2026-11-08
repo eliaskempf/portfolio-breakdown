@@ -5,11 +5,11 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.generalized_studies import ScenarioContract
-from portfolio_app.generalized_studies_ui import (
+from portfolio_app.studies.generalized_studies import ScenarioContract
+from portfolio_app.interface.views.studies.generalized_studies_ui import (
     MODES, fetch_proxy_rows, load_study_settings, prepare_study, save_study_settings,
 )
-from portfolio_app.holdings import DataError
+from portfolio_app.portfolio.holdings import DataError
 
 
 def config(mode='Forward Monte Carlo'):
@@ -37,7 +37,7 @@ def test_all_modes_run_from_normal_workspace_and_save_settings_only(tmp_path, mo
     actual.write_text('{"synthetic": true}')
     before = actual.read_bytes()
     script = ('from pathlib import Path\n'
-              'from portfolio_app.generalized_studies_ui import render_generalized_studies\n'
+              'from portfolio_app.interface.views.studies.generalized_studies_ui import render_generalized_studies\n'
               f'render_generalized_studies(Path({str(tmp_path)!r}))')
     app = AppTest.from_string(script).run(timeout=20)
     assert not app.exception
@@ -53,8 +53,8 @@ def test_all_modes_run_from_normal_workspace_and_save_settings_only(tmp_path, mo
 
 
 def test_actual_position_is_copied_into_study_form(tmp_path):
-    script = ('from portfolio_app.derivative_types import ContractSpec\n'
-              'from portfolio_app.generalized_studies_ui import render_generalized_studies\n'
+    script = ('from portfolio_app.derivatives.derivative_types import ContractSpec\n'
+              'from portfolio_app.interface.views.studies.generalized_studies_ui import render_generalized_studies\n'
               'from decimal import Decimal\n'
               "contract=ContractSpec('SYNTHETIC','2027-06-18','USD',Decimal('5'),Decimal('.1'))\n"
               "render_generalized_studies(positions=[dict(id='synthetic-position',name='Invented future',contract=contract,quantity=-2,last_price=Decimal('300'))])")
@@ -103,7 +103,7 @@ def test_free_history_uses_exact_fx_and_does_not_guess_proxy_identity():
 
 def test_old_results_disappear_when_inputs_change(tmp_path):
     save_study_settings(tmp_path, 'manual:EUR', config(), None)
-    script = ('from pathlib import Path\nfrom portfolio_app.generalized_studies_ui import render_generalized_studies\n'
+    script = ('from pathlib import Path\nfrom portfolio_app.interface.views.studies.generalized_studies_ui import render_generalized_studies\n'
               f'render_generalized_studies(Path({str(tmp_path)!r}))')
     app = AppTest.from_string(script).run()
     next(b for b in app.button if b.label == 'Run study').click().run()
@@ -114,7 +114,7 @@ def test_old_results_disappear_when_inputs_change(tmp_path):
 
 def test_external_settings_change_cannot_overwrite_open_draft(tmp_path):
     save_study_settings(tmp_path, 'manual:EUR', config(), None)
-    script = ('from pathlib import Path\nfrom portfolio_app.generalized_studies_ui import render_generalized_studies\n'
+    script = ('from pathlib import Path\nfrom portfolio_app.interface.views.studies.generalized_studies_ui import render_generalized_studies\n'
               f'render_generalized_studies(Path({str(tmp_path)!r}))')
     app = AppTest.from_string(script).run()
     _, revision = load_study_settings(tmp_path)

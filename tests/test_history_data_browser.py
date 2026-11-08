@@ -11,8 +11,8 @@ from urllib.request import urlopen
 import pytest
 
 from browser_support import settle
-from portfolio_app.account_journal import save_journal
-from portfolio_app.history_observations import load_observations, save_observations
+from portfolio_app.ledger.account_journal import save_journal
+from portfolio_app.performance.history_observations import load_observations, save_observations
 from test_history_data_ui import fixture
 
 playwright = pytest.importorskip('playwright.sync_api')
@@ -29,9 +29,9 @@ def test_quote_provenance_correction_and_saved_details_in_browser(tmp_path):
     script.write_text('''
 from pathlib import Path
 from types import SimpleNamespace
-from portfolio_app.account_journal import load_journal
-from portfolio_app.history_observations import load_observations, HistoryScope
-from portfolio_app.history_data_ui import render_history_data
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.performance.history_observations import load_observations, HistoryScope
+from portfolio_app.interface.views.history.history_data_ui import render_history_data
 root=Path(__file__).parent
 journal,_=load_journal(root)
 store,revision=load_observations(root)

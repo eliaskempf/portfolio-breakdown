@@ -31,11 +31,11 @@ def test_navigation_close_and_save_do_not_wait_for_market_data(tmp_path):
 from pathlib import Path
 from datetime import datetime, timezone
 import time
-from portfolio_app import market_data
-from portfolio_app.etf_refresh import coordinator as etf_coordinator
-from portfolio_app.history import HistoryService, HistoryResult
-from portfolio_app.prices import PriceService, Quote
-from portfolio_app.ui import render_app
+from portfolio_app.market import market_data
+from portfolio_app.funds.etf_refresh import coordinator as etf_coordinator
+from portfolio_app.market.history import HistoryService, HistoryResult
+from portfolio_app.market.prices import PriceService, Quote
+from portfolio_app.interface.ui import render_app
 directory = Path(__file__).parent
 def wait_for(name):
     for _ in range(1200):

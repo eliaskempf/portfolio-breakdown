@@ -11,16 +11,16 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 import pytest
 import yaml
 
-from portfolio_app.backup import (create_backup, inspect_backup, commit_restore,
+from portfolio_app.workspace.backup import (create_backup, inspect_backup, commit_restore,
                                   restore_destination, safe_path)
-from portfolio_app.demo import create_demo_data
-from portfolio_app.holdings import DataError
-from portfolio_app.portfolio_settings import save_settings
-from portfolio_app.positions import read_snapshot, save_position
-from portfolio_app.storage import save_document
-from portfolio_app.workspace import inventory
-from portfolio_app.workspace_lock import workspace_lock, write_context
-from portfolio_app.workspace_selection import Selection, save_selection
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.portfolio.portfolio_settings import save_settings
+from portfolio_app.portfolio.positions import read_snapshot, save_position
+from portfolio_app.workspace.storage import save_document
+from portfolio_app.workspace.workspace import inventory
+from portfolio_app.workspace.workspace_lock import workspace_lock, write_context
+from portfolio_app.workspace.workspace_selection import Selection, save_selection
 
 
 def mutate_archive(content, change):
@@ -36,7 +36,7 @@ def mutate_archive(content, change):
 
 @pytest.mark.parametrize('currency', ['EUR', 'USD', 'GBP'])
 def test_complete_roundtrip(tmp_path, currency):
-    from portfolio_app.cost_basis import FIELD, component, encode_components, supplied_conversion
+    from portfolio_app.performance.cost_basis import FIELD, component, encode_components, supplied_conversion
     source = create_demo_data(tmp_path / 'invented ü')
     save_settings(source, currency, None)
     snapshot = read_snapshot(source / 'holdings.csv')
@@ -124,7 +124,7 @@ def test_invalid_archives_fail_before_destination(tmp_path, case):
 
 
 def test_special_duplicate_truncated_and_size_limits(tmp_path, monkeypatch):
-    from portfolio_app import backup
+    from portfolio_app.workspace import backup
     source = create_demo_data(tmp_path / 'source')
     content = create_backup(source)
     for broken in (b'not zip', content[:40], content[:-30]):
@@ -161,7 +161,7 @@ def test_refuses_existing_nested_link_and_staging_changes(tmp_path):
 def test_snapshot_waits_for_whole_currency_transaction(tmp_path, monkeypatch):
     source = create_demo_data(tmp_path / 'source')
     halfway, finish, backup_started = Event(), Event(), Event()
-    from portfolio_app import backup
+    from portfolio_app.workspace import backup
     original = backup.inventory
     def observe(path):
         backup_started.set()
@@ -189,7 +189,7 @@ def test_snapshot_waits_for_whole_currency_transaction(tmp_path, monkeypatch):
 
 
 def test_external_change_aborts_snapshot(tmp_path, monkeypatch):
-    import portfolio_app.backup as backup
+    import portfolio_app.workspace.backup as backup
     source = create_demo_data(tmp_path / 'source')
     original = backup._copy_file
     def copying(a, b):
@@ -249,8 +249,8 @@ def test_cross_process_barrier(tmp_path):
 
 
 def test_etf_publication_cannot_be_split_by_snapshot(tmp_path, monkeypatch):
-    from portfolio_app.etf import load_funds
-    from portfolio_app.etf_sources import publish_snapshot
+    from portfolio_app.funds.etf import load_funds
+    from portfolio_app.funds.etf_sources import publish_snapshot
     source = create_demo_data(tmp_path / 'source')
     fund = load_funds(source / 'etfs')[0]
     prior = fund.manifest_path.read_bytes()
@@ -291,20 +291,20 @@ def test_persistent_writers_wait_for_snapshot_barrier(tmp_path, kind):
             snap = read_snapshot(source / 'holdings.csv')
             save_position(source / 'holdings.csv', {'shares':'42'}, expected_revision=snap.revision, position_id=snap.holdings.position_id.iloc[0])
         elif kind == 'analytics':
-            from portfolio_app.analytics_cache import atomic_json
+            from portfolio_app.analytics.analytics_cache import atomic_json
             atomic_json(source / '.cache' / 'analytics' / 'invented.json', {'invented':True})
         elif kind == 'etf-status':
-            from portfolio_app.etf_refresh import write_json
+            from portfolio_app.funds.etf_refresh import write_json
             write_json(source / '.cache' / 'etf-refresh' / 'status.json', {'invented':True})
         elif kind == 'fee':
-            from portfolio_app.fundamentals import save_fee_override, FundFee
+            from portfolio_app.analytics.fundamentals import save_fee_override, FundFee
             save_fee_override(source / 'fund-fees.json', 'ticker:SYNTH', FundFee(.002, 'Invented override', '2026-09-04'))
         elif kind == 'price':
-            from portfolio_app.prices import PriceService, StaticProvider
+            from portfolio_app.market.prices import PriceService, StaticProvider
             service = PriceService(StaticProvider(source / 'demo_prices.json'), source / '.cache' / 'prices.json')
             service.fx('USD')
         else:
-            from portfolio_app.history import HistoryService, DemoHistoryProvider
+            from portfolio_app.market.history import HistoryService, DemoHistoryProvider
             HistoryService(DemoHistoryProvider(), source / '.cache' / 'history').get('INVENTED')
         saved.set()
     with ThreadPoolExecutor(1) as pool:
@@ -317,7 +317,7 @@ def test_persistent_writers_wait_for_snapshot_barrier(tmp_path, kind):
 
 
 def test_destination_race_and_copy_failure_leave_source_intact(tmp_path, monkeypatch):
-    import portfolio_app.backup as backup
+    import portfolio_app.workspace.backup as backup
     source = create_demo_data(tmp_path / 'source')
     before = inventory(source)
     draft = inspect_backup(create_backup(source))
@@ -337,8 +337,8 @@ def test_destination_race_and_copy_failure_leave_source_intact(tmp_path, monkeyp
 
 
 def test_queued_market_worker_keeps_its_selection_generation(tmp_path):
-    from portfolio_app.market_data import RequestCoordinator
-    from portfolio_app.analytics_cache import atomic_json
+    from portfolio_app.market.market_data import RequestCoordinator
+    from portfolio_app.analytics.analytics_cache import atomic_json
     launch = create_demo_data(tmp_path / 'launch')
     target = create_demo_data(tmp_path / 'restored')
     ready, finish = Event(), Event()
@@ -375,7 +375,7 @@ def test_source_symlink_and_destination_symlink_are_rejected(tmp_path):
 
 
 def test_fragment_without_context_cannot_save_retired_workspace(tmp_path):
-    from portfolio_app.workspace_lock import bind_workspace
+    from portfolio_app.workspace.workspace_lock import bind_workspace
     launch = create_demo_data(tmp_path / 'launch')
     target = create_demo_data(tmp_path / 'restored')
     token = write_context.set(None)
@@ -405,7 +405,7 @@ def test_invalid_override_content_is_rejected(tmp_path, name):
 
 def test_raw_zip_name_is_checked_before_library_normalization():
     from hashlib import sha256
-    from portfolio_app.backup import FORMAT, VERSION
+    from portfolio_app.workspace.backup import FORMAT, VERSION
     manifest = dict(format=FORMAT, version=VERSION, app_version='0.1.0',
                     created_at='2026-10-06T12:00:00+00:00',
                     files={'foo': dict(size=8, sha256=sha256(b'invented').hexdigest())})

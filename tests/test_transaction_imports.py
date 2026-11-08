@@ -3,13 +3,13 @@ from decimal import Decimal as D
 
 import pytest
 
-from portfolio_app.account_journal import load_journal, save_journal, Journal
-from portfolio_app.consors_pdf import parse_consors_pdf, parse_consors_batch
-from portfolio_app.history_commands import save_history, reconstruction_candidate
-from portfolio_app.holdings import DataError
-from portfolio_app.positions import read_snapshot
-from portfolio_app.security_history import effective_holdings
-from portfolio_app.transaction_imports import save_pdf_drafts, draft_problems
+from portfolio_app.ledger.account_journal import load_journal, save_journal, Journal
+from portfolio_app.ingestion.consors_pdf import parse_consors_pdf, parse_consors_batch
+from portfolio_app.ledger.history_commands import save_history, reconstruction_candidate
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ledger.security_history import effective_holdings
+from portfolio_app.ingestion.transaction_imports import save_pdf_drafts, draft_problems
 from test_consors_pdf import statement
 
 
@@ -82,7 +82,7 @@ def test_stale_review_does_not_overwrite_other_work(tmp_path):
 
 
 def test_statement_times_order_same_day_trades_independently_of_upload_order(tmp_path):
-    from portfolio_app.security_history import selected_events
+    from portfolio_app.ledger.security_history import selected_events
     snapshot,journal,revision=setup(tmp_path)
     buy=replace(parse_consors_pdf(statement()),trade_time='10:00:00')
     sale=replace(parse_consors_pdf(statement(sale=True,quantity='1',gross='50,00',net='43,00')),trade_time='11:00:00')
@@ -93,8 +93,8 @@ def test_statement_times_order_same_day_trades_independently_of_upload_order(tmp
 
 @pytest.mark.parametrize('confirmed', [False, True])
 def test_fee_free_purchase_remains_unknown_until_confirmed(tmp_path, confirmed):
-    from portfolio_app.transaction_import_ui import _charges
-    from portfolio_app.money import format_money
+    from portfolio_app.interface.views.ingestion.transaction_import_ui import _charges
+    from portfolio_app.interface.shared.money import format_money
     snapshot, journal, revision = setup(tmp_path)
     # Within the existing cent tolerance, but not exact enough for autozero.
     draft = parse_consors_pdf(statement(fees=False, net='100,01'))
@@ -120,8 +120,8 @@ def test_zero_statement_charges_are_saved_automatically_in_a_mixed_batch(tmp_pat
 
 
 def test_removed_pdf_can_be_imported_again_without_reviving_deleted_record(tmp_path):
-    from portfolio_app.history_commands import remove_transactions
-    from portfolio_app.security_history import current_records
+    from portfolio_app.ledger.history_commands import remove_transactions
+    from portfolio_app.ledger.security_history import current_records
     snapshot, journal, revision = setup(tmp_path)
     draft = parse_consors_pdf(statement())
     save_pdf_drafts(tmp_path, snapshot.holdings.iloc[0], journal, revision, snapshot, [draft])
@@ -144,9 +144,9 @@ def test_removed_pdf_can_be_imported_again_without_reviving_deleted_record(tmp_p
 
 
 def test_duplicate_check_keeps_applied_original_while_correction_is_pending():
-    from portfolio_app.history_commands import correct_transaction
-    from portfolio_app.security_history import SecurityBook
-    from portfolio_app.transaction_imports import as_event, existing_transactions, possible_duplicate
+    from portfolio_app.ledger.history_commands import correct_transaction
+    from portfolio_app.ledger.security_history import SecurityBook
+    from portfolio_app.ingestion.transaction_imports import as_event, existing_transactions, possible_duplicate
     draft = parse_consors_pdf(statement())
     original = as_event(draft)
     book = SecurityBook('invented', 'invented', ('2', '50', 'EUR'),

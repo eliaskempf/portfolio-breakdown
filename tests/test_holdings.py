@@ -1,7 +1,7 @@
 import pytest
 
-from portfolio_app.holdings import DataError, load_holdings, metadata_dimensions
-from portfolio_app.taxonomy import load_classifications, paths_for
+from portfolio_app.portfolio.holdings import DataError, load_holdings, metadata_dimensions
+from portfolio_app.exposure.taxonomy import load_classifications, paths_for
 
 
 def test_optional_fields_and_zero_shares(tmp_path):

@@ -4,11 +4,11 @@ from test_ui import position_action
 import pandas as pd
 import pytest
 
-from portfolio_app.balances import patch_holdings, replacement_changes
-from portfolio_app.costs import average_from_total
-from portfolio_app.holdings import DataError, load_holdings
-from portfolio_app.performance import position_performance
-from portfolio_app.positions import read_snapshot
+from portfolio_app.portfolio.balances import patch_holdings, replacement_changes
+from portfolio_app.portfolio.costs import average_from_total
+from portfolio_app.portfolio.holdings import DataError, load_holdings
+from portfolio_app.performance.performance import position_performance
+from portfolio_app.portfolio.positions import read_snapshot
 from test_instrument_ui import launch_editor
 from test_ui import by_label
 
@@ -125,7 +125,7 @@ def test_balance_editor_saves_total_cost_and_clears_missing_cost(monkeypatch, tm
         frame.loc[1, 'total_buy_in'] = float('nan')
         return frame
 
-    monkeypatch.setattr('portfolio_app.allocation_ui.st.data_editor', edit)
+    monkeypatch.setattr('portfolio_app.interface.views.portfolio.allocation_ui.st.data_editor', edit)
     by_label(app.button, 'Save replacement balances').click().run()
     assert not app.exception and not app.error
     stored = load_holdings(path)
@@ -147,7 +147,7 @@ def test_invalid_total_balance_update_is_atomic(monkeypatch, tmp_path):
         frame.loc[1, 'total_buy_in'] = 10.  # Zero quantity cannot carry positive total cost.
         return frame
 
-    monkeypatch.setattr('portfolio_app.allocation_ui.st.data_editor', edit)
+    monkeypatch.setattr('portfolio_app.interface.views.portfolio.allocation_ui.st.data_editor', edit)
     by_label(app.button, 'Save replacement balances').click().run()
     assert not app.exception
     assert any('Invented Beta' in error.value for error in app.error)

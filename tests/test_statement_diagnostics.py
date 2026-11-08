@@ -1,7 +1,7 @@
 """Privacy checks use invented PDFs and independent sentinel values only."""
 import pytest
 
-from portfolio_app.statement_diagnostics import _token, layout_report
+from portfolio_app.ingestion.statement_diagnostics import _token, layout_report
 from test_consors_pdf import statement
 
 
@@ -34,14 +34,14 @@ def test_non_allowlisted_text_cannot_survive(secret):
 def test_bad_document_never_exports_parser_exception(monkeypatch):
     def fail(source):
         raise ValueError('PRIVATE_SENTINEL: raw source text')
-    monkeypatch.setattr('portfolio_app.statement_diagnostics._rows', fail)
+    monkeypatch.setattr('portfolio_app.ingestion.statement_diagnostics._rows', fail)
     report = layout_report([b'PRIVATE_SENTINEL'])
     assert 'PRIVATE_SENTINEL' not in report
     assert 'PDF could not be read.' in report
 
 
 def test_reconciliation_clues_reveal_matches_without_amounts_or_repair():
-    from portfolio_app.consors_pdf import parse_consors_pdf
+    from portfolio_app.ingestion.consors_pdf import parse_consors_pdf
     source = statement(sale=True, net='81,66', extra=(
         'Invented tax debit 11,34 EUR',
         'Invented unrelated value 44,55 EUR'))

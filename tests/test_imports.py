@@ -6,14 +6,14 @@ from zipfile import ZipFile
 import pandas as pd
 import pytest
 
-from portfolio_app.holdings import DataError, metadata_dimensions
-from portfolio_app.import_readers import (
+from portfolio_app.portfolio.holdings import DataError, metadata_dimensions
+from portfolio_app.ingestion.import_readers import (
     detect_text_format,
     excel_sheets,
     read_table,
     suggest_mapping,
 )
-from portfolio_app.imports import (
+from portfolio_app.ingestion.imports import (
     ImportOptions,
     combine_drafts,
     link_listing,
@@ -21,10 +21,10 @@ from portfolio_app.imports import (
     parse_number,
     save_import,
 )
-from portfolio_app.instruments import Instrument
-from portfolio_app.positions import read_snapshot
-from portfolio_app.prices import PriceService, UnavailableProvider
-from portfolio_app.valuation import value_holdings
+from portfolio_app.market.instruments import Instrument
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.market.prices import PriceService, UnavailableProvider
+from portfolio_app.portfolio.valuation import value_holdings
 
 
 def options(**kwargs):

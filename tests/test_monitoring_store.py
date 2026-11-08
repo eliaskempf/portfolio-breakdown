@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from portfolio_app.holdings import DataError
-from portfolio_app.monitoring import Evaluation
-from portfolio_app.monitoring_store import (save_rule, delete_rule, load_monitoring, record_evaluations, mark_events)
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.monitoring.monitoring import Evaluation
+from portfolio_app.monitoring.monitoring_store import (save_rule, delete_rule, load_monitoring, record_evaluations, mark_events)
 from test_monitoring import rule, NOW
 
 
@@ -66,8 +66,8 @@ def test_workspace_isolation_and_concurrent_writes(tmp_path):
 
 
 def test_monitoring_is_included_in_portable_backups_and_restore_validation(tmp_path):
-    from portfolio_app.demo import create_demo_data
-    from portfolio_app.backup import create_backup, inspect_backup
+    from portfolio_app.demo_data.demo import create_demo_data
+    from portfolio_app.workspace.backup import create_backup, inspect_backup
     root=tmp_path/'synthetic'
     create_demo_data(root)
     save_rule(root,rule())

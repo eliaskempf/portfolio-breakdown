@@ -5,10 +5,10 @@ from decimal import Decimal as D
 
 import pytest
 
-from portfolio_app.account_journal import Journal
-from portfolio_app.history_observations import HistoryScope, Observation, ObservationStore, CoverageReview
-from portfolio_app.history_view import history_view, period_start
-from portfolio_app.security_history import SecurityBook, SecurityEvent, history_fingerprint
+from portfolio_app.ledger.account_journal import Journal
+from portfolio_app.performance.history_observations import HistoryScope, Observation, ObservationStore, CoverageReview
+from portfolio_app.performance.history_view import history_view, period_start
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent, history_fingerprint
 
 
 def fixture():
@@ -119,8 +119,8 @@ def test_ranges_covering_entire_holding_preserve_full_history_boundaries():
 
 @pytest.mark.parametrize('snapshot', [True, False])
 def test_long_range_headline_shows_total_known_gain(tmp_path, snapshot):
-    from portfolio_app.account_journal import save_journal
-    from portfolio_app.history_observations import save_observations
+    from portfolio_app.ledger.account_journal import save_journal
+    from portfolio_app.performance.history_observations import save_observations
     from streamlit.testing.v1 import AppTest
     journal, scope, store = fixture()
     book = journal.securities[0]
@@ -138,10 +138,10 @@ def test_long_range_headline_shows_total_known_gain(tmp_path, snapshot):
 from pathlib import Path
 from datetime import date
 import streamlit as st
-from portfolio_app.account_journal import load_journal
-from portfolio_app.history_observations import load_observations, HistoryScope
-from portfolio_app.history_view import history_view
-from portfolio_app.history_ui import _render_history_results
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.performance.history_observations import load_observations, HistoryScope
+from portfolio_app.performance.history_view import history_view
+from portfolio_app.interface.views.history.history_ui import _render_history_results
 root = Path({str(tmp_path)!r})
 journal, _ = load_journal(root)
 store, revision = load_observations(root)
@@ -161,8 +161,8 @@ _render_history_results(root, journal, scope, key='test_', include_inputs=False,
 
 @pytest.mark.parametrize('reviewed', [True, False])
 def test_chart_reuses_ledger_states_without_changing_dated_results(monkeypatch, reviewed):
-    import portfolio_app.personal_performance as performance
-    from portfolio_app.gain_accounting import summarize_known_gain
+    import portfolio_app.performance.personal_performance as performance
+    from portfolio_app.performance.gain_accounting import summarize_known_gain
     journal, scope, store = fixture()
     if not reviewed:
         store = replace(store, reviews=())
@@ -196,7 +196,7 @@ def test_summary_omits_only_chart_points(reviewed):
 
 
 def test_chart_computes_annualized_return_only_for_headline_intervals(monkeypatch):
-    import portfolio_app.personal_performance as performance
+    import portfolio_app.performance.personal_performance as performance
     journal, scope, store = fixture()
     calls = []
     original = performance.xirr
@@ -211,8 +211,8 @@ def test_chart_computes_annualized_return_only_for_headline_intervals(monkeypatc
 
 
 def test_replay_reuses_price_only_dates_but_preserves_separate_fee_dates(monkeypatch):
-    import portfolio_app.personal_performance as performance
-    from portfolio_app.security_history import Charge, replay_securities
+    import portfolio_app.performance.personal_performance as performance
+    from portfolio_app.ledger.security_history import Charge, replay_securities
     events = (SecurityEvent('open', 'opening', '2024-01-01'),
         SecurityEvent('buy', 'buy', '2024-01-03', quantity=3, price=10, currency='EUR',
                       charges=(Charge(D(2), 'EUR', '2024-01-06'),), charges_known=True),

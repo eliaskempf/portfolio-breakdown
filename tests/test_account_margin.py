@@ -5,14 +5,14 @@ from decimal import Decimal as D
 import pandas as pd
 import pytest
 
-from portfolio_app.account_journal import (
+from portfolio_app.ledger.account_journal import (
     Account, Event, Journal, MarginRequirement, append_events, load_journal, replay, save_journal,
 )
-from portfolio_app.account_margin import (
+from portfolio_app.derivatives.account_margin import (
     adopt_liability, bind_holding, conversion_rate, margin_coverage, reserve_collateral, validate_reservations,
 )
-from portfolio_app.holdings import DataError, parse_holdings
-from portfolio_app.leverage_settings import MarginLiability
+from portfolio_app.portfolio.holdings import DataError, parse_holdings
+from portfolio_app.funds.leverage_settings import MarginLiability
 
 DAY = '2026-01-05'
 CSV = ('id,name,shares,instrument_type,position_key\n'
@@ -164,9 +164,9 @@ def test_margin_ui_shows_security_quantity_and_review_without_posting(tmp_path):
     save_journal(tmp_path, journal, None)
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.account_journal import load_journal
-from portfolio_app.account_margin_ui import render_account_margin
-from portfolio_app.positions import read_snapshot
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.interface.views.derivatives.account_margin_ui import render_account_margin
+from portfolio_app.portfolio.positions import read_snapshot
 directory = Path({str(tmp_path)!r})
 journal, revision = load_journal(directory)
 holdings = read_snapshot(directory/'holdings.csv').holdings
@@ -191,8 +191,8 @@ render_account_margin(directory, journal, revision, holdings, valued, 'EUR', fx_
 
 
 def test_adopted_legacy_debt_does_not_block_foreign_currency_settings(tmp_path):
-    from portfolio_app.leverage_settings import LeverageSettings, load_leverage_settings, save_leverage_settings
-    from portfolio_app.portfolio_settings import save_settings
+    from portfolio_app.funds.leverage_settings import LeverageSettings, load_leverage_settings, save_leverage_settings
+    from portfolio_app.portfolio.portfolio_settings import save_settings
     journal, _, _ = fixture()
     legacy = MarginLiability('old', 'Invented legacy debt', 300)
     settings = LeverageSettings(liabilities=(legacy,))
@@ -209,7 +209,7 @@ def test_adopted_legacy_debt_does_not_block_foreign_currency_settings(tmp_path):
 
 def test_collateral_displays_names_and_financial_details_without_internal_ids(tmp_path):
     from streamlit.testing.v1 import AppTest
-    from portfolio_app.account_margin_ui import _review_rows
+    from portfolio_app.interface.views.derivatives.account_margin_ui import _review_rows
     (tmp_path/'holdings.csv').write_text(CSV)
     journal, holdings, _ = fixture()
     reserved = security_reserve(journal, holdings, identity='opaque-reservation-id')
@@ -222,9 +222,9 @@ def test_collateral_displays_names_and_financial_details_without_internal_ids(tm
     save_journal(tmp_path, reserved, None)
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.account_journal import load_journal
-from portfolio_app.account_margin_ui import render_account_margin
-from portfolio_app.positions import read_snapshot
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.interface.views.derivatives.account_margin_ui import render_account_margin
+from portfolio_app.portfolio.positions import read_snapshot
 directory = Path({str(tmp_path)!r})
 journal, revision = load_journal(directory)
 holdings = read_snapshot(directory/'holdings.csv').holdings
@@ -250,7 +250,7 @@ render_account_margin(directory, journal, revision, holdings, valued, 'EUR', fx_
 
 @pytest.mark.parametrize('denomination', ['EUR', 'USD'])
 def test_unknown_cash_withholds_affected_collateral_and_liquidity(denomination, tmp_path):
-    from portfolio_app.security_history import SecurityBook, SecurityEvent
+    from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent
     journal, held, valued = fixture()
     journal = reserve_collateral(journal, Event('reserve', DAY, 'reserve', account_id='broker',
         currency='USD', amount=500, collateral_id='cash'), held)
@@ -272,9 +272,9 @@ def test_unknown_cash_withholds_affected_collateral_and_liquidity(denomination, 
         save_journal(tmp_path, journal, None)
         app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.account_journal import load_journal
-from portfolio_app.account_margin_ui import render_account_margin
-from portfolio_app.positions import read_snapshot
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.interface.views.derivatives.account_margin_ui import render_account_margin
+from portfolio_app.portfolio.positions import read_snapshot
 directory = Path({str(tmp_path)!r})
 journal, revision = load_journal(directory)
 holdings = read_snapshot(directory/'holdings.csv').holdings
@@ -304,7 +304,7 @@ render_account_margin(directory, journal, revision, holdings, valued, 'USD', fx_
 
 
 def test_unknown_settlement_cash_preserves_independent_security_coverage():
-    from portfolio_app.security_history import SecurityBook, SecurityEvent
+    from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent
     journal, held, valued = fixture()
     journal = security_reserve(journal, held)
     journal = append_events(journal, (Event('eur-cash', DAY, 'cash_open', account_id='broker', currency='EUR', amount=0),))
@@ -325,9 +325,9 @@ def test_unknown_settlement_cash_preserves_independent_security_coverage():
 @pytest.mark.parametrize('projected_input', [False, True])
 def test_collateral_ui_uses_applied_history_for_coverage_and_reviewed_save(tmp_path, snapshot_quantity, projected_input):
     from streamlit.testing.v1 import AppTest
-    from portfolio_app.account_journal import HoldingLink
-    from portfolio_app.cost_basis import fingerprint
-    from portfolio_app.security_history import SecurityBook, SecurityEvent
+    from portfolio_app.ledger.account_journal import HoldingLink
+    from portfolio_app.performance.cost_basis import fingerprint
+    from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent
     content = ('id,name,shares,instrument_type,position_key,acquisition_price,acquisition_currency\n'
                f'synthetic,Invented security,{snapshot_quantity},equity,security,10,EUR\n')
     (tmp_path/'holdings.csv').write_text(content)
@@ -347,10 +347,10 @@ def test_collateral_ui_uses_applied_history_for_coverage_and_reviewed_save(tmp_p
     save_journal(tmp_path, journal, None)
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.account_journal import load_journal
-from portfolio_app.account_margin_ui import render_account_margin
-from portfolio_app.positions import read_snapshot
-from portfolio_app.security_history import effective_holdings
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.interface.views.derivatives.account_margin_ui import render_account_margin
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ledger.security_history import effective_holdings
 directory = Path({str(tmp_path)!r})
 journal, revision = load_journal(directory)
 holdings = read_snapshot(directory/'holdings.csv').holdings
@@ -382,9 +382,9 @@ def test_collateral_rejects_stale_projected_journal_even_when_units_match(tmp_pa
     save_journal(tmp_path, journal, None)
     app = AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.account_journal import load_journal
-from portfolio_app.account_margin_ui import render_account_margin
-from portfolio_app.positions import read_snapshot
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.interface.views.derivatives.account_margin_ui import render_account_margin
+from portfolio_app.portfolio.positions import read_snapshot
 directory = Path({str(tmp_path)!r})
 journal, revision = load_journal(directory)
 holdings = read_snapshot(directory/'holdings.csv').holdings

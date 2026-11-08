@@ -4,10 +4,10 @@ from decimal import Decimal
 
 import pytest
 
-from portfolio_app import account_journal as ledger
-from portfolio_app.derivative_types import PriceObservation
-from portfolio_app.holdings import DataError
-from portfolio_app.settlement_backfill import settlement_days, retrieve_settlements, propose_settlements
+from portfolio_app.ledger import account_journal as ledger
+from portfolio_app.derivatives.derivative_types import PriceObservation
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.derivatives.settlement_backfill import settlement_days, retrieve_settlements, propose_settlements
 from test_futures_investments import grouped, project
 
 
@@ -75,7 +75,7 @@ def test_closed_quantity_corrections_and_range_limits(tmp_path):
 
 @pytest.mark.parametrize('currency,multiplier', [('EUR',100),('USD',10),('GBP',5)])
 def test_signed_backfill_preserves_native_currency(tmp_path,currency,multiplier):
-    from portfolio_app.derivative_types import ContractSpec
+    from portfolio_app.derivatives.derivative_types import ContractSpec
     contract=ContractSpec('SYNTH','2026-03-20',currency,multiplier,1)
     journal=ledger.Journal(accounts=(ledger.Account('a','Invented'),),contracts=(contract,),
         positions=(ledger.PositionSpec('p','a',contract.id),),events=(
@@ -87,7 +87,7 @@ def test_signed_backfill_preserves_native_currency(tmp_path,currency,multiplier)
 @pytest.mark.parametrize('currency', ['EUR', 'USD', 'GBP'])
 @pytest.mark.parametrize('amount', [200, -200])
 def test_explicit_cash_flows_preserve_backfill_and_original_records(tmp_path, currency, amount):
-    from portfolio_app.derivative_types import ContractSpec
+    from portfolio_app.derivatives.derivative_types import ContractSpec
     contract = ContractSpec('SYNTH', '2026-03-20', currency, 10, 1)
     journal = ledger.Journal(accounts=(ledger.Account('a', 'Invented'),), contracts=(contract,),
         positions=(ledger.PositionSpec('p', 'a', contract.id),), events=(
@@ -109,7 +109,7 @@ def test_explicit_cash_flows_preserve_backfill_and_original_records(tmp_path, cu
 @pytest.mark.parametrize('direction', [1, -1])
 @pytest.mark.parametrize('closed', [1, 2, 3])
 def test_backfill_retains_zero_close_claim_and_existing_receipt(tmp_path, direction, closed):
-    from portfolio_app.derivative_types import ContractSpec
+    from portfolio_app.derivatives.derivative_types import ContractSpec
     contract = ContractSpec('SYNTH', '2026-03-20', 'EUR', 10, 1)
     journal = ledger.Journal(accounts=(ledger.Account('a', 'Invented'),), contracts=(contract,),
         positions=(ledger.PositionSpec('p', 'a', contract.id),), events=(

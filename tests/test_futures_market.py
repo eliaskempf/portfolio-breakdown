@@ -7,13 +7,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_comparison import ComparisonSettings, comparison_dates, evaluate_paths, cash_growth
-from portfolio_app.futures_market import (QUOTE_FILE, VOL_FILE, apply_quote, estimate_volatility,
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.studies.futures_comparison import ComparisonSettings, comparison_dates, evaluate_paths, cash_growth
+from portfolio_app.studies.futures_market import (QUOTE_FILE, VOL_FILE, apply_quote, estimate_volatility,
     load_observation, parse_settlement, refresh_quote, refresh_volatility, statistics_request)
-from portfolio_app.futures_workspace import SANDBOX_FILE, load_sandbox
-from portfolio_app.holdings import DataError
-from portfolio_app.risk_data import AdjustedHistory
+from portfolio_app.studies.futures_workspace import SANDBOX_FILE, load_sandbox
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.analytics.risk_data import AdjustedHistory
 
 
 def synthetic_statistics():
@@ -127,7 +127,7 @@ def test_proxy_refresh_requires_fresh_eur_history(tmp_path):
 
 
 def test_historical_quote_selects_exact_maturity_not_front_contract_or_latest_date():
-    from portfolio_app.futures_market import fetch_contract_settlement
+    from portfolio_app.studies.futures_market import fetch_contract_settlement
     raw = synthetic_statistics()
     raw['header']['tradingDates'].insert(0, '03-01-2001 12:00')
     calls = []
@@ -148,8 +148,8 @@ def test_historical_quote_selects_exact_maturity_not_front_contract_or_latest_da
 
 
 def test_observed_entry_and_mark_preserve_provenance_collateral_and_backup(tmp_path):
-    from portfolio_app.futures_market import fetch_contract_settlement, position_from_settlements
-    from portfolio_app.futures_workspace import save_sandbox
+    from portfolio_app.studies.futures_market import fetch_contract_settlement, position_from_settlements
+    from portfolio_app.studies.futures_workspace import save_sandbox
     quote = fetch_contract_settlement(date(2001, 1, 2), date(2001, 6, 15), lambda _: json.dumps(synthetic_statistics()))
     mark = {**quote, 'quote_date': '2001-01-03', 'price': 435., 'source': quote['source'].replace('20010102', '20010103')}
     original = FuturePosition(entry_price=200., mark_price=300., bucket_id='synthetic-core')
@@ -177,8 +177,8 @@ def test_observed_entry_and_mark_preserve_provenance_collateral_and_backup(tmp_p
 def test_distinct_observed_entry_is_not_reported_as_manual_price_override():
     from streamlit.testing.v1 import AppTest
     app = AppTest.from_string('''
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_market_ui import render_price_provenance
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.interface.views.studies.futures_market_ui import render_price_provenance
 p = FuturePosition(entry_price=420., mark_price=435., reference_price=435., quote_date='2001-01-03',
     contract_expiry='2001-06-15', entry_date='2001-01-02', entry_reference_price=420.,
     entry_price_source='https://www.eurex.com/synthetic-entry', price_source='https://www.eurex.com/synthetic-mark')

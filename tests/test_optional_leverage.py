@@ -5,13 +5,13 @@ import json
 import pandas as pd
 import pytest
 
-from portfolio_app.allocation import Allocation, Bucket
-from portfolio_app.exposure_targets import ExposureTargets, exposure_gaps, load_exposure_targets, save_exposure_targets, validate_targets
-from portfolio_app.exposure_planning import plan_exposure
-from portfolio_app.futures import FuturePosition
-from portfolio_app.holdings import DataError
-from portfolio_app.leverage_settings import LeverageSettings, MarginLiability, FundFactor, load_leverage_settings, save_leverage_settings
-from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
+from portfolio_app.portfolio.allocation import Allocation, Bucket
+from portfolio_app.exposure.exposure_targets import ExposureTargets, exposure_gaps, load_exposure_targets, save_exposure_targets, validate_targets
+from portfolio_app.exposure.exposure_planning import plan_exposure
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.funds.leverage_settings import LeverageSettings, MarginLiability, FundFactor, load_leverage_settings, save_leverage_settings
+from portfolio_app.exposure.portfolio_exposure import calculate_portfolio_exposure
 
 CONFIG = Allocation((Bucket('assets', 'Invented assets'), Bucket('stock', 'Invented stock', 'assets'), Bucket('gold', 'Invented gold', 'assets')))
 

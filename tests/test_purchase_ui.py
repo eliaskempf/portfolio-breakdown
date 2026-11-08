@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from portfolio_app.holdings import load_holdings
-from portfolio_app.purchases import HISTORY_COLUMN, read_purchase_history
+from portfolio_app.portfolio.holdings import load_holdings
+from portfolio_app.portfolio.purchases import HISTORY_COLUMN, read_purchase_history
 from test_instrument_ui import launch_editor, search, stub_search
 from test_ui import by_label, launch
 
@@ -178,7 +178,7 @@ def test_bulk_in_full_app_keeps_history_out_of_allocation_dimensions(tmp_path, s
                          ids=['valid', 'invalid-utf8', 'oversized'])
 def test_upload_validates_and_saves_only_valid_input(monkeypatch, tmp_path, content, error):
     upload = SimpleNamespace(size=len(content), getvalue=lambda: content)
-    monkeypatch.setattr("portfolio_app.purchase_ui.st.file_uploader", lambda *args, **kwargs: upload)
+    monkeypatch.setattr("portfolio_app.interface.views.positions.purchase_ui.st.file_uploader", lambda *args, **kwargs: upload)
     path = tmp_path / "holdings.csv"
     app = bulk(launch_editor(path))
     by_label(app.text_input, "Instrument name").set_value("Synthetic upload")

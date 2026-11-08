@@ -2,9 +2,9 @@
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.account_journal import load_journal
-from portfolio_app.security_history import replay_securities
-from portfolio_app.transaction_csv import read_csv
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.ledger.security_history import replay_securities
+from portfolio_app.ingestion.transaction_csv import read_csv
 from test_transaction_mapping_ui import set_listing
 
 
@@ -12,7 +12,7 @@ def launch(directory, content):
     def script(directory, content):
         from pathlib import Path
         import streamlit as st
-        from portfolio_app.csv_transaction_import_ui import render_transaction_import
+        from portfolio_app.interface.views.ingestion.csv_transaction_import_ui import render_transaction_import
         st.session_state['import_tx_content'] = ('invented.csv', content)
         render_transaction_import(Path(directory), demo=True)
     return AppTest.from_function(script, args=(str(directory), content)).run()
@@ -43,8 +43,8 @@ def test_rejected_swaps_reserve_destination_and_reopen_without_placeholders(tmp_
     button(reopened,'Review against portfolio').click().run()
     assert not reopened.exception
     assert load_journal(tmp_path) == (journal,revision)
-    from portfolio_app.csv_transaction_imports import prepare_import
-    from portfolio_app.positions import read_snapshot
+    from portfolio_app.ingestion.csv_transaction_imports import prepare_import
+    from portfolio_app.portfolio.positions import read_snapshot
     rows = read_csv(content)
     mapping = {(a,asset):p for r in journal.transaction_imports for a,asset,p in r.positions}
     again = prepare_import(journal,read_snapshot(tmp_path/'holdings.csv').holdings,rows,mapping,
@@ -55,9 +55,9 @@ def test_rejected_swaps_reserve_destination_and_reopen_without_placeholders(tmp_
 def test_new_source_after_rejected_correction_shows_surviving_manual_edit(tmp_path):
     from dataclasses import replace
     from decimal import Decimal
-    from portfolio_app.history_commands import correct_transaction, save_history
-    from portfolio_app.positions import read_snapshot
-    from portfolio_app.transaction_import_commands import save_transaction_import
+    from portfolio_app.ledger.history_commands import correct_transaction, save_history
+    from portfolio_app.portfolio.positions import read_snapshot
+    from portfolio_app.ledger.transaction_import_commands import save_transaction_import
     header = 'reference,date,type,asset,quantity,amount,currency\n'
     original = header+'a,2024-01-02,buy,BTC,10,100,EUR\n'
     app = launch(tmp_path,original.encode())
@@ -137,8 +137,8 @@ def test_similar_rows_default_to_keep_and_can_be_excluded(tmp_path, decision, qu
     journal = load_journal(tmp_path)[0]
     assert len(journal.transaction_imports) == 2
     assert sum(s.quantity for s in replay_securities(journal.securities).positions.values()) == quantity
-    from portfolio_app.history_observations import HistoryScope, Observation, ObservationStore
-    from portfolio_app.personal_performance import calculate_history
+    from portfolio_app.performance.history_observations import HistoryScope, Observation, ObservationStore
+    from portfolio_app.performance.personal_performance import calculate_history
     identity = journal.securities[0].position_id
     obs = ObservationStore((Observation('invented-close', 'price', identity, '2025-01-02', 110, 'EUR'),))
     result = calculate_history(journal, HistoryScope((identity,)), obs, '2024-01-01', '2025-01-02')
@@ -278,7 +278,7 @@ def test_name_edit_survives_listing_change_and_destination_switch(tmp_path):
     holding = next(s for s in app.selectbox if s.label == 'Holding · ETH')
     assert holding.options[0] == 'New position'
     assert not any(s.label.startswith('Destination ·') for s in app.selectbox)
-    from portfolio_app.positions import read_snapshot
+    from portfolio_app.portfolio.positions import read_snapshot
     existing = read_snapshot(tmp_path/'holdings.csv').holdings.position_id.iloc[0]
     holding.set_value(existing).run()
     assert not app.exception
@@ -297,7 +297,7 @@ def test_automatic_name_follows_listing_until_user_edits_it(tmp_path):
 
 
 def test_pdf_provenance_is_a_readable_source_label():
-    from portfolio_app.history_ui import _source_label
+    from portfolio_app.interface.views.history.history_ui import _source_label
     assert _source_label('consors_pdf:'+'a1'*32) == 'PDF import'
     assert _source_label('legacy:'+'b2'*16) == 'Imported purchase history'
     assert _source_label('c3'*32) == 'Recorded history'
@@ -305,15 +305,15 @@ def test_pdf_provenance_is_a_readable_source_label():
 
 def test_saved_import_selector_hides_ledger_identifiers(tmp_path):
     from test_csv_transaction_imports import row
-    from portfolio_app.transaction_csv import normalize
-    from portfolio_app.transaction_import_commands import save_transaction_import
+    from portfolio_app.ingestion.transaction_csv import normalize
+    from portfolio_app.ledger.transaction_import_commands import save_transaction_import
     secret = 'a1'*32
     original = row(1, gross_amount='10', currency='EUR')
     item = normalize({**original.raw, 'source_id':secret})
     save_transaction_import(tmp_path, [item], {}, expected_journal_revision=None, expected_holdings_revision=None)
     def script(directory):
         from pathlib import Path
-        from portfolio_app.csv_transaction_import_ui import render_transaction_import
+        from portfolio_app.interface.views.ingestion.csv_transaction_import_ui import render_transaction_import
         render_transaction_import(Path(directory), demo=True)
     app = AppTest.from_function(script, args=(str(tmp_path),)).run()
     next(r for r in app.radio if r.label == 'Transactions').set_value('Saved imports').run()
@@ -327,7 +327,7 @@ def test_checkpoint_review_hides_internal_position_keys(tmp_path):
     import csv
     from io import StringIO
     from test_inventory_imports import row, estimate
-    from portfolio_app.transaction_csv import FIELDS_V2
+    from portfolio_app.ingestion.transaction_csv import FIELDS_V2
     stream = StringIO()
     writer = csv.DictWriter(stream, fieldnames=FIELDS_V2)
     writer.writeheader(); writer.writerow(row('balance', **estimate()).facts)
@@ -343,10 +343,10 @@ def test_checkpoint_review_hides_internal_position_keys(tmp_path):
 @pytest.mark.parametrize('source', ['manual', 'consors_pdf:invented', 'transaction_csv_v3'])
 def test_partial_fills_use_same_review_for_every_source(tmp_path, source):
     from dataclasses import replace
-    from portfolio_app.account_journal import Journal, save_journal
-    from portfolio_app.csv_transaction_imports import event_for
-    from portfolio_app.history_commands import book_for
-    from portfolio_app.positions import read_snapshot
+    from portfolio_app.ledger.account_journal import Journal, save_journal
+    from portfolio_app.ingestion.csv_transaction_imports import event_for
+    from portfolio_app.ledger.history_commands import book_for
+    from portfolio_app.portfolio.positions import read_snapshot
     from test_history_ui import launch as history_app
     content = (b'reference,date,type,asset,quantity,amount,currency\n'
         b'buy,2024-01-01,buy,AUR,6,60,EUR\n'
@@ -363,7 +363,7 @@ def test_partial_fills_use_same_review_for_every_source(tmp_path, source):
     mapping = {pair:row.position_id for entry in entries for pair in entry.pairs}
     records = tuple(replace(event_for(entry, mapping), source=source) for entry in entries)
     book = replace(book_for(Journal(), row), records=records)
-    from portfolio_app.transaction_csv import ImportReceipt
+    from portfolio_app.ingestion.transaction_csv import ImportReceipt
     receipts = tuple(ImportReceipt(entry.identity, entry.raw, entry.facts,
         positions=tuple((a, asset, row.position_id) for a,asset in entry.pairs)) for entry in entries) if source.startswith('transaction_csv_v') else ()
     save_journal(history_dir, Journal(version=5, securities=(book,), transaction_imports=receipts), None)

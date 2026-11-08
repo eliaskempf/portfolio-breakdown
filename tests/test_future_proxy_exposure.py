@@ -6,13 +6,13 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from portfolio_app.etf import FundSnapshot
-from portfolio_app.futures import FuturePosition, funded_strategy_positions
-from portfolio_app.portfolio_exposure import calculate_portfolio_exposure
-from portfolio_app.exposure_presentation import company_move, exposure_positions, companion_nodes
-from portfolio_app.strategic import strategic_tree
-from portfolio_app.charts import sort_allocation_nodes
-from portfolio_app.leverage_settings import MarginLiability, FundFactor
+from portfolio_app.funds.etf import FundSnapshot
+from portfolio_app.studies.futures import FuturePosition, funded_strategy_positions
+from portfolio_app.exposure.portfolio_exposure import calculate_portfolio_exposure
+from portfolio_app.exposure.exposure_presentation import company_move, exposure_positions, companion_nodes
+from portfolio_app.portfolio.strategic import strategic_tree
+from portfolio_app.interface.shared.charts import sort_allocation_nodes
+from portfolio_app.funds.leverage_settings import MarginLiability, FundFactor
 from test_portfolio_exposure import invented, CONFIG
 
 
@@ -127,7 +127,7 @@ def test_companion_ui_sunbursts_and_company_move(tmp_path):
     from test_portfolio_exposure_ui import synthetic_workspace
     from test_futures_ui import launch
     from test_ui import activate, by_label, list_frame
-    from portfolio_app.futures_workspace import load_sandbox, save_sandbox
+    from portfolio_app.studies.futures_workspace import load_sandbox, save_sandbox
     def chart_values(trace):
         values = trace['values']
         return np.frombuffer(base64.b64decode(values['bdata']), dtype=values['dtype']) if isinstance(values, dict) else values
@@ -182,8 +182,8 @@ def test_companion_ui_sunbursts_and_company_move(tmp_path):
 
 
 def test_provider_name_aliases_do_not_overwrite_shared_company_chart_nodes():
-    from portfolio_app.exposure_presentation import canonical_asset_names
-    from portfolio_app.aggregation import build_tree
+    from portfolio_app.exposure.exposure_presentation import canonical_asset_names
+    from portfolio_app.exposure.aggregation import build_tree
     rows = pd.DataFrame([
         dict(asset_id='shared', asset_name='Invented Company plc', path=('Industry',), value=100.),
         dict(asset_id='shared', asset_name='INVENTED COMPANY', path=('Industry',), value=200.),
@@ -196,8 +196,8 @@ def test_provider_name_aliases_do_not_overwrite_shared_company_chart_nodes():
 
 
 def test_unknown_exposure_is_unavailable_in_table_not_zero():
-    from portfolio_app.exposure_workspace import analysis_sources, analysis_contributions
-    from portfolio_app.exposure_tables import asset_exposure_table
+    from portfolio_app.exposure.exposure_workspace import analysis_sources, analysis_contributions
+    from portfolio_app.exposure.exposure_tables import asset_exposure_table
     frame, fund, future = fixture()
     frame.loc[1, 'current_value_reporting'] = float('nan')
     result = calculate(frame, fund, future)
@@ -209,7 +209,7 @@ def test_unknown_exposure_is_unavailable_in_table_not_zero():
 
 
 def test_companion_chart_preserves_node_order_and_style_indices():
-    from portfolio_app.charts import hierarchy_chart
+    from portfolio_app.interface.shared.charts import hierarchy_chart
     frame, _, future = fixture()
     values = funded_strategy_positions(frame, future, CONFIG)
     nodes = companion_nodes(sort_allocation_nodes(strategic_tree(values, CONFIG)), future)

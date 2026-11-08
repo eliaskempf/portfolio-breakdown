@@ -4,13 +4,13 @@ import json
 
 import pytest
 
-from portfolio_app.backup import create_backup, inspect_backup, commit_restore
-from portfolio_app.demo import create_demo_data
-from portfolio_app.futures_workspace import fork_futures_workspace, load_sandbox, save_sandbox
-from portfolio_app.holdings import DataError
-from portfolio_app.leverage_settings import LeverageSettings, MarginLiability, save_leverage_settings
-from portfolio_app.portfolio_settings import load_settings, save_settings
-from portfolio_app.workspace import inventory
+from portfolio_app.workspace.backup import create_backup, inspect_backup, commit_restore
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.studies.futures_workspace import fork_futures_workspace, load_sandbox, save_sandbox
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.funds.leverage_settings import LeverageSettings, MarginLiability, save_leverage_settings
+from portfolio_app.portfolio.portfolio_settings import load_settings, save_settings
+from portfolio_app.workspace.workspace import inventory
 
 
 @pytest.mark.parametrize('currency', ['USD', 'GBP'])
@@ -45,8 +45,8 @@ def test_backup_roundtrip_preserves_futures_and_leverage(tmp_path):
     source = create_demo_data(tmp_path / 'synthetic-source')
     sandbox = fork_futures_workspace(source, tmp_path / 'synthetic-sandbox')
     save_leverage_settings(sandbox, LeverageSettings(enabled=True), None)
-    from portfolio_app.futures_funding import FundingPolicy, FundingStudy
-    from portfolio_app.futures_funding_data import save_funding_settings
+    from portfolio_app.studies.futures_funding import FundingPolicy, FundingStudy
+    from portfolio_app.studies.futures_funding_data import save_funding_settings
     save_funding_settings(sandbox, FundingStudy(1000., FundingPolicy(700.), (FundingPolicy(400.),)), '', None)
     before = inventory(sandbox)
     draft = inspect_backup(create_backup(sandbox))
@@ -79,7 +79,7 @@ def test_existing_non_eur_leverage_remains_visible_without_mixed_totals(tmp_path
 
 
 def test_workspace_validation_rejects_corrupt_leverage_settings(tmp_path):
-    from portfolio_app.workspace import validate_workspace
+    from portfolio_app.workspace.workspace import validate_workspace
     source = create_demo_data(tmp_path / 'synthetic')
     (source / 'leverage-settings.json').write_text(json.dumps({'version': 999}))
     with pytest.raises(DataError, match='leverage'):
@@ -88,7 +88,7 @@ def test_workspace_validation_rejects_corrupt_leverage_settings(tmp_path):
 
 @pytest.mark.parametrize('currency', ['EUR', 'USD', 'GBP'])
 def test_enabled_only_exposure_policy_is_currency_independent_and_preserves_basis(tmp_path, currency):
-    from portfolio_app.leverage_settings import load_leverage_settings
+    from portfolio_app.funds.leverage_settings import load_leverage_settings
     source = create_demo_data(tmp_path / 'synthetic')
     save_settings(source, currency, None)
     save_leverage_settings(source, LeverageSettings(enabled=True, active_basis='exposure'), None)
@@ -115,7 +115,7 @@ def test_future_only_portfolio_preserves_wealth_and_default_overview(tmp_path, c
 
 
 def test_orphaned_exposure_policy_is_a_recoverable_validation_error(tmp_path):
-    from portfolio_app.workspace import validate_workspace
+    from portfolio_app.workspace.workspace import validate_workspace
     source = create_demo_data(tmp_path / 'synthetic')
     (source / 'allocation.yaml').unlink(missing_ok=True)
     (source / 'exposure-targets.json').write_text(json.dumps(dict(multiple=1.2,
@@ -129,7 +129,7 @@ def test_currency_and_leverage_commands_validate_inside_workspace_transaction(tm
     """Hold the first command after validation; the competing save must recheck."""
     from concurrent.futures import ThreadPoolExecutor
     from threading import Event
-    from portfolio_app import portfolio_settings, leverage_settings
+    from portfolio_app.portfolio import portfolio_settings; from portfolio_app.funds import leverage_settings
     validated, release, competing = Event(), Event(), Event()
     module = portfolio_settings if first == 'currency' else leverage_settings
     original = module.save_document

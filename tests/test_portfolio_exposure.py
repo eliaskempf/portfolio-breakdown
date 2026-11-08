@@ -5,13 +5,13 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from portfolio_app.allocation import Allocation, Bucket
-from portfolio_app.etf import FundSnapshot
-from portfolio_app.exposure_targets import ExposureTargets, exposure_gaps, load_exposure_targets, save_exposure_targets
-from portfolio_app.futures import FuturePosition
-from portfolio_app.holdings import DataError
-from portfolio_app.leverage_settings import FundFactor, LeverageSettings, MarginLiability, load_leverage_settings, save_leverage_settings
-from portfolio_app.portfolio_exposure import calculate_portfolio_exposure, strategy_exposure
+from portfolio_app.portfolio.allocation import Allocation, Bucket
+from portfolio_app.funds.etf import FundSnapshot
+from portfolio_app.exposure.exposure_targets import ExposureTargets, exposure_gaps, load_exposure_targets, save_exposure_targets
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.funds.leverage_settings import FundFactor, LeverageSettings, MarginLiability, load_leverage_settings, save_leverage_settings
+from portfolio_app.exposure.portfolio_exposure import calculate_portfolio_exposure, strategy_exposure
 
 CONFIG = Allocation((Bucket('core', 'Core'), Bucket('stocks', 'Stocks'), Bucket('cash', 'Cash')))
 
@@ -193,7 +193,7 @@ def test_strategy_leaf_labels_fund_total_with_source_name_not_first_constituent(
 
 
 def test_price_scenario_uses_recorded_equity_and_fixed_debt():
-    from portfolio_app.futures import futures_scenarios, summarize_future
+    from portfolio_app.studies.futures import futures_scenarios, summarize_future
     frame = invented()
     position = FuturePosition(mark_price=510.)
     result = calculate(frame, future=position, liabilities=(MarginLiability('loan', 'Invented loan', 30000.),))
@@ -259,7 +259,7 @@ def test_total_market_includes_gold_crypto_but_equity_targets_do_not():
 
 
 def test_combined_position_rows_keep_future_notional_out_of_capital_and_returns():
-    from portfolio_app.position_list import overview_position_rows
+    from portfolio_app.interface.views.positions.position_list import overview_position_rows
     frame = invented()
     future = FuturePosition(contracts=-1, mark_price=510., bucket_id='core')
     result = calculate(frame, future=future)

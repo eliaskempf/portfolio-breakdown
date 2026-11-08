@@ -3,12 +3,12 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal as D
 
-from portfolio_app.history_observations import Observation, ObservationStore, CoverageReview, HistoryScope, from_dict
-from portfolio_app.history_valuation import closed_interval, price_at, listing_calendar
-from portfolio_app.personal_performance import value_at
-from portfolio_app.history_view import history_view
-from portfolio_app.account_journal import Journal
-from portfolio_app.security_history import SecurityBook, SecurityEvent as E, history_fingerprint
+from portfolio_app.performance.history_observations import Observation, ObservationStore, CoverageReview, HistoryScope, from_dict
+from portfolio_app.performance.history_valuation import closed_interval, price_at, listing_calendar
+from portfolio_app.performance.personal_performance import value_at
+from portfolio_app.performance.history_view import history_view
+from portfolio_app.ledger.account_journal import Journal
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent as E, history_fingerprint
 
 
 def quote(stamp='2024-12-27', **kw):
@@ -61,7 +61,7 @@ def test_legacy_observations_load_without_listing_metadata():
 
 
 def test_metadata_refresh_is_a_revision_and_manual_observations_win():
-    from portfolio_app.personal_market import merge_download
+    from portfolio_app.performance.personal_market import merge_download
     old = replace(quote(source='Invented feed'), listing='', calendar='', exchange_timezone='')
     updated = merge_download(ObservationStore((old,)), (replace(quote(source='Invented feed'), id='new'),))
     assert len(updated.observations) == 2 and updated.observations[-1].replaces == old.id
@@ -71,14 +71,14 @@ def test_metadata_refresh_is_a_revision_and_manual_observations_win():
 
 def test_every_supported_venue_has_a_calendar():
     import exchange_calendars
-    from portfolio_app.history_valuation import VENUES
+    from portfolio_app.performance.history_valuation import VENUES
     assert all(calendar in exchange_calendars.get_calendar_names() for calendar, _ in VENUES.values())
 
 
 def test_bulk_download_validates_one_batch_and_retains_every_correction(monkeypatch):
     from datetime import timedelta
-    import portfolio_app.history_observations as module
-    from portfolio_app.personal_market import merge_download
+    import portfolio_app.performance.history_observations as module
+    from portfolio_app.performance.personal_market import merge_download
     original=tuple(replace(quote(),id=f'old-{i}',date=(date(2024,1,1)+timedelta(days=i)).isoformat(),source='Invented feed') for i in range(1000))
     incoming=tuple(replace(o,id=f'new-{i}',amount=D(120)) for i,o in enumerate(original))
     store=ObservationStore(original)

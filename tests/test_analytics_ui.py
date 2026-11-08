@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.analytics_service import load_metrics
-from portfolio_app.holdings import load_holdings
+from portfolio_app.analytics.analytics_service import load_metrics
+from portfolio_app.portfolio.holdings import load_holdings
 from test_ui import activate, by_label, launch
 
 
@@ -15,8 +15,8 @@ def no_live_analytics(monkeypatch):
     def fail(*args, **kwargs):
         calls.append(1)
         raise AssertionError('UI tests must not fetch live analytics')
-    monkeypatch.setattr('portfolio_app.fundamentals.YahooFundamentalsProvider.fetch', fail)
-    monkeypatch.setattr('portfolio_app.risk_data.YahooRiskHistoryProvider.fetch', fail)
+    monkeypatch.setattr('portfolio_app.analytics.fundamentals.YahooFundamentalsProvider.fetch', fail)
+    monkeypatch.setattr('portfolio_app.analytics.risk_data.YahooRiskHistoryProvider.fetch', fail)
     yield
     assert not calls, 'A demo UI attempted live analytics access'
 
@@ -58,7 +58,7 @@ def test_position_presets_details_and_risk(sample_data_dir):
 
 
 def test_portfolio_analytics_uses_overview_scope_and_risk(sample_data_dir):
-    from portfolio_app.allocation import migration_preview
+    from portfolio_app.portfolio.allocation import migration_preview
     app = launch(sample_data_dir)
     activate(app, 'Overview')
     by_label(app.get('button_group'), 'Overview view').set_value('Analytics').run()
@@ -97,11 +97,11 @@ def test_portfolio_analytics_uses_overview_scope_and_risk(sample_data_dir):
 
 
 def test_private_fee_edit_roundtrip_in_invented_workspace(tmp_path):
-    from portfolio_app.fundamentals import load_fee_overrides
+    from portfolio_app.analytics.fundamentals import load_fee_overrides
     (tmp_path / 'holdings.csv').write_text('id,name,ticker,isin,shares,instrument_type\nf,Invented fund,FFF,,1,etf\n')
     script = ('from pathlib import Path\n'
-              'from portfolio_app.positions import read_snapshot\n'
-              'from portfolio_app.position_metrics_ui import render_instrument_metrics\n'
+              'from portfolio_app.portfolio.positions import read_snapshot\n'
+              'from portfolio_app.interface.views.analytics.position_metrics_ui import render_instrument_metrics\n'
               f'p = Path({str(tmp_path / "holdings.csv")!r})\n'
               'render_instrument_metrics(read_snapshot(p).holdings.iloc[0], p.parent, demo=True)\n')
     app = AppTest.from_string(script).run()
@@ -119,13 +119,13 @@ def test_private_fee_edit_roundtrip_in_invented_workspace(tmp_path):
 
 
 def test_fundamental_fetch_deduplicates_account_rows(tmp_path, monkeypatch):
-    from portfolio_app.fundamentals import Fundamentals
+    from portfolio_app.analytics.fundamentals import Fundamentals
     (tmp_path / 'holdings.csv').write_text('id,name,ticker,shares,account\na,Invented A,AAA,1,First\na,Invented A,AAA,2,Second\n')
     calls = []
     def fetch(self, ticker):
         calls.append(ticker)
         return Fundamentals(ticker, 'equity')
-    monkeypatch.setattr('portfolio_app.fundamentals.YahooFundamentalsProvider.fetch', fetch)
+    monkeypatch.setattr('portfolio_app.analytics.fundamentals.YahooFundamentalsProvider.fetch', fetch)
     snapshots = load_metrics(load_holdings(tmp_path / 'holdings.csv'), tmp_path)
     assert calls == ['AAA']
     assert set(snapshots) == {'a'}
@@ -135,8 +135,8 @@ def test_fundamental_fetch_deduplicates_account_rows(tmp_path, monkeypatch):
 def test_partial_integrated_risk_shows_metrics_and_visible_exclusions(scoped):
     script = '''
 import pandas as pd
-from portfolio_app.risk import risk_analytics
-from portfolio_app.portfolio_analytics_ui import render_risk_dashboard
+from portfolio_app.analytics.risk import risk_analytics
+from portfolio_app.interface.views.analytics.portfolio_analytics_ui import render_risk_dashboard
 dates = pd.date_range('2023-01-06', periods=131, freq='W-FRI')
 prices = pd.Series([100 * (1.001 ** i) * (1.01 if i % 2 else 1) for i in range(131)], index=dates)
 held = pd.DataFrame(dict(id=['covered', 'new'], name=['Invented established share', 'Invented recent share'],
@@ -166,10 +166,10 @@ def test_workspace_switch_resets_analytics_options(tmp_path, sample_data_dir):
     second = tmp_path / 'second-demo'
     shutil.copytree(sample_data_dir, second)
     script = ('from pathlib import Path\nimport streamlit as st\n'
-              'from portfolio_app.holdings import load_holdings\n'
-              'from portfolio_app.prices import PriceService, StaticProvider\n'
-              'from portfolio_app.portfolio import prepare_portfolio\n'
-              'from portfolio_app.portfolio_analytics_ui import render_portfolio_analytics\n'
+              'from portfolio_app.portfolio.holdings import load_holdings\n'
+              'from portfolio_app.market.prices import PriceService, StaticProvider\n'
+              'from portfolio_app.portfolio.portfolio import prepare_portfolio\n'
+              'from portfolio_app.interface.views.analytics.portfolio_analytics_ui import render_portfolio_analytics\n'
               f'directories = [Path({str(sample_data_dir)!r}), Path({str(second)!r})]\n'
               'index = st.selectbox("Test workspace", [0, 1])\n'
               'p = directories[index]\n'
@@ -188,8 +188,8 @@ def test_heatmap_omits_undefined_cash_but_preserves_risk_and_fx_cash(cash_only):
     script = '''
 import numpy as np
 import pandas as pd
-from portfolio_app.risk import risk_analytics
-from portfolio_app.portfolio_analytics_ui import render_risk_dashboard
+from portfolio_app.analytics.risk import risk_analytics
+from portfolio_app.interface.views.analytics.portfolio_analytics_ui import render_risk_dashboard
 cash_only = CASH_ONLY
 dates = pd.date_range('2023-01-06', periods=131, freq='W-FRI')
 prices = pd.Series(100 * np.cumprod(1 + .01 * np.sin(np.arange(131))), index=dates)

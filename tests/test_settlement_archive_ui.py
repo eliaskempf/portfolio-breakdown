@@ -3,10 +3,10 @@ from dataclasses import replace
 
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app import account_journal as ledger
-from portfolio_app.settlement_archive import SettlementArchive
-from portfolio_app.settlement_archive_ui import settlement_notices
-from portfolio_app.settlement_collection import scan_dates, read_status
+from portfolio_app.ledger import account_journal as ledger
+from portfolio_app.derivatives.settlement_archive import SettlementArchive
+from portfolio_app.interface.views.derivatives.settlement_archive_ui import settlement_notices
+from portfolio_app.derivatives.settlement_collection import scan_dates, read_status
 from test_settlement_collection import workspace, quote
 from test_ui import by_label
 
@@ -27,8 +27,8 @@ def test_review_source_revision_retains_journal_and_unread_identity(tmp_path):
     assert settlement_notices(tmp_path,journal)[1]==identity
     app=AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.account_journal import load_journal
-from portfolio_app.settlement_archive_ui import render_history_checks
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.interface.views.derivatives.settlement_archive_ui import render_history_checks
 root=Path({str(tmp_path)!r})
 journal,_=load_journal(root)
 render_history_checks(root,journal,['p'],key='test_')
@@ -46,7 +46,7 @@ render_history_checks(root,journal,['p'],key='test_')
 
 def test_manual_scan_resolves_persisted_gap_without_resetting_automatic_schedule(tmp_path):
     journal,contract=workspace(tmp_path)
-    from portfolio_app.holdings import DataError
+    from portfolio_app.portfolio.holdings import DataError
     def unavailable(*_):raise DataError('Invented unavailable date')
     scan_dates(tmp_path,contract,['2026-01-05'],fetch=unavailable)
     assert 'unavailable' in settlement_notices(tmp_path,journal)[0][0]

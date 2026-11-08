@@ -5,11 +5,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.analytics_service import load_risk
-from portfolio_app.leverage_settings import FundFactor, LeverageSettings, save_leverage_settings
-from portfolio_app.risk import native_future_weekly_returns, risk_analytics, weekly_returns
-from portfolio_app.risk_data import AdjustedHistory
-from portfolio_app.study_market import QualifiedHistory
+from portfolio_app.analytics.analytics_service import load_risk
+from portfolio_app.funds.leverage_settings import FundFactor, LeverageSettings, save_leverage_settings
+from portfolio_app.analytics.risk import native_future_weekly_returns, risk_analytics, weekly_returns
+from portfolio_app.analytics.risk_data import AdjustedHistory
+from portfolio_app.studies.study_market import QualifiedHistory
 from test_risk import history, market, TODAY
 
 

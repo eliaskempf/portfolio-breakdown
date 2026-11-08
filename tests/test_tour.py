@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from portfolio_app.demo import create_demo_data
+from portfolio_app.demo_data.demo import create_demo_data
 from portfolio_app.settings import state_path
-from portfolio_app.tour import dismissed, save_dismissal
-from portfolio_app.tour_steps import STEPS
+from portfolio_app.interface.views.onboarding.tour import dismissed, save_dismissal
+from portfolio_app.interface.views.onboarding.tour_steps import STEPS
 from test_startup import launch_workspaces
 from test_onboarding_ui import add_category
 from test_ui import activate, by_label
@@ -158,7 +158,7 @@ def test_not_now_is_remembered_but_help_still_replays(tmp_path):
 @pytest.mark.parametrize('currency', ['USD', 'GBP'])
 @pytest.mark.parametrize('start_demo', [False, True])
 def test_tour_restores_currency_and_saved_plan(tmp_path, currency, start_demo):
-    from portfolio_app.portfolio_settings import load_settings, save_settings
+    from portfolio_app.portfolio.portfolio_settings import load_settings, save_settings
     personal = create_demo_data(tmp_path / 'invented-personal')
     demo = create_demo_data(tmp_path / 'demo')
     original = demo if start_demo else personal
@@ -188,7 +188,7 @@ def test_unwritable_preference_still_restores_workspace(tmp_path, monkeypatch):
     start(app)
     def fail():
         raise OSError('Injected write failure')
-    monkeypatch.setattr('portfolio_app.tour.save_dismissal', fail)
+    monkeypatch.setattr('portfolio_app.interface.views.onboarding.tour.save_dismissal', fail)
     click(app, 'Skip tour')
     assert 'tour_step' not in app.session_state.to_dict()
     assert any('Could not save' in item.value for item in app.caption)
@@ -210,8 +210,8 @@ def test_missing_corrupt_and_atomic_preference(tmp_path):
 
 def test_demo_invitation_waits_until_overview_is_ready(tmp_path, monkeypatch):
     pending = True
-    monkeypatch.setattr('portfolio_app.ui.live_demo_pending', lambda directory: pending)
-    monkeypatch.setattr('portfolio_app.ui.initialize_live_demo', lambda *args: False)
+    monkeypatch.setattr('portfolio_app.interface.ui.live_demo_pending', lambda directory: pending)
+    monkeypatch.setattr('portfolio_app.interface.ui.initialize_live_demo', lambda *args: False)
     app = launch_workspaces(tmp_path / 'personal', create_demo_data(tmp_path / 'demo'))
     click(app, 'Explore demo')
     assert 'tour_welcome' not in app.session_state.to_dict()
@@ -232,15 +232,15 @@ def test_closed_first_position_ignores_delayed_valuation_callback(tmp_path, monk
     callback = app.session_state._state._state._new_widget_state.widget_metadata[radio.proto.id].callback
     click(app, 'Finish later')
     closed_state = {}
-    monkeypatch.setattr('portfolio_app.position_ui.st.session_state', closed_state)
+    monkeypatch.setattr('portfolio_app.interface.views.positions.position_ui.st.session_state', closed_state)
     callback()
     assert closed_state == {}
 
 
 def test_monitoring_tour_saves_acknowledges_and_restores_original_draft(tmp_path, monkeypatch):
-    from portfolio_app.monitoring import Rule, SeriesSpec, Evaluation
-    from portfolio_app.monitoring_store import load_monitoring, save_rule, record_evaluations
-    from portfolio_app.monitoring_service import monitoring_for
+    from portfolio_app.monitoring.monitoring import Rule, SeriesSpec, Evaluation
+    from portfolio_app.monitoring.monitoring_store import load_monitoring, save_rule, record_evaluations
+    from portfolio_app.monitoring.monitoring_service import monitoring_for
     original = create_demo_data(tmp_path / 'invented-original')
     rule = Rule('original-example', 'Invented original rule', series=SeriesSpec('INVENTED'))
     save_rule(original, rule)
@@ -281,7 +281,7 @@ def test_monitoring_tour_saves_acknowledges_and_restores_original_draft(tmp_path
 
 
 def test_monitoring_tour_rejects_non_tour_workspace(tmp_path):
-    from portfolio_app.tour_monitoring import prepare_step
+    from portfolio_app.interface.views.onboarding.tour_monitoring import prepare_step
     directory = create_demo_data(tmp_path / 'invented-non-tour')
     before = tree_bytes(directory)
     with pytest.raises(ValueError, match='own synthetic workspace'):
@@ -292,9 +292,9 @@ def test_monitoring_tour_rejects_non_tour_workspace(tmp_path):
 def test_tour_monitoring_completion_uses_canonical_workspace(tmp_path, monkeypatch):
     from threading import Event
     from types import SimpleNamespace
-    from portfolio_app import monitoring_service, tour
-    from portfolio_app.market_data import RequestCoordinator
-    from portfolio_app.monitoring import SeriesSpec
+    from portfolio_app.monitoring import monitoring_service; from portfolio_app.interface.views.onboarding import tour
+    from portfolio_app.market.market_data import RequestCoordinator
+    from portfolio_app.monitoring.monitoring import SeriesSpec
 
     # A noncanonical temporary root exercises the same identity mismatch as
     # Windows short names and symlinked temp roots, without requiring symlinks.

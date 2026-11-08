@@ -4,12 +4,12 @@ from datetime import date
 
 import pytest
 
-from portfolio_app.account_journal import Account, Event, Journal, PositionSpec
-from portfolio_app.derivative_market import make_contract
-from portfolio_app.history_observations import HistoryScope, Observation, ObservationStore
-from portfolio_app.history_valuation import price_at
-from portfolio_app.history_view import history_view
-from portfolio_app.personal_performance import calculate_history, value_at
+from portfolio_app.ledger.account_journal import Account, Event, Journal, PositionSpec
+from portfolio_app.derivatives.derivative_market import make_contract
+from portfolio_app.performance.history_observations import HistoryScope, Observation, ObservationStore
+from portfolio_app.performance.history_valuation import price_at
+from portfolio_app.performance.history_view import history_view
+from portfolio_app.performance.personal_performance import calculate_history, value_at
 
 
 def example():

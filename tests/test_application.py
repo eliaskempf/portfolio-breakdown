@@ -7,10 +7,10 @@ import pandas as pd
 
 from portfolio_app.application import (PortfolioInputs, historical_for, load_leverage_context,
     prepare_application, prepare_exposure, select_price_service)
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_workspace import SANDBOX_FILE
-from portfolio_app.holdings import parse_holdings
-from portfolio_app.positions import HoldingsSnapshot
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.studies.futures_workspace import SANDBOX_FILE
+from portfolio_app.portfolio.holdings import parse_holdings
+from portfolio_app.portfolio.positions import HoldingsSnapshot
 
 
 def test_currency_eligibility_gates_exposure_and_preserves_saved_records(tmp_path):
@@ -46,8 +46,8 @@ def test_offline_selection_and_preparation_never_request_live_services(tmp_path)
 
 
 def test_refresh_is_explicit_and_target_preparation_preserves_input_snapshot(tmp_path):
-    from portfolio_app.allocation import Allocation, Bucket
-    from portfolio_app.prices import PriceService, StaticProvider
+    from portfolio_app.portfolio.allocation import Allocation, Bucket
+    from portfolio_app.market.prices import PriceService, StaticProvider
     path = tmp_path / 'invented.json'
     path.write_text(json.dumps({'prices': {'SYNTH-A': {'price': 100, 'currency': 'EUR', 'observed_at': '2026-01-01T12:00:00+00:00'}}, 'fx': {}}))
     provider = StaticProvider(path)

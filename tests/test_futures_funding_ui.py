@@ -6,10 +6,10 @@ import json
 import numpy as np
 import pandas as pd
 
-from portfolio_app.demo import create_demo_data
-from portfolio_app.futures_workspace import fork_futures_workspace, load_sandbox, save_sandbox, save_comparison
-from portfolio_app.futures_comparison import ComparisonSettings
-from portfolio_app.futures_funding_data import load_funding_settings
+from portfolio_app.demo_data.demo import create_demo_data
+from portfolio_app.studies.futures_workspace import fork_futures_workspace, load_sandbox, save_sandbox, save_comparison
+from portfolio_app.studies.futures_comparison import ComparisonSettings
+from portfolio_app.studies.futures_funding_data import load_funding_settings
 from test_futures_ui import launch, open_analysis
 from test_ui import by_label, activate
 
@@ -92,8 +92,8 @@ def test_changed_source_and_invalid_inputs_never_silently_reuse_results(tmp_path
 
 
 def test_external_settings_change_requires_reload(tmp_path):
-    from portfolio_app.futures_funding import FundingPolicy, FundingStudy
-    from portfolio_app.futures_funding_data import save_funding_settings
+    from portfolio_app.studies.futures_funding import FundingPolicy, FundingStudy
+    from portfolio_app.studies.futures_funding_data import save_funding_settings
     sandbox = synthetic_funding_workspace(tmp_path)
     app = enter_study(launch(sandbox))
     other = FundingStudy(1200., FundingPolicy(800.), (FundingPolicy(500.),))

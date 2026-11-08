@@ -6,10 +6,10 @@ import json
 import pandas as pd
 import pytest
 
-from portfolio_app.history import HistoryResult, HistoryService, YahooHistoryProvider
-from portfolio_app.instruments import InstrumentSearch
-from portfolio_app.prices import PriceService, Quote, YahooProvider
-from portfolio_app.valuation import value_holdings
+from portfolio_app.market.history import HistoryResult, HistoryService, YahooHistoryProvider
+from portfolio_app.market.instruments import InstrumentSearch
+from portfolio_app.market.prices import PriceService, Quote, YahooProvider
+from portfolio_app.portfolio.valuation import value_holdings
 
 
 @pytest.mark.parametrize('offline', [False, True])
@@ -18,7 +18,7 @@ def test_overnight_isin_offers_verified_eur_listings_not_bad_feed(tmp_path, monk
         if offline:
             raise OSError('Invented outage')
         return SimpleNamespace(quotes=[dict(symbol='0E2B.IL', quoteType='ETF', shortname='Invented stale listing')])
-    monkeypatch.setattr('portfolio_app.instruments.yf.Search', search)
+    monkeypatch.setattr('portfolio_app.market.instruments.yf.Search', search)
     found = InstrumentSearch(tmp_path).search('LU1190417599')
     assert [x.ticker for x in found] == ['CSH2.PA', 'SMART.MI']
     assert all(x.isin == 'LU1190417599' and x.currency == 'EUR' for x in found)

@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from portfolio_app.history import HistoryResult, HistoryService
-from portfolio_app.msci_history import MarketHistoryProvider, parse_levels
+from portfolio_app.market.history import HistoryResult, HistoryService
+from portfolio_app.market.msci_history import MarketHistoryProvider, parse_levels
 
 
 def payload(currency='EUR'):

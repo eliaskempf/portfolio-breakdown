@@ -6,14 +6,14 @@ import math
 import pandas as pd
 import pytest
 
-from portfolio_app.account_journal import Account, Event, Journal
-from portfolio_app.history_observations import (
+from portfolio_app.ledger.account_journal import Account, Event, Journal
+from portfolio_app.performance.history_observations import (
     HistoryScope, Observation, ObservationStore, CoverageReview, rate,
     add_observation, load_observations, save_observations,
 )
-from portfolio_app.personal_performance import calculate_history, value_at, external_flows, ExternalFlow, xirr
-from portfolio_app.security_history import SecurityBook, SecurityEvent as E, history_fingerprint
-from portfolio_app.personal_market import as_traded_prices
+from portfolio_app.performance.personal_performance import calculate_history, value_at, external_flows, ExternalFlow, xirr
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent as E, history_fingerprint
+from portfolio_app.performance.personal_market import as_traded_prices
 
 
 def journal():
@@ -148,8 +148,8 @@ def test_account_transfer_and_borrowing_do_not_become_portfolio_contributions():
 
 
 def test_futures_settlement_moves_pnl_to_cash_without_creating_contributions():
-    from portfolio_app.account_journal import PositionSpec
-    from portfolio_app.derivative_types import ContractSpec
+    from portfolio_app.ledger.account_journal import PositionSpec
+    from portfolio_app.derivatives.derivative_types import ContractSpec
     contract=ContractSpec('SYNTH','2025-03-20','EUR',D(10),D('.5'))
     j=Journal(accounts=(Account('a','Invented'),),contracts=(contract,),positions=(PositionSpec('future','a',contract.id),),
         events=(Event('cash','2024-01-01','cash_open','a','EUR',D(1000)),
@@ -204,5 +204,5 @@ def test_external_security_transfer_is_contribution_without_fabricating_purchase
     j=Journal(version=2,securities=(b,));scope=HistoryScope(('holding',))
     flows,reasons=external_flows(j,scope,ObservationStore(),'2024-01-01','2024-03-01','EUR')
     assert not reasons and flows[0].amount==50
-    from portfolio_app.security_history import replay_securities
+    from portfolio_app.ledger.security_history import replay_securities
     assert replay_securities((b,)).positions['holding'].costs[0]['amount']==''

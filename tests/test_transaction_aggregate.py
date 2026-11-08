@@ -4,13 +4,13 @@ from decimal import Decimal as D
 
 import pytest
 
-from portfolio_app.account_journal import Journal, journal_from_dict, journal_to_dict
-from portfolio_app.history_observations import ObservationStore
-from portfolio_app.holdings import DataError, parse_holdings
-from portfolio_app.security_history import replay_securities, selected_events
-from portfolio_app.transaction_evidence import asset_movement_totals, compare_asset_changes, link_transfer_deductions, recorded_asset_changes
-from portfolio_app.csv_transaction_imports import prepare_import
-from portfolio_app.transaction_csv import normalize
+from portfolio_app.ledger.account_journal import Journal, journal_from_dict, journal_to_dict
+from portfolio_app.performance.history_observations import ObservationStore
+from portfolio_app.portfolio.holdings import DataError, parse_holdings
+from portfolio_app.ledger.security_history import replay_securities, selected_events
+from portfolio_app.ledger.transaction_evidence import asset_movement_totals, compare_asset_changes, link_transfer_deductions, recorded_asset_changes
+from portfolio_app.ingestion.csv_transaction_imports import prepare_import
+from portfolio_app.ingestion.transaction_csv import normalize
 
 
 def row(identity, kind, **kwargs):
@@ -145,7 +145,7 @@ def test_unknown_asset_fee_still_blocks_without_proven_deduction():
 
 
 def test_undated_units_and_conflicting_rows_do_not_get_invented_dates():
-    from portfolio_app.transaction_csv import normalize
+    from portfolio_app.ingestion.transaction_csv import normalize
     base=row('undated','inventory_in',flow_classification='unresolved')
     undated=normalize({**base.facts,'timestamp_utc':''})
     assert asset_movement_totals([undated])[0]['known_unit_change']=='2'

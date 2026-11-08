@@ -3,9 +3,9 @@ from dataclasses import replace
 from decimal import Decimal as D
 import pytest
 
-from portfolio_app.account_journal import Account, Event, Journal, replay, journal_from_dict, journal_to_dict
-from portfolio_app.holdings import DataError, parse_holdings
-from portfolio_app.security_history import SecurityBook, SecurityEvent as E, Charge, replay_securities, effective_holdings
+from portfolio_app.ledger.account_journal import Account, Event, Journal, replay, journal_from_dict, journal_to_dict
+from portfolio_app.portfolio.holdings import DataError, parse_holdings
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent as E, Charge, replay_securities, effective_holdings
 
 
 def book(*events, account=''):
@@ -18,7 +18,7 @@ def opening(quantity='10', cost='80'):
 
 
 def test_duplicate_candidates_distinguish_recorded_execution_times():
-    from portfolio_app.security_history import duplicate_candidates
+    from portfolio_app.ledger.security_history import duplicate_candidates
     first = E('first', 'asset_fee', '2024-02-01', quantity=D('0.01'),
               timestamp_utc='2024-02-01T08:00:00Z')
     later = replace(first, id='later', sequence=1, timestamp_utc='2024-02-01T09:00:00Z')
@@ -29,7 +29,7 @@ def test_duplicate_candidates_distinguish_recorded_execution_times():
 
 @pytest.mark.parametrize('timestamp_first', [False, True])
 def test_duplicate_candidates_still_match_date_only_and_timestamped_evidence(timestamp_first):
-    from portfolio_app.security_history import duplicate_candidates
+    from portfolio_app.ledger.security_history import duplicate_candidates
     manual = E('manual', 'buy', '2024-02-01', quantity=D(2), amount=D(20), currency='EUR')
     imported = replace(manual, id='imported', timestamp_utc='2024-02-01T08:00:00Z')
     events = (imported, manual) if timestamp_first else (manual, imported)
@@ -118,7 +118,7 @@ def test_closed_position_and_reopening_keep_evidence_and_new_lot_cost():
 
 
 def test_corrected_trade_preserves_pending_receipt_reference():
-    from portfolio_app.security_history import append_evidence
+    from portfolio_app.ledger.security_history import append_evidence
     b=book(opening(),E('buy','buy','2024-02-01',quantity=D(1),price=D(10),currency='EUR',charges_known=True,value_date='2024-02-03'),account='a')
     j=Journal(version=2,accounts=(Account('a','Invented'),),securities=(b,),events=(
         Event('cash','2024-01-01','cash_open','a','EUR',D(100)),

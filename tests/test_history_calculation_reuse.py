@@ -6,20 +6,20 @@ from decimal import Decimal as D
 import pandas as pd
 import pytest
 
-from portfolio_app.account_journal import Journal
-from portfolio_app.allocation import Allocation, Bucket
-from portfolio_app.gain_accounting import current_component_values, summarize_known_gain
-from portfolio_app.gain_comparison import known_category_performance
-from portfolio_app.gain_components import security_gain_components
-from portfolio_app.history_observations import HistoryScope, Observation, ObservationStore
-from portfolio_app.history_view import history_view
-from portfolio_app.personal_performance import HistoryCalculation
+from portfolio_app.ledger.account_journal import Journal
+from portfolio_app.portfolio.allocation import Allocation, Bucket
+from portfolio_app.performance.gain_accounting import current_component_values, summarize_known_gain
+from portfolio_app.performance.gain_comparison import known_category_performance
+from portfolio_app.performance.gain_components import security_gain_components
+from portfolio_app.performance.history_observations import HistoryScope, Observation, ObservationStore
+from portfolio_app.performance.history_view import history_view
+from portfolio_app.performance.personal_performance import HistoryCalculation
 from test_gain_accounting import book, observations, START, END, E
 from test_history_account_reuse import mixed_journal
 
 
 def test_account_flow_event_resolution_is_once_per_snapshot(monkeypatch):
-    import portfolio_app.personal_performance as module
+    import portfolio_app.performance.personal_performance as module
     journal = mixed_journal()
     original, calls = module.effective_events, []
     def counted(value):
@@ -34,7 +34,7 @@ def test_account_flow_event_resolution_is_once_per_snapshot(monkeypatch):
 
 
 def test_standalone_negative_equity_scan_reuses_its_calculation(monkeypatch):
-    import portfolio_app.personal_performance as module
+    import portfolio_app.performance.personal_performance as module
     journal = Journal(version=2, securities=(book(E('opening', 'opening', START, quantity=1, amount=10, currency='EUR')),))
     scope = HistoryScope(('stock',))
     obs = observations(journal, scope, [('stock', START, 10), ('stock', END, 12)])
@@ -55,8 +55,8 @@ def test_unrelated_fx_does_not_add_chart_points_or_missing_prices():
 
 
 def test_fx_dates_include_foreign_account_cash_and_inverse_rates():
-    from portfolio_app.account_journal import Account, Event
-    from portfolio_app.history_valuation import scope_observations
+    from portfolio_app.ledger.account_journal import Account, Event
+    from portfolio_app.performance.history_valuation import scope_observations
     journal = Journal(accounts=(Account('a', 'Invented'),), events=(Event('open', START, 'cash_open', account_id='a', currency='USD', amount=100),))
     scope = HistoryScope(accounts=('a',))
     obs = ObservationStore((Observation('direct', 'fx', 'USD/EUR', START, '.9', 'USD', target='EUR'),
@@ -66,7 +66,7 @@ def test_fx_dates_include_foreign_account_cash_and_inverse_rates():
 
 
 def test_chart_current_gain_and_categories_share_ledgers_but_not_valuation_basis(monkeypatch):
-    import portfolio_app.personal_performance as performance
+    import portfolio_app.performance.personal_performance as performance
     journal = Journal(version=2, securities=(
         book(E('first', 'opening', START, quantity=10, amount=100, currency='EUR')),
         book(E('second', 'opening', START, quantity=5, amount=50, currency='EUR'), identity='other')))
@@ -103,7 +103,7 @@ def test_chart_current_gain_and_categories_share_ledgers_but_not_valuation_basis
 
 @pytest.mark.parametrize('target', ['EUR', 'USD'])
 def test_recorded_gain_reuse_preserves_fee_dates_corrections_unknowns_and_daily_values(monkeypatch, target):
-    import portfolio_app.gain_components as module
+    import portfolio_app.performance.gain_components as module
     journal = mixed_journal()
     obs = ObservationStore(tuple(
         Observation(f'p{day}', 'price', 'invented-stock', f'2026-01-{day:02}', D(10+day), 'EUR')
@@ -143,8 +143,8 @@ def test_recorded_gain_reuse_preserves_fee_dates_corrections_unknowns_and_daily_
 @pytest.mark.parametrize('target', ['EUR', 'USD'])
 @pytest.mark.parametrize('account_scope', [False, True])
 def test_flow_reuse_matches_fresh_intervals_with_opening_day_and_unknown_fx(target, account_scope):
-    from portfolio_app.account_journal import Event
-    from portfolio_app.personal_performance import external_flows
+    from portfolio_app.ledger.account_journal import Event
+    from portfolio_app.performance.personal_performance import external_flows
     journal = mixed_journal()
     journal = replace(journal, events=(*journal.events,
         Event('initial-funding', '2026-01-01', 'cash_flow', 'broker', 'EUR', D(20)),
@@ -160,7 +160,7 @@ def test_flow_reuse_matches_fresh_intervals_with_opening_day_and_unknown_fx(targ
 
 
 def test_daily_price_changes_do_not_rebuild_unchanged_flows(monkeypatch):
-    import portfolio_app.personal_performance as module
+    import portfolio_app.performance.personal_performance as module
     journal = mixed_journal()
     calculation = HistoryCalculation(journal, ObservationStore())
     scope = HistoryScope(('invented-stock',))
@@ -178,7 +178,7 @@ def test_daily_price_changes_do_not_rebuild_unchanged_flows(monkeypatch):
 
 def test_dense_flow_conversion_and_retention_are_linear(monkeypatch):
     from datetime import timedelta
-    import portfolio_app.personal_performance as module
+    import portfolio_app.performance.personal_performance as module
     start = date(2024, 1, 1)
     events = [E('zero', 'opening', start.isoformat())]
     events += [E(f'purchase-{i}', 'buy', (start+timedelta(days=i)).isoformat(),
@@ -203,8 +203,8 @@ def test_dense_flow_conversion_and_retention_are_linear(monkeypatch):
 
 
 def test_future_flow_fx_conflicts_and_nonflow_issues_do_not_leak_into_early_interval():
-    from portfolio_app.personal_performance import external_flows
-    from portfolio_app.holdings import DataError
+    from portfolio_app.performance.personal_performance import external_flows
+    from portfolio_app.portfolio.holdings import DataError
     events = (E('zero','opening','2024-01-01'),
         E('buy','buy','2024-01-02',quantity=1,amount=10,currency='EUR',charges_known=True),
         E('unknown-origin','inventory_in','2024-01-03',quantity=1,flow_classification='unresolved'),
@@ -222,7 +222,7 @@ def test_future_flow_fx_conflicts_and_nonflow_issues_do_not_leak_into_early_inte
 
 
 def test_category_comparison_does_not_calculate_unused_annualized_returns(monkeypatch):
-    import portfolio_app.personal_performance as performance
+    import portfolio_app.performance.personal_performance as performance
     journal = Journal(version=2, securities=(book(E('opening', 'opening', START,
                                                         quantity=10, amount=100, currency='EUR')),))
     scope = HistoryScope(('stock',))

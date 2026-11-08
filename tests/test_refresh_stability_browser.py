@@ -3,9 +3,9 @@ from dataclasses import replace
 from datetime import timedelta
 
 from browser_support import settle
-from portfolio_app.futures_quotes import record_result
-from portfolio_app.derivative_types import PriceObservation
-from portfolio_app.locking import write_lock
+from portfolio_app.derivatives.futures_quotes import record_result
+from portfolio_app.derivatives.derivative_types import PriceObservation
+from portfolio_app.workspace.locking import write_lock
 from test_futures_freshness_browser import futures_page, playwright, NOW
 
 

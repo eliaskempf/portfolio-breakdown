@@ -3,7 +3,7 @@ import shutil
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.label_comparison import Label
+from portfolio_app.exposure.label_comparison import Label
 from test_ui import by_label, theme_view, missing_prices
 
 
@@ -23,7 +23,7 @@ def label_data(tmp_path, sample_data_dir):
 
 def launch(path, *, show_sold=False):
     app = AppTest.from_string(
-        "from pathlib import Path\nfrom portfolio_app.ui import render_app\n"
+        "from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n"
         f"render_app(Path({str(path)!r}), demo=True)\n", default_timeout=15,
     )
     if show_sold:

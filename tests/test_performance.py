@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.performance import position_performance, summarize_performance
+from portfolio_app.performance.performance import position_performance, summarize_performance
 
 
 def positions():

@@ -5,15 +5,15 @@ from datetime import timedelta
 import pandas as pd
 import pytest
 
-from portfolio_app.actual_portfolio import journal_positions
-from portfolio_app.freshness_view import refresh_freshness
-from portfolio_app.futures_investments import investment_positions
-from portfolio_app.futures_valuation import freshness, select_valuations
-from portfolio_app.portfolio import prepare_portfolio
-from portfolio_app.positions import read_snapshot
+from portfolio_app.portfolio.actual_portfolio import journal_positions
+from portfolio_app.interface.shared.freshness_view import refresh_freshness
+from portfolio_app.derivatives.futures_investments import investment_positions
+from portfolio_app.derivatives.futures_valuation import freshness, select_valuations
+from portfolio_app.portfolio.portfolio import prepare_portfolio
+from portfolio_app.portfolio.positions import read_snapshot
 from test_futures_investments import grouped
 from test_futures_sessions import at, contract
-from portfolio_app.derivative_types import PriceObservation
+from portfolio_app.derivatives.derivative_types import PriceObservation
 
 
 @pytest.mark.parametrize('group', [False, True])

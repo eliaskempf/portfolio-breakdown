@@ -19,7 +19,7 @@ def test_tax_year_broker_selection_review_and_navigation(tmp_path):
     create_tax_sample(data)
     before = (data/'account-journal.json').read_bytes()
     app = tmp_path/'app.py'
-    app.write_text('from pathlib import Path\nfrom portfolio_app.ui import render_app\n'
+    app.write_text('from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n'
                    f'render_app(Path({str(data)!r}), demo=True, ignore_selection=True)\n')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))

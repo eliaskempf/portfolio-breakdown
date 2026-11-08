@@ -3,12 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from portfolio_app import atomic_file
-from portfolio_app.analytics_cache import atomic_json
-from portfolio_app.etf_refresh import write_json
-from portfolio_app.holdings import DataError
-from portfolio_app.positions import save_position
-from portfolio_app.storage import revision, save_document
+from portfolio_app.workspace import atomic_file
+from portfolio_app.analytics.analytics_cache import atomic_json
+from portfolio_app.funds.etf_refresh import write_json
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.portfolio.positions import save_position
+from portfolio_app.workspace.storage import revision, save_document
 
 
 def test_stage_is_closed_beside_destination_and_does_not_publish_implicitly(tmp_path):

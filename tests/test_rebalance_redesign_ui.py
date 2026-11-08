@@ -7,8 +7,8 @@ import yaml
 
 from list_helpers import list_frame
 from test_ui import activate, by_label, launch
-from portfolio_app.allocation import load_allocation
-from portfolio_app.positions import read_snapshot
+from portfolio_app.portfolio.allocation import load_allocation
+from portfolio_app.portfolio.positions import read_snapshot
 
 
 @pytest.fixture
@@ -137,7 +137,7 @@ def test_target_reassignment_remains_visible_in_draft_and_discard_restores(works
 
 
 def test_stale_target_save_keeps_external_update_and_draft(workspace, monkeypatch):
-    import portfolio_app.allocation_ui as allocation_ui
+    import portfolio_app.interface.views.portfolio.allocation_ui as allocation_ui
     app = launch(workspace, tab='Rebalance', subtab='Targets')
     edit(app, 'targets_positions_', {0: {'within_bucket_target': 75.}})
     path = workspace / 'holdings.csv'

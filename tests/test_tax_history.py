@@ -3,9 +3,9 @@ from dataclasses import replace
 from decimal import Decimal as D
 import pytest
 
-from portfolio_app.security_history import SecurityBook, SecurityEvent as E, SecurityLot
-from portfolio_app.tax_history import project_holdings
-from portfolio_app.vorabpauschale import FundInputs, calculate_fund
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent as E, SecurityLot
+from portfolio_app.taxes.tax_history import project_holdings
+from portfolio_app.taxes.vorabpauschale import FundInputs, calculate_fund
 
 
 def book(position='a', account='one', events=(), instrument='invented'):

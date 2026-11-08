@@ -1,6 +1,6 @@
 """Verify real spotlight cutouts, demo navigation, and restoration in a browser."""
 import pytest
-from portfolio_app.tour_steps import STEPS
+from portfolio_app.interface.views.onboarding.tour_steps import STEPS
 from test_intro_browser import intro_server, intro_page  # noqa: F401
 from browser_support import select_tab, settle
 

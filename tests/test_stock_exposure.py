@@ -5,9 +5,9 @@ from dataclasses import replace
 import pandas as pd
 import pytest
 
-from portfolio_app.etf import FundSnapshot, resolve_constituent_asset
-from portfolio_app.holdings import DataError, parse_holdings
-from portfolio_app.stock_exposure import stock_exposure
+from portfolio_app.funds.etf import FundSnapshot, resolve_constituent_asset
+from portfolio_app.portfolio.holdings import DataError, parse_holdings
+from portfolio_app.exposure.stock_exposure import stock_exposure
 
 
 def sources():
@@ -123,10 +123,10 @@ def test_other_instrument_type_remains_unresolved():
 
 
 def test_reviewed_receipt_link_merges_analysis_and_labels_without_changing_security():
-    from portfolio_app.etf import expand_etfs, fund_classifications, effective_exposure_table
-    from portfolio_app.exposures import normalize_exposures
-    from portfolio_app.stock_exposure import link_fund_companies
-    from portfolio_app.targets import target_exposures
+    from portfolio_app.funds.etf import expand_etfs, fund_classifications, effective_exposure_table
+    from portfolio_app.exposure.exposures import normalize_exposures
+    from portfolio_app.exposure.stock_exposure import link_fund_companies
+    from portfolio_app.portfolio.targets import target_exposures
 
     rows = sources()
     rows.loc[0, 'isin'] = 'TEST-ADR-001'
@@ -169,7 +169,7 @@ def test_reviewed_receipt_link_merges_analysis_and_labels_without_changing_secur
 
 
 def test_reviewed_links_do_not_match_names_or_reclassify_other_instruments():
-    from portfolio_app.stock_exposure import link_fund_companies
+    from portfolio_app.exposure.stock_exposure import link_fund_companies
     rows = sources()
     empty = link_fund_companies(funds(), rows, {})
     assert empty[0].constituents.company_asset_id.eq('').all()

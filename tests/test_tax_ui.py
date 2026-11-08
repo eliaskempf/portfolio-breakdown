@@ -5,12 +5,12 @@ from streamlit.testing.v1 import AppTest
 
 from tax_sample import create_tax_sample
 from test_ui import by_label, activate
-from portfolio_app.tax_evidence import load_inputs
+from portfolio_app.taxes.tax_evidence import load_inputs
 
 
 def launch(tmp_path):
     create_tax_sample(tmp_path)
-    app = AppTest.from_string('from pathlib import Path\nfrom portfolio_app.ui import render_app\n'
+    app = AppTest.from_string('from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n'
         f'render_app(Path({str(tmp_path)!r}), demo=True)', default_timeout=20).run()
     assert not app.exception
     activate(app, 'Taxes')
@@ -51,8 +51,8 @@ def test_save_review_and_forecast(tmp_path):
 
 def test_inactive_tax_view_does_not_fetch_or_calculate(tmp_path):
     create_tax_sample(tmp_path)
-    with patch('portfolio_app.tax_ui.render_taxes') as render:
-        app = AppTest.from_string('from pathlib import Path\nfrom portfolio_app.ui import render_app\n'
+    with patch('portfolio_app.interface.views.taxes.tax_ui.render_taxes') as render:
+        app = AppTest.from_string('from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n'
             f'render_app(Path({str(tmp_path)!r}), demo=True)', default_timeout=20).run()
         assert not app.exception and not render.called
 
@@ -77,15 +77,15 @@ def test_default_view_keeps_optional_inputs_out_of_main_form(tmp_path):
 
 
 def test_accumulating_funds_calculate_automatically_with_existing_metadata(tmp_path, monkeypatch):
-    from portfolio_app.fundamentals import FundFee
-    from portfolio_app.tax_evidence import save_inputs
+    from portfolio_app.analytics.fundamentals import FundFee
+    from portfolio_app.taxes.tax_evidence import save_inputs
     app = launch(tmp_path)
     raw, revision = load_inputs(tmp_path)
     for value in raw['funds'].values():
         value.pop('distribution_mode')
     save_inputs(tmp_path, raw, revision)
     policy = FundFee(.001, 'https://example.invalid/invented-policy', '2026-01-01', accumulating=True)
-    monkeypatch.setattr('portfolio_app.fundamentals.PUBLIC_FEES', dict(SYNTHETIC001=policy, SYNTHETIC002=policy))
+    monkeypatch.setattr('portfolio_app.analytics.fundamentals.PUBLIC_FEES', dict(SYNTHETIC001=policy, SYNTHETIC002=policy))
     app.run()
     assert not app.exception and not app.error
     assert by_label(app.metric, 'Vorabpauschale').value == '€560.00'

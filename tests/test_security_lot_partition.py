@@ -6,12 +6,12 @@ from fractions import Fraction as F
 
 import pytest
 
-from portfolio_app.account_journal import Journal, journal_from_dict, journal_to_dict
-from portfolio_app.cost_basis import component
-from portfolio_app.gain_components import security_gain_components
-from portfolio_app.history_observations import ObservationStore
-from portfolio_app.holdings import DataError
-from portfolio_app.security_history import SecurityLot, SecurityBook, SecurityEvent as E, Charge, _consume, replay_securities
+from portfolio_app.ledger.account_journal import Journal, journal_from_dict, journal_to_dict
+from portfolio_app.performance.cost_basis import component
+from portfolio_app.performance.gain_components import security_gain_components
+from portfolio_app.performance.history_observations import ObservationStore
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.ledger.security_history import SecurityLot, SecurityBook, SecurityEvent as E, Charge, _consume, replay_securities
 
 
 def active(*events, identity='invented'):

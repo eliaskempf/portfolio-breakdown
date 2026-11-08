@@ -1,17 +1,17 @@
 from streamlit.testing.v1 import AppTest
 import pytest
 
-from portfolio_app.holdings import load_holdings
-from portfolio_app.instruments import Instrument, catalog_search
-from portfolio_app.search_widget import SEARCH_KEY
+from portfolio_app.portfolio.holdings import load_holdings
+from portfolio_app.market.instruments import Instrument, catalog_search
+from portfolio_app.interface.shared.search_widget import SEARCH_KEY
 from test_ui import by_label, position_action
 
 
 def launch_editor(path, action='Add position', *, manual=False):
     app = AppTest.from_string(
         "from pathlib import Path\n"
-        "from portfolio_app.positions import read_snapshot\n"
-        "from portfolio_app.position_ui import render_position_editor\n"
+        "from portfolio_app.portfolio.positions import read_snapshot\n"
+        "from portfolio_app.interface.views.positions.position_ui import render_position_editor\n"
         f"path = Path({str(path)!r})\n"
         "render_position_editor(path, read_snapshot(path), [])\n"
     ).run()
@@ -41,7 +41,7 @@ def stub_search(monkeypatch):
                 return Instrument("NVDA", "NVIDIA", "NASDAQ", isin="US67066G1040", currency="USD")
             return listing
 
-    monkeypatch.setattr("portfolio_app.instrument_ui.InstrumentSearch", Search)
+    monkeypatch.setattr("portfolio_app.interface.shared.instrument_ui.InstrumentSearch", Search)
     # AppTest does not drive component JavaScript. Exercise the Python boundary
     # with native buttons; browser smoke tests cover the real live component.
     def search_box(query, groups, message, selected=""):
@@ -56,7 +56,7 @@ def stub_search(monkeypatch):
                     choice = {"query": query, "ticker": listing["ticker"]}
         return choice
 
-    monkeypatch.setattr("portfolio_app.instrument_ui.render_search_box", search_box)
+    monkeypatch.setattr("portfolio_app.interface.shared.instrument_ui.render_search_box", search_box)
     return Search
 
 
@@ -172,7 +172,7 @@ def test_search_cache_filter_and_stale_selection(monkeypatch, tmp_path):
     assert not any(item.label.startswith("Select ") for item in app.button)
     assert provider.calls == ["nvidia"]
     by_label(app.radio, "Search for").set_value("All").run()
-    monkeypatch.setattr("portfolio_app.instrument_ui.render_search_box", lambda *args: {"query": "old query", "ticker": "NVDA"})
+    monkeypatch.setattr("portfolio_app.interface.shared.instrument_ui.render_search_box", lambda *args: {"query": "old query", "ticker": "NVDA"})
     app.run()
     assert not any(item.label == "Ticker" for item in app.text_input)
 

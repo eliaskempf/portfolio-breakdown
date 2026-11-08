@@ -19,12 +19,12 @@ def test_background_completion_keeps_position_dialog_and_page_stable(tmp_path):
 from pathlib import Path
 import time
 import streamlit as st
-from portfolio_app.positions import read_snapshot
-from portfolio_app.position_ui import request_position, render_position_dialog
-from portfolio_app.history import HistoryResult
-from portfolio_app.ui import render_market_status
-from portfolio_app.market_data import coordinator
-import portfolio_app.position_detail as detail
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.interface.views.positions.position_ui import request_position, render_position_dialog
+from portfolio_app.market.history import HistoryResult
+from portfolio_app.interface.ui import render_market_status
+from portfolio_app.market.market_data import coordinator
+import portfolio_app.interface.views.positions.position_detail as detail
 root=Path(__file__).parent
 st.session_state.runs=st.session_state.get('runs',0)+1
 st.html(f'<span id="page-runs">{st.session_state.runs}</span>')

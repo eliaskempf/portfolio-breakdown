@@ -4,14 +4,14 @@ from datetime import datetime, timedelta, timezone
 import json
 
 import pytest
-from portfolio_app import account_journal as ledger
-from portfolio_app.automatic_settlements import apply_archived_settlements
-from portfolio_app.derivative_market import fetch_settlement, SettlementNotPublished, SettlementUnavailable
-from portfolio_app.futures_clock import EXCHANGE_ZONE, business_date, settlement_reference
-from portfolio_app.futures_valuation import load_valuations
-from portfolio_app.holdings import DataError
-from portfolio_app.settlement_archive import SettlementArchive
-from portfolio_app.settlement_collection import SettlementCollector, due_days, scan_dates, read_status, _save_status
+from portfolio_app.ledger import account_journal as ledger
+from portfolio_app.derivatives.automatic_settlements import apply_archived_settlements
+from portfolio_app.derivatives.derivative_market import fetch_settlement, SettlementNotPublished, SettlementUnavailable
+from portfolio_app.derivatives.futures_clock import EXCHANGE_ZONE, business_date, settlement_reference
+from portfolio_app.derivatives.futures_valuation import load_valuations
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.derivatives.settlement_archive import SettlementArchive
+from portfolio_app.derivatives.settlement_collection import SettlementCollector, due_days, scan_dates, read_status, _save_status
 from test_settlement_collection import workspace, quote, join
 
 
@@ -102,7 +102,7 @@ def test_late_old_response_retains_versions_but_not_latest_status(tmp_path):
 
 def test_weekend_has_no_new_dates_but_completed_friday_still_posts(tmp_path):
     journal,contract=workspace(tmp_path)
-    from portfolio_app.settlement_collection import tracked_contracts
+    from portfolio_app.derivatives.settlement_collection import tracked_contracts
     saturday=datetime(2026,1,10,12,tzinfo=EXCHANGE_ZONE)
     days=tracked_contracts(journal,saturday.date(),include_today=True)[contract.id][1]
     assert '2026-01-09' in days and '2026-01-10' not in days

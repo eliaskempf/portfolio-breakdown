@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from portfolio_app.history import HistoryService, normalize_history
+from portfolio_app.market.history import HistoryService, normalize_history
 
 
 def test_history_normalizes_subunits_sorts_and_rejects_missing_currency():
@@ -49,7 +49,7 @@ def test_history_cache_expiry_failure_and_manual_instruments(tmp_path):
 ])
 @pytest.mark.parametrize('target', ['EUR', 'GBP'])
 def test_daily_conversion_preserves_trading_dates_across_dst(price_offsets,fx_offsets,target):
-    from portfolio_app.history import HistoryResult, convert_price_history
+    from portfolio_app.market.history import HistoryResult, convert_price_history
     days = ('2026-03-27','2026-03-30','2026-10-23','2026-10-26')
     original = HistoryResult(tuple(f'{day}T00:00:00+{offset}' for day,offset in zip(days,price_offsets)),
                              (100.,110.,120.,130.), 'USD', 'cached')
@@ -63,7 +63,7 @@ def test_daily_conversion_preserves_trading_dates_across_dst(price_offsets,fx_of
 
 
 def test_cached_timezone_offsets_convert_without_refresh(tmp_path):
-    from portfolio_app.history import HistoryResult, convert_price_history
+    from portfolio_app.market.history import HistoryResult, convert_price_history
     class Provider:
         def history(self,*_):
             return HistoryResult(('2026-03-27T00:00:00+01:00','2026-03-30T00:00:00+02:00'),(100.,110.),'GBP','fresh')
@@ -84,8 +84,8 @@ def test_chart_renders_converted_and_native_history_across_dst(tmp_path):
     app = AppTest.from_string('''
 from pathlib import Path
 import streamlit as st
-from portfolio_app.history import HistoryResult, HistoryService
-from portfolio_app.market_history_ui import render_market_history
+from portfolio_app.market.history import HistoryResult, HistoryService
+from portfolio_app.interface.views.history.market_history_ui import render_market_history
 class InventedProvider:
     def history(self,ticker,period):
         dates=('2026-03-27T00:00:00+01:00','2026-03-30T00:00:00+02:00')

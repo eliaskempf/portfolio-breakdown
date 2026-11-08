@@ -2,8 +2,8 @@
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.display_preferences import FILE, load_preferences, save_preferences, save_overview_view
-from portfolio_app.holdings import DataError
+from portfolio_app.workspace.display_preferences import FILE, load_preferences, save_preferences, save_overview_view
+from portfolio_app.portfolio.holdings import DataError
 from test_ui import by_label
 
 
@@ -28,7 +28,7 @@ def test_settings_control_persists_and_reload_uses_saved_choice(tmp_path):
     script=f'''
 from pathlib import Path
 import streamlit as st
-from portfolio_app.calendar_ui import configure_calendar
+from portfolio_app.interface.shared.calendar_ui import configure_calendar
 configure_calendar(Path({str(tmp_path)!r}),st.container())
 '''
     app=AppTest.from_string(script).run()

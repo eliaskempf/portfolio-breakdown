@@ -6,8 +6,8 @@ from time import perf_counter
 import pytest
 import yaml
 
-from portfolio_app.futures import FuturePosition
-from portfolio_app.futures_workspace import SANDBOX_FILE
+from portfolio_app.studies.futures import FuturePosition
+from portfolio_app.studies.futures_workspace import SANDBOX_FILE
 from test_ux_browser import ux_page, playwright  # noqa: F401
 from browser_support import select_tab, settle
 

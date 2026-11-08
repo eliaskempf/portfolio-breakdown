@@ -41,11 +41,11 @@ from pathlib import Path
 from datetime import date
 import time
 import yaml
-from portfolio_app.etf import load_funds
-from portfolio_app.etf_sources import SOURCES
-from portfolio_app.etf_refresh import coordinator
-from portfolio_app.prices import PriceService, StaticProvider
-from portfolio_app.ui import render_app
+from portfolio_app.funds.etf import load_funds
+from portfolio_app.funds.etf_sources import SOURCES
+from portfolio_app.funds.etf_refresh import coordinator
+from portfolio_app.market.prices import PriceService, StaticProvider
+from portfolio_app.interface.ui import render_app
 directory = Path(__file__).parent
 SOURCES['ZZ9999999999'] = None
 def refresh(fund):

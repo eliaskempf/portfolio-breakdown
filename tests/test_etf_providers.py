@@ -8,11 +8,11 @@ from zipfile import ZipFile
 
 import pytest
 
-from portfolio_app import amundi, spdr, vanguard
-from portfolio_app.etf_discovery import Discovery, source_from_url
-from portfolio_app.etf_sources import install_snapshot, refresh_snapshot, retrieve_snapshot
-from portfolio_app.etf import fund_breakdown
-from portfolio_app.holdings import DataError
+from portfolio_app.funds.providers import amundi; from portfolio_app.funds.providers import spdr; from portfolio_app.funds.providers import vanguard
+from portfolio_app.funds.etf_discovery import Discovery, source_from_url
+from portfolio_app.funds.etf_sources import install_snapshot, refresh_snapshot, retrieve_snapshot
+from portfolio_app.funds.etf import fund_breakdown
+from portfolio_app.portfolio.holdings import DataError
 from test_etf_discovery import invented_isin
 
 FUND = invented_isin(901)

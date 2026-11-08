@@ -5,9 +5,9 @@ import json
 import pandas as pd
 import pytest
 
-from portfolio_app.derivative_market import make_contract
-from portfolio_app.holdings import DataError
-from portfolio_app.study_market import (QualifiedHistory, RateHistory, benchmark_history,
+from portfolio_app.derivatives.derivative_market import make_contract
+from portfolio_app.portfolio.holdings import DataError
+from portfolio_app.studies.study_market import (QualifiedHistory, RateHistory, benchmark_history,
     manual_rate_history, parse_benchmark_history, translate_history, validate_history_for_contract)
 
 

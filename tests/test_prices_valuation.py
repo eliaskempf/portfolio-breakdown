@@ -2,8 +2,8 @@ from datetime import timedelta
 import pandas as pd
 import pytest
 
-from portfolio_app.prices import PriceService, Quote, YahooProvider
-from portfolio_app.valuation import portfolio_weights, value_holdings
+from portfolio_app.market.prices import PriceService, Quote, YahooProvider
+from portfolio_app.portfolio.valuation import portfolio_weights, value_holdings
 
 
 class CountingProvider:

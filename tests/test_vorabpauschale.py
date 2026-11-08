@@ -2,9 +2,9 @@
 from decimal import Decimal as D
 import pytest
 
-from portfolio_app.vorabpauschale import (FundInputs, TaxLot, calculate_fund, estimate_tax,
+from portfolio_app.taxes.vorabpauschale import (FundInputs, TaxLot, calculate_fund, estimate_tax,
                                          RULES, number)
-from portfolio_app.holdings import DataError
+from portfolio_app.portfolio.holdings import DataError
 
 
 def run(start='100', end='110', distribution='0', month=1, qty='100', year=2025, exemption='0'):

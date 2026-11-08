@@ -4,15 +4,15 @@ from datetime import date
 
 import pytest
 
-from portfolio_app.account_journal import Journal, load_journal, save_journal
-from portfolio_app.history_commands import book_for, save_history
-from portfolio_app.history_observations import (
+from portfolio_app.ledger.account_journal import Journal, load_journal, save_journal
+from portfolio_app.ledger.history_commands import book_for, save_history
+from portfolio_app.performance.history_observations import (
     CoverageReview, HistoryScope, Observation, ObservationStore, load_observations, save_observations,
 )
-from portfolio_app.history_view import history_view
-from portfolio_app.personal_performance import calculate_history
-from portfolio_app.positions import read_snapshot
-from portfolio_app.security_history import HistoryReview, SecurityEvent as E, effective_holdings
+from portfolio_app.performance.history_view import history_view
+from portfolio_app.performance.personal_performance import calculate_history
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.ledger.security_history import HistoryReview, SecurityEvent as E, effective_holdings
 
 
 def applied_position(directory):

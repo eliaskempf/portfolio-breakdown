@@ -1,7 +1,7 @@
 """Review, cancel and conflicting writes using invented account facts."""
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app import account_journal as ledger
+from portfolio_app.ledger import account_journal as ledger
 from test_actual_portfolio import invented
 from test_ui import by_label
 
@@ -9,8 +9,8 @@ from test_ui import by_label
 def launch_activity(directory):
     return AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.account_journal import load_journal
-from portfolio_app.account_activity_ui import render_activity
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.interface.views.history.account_activity_ui import render_activity
 directory = Path({str(directory)!r})
 journal, revision = load_journal(directory)
 render_activity(directory, journal, revision, key='accounts_activity_')

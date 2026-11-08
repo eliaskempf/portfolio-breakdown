@@ -6,9 +6,9 @@ from types import SimpleNamespace
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from portfolio_app.derivative_market import CATALOG, make_contract
-from portfolio_app.futures_chart_reference import reference_for
-from portfolio_app.history import HistoryResult
+from portfolio_app.derivatives.derivative_market import CATALOG, make_contract
+from portfolio_app.derivatives.futures_chart_reference import reference_for
+from portfolio_app.market.history import HistoryResult
 from test_ui import by_label
 
 
@@ -32,14 +32,14 @@ def start_chart(tmp_path, monkeypatch, *, product='FMWN', currency='EUR', status
         values = (.9, .91) if ticker == 'USDEUR=X' else (1.2, 1.21) if ticker == 'GBPEUR=X' else (100., 110.)
         return HistoryResult(('2026-01-02','2026-01-03'), values, denomination, status,
                              '2026-01-04', 'Synthetic saved history' if status=='stale' else '')
-    monkeypatch.setattr('portfolio_app.market_history_ui.history_for',
+    monkeypatch.setattr('portfolio_app.interface.views.history.market_history_ui.history_for',
                         lambda _: SimpleNamespace(get=get, pending=lambda *args: False))
     app=AppTest.from_string(f'''
 from pathlib import Path
 from dataclasses import replace
 import streamlit as st
-from portfolio_app.derivative_market import make_contract
-from portfolio_app.futures_chart_ui import render_futures_chart
+from portfolio_app.derivatives.derivative_market import make_contract
+from portfolio_app.interface.views.derivatives.futures_chart_ui import render_futures_chart
 st.session_state['reporting_currency']={currency!r}
 st.session_state['position_edit_dialog']=True
 contract=make_contract({product!r},'2027-03-19')
@@ -91,10 +91,10 @@ def test_wrong_source_currency_is_not_silently_relabelled(tmp_path, monkeypatch)
 
 
 def test_unknown_contract_requires_explicit_reference_and_preserves_journal(tmp_path, monkeypatch):
-    from portfolio_app.account_journal import load_journal
+    from portfolio_app.ledger.account_journal import load_journal
     from test_investment_dialog import start
     calls=[]
-    monkeypatch.setattr('portfolio_app.market_history_ui.history_for', lambda _: SimpleNamespace(
+    monkeypatch.setattr('portfolio_app.interface.views.history.market_history_ui.history_for', lambda _: SimpleNamespace(
         get=lambda ticker,period,**kwargs: (calls.append(ticker) or HistoryResult(
             ('2026-01-02','2026-01-03'),(100.,101.),'EUR','fresh','2026-01-04')),
         pending=lambda *args:False))
@@ -113,12 +113,12 @@ def test_unknown_contract_requires_explicit_reference_and_preserves_journal(tmp_
 
 
 def test_different_contract_markets_are_not_spliced(tmp_path, monkeypatch):
-    monkeypatch.setattr('portfolio_app.market_history_ui.history_for',lambda _:SimpleNamespace(
+    monkeypatch.setattr('portfolio_app.interface.views.history.market_history_ui.history_for',lambda _:SimpleNamespace(
         get=lambda *a,**kw:HistoryResult(note='Synthetic unavailable history'),pending=lambda *a:False))
     app=AppTest.from_string(f'''
 from pathlib import Path
-from portfolio_app.derivative_market import make_contract
-from portfolio_app.futures_chart_ui import render_futures_chart
+from portfolio_app.derivatives.derivative_market import make_contract
+from portfolio_app.interface.views.derivatives.futures_chart_ui import render_futures_chart
 render_futures_chart(Path({str(tmp_path)!r}), [make_contract(code,'2027-03-19') for code in ['FDAX','FTUK']], key='mixed_')
 ''').run()
     assert not app.exception

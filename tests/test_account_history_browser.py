@@ -1,7 +1,7 @@
 """Account history navigation uses applied records without confirmation controls."""
 from browser_support import settle, select_tab
-from portfolio_app.account_journal import load_journal
-from portfolio_app.history_observations import load_observations
+from portfolio_app.ledger.account_journal import load_journal
+from portfolio_app.performance.history_observations import load_observations
 from test_futures_freshness_browser import futures_page, playwright  # noqa: F401
 
 

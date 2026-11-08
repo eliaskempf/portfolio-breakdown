@@ -1,19 +1,19 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.aggregation import aggregate, aggregate_dimension, classify_exposures
-from portfolio_app.charts import bar_chart, hierarchy_chart, pie_chart, sort_allocation_nodes
-from portfolio_app.exposures import normalize_exposures
-from portfolio_app.filtering import filter_holdings
-from portfolio_app.valuation import portfolio_weights
+from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension, classify_exposures
+from portfolio_app.interface.shared.charts import bar_chart, hierarchy_chart, pie_chart, sort_allocation_nodes
+from portfolio_app.exposure.exposures import normalize_exposures
+from portfolio_app.portfolio.filtering import filter_holdings
+from portfolio_app.portfolio.valuation import portfolio_weights
 
 
 def test_shared_bond_leaf_conserves_both_funds_despite_provider_names():
     from datetime import date
-    from portfolio_app.etf import FundSnapshot
-    from portfolio_app.company_merges import build_plan, MergeSettings
-    from portfolio_app.exposure_analysis import prepare_exposures
-    from portfolio_app.holdings import parse_holdings
+    from portfolio_app.funds.etf import FundSnapshot
+    from portfolio_app.exposure.company_merges import build_plan, MergeSettings
+    from portfolio_app.exposure.exposure_analysis import prepare_exposures
+    from portfolio_app.portfolio.holdings import parse_holdings
     holdings = parse_holdings('id,name,shares,account,position_key,ticker,isin,instrument_type\n'
         'f1,Invented bond fund one,1,Desk,f1,F1,XX0000000001,etf\n'
         'f2,Invented bond fund two,1,Desk,f2,F2,XX0000000002,etf\n')

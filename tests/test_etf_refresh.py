@@ -7,9 +7,9 @@ import pandas as pd
 import pytest
 import yaml
 
-from portfolio_app.etf import load_funds
-from portfolio_app.etf_refresh import RefreshCoordinator, due, preferences, read_json, save_preferences
-from portfolio_app.etf_sources import SOURCES
+from portfolio_app.funds.etf import load_funds
+from portfolio_app.funds.etf_refresh import RefreshCoordinator, due, preferences, read_json, save_preferences
+from portfolio_app.funds.etf_sources import SOURCES
 
 
 @pytest.fixture
@@ -113,14 +113,14 @@ def test_refresh_import_does_not_require_unix_fcntl():
     # Simulate the absent Unix module without changing platform identity or
     # reading a workspace. Native Windows lock behavior is checked in CI.
     result = subprocess.run([sys.executable, '-c',
-        "import sys; sys.modules['fcntl'] = None; import portfolio_app.etf_refresh"],
+        "import sys; sys.modules['fcntl'] = None; import portfolio_app.funds.etf_refresh"],
         capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize('old_status', ['failed', 'unavailable'])
 def test_old_adapter_failure_retries_immediately_then_uses_short_backoff(refresh_workspace, old_status):
-    from portfolio_app.etf_refresh import ADAPTER_REVISION, write_json
+    from portfolio_app.funds.etf_refresh import ADAPTER_REVISION, write_json
     path, holdings, funds = refresh_workspace
     now = [datetime(2026, 1, 10, tzinfo=timezone.utc)]
     status_path = path / '.cache/etf-refresh/status.json'
@@ -149,9 +149,9 @@ def test_old_adapter_failure_retries_immediately_then_uses_short_backoff(refresh
 
 
 def test_recent_unavailable_discovery_recovers_without_manual_refresh(tmp_path):
-    from portfolio_app.etf_refresh import write_json
-    from portfolio_app.etf_discovery import Discovery
-    from portfolio_app.etf_sources import install_snapshot
+    from portfolio_app.funds.etf_refresh import write_json
+    from portfolio_app.funds.etf_discovery import Discovery
+    from portfolio_app.funds.etf_sources import install_snapshot
     from test_etf_discovery import Provider, FUND
     now = datetime(2026, 1, 3, tzinfo=timezone.utc)
     holdings = pd.DataFrame([dict(isin=FUND, shares=1., name='Invented fund')])
@@ -171,7 +171,7 @@ def test_recent_unavailable_discovery_recovers_without_manual_refresh(tmp_path):
 @pytest.mark.parametrize('failure', ['serialize', 'write', 'replace'])
 def test_status_write_failure_preserves_destination_and_removes_temporary(tmp_path, monkeypatch, failure):
     from pathlib import Path
-    from portfolio_app import etf_refresh
+    from portfolio_app.funds import etf_refresh
     path = tmp_path / 'status.json'
     path.write_text('{"invented": "original"}')
     if failure == 'write':

@@ -2,9 +2,9 @@
 from datetime import date
 from decimal import Decimal
 
-from portfolio_app.account_journal import InvestmentSpec, load_journal, replay, save_journal
-from portfolio_app.futures_investments import assign_investment
-from portfolio_app.investment_ui import investment_review_rows
+from portfolio_app.ledger.account_journal import InvestmentSpec, load_journal, replay, save_journal
+from portfolio_app.derivatives.futures_investments import assign_investment
+from portfolio_app.interface.views.derivatives.investment_ui import investment_review_rows
 from test_accounts_ui import launch_actual
 from test_actual_portfolio import invented
 from test_ui import activate, by_label

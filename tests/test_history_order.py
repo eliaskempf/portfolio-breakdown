@@ -4,13 +4,13 @@ from decimal import Decimal as D
 
 import pytest
 
-from portfolio_app.account_journal import Journal, journal_from_dict, journal_to_dict
-from portfolio_app.csv_transaction_imports import prepare_import
-from portfolio_app.history_commands import preview_activation, reconstruction_candidate
-from portfolio_app.history_order import OrderReviewRequired, apply_order, validate_order
-from portfolio_app.holdings import parse_holdings
-from portfolio_app.security_history import SecurityBook, SecurityEvent, selected_events, replay_securities
-from portfolio_app.transaction_csv import read_csv, normalize, ImportReceipt
+from portfolio_app.ledger.account_journal import Journal, journal_from_dict, journal_to_dict
+from portfolio_app.ingestion.csv_transaction_imports import prepare_import
+from portfolio_app.ledger.history_commands import preview_activation, reconstruction_candidate
+from portfolio_app.ledger.history_order import OrderReviewRequired, apply_order, validate_order
+from portfolio_app.portfolio.holdings import parse_holdings
+from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent, selected_events, replay_securities
+from portfolio_app.ingestion.transaction_csv import read_csv, normalize, ImportReceipt
 
 
 def source_row():
@@ -26,7 +26,7 @@ def baseline_for(book):
 
 
 def mixed():
-    from portfolio_app.csv_transaction_imports import event_for
+    from portfolio_app.ingestion.csv_transaction_imports import event_for
     buy = event_for(source_row(), {('Desk','INV'):'p'})
     sale = SecurityEvent('pdf-sale', 'sell', buy.date, 5400000000,
         quantity=1, amount=15, currency='EUR', charges_known=True,
@@ -117,7 +117,7 @@ def test_order_review_controls_recover_from_duplicate_ranks(tmp_path):
     button(app,'Use reviewed order').click().run()
     assert not app.exception
     button(app,'Apply history').click().run()
-    from portfolio_app.account_journal import load_journal
+    from portfolio_app.ledger.account_journal import load_journal
     journal = load_journal(tmp_path)[0]
     assert next(iter(replay_securities(journal.securities).positions.values())).quantity == 1
 
@@ -150,7 +150,7 @@ def test_colliding_balance_boundaries_require_distinct_end_of_day_order():
 
 
 def test_date_edit_drops_clock_domain_without_inventing_a_timestamp():
-    from portfolio_app.history_commands import correct_transaction
+    from portfolio_app.ledger.history_commands import correct_transaction
     book,buy,_ = mixed()
     edited = correct_transaction(book,buy.id,date='2024-01-03').records[-1]
     assert edited.timestamp_utc == edited.order_domain == edited.order_time == ''
@@ -159,7 +159,7 @@ def test_date_edit_drops_clock_domain_without_inventing_a_timestamp():
 
 
 def test_ordered_saved_proposals_remain_excludable():
-    from portfolio_app.history_order import editable_order_ids, original_order_ids
+    from portfolio_app.ledger.history_order import editable_order_ids, original_order_ids
     book,buy,sale = mixed()
     baseline = baseline_for(book)
     candidate = reconstruction_candidate(book,(buy.id,sale.id),starts_at_zero=True)

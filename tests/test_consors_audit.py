@@ -4,9 +4,9 @@ from decimal import Decimal as D
 import pytest
 
 from consors_audit_fixtures import BUY, FREE, SALE, LOSS_SALE, SUPPLEMENTARY_DETAILS, TAX_PAGE, TAX_INFORMATION, LEGACY, COMPANY_FOOTER, DOCUMENT_REFERENCE, text_pdf, cell_pdf, with_margin_reference
-from portfolio_app.consors_pdf import parse_consors_pdf, _parse_rows
-from portfolio_app.transaction_imports import as_event, draft_problems
-from portfolio_app.account_journal import Journal
+from portfolio_app.ingestion.consors_pdf import parse_consors_pdf, _parse_rows
+from portfolio_app.ingestion.transaction_imports import as_event, draft_problems
+from portfolio_app.ledger.account_journal import Journal
 
 
 def blocking(draft):

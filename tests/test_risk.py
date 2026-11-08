@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.risk import eur_prices, risk_analytics, weekly_returns
-from portfolio_app.risk_data import AdjustedHistory, RiskHistoryService, YahooRiskHistoryProvider
+from portfolio_app.analytics.risk import eur_prices, risk_analytics, weekly_returns
+from portfolio_app.analytics.risk_data import AdjustedHistory, RiskHistoryService, YahooRiskHistoryProvider
 
 TODAY = date(2026, 9, 27)
 

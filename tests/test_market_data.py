@@ -6,9 +6,9 @@ from time import monotonic
 
 import pytest
 
-from portfolio_app.history import HistoryResult, HistoryService
-from portfolio_app.market_data import BackgroundHistory, BackgroundPrices, RequestCoordinator
-from portfolio_app.prices import PriceService, Quote
+from portfolio_app.market.history import HistoryResult, HistoryService
+from portfolio_app.market.market_data import BackgroundHistory, BackgroundPrices, RequestCoordinator
+from portfolio_app.market.prices import PriceService, Quote
 
 
 @pytest.fixture
