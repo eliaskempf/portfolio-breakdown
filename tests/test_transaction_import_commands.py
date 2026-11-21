@@ -187,21 +187,23 @@ def categorized_import(directory):
     return rows, options
 
 
-def test_new_closed_import_retains_category_and_existing_targets(tmp_path):
+@pytest.mark.parametrize('owner', ['leaf', 'root'])
+def test_new_closed_import_retains_category_and_existing_targets(tmp_path, owner):
     rows, options = categorized_import(tmp_path)
+    options['additions'][0]['bucket_id'] = owner
     before = read_snapshot(tmp_path/'holdings.csv').holdings.iloc[0]
     result = save_transaction_import(tmp_path, rows, {('Portfolio','AUR'):'closed'}, **options)
     holdings = effective_holdings(read_snapshot(tmp_path/'holdings.csv').holdings, result.journal.securities).set_index('position_id')
     assert holdings.loc['closed', 'shares'] == 0
-    assert holdings.loc['closed', 'bucket_id'] == 'leaf'
+    assert holdings.loc['closed', 'bucket_id'] == owner
     assert holdings.loc['closed', 'instrument_type'] == 'equity'
     assert holdings.loc['existing', 'bucket_id'] == before.bucket_id
     assert holdings.loc['existing', 'within_bucket_target'] == before.within_bucket_target
     assert holdings.loc['existing', 'shares'] == before.shares
 
 
-@pytest.mark.parametrize('change', ['revision', 'removed', 'parent'])
-def test_changed_or_nonleaf_category_blocks_atomic_application(tmp_path, change):
+@pytest.mark.parametrize('change', ['revision', 'removed'])
+def test_changed_or_missing_category_blocks_atomic_application(tmp_path, change):
     from portfolio_app.workspace.storage import revision
     rows, options = categorized_import(tmp_path)
     before = (tmp_path/'holdings.csv').read_bytes()
@@ -210,8 +212,8 @@ def test_changed_or_nonleaf_category_blocks_atomic_application(tmp_path, change)
         path.write_text(path.read_text().replace('Invented category', 'Renamed category'))
     else:
         options['expected_allocation_revision'] = revision(tmp_path/'allocation.yaml')
-        options['additions'][0]['bucket_id'] = 'missing' if change == 'removed' else 'root'
-    with pytest.raises(DataError, match='Categories or targets changed|existing leaf buckets'):
+        options['additions'][0]['bucket_id'] = 'missing'
+    with pytest.raises(DataError, match='Categories or targets changed|existing categories'):
         save_transaction_import(tmp_path, rows, {('Portfolio','AUR'):'closed'}, **options)
     assert (tmp_path/'holdings.csv').read_bytes() == before
     assert not (tmp_path/'account-journal.json').exists()
