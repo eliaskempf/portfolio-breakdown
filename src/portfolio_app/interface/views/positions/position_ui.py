@@ -7,6 +7,8 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from portfolio_app.interface.shared.render_sections import render_sections
+
 from portfolio_app.interface.views.positions.position_entry_ui import holding_amounts, purchase_rows
 from portfolio_app.portfolio.purchases import save_purchase_batch, read_opening
 from portfolio_app.portfolio.position_entry import compact_decimal, decimal_input
@@ -424,8 +426,8 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         pending_rows = st.session_state.pop('position_edit_pending_purchases', None)
         if pending_rows is not None:
             st.session_state.setdefault('view_editor_drafts', {})[prefix + 'purchase_editor'] = pending_rows
-    # Keep following fields/actions at stable element paths when search collapses.
-    with st.container(key='position_entry_search'):
+    sections = render_sections('position_entry_', 'search', 'fields', 'actions')
+    with sections['search']:
         if not editing and not identity and not physical:
             search_open = st.session_state.setdefault(prefix + 'search_open', True)
             manual = st.session_state.get(prefix + 'manual_entry', False)
@@ -439,175 +441,176 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
                     st.session_state[prefix + 'search_open'] = True
                     st.session_state[prefix + 'manual_entry'] = False
                     st.rerun()
-    if st.session_state.get('onboarding_step') == 'position':
-        st.caption('2 of 2 · Add your first position')
-        st.write('Choose what you own, enter the quantity, and select its category. Buy-in and target details can wait.')
-    def clear_unit_amounts():
-        for field in ('shares', 'buy_in', 'total_buy_in', 'manual_price', 'from_purchases', 'trade_quantity', 'trade_price', 'trade_fees'):
-            st.session_state.pop(prefix + field, None)
-            st.session_state.get('position_draft', {}).pop(prefix + field, None)
-        for name in ('view_editor_drafts', 'view_editor_bases'):
-            st.session_state.get(name, {}).pop(prefix + 'purchase_editor', None)
-        st.session_state.pop(prefix + 'purchase_editor', None)
-        st.session_state[prefix + 'unit_changed'] = True
-    price_source = row.get('price_source', '')
-    if physical:
-        def change_valuation_method():
-            from portfolio_app.portfolio.physical_assets import GOLD_WEIGHT_UNITS
-            # A queued browser event can arrive after saving cleared the dialog.
-            if (not editing and not identity and st.session_state.get(prefix + 'valuation_method') == 'Gold spot price'
-                    and st.session_state.get(prefix + 'quantity_unit') not in GOLD_WEIGHT_UNITS):
-                st.session_state.pop(prefix + 'quantity_unit', None)
-                st.session_state.get('position_draft', {}).pop(prefix + 'quantity_unit', None)
-                clear_unit_amounts()
-        live_gold = st.radio('Valuation method', ['Gold spot price', 'Manual price'], help='Use live gold spot pricing or an optional dated manual price per unit.', horizontal=True,
-            index=0 if price_source == 'gold_spot' or not (editing or identity) else 1,
-            key=prefix + 'valuation_method', on_change=change_valuation_method) == 'Gold spot price'
-        price_source = 'gold_spot' if live_gold else ''
-    manual_entry = st.session_state.get(prefix + 'manual_entry', False)
-    name = st.session_state.get(prefix + 'name', row.get('name', ''))
-    ticker = st.session_state.get(prefix + 'ticker', row.get('ticker', ''))
-    identity_ready = bool(name) or manual_entry or physical or editing or bool(identity)
-    if identity_ready:
-        name_column, ticker_column = st.columns([3, 2]) if not physical else (st, st)
-        name = name_column.text_input('Instrument name', value=row.get('name') or ('Physical gold' if physical else ''),
-            disabled=bool(identity) and not editing, key=prefix + 'name',
-            help='Edit the name shown in your portfolio. Renaming a saved instrument applies to all its account positions.')
-        if not physical:
-            ticker = ticker_column.text_input('Ticker', value=row.get('ticker', ''),
-                disabled=bool(identity) or not manual_entry, key=prefix + 'ticker',
-                help='Exchange-qualified symbol used to retrieve prices. Use Change investment to select another listing. '
-                     'For saved holdings, use Connect live prices to review a listing change.')
-    if physical:
-        ticker, isin = '', ''
-
-    if physical:
-        from portfolio_app.portfolio.physical_assets import GOLD_WEIGHT_UNITS
-        units = list(GOLD_WEIGHT_UNITS) if live_gold else list(dict.fromkeys([*GOLD_WEIGHT_UNITS, 'units', row.get('quantity_unit') or 'troy oz']))
-        if row.get('quantity_unit') and row['quantity_unit'] not in units:
-            st.info('This holding has no supported gold weight unit. Keep manual pricing or create a gold holding with a known weight.')
-            return
-        quantity_unit = st.selectbox('Quantity unit', units, help='Unit used consistently for quantity, purchase cost and current price.', index=units.index(row.get('quantity_unit') or 'troy oz'),
-                                    disabled=editing or bool(identity), key=prefix + 'quantity_unit', on_change=clear_unit_amounts)
-        if st.session_state.get(prefix + 'unit_changed'):
-            st.caption('Unit changed. Re-enter the quantity and prices; amounts are not converted.')
-        st.caption('Enter the fine-gold weight in troy ounces, grams or kilograms. Buy-in amounts must use the selected unit.'
-                   if live_gold else 'Quantity, manual price and buy-in must use the same unit.')
-
-    amounts_slot = st.container()
-    category_column, target_column = st.columns(2)
-    bucket = ''
-    with category_column:
-        if allocation:
-            bucket_ids = ['', *sorted(allocation.descendants())]
-            bucket_names = category_labels(allocation)
-            bucket = st.selectbox('Category', bucket_ids, index=bucket_ids.index(row.get('bucket_id', '')),
-                key=prefix + 'bucket', format_func=lambda value: bucket_names.get(value, 'Unassigned'),
-                help='Category owning this holding. The position target beside it is a share of this category.')
-        else:
-            st.caption('Add categories in Rebalance → Targets.')
-    with target_column:
-        target_field = 'within_bucket_target' if allocation else 'target_allocation'
-        initial_target = _optional_number(row.get(target_field))
-        target = st.number_input('Target within category % (optional)' if allocation else 'Target allocation % (optional)',
-            min_value=0.0, max_value=100.0, value=None if initial_target is None else initial_target * 100,
-            key=prefix + 'target', help='Share of the selected category, not the whole portfolio. Blank means undecided.' if allocation else
-            'Share of the whole portfolio. Blank means undecided.')
-
-    def render_manual_price():
-        manual_price, manual_currency, manual_date = None, '', ''
-        if not physical or not live_gold:
-            with st.expander('Current valuation' if physical else 'Manual pricing', expanded=physical):
-                manual_price = st.number_input(f'Current price per {quantity_unit} (optional)' if physical else 'Manual unit price (optional)',
-                    min_value=0., value=_optional_number(row.get('manual_price')), key=prefix + 'manual_price',
-                    help='Leave blank to track quantity with an unknown value.' if physical else 'Overrides market quotes. Clear to return to provider pricing.')
-                manual_currency = st.text_input('Price currency' if physical else 'Manual price currency', help='Currency of the manually entered current unit price.',
-                                                value=row.get('manual_price_currency') or (reporting_currency() if physical else ''), key=prefix + 'manual_currency')
-                if physical:
-                    from datetime import date
-                    initial_date = date.fromisoformat(row['manual_price_date']) if row.get('manual_price_date') else date.today()
-                    manual_date = st.date_input('Price date', value=initial_date, max_value=date.today(), key=prefix + 'manual_date').isoformat()
-                else:
-                    manual_date = st.text_input('Manual price date (YYYY-MM-DD)', help='Date the manual price was observed, in year-month-day format.', value=row.get('manual_price_date', ''), key=prefix + 'manual_date')
-
-        return manual_price, manual_currency, manual_date
-
-    if physical and not live_gold:
-        manual_price, manual_currency, manual_date = render_manual_price()
-    else:
-        manual_price, manual_currency, manual_date = None, '', ''
-    snapshot_date = None
-    if not editing and not purchase:
-        from datetime import date
-        snapshot_date = st.date_input('Holding as of', value=date.today(), max_value=date.today(), key=prefix+'snapshot_date',
-            help='Date of this total holding; it is not a purchase date.')
-    from_purchases, purchases = False, []
-    with st.expander('More details'):
-        if not physical:
-            isin = st.text_input('ISIN (optional)', value=row.get('isin', ''),
-                disabled=bool(identity) or not manual_entry, key=prefix + 'isin',
-                help='Optional security identifier retained from search. Prices use the ticker, so a missing ISIN does not prevent live pricing.')
-        account = st.text_input('Storage location (optional)' if physical else 'Account / broker', value=row.get('account', ''), key=prefix + 'account',
-            help='Optional location or account label. Use separate positions for holdings in different accounts.')
-        if not physical:
-            manual_price, manual_currency, manual_date = render_manual_price()
-        if not editing and not purchase:
-            from_purchases, purchases = purchase_rows(prefix)
-        short_name = st.text_input('Short display name (optional)', help='Optional shorter label for charts and lists; the full instrument name is retained.', value=row.get('short_name', ''), key=prefix + 'short_name')
-        portfolio = st.text_input('Portfolio / sleeve', help='Optional label for grouping holdings into separate portfolios or strategies.', value=row.get('portfolio', ''), key=prefix + 'portfolio')
+    with sections['fields']:
+        if st.session_state.get('onboarding_step') == 'position':
+            st.caption('2 of 2 · Add your first position')
+            st.write('Choose what you own, enter the quantity, and select its category. Buy-in and target details can wait.')
+        def clear_unit_amounts():
+            for field in ('shares', 'buy_in', 'total_buy_in', 'manual_price', 'from_purchases', 'trade_quantity', 'trade_price', 'trade_fees'):
+                st.session_state.pop(prefix + field, None)
+                st.session_state.get('position_draft', {}).pop(prefix + field, None)
+            for name in ('view_editor_drafts', 'view_editor_bases'):
+                st.session_state.get(name, {}).pop(prefix + 'purchase_editor', None)
+            st.session_state.pop(prefix + 'purchase_editor', None)
+            st.session_state[prefix + 'unit_changed'] = True
+        price_source = row.get('price_source', '')
         if physical:
-            instrument_type, exposure_kind = 'physical', 'non_equity'
-        else:
-            kinds = ['unknown', 'equity', 'etf', 'etc', 'crypto', 'physical', 'cash', 'other']
-            instrument_type = st.selectbox('Instrument type', kinds, help='Legal or product type of the holding, separate from the assets it contains.', index=kinds.index(row.get('instrument_type')) if row.get('instrument_type') in kinds else 0, key=prefix + 'instrument_type')
-            exposure_kinds = ['unknown', 'equity', 'non_equity']
-            exposure_kind = st.selectbox('Underlying exposure', exposure_kinds, help='Leave mixed or uncertain composition unknown.',
-                                         index=exposure_kinds.index(row.get('exposure_kind')) if row.get('exposure_kind') in exposure_kinds else 0,
-                                         format_func=lambda value: {'unknown': 'Unknown / mixed', 'equity': 'Equity', 'non_equity': 'Non-equity'}[value],
-                                         key=prefix + 'exposure_kind')
-            quantity_unit = st.text_input('Quantity unit', help='Required for a manual unit price, e.g. shares or units.', value=row.get('quantity_unit', ''), key=prefix + 'quantity_unit')
-        extras = {}
-        for column in metadata_dimensions(holdings):
-            if column not in {'portfolio', 'account', 'bucket_id', 'instrument_type', 'exposure_kind'}:
-                extras[column] = st.text_input(column.replace('_', ' ').title(), help='Optional saved classification or grouping label for this position.', value=row.get(column, ''), key=prefix + 'extra_' + column)
-    with amounts_slot:
-        if purchase:
-            from portfolio_app.interface.views.positions.trade_entry_ui import trade_inputs
-            trade_event, trade_error = trade_inputs(prefix, trade_journal)
-            shares, buy_in, currency = 0, None, ''
-            amount_errors = [trade_error] if trade_error else []
-        else:
-            shares, buy_in, currency, amount_errors = holding_amounts(prefix, row, editing=editing, from_purchases=from_purchases, rows=purchases)
-    from portfolio_app.performance.cost_basis import (FIELD, active_components, aggregate_component, encode_components,
-        fingerprint, same_summary, resolve_cost)
-    from portfolio_app.interface.views.workspace.currency_ui import cost_conversion_controls, historical_for, ui_prices, render_fx_progress
-    from portfolio_app.portfolio.purchases import purchase_components, validate_purchases
-    parts, conversion_error = [], None
-    historical = None if purchase else historical_for(path.parent, demo=demo)
-    if not amount_errors and not purchase:
-        try:
-            if from_purchases:
-                parts = purchase_components(validate_purchases(purchases), currency, {}, reporting_currency=reporting_currency())
-                resolved = resolve_cost(parts, reporting_currency(), historical)
-                if resolved.amount is None:
-                    st.warning(resolved.note + ' Available current values remain included.')
-                else:
-                    st.caption(f'Combined buy-in: {resolved.amount:,.2f} {reporting_currency()} · {resolved.note or "Recorded cost"}')
-                render_fx_progress(path.parent)
+            def change_valuation_method():
+                from portfolio_app.portfolio.physical_assets import GOLD_WEIGHT_UNITS
+                # A queued browser event can arrive after saving cleared the dialog.
+                if (not editing and not identity and st.session_state.get(prefix + 'valuation_method') == 'Gold spot price'
+                        and st.session_state.get(prefix + 'quantity_unit') not in GOLD_WEIGHT_UNITS):
+                    st.session_state.pop(prefix + 'quantity_unit', None)
+                    st.session_state.get('position_draft', {}).pop(prefix + 'quantity_unit', None)
+                    clear_unit_amounts()
+            live_gold = st.radio('Valuation method', ['Gold spot price', 'Manual price'], help='Use live gold spot pricing or an optional dated manual price per unit.', horizontal=True,
+                index=0 if price_source == 'gold_spot' or not (editing or identity) else 1,
+                key=prefix + 'valuation_method', on_change=change_valuation_method) == 'Gold spot price'
+            price_source = 'gold_spot' if live_gold else ''
+        manual_entry = st.session_state.get(prefix + 'manual_entry', False)
+        name = st.session_state.get(prefix + 'name', row.get('name', ''))
+        ticker = st.session_state.get(prefix + 'ticker', row.get('ticker', ''))
+        identity_ready = bool(name) or manual_entry or physical or editing or bool(identity)
+        if identity_ready:
+            name_column, ticker_column = st.columns([3, 2]) if not physical else (st, st)
+            name = name_column.text_input('Instrument name', value=row.get('name') or ('Physical gold' if physical else ''),
+                disabled=bool(identity) and not editing, key=prefix + 'name',
+                help='Edit the name shown in your portfolio. Renaming a saved instrument applies to all its account positions.')
+            if not physical:
+                ticker = ticker_column.text_input('Ticker', value=row.get('ticker', ''),
+                    disabled=bool(identity) or not manual_entry, key=prefix + 'ticker',
+                    help='Exchange-qualified symbol used to retrieve prices. Use Change investment to select another listing. '
+                         'For saved holdings, use Connect live prices to review a listing change.')
+        if physical:
+            ticker, isin = '', ''
+
+        if physical:
+            from portfolio_app.portfolio.physical_assets import GOLD_WEIGHT_UNITS
+            units = list(GOLD_WEIGHT_UNITS) if live_gold else list(dict.fromkeys([*GOLD_WEIGHT_UNITS, 'units', row.get('quantity_unit') or 'troy oz']))
+            if row.get('quantity_unit') and row['quantity_unit'] not in units:
+                st.info('This holding has no supported gold weight unit. Keep manual pricing or create a gold holding with a known weight.')
+                return
+            quantity_unit = st.selectbox('Quantity unit', units, help='Unit used consistently for quantity, purchase cost and current price.', index=units.index(row.get('quantity_unit') or 'troy oz'),
+                                        disabled=editing or bool(identity), key=prefix + 'quantity_unit', on_change=clear_unit_amounts)
+            if st.session_state.get(prefix + 'unit_changed'):
+                st.caption('Unit changed. Re-enter the quantity and prices; amounts are not converted.')
+            st.caption('Enter the fine-gold weight in troy ounces, grams or kilograms. Buy-in amounts must use the selected unit.'
+                       if live_gold else 'Quantity, manual price and buy-in must use the same unit.')
+
+        amounts_slot = st.container()
+        category_column, target_column = st.columns(2)
+        bucket = ''
+        with category_column:
+            if allocation:
+                bucket_ids = ['', *sorted(allocation.descendants())]
+                bucket_names = category_labels(allocation)
+                bucket = st.selectbox('Category', bucket_ids, index=bucket_ids.index(row.get('bucket_id', '')),
+                    key=prefix + 'bucket', format_func=lambda value: bucket_names.get(value, 'Unassigned'),
+                    help='Category owning this holding. The position target beside it is a share of this category.')
             else:
-                cost_row = dict(shares=shares, acquisition_price=buy_in,
-                                acquisition_currency=currency if buy_in is not None else '')
-                unchanged_cost = editing and same_summary(fingerprint(row), fingerprint(cost_row))
-                parts = active_components(row) if unchanged_cost else [aggregate_component(cost_row)]
-                if len(parts) > 1:
-                    st.caption('Original purchase components are preserved. Changing quantity or buy-in replaces their active cost basis. Use Bulk add purchases to add purchases.')
-                with amounts_slot:
-                    parts = cost_conversion_controls(parts, reporting_currency(), path.parent, ui_prices(path.parent, demo),
-                        key=prefix + reporting_currency() + str(fingerprint(cost_row)) + '_conversion_', demo=demo)
-        except DataError as exc:
-            conversion_error = str(exc)
-            st.warning(conversion_error)
-    with st.container(key='position_entry_actions'):
+                st.caption('Add categories in Rebalance → Targets.')
+        with target_column:
+            target_field = 'within_bucket_target' if allocation else 'target_allocation'
+            initial_target = _optional_number(row.get(target_field))
+            target = st.number_input('Target within category % (optional)' if allocation else 'Target allocation % (optional)',
+                min_value=0.0, max_value=100.0, value=None if initial_target is None else initial_target * 100,
+                key=prefix + 'target', help='Share of the selected category, not the whole portfolio. Blank means undecided.' if allocation else
+                'Share of the whole portfolio. Blank means undecided.')
+
+        def render_manual_price():
+            manual_price, manual_currency, manual_date = None, '', ''
+            if not physical or not live_gold:
+                with st.expander('Current valuation' if physical else 'Manual pricing', expanded=physical):
+                    manual_price = st.number_input(f'Current price per {quantity_unit} (optional)' if physical else 'Manual unit price (optional)',
+                        min_value=0., value=_optional_number(row.get('manual_price')), key=prefix + 'manual_price',
+                        help='Leave blank to track quantity with an unknown value.' if physical else 'Overrides market quotes. Clear to return to provider pricing.')
+                    manual_currency = st.text_input('Price currency' if physical else 'Manual price currency', help='Currency of the manually entered current unit price.',
+                                                    value=row.get('manual_price_currency') or (reporting_currency() if physical else ''), key=prefix + 'manual_currency')
+                    if physical:
+                        from datetime import date
+                        initial_date = date.fromisoformat(row['manual_price_date']) if row.get('manual_price_date') else date.today()
+                        manual_date = st.date_input('Price date', value=initial_date, max_value=date.today(), key=prefix + 'manual_date').isoformat()
+                    else:
+                        manual_date = st.text_input('Manual price date (YYYY-MM-DD)', help='Date the manual price was observed, in year-month-day format.', value=row.get('manual_price_date', ''), key=prefix + 'manual_date')
+
+            return manual_price, manual_currency, manual_date
+
+        if physical and not live_gold:
+            manual_price, manual_currency, manual_date = render_manual_price()
+        else:
+            manual_price, manual_currency, manual_date = None, '', ''
+        snapshot_date = None
+        if not editing and not purchase:
+            from datetime import date
+            snapshot_date = st.date_input('Holding as of', value=date.today(), max_value=date.today(), key=prefix+'snapshot_date',
+                help='Date of this total holding; it is not a purchase date.')
+        from_purchases, purchases = False, []
+        with st.expander('More details'):
+            if not physical:
+                isin = st.text_input('ISIN (optional)', value=row.get('isin', ''),
+                    disabled=bool(identity) or not manual_entry, key=prefix + 'isin',
+                    help='Optional security identifier retained from search. Prices use the ticker, so a missing ISIN does not prevent live pricing.')
+            account = st.text_input('Storage location (optional)' if physical else 'Account / broker', value=row.get('account', ''), key=prefix + 'account',
+                help='Optional location or account label. Use separate positions for holdings in different accounts.')
+            if not physical:
+                manual_price, manual_currency, manual_date = render_manual_price()
+            if not editing and not purchase:
+                from_purchases, purchases = purchase_rows(prefix)
+            short_name = st.text_input('Short display name (optional)', help='Optional shorter label for charts and lists; the full instrument name is retained.', value=row.get('short_name', ''), key=prefix + 'short_name')
+            portfolio = st.text_input('Portfolio / sleeve', help='Optional label for grouping holdings into separate portfolios or strategies.', value=row.get('portfolio', ''), key=prefix + 'portfolio')
+            if physical:
+                instrument_type, exposure_kind = 'physical', 'non_equity'
+            else:
+                kinds = ['unknown', 'equity', 'etf', 'etc', 'crypto', 'physical', 'cash', 'other']
+                instrument_type = st.selectbox('Instrument type', kinds, help='Legal or product type of the holding, separate from the assets it contains.', index=kinds.index(row.get('instrument_type')) if row.get('instrument_type') in kinds else 0, key=prefix + 'instrument_type')
+                exposure_kinds = ['unknown', 'equity', 'non_equity']
+                exposure_kind = st.selectbox('Underlying exposure', exposure_kinds, help='Leave mixed or uncertain composition unknown.',
+                                             index=exposure_kinds.index(row.get('exposure_kind')) if row.get('exposure_kind') in exposure_kinds else 0,
+                                             format_func=lambda value: {'unknown': 'Unknown / mixed', 'equity': 'Equity', 'non_equity': 'Non-equity'}[value],
+                                             key=prefix + 'exposure_kind')
+                quantity_unit = st.text_input('Quantity unit', help='Required for a manual unit price, e.g. shares or units.', value=row.get('quantity_unit', ''), key=prefix + 'quantity_unit')
+            extras = {}
+            for column in metadata_dimensions(holdings):
+                if column not in {'portfolio', 'account', 'bucket_id', 'instrument_type', 'exposure_kind'}:
+                    extras[column] = st.text_input(column.replace('_', ' ').title(), help='Optional saved classification or grouping label for this position.', value=row.get(column, ''), key=prefix + 'extra_' + column)
+        with amounts_slot:
+            if purchase:
+                from portfolio_app.interface.views.positions.trade_entry_ui import trade_inputs
+                trade_event, trade_error = trade_inputs(prefix, trade_journal)
+                shares, buy_in, currency = 0, None, ''
+                amount_errors = [trade_error] if trade_error else []
+            else:
+                shares, buy_in, currency, amount_errors = holding_amounts(prefix, row, editing=editing, from_purchases=from_purchases, rows=purchases)
+        from portfolio_app.performance.cost_basis import (FIELD, active_components, aggregate_component, encode_components,
+            fingerprint, same_summary, resolve_cost)
+        from portfolio_app.interface.views.workspace.currency_ui import cost_conversion_controls, historical_for, ui_prices, render_fx_progress
+        from portfolio_app.portfolio.purchases import purchase_components, validate_purchases
+        parts, conversion_error = [], None
+        historical = None if purchase else historical_for(path.parent, demo=demo)
+        if not amount_errors and not purchase:
+            try:
+                if from_purchases:
+                    parts = purchase_components(validate_purchases(purchases), currency, {}, reporting_currency=reporting_currency())
+                    resolved = resolve_cost(parts, reporting_currency(), historical)
+                    if resolved.amount is None:
+                        st.warning(resolved.note + ' Available current values remain included.')
+                    else:
+                        st.caption(f'Combined buy-in: {resolved.amount:,.2f} {reporting_currency()} · {resolved.note or "Recorded cost"}')
+                    render_fx_progress(path.parent)
+                else:
+                    cost_row = dict(shares=shares, acquisition_price=buy_in,
+                                    acquisition_currency=currency if buy_in is not None else '')
+                    unchanged_cost = editing and same_summary(fingerprint(row), fingerprint(cost_row))
+                    parts = active_components(row) if unchanged_cost else [aggregate_component(cost_row)]
+                    if len(parts) > 1:
+                        st.caption('Original purchase components are preserved. Changing quantity or buy-in replaces their active cost basis. Use Bulk add purchases to add purchases.')
+                    with amounts_slot:
+                        parts = cost_conversion_controls(parts, reporting_currency(), path.parent, ui_prices(path.parent, demo),
+                            key=prefix + reporting_currency() + str(fingerprint(cost_row)) + '_conversion_', demo=demo)
+            except DataError as exc:
+                conversion_error = str(exc)
+                st.warning(conversion_error)
+    with sections['actions']:
         save, cancel = st.columns(2)
         submitted = save.button('Save purchase' if purchase else 'Save position', help='Save this holding and its optional purchase records together in the active workspace.', type='primary', width='stretch')
         if cancel.button('Finish later' if st.session_state.get('onboarding_step') == 'position' else 'Cancel', help='Discard this draft and leave setup without saving.', width='stretch'):

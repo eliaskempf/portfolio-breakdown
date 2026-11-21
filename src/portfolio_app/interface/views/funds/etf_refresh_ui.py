@@ -1,6 +1,8 @@
 """Lightweight status and preferences for the app-owned background updater."""
 from pathlib import Path
 import streamlit as st
+
+from portfolio_app.interface.shared.render_sections import render_sections
 from portfolio_app.interface.shared.background_ui import refresh_allowed
 
 from portfolio_app.interface.shared.display_names import compact_fund_name
@@ -51,17 +53,20 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False, show_message
             st.rerun()
         if not show_messages:
             return
+        sections = render_sections('etf_refresh_', 'progress', 'notices')
         notice = render_notice or st.caption
-        if pending:
-            notice('Discovering and updating ETF holdings · Using saved snapshots')
+        with sections['progress']:
+            if pending:
+                notice('Discovering and updating ETF holdings · Using saved snapshots')
         if not include_notices:
             return
-        parts, _ = refresh_notices(data_dir, funds)
-        if render_notice is not None:
-            for part in parts:
-                notice(part)
-        elif parts:
-            notice(' · '.join(parts))
+        with sections['notices']:
+            parts, _ = refresh_notices(data_dir, funds)
+            if render_notice is not None:
+                for part in parts:
+                    notice(part)
+            elif parts:
+                notice(' · '.join(parts))
     status()
 
 

@@ -92,6 +92,33 @@ fragments must stop writing when their captured position or view is no longer
 selected; a stale timer must not draw into a replacement view. Verify actual
 transitions with delayed synthetic data: settled screenshots alone miss old
 controls and charts briefly appearing during a switch.
+
+Streamlit streams updates at numeric element paths and retires unused elements
+at the end of a rerun. Optional messages or controls must not shift the paths of
+later content. Reserve fixed sibling sections with
+`interface.shared.render_sections.render_sections` before rendering conditional
+content. Keep the section names and order constant across loading, success,
+empty, error and retry states; keep each widget's existing key. For example:
+
+```python
+sections = render_sections(prefix, 'fields', 'preview', 'actions')
+with sections['fields']:
+    render_fields()
+with sections['preview']:
+    if preview:
+        render_preview(preview)
+with sections['actions']:
+    render_actions()
+```
+
+Allocate sections inside their owning fragment. Do not let a timer append into
+containers created by its caller. A keyed container created conditionally does
+not reserve a stable sibling path. Avoid global stale-element hiding or clearing
+whole screens on every tick: unchanged fields, focus and charts must survive
+background updates. Transition tests must observe visible element counts during
+delayed renders, in both directions, and check focus, drafts and chart identity
+where applicable; assertions made only after rendering settles miss duplicates.
+
 An explicit retry rebuilds the owning dialog's download state and polling timer;
 successful completion must update the chart without changing its period or
 leaving the view. Idle polling checks the observation-file identity before

@@ -4,6 +4,8 @@ from uuid import uuid4
 
 import streamlit as st
 
+from portfolio_app.interface.shared.render_sections import render_sections
+
 from portfolio_app.interface.shared.currency_display import reporting_currency
 from portfolio_app.ledger.account_journal import replay
 from portfolio_app.ledger.security_history import Charge, SecurityEvent, duplicate_candidates
@@ -55,52 +57,56 @@ def render_trade(directory, snapshot, journal, revision, position_id, prefix, *,
     if expected != (snapshot.revision, revision):
         st.warning('History or holdings changed. Close and reopen this form before saving.')
         return
-    event, error = trade_inputs(prefix, journal, kind=kind)
-    opening_date = ''
-    if not book.active:
-        confirmed = row.get('holdings_confirmed_on', '')
-        if confirmed:
-            opening_date = confirmed
-            st.caption(f'Existing holding: {row.shares:g} units as of {confirmed}')
-        else:
-            stamp = st.date_input('Holding as of', value=None, max_value=date.today(), key=prefix+'opening_date',
-                help='Date of the existing total, before this trade. The trade adds to or subtracts from that total. Earlier history stays unknown.')
-            opening_date = stamp.isoformat() if stamp else ''
-    accept_duplicate = False
-    if event:
-        from dataclasses import replace
-        from portfolio_app.ledger.security_history import append_evidence
-        candidate = append_evidence(book, (event,))
-        candidate = replace(candidate, active_ids=(*book.active_ids, event.id))
-        if any(event.id in pair for pair in duplicate_candidates(candidate)):
-            accept_duplicate = st.checkbox('This is a separate trade', key=prefix+'duplicate')
-        try:
-            proposed = prepare_trade(journal, snapshot.holdings, position_id, event,
-                opening_date=opening_date, accept_duplicate=accept_duplicate)
-            if book.account_id:
-                before, after = replay(journal), replay(proposed)
-                for key in sorted(set(before.cash) | set(after.cash)):
-                    if before.cash.get(key) != after.cash.get(key):
-                        value = after.cash.get(key)
-                        st.caption(f'Linked cash ({key[1]}): {"Unknown" if key in after.unknown_cash else f"{value:,.2f}"}')
-        except (DataError, ValueError) as exc:
-            error = str(exc)
-    if error and event:
-        st.caption(error)
-    if st.button('Save purchase' if kind == 'buy' else 'Save sale', type='primary', key=prefix+'save_trade'):
-        if error:
-            st.error(error)
-        else:
-            try:
-                save_trade(directory, event, position_id=position_id,
-                    expected_holdings_revision=expected[0], expected_journal_revision=expected[1],
-                    opening_date=opening_date, accept_duplicate=accept_duplicate)
-            except (DataError, OSError, ValueError) as exc:
-                st.error(str(exc))
+    sections = render_sections(prefix, 'fields', 'preview', 'actions')
+    with sections['fields']:
+        event, error = trade_inputs(prefix, journal, kind=kind)
+        opening_date = ''
+        if not book.active:
+            confirmed = row.get('holdings_confirmed_on', '')
+            if confirmed:
+                opening_date = confirmed
+                st.caption(f'Existing holding: {row.shares:g} units as of {confirmed}')
             else:
-                for key in list(st.session_state):
-                    if key.startswith(prefix):
-                        del st.session_state[key]
-                if on_saved:
-                    on_saved()
-                st.rerun()
+                stamp = st.date_input('Holding as of', value=None, max_value=date.today(), key=prefix+'opening_date',
+                    help='Date of the existing total, before this trade. The trade adds to or subtracts from that total. Earlier history stays unknown.')
+                opening_date = stamp.isoformat() if stamp else ''
+    with sections['preview']:
+        accept_duplicate = False
+        if event:
+            from dataclasses import replace
+            from portfolio_app.ledger.security_history import append_evidence
+            candidate = append_evidence(book, (event,))
+            candidate = replace(candidate, active_ids=(*book.active_ids, event.id))
+            if any(event.id in pair for pair in duplicate_candidates(candidate)):
+                accept_duplicate = st.checkbox('This is a separate trade', key=prefix+'duplicate')
+            try:
+                proposed = prepare_trade(journal, snapshot.holdings, position_id, event,
+                    opening_date=opening_date, accept_duplicate=accept_duplicate)
+                if book.account_id:
+                    before, after = replay(journal), replay(proposed)
+                    for key in sorted(set(before.cash) | set(after.cash)):
+                        if before.cash.get(key) != after.cash.get(key):
+                            value = after.cash.get(key)
+                            st.caption(f'Linked cash ({key[1]}): {"Unknown" if key in after.unknown_cash else f"{value:,.2f}"}')
+            except (DataError, ValueError) as exc:
+                error = str(exc)
+        if error and event:
+            st.caption(error)
+    with sections['actions']:
+        if st.button('Save purchase' if kind == 'buy' else 'Save sale', type='primary', key=prefix+'save_trade'):
+            if error:
+                st.error(error)
+            else:
+                try:
+                    save_trade(directory, event, position_id=position_id,
+                        expected_holdings_revision=expected[0], expected_journal_revision=expected[1],
+                        opening_date=opening_date, accept_duplicate=accept_duplicate)
+                except (DataError, OSError, ValueError) as exc:
+                    st.error(str(exc))
+                else:
+                    for key in list(st.session_state):
+                        if key.startswith(prefix):
+                            del st.session_state[key]
+                    if on_saved:
+                        on_saved()
+                    st.rerun()

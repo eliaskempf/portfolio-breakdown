@@ -4,6 +4,8 @@ from hashlib import sha256
 
 import streamlit as st
 
+from portfolio_app.interface.shared.render_sections import render_sections
+
 from portfolio_app.ledger.account_journal import load_journal
 from portfolio_app.interface.shared.currency_display import reporting_currency
 from portfolio_app.interface.shared.display_names import instrument_name
@@ -34,14 +36,17 @@ def render_history_status_list(path, snapshot, holdings, *, demo=False):
         if refresh.pending and not refresher.pending(path.parent):
             current, _ = load_journal(path.parent)
             refresh = refresher.request(path.parent, current, scope, target)
-        if refresh.pending:
-            st.caption('Loading historical prices and FX…')
-        elif refresh.errors:
-            if st.button('Retry prices', key='history_status_retry'):
-                current, _ = load_journal(path.parent)
-                refresher.request(path.parent, current, scope, target, force=True)
-                st.rerun()
-        _render_history_status_list(path, snapshot, holdings)
+        sections = render_sections('history_status_', 'refresh', 'list')
+        with sections['refresh']:
+            if refresh.pending:
+                st.caption('Loading historical prices and FX…')
+            elif refresh.errors:
+                if st.button('Retry prices', key='history_status_retry'):
+                    current, _ = load_journal(path.parent)
+                    refresher.request(path.parent, current, scope, target, force=True)
+                    st.rerun()
+        with sections['list']:
+            _render_history_status_list(path, snapshot, holdings)
     region()
 
 

@@ -6,6 +6,8 @@ from time import monotonic
 import pandas as pd
 import streamlit as st
 
+from portfolio_app.interface.shared.render_sections import render_sections
+
 from portfolio_app.market.instruments import InstrumentSearch, catalog_search, normalized_query, result_groups
 from portfolio_app.interface.shared.search_widget import SEARCH_KEY, render_search_box
 
@@ -47,54 +49,58 @@ def render_instrument_search(prefix: str, holdings: pd.DataFrame, cache_dir: Pat
         message = "No matching investments. Try another name or ticker, or enter the details below."
     else:
         message = f"{len(groups)} matching investment(s) · Select the exchange and currency you use."
-    selected = render_search_box(query, groups, message, st.session_state.get("position_edit_search_applied", ""))
-    if error and st.button("Retry search", help='Try the current query again after a provider failure.'):
-        cache.pop(cache_key, None)
-        st.rerun()
-    st.caption("Offline catalog only in demo mode." if disabled else "Live suggestions appear as you type. Only search text and selected instrument identifiers are sent to market-data providers.")
-    if selected and isinstance(selected, dict) and normalized_query(str(selected.get("query", ""))) == query:
-        listing = next((item for item in results if item.ticker == selected.get("ticker")), None)
-        if listing is not None:
-            if not disabled:
-                try:
-                    with st.spinner("Getting listing details…"):
-                        listing = InstrumentSearch(cache_dir).details(listing)
-                except Exception:
-                    pass
-            matches = holdings.loc[holdings["ticker"] == listing.ticker]
-            if not matches.empty:
+    sections = render_sections(prefix, 'search_results', 'search_retry', 'search_status', 'search_selection')
+    with sections['search_results']:
+        selected = render_search_box(query, groups, message, st.session_state.get("position_edit_search_applied", ""))
+    with sections['search_retry']:
+        if error and st.button("Retry search", help='Try the current query again after a provider failure.'):
+            cache.pop(cache_key, None)
+            st.rerun()
+    sections['search_status'].caption("Offline catalog only in demo mode." if disabled else "Live suggestions appear as you type. Only search text and selected instrument identifiers are sent to market-data providers.")
+    with sections['search_selection']:
+        if selected and isinstance(selected, dict) and normalized_query(str(selected.get("query", ""))) == query:
+            listing = next((item for item in results if item.ticker == selected.get("ticker")), None)
+            if listing is not None:
+                if not disabled:
+                    try:
+                        with st.spinner("Getting listing details…"):
+                            listing = InstrumentSearch(cache_dir).details(listing)
+                    except Exception:
+                        pass
+                matches = holdings.loc[holdings["ticker"] == listing.ticker]
+                if not matches.empty:
+                    if compact:
+                        # Reusing an existing identity must not discard this new
+                        # position's amount/account draft. Saved holdings stay untouched.
+                        fields = ('shares', 'buy_in', 'total_buy_in', 'cost_source', 'currency',
+                                  'bucket', 'target', 'account', 'portfolio', 'from_purchases',
+                                  'trade_date', 'trade_currency', 'trade_quantity', 'trade_price', 'trade_fees')
+                        st.session_state['position_edit_pending_fields'] = {
+                            field: st.session_state[prefix + field]
+                            for field in fields if prefix + field in st.session_state}
+                        rows = st.session_state.get('view_editor_drafts', {}).get(prefix + 'purchase_editor')
+                        if rows is not None:
+                            st.session_state['position_edit_pending_purchases'] = rows.copy(deep=True)
+                    st.session_state["position_edit_pending_instrument"] = matches.iloc[0]["id"]
+                    st.rerun()
+                for field in ("name", "ticker", "isin"):
+                    st.session_state[prefix + field] = getattr(listing, field)
+                st.session_state[prefix + 'instrument_type'] = {'EQUITY': 'equity', 'ETF': 'etf', 'ETC': 'etc', 'CRYPTOCURRENCY': 'crypto'}.get(listing.kind, 'unknown')
+                st.session_state[prefix + 'exposure_kind'] = {'EQUITY': 'equity', 'ETC': 'non_equity', 'CRYPTOCURRENCY': 'non_equity'}.get(listing.kind, 'unknown')
+                st.session_state["position_edit_search_applied"] = listing.ticker
+                notice = f"Selected {listing.ticker} · {listing.exchange}."
+                if listing.currency:
+                    notice += f" Trading currency: {listing.currency}."
+                if not listing.isin and not compact:
+                    notice += " ISIN unavailable; you can enter it manually."
+                st.session_state["position_edit_search_notice"] = notice
                 if compact:
-                    # Reusing an existing identity must not discard this new
-                    # position's amount/account draft. Saved holdings stay untouched.
-                    fields = ('shares', 'buy_in', 'total_buy_in', 'cost_source', 'currency',
-                              'bucket', 'target', 'account', 'portfolio', 'from_purchases',
-                              'trade_date', 'trade_currency', 'trade_quantity', 'trade_price', 'trade_fees')
+                    # Apply again when widgets mount after the full rerun. Their old
+                    # browser values and detached draft may otherwise restore blanks.
                     st.session_state['position_edit_pending_fields'] = {
                         field: st.session_state[prefix + field]
-                        for field in fields if prefix + field in st.session_state}
-                    rows = st.session_state.get('view_editor_drafts', {}).get(prefix + 'purchase_editor')
-                    if rows is not None:
-                        st.session_state['position_edit_pending_purchases'] = rows.copy(deep=True)
-                st.session_state["position_edit_pending_instrument"] = matches.iloc[0]["id"]
-                st.rerun()
-            for field in ("name", "ticker", "isin"):
-                st.session_state[prefix + field] = getattr(listing, field)
-            st.session_state[prefix + 'instrument_type'] = {'EQUITY': 'equity', 'ETF': 'etf', 'ETC': 'etc', 'CRYPTOCURRENCY': 'crypto'}.get(listing.kind, 'unknown')
-            st.session_state[prefix + 'exposure_kind'] = {'EQUITY': 'equity', 'ETC': 'non_equity', 'CRYPTOCURRENCY': 'non_equity'}.get(listing.kind, 'unknown')
-            st.session_state["position_edit_search_applied"] = listing.ticker
-            notice = f"Selected {listing.ticker} · {listing.exchange}."
-            if listing.currency:
-                notice += f" Trading currency: {listing.currency}."
-            if not listing.isin and not compact:
-                notice += " ISIN unavailable; you can enter it manually."
-            st.session_state["position_edit_search_notice"] = notice
-            if compact:
-                # Apply again when widgets mount after the full rerun. Their old
-                # browser values and detached draft may otherwise restore blanks.
-                st.session_state['position_edit_pending_fields'] = {
-                    field: st.session_state[prefix + field]
-                    for field in ('name', 'ticker', 'isin', 'instrument_type', 'exposure_kind')}
-                st.session_state[prefix + "search_open"] = False
-                st.rerun()
-    if notice := st.session_state.get("position_edit_search_notice"):
-        st.success(notice)
+                        for field in ('name', 'ticker', 'isin', 'instrument_type', 'exposure_kind')}
+                    st.session_state[prefix + "search_open"] = False
+                    st.rerun()
+        if notice := st.session_state.get("position_edit_search_notice"):
+            st.success(notice)

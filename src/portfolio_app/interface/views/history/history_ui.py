@@ -10,6 +10,8 @@ from uuid import uuid4, uuid5, NAMESPACE_URL
 import pandas as pd
 import streamlit as st
 
+from portfolio_app.interface.shared.render_sections import render_sections
+
 from portfolio_app.ledger.account_journal import load_journal
 from portfolio_app.performance.cost_basis import active_components
 from portfolio_app.portfolio.holdings import DataError
@@ -1009,7 +1011,8 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     # Keep sibling paths stable as the chart appears and loading/retry controls
     # change. Streamlit otherwise shows the new caption beside its stale copy
     # until the fragment finishes rendering.
-    plot = st.container(key=key+'plot')
+    sections = render_sections(key, 'plot', 'market_refresh_status', 'valuation_status')
+    plot = sections['plot']
     points = view.points
     if sum(p['Value'] is not None for p in points) >= 2:
         import plotly.graph_objects as go
@@ -1052,7 +1055,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     else:
         if not automatic:
             plot.caption('Load historical prices to chart your saved transactions.')
-    with st.container(key=key+'market_refresh_status'):
+    with sections['market_refresh_status']:
         if automatic:
             _automatic_history_status(directory, journal, scope, target, key, refresh)
         else:
@@ -1069,7 +1072,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     if view.missing:
         notes.append('Some valuations missing · lines connect available values')
     if notes:
-        st.caption(' · '.join(notes))
+        sections['valuation_status'].caption(' · '.join(notes))
     if include_inputs:
         _history_inputs(directory, journal, scope, observations, revision, view, target, key)
 

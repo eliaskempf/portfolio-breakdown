@@ -5,6 +5,8 @@ from dataclasses import replace
 import plotly.graph_objects as go
 import streamlit as st
 
+from portfolio_app.interface.shared.render_sections import render_sections
+
 from portfolio_app.interface.shared.charts import chart_config, style_figure, PALETTE
 from portfolio_app.interface.shared.currency_display import reporting_currency
 from portfolio_app.market.history import HistoryService, DemoHistoryProvider, PERIODS
@@ -60,18 +62,22 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
         if not completed and not any(service.pending(symbol, period) for symbol in requested):
             result, requested = read()
             completed = not any(service.pending(symbol, period) for symbol in requested)
-        _draw_history(result, index_points=index_points, compact=compact, caption=caption)
-        if not completed:
-            st.caption('Updating market-price history in the background…')
-        elif not demo and result.status in {'stale', 'unavailable'} and ticker and not manual:
-            if st.button('Retry history', key=key+'retry'):
-                service.get(ticker, period, refresh=True)
-                st.rerun()
+        sections = render_sections(key, 'market_result', 'market_refresh')
+        with sections['market_result']:
+            _draw_history(result, key=key, index_points=index_points, compact=compact, caption=caption)
+        with sections['market_refresh']:
+            if not completed:
+                st.caption('Updating market-price history in the background…')
+            elif not demo and result.status in {'stale', 'unavailable'} and ticker and not manual:
+                if st.button('Retry history', key=key+'retry'):
+                    service.get(ticker, period, refresh=True)
+                    st.rerun()
     progress()
     return result
 
 
-def _draw_history(result, *, index_points, compact, caption):
+def _draw_history(result, *, key, index_points, compact, caption):
+    sections = render_sections(key, 'market_plot', 'market_description', 'market_retrieved', 'market_note')
     if result.prices:
         units = 'Index points' if index_points else result.currency
         figure = style_figure(go.Figure(go.Scatter(x=result.dates, y=result.prices, mode='lines',
@@ -79,9 +85,9 @@ def _draw_history(result, *, index_points, compact, caption):
         figure.update_layout(height=340, yaxis_title=units, margin=dict(l=0, r=0, t=12, b=0))
         if not index_points:
             money_history_axes(figure, result.currency)
-        st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
+        sections['market_plot'].plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
         if not compact:
-            st.caption(caption.format(currency=result.currency))
-            st.caption(f'History last retrieved: {result.fetched_at}')
+            sections['market_description'].caption(caption.format(currency=result.currency))
+            sections['market_retrieved'].caption(f'History last retrieved: {result.fetched_at}')
     if result.note and (not compact or result.status not in {'fresh', 'cached'}):
-        (st.warning if result.status == 'stale' else st.info)(result.note)
+        (sections['market_note'].warning if result.status == 'stale' else sections['market_note'].info)(result.note)
