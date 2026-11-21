@@ -7,7 +7,7 @@ from threading import RLock
 import pandas as pd
 
 from portfolio_app.market.market_data import coordinator
-from portfolio_app.monitoring.monitoring import (SeriesSpec, Evaluation, condition, evaluate_series,
+from portfolio_app.monitoring.monitoring import (SeriesSpec, completed_evaluation, evaluate_series,
     evaluate_account, indicator_frame, unavailable, utc_now)
 from portfolio_app.monitoring.monitoring_market import MonitoringMarket, SyntheticMonitoringProvider
 from portfolio_app.monitoring.monitoring_store import load_monitoring, record_evaluations, rule_from_dict
@@ -52,23 +52,33 @@ class MonitoringService:
         try:
             doc, _ = load_monitoring(self.directory)
             rules = [rule_from_dict(r) for r in doc['rules'] if r['enabled']]
+            snapshots = {}
+            frames = {}
             for rule in rules:
                 try:
                     if rule.kind == 'sma':
-                        series = self.market.get(rule.series, refresh=refresh)
-                        with self.lock:
-                            series_key = json.dumps(vars(rule.series), sort_keys=True)
-                            self.series[series_key] = series
-                            self.browse_attempts[series_key] = self.now()
-                        latest = evaluate_series(rule, series, now=self.now())
+                        if rule.series not in snapshots:
+                            series = self.market.get(rule.series, refresh=refresh)
+                            snapshots[rule.series] = (series, self.now())
+                            with self.lock:
+                                series_key = json.dumps(vars(rule.series), sort_keys=True)
+                                self.series[series_key] = series
+                                self.browse_attempts[series_key] = snapshots[rule.series][1]
+                        series, now = snapshots[rule.series]
+                        key = (rule.series, rule.window, rule.comparison_window, rule.period, rule.cadence)
+                        if key not in frames and series.quality == 'valid':
+                            frames[key] = indicator_frame(rule, series, now=now)
+                        frame = frames.get(key)
+                        latest = evaluate_series(rule, series, now=now, frame=frame)
                         previous = doc['states'].get(rule.id, {}).get('last_valid', {}).get('observed_at')
-                        if rule.cadence != 'intraday' and latest.quality == 'valid' and previous:
-                            frame = indicator_frame(rule, series, now=self.now()).dropna()
+                        if rule.cadence != 'intraday' and latest.quality == 'valid' and previous and previous < latest.observed_at:
                             after = max(str(previous)[:10], rule.created_at[:10])
                             history = frame.loc[(frame.index > pd.Timestamp(after)) & (frame.index < pd.Timestamp(latest.observed_at))]
-                            recovered = [Evaluation(day.date().isoformat(), float(row.distance), float(row.sma), float(row.price),
-                                condition(float(row.distance), rule), inputs={'currency': series.currency, 'basis': rule.series.basis},
-                                note='Recovered completed-close observation; recorded after reopening.') for day, row in history.iterrows()]
+                            recovered = [
+                                completed_evaluation(rule, series, row.Index.date().isoformat(), row,
+                                    note='Recovered completed-close observation; recorded after reopening.')
+                                for row in history.dropna(subset=['distance']).itertuples()
+                            ]
                             if recovered:
                                 record_evaluations(self.directory, rule, recovered, recovered=True, now=self.now())
                         record_evaluations(self.directory, rule, [latest], now=self.now())

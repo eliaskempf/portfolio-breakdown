@@ -114,7 +114,11 @@ def render_notifications(directory, funds, revision, valued, status, *, demo=Fal
     for event in reversed(events):
         value = event['evaluation']['value']
         value_text = f'{value:,.2f}%' if value is not None else 'Undefined ratio'
-        definition = next((r for r in doc['rules'] if r['id'] == event['rule_id']), {})
+        definition = doc['definitions'][f"{event['rule_id']}:{event['revision']}"]
+        if definition.get('comparison_window') is not None:
+            from portfolio_app.monitoring.monitoring_presentation import comparison_observation
+            from portfolio_app.monitoring.monitoring_store import rule_from_dict
+            value_text = comparison_observation(rule_from_dict(definition), event['evaluation'])
         message = f"{event['condition'].title()} · {value_text} · Trigger {definition.get('threshold', '—')}%"
         if value is None and event['evaluation'].get('note'):
             message += ' · '+event['evaluation']['note']

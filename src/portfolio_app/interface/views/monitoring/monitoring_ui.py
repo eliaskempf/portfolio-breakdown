@@ -14,7 +14,7 @@ from portfolio_app.interface.shared.background_ui import refresh_allowed
 from portfolio_app.interface.shared.charts import style_figure
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.monitoring.monitoring import Rule, SeriesSpec, evaluate_series, indicator_frame, condition, utc_now
-from portfolio_app.monitoring.monitoring_presentation import observation_time, alert_details
+from portfolio_app.monitoring.monitoring_presentation import observation_time, alert_details, comparison_observation, sma_label
 from portfolio_app.monitoring.monitoring_service import monitoring_for
 from portfolio_app.monitoring.monitoring_store import (load_monitoring, rule_from_dict, save_rule, delete_rule, mark_events)
 
@@ -44,9 +44,11 @@ def describe(rule):
     if rule.kind == 'sma':
         spec = rule.series
         timing = {'daily': 'Daily close', 'monthly': 'Month-end close', 'intraday': 'Intraday observation'}[rule.cadence]
+        if rule.comparison_window is not None:
+            timing += f' · {rule.comparison_window}-session SMA'
         return (f'{spec.name or spec.symbol} · {spec.currency or "Source currency"} · {spec.convention} · '
                 f'{timing} {"at or below" if rule.direction == "below" else "at or above"} {return_percent(rule.threshold)} '
-                f'from its {rule.window}-{rule.period} SMA · {"Developing period included" if rule.developing else "Completed periods"}')
+                f'relative to the {sma_label(rule)} · {"Developing period included" if rule.developing else "Completed periods"}')
     return (f'{"LTV" if rule.kind == "ltv" else "Maintenance headroom"} '
             f'{"at or above" if rule.direction == "above" else "at or below"} {rule.threshold:g}% · {rule.currency} · User-defined limit')
 
@@ -54,7 +56,8 @@ def describe(rule):
 def _plot(rule, series, *, key='monitoring_chart_', show_condition=True, tracked=True):
     # Calculate with all source history before clipping; a display window must
     # never shorten the SMA's warm-up or change a saved rule's live evaluation.
-    frame = indicator_frame(rule, series)
+    now = utc_now()
+    frame = indicator_frame(rule, series, now=now)
     if frame.empty:
         st.info('No completed observations available.')
         return
@@ -92,14 +95,19 @@ def _plot(rule, series, *, key='monitoring_chart_', show_condition=True, tracked
         st.info(f'No observations in this period. Available history: {series.dates[0]} to {series.dates[-1]}.')
         return
     figure = go.Figure()
-    figure.add_scatter(x=display.index, y=display.price, name='Completed close', line=dict(color='#5470c6'))
-    figure.add_scatter(x=display.index, y=display.sma, name='SMA', line=dict(color='#e6a23c'))
+    pair = rule.comparison_window is not None
+    left_label = f'{rule.comparison_window}-session SMA' if pair else 'Completed close'
+    right_label = sma_label(rule) if pair else 'SMA'
+    figure.add_scatter(x=display.index, y=display.comparison_sma if pair else display.price,
+                       name=left_label, line=dict(color='#5470c6'))
+    figure.add_scatter(x=display.index, y=display.sma, name=right_label, line=dict(color='#e6a23c'))
     if show_condition:
-        figure.add_scatter(x=display.index, y=display.sma*(1+rule.threshold/100), name='Trigger boundary', line=dict(color='#cf4446', dash='dash'))
+        if not pair or rule.threshold != 0:
+            figure.add_scatter(x=display.index, y=display.sma*(1+rule.threshold/100), name='Trigger boundary', line=dict(color='#cf4446', dash='dash'))
         warning = rule.threshold + (rule.warning_band if rule.direction == 'below' else -rule.warning_band)
         if rule.warning_band:
             figure.add_scatter(x=display.index, y=display.sma*(1+warning/100), name='Approaching boundary', line=dict(color='#d3ac57', dash='dot'))
-    current = evaluate_series(rule, series)
+    current = evaluate_series(rule, series, now=now, frame=frame)
     if rule.cadence == 'intraday' and series.quote is not None and series.quote_at and start <= pd.Timestamp(series.quote_at).date() <= end:
         figure.add_scatter(x=[series.quote_at], y=[series.quote], name='Latest observation', mode='markers', marker=dict(size=10))
         if current.reference is not None:
@@ -113,19 +121,23 @@ def _plot(rule, series, *, key='monitoring_chart_', show_condition=True, tracked
     row = display.iloc[-1]
     value = row.distance if historical else current.value
     reference = row.sma if historical else current.reference
-    quality = pd.notna(row.sma) if historical else current.quality == 'valid'
-    columns = st.columns(3 if show_condition else 2)
+    quality = pd.notna(row.distance) if historical else current.quality == 'valid'
+    columns = st.columns(2 + int(pair) + int(show_condition))
     a,b = columns[:2]
     a.metric('Distance from SMA', return_percent(value) if quality else '—', help='At the final close in the selected historical period, or the latest eligible observation for a current chart.')
-    b.metric('SMA', _value(reference, ' '+series.currency) if quality else '—')
+    if pair:
+        compared = row.comparison_sma if historical else current.inputs.get('comparison_sma')
+        b.metric(left_label, _value(compared, ' '+series.currency) if quality else '—')
+    reference_column = columns[2] if pair else b
+    reference_column.metric(right_label, _value(reference, ' '+series.currency) if quality else '—')
     if show_condition:
-        columns[2].metric('Historical condition' if historical else 'Rule status' if tracked else 'Preview condition', condition(float(value),rule).title() if quality else 'Unavailable',
+        columns[-1].metric('Historical condition' if historical else 'Rule status' if tracked else 'Preview condition', condition(float(value),rule).title() if quality else 'Unavailable',
                  help='Preview and historical conditions do not create alerts. Monitoring begins only after you track the rule.')
     if historical:
         st.caption('Historical close · '+observation_time(display.index[-1].date().isoformat()))
     elif current.quality != 'valid':
         st.info(current.note)
-    if display.sma.isna().any():
+    if display.distance.isna().any():
         st.caption('SMA unavailable where the source has insufficient earlier observations.')
 
 
@@ -147,7 +159,7 @@ def _delivery(key, existing=None):
 
 def _rule_controls(key, existing=None):
     columns = st.columns([1, 1, 1])
-    direction = columns[0].selectbox('Trigger direction', ['below','above'], index=1 if existing and existing.direction == 'above' else 0, key=key+'direction')
+    direction = columns[0].selectbox('Trigger direction', ['below','above'], index=1 if existing and existing.direction == 'above' else 0, format_func=lambda x: 'At or '+x, key=key+'direction')
     a,b = columns[1:]
     threshold = a.number_input('Distance from SMA trigger (%)', value=float(existing.threshold) if existing else None, step=.5, key=key+'threshold', placeholder='Enter a threshold to create a rule', help='Leave empty to explore prices and SMA without rule bands. Negative values are below the SMA. Equality triggers the alert.')
     warning = b.number_input('Approaching band (percentage points)', min_value=0., value=float(existing.warning_band) if existing else 1., step=.5, key=key+'warning', disabled=threshold is None, help='Distance before the trigger, in percentage points. For a ▼ 2% trigger and a 1 pp band, approaching begins at ▼ 1%.')
@@ -197,25 +209,36 @@ def _browse(directory, holdings, *, demo=False, existing=None):
                 return
     reference = KNOWN_REFERENCES.get(symbol)
     basis_options = ['close'] if reference else ['close', 'adjusted']
-    basis_column, preset_column, cadence_column = st.columns(3)
+    comparison_column, basis_column, preset_column, cadence_column = st.columns(4)
+    mode = comparison_column.selectbox('Comparison', ['Price vs. SMA', 'SMA vs. SMA'],
+        index=int(bool(existing and existing.comparison_window is not None)), key=key+'comparison')
+    pair = mode == 'SMA vs. SMA'
     basis = basis_column.selectbox('Price basis', basis_options, index=basis_options.index(existing.series.basis) if existing else 0,
                          format_func=lambda x: 'Published index levels' if reference else 'Closing prices (split adjusted)' if x == 'close' else 'Dividend-adjusted history', key=key+'basis_'+('index' if reference else 'market'), help='Indices use their published return convention. Closing prices include provider split adjustments; dividend-adjusted history is a separate choice.')
     spec = SeriesSpec(symbol, reference.name if reference else name,
         reference.currency if reference else existing.series.currency if existing else '', basis,
         reference.source if reference else 'Yahoo Finance', reference.convention if reference else 'Dividend adjusted' if basis == 'adjusted' else 'Closing price')
-    preset = preset_column.selectbox('SMA preset', ['200 sessions', '10 months', 'Custom'], index=2 if existing else 0, key=key+'preset')
-    if preset == 'Custom':
-        a,b = st.columns(2)
-        period_options = ['sessions','months']
-        period = a.selectbox('SMA periods', period_options,
-            index=period_options.index(existing.period) if existing else 0, key=key+'period_Custom')
-        window = int(b.number_input('SMA window', min_value=2, max_value=1000,
-            value=existing.window if existing else 200, step=1, key=key+'window_Custom'))
+    comparison_window = None
+    if pair:
+        comparison_window = preset_column.number_input('Comparison SMA (sessions)', 2, 1000,
+            value=existing.comparison_window if existing and existing.comparison_window else 5, key=key+'comparison_window')
+        window = cadence_column.number_input('Reference SMA (sessions)', 2, 1000,
+            value=existing.window if existing and existing.period == 'sessions' else 200, key=key+'reference_window')
+        period, cadence = 'sessions', 'daily'
     else:
-        period, window = ('months',10) if preset == '10 months' else ('sessions',200)
-    cadences = ['daily', 'monthly'] + ([] if symbol.startswith('MSCI:') else ['intraday'])
-    cadence = cadence_column.selectbox('Evaluate on', cadences, index=cadences.index(existing.cadence) if existing else 0,
-        format_func=lambda x: {'daily':'Completed daily close', 'monthly':'Completed month-end close', 'intraday':'Latest intraday observation'}[x], key=key+'cadence_'+('msci' if symbol.startswith('MSCI:') else 'market'), help='Daily and month-end decisions use completed closes. Direct MSCI references supply daily levels only.')
+        preset = preset_column.selectbox('SMA preset', ['200 sessions', '10 months', 'Custom'], index=2 if existing else 0, key=key+'preset')
+        if preset == 'Custom':
+            a,b = st.columns(2)
+            period_options = ['sessions','months']
+            period = a.selectbox('SMA periods', period_options,
+                index=period_options.index(existing.period) if existing else 0, key=key+'period_Custom')
+            window = int(b.number_input('SMA window', min_value=2, max_value=1000,
+                value=existing.window if existing else 200, step=1, key=key+'window_Custom'))
+        else:
+            period, window = ('months',10) if preset == '10 months' else ('sessions',200)
+        cadences = ['daily', 'monthly'] + ([] if symbol.startswith('MSCI:') else ['intraday'])
+        cadence = cadence_column.selectbox('Evaluate on', cadences, index=cadences.index(existing.cadence) if existing else 0,
+            format_func=lambda x: {'daily':'Completed daily close', 'monthly':'Completed month-end close', 'intraday':'Latest intraday observation'}[x], key=key+'cadence_'+('msci' if symbol.startswith('MSCI:') else 'market'), help='Daily and month-end decisions use completed closes. Direct MSCI references supply daily levels only.')
     with st.container(key='tour_monitoring_condition'):
         direction, threshold, warning = _rule_controls(key, existing)
     if not existing:
@@ -230,7 +253,10 @@ def _browse(directory, holdings, *, demo=False, existing=None):
     refresh = refresh_slot.button('Refresh market data', key=key+'refresh',
         help='Refresh the selected instrument’s prices and history. This does not check saved rules.')
     series = service.browse(spec, refresh=refresh)
-    rule = Rule(existing.id if existing else uuid4().hex, existing.name if existing else f'{spec.name or symbol} SMA {window}',
+    default_name = existing.name if existing else f'{spec.name or symbol} SMA {window}'
+    if pair and not existing:
+        default_name = f'{spec.name or symbol} SMA {comparison_window} vs. {window}'
+    rule = Rule(existing.id if existing else uuid4().hex, default_name, comparison_window=comparison_window,
         series=spec, window=window, period=period, cadence=cadence, developing=developing,
         # The calculation definition needs a finite threshold. This placeholder
         # is never shown as a condition or saved while the draft is incomplete.
@@ -240,7 +266,14 @@ def _browse(directory, holdings, *, demo=False, existing=None):
         rule = replace(rule, series=spec)
     with st.container(key='tour_monitoring_save'):
         name_slot, delivery_slot, save_slot = st.columns([3,2,1.3], vertical_alignment='bottom')
-        name_input = name_slot.text_input('Rule name', value=existing.name if existing else f'{spec.name or symbol} SMA {window}', key=key+'name_'+sha256(symbol.encode()).hexdigest()[:10])
+        name_key = key+'name_'+sha256((symbol+mode).encode()).hexdigest()[:10]
+        previous_suggestion = st.session_state.get(key+'suggested_name')
+        if name_key not in st.session_state or (
+            previous_suggestion != default_name and st.session_state[name_key] == previous_suggestion
+        ):
+            st.session_state[name_key] = default_name
+        st.session_state[key+'suggested_name'] = default_name
+        name_input = name_slot.text_input('Rule name', key=name_key)
         with delivery_slot:
             delivery = _delivery(key, existing)
         if save_slot.button('Save changes' if existing else 'Track rule', key=key+'save', type='primary', width='stretch',
@@ -510,6 +543,9 @@ def _monitoring_banners(doc):
             status = state['condition']
             latest = state.get('last_valid', {})
             message = f"{raw['name']} · {status.title()} · {return_percent(latest.get('value')) if raw['kind'] == 'sma' else _value(latest.get('value'))} · observed {latest.get('observed_at','—')}"
+            if raw.get('comparison_window') is not None:
+                observed = comparison_observation(rule_from_dict(raw), latest)
+                message = f"{raw['name']} · {status.title()} · {observed} · observed {latest['observed_at']}"
             if latest.get('value') is None and latest.get('note'):
                 message += ' · '+latest['note']
             if state.get('quality') != 'valid':
@@ -566,8 +602,11 @@ def render_alert_event(directory, rule, event, *, review=None):
         if rule.kind == 'sma':
             st.write(f'{rule.series.source} · {rule.series.currency} · {rule.series.convention}')
             a,b = st.columns(2)
-            a.metric('Observed price', _value(evaluation.get('price'), ' '+rule.series.currency))
-            b.metric('SMA', _value(evaluation.get('reference'), ' '+rule.series.currency))
+            if rule.comparison_window is None:
+                a.metric('Observed price', _value(evaluation.get('price'), ' '+rule.series.currency))
+            else:
+                a.metric(f'{rule.comparison_window}-session SMA', _value(evaluation['inputs']['comparison_sma'], ' '+rule.series.currency))
+            b.metric(sma_label(rule), _value(evaluation.get('reference'), ' '+rule.series.currency))
         else:
             st.write('Recorded account inputs · '+rule.currency)
         if evaluation.get('note'):

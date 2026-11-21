@@ -148,3 +148,53 @@ def test_account_cached_fallback_cannot_clear_trigger_and_manual_refresh_retries
     assert calls==[False,True]
     assert state['quality']=='stale' and state['condition']=='triggered'
     assert state['last_valid']['value']==60
+
+
+def test_two_sma_entry_exit_reuse_and_recover_observations(tmp_path, monkeypatch):
+    from portfolio_app.monitoring import monitoring_service
+    from portfolio_app.monitoring.monitoring_presentation import alert_details
+
+    exit_rule = rule(comparison_window=2, threshold=0, warning_band=0)
+    entry_rule = replace(exit_rule, id='entry', direction='above')
+    save_rule(tmp_path, exit_rule)
+    save_rule(tmp_path, entry_rule)
+    dates = ('2026-10-02', '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09')
+    closes = (110., 100., 90., 120., 120., 60.)
+    series = history(closes[:3], dates[:3])
+    calls = []
+    def fetch(spec, **kwargs):
+        calls.append('fetch')
+        return series
+    calculate = monitoring_service.indicator_frame
+    def frame(*args, **kwargs):
+        calls.append('frame')
+        return calculate(*args, **kwargs)
+    service = MonitoringService(tmp_path, demo=True, now=lambda: NOW)
+    monkeypatch.setattr(service.market, 'get', fetch)
+    monkeypatch.setattr(monitoring_service, 'indicator_frame', frame)
+
+    service.evaluate(refresh=True)
+    assert calls == ['fetch', 'frame']
+    first = load_monitoring(tmp_path)[0]['events']
+    assert [(e['rule_id'], e['condition']) for e in first] == [('invented', 'triggered')]
+    assert first[0]['evaluation']['inputs']['comparison_sma'] == 95.
+    series = replace(series, quality='stale')
+    service.evaluate()
+    assert load_monitoring(tmp_path)[0]['states'][exit_rule.id]['condition'] == 'triggered'
+
+    series = history(closes, dates)
+    service.evaluate()
+    service.evaluate()
+    doc = load_monitoring(tmp_path)[0]
+    exit_events = [e for e in doc['events'] if e['rule_id'] == exit_rule.id]
+    assert [e['observed_at'] for e in exit_events] == [dates[2], dates[5]]
+    assert exit_events[0]['resolved'] and not exit_events[1]['resolved']
+    entry_events = [e for e in doc['events'] if e['rule_id'] == entry_rule.id]
+    assert len(entry_events) == 1 and entry_events[0]['recovered'] and entry_events[0]['resolved']
+    event = entry_events[0]
+    assert event['observed_at'] == dates[3]
+    evaluation = event['evaluation']
+    assert evaluation['inputs']['comparison_sma'] == 105 and evaluation['price'] == 120
+    condition, observed = alert_details(entry_rule, evaluation)
+    assert '2-session SMA at or above' in condition
+    assert '2-session SMA 105.00 EUR' in observed and '3-session SMA 103.33 EUR' in observed

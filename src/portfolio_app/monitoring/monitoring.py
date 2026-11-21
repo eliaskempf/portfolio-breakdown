@@ -50,8 +50,14 @@ class Rule:
     delivery: str = 'dialog'
     created_at: str = ''
     max_age_minutes: int = 10080
+    comparison_window: int | None = None  # None compares the observed price with the reference SMA.
 
     def __post_init__(self):
+        if self.comparison_window is not None:
+            if type(self.comparison_window) is not int or not 2 <= self.comparison_window <= 1000:
+                raise DataError('Choose a comparison SMA window from 2 to 1000 sessions.')
+            if self.kind != 'sma' or self.period != 'sessions' or self.cadence != 'daily':
+                raise DataError('Comparing two SMAs requires completed daily sessions.')
         if any(type(x) is not int for x in (self.revision, self.window, self.max_age_minutes)) or any(type(x) is not bool for x in (self.enabled, self.developing)):
             raise DataError('Rule periods and revisions must be integers; switches must be booleans.')
         if not isinstance(self.id, str) or not isinstance(self.name, str) or not self.id or not self.name.strip() or self.revision < 1:
@@ -167,17 +173,32 @@ def indicator_frame(rule, series, *, now=None):
     if rule.cadence == 'monthly':
         result = result.groupby(result.index.to_period('M')).tail(1)
         result = result.loc[result.index.to_period('M') < pd.Period(local_today, freq='M')]
-    result['distance'] = 100 * (result.price / result.sma - 1)
+    if rule.comparison_window is not None:
+        compared = sma if rule.comparison_window == rule.window else completed.rolling(rule.comparison_window).mean()
+        result['comparison_sma'] = compared
+        result['distance'] = 100 * (compared - result.sma) / result.sma
+    else:
+        result['distance'] = 100 * (result.price / result.sma - 1)
     return result
 
 
-def evaluate_series(rule, series, *, now=None):
+def completed_evaluation(rule, series, stamp, row, *, note):
+    inputs = {'currency': series.currency, 'basis': rule.series.basis}
+    if rule.comparison_window is not None:
+        inputs['comparison_sma'] = float(row.comparison_sma)
+    value = float(row.distance)
+    return Evaluation(stamp, value, float(row.sma), float(row.price), condition(value, rule),
+                      inputs=inputs, note=note)
+
+
+def evaluate_series(rule, series, *, now=None, frame=None):
     now = now or utc_now()
     if series.quality != 'valid':
         return unavailable(series.note or 'Market data unavailable.', quality=series.quality)
     if rule.series.currency and series.currency != rule.series.currency:
         return unavailable('The source returned a different currency. Review this rule.')
-    frame = indicator_frame(rule, series, now=now)
+    if frame is None:
+        frame = indicator_frame(rule, series, now=now)
     if frame.empty:
         return unavailable('No completed observations available.')
     latest = frame.iloc[-1]
@@ -197,17 +218,22 @@ def evaluate_series(rule, series, *, now=None):
                 history = history.loc[history.index.date < day]
             tail = history.tail(rule.window-1)
             average = (tail.sum()+price)/rule.window if len(tail) == rule.window-1 and tail.notna().all() else float('nan')
+    if rule.comparison_window is not None and pd.isna(latest.distance):
+        needed = max(rule.window, rule.comparison_window)
+        return unavailable(f'Need {needed} complete sessions of history.', observed_at=stamp)
     if not math.isfinite(average) or average <= 0:
         return unavailable(f'Need {rule.window} complete {rule.period} of history.', observed_at=stamp)
     # A monthly decision stays current until the next completed month; assess
     # source freshness using the latest daily input, not that decision's date.
-    age_stamp = stamp if rule.cadence == 'intraday' else series.dates[-1]
+    age_stamp = stamp if rule.cadence == 'intraday' or rule.comparison_window is not None else series.dates[-1]
     observed = pd.Timestamp(age_stamp)
     if observed.tzinfo is None:
         observed = observed.tz_localize(series.timezone)
     age = (pd.Timestamp(now)-observed).total_seconds()/60
     if age < -1 or age > rule.max_age_minutes:
         return unavailable('The source observation is outside this rule’s freshness limit.', quality='stale', observed_at=stamp)
+    if rule.cadence != 'intraday':
+        return completed_evaluation(rule, series, stamp, latest, note=series.note)
     value = 100 * (price/average-1)
     return Evaluation(stamp, value, average, price, condition(value, rule), note=series.note,
                       inputs={'currency': series.currency, 'basis': rule.series.basis})

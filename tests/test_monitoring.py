@@ -173,3 +173,54 @@ def test_alert_copy_describes_condition_and_actual_observation():
     assert 'at or below ▼ 2.00% relative to its 3-session SMA' in condition_text
     assert '▼ 3.25% from its 3-session SMA' in observed
     assert observation_time('2026-10-12T14:05:49.034+02:00')=='12 Oct 2026, 12:05 UTC'
+
+
+def test_two_smas_use_completed_sessions_and_warm_up_independently():
+    dates = tuple(day.date().isoformat() for day in pd.bdate_range(end='2026-10-12', periods=201))
+    series = replace(history(tuple(range(1, 202)), dates), complete=(True,) * 200 + (False,))
+    r = replace(rule(), comparison_window=5, window=200)
+    frame = indicator_frame(r, series, now=NOW)
+    assert frame.comparison_sma.first_valid_index() == frame.index[4]
+    assert frame.distance.first_valid_index() == frame.index[199]
+    latest = evaluate_series(r, series, now=NOW)
+    assert latest.observed_at == dates[-2] and latest.price == 200
+    assert latest.inputs['comparison_sma'] == 198 and latest.reference == 100.5
+    assert latest.value == pytest.approx(100 * (198 / 100.5 - 1))
+    assert evaluate_series(replace(r, comparison_window=201), series, now=NOW).quality == 'unavailable'
+    assert evaluate_series(replace(r, max_age_minutes=1440), series, now=NOW).quality == 'stale'
+    assert evaluate_series(r, replace(series, currency='USD'), now=NOW).quality == 'unavailable'
+
+
+@pytest.mark.parametrize('direction', ['above', 'below'])
+def test_two_smas_include_equality(direction):
+    r = rule(comparison_window=2, threshold=0, direction=direction)
+    assert evaluate_series(r, history((100, 100, 100)), now=NOW).condition == 'triggered'
+
+
+@pytest.mark.parametrize('overrides', [
+    {'comparison_window': True}, {'comparison_window': 1}, {'comparison_window': 1001},
+    {'period': 'months'}, {'cadence': 'monthly'}, {'cadence': 'intraday'}, {'kind': 'ltv'},
+])
+def test_pair_accepts_only_daily_session_smas(overrides):
+    with pytest.raises(DataError):
+        replace(rule(comparison_window=2), **overrides)
+
+
+def test_legacy_price_rule_loads_without_comparison_window():
+    from dataclasses import asdict
+    from portfolio_app.monitoring.monitoring_store import rule_from_dict
+    legacy = asdict(rule())
+    del legacy['comparison_window']
+    assert rule_from_dict(legacy) == rule()
+
+
+@pytest.mark.parametrize(('closes', 'direction', 'threshold', 'expected'), [
+    ((104, 98, 98), 'below', -2, 'triggered'),
+    ((102, 99, 99), 'below', -2, 'approaching'),
+    ((96, 102, 102), 'above', 2, 'triggered'),
+    ((98, 101, 101), 'above', 2, 'approaching'),
+    ((100, 100, 100), 'below', -2, 'normal'),
+])
+def test_sma_pair_threshold_and_warning_use_reference_as_denominator(closes, direction, threshold, expected):
+    r = rule(comparison_window=2, direction=direction, threshold=threshold, warning_band=1)
+    assert evaluate_series(r, history(closes), now=NOW).condition == expected
