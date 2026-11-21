@@ -1006,6 +1006,10 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
                     + (f' Annualized from a short interval of {full.days} days.' if full.days < 365 else '')
                     + (' Estimated return: uses supplied estimates in dated flows.' if full.estimated else '')
                     + (' '+explanation(full.money_weighted_reasons) if full.money_weighted is None else ''))
+    # Keep sibling paths stable as the chart appears and loading/retry controls
+    # change. Streamlit otherwise shows the new caption beside its stale copy
+    # until the fragment finishes rendering.
+    plot = st.container(key=key+'plot')
     points = view.points
     if sum(p['Value'] is not None for p in points) >= 2:
         import plotly.graph_objects as go
@@ -1042,16 +1046,17 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
                           for text, p in zip(previous_text, points)]
             if show_summary:
                 trace.hovertemplate = trace.hovertemplate.replace('<extra>', '<br>%{text}<extra>')
-        st.plotly_chart(figure, key=key+'chart', width='stretch', config=chart_config())
+        plot.plotly_chart(figure, key=key+'chart', width='stretch', config=chart_config())
     elif view.useful:
-        st.caption('Not enough valuations in this period. Choose a longer period to see history.')
+        plot.caption('Not enough valuations in this period. Choose a longer period to see history.')
     else:
         if not automatic:
-            st.caption('Load historical prices to chart your saved transactions.')
-    if automatic:
-        _automatic_history_status(directory, journal, scope, target, key, refresh)
-    else:
-        _load_market_observations(directory, journal, scope, observations, revision, view.all_start, view.today, target, key)
+            plot.caption('Load historical prices to chart your saved transactions.')
+    with st.container(key=key+'market_refresh_status'):
+        if automatic:
+            _automatic_history_status(directory, journal, scope, target, key, refresh)
+        else:
+            _load_market_observations(directory, journal, scope, observations, revision, view.all_start, view.today, target, key)
     notes = []
     if view.all_end != view.today:
         notes.append(f'Latest valuation: {view.all_end}')
