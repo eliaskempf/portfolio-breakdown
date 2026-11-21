@@ -7,7 +7,7 @@ def target_column_config() -> dict:
     return {
         "Current portfolio %": st.column_config.NumberColumn("Current (% of portfolio)", help='Current value as a percentage of total portfolio value.', format="%.2f %%"),
         "Target portfolio %": st.column_config.NumberColumn("Target (% of portfolio)", help='Desired value as a percentage of the whole portfolio.', format="%.2f %%"),
-        "Gap (pp)": st.column_config.NumberColumn("Current − target (pp)", format="%+.2f",
+        "Gap (pp)": st.column_config.NumberColumn("Current − target (pp)", format=None,
                                                  help="Positive means above target; negative means below. Both use the whole portfolio."),
         "Known target portfolio %": st.column_config.NumberColumn("Known target subtotal (%)", help='Sum of entered targets; blank targets are not inferred.', format="%.2f %%"),
     }

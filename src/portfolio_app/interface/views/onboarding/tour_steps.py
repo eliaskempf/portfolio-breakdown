@@ -69,7 +69,7 @@ STEPS = (
         'Browse starts with MSCI World in EUR and a 200-session SMA. The threshold is blank: prices and SMA are visible, but no rule or alert exists. This tour uses invented history.',
         ('.st-key-tour_monitoring_chart',), 'Browse'),
     TourStep('Monitoring', 'Configure and save a rule',
-        'This example chooses below +10%, a 1-point approaching band, a name and pop-up alerts. Track rule saves these settings. Next saves this example only in the temporary tour workspace.',
+        'This example chooses below ▲ 10%, a 1-point approaching band, a name and pop-up alerts. Track rule saves these settings. Next saves this example only in the temporary tour workspace.',
         ('.st-key-tour_monitoring_condition', '.st-key-tour_monitoring_save'), 'Configure'),
     TourStep('Monitoring', 'Understand a triggered alert',
         'The invented close is at or below this example’s SMA threshold, so the saved rule is Triggered. Check Data and Observed alongside the condition. Checks run only while an app session is open.',

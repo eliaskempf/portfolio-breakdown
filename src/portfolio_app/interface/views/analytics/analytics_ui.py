@@ -1,5 +1,6 @@
 """Shared analytics display helpers and controls."""
 
+from portfolio_app.interface.shared.number_format import return_percent
 from portfolio_app.interface.shared.currency_display import reporting_currency
 from hashlib import sha256
 
@@ -26,6 +27,8 @@ def display_value(metric, key):
         return '—'
     if key in {'trailing_pe', 'forward_pe', 'fund_pe'} and value <= 0:
         return 'Not meaningful'
+    if metric.unit == 'fraction' and key in {'revenue_growth', 'earnings_growth'}:
+        return return_percent(value * 100)
     if metric.unit == 'fraction':
         return f'{value * 100:,.2f}%'
     if metric.unit not in {'ratio', ''}:

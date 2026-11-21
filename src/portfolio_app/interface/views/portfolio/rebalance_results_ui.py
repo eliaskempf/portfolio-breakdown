@@ -4,6 +4,7 @@ from portfolio_app.interface.shared.currency_display import money_format, money,
 from portfolio_app.interface.shared.ui_help import column_help
 import streamlit as st
 
+from portfolio_app.interface.shared.number_format import change_columns
 from portfolio_app.interface.shared.list_ui import ListColumn, frame_rows, render_list
 from portfolio_app.portfolio.rebalance_tables import portfolio_impact, suggested_trades
 from portfolio_app.portfolio.strategic import category_labels
@@ -18,8 +19,8 @@ def show_table(table, *, scope='portfolio', cap_scope='portfolio'):
                    'Current': st.column_config.NumberColumn('Current value', help='Current quantity multiplied by its price and converted to the portfolio currency where available.', format=money_format()),
                    'Trade': st.column_config.NumberColumn('Amount', help='Suggested purchase amount in the portfolio currency; no trade is placed.', format=money_format()),
                    'Max allocation %': st.column_config.NumberColumn(f'Maximum (% of {cap_scope})', help='Allocation as a percentage of the scope named in this column.', format='%.2f %%'),
-                   'Gap (pp)': st.column_config.NumberColumn('Planned − target (pp)', help='Planned allocation minus its target, in percentage points.', format='%+.2f')})
-    st.dataframe(table, hide_index=True, height='content', width='stretch', column_config=config)
+                   'Gap (pp)': st.column_config.NumberColumn('Planned − target (pp)', help='Planned allocation minus its target, in percentage points.', format=None)})
+    st.dataframe(change_columns(table, points=["Gap (pp)"]), hide_index=True, height='content', width='stretch', column_config=config)
 
 
 def render_summary(table, amount, cash, *, minimum=False):

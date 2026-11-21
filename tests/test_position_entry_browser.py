@@ -1,6 +1,7 @@
 """Real-browser position entry using only synthetic workspaces and offline search."""
 import json
 import re
+import pytest
 
 from test_ux_browser import playwright, ux_page  # noqa: F401
 from browser_support import select_tab, settle
@@ -193,3 +194,40 @@ def test_purchase_first_save_history_and_followup_sale(ux_page):
     holdings = effective_holdings(read_snapshot(directory/'holdings.csv').holdings, journal.securities)
     assert holdings.loc[holdings.position_id.eq(identity)].iloc[0].shares == 1.5
     settle(page)
+
+
+@pytest.mark.parametrize('ux_page', ['slow_purchase_selection', 'slow_purchase_selection_existing'], indirect=True)
+def test_purchase_ticker_selection_preserves_draft_and_single_action_row(ux_page, request):
+    page, _ = ux_page
+    select_tab(page, 'Positions')
+    page.get_by_role('button', name=re.compile(r'^(?:add )?Add position$')).click()
+    dialog = page.get_by_role('dialog')
+    for label, value in [('Quantity bought', '2.5'), ('Unit price', '100'), ('Fees', '3')]:
+        enter(dialog, label, value)
+    search = dialog.get_by_role('searchbox', name='Find an investment', exact=True)
+    search.fill('IE00BMC38736')
+    chooser = dialog.locator('summary').filter(has_text='Choose listing')
+    playwright.expect(chooser).to_be_visible()
+    chooser.click()
+    choice = dialog.get_by_role('button', name='Select VVSM.DE on Xetra', exact=True)
+    playwright.expect(choice).to_be_visible()
+    settle(page)
+    page.evaluate('''() => {
+      window.purchaseActionCounts=[];
+      const sample=()=>{window.purchaseActionCounts.push([...document.querySelectorAll('[role="dialog"] button')]
+        .filter(b=>b.textContent.trim()==='Save purchase' && b.getClientRects().length).length);};
+      window.purchaseActionObserver=new MutationObserver(sample);
+      window.purchaseActionObserver.observe(document.body,{subtree:true,childList:true,attributes:true});sample();
+    }''')
+    choice.click()
+    if request.node.callspec.params['ux_page'].endswith('_existing'):
+        playwright.expect(dialog.get_by_role('combobox', name='Purchase destination', exact=True)).to_be_visible()
+    else:
+        playwright.expect(dialog.get_by_role('button', name='Change investment', exact=True)).to_be_visible()
+    settle(page)
+    counts = page.evaluate('''() => {window.purchaseActionObserver.disconnect();return window.purchaseActionCounts;}''')
+    assert counts and max(counts) <= 1, f'Duplicate Save purchase actions during selection: {max(counts)}'
+    for label, value in [('Quantity bought', '2.5'), ('Unit price', '100'), ('Fees', '3')]:
+        playwright.expect(dialog.get_by_role('textbox', name=label, exact=True)).to_have_value(value)
+    playwright.expect(dialog.get_by_role('button', name='Save purchase', exact=True)).to_have_count(1)
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

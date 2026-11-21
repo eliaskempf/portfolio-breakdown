@@ -1,4 +1,5 @@
 """Charts consume the shared futures assumptions; no independent financial inputs."""
+from portfolio_app.interface.shared.number_format import return_percent
 from portfolio_app.interface.shared.chart_hover import chart_hover
 from dataclasses import replace
 
@@ -61,12 +62,12 @@ def render_comparison(position, settings, provenance, base_value):
         st.caption(f'{rolling_years} years · {len(schedule)} planned quarterly rolls if funded throughout. '
                    'Risk accumulates across the entire period; cash and P&L carry forward, with no top-ups or re-entry.')
     st.caption(f'Financing source: {provenance["financing_label"]}')
-    st.caption(f'Model assumptions: index drift {index_return:.1%}/year · financing {financing:.2%}/year · '
+    st.caption(f'Model assumptions: index drift {return_percent(index_return * 100)}/year · financing {financing:.2%}/year · '
                f'volatility {volatility:.1f}%/year · margin {"scales with contract value" if scale_margin else "fixed in euros"}. '
                'These are constant scenario inputs, not forecasts.')
     if historical_drift:
         st.caption(f"Growth source: historical MSCI World EUR proxy (EUNL.DE), {return_estimate['start_date']} → "
-                   f"{return_estimate['end_date']} · historical CAGR {return_estimate['cagr']:.2%}. "
+                   f"{return_estimate['end_date']} · historical CAGR {return_percent(return_estimate['cagr'] * 100)}. "
                    'Proxy data, not FMWN settlement history; past performance is not a forecast.')
     st.caption('This is a forward simulation from the selected start, calibrated using historical index growth; '
                'it is not the realised performance of the previous quarter. Use Historical quarters for the past reconstruction.')

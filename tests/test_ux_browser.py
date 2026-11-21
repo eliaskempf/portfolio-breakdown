@@ -319,7 +319,7 @@ def test_navigation_waits_before_next_dialog_request(serialized):
 
 
 @pytest.fixture
-def ux_page(tmp_path):
+def ux_page(tmp_path, request):
     (tmp_path / 'holdings.csv').write_text(
         'position_key,id,name,ticker,shares,acquisition_price,acquisition_currency,account,bucket_id,within_bucket_target\n'
         'fund-a,a,Invented Global UCITS ETF Acc,SYNTH-A,2,80,EUR,First,core,0.6\n'
@@ -331,7 +331,25 @@ def ux_page(tmp_path):
         ticker: dict(price=price, currency='EUR', observed_at='2026-09-01T12:00:00+00:00')
         for ticker, price in [('SYNTH-A', 100), ('SYNTH-B', 50), ('SYNTH-C', 80)]}, 'fx': {}}))
     app = tmp_path / 'app.py'
-    app.write_text('from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n'
+    if getattr(request, 'param', '') == 'slow_purchase_selection_existing':
+        for filename in ('holdings.csv', 'demo_prices.json'):
+            path = tmp_path / filename
+            path.write_text(path.read_text().replace('SYNTH-A', 'VVSM.DE'))
+    setup = ''
+    if str(getattr(request, 'param', '')).startswith('slow_purchase_selection'):
+        # Keep intermediate DOM states observable even on a fast test machine.
+        setup = '''import time
+import streamlit as st
+from portfolio_app.interface.views.positions import position_ui
+if not hasattr(position_ui, '_original_remember_draft'):
+    position_ui._original_remember_draft = position_ui._remember_draft
+    def slow_remember():
+        position_ui._original_remember_draft()
+        if st.session_state.get('position_edit_search_applied') or st.session_state.get('position_edit_instrument'):
+            time.sleep(.7)
+    position_ui._remember_draft = slow_remember
+'''
+    app.write_text(setup + 'from pathlib import Path\nfrom portfolio_app.interface.ui import render_app\n'
                    'render_app(Path(__file__).parent, demo=True)\n')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
@@ -845,13 +863,13 @@ def test_personal_history_is_visible_with_periods_ending_today(ux_page):
     # survives hover, period changes and the roundtrip through Allocation.
     badge=history_value.get_by_test_id('stMetricDelta')
     badge.click()
-    playwright.expect(badge).to_have_text(re.compile(r'[↑↓] \d[\d,.]*%'))
+    playwright.expect(badge).to_have_text(re.compile(r'[▲▼] \d[\d,.]*%'))
     playwright.expect(history_value.get_by_test_id('stMetricDelta')).to_have_attribute('title','Daily TWR · 1M · Click for amount')
     period_twr=badge.inner_text()
     pointer=chart.evaluate('(el,stamp)=>{const b=el.getBoundingClientRect(),l=el._fullLayout;return {x:b.x+l.xaxis._offset+l.xaxis.d2p(stamp),y:b.y+l.yaxis._offset+10}}', (start+timedelta(days=349)).isoformat())
     page.mouse.move(pointer['x'],pointer['y'])
     playwright.expect(history_value.get_by_test_id('stMetricDelta')).to_have_attribute('title',re.compile(r'TWR · All history to .* · Click for amount'))
-    playwright.expect(badge).to_have_text('↓ 26.59%')  # 234.90 / 320.00 - 1; snapshot cost is irrelevant to TWR.
+    playwright.expect(badge).to_have_text('▼ 26.59%')  # 234.90 / 320.00 - 1; snapshot cost is irrelevant to TWR.
     assert_gain_color(badge,positive=False)
     playwright.expect(metric.get_by_test_id('stMetricValue')).to_have_text(full_return)
     page.mouse.move(5,5)
@@ -859,7 +877,7 @@ def test_personal_history_is_visible_with_periods_ending_today(ux_page):
     playwright.expect(history_value.get_by_test_id('stMetricDelta')).to_have_attribute('title','Daily TWR · 1M · Click for amount')
     page.get_by_role('radio',name='Allocation',exact=True).click()
     allocation_delta=page.locator('.st-key-overview_value').get_by_test_id('stMetricDelta')
-    playwright.expect(allocation_delta).to_have_text(re.compile(r'[↑↓] \d[\d,.]*%'))
+    playwright.expect(allocation_delta).to_have_text(re.compile(r'[▲▼] \d[\d,.]*%'))
     page.get_by_role('radio',name='Performance',exact=True).click()
     playwright.expect(badge).to_have_text(period_twr)
     badge.press('Enter')

@@ -18,6 +18,7 @@ from portfolio_app.interface.views.positions.position_list import render_overvie
 from portfolio_app.interface.views.studies.futures_position_ui import render_future_position
 from portfolio_app.interface.shared.list_ui import ListColumn, frame_rows, render_list
 from portfolio_app.interface.shared.presentation import value_metric
+from portfolio_app.interface.shared.number_format import return_percent
 from portfolio_app.performance.performance import position_performance, summarize_performance
 from portfolio_app.portfolio.strategic import bucket_paths, category_labels, bucket_positions, strategic_summary, strategic_tree, strategic_performance
 
@@ -152,11 +153,11 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             available = table.dropna(subset=[measure]).sort_values(measure)
             if not available.empty:
                 hover = [[money(row["Cost"]), money(row["Gain"], signed=True),
-                          f'{row["Return (%)"]:+,.2f}%' if pd.notna(row['Return (%)']) else 'Unavailable',
+                          return_percent(row['Return (%)']) if pd.notna(row['Return (%)']) else 'Unavailable',
                           row['Coverage'], row['Status']] for _, row in available.iterrows()]
                 figure = style_figure(go.Figure(go.Bar(x=available[measure], y=available.Category, orientation='h',
                     marker_color=[LOSS_COLOR if row[measure] < 0 else GAIN_COLOR for _, row in available.iterrows()],
-                    text=[f'{value:+,.2f}%' if chart_percent else money(value, signed=True) for value in available[measure]], textposition='auto',
+                    text=[return_percent(value) if chart_percent else money(value, signed=True) for value in available[measure]], textposition='auto',
                     customdata=hover, hovertemplate='%{y}<br>TWR: %{customdata[2]}<br>Gain: %{customdata[1]}<br>Capital basis: %{customdata[0]}<br>Coverage: %{customdata[3]} · %{customdata[4]}<extra></extra>')))
                 figure.update_layout(height=max(260, 36 * len(available)), xaxis_title=measure, margin=dict(l=12, r=12, t=12, b=30))
                 st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config(), key='category_performance_chart')
@@ -280,6 +281,13 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                         target_help = {**TARGET_COLUMN_HELP, 'Target (%)': 'Saved target share within this scope. A percentage comparison does not require a total exposure multiple.'}
                     else:
                         table[['Target (%)', 'Gap (pp)']] = float('nan')
+                # Hide closed members only after computing targets and scope totals.
+                # Their history and planned targets remain part of the portfolio.
+                if not show_sold_positions:
+                    sold = set(valued.loc[valued.shares.eq(0), 'position_id'])
+                    table = table.loc[~table.position_id.isin(sold)].copy()
+                if 'Account' in table:
+                    table['Account'] = table.Account.map(lambda value: f'Account: {value}' if pd.notna(value) and value else '')
                 identity_columns = {'row_id', 'parent_id', 'position_id', 'category_id'}
                 for col in table:
                     if col not in {'Category', 'Status', 'Assigned category', 'Account'} | identity_columns:
@@ -312,7 +320,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 render_list(roots, [ListColumn(column, 'Investment' if flat and column == 'Category' else f'% of {scope}' if column == 'Current (%)' else column,
                             tooltip='Row details' if column == 'Category' else '',
                             secondary=('Assigned category' if flat else 'Account') if column == 'Category' else '',
-                            help=target_help.get(column, column_help(column, scope=scope)), numeric=column not in {'Category', 'Status', 'Assigned category', 'Account'}, signed=column in {'Gap (pp)', 'Gap'}, color_signed=False) for column in columns],
+                            help=target_help.get(column, column_help(column, scope=scope)), numeric=column not in {'Category', 'Status', 'Assigned category', 'Account'}, signed=column == 'Gap', directional=column == 'Gap (pp)', color_signed=False) for column in columns],
                             key='strategic_allocation_table', context=f'{position_context}_{bucket}_{measure}_{flat}',
                             title=title, default_sort='% of exposure' if market else 'Value',
                             children=children, on_open=open_allocation_row)

@@ -1,4 +1,5 @@
 """Indicator exploration, saved rules and their recorded observations."""
+from portfolio_app.interface.shared.number_format import return_percent
 from portfolio_app.interface.shared.chart_hover import chart_hover
 from dataclasses import replace
 from datetime import date
@@ -44,7 +45,7 @@ def describe(rule):
         spec = rule.series
         timing = {'daily': 'Daily close', 'monthly': 'Month-end close', 'intraday': 'Intraday observation'}[rule.cadence]
         return (f'{spec.name or spec.symbol} · {spec.currency or "Source currency"} · {spec.convention} · '
-                f'{timing} {"at or below" if rule.direction == "below" else "at or above"} {rule.threshold:+g}% '
+                f'{timing} {"at or below" if rule.direction == "below" else "at or above"} {return_percent(rule.threshold)} '
                 f'from its {rule.window}-{rule.period} SMA · {"Developing period included" if rule.developing else "Completed periods"}')
     return (f'{"LTV" if rule.kind == "ltv" else "Maintenance headroom"} '
             f'{"at or above" if rule.direction == "above" else "at or below"} {rule.threshold:g}% · {rule.currency} · User-defined limit')
@@ -115,7 +116,7 @@ def _plot(rule, series, *, key='monitoring_chart_', show_condition=True, tracked
     quality = pd.notna(row.sma) if historical else current.quality == 'valid'
     columns = st.columns(3 if show_condition else 2)
     a,b = columns[:2]
-    a.metric('Distance from SMA', _value(value) if quality else '—', help='At the final close in the selected historical period, or the latest eligible observation for a current chart.')
+    a.metric('Distance from SMA', return_percent(value) if quality else '—', help='At the final close in the selected historical period, or the latest eligible observation for a current chart.')
     b.metric('SMA', _value(reference, ' '+series.currency) if quality else '—')
     if show_condition:
         columns[2].metric('Historical condition' if historical else 'Rule status' if tracked else 'Preview condition', condition(float(value),rule).title() if quality else 'Unavailable',
@@ -149,7 +150,7 @@ def _rule_controls(key, existing=None):
     direction = columns[0].selectbox('Trigger direction', ['below','above'], index=1 if existing and existing.direction == 'above' else 0, key=key+'direction')
     a,b = columns[1:]
     threshold = a.number_input('Distance from SMA trigger (%)', value=float(existing.threshold) if existing else None, step=.5, key=key+'threshold', placeholder='Enter a threshold to create a rule', help='Leave empty to explore prices and SMA without rule bands. Negative values are below the SMA. Equality triggers the alert.')
-    warning = b.number_input('Approaching band (percentage points)', min_value=0., value=float(existing.warning_band) if existing else 1., step=.5, key=key+'warning', disabled=threshold is None, help='Distance before the trigger, in percentage points. For a −2% trigger and a 1 pp band, approaching begins at −1%.')
+    warning = b.number_input('Approaching band (percentage points)', min_value=0., value=float(existing.warning_band) if existing else 1., step=.5, key=key+'warning', disabled=threshold is None, help='Distance before the trigger, in percentage points. For a ▼ 2% trigger and a 1 pp band, approaching begins at ▼ 1%.')
     return direction, threshold, warning
 
 
@@ -362,7 +363,11 @@ def _tracked(directory, holdings, journal, *, demo=False):
             'Distance to trigger (pp)': abs(value-rule.threshold) if value is not None else None,
             'Observed': latest.get('observed_at','—')})
     with st.container(key='tour_monitoring_tracked'):
-        st.dataframe(pd.DataFrame(records), hide_index=True, width='stretch')
+        frame = pd.DataFrame(records)
+        change_rows = [i for i, rule in enumerate(rules.values()) if rule.kind == 'sma']
+        styled = frame.style.format({name: return_percent for name in ('Value (%)', 'Trigger (%)')},
+            subset=pd.IndexSlice[change_rows, ['Value (%)', 'Trigger (%)']])
+        st.dataframe(styled, hide_index=True, width='stretch')
     if st.session_state.get('monitoring_selected') not in rules:
         st.session_state['monitoring_selected'] = next(iter(rules))
     identity = st.selectbox('Rule details', list(rules), format_func=lambda x:rules[x].name, key='monitoring_selected')
@@ -418,11 +423,18 @@ def _history(doc, identity=None):
                  'Revision':x['revision'], 'Observed':x['evaluation']['observed_at'], 'Recorded':x['recorded_at'],
                  'Value (%)':x['evaluation']['value'], 'Condition':x['evaluation']['condition'],
                  'Data':x['evaluation']['quality'], 'Recovered':x['recovered'], 'Note':x['evaluation']['note']} for x in observations]
-        st.dataframe(pd.DataFrame(rows[-1000:][::-1]), hide_index=True, width='stretch')
+        frame = pd.DataFrame(rows[-1000:][::-1])
+        shown = observations[-1000:][::-1]
+        change_rows = [i for i, item in enumerate(shown) if doc['definitions'].get(f"{item['rule_id']}:{item['revision']}", {}).get('kind') == 'sma']
+        st.dataframe(frame.style.format({'Value (%)': return_percent}, subset=pd.IndexSlice[change_rows, ['Value (%)']]), hide_index=True, width='stretch')
         if identity:
             valid = [x for x in observations if x['evaluation']['quality'] == 'valid' and x['evaluation']['value'] is not None]
             if valid:
                 chart = go.Figure(go.Scatter(x=[x['recorded_at'] for x in valid], y=[x['evaluation']['value'] for x in valid], mode='markers', name='Observed metric (%)'))
+                definition = doc['definitions'].get(f"{valid[-1]['rule_id']}:{valid[-1]['revision']}", {})
+                if definition.get('kind') == 'sma':
+                    chart.update_traces(text=[return_percent(x['evaluation']['value']) for x in valid],
+                        hovertemplate='%{x}<br>Distance from SMA: %{text}<extra></extra>')
                 st.plotly_chart(chart_hover(style_figure(chart)), width='stretch')
     else:
         st.info('No observations recorded yet.')
@@ -497,7 +509,7 @@ def _monitoring_banners(doc):
                 continue
             status = state['condition']
             latest = state.get('last_valid', {})
-            message = f"{raw['name']} · {status.title()} · {_value(latest.get('value'))} · observed {latest.get('observed_at','—')}"
+            message = f"{raw['name']} · {status.title()} · {return_percent(latest.get('value')) if raw['kind'] == 'sma' else _value(latest.get('value'))} · observed {latest.get('observed_at','—')}"
             if latest.get('value') is None and latest.get('note'):
                 message += ' · '+latest['note']
             if state.get('quality') != 'valid':

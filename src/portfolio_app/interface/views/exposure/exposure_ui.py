@@ -1,4 +1,5 @@
 """Streamlit controls and presentation; calculations live in pure modules."""
+from portfolio_app.interface.shared.number_format import change_columns
 from portfolio_app.interface.shared.chart_hover import chart_hover
 
 from portfolio_app.interface.shared.currency_display import money_format
@@ -483,7 +484,7 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                     allocation["Labels"] = [asset_badges(classifications, json.loads(node.node_id)[1][0], label_set)
                                             for node in nodes.loc[nodes["parent_id"] != ""].itertuples()]
                     label_config["Labels"] = badge_column("Labels", taxonomy_colors(classifications, label_set))
-                table_area.dataframe(allocation, column_order=['Category', 'Value', 'Allocation %', *(['Labels'] if 'Labels' in allocation else []), *(['Classification path'] if show_paths else []), *(['% of portfolio equity'] if market else [])], hide_index=True, width="stretch", height="content", column_config={
+                table_area.dataframe(change_columns(allocation, percent=["Performance"] if performance_percent else [], points=["Gap (pp)"]), column_order=['Category', 'Value', 'Allocation %', *(['Labels'] if 'Labels' in allocation else []), *(['Classification path'] if show_paths else []), *(['% of portfolio equity'] if market else [])], hide_index=True, width="stretch", height="content", column_config={
                     "Category": "Investment" if view == "holding" else "Category",
                     "Classification path": st.column_config.TextColumn(help="Full breadcrumb within the selected taxonomy."),
                     "Value": st.column_config.NumberColumn(format=money_format()),
@@ -529,7 +530,7 @@ def render_source_positions(selected, valued, names, classifications, show_ticke
         columns += ['quantity_unit']
     if st.checkbox("Show price details", key="exposure_show_price_details", help="Quote timestamps, FX status and valuation notes"):
         columns += ["price_status", "price_observed_at", "price_age_hours", "fx_status", "fx_observed_at", "fx_age_hours", "valuation_note"]
-    st.dataframe(table[columns], hide_index=True, width="stretch", height="content", column_config={
+    st.dataframe(change_columns(table[columns], percent=["Performance"] if performance_percent else [], points=["Gap (pp)"]), hide_index=True, width="stretch", height="content", column_config={
         "id": None, "name": "Investment", "ticker": "Ticker" if show_tickers else None, "shares": st.column_config.NumberColumn('Quantity', help='Number of held units, including fractional quantities.', format='%.10f'),
         'Current bucket %': st.column_config.NumberColumn('Current (% of bucket)', help='Current position value divided by the current value of its category.', format='%.2f %%'),
         'Target bucket %': st.column_config.NumberColumn('Target (% of bucket)', help='Desired share of this position’s assigned category.', format='%.2f %%'),

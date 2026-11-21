@@ -1,4 +1,5 @@
 """Explicit-run funding studies and event inspection."""
+from portfolio_app.interface.shared.number_format import return_percent
 from portfolio_app.interface.shared.chart_hover import chart_hover
 from pathlib import Path
 
@@ -240,8 +241,8 @@ def render_stress(result, position, settings, study, history, context):
     relative.add_hline(y=0)
     relative.update_layout(yaxis_title='Wealth versus baseline (€)', xaxis_title='Simulation date', height=280)
     st.plotly_chart(chart_hover(relative), width='stretch', config=chart_config(zoom=True))
-    st.caption(f"Across all raw proxy windows of {moves['observations']} observations, worst running adverse move: {moves['worst_running']:.2%}; "
-        f"1st percentile: {moves['p01_running']:.2%}. {'Rises' if position.contracts < 0 else 'Falls'} are adverse. "
+    st.caption(f"Across all raw proxy windows of {moves['observations']} observations, worst running adverse move: {return_percent(moves['worst_running'] * 100)}; "
+        f"1st percentile: {return_percent(moves['p01_running'] * 100)}. {'Rises' if position.contracts < 0 else 'Falls'} are adverse. "
         'This separate raw-move summary excludes margin, financing and transfers; it is not a cash requirement.')
     with st.expander('Event ledger · candidate and baseline'):
         st.dataframe(ledger, hide_index=True, width='stretch')

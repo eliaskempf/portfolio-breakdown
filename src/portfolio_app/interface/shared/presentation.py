@@ -3,7 +3,7 @@
 from portfolio_app.interface.shared.currency_display import money
 
 from html import escape
-from math import isfinite
+from portfolio_app.interface.shared.number_format import return_percent
 
 import streamlit as st
 from portfolio_app.settings import GAIN_COLOR, LOSS_COLOR
@@ -120,14 +120,6 @@ def performance_metric(label: str, value: str, amount, *, key: str, qualified=Fa
         tone = 'neutral'
     with st.container(key=f'gain_{tone}_{key}'):
         st.metric(label, value, help=help)
-
-
-def return_percent(value) -> str:
-    """Format a percentage return with direction, without a duplicate sign."""
-    if value is None or not isfinite(value):
-        return '—'
-    arrow = '↑ ' if value > 0 else '↓ ' if value < 0 else ''
-    return f'{arrow}{abs(value):,.2f}%'
 
 
 def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False, freshness=None, known=None, twr=None, twr_estimated=False, freshness_rows=None, twr_help=''):

@@ -1,4 +1,5 @@
 """Compact futures details and an explicit two-leg roll inside the position dialog."""
+from portfolio_app.interface.shared.number_format import return_percent
 from dataclasses import replace
 from datetime import date
 from uuid import uuid4
@@ -229,7 +230,7 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
             st.write('Fees, interest & entered taxes: '+format_money(
                 row.unrealized_gain_reporting-realized-unrealized,currency,signed=True))
             amount = row.return_pct
-            st.write('Return on initial capital: '+(f'{amount:+.2f}%' if pd.notna(amount) else '—'))
+            st.write('Return on initial capital: '+return_percent(amount))
             if investment:
                 st.write(f'Initial capital: {format_money(investment.reference_capital,investment.currency)}')
                 st.write(f'Net additional allocation: {format_money(investment.allocated_capital-investment.reference_capital,investment.currency,signed=True)}')

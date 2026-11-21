@@ -1,4 +1,5 @@
 """A direct comparison of selected labels, alongside the advanced tree views."""
+from portfolio_app.interface.shared.number_format import change_columns
 from portfolio_app.interface.shared.chart_hover import chart_hover
 
 from portfolio_app.interface.shared.currency_display import money, money_format, currency_symbol
@@ -176,7 +177,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             if market:
                 assets['% of portfolio equity'] = assets.Value * 100 / equity if complete and equity and equity > 0 else float('nan')
             assets["Labels"] = assets.pop("asset_id").map(lambda asset: asset_badges(classifications, asset, taxonomy))
-            table_area.dataframe(assets, column_order=['Investment', 'Value', 'Allocation %', 'Labels', *(['% of portfolio equity'] if market else [])], hide_index=True, height="content", width="stretch", column_config={
+            table_area.dataframe(change_columns(assets, percent=["Performance"] if performance_percent else [], points=["Gap (pp)"]), column_order=['Investment', 'Value', 'Allocation %', 'Labels', *(['% of portfolio equity'] if market else [])], hide_index=True, height="content", width="stretch", column_config={
                 "Labels": badge_column("Labels", colors),
                 "Value": st.column_config.NumberColumn(format=money_format()),
                 "Allocation %": st.column_config.NumberColumn("Within this detail (%)", help='Share normalized within this selected detail, not the entire portfolio.', format="%.2f %%"),
@@ -199,7 +200,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
     if market:
         table['% of portfolio equity'] = table.Value * 100 / equity if complete and equity and equity > 0 else float('nan')
     table["Label"] = table["Label"].map(lambda label: [label])
-    table_area.dataframe(table, column_order=['Label', 'Value', 'Portfolio %', 'Selected labels %', *(['% of portfolio equity'] if market else [])], hide_index=True, height="content", width="stretch", column_config={
+    table_area.dataframe(change_columns(table, percent=["Performance"] if performance_percent else [], points=["Gap (pp)"]), column_order=['Label', 'Value', 'Portfolio %', 'Selected labels %', *(['% of portfolio equity'] if market else [])], hide_index=True, height="content", width="stretch", column_config={
         "Label": badge_column("Label", colors),
         "Value": st.column_config.NumberColumn(format=money_format()),
         "Selected labels %": st.column_config.NumberColumn("% of labels", format="%.2f %%",

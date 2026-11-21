@@ -1,4 +1,5 @@
 """Compact position overview, with an explicitly labelled cached index proxy."""
+from portfolio_app.interface.shared.number_format import return_percent
 from portfolio_app.interface.shared.chart_hover import chart_hover
 import pandas as pd
 import plotly.graph_objects as go
@@ -57,7 +58,7 @@ def render_future_position(future, directory=None):
         value.metric('Position value', euros(future.capital_value) if future.reference_capital_eur is not None else '—',
                      help='Initial collateral + net additional funding + lifetime gain after fees. The current collateral balance already includes gains; they are not added twice.')
         gain.metric('Lifetime gain', euros(future.lifetime_gain), help='Current and previous contracts’ P&L, less transaction fees. Funding is excluded.')
-        performance.metric('Return', f'{future.reference_return_pct:+.2f}%' if future.reference_return_pct is not None else '—',
+        performance.metric('Return', return_percent(future.reference_return_pct),
                            help='Lifetime gain divided by fixed reference collateral. Not a time-weighted return; cash earns no interest.')
         render_index_chart(future, directory)
         from portfolio_app.interface.views.derivatives.futures_mtm_ui import render_daily_mtm

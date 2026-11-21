@@ -21,6 +21,7 @@ class ListColumn:
     numeric: bool = False
     decimals: int = 2
     signed: bool = False
+    directional: bool = False
     prefix: str = ''
     tooltip: str = ''
     help: str = ''
@@ -141,11 +142,15 @@ export default function({parentElement:root,data,setTriggerValue}) {
         if(column.numeric)td.className='number';
         if(column.width && !column.numeric)td.title=String(row[field]??'');
         if(column.tooltip)td.title=String(row[column.tooltip]||'');
-        if(column.signed){
+        if(column.signed || column.directional){
           td.title=String(row.note||column.help||'');
           const colored=column.color_signed!==false && !(column.neutral_when && row[column.neutral_when]);
-          if(row[field]>0){if(colored)td.classList.add('positive');td.textContent='+'+td.textContent;}
+          if(row[field]>0 && colored)td.classList.add('positive');
           else if(row[field]<0 && colored)td.classList.add('negative');
+          if(column.directional && row[field]!=null){
+            const direction=row[field]>0?'▲ ':row[field]<0?'▼ ':'';
+            td.textContent=direction+Math.abs(Number(row[field])).toLocaleString(undefined,{maximumFractionDigits:column.decimals,minimumFractionDigits:column.decimals});
+          }else if(row[field]>0)td.textContent='+'+td.textContent;
         }
         if(column.badges && Array.isArray(row[field])){
           td.replaceChildren();const badges=element('div','');badges.className='badges';
@@ -243,7 +248,7 @@ export default function({parentElement:root,data,setTriggerValue}) {
         const row=lookup.get(tr.dataset.positionId);if(!row)continue;
         columns.forEach((column,index)=>{
           const td=tr.children[index];
-          if(column.signed){
+          if(column.signed || column.directional){
             const colored=column.color_signed!==false && !(column.neutral_when && row[column.neutral_when]);
             for(const [tone,enabled] of [['positive',colored&&row[column.key]>0],['negative',colored&&row[column.key]<0]]){
               if(td.classList.contains(tone)!==enabled)td.classList.toggle(tone,enabled);

@@ -187,7 +187,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                 default='%' if st.session_state.get('performance_preferences', {}).get(context_key) == '%' else currency_symbol(),
                 key=unit_key, on_change=remember_unit) == '%'
             hide_empty = not st.checkbox('Show sold positions', key='show_sold_positions',
-                help='Include zero-unit positions in Positions and Exposure. History, targets and planning weights are retained.')
+                help='Include zero-unit positions in Overview groups, Positions and Exposure. History, targets and planning weights are retained.')
     if holdings.empty and st.session_state.get('currency_change_requested'):
         if render_currency_dialog(data_dir, snapshot, currency_settings, price_service or prices_for(data_dir), historical):
             mark_view_ready()

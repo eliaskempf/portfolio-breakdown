@@ -131,7 +131,8 @@ def _render_table(rows, columns, *, context, revision, on_open, interactive=True
         return definition.description if definition else 'Saved position attribute; missing values appear as a dash.'
     numeric = {'quantity', 'value', 'allocation', 'gain', 'returnPct', 'gainReporting', 'exposure'}
     column_specs = [ListColumn(field, money_label(label) if field in {'value', 'gainReporting', 'exposure'} or (field == 'gain' and label == 'Gain') else label, numeric=field in numeric or field.startswith('metric_'), decimals=10 if field == 'quantity' else 2,
-                              signed=field in {'gain', 'returnPct', 'gainReporting'},
+                              signed=field == 'gainReporting' or (field == 'gain' and label == 'Gain'),
+                              directional=field == 'returnPct' or (field == 'gain' and label == 'Return (%)') or field in {'metric_revenue_growth', 'metric_earnings_growth'},
                               neutral_when='valuationQualified',
                               secondary='valuationLabel' if field == 'name' else '',
                               secondary_help='valuationDetail' if field == 'name' else '',

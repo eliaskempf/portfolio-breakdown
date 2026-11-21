@@ -424,19 +424,21 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         pending_rows = st.session_state.pop('position_edit_pending_purchases', None)
         if pending_rows is not None:
             st.session_state.setdefault('view_editor_drafts', {})[prefix + 'purchase_editor'] = pending_rows
-    if not editing and not identity and not physical:
-        search_open = st.session_state.setdefault(prefix + 'search_open', True)
-        manual = st.session_state.get(prefix + 'manual_entry', False)
-        if search_open and not manual:
-            render_instrument_search(prefix, holdings, path.parent / '.cache' / 'yahoo', disabled=demo, compact=True)
-            if st.button('Enter manually', help='Enter an instrument without using search, including holdings without a live ticker.'):
-                st.session_state[prefix + 'manual_entry'] = True
-                st.rerun()
-        else:
-            if st.button('Search investments' if manual else 'Change investment', help='Choose another listing; your quantity, costs and allocation draft are retained.'):
-                st.session_state[prefix + 'search_open'] = True
-                st.session_state[prefix + 'manual_entry'] = False
-                st.rerun()
+    # Keep following fields/actions at stable element paths when search collapses.
+    with st.container(key='position_entry_search'):
+        if not editing and not identity and not physical:
+            search_open = st.session_state.setdefault(prefix + 'search_open', True)
+            manual = st.session_state.get(prefix + 'manual_entry', False)
+            if search_open and not manual:
+                render_instrument_search(prefix, holdings, path.parent / '.cache' / 'yahoo', disabled=demo, compact=True)
+                if st.button('Enter manually', help='Enter an instrument without using search, including holdings without a live ticker.'):
+                    st.session_state[prefix + 'manual_entry'] = True
+                    st.rerun()
+            else:
+                if st.button('Search investments' if manual else 'Change investment', help='Choose another listing; your quantity, costs and allocation draft are retained.'):
+                    st.session_state[prefix + 'search_open'] = True
+                    st.session_state[prefix + 'manual_entry'] = False
+                    st.rerun()
     if st.session_state.get('onboarding_step') == 'position':
         st.caption('2 of 2 · Add your first position')
         st.write('Choose what you own, enter the quantity, and select its category. Buy-in and target details can wait.')
@@ -605,12 +607,13 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         except DataError as exc:
             conversion_error = str(exc)
             st.warning(conversion_error)
-    save, cancel = st.columns(2)
-    submitted = save.button('Save purchase' if purchase else 'Save position', help='Save this holding and its optional purchase records together in the active workspace.', type='primary', width='stretch')
-    if cancel.button('Finish later' if st.session_state.get('onboarding_step') == 'position' else 'Cancel', help='Discard this draft and leave setup without saving.', width='stretch'):
-        _clear_editor()
-        st.session_state['onboarding_step'] = 'done'
-        st.rerun()
+    with st.container(key='position_entry_actions'):
+        save, cancel = st.columns(2)
+        submitted = save.button('Save purchase' if purchase else 'Save position', help='Save this holding and its optional purchase records together in the active workspace.', type='primary', width='stretch')
+        if cancel.button('Finish later' if st.session_state.get('onboarding_step') == 'position' else 'Cancel', help='Discard this draft and leave setup without saving.', width='stretch'):
+            _clear_editor()
+            st.session_state['onboarding_step'] = 'done'
+            st.rerun()
     if submitted:
         values = {
             "id": identity, "name": name, "short_name": short_name, "ticker": ticker, "isin": isin,

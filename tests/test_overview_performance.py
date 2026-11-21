@@ -76,3 +76,25 @@ def test_sold_positions_hidden_in_allocation_without_changing_gain(tmp_path):
     assert list_frame(app, 'Positions').name.tolist() == ['Invented open']
     activate(app, 'Overview')
     assert list_frame(app, 'Positions').name.tolist() == ['Invented open']
+
+
+def test_allocation_members_hide_closed_positions_and_identify_accounts(tmp_path):
+    from test_ui import launch, by_label
+    from list_helpers import list_data
+    (tmp_path/'holdings.csv').write_text(
+        'position_key,id,name,shares,bucket_id,within_bucket_target,account,quantity_unit,manual_price,manual_price_currency,manual_price_date\n'
+        'open,a,Invented open,2,core,.6,Invented account,units,10,EUR,2026-01-01\n'
+        'closed,b,Invented closed,0,core,.4,Invented account,units,10,EUR,2026-01-01\n')
+    (tmp_path/'allocation.yaml').write_text('version: 2\nbuckets:\n  - id: core\n    name: Invented core\n    target: 1\n')
+    app = launch(tmp_path, tab='Overview')
+    assert not app.exception
+    def rows():
+        data = list_data(app, 'Allocation')
+        return data['rows'] + [row for members in data['children'].values() for row in members]
+    before = rows()
+    assert [r['position_id'] for r in before if r['position_id']] == ['open']
+    assert next(r for r in before if r['position_id'])['Account'] == 'Account: Invented account'
+    totals = [(r['Value'], r['Target (%)']) for r in before if not r['position_id']]
+    by_label(app.checkbox, 'Show sold positions').check().run()
+    assert sorted(r['position_id'] for r in rows() if r['position_id']) == ['closed', 'open']
+    assert [(r['Value'], r['Target (%)']) for r in rows() if not r['position_id']] == totals

@@ -1,4 +1,5 @@
 """Human-readable monitoring conditions and observation details."""
+from portfolio_app.interface.shared.number_format import return_percent
 import pandas as pd
 
 
@@ -18,10 +19,10 @@ def alert_details(rule, evaluation):
     if rule.kind == 'sma':
         cadence = {'daily':'Daily close', 'monthly':'Month-end close', 'intraday':'Intraday price'}[rule.cadence]
         comparison = 'at or below' if rule.direction == 'below' else 'at or above'
-        condition = f'{cadence} {comparison} {rule.threshold:+g}% relative to its {sma_label(rule)}.'
+        condition = f'{cadence} {comparison} {return_percent(rule.threshold)} relative to its {sma_label(rule)}.'
         if (rule.direction == 'below' and rule.threshold < 0) or (rule.direction == 'above' and rule.threshold > 0):
             condition = f'{cadence} at least {abs(rule.threshold):g}% {rule.direction} its {sma_label(rule)}.'
-        observed = 'Observation unavailable.' if value is None else f'{rule.series.name or rule.series.symbol}: {abs(value):.2f}% {"below" if value < 0 else "above"} its {sma_label(rule)}.'
+        observed = 'Observation unavailable.' if value is None else f'{rule.series.name or rule.series.symbol}: {return_percent(value)} from its {sma_label(rule)}.'
     elif rule.kind == 'ltv':
         condition = f'Loan-to-value at or above {rule.threshold:g}%.'
         observed = f'LTV is {value:.2f}%.' if value is not None else evaluation.get('note', 'LTV is undefined.')

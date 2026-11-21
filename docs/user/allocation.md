@@ -67,6 +67,7 @@ Exposure filters and ETF expansion do not alter strategic ownership.
 The allocation table shows immediate subcategories alongside directly owned investments.
 Category rows start collapsed. Open a row's chevron to reveal its investments
 and subcategories, slightly indented beneath the combined value and target.
+Closed positions are hidden in expanded and flattened groups unless **Show sold positions** is enabled in Portfolio settings. Their history and targets remain retained. Account subtitles are prefixed **Account:** to distinguish them from category ownership.
 Expansion changes only the table; the chart, selection and percentage denominator
 stay unchanged. Sorting keeps members beneath their category. Click an investment
 to open its details. Member rows are included in their parent totals, not additional
