@@ -170,6 +170,6 @@ def test_monitoring_catalog_separates_fixed_benchmarks_from_owned_market_assets(
 def test_alert_copy_describes_condition_and_actual_observation():
     from portfolio_app.monitoring.monitoring_presentation import alert_details, observation_time
     condition_text, observed=alert_details(rule(),{'value':-3.25})
-    assert 'at least 2% below its 3-session SMA' in condition_text
-    assert '3.25% below' in observed
+    assert 'at or below ▼ 2.00% relative to its 3-session SMA' in condition_text
+    assert '▼ 3.25% from its 3-session SMA' in observed
     assert observation_time('2026-10-12T14:05:49.034+02:00')=='12 Oct 2026, 12:05 UTC'
