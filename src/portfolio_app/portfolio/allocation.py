@@ -106,7 +106,7 @@ def validate_allocation(config: Allocation, holdings: pd.DataFrame | None = None
         if assigned - set(ids):
             raise DataError('Positions must belong to existing categories. Move positions before removing a category.')
         for b in config.buckets:
-            members = set(holdings.loc[holdings.bucket_id.eq(b.id), 'position_id'])
+            members = set(holdings.loc[holdings.bucket_id.eq(b.id), 'position_id']) if {'bucket_id', 'position_id'} <= set(holdings) else set()
             if (set(b.buy_priority) | set(b.sell_priority)) - members:
                 raise DataError(f'Trade priorities for {b.name} reference positions outside the category. Review its priorities.')
 
@@ -129,7 +129,8 @@ def load_allocation(path: Path, holdings: pd.DataFrame | None = None) -> Allocat
 
 def save_allocation(path: Path, config: Allocation, holdings: pd.DataFrame, expected_revision: str | None) -> None:
     validate_allocation(config, holdings)
-    if any(config.children(b.id) and holdings.bucket_id.eq(b.id).any() for b in config.buckets):
+    owners = holdings.get('bucket_id', pd.Series(dtype=str))
+    if any(config.children(b.id) and owners.eq(b.id).any() for b in config.buckets):
         config = replace(config, version=3)
     content = allocation_content(config)
     save_document(path, content, expected_revision)

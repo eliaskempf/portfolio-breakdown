@@ -8,6 +8,7 @@ from portfolio_app.portfolio.allocation import Allocation, Bucket, analysis_targ
 from portfolio_app.portfolio.strategic import bucket_positions, strategic_summary, strategic_tree
 from portfolio_app.portfolio.category_rebalancing import category_plan
 from portfolio_app.portfolio.rebalancing import RebalanceError
+from portfolio_app.portfolio.holdings import DataError
 
 
 def example(values=(20., 20., 60.)):
@@ -160,3 +161,16 @@ def test_flexible_contributions_use_whole_cents_and_preserve_remainder():
     assert plan.table.Trade.tolist() == pytest.approx([.09,0.])
     assert plan.unallocated_cash == pytest.approx(.91)
     assert plan.table.After.sum()+plan.unallocated_cash == pytest.approx(41.)
+
+
+@pytest.mark.parametrize('holdings', [pd.DataFrame(), pd.DataFrame({'position_id':['legacy'], 'shares':[1.]})])
+def test_initial_categories_save_without_existing_ownership_columns(tmp_path, holdings):
+    from portfolio_app.portfolio.allocation import save_allocation, load_allocation
+    config = Allocation((Bucket('parent','Invented parent',target=1.),
+                         Bucket('child','Invented child','parent',1.)))
+    path = tmp_path/'allocation.yaml'
+    save_allocation(path,config,holdings,None)
+    assert load_allocation(path,holdings) == config
+    invalid = replace(config,buckets=(config.buckets[0],replace(config.buckets[1],buy_priority=('missing',))))
+    with pytest.raises(DataError,match='priorities'):
+        validate_allocation(invalid,holdings)
