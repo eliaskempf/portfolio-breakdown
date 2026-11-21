@@ -474,9 +474,9 @@ def render_monitoring(directory, holdings, journal, *, demo=False):
         st.error(str(exc))
 
 
-def watch_monitoring(directory, *, demo=False, disabled=False, visible=True, starting_revision=None):
-    """Invisible heartbeat: evaluation remains active regardless of selected tab."""
-    if disabled:
+def watch_monitoring(directory, *, demo=False, evaluate_rules=True, visible=True, starting_revision=None):
+    """Watch requested charts, and evaluate saved rules outside the guided tour."""
+    if not visible and not evaluate_rules:
         return
     service = monitoring_for(directory, demo=demo)
     directory = service.directory
@@ -484,7 +484,7 @@ def watch_monitoring(directory, *, demo=False, disabled=False, visible=True, sta
         doc, _ = load_monitoring(directory)
     except DataError:
         return  # The Monitoring view reports the corrupt document.
-    enabled = any(r['enabled'] for r in doc['rules'])
+    enabled = evaluate_rules and any(r['enabled'] for r in doc['rules'])
     from portfolio_app.market.market_data import coordinator
     from portfolio_app.interface.shared.background_ui import poll_while_mounted
     revision = starting_revision

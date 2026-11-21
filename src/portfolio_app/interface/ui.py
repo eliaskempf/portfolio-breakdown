@@ -271,7 +271,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if tabs[-2].open:
         with tabs[-2]:
             render_monitoring(data_dir, holdings, journal, demo=offline_demo)
-    watch_monitoring(data_dir, demo=offline_demo, disabled=tour_active(), visible=tabs[-2].open,
+    watch_monitoring(data_dir, demo=offline_demo, evaluate_rules=not tour_active(), visible=tabs[-2].open,
                      starting_revision=monitoring_revision)
     if tabs[-1].open:
         with tabs[-1]:
