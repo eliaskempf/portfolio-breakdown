@@ -96,7 +96,7 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
     if message := st.session_state.pop('position_saved_notice', None):
         st.success(message)
     action, secondary = st.columns([1, 3])
-    if action.button('Add position', help='Create a holding in the active portfolio; nothing is saved until you choose Save position.', type='primary', icon=':material/add:', key='tour_add_position'):
+    if action.button('Add position', help='Record a new purchase or add an existing holding.', type='primary', icon=':material/add:', key='tour_add_position'):
         _clear_editor()
         st.session_state.update(position_edit_action='Add position', position_edit_dialog=True)
     if _has_position_draft():
@@ -325,6 +325,11 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
     holdings = snapshot.holdings
     editing = action == "Edit position"
     position_id = None
+    purchase = False
+    if not editing:
+        purchase = st.segmented_control('Entry method', ['New purchase', 'Existing holding'],
+            default='Existing holding' if st.session_state.get('onboarding_step') == 'position' else 'New purchase',
+            key='position_edit_fields_entry_mode') != 'Existing holding'
     if editing:
         if holdings.empty:
             st.info("Create your first position before editing.")
@@ -358,6 +363,32 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         identity = instrument_column.selectbox("Existing instrument", ["", *labels], help='Reuse a saved instrument identity when adding a position in another account or category.', format_func=lambda value: labels[value] if value else "New instrument", key="position_edit_instrument") if labels else ""
         row = holdings.loc[holdings["id"] == identity].iloc[0].to_dict() if identity else {}
         row = {column: row.get(column, "") for column in ("id", "name", "ticker", "isin", "instrument_type", "exposure_kind", "quantity_unit", "short_name", "price_source")}
+    if purchase and identity:
+        destinations = holdings.loc[holdings.id.eq(identity)]
+        bucket_names = category_labels(allocation) if allocation else {}
+        destination_labels = {r.position_id: ' · '.join(filter(None, (r.account or 'Unspecified account',
+                    r.portfolio, bucket_names.get(r.get('bucket_id', ''), ''))))
+                  for _, r in destinations.iterrows()}
+        destination = st.selectbox('Purchase destination', [*destination_labels, ''],
+            format_func=lambda value: destination_labels.get(value, 'New account / holding'),
+            key='position_edit_fields_destination_'+identity)
+        if destination:
+            from portfolio_app.ledger.account_journal import load_journal
+            from portfolio_app.interface.views.positions.trade_entry_ui import render_trade
+            journal, revision = load_journal(path.parent)
+            trade_prefix = 'position_edit_fields_trade_'+destination+'_'
+            for field, value in st.session_state.pop('position_edit_pending_fields', {}).items():
+                if field.startswith('trade_'):
+                    st.session_state[trade_prefix + field] = value
+            def saved_trade():
+                _clear_editor()
+                st.session_state['position_saved_notice'] = 'Purchase saved.'
+            render_trade(path.parent, snapshot, journal, revision, destination,
+                trade_prefix, on_saved=saved_trade)
+            if st.button('Cancel'):
+                _clear_editor()
+                st.rerun()
+            return True
     physical = row.get('instrument_type') == 'physical' and not row.get('ticker') and bool(row.get('quantity_unit'))
     if not editing and not identity:
         entry = kind_column.segmented_control('Position type', ['Listed investment', 'Physical asset', 'Future'], help='Choose a listed security or a physical holding measured in units or weight.', default='Listed investment',
@@ -381,6 +412,12 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         return
     # Separate keys keep values tied to the selected position, not another row.
     prefix = f"position_edit_fields_{action}_{position_id}_{identity}_{physical}_"
+    if purchase:
+        from portfolio_app.ledger.account_journal import load_journal
+        from portfolio_app.workspace.storage import revision as file_revision
+        trade_journal, trade_revision = load_journal(path.parent)
+        trade_expected = st.session_state.setdefault(prefix + 'trade_expected',
+            (snapshot.revision, trade_revision, file_revision(path.parent/'allocation.yaml')))
     if not editing:
         for field, value in st.session_state.pop('position_edit_pending_fields', {}).items():
             st.session_state[prefix + field] = value
@@ -404,7 +441,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         st.caption('2 of 2 · Add your first position')
         st.write('Choose what you own, enter the quantity, and select its category. Buy-in and target details can wait.')
     def clear_unit_amounts():
-        for field in ('shares', 'buy_in', 'total_buy_in', 'manual_price', 'from_purchases'):
+        for field in ('shares', 'buy_in', 'total_buy_in', 'manual_price', 'from_purchases', 'trade_quantity', 'trade_price', 'trade_fees'):
             st.session_state.pop(prefix + field, None)
             st.session_state.get('position_draft', {}).pop(prefix + field, None)
         for name in ('view_editor_drafts', 'view_editor_bases'):
@@ -497,6 +534,11 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         manual_price, manual_currency, manual_date = render_manual_price()
     else:
         manual_price, manual_currency, manual_date = None, '', ''
+    snapshot_date = None
+    if not editing and not purchase:
+        from datetime import date
+        snapshot_date = st.date_input('Holding as of', value=date.today(), max_value=date.today(), key=prefix+'snapshot_date',
+            help='Date of this total holding; it is not a purchase date.')
     from_purchases, purchases = False, []
     with st.expander('More details'):
         if not physical:
@@ -507,7 +549,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
             help='Optional location or account label. Use separate positions for holdings in different accounts.')
         if not physical:
             manual_price, manual_currency, manual_date = render_manual_price()
-        if not editing:
+        if not editing and not purchase:
             from_purchases, purchases = purchase_rows(prefix)
         short_name = st.text_input('Short display name (optional)', help='Optional shorter label for charts and lists; the full instrument name is retained.', value=row.get('short_name', ''), key=prefix + 'short_name')
         portfolio = st.text_input('Portfolio / sleeve', help='Optional label for grouping holdings into separate portfolios or strategies.', value=row.get('portfolio', ''), key=prefix + 'portfolio')
@@ -527,14 +569,20 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
             if column not in {'portfolio', 'account', 'bucket_id', 'instrument_type', 'exposure_kind'}:
                 extras[column] = st.text_input(column.replace('_', ' ').title(), help='Optional saved classification or grouping label for this position.', value=row.get(column, ''), key=prefix + 'extra_' + column)
     with amounts_slot:
-        shares, buy_in, currency, amount_errors = holding_amounts(prefix, row, editing=editing, from_purchases=from_purchases, rows=purchases)
+        if purchase:
+            from portfolio_app.interface.views.positions.trade_entry_ui import trade_inputs
+            trade_event, trade_error = trade_inputs(prefix, trade_journal)
+            shares, buy_in, currency = 0, None, ''
+            amount_errors = [trade_error] if trade_error else []
+        else:
+            shares, buy_in, currency, amount_errors = holding_amounts(prefix, row, editing=editing, from_purchases=from_purchases, rows=purchases)
     from portfolio_app.performance.cost_basis import (FIELD, active_components, aggregate_component, encode_components,
         fingerprint, same_summary, resolve_cost)
     from portfolio_app.interface.views.workspace.currency_ui import cost_conversion_controls, historical_for, ui_prices, render_fx_progress
     from portfolio_app.portfolio.purchases import purchase_components, validate_purchases
     parts, conversion_error = [], None
-    historical = historical_for(path.parent, demo=demo)
-    if not amount_errors:
+    historical = None if purchase else historical_for(path.parent, demo=demo)
+    if not amount_errors and not purchase:
         try:
             if from_purchases:
                 parts = purchase_components(validate_purchases(purchases), currency, {}, reporting_currency=reporting_currency())
@@ -558,7 +606,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
             conversion_error = str(exc)
             st.warning(conversion_error)
     save, cancel = st.columns(2)
-    submitted = save.button('Save position', help='Save this holding and its optional purchase records together in the active workspace.', type='primary', width='stretch')
+    submitted = save.button('Save purchase' if purchase else 'Save position', help='Save this holding and its optional purchase records together in the active workspace.', type='primary', width='stretch')
     if cancel.button('Finish later' if st.session_state.get('onboarding_step') == 'position' else 'Cancel', help='Discard this draft and leave setup without saving.', width='stretch'):
         _clear_editor()
         st.session_state['onboarding_step'] = 'done'
@@ -584,7 +632,15 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
                 raise DataError("Enter the currency of the buy-in price, for example EUR.")
             if conversion_error:
                 raise DataError(conversion_error)
-            if from_purchases:
+            if snapshot_date:
+                values['holdings_confirmed_on'] = snapshot_date.isoformat()
+            if purchase:
+                from portfolio_app.ledger.trade_commands import save_trade
+                asset_id = save_trade(path.parent, trade_event, fields=values,
+                    expected_holdings_revision=trade_expected[0], expected_journal_revision=trade_expected[1],
+                    expected_allocation_revision=trade_expected[2],
+                    validate=lambda frame: validate_fund_listings(frame, funds))
+            elif from_purchases:
                 asset_id = save_purchase_batch(path, values, purchases, currency=currency,
                     expected_revision=st.session_state['position_edit_revision'],
                     reporting_currency=reporting_currency(), historical=historical, components=parts,

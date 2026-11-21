@@ -89,61 +89,7 @@ def save_position(
         if revision != expected_revision:
             raise DataError("Holdings changed since this form was opened. Reload the form before saving.")
         content = original.decode("utf-8-sig") if original is not None else EMPTY_CSV
-        current = parse_holdings(content)
-        raw = pd.read_csv(StringIO(content), dtype=str, keep_default_na=False)
-        values = {key: str(value).strip() for key, value in fields.items()}
-        if "position_id" in values:
-            raise DataError("Position identity cannot be entered as a CSV field.")
-        if "position_key" in values:
-            raise DataError("Persistent position identity cannot be edited.")
-        for column in ("ticker", "isin", "acquisition_currency"):
-            if column in values:
-                values[column] = values[column].upper()
-        if position_id is None:
-            if not values.get("id"):
-                values["id"] = _new_asset_id(values, current)
-            existing = current.loc[current.id.eq(values['id'])]
-            if not existing.empty and 'short_name' not in values:
-                values['short_name'] = existing.iloc[0].short_name
-            index = len(raw)
-        else:
-            matches = current.index[current["position_id"] == position_id]
-            if len(matches) != 1:
-                raise DataError("The selected position no longer exists. Reload the form.")
-            index = int(matches[0])
-            if "id" in values and values["id"] != current.at[index, "id"]:
-                raise DataError("An existing position's asset ID cannot be changed here.")
-        # A changed balance/cost is a replacement, not an inferred disposal.
-        from portfolio_app.performance.cost_basis import FIELD, encode_components, aggregate_component, fingerprint, same_summary
-        if position_id is not None and FIELD not in values:
-            before = current.loc[index].to_dict()
-            after = {**before, **values}
-            if not same_summary(fingerprint(before), fingerprint(after)):
-                values[FIELD] = encode_components([aggregate_component(after)], after)
-        for column in values:
-            if column not in raw:
-                raw[column] = ""
-        if position_id is None:
-            raw.loc[index] = {column: "" for column in raw.columns}
-            if "position_key" in raw:
-                raw.at[index, "position_key"] = uuid4().hex
-        for column, value in values.items():
-            raw.at[index, column] = value
-        instrument_id = current.at[index, 'id'] if position_id is not None else values['id']
-        for column in ('name', 'short_name'):
-            if column in values and (position_id is not None or column == 'short_name'):
-                raw.loc[raw['id'] == instrument_id, column] = values[column]
-        csv = raw.to_csv(index=False)
-        candidate = parse_holdings(csv)
-        selected = candidate.iloc[index]
-        others = candidate.drop(index)
-        duplicate = others["id"].eq(selected["id"]) & others["account"].eq(selected["account"]) & others["portfolio"].eq(selected["portfolio"])
-        if "bucket_id" in candidate:
-            duplicate &= others.bucket_id.eq(selected.bucket_id)
-        if duplicate.any():
-            raise DataError("A position for this instrument, account, and portfolio already exists. Edit its total shares instead of adding another position.")
-        if validate:
-            validate(candidate)
+        csv, selected = position_content(content, fields, position_id=position_id, validate=validate)
         with staged_text(path, lambda handle: handle.write(csv), sync=True) as temporary:
             if original is not None:
                 backup_dir = path.parent / ".backups"
@@ -158,3 +104,63 @@ def save_position(
                 raise DataError("Holdings changed during the save. Reload the form before saving.")
             temporary.replace(path)
         return str(selected["id"])
+
+
+def position_content(content, fields, *, position_id=None, validate=None):
+    """Validate a position change without publishing it; shared by atomic trade saves."""
+    current = parse_holdings(content)
+    raw = pd.read_csv(StringIO(content), dtype=str, keep_default_na=False)
+    values = {key: str(value).strip() for key, value in fields.items()}
+    if "position_id" in values:
+        raise DataError("Position identity cannot be entered as a CSV field.")
+    if "position_key" in values:
+        raise DataError("Persistent position identity cannot be edited.")
+    for column in ("ticker", "isin", "acquisition_currency"):
+        if column in values:
+            values[column] = values[column].upper()
+    if position_id is None:
+        if not values.get("id"):
+            values["id"] = _new_asset_id(values, current)
+        existing = current.loc[current.id.eq(values['id'])]
+        if not existing.empty and 'short_name' not in values:
+            values['short_name'] = existing.iloc[0].short_name
+        index = len(raw)
+    else:
+        matches = current.index[current["position_id"] == position_id]
+        if len(matches) != 1:
+            raise DataError("The selected position no longer exists. Reload the form.")
+        index = int(matches[0])
+        if "id" in values and values["id"] != current.at[index, "id"]:
+            raise DataError("An existing position's asset ID cannot be changed here.")
+    # A changed balance/cost is a replacement, not an inferred disposal.
+    from portfolio_app.performance.cost_basis import FIELD, encode_components, aggregate_component, fingerprint, same_summary
+    if position_id is not None and FIELD not in values:
+        before = current.loc[index].to_dict()
+        after = {**before, **values}
+        if not same_summary(fingerprint(before), fingerprint(after)):
+            values[FIELD] = encode_components([aggregate_component(after)], after)
+    for column in values:
+        if column not in raw:
+            raw[column] = ""
+    if position_id is None:
+        raw.loc[index] = {column: "" for column in raw.columns}
+        if "position_key" in raw:
+            raw.at[index, "position_key"] = uuid4().hex
+    for column, value in values.items():
+        raw.at[index, column] = value
+    instrument_id = current.at[index, 'id'] if position_id is not None else values['id']
+    for column in ('name', 'short_name'):
+        if column in values and (position_id is not None or column == 'short_name'):
+            raw.loc[raw['id'] == instrument_id, column] = values[column]
+    csv = raw.to_csv(index=False)
+    candidate = parse_holdings(csv)
+    selected = candidate.iloc[index]
+    others = candidate.drop(index)
+    duplicate = others["id"].eq(selected["id"]) & others["account"].eq(selected["account"]) & others["portfolio"].eq(selected["portfolio"])
+    if "bucket_id" in candidate:
+        duplicate &= others.bucket_id.eq(selected.bucket_id)
+    if duplicate.any():
+        raise DataError("A position for this instrument, account, and portfolio already exists. Edit its total shares instead of adding another position.")
+    if validate:
+        validate(candidate)
+    return csv, selected

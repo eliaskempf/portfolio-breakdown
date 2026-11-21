@@ -98,10 +98,10 @@ def _history_action(key, action):
     if action in ('buy', 'sell', 'add'):
         # A new entry starts clean; returning to the list never changes saved evidence.
         for field in list(st.session_state):
-            if field.startswith(key+'new_'):
+            if field.startswith((key+'new_', key+'trade_')):
                 del st.session_state[field]
         st.session_state[key+'new_kind'] = action if action in ('buy', 'sell') else 'buy'
-        action = 'add'
+        action = 'trade' if action in ('buy', 'sell') else 'add'
     st.session_state[key+'screen'] = action
 
 
@@ -211,13 +211,18 @@ def render_position_history(directory, row):
         # Inactive slots stay empty for this entire render, so their old blocks
         # are replaced rather than reused by a different screen.
         slots = {name: st.empty() for name in
-                 ('list', 'opening', 'add', 'import_pdf', 'edit', 'remove', 'replace', 'fix', 'review')}
+                 ('list', 'opening', 'add', 'trade', 'import_pdf', 'edit', 'remove', 'replace', 'fix', 'review')}
         with slots.get(screen, slots['list']).container(key=key+'screen_'+screen):
             if screen != 'list':
                 st.button('Back to transactions', icon=':material/arrow_back:', key=key+'back',
                     on_click=_history_action, args=(key, 'list'))
             if screen == 'opening':
                 _opening_form(directory, journal, revision, snapshot, book, row, key)
+            elif screen == 'trade':
+                from portfolio_app.interface.views.positions.trade_entry_ui import render_trade
+                render_trade(directory, snapshot, journal, revision, book.position_id, key+'trade_',
+                    kind=st.session_state.get(key+'new_kind', 'buy'),
+                    on_saved=lambda: _history_action(key, 'list'))
             elif screen == 'add':
                 _add_transaction(directory, journal, revision, snapshot, book, key)
             elif screen == 'import_pdf':
@@ -265,10 +270,11 @@ def render_position_history(directory, row):
                             Cost_source='; '.join(dict.fromkeys(p.get('source', '') for p in e.costs)),
                             Valuation_source=e.valuation_source) for e in records]), hide_index=True, width='stretch')
                 else:
-                    st.caption('No transactions yet. Add buys and sells, then review them against your portfolio.')
+                    st.caption('No transactions yet.')
                 if any(e.id not in owners[e.id].active_ids for e in records):
                     st.caption('Saved transactions do not change your holding until you review and apply them.')
-                with st.container(horizontal=True):
+                with st.expander('Add earlier history', expanded=any(e.id not in owners[e.id].active_ids for e in records)):
+                    st.button('Enter earlier transactions', key=key+'earlier', on_click=_history_action, args=(key,'add'))
                     if records:
                         def review():
                             owner = book.position_id if _visible_records(book) else owners[records[0].id].position_id
@@ -277,7 +283,7 @@ def render_position_history(directory, row):
                                 from portfolio_app.interface.views.positions.position_ui import request_position
                                 request_position(owner, local=False)
                                 st.session_state[f'position_edit_detail_view_{owner}'] = 'Transactions'
-                        st.button('Review against portfolio', type='primary', key=key+'review_list', on_click=review)
+                        st.button('Review against portfolio', type='secondary', key=key+'review_list', on_click=review)
                     st.button('Add starting balance', type='tertiary', key=key+'starting',
                         help='Optional: the holding before the transactions you have records for.', on_click=_history_action, args=(key,'opening'))
                     if book.active and records:
@@ -779,19 +785,42 @@ def _edit_transaction(directory, journal, revision, snapshot, book, key):
         candidate = correct_transaction(book, identity, date=stamp.isoformat() if stamp else '', quantity=_decimal(quantity),
             price=price, amount=gross, currency=currency, charges=updated_fees, charges_known=known, asset_charges=asset_charges,
             value_date=settlement.isoformat() if settlement else '', note=note, estimated=estimated, sequence=sequence)
+        direct = identity in book.active_ids and event.kind in ('buy', 'sell')
+        accept_duplicate = False
+        if direct and candidate != book:
+            correction = candidate.records[-1]
+            from portfolio_app.ledger.trade_commands import select_trade_correction
+            candidate = select_trade_correction(book, candidate, identity)
+            from portfolio_app.ledger.security_history import duplicate_candidates
+            if any(correction.id in pair for pair in duplicate_candidates(candidate)):
+                accept_duplicate = st.checkbox('This is a separate trade', key=key+'duplicate')
+            if book.account_id:
+                from portfolio_app.ledger.account_journal import replay
+                from portfolio_app.ledger.history_commands import proposed_journal
+                before, after = replay(journal), replay(proposed_journal(journal, (candidate,)))
+                for cash_key in sorted(set(before.cash) | set(after.cash)):
+                    if before.cash.get(cash_key) != after.cash.get(cash_key):
+                        st.caption('Linked cash ('+cash_key[1]+'): '+
+                            ('Unknown' if cash_key in after.unknown_cash else _money(after.cash.get(cash_key), cash_key[1])))
         with st.container(horizontal=True):
             if st.button('Save changes', type='primary', key=key+'save',
                          on_click=_capture_submit_revision, args=(key, revision, snapshot.revision)):
                 # Build from this submission's widget values. A callback argument
                 # prepared on the previous render can silently save stale input.
                 expected = st.session_state.pop(key+'submitted_revision')
-                if candidate != book or expected != (revision, snapshot.revision):
+                if direct:
+                    save_history(directory, candidate, expected_journal_revision=expected[0],
+                        expected_holdings_revision=expected[1], activate=True, resolution='record',
+                        accept_balance_change=True, accept_cash_change=True, accept_duplicates=accept_duplicate)
+                    _history_action(_key(directory, book.position_id), 'list')
+                elif candidate != book or expected != (revision, snapshot.revision):
                     _save_evidence(directory, candidate, *expected, screen='list')
                 else:
                     _history_action(_key(directory, book.position_id), 'list')
                 st.rerun()
             st.button('Cancel', key=key+'cancel', on_click=_history_action, args=(_key(directory, book.position_id),'list'))
-        st.caption('Full precision is preserved. Changes affect your holding only after Review against portfolio.')
+        if not direct:
+            st.caption('Full precision is preserved. Changes affect your holding only after Review against portfolio.')
     except (DataError, ValueError) as exc:
         st.caption(str(exc))
 

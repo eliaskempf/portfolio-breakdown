@@ -67,7 +67,8 @@ def render_instrument_search(prefix: str, holdings: pd.DataFrame, cache_dir: Pat
                     # Reusing an existing identity must not discard this new
                     # position's amount/account draft. Saved holdings stay untouched.
                     fields = ('shares', 'buy_in', 'total_buy_in', 'cost_source', 'currency',
-                              'bucket', 'target', 'account', 'portfolio', 'from_purchases')
+                              'bucket', 'target', 'account', 'portfolio', 'from_purchases',
+                              'trade_date', 'trade_currency', 'trade_quantity', 'trade_price', 'trade_fees')
                     st.session_state['position_edit_pending_fields'] = {
                         field: st.session_state[prefix + field]
                         for field in fields if prefix + field in st.session_state}

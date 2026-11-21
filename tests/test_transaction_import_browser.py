@@ -1,4 +1,5 @@
 """Only independently generated PDF statements and synthetic portfolios."""
+from browser_support import reveal_earlier_history
 import pytest
 
 from portfolio_app.ledger.account_journal import load_journal
@@ -129,8 +130,10 @@ def test_review_replaces_list_actions_after_history_is_active(transaction_page):
     page,root=transaction_page
     dialog=page.get_by_role('dialog')
     dialog.get_by_role('radio',name='Transactions',exact=True).click();settle(page)
+    reveal_earlier_history(page)
     dialog.get_by_role('button',name='Review against portfolio',exact=True).click();settle(page)
     dialog.get_by_role('button',name='Apply history',exact=True).click();settle(page)
+    reveal_earlier_history(page)
     dialog.get_by_role('button',name='Review against portfolio',exact=True).click();settle(page)
     assert dialog.get_by_role('button',name='Apply history',exact=True).count()==1
     assert dialog.get_by_role('button',name='Review against portfolio',exact=True).count()==0
@@ -307,7 +310,7 @@ def test_unresolved_financial_rows_offer_diagnostics_but_no_save(transaction_pag
     holdings = (root/'holdings.csv').read_bytes()
     dialog.locator('input[type=file]').set_input_files([source]); settle(page)
     assert dialog.get_by_text(
-        'No importable transactions. Use Add buy / Add sell for unsupported statements or missing fields.',
+        'No importable transactions. Use Add earlier history → Enter earlier transactions for unsupported statements or missing fields.',
         exact=True).count() == 1
     assert dialog.get_by_role('button', name='Save transactions and review', exact=True).count() == 0
     assert dialog.get_by_text('I checked that all fees and taxes are included', exact=True).count() == 0
@@ -483,7 +486,7 @@ def test_bulk_removal_select_all_previews_and_preserves_originals(transaction_pa
     assert dialog.get_by_role('button', name='Review against portfolio', exact=True).count() == 0
     assert dialog.get_by_role('button', name='Replace balance', exact=True).count() == 0
     from playwright.sync_api import expect
-    expect(dialog.get_by_text('No transactions yet. Add buys and sells, then review them against your portfolio.', exact=True)).to_be_visible()
+    expect(dialog.get_by_text('No transactions yet.', exact=True)).to_be_visible()
     assert dialog.get_by_role('button', name='Import PDFs', exact=True).is_enabled()
     assert not page.get_by_test_id('stException').count()
 

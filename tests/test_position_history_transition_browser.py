@@ -1,4 +1,5 @@
 """Slow synthetic history calculations must not leave outgoing views on screen."""
+from browser_support import reveal_earlier_history
 from browser_runtime import browser_session, start_server
 import os
 import socket
@@ -134,6 +135,7 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             assert not dialog.get_by_text('Required inputs', exact=True).count()
             assert not dialog.get_by_text('History inputs', exact=True).count()
             dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+            reveal_earlier_history(page)
             dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
             assert dialog.get_by_role('button', name='Apply history', exact=True).count() == 1
             assert not dialog.get_by_role('checkbox').count()

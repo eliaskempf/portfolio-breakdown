@@ -27,6 +27,7 @@ def launch(data_dir, tab="Exposure", subtab=None):
         activate(app, tab, subtab)
     if not (data_dir / 'holdings.csv').exists():
         by_label(app.button, 'Add position').click().run()
+        by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     return app
 
 
@@ -34,7 +35,8 @@ def position_action(app, action, position_id='position-0'):
     """Drive the new toolbar or simulate the stable-ID row event boundary."""
     if action == 'Add position':
         activate(app, 'Positions')
-        return by_label(app.button, 'Add position').click().run()
+        by_label(app.button, 'Add position').click().run()
+        return by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     if action in {'Positions', 'Update balances', 'Bulk add purchases'}:
         activate(app, 'Positions')
         return by_label(app.get('button_group'), 'Position tools').set_value(action).run()

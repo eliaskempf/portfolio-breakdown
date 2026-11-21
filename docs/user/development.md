@@ -135,8 +135,17 @@ for debugging, expose them only inside an explicitly opened internal diagnostics
 view, never in the normal import or transaction-review workflow.
 Show overwrite confirmation only when a value will actually be replaced.
 
-For a single holding, use **Apply history** after reconciliation. For multiple
-holdings, review each with **Accept this holding**, then **Apply reviewed holdings**
+Everyday purchases use one save to create or update a holding and its applied
+transaction. New positions start at zero before their first purchase. Existing
+summary holdings use a dated starting snapshot, retaining unknown costs and
+prior-history limitations. Trades overlapping that boundary use the secondary
+historical reconstruction workflow. Pending evidence is never implicitly applied
+by a new trade. Keep revision checks, duplicate acknowledgment, ordering checks,
+linked-cash validation and recoverable position/journal publication on this path.
+The normal buy/sell form must not require a separate history activation step.
+
+For historical reconstruction of a single holding, use **Apply history** after
+reconciliation. For multiple holdings, review each with **Accept this holding**, then **Apply reviewed holdings**
 in one atomic save. Changes to reviewed facts reset these balance-review decisions.
 Applying makes the selected ledger authoritative for the resulting holdings,
 including when it replaces a different current balance. There is no separate

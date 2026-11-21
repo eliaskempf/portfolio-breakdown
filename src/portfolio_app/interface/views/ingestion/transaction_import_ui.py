@@ -145,7 +145,7 @@ def render_pdf_import(directory, row, book, journal, revision, snapshot, key):
         if problems[focus]:
             for problem in problems[focus]:
                 st.error(problem)
-            st.caption('Use Add buy / Add sell for unsupported statements. No transaction will be saved from this file.')
+            st.caption('Use Add earlier history → Enter earlier transactions for unsupported statements. No transaction will be saved from this file.')
         else:
             _review_statement(files[focus], draft, focus, review_key, complete(focus), decisions,
                               similar=focus in similar, distinct=draft.fingerprint in distinct)
@@ -153,7 +153,7 @@ def render_pdf_import(directory, row, book, journal, revision, snapshot, key):
         st.caption('All selected statements are ready.')
     _statement_details(files, drafts, review_key)
     if not any(not p for p in problems.values()):
-        st.info('No importable transactions. Use Add buy / Add sell for unsupported statements or missing fields.')
+        st.info('No importable transactions. Use Add earlier history → Enter earlier transactions for unsupported statements or missing fields.')
         return
     identity_confirmed = False
     if any(identity_review_required(drafts[i], row) for i in included):

@@ -150,10 +150,14 @@ form, you return to Overview and the optional tour prompt.
 
 ### Save a first holding, or import
 
-For manual entry, choose **Positions → Add position**. Search and select the
-correct listing, checking its exchange and currency, or choose **Enter manually**.
-Enter the quantity you currently hold. Buy-in cost and allocation targets are
-optional. **Save position** writes to My portfolio; check the saved row and its
+For a purchase, choose **Positions → Add position → New purchase**. Select the
+investment and enter trade date, quantity, unit price, currency and fees.
+**Save purchase** saves both the position and its transaction immediately.
+
+To enter a total you already hold, choose **Existing holding**. Search and select
+the correct listing, checking its exchange and currency, or choose **Enter manually**.
+Enter the quantity you currently hold and its **Holding as of** date. Buy-in cost
+and allocation targets are optional. **Save position** writes to My portfolio; check the saved row and its
 valuation status. A blank price is unknown, not zero. For an asset without a
 quote, provide a dated manual price under **More details**. For physical gold,
 choose **Physical asset → Gold spot price** and enter fine-gold weight; see

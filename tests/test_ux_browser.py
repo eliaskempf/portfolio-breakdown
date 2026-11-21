@@ -1,4 +1,5 @@
 """Full app regressions with invented positions and offline prices only."""
+from browser_support import reveal_earlier_history
 from browser_runtime import browser_session, start_server
 import json
 import os
@@ -697,7 +698,8 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     runs.click(page, page.get_by_role('table', name='Positions', exact=True).locator('tr[data-position-id="fund-a"]'))
     dialog = page.get_by_role('dialog')
     runs.click(page, dialog.get_by_text('Transactions', exact=True))
-    runs.click(page, dialog.get_by_role('button', name='Add buy'))
+    reveal_earlier_history(page)
+    runs.click(page, dialog.get_by_role('button', name='Enter earlier transactions'))
     # Each blur starts a rerender; finish it before editing the next field.
     inputs = [('Quantity', '2'), ('Unit price', '80'), ('Fees', '0')]
     for label, value in inputs:
@@ -711,6 +713,7 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     buy = next(event for event in load_journal(directory)[0].securities[0].records if event.kind == 'buy')
     assert buy.quantity == 2 and buy.price == 80
     assert buy.charges_known and buy.charges[0].amount == 0
+    reveal_earlier_history(page)
     runs.click(page, dialog.get_by_role('button', name='Review against portfolio', exact=True))
     apply = dialog.get_by_role('button', name='Apply history', exact=True)
     playwright.expect(apply).to_be_enabled()
@@ -719,7 +722,7 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     assert not dialog.get_by_role('combobox', name='Included transactions', exact=True).is_visible()
     assert not load_journal(directory)[0].securities[0].active
     runs.click(page, apply)
-    dialog.get_by_role('button', name='Review against portfolio', exact=True).wait_for()
+    dialog.get_by_role('button', name='Review against portfolio', exact=True, include_hidden=True).wait_for(state='attached')
     journal, _ = load_journal(directory)
     row = effective_holdings(read_snapshot(directory/'holdings.csv').holdings, journal.securities).set_index('position_id').loc['fund-a']
     assert row.shares == 2 and row.acquisition_price == 80
@@ -728,18 +731,19 @@ def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page)
     playwright.expect(expect_price).to_have_value('80')
     page.streamlit_reruns.commit_text(page, expect_price, '81.125')
     dialog.get_by_role('button', name='Save changes', exact=True).click()
-    dialog.get_by_role('button', name='Review against portfolio', exact=True).wait_for()
+    dialog.get_by_role('button', name='Review against portfolio', exact=True, include_hidden=True).wait_for(state='attached')
     journal, _ = load_journal(directory)
     assert len(journal.securities[0].records) == 3  # Original buy, internal boundary and retained correction.
     current = effective_holdings(read_snapshot(directory/'holdings.csv').holdings, journal.securities).set_index('position_id').loc['fund-a']
-    assert current.acquisition_price == 80
+    assert current.acquisition_price == 81.125
+    reveal_earlier_history(page)
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click()
     dialog.get_by_text('Review options', exact=True).click()
     # Only the latest transaction belongs in the picker, not its retained audit
     # version or the internal zero-share boundary.
     playwright.expect(dialog.get_by_test_id('stMultiSelect').get_by_role('button', name=re.compile('^Remove '))).to_have_count(1)
     dialog.get_by_role('button', name='Apply history', exact=True).click()
-    dialog.get_by_role('button', name='Review against portfolio', exact=True).wait_for()
+    dialog.get_by_role('button', name='Review against portfolio', exact=True, include_hidden=True).wait_for(state='attached')
     journal, _ = load_journal(directory)
     current = effective_holdings(read_snapshot(directory/'holdings.csv').holdings, journal.securities).set_index('position_id').loc['fund-a']
     assert current.shares == 2 and current.acquisition_price == 81.125
