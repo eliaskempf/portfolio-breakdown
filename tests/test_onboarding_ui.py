@@ -33,6 +33,7 @@ def test_welcome_demo_and_manual_save_are_isolated(tmp_path):
     assert app.session_state['main_tabs'] == 'Overview'
     activate(app, 'Positions')
     by_label(app.button, 'Add position').click().run()
+    by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     assert not app.exception
     by_label(app.button, 'Enter manually').click().run()
     by_label(app.text_input, 'Instrument name').set_value('Invented first position')
@@ -238,6 +239,7 @@ def test_physical_unit_change_clears_amounts_and_edit_keeps_unit(tmp_path):
     assert app.session_state['main_tabs'] == 'Overview'
     activate(app, 'Positions')
     by_label(app.button, 'Add position').click().run()
+    by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
     by_label(app.radio, 'Valuation method').set_value('Manual price').run()
     by_label(app.text_input, 'Quantity held (total)').set_value(str(2.)).run()
@@ -319,6 +321,7 @@ def test_physical_gold_spot_save_edit_and_explicit_manual_switch(tmp_path):
     assert app.session_state['main_tabs'] == 'Overview'
     activate(app, 'Positions')
     by_label(app.button, 'Add position').click().run()
+    by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
     assert by_label(app.radio, 'Valuation method').value == 'Gold spot price'
     assert set(by_label(app.selectbox, 'Quantity unit').options) == {'troy oz', 'grams', 'kg'}
@@ -357,6 +360,7 @@ def test_new_manual_units_cannot_be_reinterpreted_as_gold_ounces(tmp_path):
     assert app.session_state['main_tabs'] == 'Overview'
     activate(app, 'Positions')
     by_label(app.button, 'Add position').click().run()
+    by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
     by_label(app.radio, 'Valuation method').set_value('Manual price').run()
     by_label(app.selectbox, 'Quantity unit').set_value('units').run()

@@ -6,10 +6,12 @@ from test_ux_browser import playwright, ux_page  # noqa: F401
 from browser_support import select_tab, settle
 
 
-def add_manually(page):
+def add_manually(page, *, purchase=False):
     select_tab(page, 'Positions')
     page.get_by_role('button', name=re.compile(r'^(?:add )?Add position$')).click()
     dialog = page.get_by_role('dialog')
+    if not purchase:
+        page.streamlit_reruns.click(page, dialog.get_by_text('Existing holding', exact=True))
     dialog.get_by_role('button', name='Enter manually', exact=True).click()
     # The amount fields already exist in search mode. Wait for the manual
     # form's completed rerender before opening a dropdown that it would dismiss.
@@ -148,4 +150,46 @@ def test_search_selection_and_settings_help(ux_page):
     isin = dialog.get_by_role('textbox', name='ISIN (optional)', exact=True)
     playwright.expect(isin).to_have_value('IE00BMC38736')
     playwright.expect(isin).to_be_disabled()
+    settle(page)
+
+
+def test_purchase_first_save_history_and_followup_sale(ux_page):
+    """A new buy and subsequent sale never enter reconstruction/review screens."""
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.ledger.security_history import effective_holdings
+    from portfolio_app.portfolio.positions import read_snapshot
+    page, directory = ux_page
+    dialog = add_manually(page, purchase=True)
+    runs = page.streamlit_reruns
+    playwright.expect(dialog.get_by_role('textbox', name='Quantity bought', exact=True)).to_be_visible()
+    playwright.expect(dialog.get_by_role('textbox', name='Fees', exact=True)).to_have_value('0')
+    for label, value in [('Instrument name', 'Invented daily purchase'), ('Quantity bought', '2.5'),
+                         ('Unit price', '100'), ('Fees', '3')]:
+        runs.commit_text(page, dialog.get_by_role('textbox', name=label, exact=True), value)
+    playwright.expect(dialog.get_by_text('Total paid: 253.00 EUR', exact=True)).to_be_visible()
+    for width in (620, 390):
+        page.set_viewport_size({'width': width, 'height': 950})
+        assert dialog.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
+    page.set_viewport_size({'width': 1440, 'height': 1000})
+    runs.click(page, dialog.get_by_role('button', name='Save purchase', exact=True))
+    playwright.expect(dialog).to_have_count(0)
+    journal = load_journal(directory)[0]
+    assert len(journal.securities) == 1 and len(journal.securities[0].active_ids) == 2
+    identity = journal.securities[0].position_id
+    holdings = effective_holdings(read_snapshot(directory/'holdings.csv').holdings, journal.securities)
+    saved = holdings.loc[holdings.position_id.eq(identity)].iloc[0]
+    assert saved.shares == 2.5 and saved.acquisition_price == 101.2
+    runs.click(page, page.get_by_role('table', name='Positions', exact=True).locator(f'tr[data-position-id="{identity}"]'))
+    runs.click(page, dialog.get_by_text('Transactions', exact=True))
+    playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
+    playwright.expect(dialog.get_by_role('button', name='Review against portfolio', exact=True)).not_to_be_visible()
+    runs.click(page, dialog.get_by_role('button', name='Add sell'))
+    for label, value in [('Quantity sold', '1'), ('Unit price', '110'), ('Fees', '1')]:
+        runs.commit_text(page, dialog.get_by_role('textbox', name=label, exact=True), value)
+    runs.click(page, dialog.get_by_role('button', name='Save sale', exact=True))
+    playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
+    journal = load_journal(directory)[0]
+    assert len(journal.securities[0].active_ids) == 3
+    holdings = effective_holdings(read_snapshot(directory/'holdings.csv').holdings, journal.securities)
+    assert holdings.loc[holdings.position_id.eq(identity)].iloc[0].shares == 1.5
     settle(page)

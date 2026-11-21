@@ -1,5 +1,55 @@
 # Release and upgrade notes {#releases}
 
+## Version 0.2.1 {#version-021}
+
+Version 0.2.1 adds Vorabpauschale estimates and reorganizes the Python source into
+responsibility-based packages. Existing holdings, transaction history, allocation,
+exposure and rebalancing behavior remain available through the same launch commands.
+
+### Vorabpauschale estimates
+
+**Taxes → Vorabpauschale** estimates annual fund amounts and associated tax for
+calculation years 2018–2026. Select accounts and funds, inspect missing evidence,
+and review fund inputs when automatic observations are insufficient. Completed
+years use year-end ownership; the current year is an explicitly labelled forecast.
+
+The calculator reuses applied ownership history and exact-share-class income
+policies across supported years. It keeps market observations, manual assumptions
+and confirmed facts distinguishable. Optional settings cover partial exemption,
+available allowance and church tax. Missing inputs remain visible, and totals
+are marked partial when selected funds cannot be calculated. Results do not
+create transactions or reproduce a bank's tax statement. See
+[Vorabpauschale estimates](taxes.md) for supported inputs, forecast assumptions,
+limitations and calculation sources.
+
+### Source organization
+
+Python modules now live in subpackages for portfolio calculations, exposure,
+fund providers, ledgers, performance, taxes, interfaces and runtime services.
+Installed commands and retained executable entrypoints remain unchanged. Internal
+Python import paths have changed; contributors should use the
+[complete move map and feature-transfer procedure](package-layout.md), including
+its special handling for edits to retained launch adapters.
+
+### Upgrade from 0.2.0 {#upgrade-021}
+
+Stop the old app, make a complete [workspace backup](storage.md#backup), then
+follow the [platform update instructions](install.md#update). Verify that the
+new application reports version 0.2.1 and check the selected workspace before
+retiring the previous installation. The package restructure does not move or
+rewrite private portfolio data, and the calculator does not alter the journal.
+
+Reviewed tax inputs and settings are stored privately in `tax-inputs.json`;
+downloaded observations use `.cache/tax/`. Include them in complete workspace
+backups. Opening Taxes does not establish that missing ownership or distributions
+were zero. Review incomplete results and any assumptions before relying on an
+estimate. If upgrading from 0.1.0, also follow the
+[history and account upgrade precautions](#upgrade-020).
+
+For rollback, retain the old application and restore the complete pre-upgrade
+backup into a separate directory. Keep the newer workspace intact so that later
+changes and tax inputs are not lost.
+
 ## Version 0.2.0 {#version-020}
 
 Version 0.2.0 extends current-holdings analysis with optional transaction history,

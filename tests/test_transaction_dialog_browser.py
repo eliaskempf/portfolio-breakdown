@@ -1,4 +1,5 @@
 """Transaction workflows keep their dialog mounted using invented holdings only."""
+from browser_support import reveal_earlier_history
 from browser_support import open_app
 from browser_runtime import browser_session, start_server
 import os
@@ -133,10 +134,11 @@ def test_edit_and_reconfirm_replaces_review_with_transaction_list(transaction_pa
             price = dialog.get_by_role('textbox', name='Unit price', exact=True)
             price.fill('11'); price.press('Tab'); settle(page)
             dialog.get_by_role('button', name='Save changes', exact=True).click(); settle(page)
+        reveal_earlier_history(page)
         dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
         dialog.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
         playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_have_count(1)
-        playwright.expect(dialog.get_by_role('button', name='Review against portfolio', exact=True)).to_have_count(1)
+        playwright.expect(dialog.get_by_role('button', name='Review against portfolio', exact=True, include_hidden=True)).to_have_count(1)
         for label in ('Apply history', 'Apply incomplete history', 'Keep portfolio unchanged', 'Back to transactions'):
             playwright.expect(dialog.get_by_role('button', name=label, exact=True)).to_have_count(0)
         playwright.expect(dialog.get_by_text('Review options', exact=True)).to_have_count(0)
@@ -148,6 +150,7 @@ def test_edit_and_reconfirm_replaces_review_with_transaction_list(transaction_pa
     page.evaluate('cancelAnimationFrame(window.historyFrame)')
     assert page.evaluate('window.mixedHistoryFrames') == 0
     assert page.locator('#page-runs').inner_text() == '1'
+    reveal_earlier_history(page)
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     apply = dialog.get_by_role('button', name='Apply history', exact=True)
     playwright.expect(apply).to_have_attribute('data-testid', 'stBaseButton-primary')
@@ -160,6 +163,7 @@ def test_edit_and_reconfirm_replaces_review_with_transaction_list(transaction_pa
     apply.click(); settle(page)
     assert not load_journal(root)[0].securities[0].reviews[-1].complete_through
     playwright.expect(dialog.get_by_role('button', name='Apply history', exact=True)).to_have_count(0)
+    reveal_earlier_history(page)
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     dialog.get_by_role('button', name='Keep portfolio unchanged', exact=True).click(); settle(page)
     playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_have_count(1)
@@ -174,7 +178,8 @@ def test_save_and_review_keep_dialog_visible(transaction_page, action):
     dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
     original, revision = load_journal(root)
     if action == 'save':
-        dialog.get_by_role('button', name='Add buy', exact=False).click(); settle(page)
+        reveal_earlier_history(page)
+        dialog.get_by_role('button', name='Enter earlier transactions', exact=False).click(); settle(page)
         for name, value in [('Quantity', '1'), ('Unit price', '12'), ('Fees', '0')]:
             dialog.get_by_role('textbox', name=name, exact=True).fill(value)
             dialog.get_by_role('textbox', name=name, exact=True).press('Tab'); settle(page)
@@ -217,12 +222,14 @@ def test_first_history_preserves_tabs_selection_and_valuation(ux_page):
     dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
     values = dialog.get_by_test_id('stMetricValue').all_text_contents()
     watch_dialog(page)
-    dialog.get_by_role('button', name='Add buy', exact=False).click(); settle(page)
+    reveal_earlier_history(page)
+    dialog.get_by_role('button', name='Enter earlier transactions', exact=False).click(); settle(page)
     for name, value in [('Quantity', '2'), ('Unit price', '80'), ('Fees', '0')]:
         field = dialog.get_by_role('textbox', name=name, exact=True)
         field.fill(value); field.press('Tab'); settle(page)
     dialog.get_by_role('button', name='Save transaction', exact=True).click(); settle(page)
     assert dialog.get_by_test_id('stMetricValue').all_text_contents() == values
+    reveal_earlier_history(page)
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     assert page.evaluate('window.missingDialogFrames') == 0
     assert dialog.evaluate('e=>e===window.originalDialog')
@@ -303,6 +310,7 @@ def test_review_repairs_and_apply_share_dialog_refresh_boundary(transaction_page
     dialog = page.get_by_role('dialog')
     dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
     watch_dialog(page)
+    reveal_earlier_history(page)
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     if original.securities[0].records[0].currency == 'USD':
         field, value, action = '2024-01-02 · EUR per 1 USD', '0.9', 'Save exchange rate'
@@ -314,6 +322,7 @@ def test_review_repairs_and_apply_share_dialog_refresh_boundary(transaction_page
     dialog.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
     assert load_journal(root)[0].securities[0].active
     assert load_journal(root)[0].securities[0].records[0] == original.securities[0].records[0]
+    reveal_earlier_history(page)
     dialog.get_by_role('button', name='Review against portfolio', exact=True).click(); settle(page)
     assert not dialog.get_by_role('button', name='Confirm complete history', exact=True).count()
     from portfolio_app.performance.history_observations import HistoryScope

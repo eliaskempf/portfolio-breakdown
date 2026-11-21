@@ -116,9 +116,9 @@ its command-line demo/live launch mode.
 
 ## Update or remove {#update}
 
-Read the [version 0.2.0 release and upgrade notes](releases.md#upgrade-020)
-before updating an existing workspace, especially if you will apply transaction
-history or record futures/accounts.
+Read the [version 0.2.1 release and upgrade notes](releases.md#upgrade-021)
+before updating an existing workspace. When upgrading from 0.1.0, also review
+the [transaction-history and account upgrade notes](releases.md#upgrade-020).
 
 1. Stop the old app and [back up the workspace](storage.md#backup).
 2. Run the new Windows Setup, install the new Ubuntu `.deb` with

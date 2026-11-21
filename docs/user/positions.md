@@ -1,9 +1,31 @@
 # Positions and buy-ins {#positions}
 
-## Add or edit a holding {#edit}
+## Record a purchase {#purchases-single}
 
-In **Positions**, choose **Add position**. Search for an investment and use
-**Select investment**, or **Choose listing** when several exchanges are grouped
+In **Positions → Add position**, **New purchase** is selected by default.
+Choose the investment, enter its trade date, quantity bought, unit price, trade
+currency and fees, then choose **Save purchase**. The total paid includes fees
+once. Saving creates the position and its applied buy transaction together;
+no separate review or history-application step is needed.
+
+For another purchase of an investment already saved, select **Existing instrument**
+and its **Purchase destination**. Choose **New account / holding** only when it
+belongs in a different account or portfolio. Existing categories and targets are
+preserved when adding a trade to an existing position.
+
+Open a position's **Transactions** view for **Add buy** or **Add sell**. These
+also update the holding immediately when saved. Editing an applied buy or sell
+with **Save changes** updates its quantity and cost directly while retaining the
+original record for audit. Selling more units than the
+recorded history supports is rejected. Matching trades require confirmation that
+they are separate events. Existing linked cash accounts update with the trade
+and fees; the form shows the resulting cash balance before saving. An unlinked
+position does not create cash balances or deposits.
+
+## Add or edit an existing holding {#edit}
+
+In **Positions**, choose **Add position → Existing holding**. Search for an
+investment and use **Select investment**, or **Choose listing** when several exchanges are grouped
 under a verified ISIN. Verify the exchange and trading currency. **Enter manually**
 opens identity fields without requiring search. **Change investment** reopens
 search while retaining your quantity, cost and allocation draft. Select an existing
@@ -23,6 +45,13 @@ commas are accepted without thousands separators. Average and total buy-in are
 visible together, followed by category and its target side by side. Account/broker,
 manual pricing and other optional fields are under **More details**. Physical
 assets using manual valuation keep their current price visible.
+
+**Holding as of** dates the current total, not its original purchases. Later
+buys and sells can be recorded directly after that date, without reconstructing
+earlier trades. For older undated holdings, the first new trade asks for this
+snapshot date. Trades on or before the snapshot date require **Add earlier
+history**, because they may already be included in the total. Earlier returns
+remain unavailable unless supported by historical evidence.
 
 Buy-in and targets are optional. A successful save writes to the active private
 workspace. A stale form is rejected; reload it before saving again.
@@ -67,8 +96,8 @@ confirmation dates are distinct from purchase dates and market-price timestamps.
 
 ## Calculate a new holding from purchases
 
-In **Add position → More details**, enable **Calculate from purchases**. Enter
-one row per purchase with quantity, unit price, optional date and optional fees.
+In **Add position → Existing holding → More details**, enable **Calculate from
+purchases**. Enter one row per purchase with quantity, unit price, optional date and optional fees.
 An optional FX rate records reporting-currency units per buy-in currency unit;
 otherwise dated purchases use historical conversion when available. Missing
 conversions exclude gains, while available current values remain included.
@@ -127,7 +156,7 @@ Date pickers show Monday through Sunday by default. Choose **Portfolio settings 
 Week starts on** to switch between Monday and Sunday. This preference is saved
 with the portfolio and applies to its date pickers without changing recorded dates.
 
-## Optional transaction history {#transaction-history}
+## Reconstruct earlier history {#transaction-history}
 
 To find gaps across current positions, open **Positions → History**. It shows
 positions needing attention by default; clear that filter to see every position.
@@ -138,11 +167,13 @@ matching balances alone cannot prove that no transactions are missing. Ordinary
 interior price gaps do not themselves make a position incomplete.
 
 Total quantity and average buy-in remain sufficient for current portfolio analysis.
-Open a position's **Transactions** view to start an empty list with **Add buy**
-or **Add sell**. **Other transaction** supports distributions, splits, transfers
-and fees. **Save transaction** retains incomplete work without changing the
-current holding. You can enter purchases and sales before deciding how much
-history you can reconstruct.
+For transactions already included in a holding snapshot, open the position's
+**Transactions → Add earlier history → Enter earlier transactions**. This
+secondary workflow retains evidence before applying reconstructed balances, so
+old purchases do not count twice. **Save transaction** can retain incomplete
+historical work without changing the current holding. **Review against portfolio**
+and **Add starting balance** are under **Add earlier history**.
+**Other transaction** also supports distributions, splits, transfers and fees.
 
 **Import PDFs** accepts a batch of Consorsbank stock/ETF buy and sale statements
 for the selected position and account (up to 100 PDFs / 100 MB per batch,

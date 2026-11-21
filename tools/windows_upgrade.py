@@ -4,12 +4,12 @@ import zipfile
 
 from windows_bundle import download
 
-BASELINE_VERSION = '0.1.0'
+BASELINE_VERSION = '0.2.0'
 BASELINE_FILES = {
-    'portfolio-breakdown-0.1.0-windows-x64-setup.exe':
-        'a28b9e6cec0d4f81213dab07ee16fa9f055a237f2714572bf4412512e8e6a1d7',
-    'portfolio-breakdown-0.1.0-windows-x64.zip':
-        '492a39f73b6a81871d2f769637c8d591c88fa67c3b07f665f5874f4d3e14bee2',
+    'portfolio-breakdown-0.2.0-windows-x64-setup.exe':
+        '7ae6c9f169956ce7ea8a852223cf400468b0df231789d0ec0a5c5fcb06db7341',
+    'portfolio-breakdown-0.2.0-windows-x64.zip':
+        'ed364f376d1605297306be4b739814a11377e601f325c986cb2b86d356724f87',
 }
 
 

@@ -342,6 +342,8 @@ def promote(api, repository, run_id, *, linux_native_run_id, macos_run_id=None):
         if len({m['documentation']['build_info_sha256'] for m in manifests}) != 1:
             raise ValueError('Platforms have different documentation contents.')
         tag = 'v' + manifests[0]['version']
+        release_notes = (f'\n\n[Release and upgrade notes for {tag}]'
+                         f'(https://github.com/{repository}/blob/{commit}/docs/user/releases.md)')
         sums = root / 'SHA256SUMS'
         sums.write_text(''.join(f'{sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in uploads), encoding='utf-8')
         uploads.append(sums)
@@ -372,7 +374,7 @@ def promote(api, repository, run_id, *, linux_native_run_id, macos_run_id=None):
                 raise
             release = api.call('/releases', method='POST', body=dict(tag_name=tag, target_commitish=commit,
                 name=tag, draft=True, body=f'Tested candidate: https://github.com/{repository}/actions/runs/{run_id}\n\n'
-                    'GPL-3.0-only. Corresponding source, build instructions and dependency notices are attached.' + linux_note + mac_note))
+                    'GPL-3.0-only. Corresponding source, build instructions and dependency notices are attached.' + release_notes + linux_note + mac_note))
         if not release['draft']:
             raise ValueError('An official release already exists; it will not be overwritten.')
         if release.get('assets'):
@@ -381,7 +383,7 @@ def promote(api, repository, run_id, *, linux_native_run_id, macos_run_id=None):
             api.upload(release['id'], path)
         publication = {'draft': False}
         body = release.get('body', '')
-        for note in [linux_note, mac_note]:
+        for note in [release_notes, linux_note, mac_note]:
             if note and note not in body:
                 body += note
         if body != release.get('body', ''):

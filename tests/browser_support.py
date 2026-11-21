@@ -101,3 +101,13 @@ def select_tab(page, name):
     expect(tab).to_have_attribute('aria-selected', 'true')
     settle(page)
     expect(tab).to_have_attribute('aria-selected', 'true')
+
+
+def reveal_earlier_history(page):
+    """Legacy reconstruction is a secondary expander in the transaction list."""
+    review = page.get_by_role('button', name='Review against portfolio', exact=True)
+    enter = page.get_by_role('button', name='Enter earlier transactions', exact=True)
+    expander = page.get_by_text('Add earlier history', exact=True)
+    if expander.count() and not review.is_visible() and not enter.is_visible():
+        expander.click()
+        settle(page)

@@ -63,7 +63,7 @@ def test_history_views_and_incomplete_new_transaction_render(tmp_path):
     fixture(tmp_path)
     app=launch(tmp_path)
     assert not app.exception
-    label(app.button,'Add buy').click().run()
+    label(app.button,'Enter earlier transactions').click().run()
     assert not app.exception
     label(app.text_input,'Quantity').set_value('1').run()
     label(app.button,'Save transaction').click().run()
@@ -92,7 +92,7 @@ def test_save_rejects_concurrent_history_change_and_retains_draft(tmp_path):
     from portfolio_app.ledger.account_journal import load_journal
     fixture(tmp_path)
     app = launch(tmp_path)
-    label(app.button, 'Add buy').click().run()
+    label(app.button, 'Enter earlier transactions').click().run()
     label(app.text_input, 'Quantity').set_value('3').run()
     label(app.text_input, 'Unit price').set_value('12').run()
     journal, revision = load_journal(tmp_path)
@@ -135,7 +135,8 @@ def test_buys_and_sells_save_before_starting_balance_and_review_from_zero(tmp_pa
     for kind,quantity,price,fee,stamp in [('buy','10','10','10',date(2024,1,2)),
                                         ('buy','5','20','',date(2024,2,1)),
                                         ('sell','5','22','',date(2024,3,1))]:
-        label(app.button,'Add '+kind).click().run()
+        label(app.button,'Enter earlier transactions').click().run()
+        label(app.selectbox,'Transaction').select(kind).run()
         assert label(app.selectbox,'Transaction').value == kind
         assert label(app.text_input,'Quantity').value == ''
         label(app.date_input,'Transaction date').set_value(stamp).run()
@@ -174,7 +175,8 @@ def test_manual_fee_defaults_follow_trade_and_explicit_details_survive_edits(tmp
     from portfolio_app.ledger.security_history import Charge
     fixture(tmp_path)
     app = launch(tmp_path)
-    label(app.button, 'Add '+kind).click().run()
+    label(app.button, 'Enter earlier transactions').click().run()
+    label(app.selectbox, 'Transaction').select(kind).run()
     if explicit_fee:
         label(app.text_input, 'Fee currency').set_value('GBP').run()
         label(app.date_input, 'Fee date').set_value(date(2024, 2, 5)).run()
@@ -265,7 +267,7 @@ def test_unknown_fees_stay_unknown_until_explicit_zero(tmp_path):
     from portfolio_app.ledger.account_journal import load_journal
     (tmp_path/'holdings.csv').write_text('id,name,shares,acquisition_price,acquisition_currency\ninvented,Invented,1,10,EUR\n')
     app=launch(tmp_path)
-    label(app.button,'Add buy').click().run()
+    label(app.button,'Enter earlier transactions').click().run()
     label(app.text_input,'Quantity').set_value('1').run()
     label(app.text_input,'Unit price').set_value('10').run()
     label(app.button,'Save transaction').click().run()
@@ -289,7 +291,8 @@ def test_gross_and_cash_total_entry_do_not_double_count_fees(tmp_path):
         directory=tmp_path/(kind+str(amount));directory.mkdir()
         (directory/'holdings.csv').write_text('id,name,shares\ninvented,Invented,1\n')
         app=launch(directory)
-        label(app.button,'Add '+kind).click().run()
+        label(app.button,'Enter earlier transactions').click().run()
+        label(app.selectbox,'Transaction').select(kind).run()
         label(app.text_input,'Quantity').set_value('10').run()
         label(app.selectbox,'Amount entry').select(mode).run()
         label(app.text_input,mode).set_value(amount).run()

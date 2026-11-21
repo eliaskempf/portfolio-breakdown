@@ -23,6 +23,8 @@ def test_manual_setup_skip_persists_currency_and_default(tmp_path, currency):
     assert app.selectbox(key='currency_setting_choice').value == currency
     activate(app, 'Positions')
     by_label(app.button, 'Add position').click().run()
+    assert by_label(app.selectbox, 'Trade currency').value == currency
+    by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     assert by_label(app.selectbox, 'Buy-in currency').value == currency
     by_label(app.button, 'Cancel').click().run()
     assert load_settings(personal).reporting_currency == currency
