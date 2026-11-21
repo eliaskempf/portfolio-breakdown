@@ -46,10 +46,10 @@ def bucket_positions(valued: pd.DataFrame, config: Allocation, bucket: str = "")
         return valued.copy()
     if bucket == "unassigned":
         return valued.loc[valued.bucket_id.eq("")].copy()
-    return valued.loc[valued.bucket_id.isin(config.leaves(bucket))].copy()
+    return valued.loc[valued.bucket_id.isin(config.descendants(bucket))].copy()
 
 
-def strategic_tree(valued: pd.DataFrame, config: Allocation, bucket: str = "") -> pd.DataFrame:
+def strategic_tree(valued: pd.DataFrame, config: Allocation, bucket: str = "", *, flat: bool = False) -> pd.DataFrame:
     """Chart areas use known reporting-currency values only; missing totals remain explicit metadata.
 
     IDs, rather than display names, define the hierarchy. Empty buckets get zero
@@ -57,13 +57,15 @@ def strategic_tree(valued: pd.DataFrame, config: Allocation, bucket: str = "") -
     """
     paths = bucket_paths(config)
     names = {item.id: item.name for item in config.buckets} | {"unassigned": "Unassigned"}
+    if flat:
+        valued = bucket_positions(valued, config, bucket)
     records = [dict(asset_id=row.position_id, asset_name=instrument_name(row),
-                    path=paths[row.bucket_id or "unassigned"],
+                    path=paths[bucket] if flat else paths[row.bucket_id or "unassigned"],
                     value=0. if pd.isna(row.current_value_reporting) else row.current_value_reporting)
                for row in valued.itertuples()]
     # Materialize planned buckets even when they have no source positions.
     records.extend(dict(asset_id="", asset_name="", path=paths[key], value=0.)
-                   for key in config.leaves() | ({"unassigned"} if valued.bucket_id.eq("").any() else set()))
+                   for key in (() if flat else config.leaves() | ({"unassigned"} if valued.bucket_id.eq("").any() else set())))
     nodes = build_tree(pd.DataFrame(records, columns=ALLOCATION_COLUMNS), root=paths[bucket],
                        include_holdings=True, root_label="Portfolio")
     if nodes.empty:
@@ -85,35 +87,66 @@ def strategic_tree(valued: pd.DataFrame, config: Allocation, bucket: str = "") -
     return nodes.reset_index(drop=True)
 
 
-def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = "", *, known_exposure=None) -> pd.DataFrame:
-    """Disjoint immediate children; current/target columns share the view scope."""
+def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = "", *, known_exposure=None, flat=False, hierarchy=False, identities=False) -> pd.DataFrame:
+    """Scope-relative allocation rows, optionally including expandable descendants.
+
+    Hierarchical rows overlap: only rows with no parent form the scope total.
+    Every descendant keeps the selected scope's percentage denominator.
+    """
     selected = bucket_positions(valued, config, bucket)
     total = float(selected.current_value_reporting.sum())
     complete = selected.current_value_reporting.notna().all()
-    children = config.children(bucket) if bucket != "unassigned" else []
+    choices = []
+    paths = bucket_paths(config)
+    members = {}
+    if hierarchy and not flat:
+        # Index membership once; avoid rescanning all positions per category.
+        for index, owner in enumerate(selected.bucket_id):
+            for ancestor in paths[owner or 'unassigned']:
+                members.setdefault(ancestor, []).append(index)
+    if not flat:
+        categories = [item for item in config.buckets if item.id != bucket and
+                      (not bucket or bucket in paths[item.id])] if hierarchy else config.children(bucket)
+        choices.extend((item.id, item.name, config.relative_target(item.id, bucket),
+                        selected.iloc[members.get(item.id, [])] if hierarchy else bucket_positions(selected, config, item.id), '')
+                       for item in categories if bucket != 'unassigned')
+        if not bucket and valued.loc[valued.bucket_id.eq(''), 'current_value_reporting'].ne(0).any():
+            choices.append(('unassigned', 'Unassigned', None, bucket_positions(selected, config, 'unassigned'), ''))
+    direct = selected if flat or hierarchy or bucket == 'unassigned' else selected.loc[selected.bucket_id.eq(bucket)] if bucket else selected.iloc[:0]
+    labels = category_labels(config)
+    for index, row in enumerate(direct.itertuples()):
+        target = row.within_bucket_target if row.bucket_id and not config.flexible(row.bucket_id) else float('nan')
+        if (flat or hierarchy) and row.bucket_id:
+            target *= config.relative_target(row.bucket_id, bucket)
+        owner = labels.get(row.bucket_id, 'Unassigned')
+        if bucket and row.bucket_id != bucket:
+            owner = owner.removeprefix(labels.get(bucket, '') + ' › ')
+        choices.append((row.position_id, instrument_name(row), target, direct.iloc[[index]], owner))
     records = []
-    choices = [(item.id, item.name, item.target) for item in children]
-    if not bucket and valued.loc[valued.bucket_id.eq(""), 'current_value_reporting'].ne(0).any():
-        choices.append(("unassigned", "Unassigned", None))
-    if not choices:
-        choices = [(row.position_id, instrument_name(row), row.within_bucket_target)
-                   for row in selected.itertuples()]
-        positions = True
-    else:
-        positions = False
-    for key, name, target in choices:
-        rows = selected.loc[selected.position_id.eq(key)] if positions else bucket_positions(valued, config, key)
+    for key, name, target, rows, owner in choices:
         known = rows.current_value_reporting.notna().all()
         subtotal = float(rows.current_value_reporting.sum())
-        current = 100 * subtotal / total if complete and known and total > 0 else float("nan")
-        target = float(target) * 100 if pd.notna(target) else float("nan")
-        records.append({"Category": name, "Value": subtotal if known else float("nan"),
-                        "Current (%)": current, "Target (%)": target,
-                        "Gap (pp)": current - target,
-                        "Status": "Missing price" if not known else "Empty" if not len(rows) or rows.shares.eq(0).all() else ""})
+        current = 100 * subtotal / total if complete and known and total > 0 else float('nan')
+        target = float(target) * 100 if pd.notna(target) else float('nan')
+        records.append({'Category': name, 'Value': subtotal if known else float('nan'),
+                        'Current (%)': current, 'Target (%)': target,
+                        'Gap (pp)': current - target,
+                        'Status': 'Missing price' if not known else 'Empty' if not len(rows) or rows.shares.eq(0).all() else ''})
+        if flat:
+            records[-1]['Assigned category'] = owner
+            records[-1]['Account'] = rows.account.iloc[0] if 'account' in rows and len(rows) == 1 else ''
+        if hierarchy or identities:
+            position = bool(owner)
+            parent = (rows.bucket_id.iloc[0] or 'unassigned') if position else next(
+                (item.parent for item in config.buckets if item.id == key), '')
+            records[-1].update(row_id=('position:' if position else 'category:') + key,
+                               parent_id='' if flat or parent in {'', bucket} else 'category:' + parent,
+                               position_id=key if position else '', category_id='' if position else key)
+            if hierarchy and not flat:
+                records[-1]['Account'] = rows.account.iloc[0] if position and 'account' in rows else ''
         if known_exposure is not None:
             records[-1]['Known exposure'] = rows.position_id.map(known_exposure).sum(min_count=1) if len(rows) else 0.
-    return pd.DataFrame(records, columns=["Category", "Value", *(['Known exposure'] if known_exposure is not None else []), "Current (%)", "Target (%)", "Gap (pp)", "Status"]).sort_values(
+    return pd.DataFrame(records, columns=["Category", *(["Assigned category", "Account"] if flat else ['Account'] if hierarchy else []), "Value", *(['Known exposure'] if known_exposure is not None else []), "Current (%)", "Target (%)", "Gap (pp)", "Status", *(['row_id', 'parent_id', 'position_id', 'category_id'] if hierarchy or identities else [])]).sort_values(
         ["Value", "Category"], ascending=[False, True], na_position="last", ignore_index=True)
 
 
@@ -124,12 +157,13 @@ def strategic_performance(valued, config, bucket="", *, evaluate=None):
     choices = [(b.name, bucket_positions(selected, config, b.id), b.id) for b in children]
     if not bucket and selected.bucket_id.eq("").any():
         choices.append(("Unassigned", bucket_positions(selected, config, "unassigned"), 'unassigned'))
-    if not choices:
-        labels = [instrument_name(row) for row in selected.itertuples()]
+    direct = selected if bucket == 'unassigned' else selected.loc[selected.bucket_id.eq(bucket)] if bucket else selected.iloc[:0]
+    if not direct.empty:
+        labels = [instrument_name(row) for row in direct.itertuples()]
         counts = Counter(labels)
-        choices = [(label + (' · ' + (getattr(row, 'account', '') or getattr(row, 'portfolio', '') or f'Position {index + 1}')
+        choices += [(label + (' · ' + (getattr(row, 'account', '') or getattr(row, 'portfolio', '') or f'Position {index + 1}')
                             if counts[label] > 1 else ''), selected.loc[selected.position_id.eq(row.position_id)], None)
-                   for index, (label, row) in enumerate(zip(labels, selected.itertuples()))]
+                   for index, (label, row) in enumerate(zip(labels, direct.itertuples()))]
     # Plotly uses category labels as coordinates. Never place distinct positions
     # or same-named sibling categories on top of each other.
     counts = Counter(name for name, _, _ in choices)

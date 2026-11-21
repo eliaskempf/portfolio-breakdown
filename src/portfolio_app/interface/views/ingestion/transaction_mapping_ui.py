@@ -145,7 +145,7 @@ def render_mapping(directory, snapshot, journal, rows, token, *, currency='EUR',
         from portfolio_app.portfolio.allocation import load_allocation
         from portfolio_app.portfolio.strategic import category_labels
         allocation = load_allocation(directory/'allocation.yaml', holdings)
-        categories = ['', *sorted(allocation.leaves())] if allocation else ['']
+        categories = ['', *sorted(allocation.descendants())] if allocation else ['']
         labels = category_labels(allocation) if allocation else {}
         with st.expander('Asset types & categories'):
             for asset, key, addition in new_details:

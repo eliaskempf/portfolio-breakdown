@@ -1,5 +1,5 @@
 """Non-overlapping allocation ownership and parent-relative budgets."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from io import StringIO
 import math
 from pathlib import Path
@@ -20,6 +20,15 @@ class Bucket:
     parent: str = ''
     target: float | None = None
     sell_protected: bool = False
+    allocation_mode: str = 'targets'
+    buy_priority: tuple[str, ...] = ()
+    sell_priority: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        if not isinstance(self.buy_priority, (tuple, list)) or not isinstance(self.sell_priority, (tuple, list)):
+            raise ValueError('Trade priorities must be ordered position lists.')
+        object.__setattr__(self, 'buy_priority', tuple(self.buy_priority))
+        object.__setattr__(self, 'sell_priority', tuple(self.sell_priority))
 
 
 @dataclass(frozen=True)
@@ -34,10 +43,27 @@ class Allocation:
         children = self.children(parent)
         return set().union(*(self.leaves(b.id) for b in children)) if children else ({parent} if parent else set())
 
-    def global_target(self, key: str) -> float:
+    def descendants(self, parent: str = '') -> set[str]:
+        """Ownership scope, including positions assigned directly to the parent."""
+        result = {parent} if parent else set()
+        pending = [parent]
+        by_parent = {}
+        for bucket in self.buckets:
+            by_parent.setdefault(bucket.parent, []).append(bucket.id)
+        while pending:
+            for key in by_parent.get(pending.pop(), ()):
+                if key not in result:
+                    result.add(key)
+                    pending.append(key)
+        return result
+
+    def flexible(self, key: str) -> bool:
+        return any(b.id == key and b.allocation_mode == 'flexible' for b in self.buckets)
+
+    def relative_target(self, key: str, parent: str = '') -> float:
         by_id = {b.id: b for b in self.buckets}
         result = 1.
-        while key:
+        while key != parent:
             b = by_id.get(key)
             if b is None or b.target is None:
                 return float('nan')
@@ -45,14 +71,24 @@ class Allocation:
             key = b.parent
         return result
 
+    def global_target(self, key: str) -> float:
+        return self.relative_target(key)
+
 
 def validate_allocation(config: Allocation, holdings: pd.DataFrame | None = None) -> None:
     ids = [b.id for b in config.buckets]
-    if config.version != 2 or len(set(ids)) != len(ids) or any(not key or key == 'unassigned' for key in ids):
-        raise DataError('Allocation version must be 2, with unique nonempty bucket IDs (unassigned is reserved).')
+    if config.version not in (2, 3) or len(set(ids)) != len(ids) or any(not key or key == 'unassigned' for key in ids):
+        raise DataError('Allocation version must be 2 or 3, with unique nonempty bucket IDs (unassigned is reserved).')
     for b in config.buckets:
         if not b.name or (b.parent and b.parent not in ids):
             raise DataError('Each bucket needs a name and an existing parent.')
+        if b.allocation_mode not in {'targets', 'flexible'}:
+            raise DataError('Choose Member targets or Flexible allocation.')
+        if b.allocation_mode == 'flexible' and config.children(b.id):
+            raise DataError('Switch to Member targets before adding subcategories to a flexible category.')
+        for priority in (b.buy_priority, b.sell_priority):
+            if any(not isinstance(key, str) or not key for key in priority) or len(set(priority)) != len(priority):
+                raise DataError('Trade priorities must contain unique position identities.')
         if not isinstance(b.sell_protected, bool):
             raise DataError('Sell protection must be true or false.')
     for b in config.buckets:
@@ -67,11 +103,19 @@ def validate_allocation(config: Allocation, holdings: pd.DataFrame | None = None
             raise DataError('Bucket targets must be blank or fractions between zero and one.')
     if holdings is not None:
         assigned = set(holdings.get('bucket_id', pd.Series(dtype=str))) - {''}
-        if assigned - config.leaves():
-            raise DataError('Positions must belong to existing leaf buckets. Move positions before removing or nesting a bucket.')
+        if assigned - set(ids):
+            raise DataError('Positions must belong to existing categories. Move positions before removing a category.')
+        for b in config.buckets:
+            members = set(holdings.loc[holdings.bucket_id.eq(b.id), 'position_id'])
+            if (set(b.buy_priority) | set(b.sell_priority)) - members:
+                raise DataError(f'Trade priorities for {b.name} reference positions outside the category. Review its priorities.')
 
 
 def load_allocation(path: Path, holdings: pd.DataFrame | None = None) -> Allocation | None:
+    if path.with_name('.allocation-publication.json').exists():
+        from portfolio_app.workspace.workspace_lock import workspace_lock
+        with workspace_lock(path.parent):
+            pass
     if not path.exists():
         return None
     try:
@@ -85,8 +129,25 @@ def load_allocation(path: Path, holdings: pd.DataFrame | None = None) -> Allocat
 
 def save_allocation(path: Path, config: Allocation, holdings: pd.DataFrame, expected_revision: str | None) -> None:
     validate_allocation(config, holdings)
-    content = yaml.safe_dump({'version': 2, 'buckets': [vars(b) for b in config.buckets]}, sort_keys=False)
+    if any(config.children(b.id) and holdings.bucket_id.eq(b.id).any() for b in config.buckets):
+        config = replace(config, version=3)
+    content = allocation_content(config)
     save_document(path, content, expected_revision)
+
+
+def allocation_content(config: Allocation) -> str:
+    version = 3 if config.version == 3 or any(b.allocation_mode != 'targets' or b.buy_priority or b.sell_priority for b in config.buckets) else 2
+    records = []
+    for b in config.buckets:
+        record = vars(b).copy()
+        if version == 2:
+            for field in ('allocation_mode', 'buy_priority', 'sell_priority'):
+                record.pop(field)
+        else:
+            record['buy_priority'] = list(b.buy_priority)
+            record['sell_priority'] = list(b.sell_priority)
+        records.append(record)
+    return yaml.safe_dump({'version': version, 'buckets': records}, sort_keys=False)
 
 
 def migration_preview(holdings: pd.DataFrame) -> tuple[Allocation, pd.DataFrame]:
@@ -129,15 +190,18 @@ def analysis_targets(holdings: pd.DataFrame, config: Allocation) -> pd.DataFrame
     result = holdings.copy()
     result['bucket_id'] = result.get('bucket_id', '')
     result['within_bucket_target'] = result.get('within_bucket_target', float('nan'))
-    result['target_allocation'] = [config.global_target(key) * target if key else float('nan')
+    result['target_allocation'] = [config.global_target(key) * target if key and not config.flexible(key) else float('nan')
                                    for key, target in zip(result.bucket_id, result.within_bucket_target)]
     return result
 
 
-def ignore_empty_by_bucket(holdings: pd.DataFrame) -> pd.DataFrame:
+def ignore_empty_by_bucket(holdings: pd.DataFrame, config: Allocation | None = None) -> pd.DataFrame:
     from portfolio_app.portfolio.rebalancing import ignore_empty_positions
     groups = []
-    for _, rows in holdings.groupby('bucket_id', dropna=False, sort=False):
+    for owner, rows in holdings.groupby('bucket_id', dropna=False, sort=False):
+        if config is not None and config.flexible(owner):
+            groups.append(rows.loc[rows.shares > 0].copy())
+            continue
         temp = rows.copy()
         temp['target_allocation'] = temp.within_bucket_target
         # Unknown targets do not block the overview or calculations in other buckets.
@@ -159,13 +223,13 @@ def macro_table(valued: pd.DataFrame, config: Allocation, *, extra_cash: float =
     for b in (*config.buckets, Bucket('unassigned', 'Unassigned')):
         if b.id == 'unassigned' and not valued.bucket_id.eq('').any():
             continue
-        mask = valued.bucket_id.eq('') if b.id == 'unassigned' else valued.bucket_id.isin(config.leaves(b.id))
+        mask = valued.bucket_id.eq('') if b.id == 'unassigned' else valued.bucket_id.isin(config.descendants(b.id))
         rows = valued.loc[mask]
         value = float(rows.current_value_reporting.sum())
         known = rows.current_value_reporting.notna().all()
         target = config.global_target(b.id)
         current = value / total if complete and total > 0 else float('nan')
-        parent_rows = valued.loc[valued.bucket_id.isin(config.leaves(b.parent))] if b.parent else valued
+        parent_rows = valued.loc[valued.bucket_id.isin(config.descendants(b.parent))] if b.parent else valued
         parent_value = float(parent_rows.current_value_reporting.sum()) + (extra_cash if not b.parent else 0.)
         parent_complete = parent_rows.current_value_reporting.notna().all()
         records.append({'Bucket': b.name, 'Parent': b.parent, 'Value': value if known else float('nan'),

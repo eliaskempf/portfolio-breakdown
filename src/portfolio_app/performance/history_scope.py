@@ -26,7 +26,7 @@ def category_history_scope(journal, holdings, config, bucket='', *, displayed=No
         # Retained histories must survive closing/removing the current position.
         positions.update(b.position_id for b in journal.securities)
         return HistoryScope(tuple(positions), tuple(a.id for a in journal.accounts))
-    included = {''} if bucket == 'unassigned' else config.leaves(bucket)
+    included = {''} if bucket == 'unassigned' else config.descendants(bucket)
     assignments = holdings.set_index('position_id').bucket_id.to_dict()
     if bucket == 'unassigned':
         positions.update(b.position_id for b in journal.securities if b.position_id not in assignments)
@@ -38,7 +38,7 @@ def category_history_scope(journal, holdings, config, bucket='', *, displayed=No
         elif event.kind in ('debt_open', 'borrow'):
             components[event.account_id].add('')
     for position in journal.positions:
-        components[position.account_id].add(position.bucket_id if position.bucket_id in config.leaves() else '')
+        components[position.account_id].add(position.bucket_id if position.bucket_id in config.descendants() else '')
     accounts = []
     for account in journal.accounts:
         categories = components[account.id]

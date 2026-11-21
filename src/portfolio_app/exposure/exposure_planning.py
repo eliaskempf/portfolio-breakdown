@@ -13,6 +13,7 @@ import pandas as pd
 from scipy.optimize import Bounds, LinearConstraint, milp
 
 from portfolio_app.exposure.exposure_targets import exposure_gaps, leaf_composition
+from portfolio_app.exposure.mixed_exposure_targets import source_target_key
 from portfolio_app.studies.futures import CONTRACTS, require_eur_reporting
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.exposure.portfolio_exposure import finite
@@ -54,9 +55,9 @@ def plan_exposure(result, targets, allocation, valued, *, permitted, future=None
     if type(max_contracts) is not int or not 0 <= max_contracts <= 10000:
         raise DataError('Contract limit must be a whole number between 0 and 10000.')
     base = exposure_gaps(result, targets, allocation).set_index('Bucket ID')
-    invalid = result.exposures.loc[~result.exposures.bucket_id.isin(allocation.leaves()), targets.field]
+    invalid = result.exposures.loc[~result.exposures.bucket_id.isin(allocation.descendants()), targets.field]
     if invalid.abs().gt(1e-9).any():
-        raise DataError('Assign all nonzero exposures to valid leaf categories before planning.')
+        raise DataError('Assign all nonzero exposures to valid categories before planning.')
     permitted = set(permitted)
     if targets.policy == 'overlay_only' and permitted != {'future:overlay'}:
         raise DataError('Overlay-only planning permits the future alone; funded exposures must stay unchanged.')
@@ -66,11 +67,11 @@ def plan_exposure(result, targets, allocation, valued, *, permitted, future=None
         raise DataError('A permitted source position no longer exists.')
     if future_funding and (future is None or future.reference_capital_eur is None):
         raise DataError('Dedicated funding requires an existing funded futures position.')
-    protected = set().union(*(allocation.leaves(b.id) for b in allocation.buckets if b.sell_protected))
+    protected = set().union(*(allocation.descendants(b.id) for b in allocation.buckets if b.sell_protected))
     instruments = []
     for row in valued.loc[valued.position_id.isin(permitted)].itertuples():
-        if row.bucket_id not in allocation.leaves() or not finite(row.current_value_reporting) or row.current_value_reporting <= 0 or not finite(row.shares) or row.shares <= 0:
-            raise DataError('Permitted funded positions need a positive priced balance and a valid leaf category.')
+        if row.bucket_id not in allocation.descendants() or not finite(row.current_value_reporting) or row.current_value_reporting <= 0 or not finite(row.shares) or row.shares <= 0:
+            raise DataError('Permitted funded positions need a positive priced balance and a valid category.')
         source = result.exposures.loc[result.exposures.source_position_id.eq(row.position_id)]
         amount = float(source[targets.field].sum())
         if source.empty or source[targets.field].isna().any() or abs(amount) < 1e-9:
@@ -81,8 +82,8 @@ def plan_exposure(result, targets, allocation, valued, *, permitted, future=None
                                 sales=allow_sales and row.bucket_id not in protected))
     changing_future = 'future:overlay' in permitted
     if changing_future:
-        if future.reference_capital_eur is None or future.bucket_id not in allocation.leaves():
-            raise DataError('Future planning requires dedicated funded capital and a valid leaf category.')
+        if future.reference_capital_eur is None or future.bucket_id not in allocation.descendants():
+            raise DataError('Future planning requires dedicated funded capital and a valid category.')
         if margin_per_contract is None or not finite(margin_per_contract) or margin_per_contract <= 0:
             raise DataError('Declare a positive initial margin per contract for this plan.')
         if collateral_limit > max(0., future.capital_value) + 1e-8:
@@ -111,8 +112,9 @@ def plan_exposure(result, targets, allocation, valued, *, permitted, future=None
     for i, item in enumerate(instruments):
         buy, sell = 2*i, 2*i+1
         fees[[buy, sell]] = item['fee']
-        changes[item['bucket']][buy] = item['unit']
-        changes[item['bucket']][sell] = -item['unit']
+        key = source_target_key(targets, item['bucket'], item['id']) if targets.weights == 'mixed' else item['bucket']
+        changes[key][buy] = item['unit']
+        changes[key][sell] = -item['unit']
         if item['future']:
             integer[[buy, sell, margin_index]] = 1
             upper[[buy, sell]] = 20000
@@ -169,6 +171,22 @@ def plan_exposure(result, targets, allocation, valued, *, permitted, future=None
         turnover[2*i:2*i+2] = max(abs(item['unit']), item['price'], 1.)
     refined = solve(turnover)
     x = refined.x if refined.success else solution.x
+    # Directional group preferences only break ties after exposure gaps and turnover.
+    if refined.success and targets.weights == 'mixed':
+        preference = np.zeros(size)
+        groups = {b.id: b for b in allocation.buckets if b.allocation_mode == 'flexible'}
+        for i, item in enumerate(instruments):
+            group = groups.get(item['bucket'])
+            if group is None:
+                continue
+            for offset, priority in enumerate((group.buy_priority, group.sell_priority)):
+                if item['id'] in priority:
+                    preference[2*i+offset] = priority.index(item['id']) * abs(item['unit'])
+        if preference.any():
+            constraint(turnover, maximum=refined.fun+1e-7)
+            preferred = solve(preference)
+            if preferred.success:
+                x = preferred.x
     activity = np.array(constraints) @ x
     if (not np.isfinite(x).all() or np.any(activity < np.array(lo)-1e-5)
             or np.any(activity > np.array(hi)+1e-5)

@@ -1,6 +1,7 @@
 """Strategic allocation setup and balance replacement controls."""
 from datetime import date
 from uuid import uuid4
+from dataclasses import replace
 from portfolio_app.portfolio.strategic import category_labels
 from pathlib import Path
 
@@ -119,11 +120,12 @@ def _bucket_editor(config, key, holdings=None):
         key=f"{key}_rows_{draft['generation']}", disabled=['ID'],
         column_config={'ID': None, 'Name': st.column_config.TextColumn(required=True),
             'Parent': st.column_config.SelectboxColumn(options=['Portfolio', *labels.values()], required=True),
-            'Target (% of parent)': st.column_config.NumberColumn(min_value=0., max_value=100.,
+            'Target (% of parent)': None if config.version == 3 else st.column_config.NumberColumn(min_value=0., max_value=100.,
                 help='Blank means unspecified; zero is an explicit target. Sibling targets should total 100%.'),
             'Protect from selling': st.column_config.CheckboxColumn()})
     draft['rows'] = edited
-    _category_summary(edited)
+    if config.version != 3:
+        _category_summary(edited, holdings, config)
     return edited
 
 
@@ -139,15 +141,17 @@ def _config_from_rows(rows, config):
             raise DataError('Each category needs a name. Use Delete categories to remove a category.')
         if parent not in {'Portfolio', *labels}:
             raise DataError('Choose an existing parent category.')
-        buckets.append(Bucket(text(row['ID']) or uuid4().hex, name, labels.get(parent, ''),
-            None if pd.isna(row['Target (% of parent)']) else float(row['Target (% of parent)']) / 100,
-            False if pd.isna(row['Protect from selling']) else bool(row['Protect from selling'])))
-    return Allocation(tuple(buckets))
+        key = text(row['ID']) or uuid4().hex
+        previous = next((b for b in config.buckets if b.id == key), Bucket(key, name))
+        buckets.append(replace(previous, name=name, parent=labels.get(parent, ''),
+            target=None if pd.isna(row['Target (% of parent)']) else float(row['Target (% of parent)']) / 100,
+            sell_protected=False if pd.isna(row['Protect from selling']) else bool(row['Protect from selling'])))
+    return Allocation(tuple(buckets), config.version)
 
 
 def category_position_editor(positions, config, *, key, extra=(), filtered=False):
     labels = category_labels(config)
-    choices = {label: identity for identity, label in labels.items() if identity in config.leaves()}
+    choices = {label: identity for identity, label in labels.items() if identity in config.descendants()}
     display = positions.copy()
     display['Category'] = display.bucket_id.map(labels).fillna('Unassigned')
     columns = ['position_id', 'name', *extra, 'Category', 'within_bucket_target']
@@ -155,7 +159,7 @@ def category_position_editor(positions, config, *, key, extra=(), filtered=False
     draft = drafts.setdefault(key, {'rows': display[columns], 'generation': 0, 'filter': '*'})
     selected = '*'
     if filtered:
-        options = ['*', *sorted(config.leaves(), key=labels.get)]
+        options = ['*', *sorted(config.descendants(), key=labels.get)]
         if draft['rows'].Category.eq('Unassigned').any():
             options.append('')
         if st.session_state.get(key + '_filter', '*') not in options:
@@ -209,7 +213,13 @@ def render_allocation_editor(path: Path, snapshot, config):
             else:
                 st.rerun()
         return
-    with st.container(key='tour_category_targets'):
+    from portfolio_app.interface.views.portfolio.category_editor import render_create_category, render_member_editor
+    render_create_category(path, snapshot, config, stamp)
+    if config.version == 3:
+        render_member_editor(path, snapshot, config, stamp)
+        render_bulk_bucket_assignment(path, snapshot, config, stamp)
+        # Structural edits keep their existing draft/review workflow below.
+    with st.expander('Category structure') if config.version == 3 else st.container(key='tour_category_targets'):
         st.subheader('Categories')
         category_key = f'targets_categories_{stamp}_{snapshot.revision}'
         rows = _bucket_editor(config, category_key, snapshot.holdings)
@@ -225,9 +235,15 @@ def render_allocation_editor(path: Path, snapshot, config):
             else:
                 _discard_draft(category_key)
                 st.rerun()
+    if config.version == 3:
+        return
     with st.container(key='tour_position_targets'):
         st.subheader('Position targets')
         render_bulk_bucket_assignment(path, snapshot, config, stamp)
+        settings = st.expander('Internal allocation settings', key='targets_internal_settings', on_change='rerun')
+        if settings.open:
+            with settings:
+                render_member_editor(path, snapshot, config, stamp)
         positions = snapshot.holdings.copy()
         positions['bucket_id'] = positions.get('bucket_id', '')
         positions['within_bucket_target'] = positions.get('within_bucket_target', float('nan')) * 100
@@ -254,7 +270,7 @@ def render_allocation_editor(path: Path, snapshot, config):
 
 
 def render_bulk_bucket_assignment(path, snapshot, config, stamp):
-    if snapshot.holdings.empty or not config.leaves():
+    if snapshot.holdings.empty or not config.descendants():
         return
     with st.popover('Assign positions', help='Choose positions and a destination category; Assign saves the changes to holdings.'):
         labels = {r.position_id: f'{r["name"]} · {r.account}' if r.account else r['name']
@@ -265,30 +281,34 @@ def render_bulk_bucket_assignment(path, snapshot, config, stamp):
         clear_button.button('Clear selection', help='Deselect all positions without changing saved data.', on_click=lambda: st.session_state.update({key: []}))
         selected = st.multiselect('Positions to assign', list(labels), help='Choose the holdings whose category assignment should change.', format_func=labels.get, key=key)
         names = category_labels(config)
-        destination = st.selectbox('Destination category', sorted(config.leaves()),
+        destination = st.selectbox('Destination category', sorted(config.descendants()),
                                    format_func=lambda value: names[value],
                                    help='Only the category changes. Quantities, costs, labels and within-category target percentages stay unchanged.')
         if st.button(f'Assign {len(selected)} positions', help='Save the selected category assignment to these holdings immediately.', disabled=not selected, type='primary'):
             try:
                 if revision(path.parent / 'allocation.yaml') != stamp:
                     raise DataError('Category settings changed. Reload before assigning positions.')
-                candidate = snapshot.holdings.copy()
-                candidate.loc[candidate.position_id.isin(selected), 'bucket_id'] = destination
-                validate_allocation(config, candidate)
-                patch_holdings(path, {key: {'bucket_id': destination} for key in selected},
-                               expected_revision=snapshot.revision)
+                from portfolio_app.portfolio.category_commands import move_category_positions
+                move_category_positions(path.parent, config, selected, destination,
+                                        holdings_revision=snapshot.revision, allocation_revision=stamp)
             except (DataError, OSError) as exc:
                 st.error(str(exc))
             else:
                 st.rerun()
 
 
-def _category_summary(rows):
+def _category_summary(rows, holdings=None, config=None):
     issues = []
     complete = 0
     for parent, children in rows.groupby('Parent', sort=False, dropna=False):
         missing = int(children['Target (% of parent)'].isna().sum())
         total = children['Target (% of parent)'].sum()
+        if holdings is not None and config is not None:
+            owner = next((key for key, name in category_labels(config).items() if name == parent), None)
+            if owner:
+                direct = holdings.loc[holdings.bucket_id.eq(owner)]
+                total += direct.within_bucket_target.sum()*100
+                missing += int(direct.within_bucket_target.isna().sum())
         if not missing and abs(total - 100) < 1e-7:
             complete += 1
         else:
@@ -302,11 +322,18 @@ def _category_summary(rows):
 def _target_summary(positions, config):
     names = category_labels(config)
     issues = []
-    for bucket in sorted(config.leaves(), key=names.get):
+    for bucket in sorted(config.descendants(), key=names.get):
+        if config.flexible(bucket):
+            continue
         rows = positions.loc[positions.bucket_id.eq(bucket)]
         missing = int(rows.within_bucket_target.isna().sum())
         total = float(rows.within_bucket_target.sum())
-        if rows.empty:
+        for child in config.children(bucket):
+            if child.target is None:
+                missing += 1
+            else:
+                total += child.target*100
+        if rows.empty and not config.children(bucket):
             issues.append(f'{names[bucket]}: no positions · planned capacity')
         elif missing or abs(total - 100) >= 1e-7:
             issues.append(f'{names[bucket]}: {total:.2f}% assigned' + (f' · {missing} missing targets' if missing else ' · needs 100%'))
@@ -315,5 +342,5 @@ def _target_summary(positions, config):
         issues.append(f'{unassigned} unassigned position(s) · choose a category')
     if issues:
         st.caption(' / '.join(issues))
-    elif config.leaves():
+    elif config.descendants():
         st.caption('Position targets total 100% in each category.')

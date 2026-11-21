@@ -107,13 +107,13 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
         raise DataError('Legacy futures and liabilities require EUR reporting.')
     capital, rows, issues = [], [], []
     complete = True
-    leaves = allocation.leaves() if allocation else set()
+    categories = allocation.descendants() if allocation else set()
     factors = {item.position_id: item for item in fund_factors}
     resolve = constituent_resolver(valued)
     def bucket(key):
-        if key and key not in leaves:
+        if key and key not in categories:
             issues.append('An exposure assignment is no longer an existing leaf; shown as Unassigned.')
-        return key if key in leaves else ''
+        return key if key in categories else ''
     def add(common, asset_id, name, value, exposure, kind, status='', method='', as_of='', market=None):
         rows.append(dict(**common, asset_id=asset_id, asset_name=name, value=value,
                          exposure_reporting=exposure, market_exposure_reporting=exposure if market is None else market, source_type=kind, status=status, method=method, as_of=as_of))
@@ -273,16 +273,19 @@ def strategy_exposure(result, config: Allocation, bucket='', *, measure='exposur
     children = [(b.id, b.name) for b in config.children(bucket)]
     selected = result.exposures
     if bucket:
-        selected = selected.loc[selected.bucket_id.isin(config.leaves(bucket))] if bucket != 'unassigned' else selected.loc[selected.bucket_id.eq('')]
+        selected = selected.loc[selected.bucket_id.isin(config.descendants(bucket))] if bucket != 'unassigned' else selected.loc[selected.bucket_id.eq('')]
     if not bucket and selected.bucket_id.eq('').any():
         children.append(('unassigned', 'Unassigned'))
     records = []
     if children:
-        groups = [(key, name, selected.loc[selected.bucket_id.eq('') if key == 'unassigned' else selected.bucket_id.isin(config.leaves(key))]) for key, name in children]
+        groups = [(key, name, selected.loc[selected.bucket_id.eq('') if key == 'unassigned' else selected.bucket_id.isin(config.descendants(key))]) for key, name in children]
     else:
+        groups = []
+    direct = selected.loc[selected.bucket_id.eq(bucket)] if children and bucket else selected.iloc[:0] if children else selected
+    if not direct.empty:
         source_names = dict(zip(result.capital.source_position_id, result.capital.name))
-        groups = [(key, source_names.get(key, group.asset_name.iloc[0]), group)
-                  for key, group in selected.groupby('source_position_id', sort=False)]
+        groups += [(key, source_names.get(key, group.asset_name.iloc[0]), group)
+                  for key, group in direct.groupby('source_position_id', sort=False)]
     for key, name, group in groups:
         amount = float(group[measure].sum()) if group[measure].notna().all() else float('nan')
         records.append({'ID': key, 'Category': name, 'Exposure (EUR)': amount,

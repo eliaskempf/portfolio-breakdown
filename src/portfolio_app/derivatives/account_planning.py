@@ -36,14 +36,14 @@ def plan_account_futures(result, targets, allocation, valued, journal, *, permit
     selected = valued.set_index('position_id')
     keys = list(base.index)
     records = []
-    protected = set().union(*(allocation.leaves(b.id) for b in allocation.buckets if b.sell_protected))
+    protected = set().union(*(allocation.descendants(b.id) for b in allocation.buckets if b.sell_protected))
     for identity in sorted(permitted):
         p = state.positions[identity]
         if identity not in selected.index:
             raise DataError('A planned position has no current valuation.')
         row = selected.loc[identity]
         margin, fee, limit = float(margins.get(identity, 0)), float(fees.get(identity, 0)), limits.get(identity, 10000)
-        if p.spec.bucket_id not in allocation.leaves() or p.spec.bucket_id in protected:
+        if p.spec.bucket_id not in allocation.descendants() or p.spec.bucket_id in protected:
             raise DataError('Permitted futures need a valid, unprotected leaf category.')
         rate, unit = row.current_fx_rate, row.unit_exposure_reporting
         if not all(math.isfinite(x) for x in (margin, fee, rate, unit)) or margin <= 0 or fee < 0 or rate <= 0 or unit <= 0:

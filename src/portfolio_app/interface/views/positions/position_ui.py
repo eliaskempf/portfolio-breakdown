@@ -460,7 +460,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
     bucket = ''
     with category_column:
         if allocation:
-            bucket_ids = ['', *sorted(allocation.leaves())]
+            bucket_ids = ['', *sorted(allocation.descendants())]
             bucket_names = category_labels(allocation)
             bucket = st.selectbox('Category', bucket_ids, index=bucket_ids.index(row.get('bucket_id', '')),
                 key=prefix + 'bucket', format_func=lambda value: bucket_names.get(value, 'Unassigned'),

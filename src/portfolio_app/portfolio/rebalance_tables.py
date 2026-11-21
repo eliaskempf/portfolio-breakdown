@@ -61,6 +61,12 @@ def category_budgets(budgets, trades, positions, config):
     spent = trades.assign(category=trades.position_id.map(categories)).groupby('category')['Trade'].sum()
     rows['Category'] = rows['Bucket ID'].map(category_labels(config))
     rows['Invested'] = rows['Bucket ID'].map(spent).fillna(0.)
+    if 'Position ID' in rows:
+        direct = rows['Position ID'].ne('')
+        labels = positions.set_index('position_id')['name']
+        rows.loc[direct, 'Category'] = rows.loc[direct, 'Position ID'].map(labels)
+        delta = trades.set_index('position_id')['Trade']
+        rows.loc[direct, 'Invested'] = rows.loc[direct, 'Position ID'].map(delta).fillna(0.)
     rows['Unallocated'] = rows['Budget'] - rows['Invested']
     return rows.rename(columns={'Budget': 'Reserved'})[
         ['Category', 'Reserved', 'Invested', 'Unallocated']]
@@ -68,7 +74,7 @@ def category_budgets(budgets, trades, positions, config):
 
 def portfolio_impact(before, after, config, *, extra_cash=0., parent=''):
     """Compare siblings, never add overlapping parent/child rows together."""
-    leaves = config.leaves(parent)
+    leaves = config.descendants(parent)
     before_scope = before.loc[before.bucket_id.isin(leaves)] if parent else before
     after_scope = after.loc[after.bucket_id.isin(leaves)] if parent else after
     current_total = before_scope.current_value_reporting.sum() if before_scope.current_value_reporting.notna().all() else float('nan')
@@ -88,9 +94,14 @@ def portfolio_impact(before, after, config, *, extra_cash=0., parent=''):
         return values.sum() if values.notna().all() else float('nan')
 
     for category in config.children(parent):
-        children = config.leaves(category.id)
+        children = config.descendants(category.id)
         append(category.name, value(before, before.bucket_id.isin(children)),
                value(after, after.bucket_id.isin(children)), category.target)
+    if parent:
+        for position in before.loc[before.bucket_id.eq(parent)].itertuples():
+            target = None if config.flexible(parent) else position.within_bucket_target
+            append(position.name, value(before, before.position_id.eq(position.position_id)),
+                   value(after, after.position_id.eq(position.position_id)), target)
     if not parent:
         if before.bucket_id.eq('').any() or after.bucket_id.eq('').any():
             append('Unassigned', value(before, before.bucket_id.eq('')), value(after, after.bucket_id.eq('')), None)

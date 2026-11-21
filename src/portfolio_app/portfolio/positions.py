@@ -26,7 +26,7 @@ class HoldingsSnapshot:
 
 
 def read_snapshot(path: Path) -> HoldingsSnapshot:
-    if path.with_name('.history-publication.json').exists():
+    if path.with_name('.history-publication.json').exists() or path.with_name('.allocation-publication.json').exists():
         from portfolio_app.workspace.workspace_lock import workspace_lock
         with workspace_lock(path.parent):
             pass
@@ -83,6 +83,7 @@ def save_position(
         assert_security_editable(path, [position_id], fields)
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(f".{path.name}.lock")
+    category_publication = None
     with _write_lock(lock_path):
         original = path.read_bytes() if path.exists() else None
         revision = sha256(original).hexdigest() if original is not None else None
@@ -144,17 +145,43 @@ def save_position(
             raise DataError("A position for this instrument, account, and portfolio already exists. Edit its total shares instead of adding another position.")
         if validate:
             validate(candidate)
-        with staged_text(path, lambda handle: handle.write(csv), sync=True) as temporary:
-            if original is not None:
-                backup_dir = path.parent / ".backups"
-                backup_dir.mkdir(exist_ok=True)
-                stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-                backup = backup_dir / f"{path.stem}-{stamp}-{uuid4().hex[:8]}.csv"
-                with backup.open("xb") as handle:
-                    handle.write(original)
-            # Also catch external CSV edits that happened during validation/staging.
-            latest = path.read_bytes() if path.exists() else None
-            if latest != original:
-                raise DataError("Holdings changed during the save. Reload the form before saving.")
-            temporary.replace(path)
-        return str(selected["id"])
+        ownership_changed = 'bucket_id' in candidate and (position_id is None or selected.bucket_id != current.loc[index, 'bucket_id'])
+        config_path = path.parent / 'allocation.yaml'
+        if ownership_changed and config_path.exists():
+            from dataclasses import replace
+            from portfolio_app.portfolio.allocation import load_allocation, validate_allocation
+            from portfolio_app.workspace.storage import revision as document_revision
+            config_revision = document_revision(config_path)
+            config = load_allocation(config_path, current)
+            buckets = []
+            for bucket in config.buckets:
+                members = set(candidate.loc[candidate.bucket_id.eq(bucket.id), 'position_id'])
+                buckets.append(replace(bucket, buy_priority=tuple(key for key in bucket.buy_priority if key in members),
+                    sell_priority=tuple(key for key in bucket.sell_priority if key in members)))
+            version = 3 if any(config.children(b.id) and candidate.bucket_id.eq(b.id).any() for b in config.buckets) else config.version
+            proposed = replace(config, buckets=tuple(buckets), version=version)
+            validate_allocation(proposed, candidate)
+            if proposed != config:
+                category_publication = (proposed, config_revision)
+        if category_publication is None:
+            with staged_text(path, lambda handle: handle.write(csv), sync=True) as temporary:
+                if original is not None:
+                    backup_dir = path.parent / ".backups"
+                    backup_dir.mkdir(exist_ok=True)
+                    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+                    backup = backup_dir / f"{path.stem}-{stamp}-{uuid4().hex[:8]}.csv"
+                    with backup.open("xb") as handle:
+                        handle.write(original)
+                # Also catch external CSV edits that happened during validation/staging.
+                latest = path.read_bytes() if path.exists() else None
+                if latest != original:
+                    raise DataError("Holdings changed during the save. Reload the form before saving.")
+                temporary.replace(path)
+            return str(selected["id"])
+    # The workspace barrier is still held by @document_write. Release the
+    # holdings lock before the pair publisher acquires its document locks.
+    from portfolio_app.portfolio.category_commands import publish_category_edit
+    proposed, config_revision = category_publication
+    publish_category_edit(path.parent, proposed, csv, holdings_revision=expected_revision,
+                          allocation_revision=config_revision)
+    return str(selected['id'])

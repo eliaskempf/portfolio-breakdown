@@ -19,6 +19,7 @@ class ScopedPlan:
     after: pd.DataFrame
     unallocated_cash: float
     new_money: float
+    priority_notes: tuple[str, ...] = ()
 
 
 def sleeve_positions(valued: pd.DataFrame, config: Allocation, bucket: str) -> pd.DataFrame:
@@ -71,6 +72,11 @@ def portfolio_contribution(valued: pd.DataFrame, config: Allocation, amount: flo
                            max_trades: int | None = None, macro_tolerance: float = .5,
                            position_tolerance: float = .5, max_allocations: dict | None = None,
                            cap_scope: str = 'portfolio') -> ScopedPlan:
+    if any(b.allocation_mode == 'flexible' or (config.children(b.id) and valued.bucket_id.eq(b.id).any()) for b in config.buckets):
+        from portfolio_app.portfolio.mixed_contributions import mixed_contribution
+        return mixed_contribution(valued, config, amount, eligible_ids=eligible_ids, minimum_purchase=minimum_purchase,
+            buy_all=buy_all, no_new_positions=no_new_positions, max_trades=max_trades, macro_tolerance=macro_tolerance,
+            position_tolerance=position_tolerance, max_allocations=max_allocations, cap_scope=cap_scope)
     cents = _positive_cents(amount, 'contribution')
     minimum = _positive_cents(minimum_purchase, 'minimum purchase')
     if valued.current_value_reporting.isna().any():

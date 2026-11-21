@@ -27,13 +27,18 @@ def render_scoped_rebalancing(valued, config):
     total = float(valued.current_value_reporting.sum()) if valued.current_value_reporting.notna().all() else None
     if workflow == 'Within a category':
         names = category_labels(config)
-        leaves = sorted(config.leaves(), key=names.get)
+        leaves = sorted(config.descendants(), key=names.get)
         if not leaves:
             st.info('Configure a category in Targets first.')
             return
         if st.session_state.get('planning_bucket') not in leaves:
             st.session_state['planning_bucket'] = leaves[0]
         selected = st.selectbox('Planning category', help='Category within which purchases and target deviations are calculated.', key='planning_bucket', options=leaves, format_func=names.get)
+        from portfolio_app.portfolio.category_rebalancing import needs_category_planner
+        if needs_category_planner(config, valued, selected):
+            from portfolio_app.interface.views.portfolio.category_plan_ui import render_category_plan
+            render_category_plan(valued, config, selected)
+            return
         try:
             positions = sleeve_positions(valued, config, selected)
             protected = False
@@ -130,6 +135,8 @@ def render_scoped_rebalancing(valued, config):
         st.markdown('**Category budgets**')
         st.caption('Reserved budgets are fixed before comparing trade counts. Purchase rules can leave part of a budget unallocated.')
         show_table(category_budgets(plan.budgets, plan.trades, original, config))
+        for note in plan.priority_notes:
+            st.caption(note)
     with results:
         render_summary(table, amount, plan.unallocated_cash)
         render_trades(table)

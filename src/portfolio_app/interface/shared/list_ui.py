@@ -62,6 +62,9 @@ td.number,th.number{text-align:right;font-variant-numeric:tabular-nums}td:first-
 td.positive{color:var(--st-green-text-color,__GAIN_COLOR__)}td.negative{color:var(--st-red-text-color,__LOSS_COLOR__)}
 td button{border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:4px;background:transparent;padding:4px 10px;cursor:pointer}
 button[data-detail-toggle]{border:0;background:transparent;padding:2px 7px;margin-left:4px;line-height:1}
+.hierarchy-label{display:flex;align-items:baseline;gap:4px}.hierarchy-label>span{min-width:0}
+button[data-group-toggle],.group-spacer{flex:0 0 24px;width:24px;padding:3px 0;border:0;text-align:center}
+tr[data-group="true"]{cursor:pointer}tr[data-group="true"]>td:first-child{font-weight:600}
 .contract-detail-row>td{white-space:normal;font-weight:400;background:var(--st-secondary-background-color)}
 .contract-details{display:flex;flex-wrap:nowrap;gap:24px;margin:0;font-size:12px;white-space:nowrap}
 .contract-details>div{display:flex;gap:6px}.contract-details dt{opacity:.7}.contract-details dd{margin:0;font-variant-numeric:tabular-nums}
@@ -108,6 +111,13 @@ export default function({parentElement:root,data,setTriggerValue}) {
   const numeric=new Set(columns.filter(column=>column.numeric).map(column=>column.key));
   const element=(tag,text)=>{const node=document.createElement(tag);node.textContent=text;return node;};
   const open=(row,action='details')=>{if(!data.interactive)return;state.focus=row.id;state.focusAction='details';persist();setTriggerValue('open',{id:row.id,action,revision:data.revision,context:data.context});};
+  const groupRows=row=>data.children?.[row.id]||[];
+  const expanded=row=>(state.expandedGroups||[]).includes(row.id);
+  const toggleGroup=row=>{
+    state.expandedGroups=expanded(row)?state.expandedGroups.filter(id=>id!==row.id):[...(state.expandedGroups||[]),row.id];
+    persist();render();
+    body.querySelector('tr[data-position-id="'+CSS.escape(row.id)+'"] [data-group-toggle]')?.focus({preventScroll:true});
+  };
   if (!data.rows.some(row=>row.id===state.detailId && row.details?.length)) state.detailId=null;
   const detailId=row=>'contract-details-'+encodeURIComponent(data.context+'-'+row.id);
   const toggleDetails=row=>{
@@ -228,7 +238,7 @@ export default function({parentElement:root,data,setTriggerValue}) {
     // Old header/row listeners also read the latest display metadata.
     data=root.listData;
     if(retain){
-      const lookup=new Map(data.rows.map(row=>[String(row.id),row]));
+      const lookup=new Map([...data.rows,...Object.values(data.children||{}).flat()].map(row=>[String(row.id),row]));
       for(const tr of body.querySelectorAll('tr[data-position-id]')){
         const row=lookup.get(tr.dataset.positionId);if(!row)continue;
         columns.forEach((column,index)=>{
@@ -266,12 +276,23 @@ export default function({parentElement:root,data,setTriggerValue}) {
       return;
     }
     const query=state.query.trim().toLocaleLowerCase();
-    const rows=data.rows.filter(row=>(!data.searchLabel||data.searchFields.some(field=>String(row[field]??'').toLocaleLowerCase().includes(query))));
+    let rows=data.rows.filter(row=>(!data.searchLabel||data.searchFields.some(field=>String(row[field]??'').toLocaleLowerCase().includes(query))));
     const {key,direction}=state;
-    rows.sort((a,b)=>{
+    const compare=(a,b)=>{
       if(a[key]==null)return b[key]==null?0:1;if(b[key]==null)return -1;
       return direction*(numeric.has(key)?a[key]-b[key]:String(a[key]||'').localeCompare(String(b[key]||'')));
-    });
+    };
+    rows.sort(compare);
+    if(data.children){
+      const visible=[];
+      const visit=(siblings,depth)=>{
+        for(const row of siblings){
+          visible.push({...row,treeDepth:depth});
+          if(expanded(row))visit([...groupRows(row)].sort(compare),depth+1);
+        }
+      };
+      visit(rows,0);rows=visible;
+    }
     // A derivative follows its companion even when the list is sorted.
     for(const row of [...rows]){
       if(row.companionId && rows.some(other=>other.id===row.companionId)){
@@ -316,15 +337,31 @@ export default function({parentElement:root,data,setTriggerValue}) {
       pager.append(previous,element('span',` Page ${state.page+1} of ${pages} · ${rows.length} assets `),next);
     }
     for(const row of pageRows){
-      const tr=document.createElement('tr');tr.tabIndex=data.interactive?0:-1;tr.dataset.positionId=row.id;
-      tr.onclick=event=>{if(!event.target.closest('button'))activate(row);};
+      const group=groupRows(row).length>0;
+      const tr=document.createElement('tr');tr.tabIndex=data.interactive||group?0:-1;tr.dataset.positionId=row.id;
+      tr.dataset.group=String(group);
+      const act=()=>group?toggleGroup(row):activate(row);
+      tr.onclick=event=>{if(!event.target.closest('button,details'))act();};
       tr.onkeydown=event=>{
         if(event.target!==tr)return;
-        if(event.key==='Enter'){event.preventDefault();activate(row);}
+        if(event.key==='Enter'||(group&&event.key===' ')){event.preventDefault();act();}
+        if(group && ((event.key==='ArrowRight'&&!expanded(row))||(event.key==='ArrowLeft'&&expanded(row)))){event.preventDefault();toggleGroup(row);}
         if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();let next=event.key==='ArrowDown'?tr.nextElementSibling:tr.previousElementSibling;while(next&&!next.dataset.positionId)next=event.key==='ArrowDown'?next.nextElementSibling:next.previousElementSibling;next?.focus();}
       };
       for(const column of columns){
         const td=cell(row,column);
+        if(data.children && column===columns[0]){
+          const label=element('span','');label.append(...td.childNodes);
+          const wrapper=element('div','');wrapper.className='hierarchy-label';wrapper.style.paddingLeft=(row.treeDepth*20)+'px';
+          const toggle=element(group?'button':'span',group?(expanded(row)?'▾':'▸'):'');
+          if(group){
+            toggle.type='button';toggle.dataset.groupToggle='true';
+            toggle.setAttribute('aria-label',(expanded(row)?'Collapse ':'Expand ')+row[column.key]);
+            toggle.setAttribute('aria-expanded',String(expanded(row)));
+            toggle.onclick=()=>toggleGroup(row);
+          }else toggle.className='group-spacer';
+          wrapper.append(toggle,label);td.append(wrapper);
+        }
         if(column.key===data.detailsColumn && row.details?.length){
           const expanded=state.detailId===row.id;
           const toggle=element('button',expanded?'▾':'▸');toggle.type='button';toggle.dataset.detailToggle='true';
@@ -380,14 +417,15 @@ def frame_rows(table, *, id_column=None):
 
 def render_list(rows, columns, *, key, context, title, on_open=None, editable=False,
                 revision=None, max_height=None, search_label=None, search_fields=(), default_sort=None,
-                preview_column=None, preview_value_column=None, preview_share_column=None, previews=None, details_column=None, page_size=None):
-    revision = revision or sha256(repr(rows).encode()).hexdigest()
+                preview_column=None, preview_value_column=None, preview_share_column=None, previews=None, details_column=None, page_size=None, children=None):
+    revision = revision or sha256(repr((rows, children)).encode()).hexdigest()
+    all_rows = [*rows, *(row for siblings in (children or {}).values() for row in siblings)]
     def handle_open():
         event = st.session_state.get(key, {}).get('open')
         if not event or not on_open:
             return
         if (event.get('context') != context or event.get('revision') != revision
-                or event.get('id') not in {row['id'] for row in rows}):
+                or event.get('id') not in {row['id'] for row in all_rows}):
             st.warning('The list changed. Select the row again from the refreshed list.')
             return
         if event.get('action') == 'details' or (editable and event.get('action') == 'edit'):
@@ -403,6 +441,6 @@ def render_list(rows, columns, *, key, context, title, on_open=None, editable=Fa
     component = st.components.v2.component('portfolio_data_list', html=HTML, css=CSS, js=JS)
     component(key=key, data={'rows': rows, 'columns': specs,
         'revision': revision, 'context': context, 'title': title, 'interactive': bool(on_open),
-        'editable': editable, 'maxHeight': max_height, 'pageSize': page_size, 'searchLabel': search_label,
+        'editable': editable, 'maxHeight': max_height, 'pageSize': page_size, 'searchLabel': search_label, 'children': children,
         'searchFields': search_fields, 'defaultSort': default_sort, 'detailsColumn': details_column,
         'previewColumn': preview_column, 'previewValueColumn': preview_value_column, 'previewShareColumn': preview_share_column, 'previews': previews}, on_open_change=handle_open)

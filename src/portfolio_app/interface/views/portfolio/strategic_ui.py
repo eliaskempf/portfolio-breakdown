@@ -75,11 +75,11 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         missing = int(selected.current_value_reporting.isna().sum())
         whole = float(valued.current_value_reporting.sum())
         performance = summarize_performance(selected)
-        bucket_ids = ({''} if bucket == 'unassigned' else config.leaves(bucket)) if bucket else None
+        bucket_ids = ({''} if bucket == 'unassigned' else config.descendants(bucket)) if bucket else None
 
     scoped_future = future
     if future is not None and bucket:
-        assigned = future.bucket_id if future.bucket_id in config.leaves() else ''
+        assigned = future.bucket_id if future.bucket_id in config.descendants() else ''
         if assigned not in bucket_ids:
             scoped_future = None
     history = None
@@ -208,7 +208,8 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     shades, patterns = [], []
                     for row in tree.itertuples():
                         derivative = row.kind == 'holding' and json.loads(row.node_id)[2] == 'future:overlay'
-                        shades.append(linked_color if derivative and linked_color else colors.get(row.node_id, '#7b8493'))
+                        shade = colors.get(row.node_id, '#7b8493')
+                        shades.append(linked_color if derivative and linked_color else shade)
                         patterns.append('/' if derivative else '')
                     figure.update_traces(maxdepth=3, insidetextorientation='auto', marker_colors=shades,
                         leaf=dict(opacity=1),
@@ -236,28 +237,52 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                         'Market exposure includes signed futures notional and leveraged fund exposure.'
                         if market else 'Capital allocated to each category, including futures investment equity. Uses capital allocation targets.'))
                     target_controls = st.container(width='content')
+                    from portfolio_app.workspace.display_preferences import load_preferences, save_allocation_view
+                    preference_key = f'strategic_flat_table_{data_dir}'
+                    flat_default = st.session_state.get(preference_key)
+                    if flat_default is None:
+                        try:
+                            flat_default = bool(data_dir and load_preferences(data_dir).allocation_view == 'All investments')
+                        except DataError:
+                            flat_default = False
+                    def remember_layout():
+                        if data_dir:
+                            save_allocation_view(data_dir, 'All investments' if st.session_state[preference_key] else 'By category')
+                    with st.container(width=36, key='allocation_table_options'):
+                        with st.popover('Table options', icon=':material/more_horiz:', type='tertiary', help='Table options'):
+                            flat = st.checkbox('Flatten groups', value=flat_default, key=preference_key,
+                                on_change=remember_layout, help='List and sort all investments in this scope together. The chart keeps its category hierarchy.')
+                from portfolio_app.interface.views.portfolio.target_dialog import request_target_edit
+                def edit_targets():
+                    request_target_edit(data_dir, config, bucket, market=market,
+                        exposure_result=exposure_result, displayed_positions=valued)
                 if not market and open_capital_targets is not None:
                     with target_controls:
                         st.button('Edit', icon=':material/edit:', key='overview_capital_targets',
-                                  on_click=open_capital_targets, type='tertiary', help='Edit capital allocation targets.')
+                                  on_click=edit_targets, type='tertiary', help='Edit targets for this category.')
                 table = strategic_summary(plotted, config, bucket,
+                    flat=flat, hierarchy=not flat, identities=True,
                     known_exposure=chart_positions.set_index('position_id').current_value_reporting if partial else None)
                 if partial:
                     table['Status'] = table.Status.replace('Missing price', 'Partial exposure: see unresolved assets above.')
                 target_help = {}
                 if market:
                     table = table.rename(columns={'Value': 'Exposure', 'Current (%)': '% of exposure'})
+                    from portfolio_app.exposure.exposure_target_presentation import TARGET_COLUMN_HELP
+                    target_help = TARGET_COLUMN_HELP
+                if market:
                     from portfolio_app.exposure.exposure_target_presentation import TARGET_COLUMN_HELP, render_market_target_summary
                     target_table = render_market_target_summary(exposure_result, config, data_dir, bucket,
-                                                                open_targets=open_exposure_targets, controls=target_controls,
-                                                                composition_table=table, open_composition=open_capital_targets)
+                                                                open_targets=edit_targets if open_exposure_targets is not None else None, controls=target_controls,
+                                                                composition_table=table, open_composition=edit_targets if open_capital_targets is not None else None, flat=flat)
                     if target_table is not None:
                         table = target_table
                         target_help = {**TARGET_COLUMN_HELP, 'Target (%)': 'Saved target share within this scope. A percentage comparison does not require a total exposure multiple.'}
                     else:
                         table[['Target (%)', 'Gap (pp)']] = float('nan')
+                identity_columns = {'row_id', 'parent_id', 'position_id', 'category_id'}
                 for col in table:
-                    if col not in {'Category', 'Status'}:
+                    if col not in {'Category', 'Status', 'Assigned category', 'Account'} | identity_columns:
                         table[col] = pd.to_numeric(table[col], errors='coerce')
                 # Keep row qualifications on hover instead of a sparse Status column.
                 table['Row details'] = table['Status'].replace({
@@ -265,13 +290,32 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     'Unassigned': 'No strategic category assigned.',
                     'Missing price': 'Missing valuation; percentages are unavailable.',
                     'Empty': 'No current holdings.'})
-                columns = [column for column in table if column not in {'Status', 'Row details'} |
-                           ({'Target exposure', 'Gap'} if market else set())]
-                render_list(frame_rows(table), [ListColumn(column, f'% of {scope}' if column == 'Current (%)' else column,
+                columns = [column for column in table if column not in {'Status', 'Row details'} | identity_columns |
+                           ({'Target exposure', 'Gap'} if market else set()) |
+                           ({'Assigned category'} if flat else {'Account'})]
+                rows = frame_rows(table, id_column='row_id')
+                children = None if flat else {}
+                roots, positions = [], {}
+                for row in rows:
+                    if row['position_id']:
+                        positions[row['id']] = row['position_id']
+                    if not flat and row['parent_id']:
+                        children.setdefault(row['parent_id'], []).append(row)
+                    else:
+                        roots.append(row)
+                def open_allocation_row(event):
+                    pid = positions.get(event['id'])
+                    if pid == 'future:overlay':
+                        render_future_position(future, data_dir)
+                    elif pid and open_position:
+                        open_position(pid)
+                render_list(roots, [ListColumn(column, 'Investment' if flat and column == 'Category' else f'% of {scope}' if column == 'Current (%)' else column,
                             tooltip='Row details' if column == 'Category' else '',
-                            help=target_help.get(column, column_help(column, scope=scope)), numeric=column not in {'Category', 'Status'}, signed=column in {'Gap (pp)', 'Gap'}, color_signed=False) for column in columns],
-                            key='strategic_allocation_table', context=f'{position_context}_{bucket}_{measure}',
-                            title=title, default_sort='% of exposure' if market else 'Value')
+                            secondary=('Assigned category' if flat else 'Account') if column == 'Category' else '',
+                            help=target_help.get(column, column_help(column, scope=scope)), numeric=column not in {'Category', 'Status', 'Assigned category', 'Account'}, signed=column in {'Gap (pp)', 'Gap'}, color_signed=False) for column in columns],
+                            key='strategic_allocation_table', context=f'{position_context}_{bucket}_{measure}_{flat}',
+                            title=title, default_sort='% of exposure' if market else 'Value',
+                            children=children, on_open=open_allocation_row)
     st.subheader('Positions')
     visible = selected if show_sold_positions else selected.loc[selected.shares.ne(0)]
     render_overview_positions(visible, config, context=f'overview_{position_context}_{bucket}', scope=scope,
@@ -282,3 +326,6 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         from portfolio_app.interface.views.exposure.portfolio_exposure_ui import render_capital_reconciliation
         with st.expander('Portfolio value reconciliation'):
             render_capital_reconciliation(exposure_result, actual=bool(valued.attrs.get('actual_accounts')))
+
+    from portfolio_app.interface.views.portfolio.target_dialog import render_target_dialog
+    render_target_dialog(data_dir, manage_capital=open_capital_targets, manage_exposure=open_exposure_targets)

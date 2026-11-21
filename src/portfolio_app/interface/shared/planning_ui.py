@@ -10,7 +10,7 @@ def planning_positions(valued, allocation=None):
                              help='Temporarily redistribute targets among held positions within each category. Saved targets stay unchanged.')
     if not redistribute:
         return valued
-    return analysis_targets(ignore_empty_by_bucket(valued), allocation) if allocation else ignore_empty_positions(valued)
+    return analysis_targets(ignore_empty_by_bucket(valued, allocation), allocation) if allocation else ignore_empty_positions(valued)
 
 
 def restriction_summary(*, no_new, caps, selected=None, maximum=None):

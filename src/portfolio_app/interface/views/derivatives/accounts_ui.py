@@ -182,9 +182,9 @@ def render_future_entry(directory, snapshot, *, valued=None, allocation=None):
                                             allow_funding=mode == 'New opening trade')
         investment_name = st.text_input('Investment name', value=f'{contract.product} futures', key=key+'investment_name', help=field_help('Investment name'))
         capital = _money_input(f'Initial allocated capital ({contract.currency})', key+'investment_capital', help=field_help('Initial allocated capital'))
-        leaves = allocation.leaves() if allocation else set()
+        categories = allocation.descendants() if allocation else set()
         labels = {b.id: b.name for b in allocation.buckets} if allocation else {}
-        bucket = st.selectbox('Category', ['', *sorted(leaves)], format_func=lambda x: labels.get(x, 'Unassigned'), key=key+'bucket', help=field_help('Category'))
+        bucket = st.selectbox('Category', ['', *sorted(categories)], format_func=lambda x: labels.get(x, 'Unassigned'), key=key+'bucket', help=field_help('Category'))
         proxies = snapshot.holdings.loc[snapshot.holdings.get('instrument_type', pd.Series('', index=snapshot.holdings.index)).eq('etf')]
         names = {r.position_id: r['name'] for _,r in proxies.iterrows()}
         proxy = st.selectbox('Index holdings proxy (optional)', ['', *names], format_func=lambda x: names.get(x, 'No proxy'), key=key+'proxy', help=field_help('Index holdings proxy (optional)'))

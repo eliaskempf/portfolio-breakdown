@@ -61,7 +61,7 @@ def render_futures(valued, data_dir, position, revision, *, allocation=None, fun
         with st.expander('Mock position'):
             from portfolio_app.portfolio.strategic import category_labels
             labels = {'': 'Unassigned', **(category_labels(allocation) if allocation else {})}
-            choices = ['', *sorted(allocation.leaves())] if allocation else ['']
+            choices = ['', *sorted(allocation.descendants())] if allocation else ['']
             bucket_id = st.selectbox('Futures strategy category', choices, index=choices.index(position.bucket_id) if position.bucket_id in choices else 0, format_func=labels.get, key=key + 'bucket')
             from portfolio_app.funds.etf import matching_fund
             companions = {'': 'None · keep index constituents unresolved'}

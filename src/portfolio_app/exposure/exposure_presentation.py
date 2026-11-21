@@ -89,7 +89,7 @@ def prepare_market_analysis(result, config, classifications, valued, *, scope=''
     field = {'exposure_eur': 'exposure_reporting', 'market_exposure_eur': 'market_exposure_reporting'}.get(field, field)
     rows = result.exposures
     if scope:
-        rows = rows.loc[rows.bucket_id.eq('') if scope == 'unassigned' else rows.bucket_id.isin(config.leaves(scope))]
+        rows = rows.loc[rows.bucket_id.eq('') if scope == 'unassigned' else rows.bucket_id.isin(config.descendants(scope))]
     rows = rows.copy()
     data = canonical_asset_names(rows)
     data['value'] = data[field]

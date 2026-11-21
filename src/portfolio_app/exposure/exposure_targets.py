@@ -1,5 +1,5 @@
 """Versioned exposure policy; never consumed by the capital trade optimizer."""
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 import json
 import math
@@ -22,6 +22,7 @@ class ExposureTargets:
     version: int = 1
     universe: str = 'equity'
     weights: str = 'leaves'
+    members: dict[str, dict[str, float]] = field(default_factory=dict)
 
     @property
     def field(self):
@@ -30,6 +31,9 @@ class ExposureTargets:
 
 def leaf_composition(targets, allocation):
     """Parent-relative fractions multiply down the stable-ID ownership tree."""
+    if targets.weights == 'mixed':
+        from portfolio_app.exposure.mixed_exposure_targets import composition_parts
+        return {key: part[2] for key, part in composition_parts(targets, allocation).items()}
     if targets.weights == 'leaves':
         return targets.composition
     result = {}
@@ -46,14 +50,20 @@ def leaf_composition(targets, allocation):
 def validate_targets(targets, allocation):
     from portfolio_app.portfolio.allocation import validate_allocation
     validate_allocation(allocation)
-    if type(targets.version) is not int or targets.version not in (1, 2) or not finite(targets.multiple) or targets.multiple < 0:
+    if type(targets.version) is not int or targets.version not in (1, 2, 3) or not finite(targets.multiple) or targets.multiple < 0:
         raise DataError('Exposure targets require a supported version and a nonnegative finite total multiple.')
-    if targets.universe not in {'equity', 'market'} or targets.weights not in {'leaves', 'parent_relative'}:
+    if targets.universe not in {'equity', 'market'} or targets.weights not in {'leaves', 'parent_relative', 'mixed'}:
         raise DataError('Choose an explicit equity/market universe and leaf/parent-relative weights.')
     if targets.version == 1 and (targets.universe != 'equity' or targets.weights != 'leaves'):
         raise DataError('Version 1 policies retain equity-only leaf composition; conversion requires version 2.')
     if not isinstance(targets.composition, dict) or not isinstance(targets.overlay_bucket, str):
         raise DataError('Exposure composition must map stable bucket IDs to fractions.')
+    if not isinstance(targets.members, dict) or (targets.members and targets.weights != 'mixed'):
+        raise DataError('Investment exposure targets require mixed category weights.')
+    if targets.weights == 'mixed':
+        from portfolio_app.exposure.mixed_exposure_targets import validate_mixed_targets
+        validate_mixed_targets(targets, allocation)
+        return
     leaves = allocation.leaves()
     if targets.policy == 'composition':
         if any(not finite(v) or not 0 <= v <= 1 for v in targets.composition.values()):
@@ -70,13 +80,13 @@ def validate_targets(targets, allocation):
         if targets.overlay_bucket:
             raise DataError('Whole-equity composition must not include an overlay-only bucket.')
     elif targets.policy == 'overlay_only':
-        if targets.overlay_bucket not in leaves or targets.composition:
-            raise DataError('Overlay-only policy needs one existing leaf and no composition targets.')
+        if targets.overlay_bucket not in allocation.descendants() or targets.composition:
+            raise DataError('Overlay-only policy needs one existing category and no composition targets.')
     else:
         raise DataError('Choose whole-equity composition or overlay-only policy explicitly.')
 
 
-def load_exposure_targets(directory, allocation):
+def load_exposure_targets(directory, allocation, *, validate=True):
     path = directory / FILE
     if not path.exists():
         return None, None
@@ -86,7 +96,7 @@ def load_exposure_targets(directory, allocation):
         target = ExposureTargets(**raw) if raw is not None else None
         if target and allocation is None:
             raise DataError('Saved exposure targets require an allocation hierarchy. Restore allocation.yaml before continuing.')
-        if target:
+        if target and validate:
             validate_targets(target, allocation)
         return target, sha256(data).hexdigest()
     except (OSError, ValueError, TypeError, KeyError) as exc:
@@ -96,7 +106,10 @@ def load_exposure_targets(directory, allocation):
 def save_exposure_targets(directory, targets, allocation, expected_revision):
     if targets:
         validate_targets(targets, allocation)
-    save_document(directory / FILE, json.dumps(asdict(targets) if targets else None, indent=2) + '\n', expected_revision)
+    document = asdict(targets) if targets else None
+    if targets and targets.version < 3:
+        document.pop('members')
+    save_document(directory / FILE, json.dumps(document, indent=2) + '\n', expected_revision)
 
 
 def exposure_gaps(result, targets, allocation, *, parent=None):
@@ -105,6 +118,12 @@ def exposure_gaps(result, targets, allocation, *, parent=None):
         raise DataError('Complete positive net equity and exposure coverage are required for exposure gaps.')
     if result.exposures[targets.field].isna().any():
         raise DataError('Unknown exposure amounts prevent complete target gaps.')
+    if targets.weights == 'mixed':
+        from portfolio_app.exposure.mixed_exposure_targets import mixed_exposure_gaps
+        return mixed_exposure_gaps(result, targets, allocation, parent=parent)
+    internal_owners = {b.id for b in allocation.buckets if allocation.children(b.id)}
+    if targets.policy == 'composition' and result.exposures.loc[result.exposures.bucket_id.isin(internal_owners), targets.field].ne(0).any():
+        raise DataError('Review exposure targets: this saved policy covers leaf categories, but investments are now assigned beside subcategories. Choose Categories and investments within each parent in the exposure target editor and save the new split.')
     grouped = result.exposures.groupby('bucket_id')[targets.field].sum().to_dict()
     keys = sorted(allocation.leaves() | set(grouped))
     desired = {key: 0. for key in keys}
@@ -124,7 +143,11 @@ def exposure_gaps(result, targets, allocation, *, parent=None):
             raise DataError('Unknown target hierarchy selection.')
         children = allocation.children(parent)
         keys = [b.id for b in children] if children else [parent]
-        memberships = {key: allocation.leaves(key) for key in keys}
+        memberships = {key: allocation.descendants(key) for key in keys}
+        if parent and children and parent in grouped:
+            keys.append(parent)
+            memberships[parent] = {parent}
+            names[parent] += ' · Direct investments'
         if not parent and '' in grouped:
             keys.append('')
             memberships[''] = {''}

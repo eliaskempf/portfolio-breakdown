@@ -34,6 +34,10 @@ def cached_input(key, signature, loader):
 
 def load_inputs(directory):
     directory = Path(directory)
+    if (directory / '.allocation-publication.json').exists():
+        from portfolio_app.workspace.workspace_lock import workspace_lock
+        with workspace_lock(directory):
+            pass
     holdings_path = directory / 'holdings.csv'
     snapshot = cached_input('holdings', file_stamp(holdings_path), lambda: read_snapshot(holdings_path))
     from portfolio_app.ledger.account_journal import load_journal

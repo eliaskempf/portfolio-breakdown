@@ -7,6 +7,7 @@ import json
 from collections import Counter
 from hashlib import sha256
 
+import pandas as pd
 import streamlit as st
 from portfolio_app.interface.shared.charts import chart_config
 
@@ -354,7 +355,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                         sources['% of portfolio equity'] = sources[measure] * 100 / equity if complete and equity else float('nan')
                     st.dataframe(sources.drop(columns='position_id'), hide_index=True, width='stretch')
                 else:
-                    render_source_positions(selected, valued, names, saved_classifications, show_tickers, performance_percent, dimensions)
+                    render_source_positions(selected, valued, names, saved_classifications, show_tickers, performance_percent, dimensions, allocation=allocation)
     return valued
 
 
@@ -490,13 +491,18 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                 } | label_config | target_column_config() | performance_column_config(percent=performance_percent))
 
 
-def render_source_positions(selected, valued, names, classifications, show_tickers, performance_percent, dimensions):
+def render_source_positions(selected, valued, names, classifications, show_tickers, performance_percent, dimensions, *, allocation=None):
     displayed_classifications = ['labels'] if 'labels' in names else names
     table = selected.sort_values("portfolio_weight", ascending=False, kind="stable", na_position="last").copy()
     if 'within_bucket_target' in table:
         bucket_values = valued.groupby('bucket_id').current_value_reporting.agg(lambda values: values.sum() if values.notna().all() else float('nan'))
+        if allocation is not None:
+            bucket_values = pd.Series({b.id: (rows.current_value_reporting.sum() if rows.current_value_reporting.notna().all() else float('nan'))
+                for b in allocation.buckets for rows in [valued.loc[valued.bucket_id.isin(allocation.descendants(b.id))]]})
         table['Current bucket %'] = 100 * table.current_value_reporting / table.bucket_id.map(bucket_values).replace(0, float('nan'))
         table['Target bucket %'] = table.within_bucket_target * 100
+        if allocation is not None:
+            table.loc[table.bucket_id.map(allocation.flexible), 'Target bucket %'] = float('nan')
     table["name"] = table["name"].map(display_name)
     for name in names:
         table[f"classification:{name}"] = table["id"].map(lambda asset_id: describe(classifications, asset_id, name))

@@ -181,7 +181,7 @@ def funded_strategy_positions(valued, position, allocation):
         return valued
     require_eur_reporting(valued)
     from portfolio_app.studies.future_projections import capital_position
-    row = capital_position(position, position.bucket_id if position.bucket_id in allocation.leaves() else '')
+    row = capital_position(position, position.bucket_id if position.bucket_id in allocation.descendants() else '')
     result = pd.concat([valued, pd.DataFrame([row])], ignore_index=True)
     result.attrs = dict(valued.attrs, reporting_currency='EUR')
     return result

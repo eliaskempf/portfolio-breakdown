@@ -11,8 +11,8 @@ Overview/Exposure filters and ETF display groups do not alter this scope.
 
 Within-category planning uses that category's post-contribution value. Portfolio
 contributions first allocate budgets across categories and then within them.
-Required sibling targets must be complete and total 100%; unrelated category
-position targets are unnecessary for a within-category plan. Relevant valuations
+Required sibling targets include subcategories and directly owned investments
+and must be complete and total 100%; unrelated category targets are unnecessary for a within-category plan. Relevant valuations
 must be complete. Protected categories and their descendants cannot be sold.
 
 The following modes apply within a category (or to a legacy whole portfolio):
@@ -28,6 +28,28 @@ and minimizes squared gaps to exact targets. **Spread by target weights** divide
 new money proportionally without accounting for existing holdings. **Optimize
 rebalancing** minimizes deviation outside ranges and may concentrate the budget
 in one position. These distributions serve different purposes.
+
+## Flexible category targets
+
+Within-category plans can include subcategories and investments side by side.
+A flexible category is evaluated by the combined value of its investments;
+member drift alone creates no trade. A category using Member targets retains its
+explicit internal split. Portfolio contributions still allocate parent budgets
+before choosing source-position purchases.
+
+Plans obey eligibility, sale protection, caps, minimum purchases and trade limits.
+Among plans meeting the selected mode's objectives equally well, the planner uses
+the saved buy or sell priorities. Restrictions can require another member;
+**Plan details** identifies that fallback. Priorities express a preference, not an
+individual target. Flexible members have blank position targets and gaps in the
+full allocation table. Portfolio impact includes categories and direct investments.
+
+Exposure planning also supports mixed categories when its saved policy uses
+**Categories and investments within each parent**. It evaluates disjoint investment
+targets and combined category targets, so parent totals are not counted again.
+Flexible groups have no individual exposure targets. Their buy/sell priorities break
+ties only after minimizing exposure gaps and turnover. The exposure planner retains
+its own permitted-instrument, funding, fee and futures-collateral constraints.
 
 ## Purchase rules and tolerances {#constraints}
 
@@ -51,7 +73,8 @@ an allowed range of 9.5–10.5%. A zero target has zero relative tolerance.
 **Only buy existing positions** forbids buys into zero-quantity rows while keeping
 their targets. **Exclude empty positions and redistribute targets** instead
 redistributes their targets within each category for the calculation. It does
-not change saved targets. An empty category retains planned capacity.
+not change saved targets. In a flexible category, empty positions are excluded
+without redistributing their inactive member targets; the category target remains. An empty category retains planned capacity.
 
 Temporary maximum allocations state their denominator: selected category or
 whole portfolio, using final value including unallocated contribution. Blank

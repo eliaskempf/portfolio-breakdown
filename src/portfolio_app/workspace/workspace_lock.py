@@ -72,6 +72,8 @@ def workspace_lock(directory: Path, *, check_context=True):
             try:
                 from portfolio_app.ledger.history_publication import recover_publication
                 recover_publication(directory)
+                from portfolio_app.portfolio.category_commands import recover_category_publication
+                recover_category_publication(directory)
                 yield
             finally:
                 _held.keys = held

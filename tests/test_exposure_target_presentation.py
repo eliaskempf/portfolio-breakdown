@@ -41,6 +41,31 @@ def test_nested_scope_keeps_absolute_targets_and_scopes_composition():
     assert leaf['Target exposure'].item() == 60.
 
 
+def test_expanded_policy_targets_remain_on_categories_with_one_scope():
+    from portfolio_app.exposure.exposure_target_presentation import market_target_hierarchy
+    from portfolio_app.portfolio.strategic import strategic_summary
+    positions = pd.DataFrame([dict(position_id=f'invented-{i}', name=f'Invented position {i}',
+        bucket_id=bucket, shares=1., within_bucket_target=1., current_value_reporting=amount)
+        for i, (bucket, amount) in enumerate(zip(('stock', 'gold', 'other'), (80., 20., 50.)))])
+    def summary(bucket):
+        composition = strategic_summary(positions, CONFIG, bucket, hierarchy=True).rename(
+            columns={'Value': 'Exposure', 'Current (%)': '% of exposure'})
+        return market_target_hierarchy(invented_result(), TARGET, CONFIG, composition, bucket).set_index('row_id')
+    whole = summary('')
+    assert whole.loc['category:risk', 'Target (%)'] == 60.
+    assert whole.loc['category:stock', 'Target (%)'] == 40.
+    assert whole.loc['position:invented-0', '% of exposure'] == pytest.approx(100*80/150)
+    assert pd.isna(whole.loc['position:invented-0', 'Target (%)'])
+    risk = summary('risk')
+    assert risk.loc['category:stock', 'Target (%)'] == pytest.approx(100*2/3)
+    assert risk.loc['position:invented-0', '% of exposure'] == 80.
+    leaf = summary('stock')
+    assert leaf.loc['category:stock', 'parent_id'] == ''
+    assert leaf.loc['category:stock', 'Target (%)'] == 100.
+    assert leaf.loc['position:invented-0', 'parent_id'] == 'category:stock'
+    assert pd.isna(leaf.loc['position:invented-0', 'Target exposure'])
+
+
 def test_zero_targets_signed_exposure_and_unassigned_are_not_normalized_away():
     zero = market_target_summary(invented_result(), replace(TARGET, multiple=0.), CONFIG)
     assert zero['Target (%)'].isna().all()
@@ -138,6 +163,8 @@ def test_normal_overview_market_targets_and_editor_navigation(tmp_path):
     assert not any('category as a whole' in x.value for x in app.caption)
     app.button(key='overview_exposure_targets').click().run()
     assert not app.exception
+    assert app.button(key='overview_target_manage')
+    app.button(key='overview_target_manage').click().run()
     assert by_label(app.get('button_group'), 'Target measure').value == 'Exposure targets'
     assert by_label(app.number_input, 'Desired total exposure (× net equity)').value == 1.5
     activate(app, 'Overview')
@@ -145,6 +172,7 @@ def test_normal_overview_market_targets_and_editor_navigation(tmp_path):
     assert 'value' in [column['key'] for column in list_data(app, 'Positions')['columns']]
     app.button(key='overview_capital_targets').click().run()
     assert not app.exception
+    app.button(key='overview_target_manage').click().run()
     assert by_label(app.get('button_group'), 'Target measure').value == 'Category targets'
 
 
@@ -223,6 +251,7 @@ def test_existing_percentages_compare_with_exposure_without_leverage_policy(tmp_
     # Edit opens the actual source of these percentages, without inventing a policy.
     app.button(key='overview_exposure_targets').click().run()
     assert not app.exception
+    app.button(key='overview_target_manage').click().run()
     assert by_label(app.get('button_group'), 'Target measure').value == 'Category targets'
     assert not (workspace/'exposure-targets.json').exists()
     assert path.read_bytes() == before
@@ -244,3 +273,29 @@ st.session_state.has_table = result is not None
     app.run()
     assert not app.exception and app.warning
     assert not app.session_state.has_table
+
+
+def test_mixed_ownership_requires_review_of_leaf_exposure_policy():
+    source = invented_result()
+    rows = source.exposures.copy()
+    rows.loc[0, 'bucket_id'] = 'risk'
+    with pytest.raises(DataError, match='Review exposure targets'):
+        market_target_summary(replace(source, exposures=rows), TARGET, CONFIG)
+
+
+def test_flat_market_view_keeps_exposure_units_and_category_policy(tmp_path):
+    from test_futures_ui import launch as launch_app
+    from test_portfolio_exposure import CONFIG as categories
+    from test_portfolio_exposure_ui import synthetic_workspace
+    from test_ui import activate, by_label, list_frame
+    _, workspace = synthetic_workspace(tmp_path)
+    target = ExposureTargets(1.5, 'composition', {'core': .8, 'stocks': .2, 'cash': 0.}, version=2, universe='market')
+    save_exposure_targets(workspace, target, categories, None)
+    app = launch_app(workspace)
+    activate(app, 'Overview')
+    by_label(app.checkbox, 'Flatten groups').set_value(True).run()
+    assert not app.exception
+    table = list_frame(app, 'Market exposure')
+    assert 'Exposure' in table and '% of exposure' in table
+    assert table['Target (%)'].isna().all()
+    assert app.button(key='overview_flat_targets').label == 'Edit'

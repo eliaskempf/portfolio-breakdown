@@ -36,9 +36,21 @@ unchanged so classification links are preserved.
 
 ### Strategic and legacy targets
 
-Current category-based portfolios use version 2 `allocation.yaml` for the category
-tree, `bucket_id` for each position's leaf category, and `within_bucket_target`
-for its fraction of that category. Category targets are relative to their parent;
+Exposure policies in `exposure-targets.json` retain support for versions 1 and 2.
+Version 3 adds mixed parent-relative composition: `composition` maps category IDs
+to shares of their parent, and `members` maps an owning category ID to its source
+position IDs and their shares. Category and investment shares within each parent
+total one. An aggregate leaf category has no `members` entry; flexible categories
+always use that aggregate form. Source identities preserve separate account positions.
+The editor and policy calculations validate moved or missing memberships.
+
+Category-based portfolios read version 2 and version 3 `allocation.yaml` for the
+category tree, `bucket_id` for each position's owning category, and `within_bucket_target`
+for its fraction of that category. Version 3 permits direct investments alongside
+subcategories and records `allocation_mode` (`targets` or `flexible`),
+`buy_priority` and `sell_priority` on categories. Priority lists use persistent
+position identities. Existing version-2 behavior remains unchanged until an
+explicit category edit adopts the new model. Category targets are relative to their parent;
 global targets multiply the fractions along that path. Configure these through
 [Rebalance → Targets](allocation.md#targets).
 
@@ -176,8 +188,9 @@ relative to each target. For a 10% target, ±0.5 pp and ±5% relative both allow
 9.5–10.5%. Relative tolerance leaves a zero target at zero; absolute tolerance
 can allow a small holding. Bounds are clipped to 0–100%.
 
-Within-category rebalancing requires position targets totaling 100% of that
-category; legacy planning requires whole-portfolio targets totaling 100%. Both
+Within-category rebalancing requires each Member targets partition—child
+categories and direct investments—to total 100%. Flexible categories constrain
+only their combined value; legacy planning requires whole-portfolio targets totaling 100%. Both
 require complete valuations in their scope and use final weights including the
 contribution. Portfolio contributions also require complete category targets.
 Overview filters,

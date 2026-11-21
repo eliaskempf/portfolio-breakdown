@@ -53,7 +53,7 @@ def render_exposure_plan(directory, result, allocation, valued, *, future=None):
         else:
             st.dataframe(plan.trades.drop(columns='Position ID'), hide_index=True, width='stretch')
         st.success(f'Targets reached within {result.reporting_currency} 0.01.') if plan.complete else st.warning('Remaining target gaps: the permitted trades and constraints do not reach every target.')
-        st.dataframe(plan.gaps.drop(columns='Bucket ID'), hide_index=True, width='stretch')
+        st.dataframe(plan.gaps.drop(columns=['Bucket ID', 'Owner ID', 'Position ID'], errors='ignore'), hide_index=True, width='stretch')
         st.caption(f'Planned equity {format_money(plan.equity,result.reporting_currency)} · Fees {format_money(plan.fees,result.reporting_currency)} · Unallocated contribution / sale proceeds {format_money(plan.unallocated_cash,result.reporting_currency)}')
         if 'future:overlay' in permitted:
             st.caption(f'Initial margin {format_money(plan.margin_required,result.reporting_currency)} · Declared collateral after fees {format_money(plan.collateral_remaining,result.reporting_currency)}')

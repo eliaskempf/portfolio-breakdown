@@ -119,7 +119,7 @@ FEATURES = (
         tour=Keys(prefixes=('rebalance_', 'planning_'), names=('ignore_empty_positions',)),
         tour_objects=Keys(names=('portfolio_contribution_result',))),
     FeatureState('targets', Keys(prefixes=('targets_', 'bulk_bucket_')),
-        inputs=Keys(prefixes=('bulk_bucket_positions_',), predicate=lambda key: key.startswith('targets_') and key.endswith('_filter')),
+        inputs=Keys(names=('targets_allocation_scope',), prefixes=('bulk_bucket_positions_', 'targets_category_mode_', 'targets_create_category_'), predicate=lambda key: key.startswith('targets_') and key.endswith('_filter')),
         mounted=tab('Rebalance', 'rebalance_tabs', 'Targets'),
         tour=Keys(prefixes=('bulk_bucket_positions_',), predicate=lambda key: key.startswith('targets_') and key.endswith('_filter')),
         tour_objects=Keys(names=('targets_drafts',))),
