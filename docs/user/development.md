@@ -119,6 +119,13 @@ background updates. Transition tests must observe visible element counts during
 delayed renders, in both directions, and check focus, drafts and chart identity
 where applicable; assertions made only after rendering settles miss duplicates.
 
+The app also checks streamed updates before the browser paints. When a newly
+rendered element matches a stale copy in the same view, the app hides the old
+copy for that update. It matches widget keys or the type and text of ordinary
+controls and messages. Focused elements and unkeyed charts or custom components
+retain Streamlit's normal rendering. The fixed sections above also preserve the
+layout and identity of these elements.
+
 An explicit retry rebuilds the owning dialog's download state and polling timer;
 successful completion must update the chart without changing its period or
 leaving the view. Idle polling checks the observation-file identity before

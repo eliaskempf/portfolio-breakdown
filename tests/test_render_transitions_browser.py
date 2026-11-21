@@ -15,6 +15,8 @@ from test_history_download import setup
 
 playwright = pytest.importorskip('playwright.sync_api')
 CASES = {
+    **{mode: ('[data-testid="stCaptionContainer"]', 'Movable status')
+       for mode in ('unsectioned', 'unsectioned_fragment', 'unsectioned_dialog')},
     'checklist': ('[data-testid="stCaptionContainer"]', 'Select a position to review its history.'),
     'trade': ('button', 'Save sale'),
     'search': ('[data-testid="stCaptionContainer"]', 'Live suggestions appear as you type.'),
@@ -34,10 +36,32 @@ import streamlit as st, time
 from portfolio_app.ledger.account_journal import load_journal
 from portfolio_app.portfolio.positions import read_snapshot
 root=Path(__file__).parent
-expanded=st.checkbox('Expanded state',value=True)
+if KIND.startswith('unsectioned'):
+    from portfolio_app.interface.shared.presentation import apply_style
+    apply_style()
+if not KIND.startswith('unsectioned'):
+    expanded=st.checkbox('Expanded state',value=True)
 snapshot=read_snapshot(root/'holdings.csv')
 journal,revision=load_journal(root)
-if KIND == 'checklist':
+if KIND.startswith('unsectioned'):
+    def render():
+        expanded=st.checkbox('Expanded state',value=True)
+        st.caption('Repeated label')
+        if expanded:
+            st.caption('Optional status')
+        st.caption('Movable status')
+        time.sleep(.5)
+        st.button('Save example', key='example_action')
+        time.sleep(.2)
+        st.caption('Repeated label')
+        st.html('<span hidden data-render-complete="'+str(expanded)+'"></span>')
+    if KIND == 'unsectioned_fragment':
+        st.fragment(render)()
+    elif KIND == 'unsectioned_dialog':
+        st.dialog('Synthetic dialog')(render)()
+    else:
+        render()
+elif KIND == 'checklist':
     from portfolio_app.performance.personal_history_refresh import RefreshStatus
     import portfolio_app.performance.personal_history_refresh as refresh_module
     from portfolio_app.interface.views.history.history_status_ui import render_history_status_list
@@ -80,8 +104,9 @@ else:
     funds.refresh_notices=lambda *a,**k: (['Invented snapshot notice'],())
     funds.render_refresh_status(root,[],0)
 # Make the real streamed intermediate states observable before stale cleanup.
-time.sleep(.5)
-st.html('<span hidden data-render-complete="'+str(expanded)+'"></span>')
+if not KIND.startswith('unsectioned'):
+    time.sleep(.5)
+    st.html('<span hidden data-render-complete="'+str(expanded)+'"></span>')
 '''.replace('KIND', repr(kind)))
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
@@ -104,18 +129,34 @@ st.html('<span hidden data-render-complete="'+str(expanded)+'"></span>')
             playwright.expect(target).to_have_count(1)
             settle(page)
             for expanded in (False, True):
-                page.evaluate('''({selector,text}) => {
+                if kind.startswith('unsectioned'):
+                    playwright.expect(page.get_by_text('Repeated label', exact=True)).to_have_count(2)
+                page.evaluate('''({selector,text,frames}) => {
                     window.transitionCounts=[];
                     const sample=()=>window.transitionCounts.push([...document.querySelectorAll(selector)]
                         .filter(e=>e.textContent.includes(text) && e.getClientRects().length
                             && getComputedStyle(e).visibility!=='hidden').length);
-                    window.transitionObserver=new MutationObserver(sample);
-                    window.transitionObserver.observe(document.body,{subtree:true,childList:true,attributes:true,characterData:true});sample();
-                }''', {'selector': selector, 'text': text})
+                    // Sample every paint for the global guard. The renderer tests
+                    // also check intermediate DOM updates before stale cleanup.
+                    if (frames) {
+                        const frame=()=>{
+                            sample();
+                            const actions=[...document.querySelectorAll('button')].filter(
+                                b=>b.textContent.trim()==='Save example' && b.checkVisibility());
+                            window.transitionCounts.push(actions.length);
+                            window.frame=requestAnimationFrame(frame);
+                        };
+                        frame();
+                    } else {
+                        window.transitionObserver=new MutationObserver(sample);
+                        window.transitionObserver.observe(document.body,{subtree:true,childList:true,attributes:true,characterData:true});
+                        sample();
+                    }
+                }''', {'selector': selector, 'text': text, 'frames': kind.startswith('unsectioned')})
                 page.get_by_role('checkbox', name='Expanded state', exact=True).press('Space')
                 page.locator(f'[data-render-complete="{expanded}"]').wait_for(state='attached')
                 settle(page)
-                counts=page.evaluate('() => {window.transitionObserver.disconnect();return window.transitionCounts;}')
+                counts=page.evaluate('() => {window.transitionObserver?.disconnect();cancelAnimationFrame(window.frame);return window.transitionCounts;}')
                 assert counts and max(counts)==1, f'{kind}: duplicate content during transition: {max(counts)}'
                 playwright.expect(target).to_have_count(1)
                 playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

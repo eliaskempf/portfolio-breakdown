@@ -8,11 +8,13 @@ from portfolio_app.interface.shared.number_format import return_percent
 import streamlit as st
 from portfolio_app.settings import GAIN_COLOR, LOSS_COLOR
 
+from portfolio_app.interface.shared.rerun_display import SCRIPT as RERUN_DISPLAY
 from portfolio_app.interface.shared.grid_interactions import install_grid_interactions
 from portfolio_app.interface.shared.metric_interactions import toggle_gain_unit
 
 CSS = """
 <style>
+[data-stale="true"][data-portfolio-superseded] {display:none!important;}
 .block-container {max-width:1440px;padding:2rem 2.5rem 3rem;}
 [data-testid="stHeader"] {background:transparent;}
 /* Keep native, keyboard-accessible field help beside its label, not at the
@@ -98,6 +100,7 @@ def mark_view_ready() -> None:
 
 def apply_style() -> None:
     st.html(CSS)
+    st.html(RERUN_DISPLAY, unsafe_allow_javascript=True)
     install_grid_interactions()
 
 
