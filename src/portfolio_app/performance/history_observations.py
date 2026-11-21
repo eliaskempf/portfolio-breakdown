@@ -2,7 +2,7 @@
 from dataclasses import asdict, dataclass, field, replace
 from decimal import Decimal
 from hashlib import sha256
-from functools import lru_cache
+from functools import cached_property, lru_cache
 import json
 from pathlib import Path
 
@@ -27,7 +27,7 @@ class HistoryScope:
                 identifier(value)
             object.__setattr__(self, field, values)
 
-    @property
+    @cached_property
     def key(self):
         return sha256(json.dumps(asdict(self), sort_keys=True).encode()).hexdigest()
 
@@ -114,6 +114,10 @@ class ObservationStore:
         object.__setattr__(self, 'classifications', values)
         active_observations(self)
 
+    @cached_property
+    def index(self):
+        return _ObservationIndex(self)
+
 
 def active_observations(store):
     if isinstance(store, _ObservationIndex):
@@ -132,7 +136,7 @@ def active_observations(store):
 
 
 class _ObservationIndex:
-    """Read-only per-calculation index; never persisted or globally cached."""
+    """Derived lookup tables shared by consumers of one immutable store."""
     def __init__(self, store):
         self.observations, self.reviews, self.classifications = store.observations, store.reviews, store.classifications
         self.active = active_observations(store)
@@ -151,7 +155,7 @@ class _ObservationIndex:
                              for subject, series in prices.items()}
 
 def index_observations(store):
-    return store if isinstance(store, _ObservationIndex) else _ObservationIndex(store)
+    return store if isinstance(store, _ObservationIndex) else store.index
 
 
 def from_dict(raw):

@@ -92,8 +92,10 @@ def historical_for(directory, *, demo=False):
         def get(self, source, target, day):
             result, due = service.cached(source, target, day)
             if due:
-                coordinator.request(workspace, f'purchase-fx-v1:{source}:{target}:{day}',
-                                    lambda: service.get(source, target, day, refresh=True))
+                def update():
+                    service.get(source, target, day, refresh=True)
+                    return service.cached(source, target, day)[0] != result
+                coordinator.request(workspace, f'purchase-fx-v1:{source}:{target}:{day}', update, channel='valuation')
             return result
     return BackgroundFX()
 

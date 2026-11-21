@@ -79,7 +79,7 @@ def prepared_history_view(directory, journal, scope, observations, revision, per
     signature = str(directory.resolve()), calculation.fingerprint, revision, scope, period, target, stamp, include_points, annualized
     key = 'history_view_'+scope.key+'_'+period+('_chart' if include_points else '_summary')+('_annualized' if annualized else '_twr')
     view = cached_input(key, signature,
-        lambda: history_view(journal, scope, observations, period, today=stamp, target=target, include_points=include_points, calculation=calculation, annualized=annualized))
+        lambda: history_view(journal, scope, observations, period, today=stamp, target=target, include_points=include_points, calculation=calculation, annualized=annualized, period_annualized=False))
     cache = st.session_state['parsed_inputs']
     cache[key] = cache.pop(key)
     entries = [name for name in cache if name.startswith('history_view_')]
@@ -844,10 +844,11 @@ def _replace_balance(directory, journal, revision, snapshot, book, row, key):
         st.caption(str(exc))
 
 
-def prepare_portfolio_history(directory, holdings, *, config, bucket='', displayed=None, current_valued=None, include_points=True, annualized=True):
+def prepare_portfolio_history(directory, holdings, *, config, journal=None, observation_snapshot=None, bucket='', displayed=None, current_valued=None, include_points=True, annualized=True):
     """Read once before choosing the initial Overview tab; no UI side effects."""
     from portfolio_app.interface.shared.currency_display import reporting_currency
-    journal, _ = load_journal(directory)
+    if journal is None:
+        journal, _ = load_journal(directory)
     from portfolio_app.performance.history_scope import category_history_scope
     scope = category_history_scope(journal, holdings, config, bucket, displayed=displayed)
     unresolved = list(scope.unresolved)
@@ -864,7 +865,7 @@ def prepare_portfolio_history(directory, holdings, *, config, bucket='', display
     if not scope.positions and not scope.accounts and not scope.unresolved:
         return None
     key = _key(directory, scope.key)
-    observations, revision = load_observations(directory)
+    observations, revision = observation_snapshot or load_observations(directory)
     period = st.session_state.get(key+'period') or '1Y'
     calculation = prepared_history_calculation(directory, journal, observations, revision)
     view = prepared_history_view(directory,journal,scope,observations,revision,period,target=reporting_currency(),
@@ -873,19 +874,27 @@ def prepare_portfolio_history(directory, holdings, *, config, bucket='', display
     current = current_values = None
     if current_valued is not None:
         current_values = current_component_values(current_valued, journal, calculation=calculation)
-        current = summarize_known_gain(journal, scope, observations, date.today().isoformat(), reporting_currency(),
-            current_values=current_values, summary_rows=current_valued, calculation=calculation)
+        # The ledger context owns the historical evidence. Only these current
+        # row fields enter the supported-gain fallback for summary holdings.
+        from portfolio_app.interface.shared.input_cache import cached_input
+        fields = ['position_id', 'shares', 'unrealized_gain_reporting', 'cost_estimated']
+        frame = current_valued.reindex(columns=fields)
+        rows = tuple(frame.astype(object).where(frame.notna(), None).itertuples(index=False, name=None))
+        gain_key = (calculation, scope, tuple(current_values.items()), rows)
+        current = cached_input('overview_current_gain', gain_key,
+            lambda: summarize_known_gain(journal, scope, observations, date.today().isoformat(), reporting_currency(),
+                current_values=current_values, summary_rows=current_valued, calculation=calculation))
     return dict(journal=journal, scope=scope, key=key, observations=observations, revision=revision, view=view,
-                current_gain=current, current_valued=current_valued, calculation=calculation, current_values=current_values,
+                history_holdings=holdings, current_gain=current, current_valued=current_valued, calculation=calculation, current_values=current_values,
                 history_signature=(revision, period, date.today()))
 
 
-def render_portfolio_history(directory, prepared, *, label='Portfolio value', percent=False, on_toggle_gain=None, automatic=False):
+def render_portfolio_history(directory, prepared, *, label='Portfolio value', percent=False, on_toggle_gain=None, automatic=False, input_revisions=None):
     render_history_results(directory, prepared['journal'], prepared['scope'], key=prepared['key'],
-        label=label, prepared=prepared, percent=percent, on_toggle_gain=on_toggle_gain, automatic=automatic)
+        label=label, prepared=prepared, percent=percent, on_toggle_gain=on_toggle_gain, automatic=automatic, input_revisions=input_revisions)
 
 
-def render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False, show_summary=True, is_active=None):
+def render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False, show_summary=True, is_active=None, input_revisions=None):
     options = dict(key=key, label=label, percent=percent, on_toggle_gain=on_toggle_gain, show_summary=show_summary)
     if not automatic:
         _render_history_results(directory, journal, scope, prepared=prepared, **options)
@@ -893,10 +902,13 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
     from portfolio_app.interface.shared.currency_display import reporting_currency
     from portfolio_app.performance.personal_history_refresh import refresher
     target = reporting_currency()
-    refresh = refresher.request(directory, journal, scope, target)
+    def request_refresh(**kwargs):
+        if input_revisions is not None:
+            kwargs['input_revisions'] = input_revisions
+        return refresher.request(directory, journal, scope, target, **kwargs)
+    refresh = request_refresh()
     cached = prepared
     signature = prepared.get('history_signature') if prepared else None
-    waiting = refresh.pending
     observation_stamp, observation_snapshot = None, None
     if on_toggle_gain is not None:
         def toggle():
@@ -905,21 +917,17 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
         options['on_toggle_gain'] = toggle
 
     from portfolio_app.interface.shared.dialog_runtime import local_dialog_updates
-    @st.fragment(run_every=2 if refresh.pending else None)
+    @st.fragment
     @local_dialog_updates()
     def history_region():
-        nonlocal cached, signature, refresh, waiting, observation_stamp, observation_snapshot
+        nonlocal cached, signature, observation_stamp, observation_snapshot
         if is_active is not None and not is_active():
             return
-        if waiting and not refresher.pending(directory):
-            # A different scope may have occupied the workspace's single job.
-            # Ensure this scope once, then stop scheduling on timer ticks.
-            refresh = refresher.request(directory, journal, scope, target)
-            waiting = refresh.pending
-        from portfolio_app.interface.shared.input_cache import file_stamp
+        from portfolio_app.interface.shared.input_cache import file_stamp, observation_snapshot as shared_observations
+        read_observations = shared_observations if prepared is not None else load_observations
         current_stamp = file_stamp(directory/'history-observations.json')
         if current_stamp != observation_stamp:
-            observation_snapshot = load_observations(directory)
+            observation_snapshot = read_observations(directory)
             observation_stamp = current_stamp
         observations, revision = observation_snapshot
         period = st.session_state.get(key+'period') or '1Y'
@@ -937,16 +945,41 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
                 cached['current_gain'] = summarize_known_gain(journal, scope, observations, date.today().isoformat(), target,
                     current_values=cached['current_values'], summary_rows=valued, calculation=calculation)
             signature = current
+        # Poll only the status element. On a revision, Overview also owns the
+        # category comparison, while position charts can update locally.
+        from portfolio_app.interface.shared.background_ui import poll_while_mounted, refresh_allowed
+        @st.fragment
+        @local_dialog_updates()
+        def status():
+            nonlocal refresh, observation_stamp
+            if is_active is not None and not is_active():
+                return
+            if refresh.pending and not refresher.pending(directory):
+                refresh = request_refresh()
+            latest_stamp = file_stamp(directory/'history-observations.json')
+            changed = latest_stamp != observation_stamp
+            if changed and read_observations(directory)[1] == revision:
+                observation_stamp, changed = latest_stamp, False
+            if changed and (prepared is None or refresh_allowed()):
+                st.rerun()
+            if _automatic_history_status(key, refresh):
+                refresh = request_refresh(force=True)
+                st.rerun()
+            watch_dialog = prepared is None and st.session_state.get('position_edit_dialog')
+            if refresh.pending or watch_dialog or changed:
+                poll_while_mounted(key+'refresh_tick', 2000)
         _render_history_results(directory, journal, scope, prepared=cached,
-            refresh=refresh, automatic=True, include_inputs=False, **options)
+            render_status=status, automatic=True, include_inputs=False, **options)
     history_region()
+    if observation_snapshot is None:
+        return
     # Keep editable evidence controls outside the polling fragment.
-    observations, revision = load_observations(directory)
+    observations, revision = observation_snapshot
     _history_inputs(directory, journal, scope, observations, revision,
         cached['view'], target, key)
 
 
-def _render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False, refresh=None, include_inputs=True, show_summary=True):
+def _render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False, render_status=None, include_inputs=True, show_summary=True):
     from portfolio_app.interface.shared.currency_display import reporting_currency, money
     from portfolio_app.performance.history_view import PERIODS
     from portfolio_app.interface.shared.presentation import return_percent
@@ -961,7 +994,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     full = view.all_result
     known = (prepared.get('current_gain') if prepared else None) or view.all_known
     from portfolio_app.interface.views.history.history_data_ui import readable_reasons, scope_names
-    names = scope_names(directory, journal, scope)
+    names = scope_names(directory, journal, scope, holdings=prepared.get('history_holdings') if prepared else None)
     def explanation(reasons):
         messages = readable_reasons(directory, journal, scope, reasons, names=names)
         return ' '.join(messages[:3]) + (' More missing dates are listed in Correct market data.' if len(messages) > 3 else '')
@@ -1057,7 +1090,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
             plot.caption('Load historical prices to chart your saved transactions.')
     with sections['market_refresh_status']:
         if automatic:
-            _automatic_history_status(directory, journal, scope, target, key, refresh)
+            render_status()
         else:
             _load_market_observations(directory, journal, scope, observations, revision, view.all_start, view.today, target, key)
     notes = []
@@ -1099,12 +1132,10 @@ def _load_market_observations(directory, journal, scope, observations, revision,
         st.caption(message)
 
 
-def _automatic_history_status(directory, journal, scope, target, key, refresh):
-    from portfolio_app.performance.personal_history_refresh import refresher
+def _automatic_history_status(key, refresh):
     if refresh.pending:
         st.caption('Loading historical prices and FX…')
-    elif refresh.errors:
+    elif getattr(refresh, 'errors', ()):
         st.caption('Some historical market data is unavailable', help=' '.join(refresh.errors))
         if st.button('Retry prices', key=key+'fetch_retry'):
-            refresher.request(directory, journal, scope, target, force=True)
-            st.rerun()
+            return True

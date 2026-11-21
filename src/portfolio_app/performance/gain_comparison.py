@@ -50,8 +50,9 @@ def known_category_performance(displayed, holdings, config, journal, observation
                 scope = HistoryScope(identities)
         gain = summarize_known_gain(journal, scope, observations, today.isoformat(), target,
                                     current_values=values, summary_rows=current_valued, calculation=calculation)
-        view = history_view(journal, scope, observations, 'All', today=today, target=target,
-                            include_points=False, calculation=calculation, annualized=False)
-        return gain, view.all_result.time_weighted
+        twr = calculation._get(('category_twr', scope, target, today), lambda:
+            history_view(journal, scope, observations, 'All', today=today, target=target,
+                         include_points=False, calculation=calculation, annualized=False).all_result.time_weighted)
+        return gain, twr
 
     return strategic_performance(comparison, config, bucket, evaluate=evaluate)

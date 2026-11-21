@@ -17,16 +17,20 @@ class RequestCoordinator:
         self._lock = RLock()
         self._pending = {}
         self._revisions = {}
+        self._channel_revisions = {}
+        self._channels = {}
         self._errors = {}
         self.capacity = capacity
 
-    def request(self, workspace, key, work):
+    def request(self, workspace, key, work, *, channel=None):
         identity = (str(workspace), key)
         with self._lock:
             if identity in self._pending or len(self._pending) >= self.capacity:
                 return False
             # Hold the lock until registration is complete, even for instant jobs.
             self._pending[identity] = self._pool.submit(copy_context().run, self._run, identity, work)
+            if channel is not None:
+                self._channels[identity] = (str(workspace), channel)
         return True
 
     def _run(self, identity, work):
@@ -34,11 +38,15 @@ class RequestCoordinator:
         with self._lock:
             pass
         try:
-            work()
+            changed = work()
             error = ''
         except Exception as exc:
+            changed = False
             error = str(exc) or type(exc).__name__
         with self._lock:
+            channel = self._channels.pop(identity, None)
+            if channel is not None and changed is not False:
+                self._channel_revisions[channel] = self._channel_revisions.get(channel, 0) + 1
             self._pending.pop(identity, None)
             self._errors[identity] = error
             self._revisions[identity[0]] = self._revisions.get(identity[0], 0) + 1
@@ -50,6 +58,12 @@ class RequestCoordinator:
     def revision(self, workspace):
         with self._lock:
             return self._revisions.get(str(workspace), 0)
+
+    def channel_state(self, workspace, channel):
+        """Material revision and outstanding work for one consumer group."""
+        key = str(workspace), channel
+        with self._lock:
+            return self._channel_revisions.get(key, 0), key in self._channels.values()
 
     def close(self):
         self._pool.shutdown(wait=True, cancel_futures=True)
@@ -75,8 +89,10 @@ class BackgroundPrices:
         self._results[key] = result
         if (due or refresh) and key not in self._requested:
             self._requested.add(key)
-            self.coordinator.request(self.workspace, key,
-                lambda: getattr(self.service, kind)(value, refresh=refresh))
+            def update():
+                getattr(self.service, kind)(value, refresh=refresh)
+                return self.service.cached(key)[0] != result
+            self.coordinator.request(self.workspace, key, update, channel='valuation')
         return result
 
     def price(self, ticker, *, refresh=False):

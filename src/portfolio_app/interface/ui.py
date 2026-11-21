@@ -107,10 +107,13 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     reporting_currency = currency_settings.reporting_currency
     st.session_state['reporting_currency'] = reporting_currency
     historical = historical_for(data_dir, demo=demo and not (data_dir / '.live-demo').exists())
+    observation_snapshot = None
     if (data_dir / 'history-observations.json').exists():
-        from portfolio_app.performance.history_observations import ObservationFX, load_observations as load_historical_observations
+        from portfolio_app.performance.history_observations import ObservationFX
+        from portfolio_app.interface.shared.input_cache import observation_snapshot as load_historical_observations
         try:
-            historical = ObservationFX(load_historical_observations(data_dir)[0], historical)
+            observation_snapshot = load_historical_observations(data_dir)
+            historical = ObservationFX(observation_snapshot[0], historical)
         except DataError as exc:
             st.error(str(exc))
             mark_view_ready()
@@ -202,7 +205,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return
     background_prices = price_service is None and not offline_demo
     market_workspace = str(data_dir.resolve())
-    market_revision = market_coordinator.revision(market_workspace)
+    market_revision, _ = market_coordinator.channel_state(market_workspace, 'valuation')
     price_service = select_price_service(data_dir, offline_demo=offline_demo, supplied=price_service, live_prices=prices_for)
     with st.spinner('Valuing portfolio…'):
         prepared = prepare_application(inputs, price_service, refresh=refresh,
@@ -264,10 +267,12 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         default='Overview', key='main_tabs', on_change='rerun')
     overview, exposure, positions, rebalance = tabs[:4]
     from portfolio_app.interface.views.monitoring.monitoring_ui import watch_monitoring, render_monitoring, render_alert_dialog
-    watch_monitoring(data_dir, demo=offline_demo, disabled=tour_active())
+    monitoring_revision, _ = market_coordinator.channel_state(market_workspace, 'monitoring')
     if tabs[-2].open:
         with tabs[-2]:
             render_monitoring(data_dir, holdings, journal, demo=offline_demo)
+    watch_monitoring(data_dir, demo=offline_demo, disabled=tour_active(), visible=tabs[-2].open,
+                     starting_revision=monitoring_revision)
     if tabs[-1].open:
         with tabs[-1]:
             from portfolio_app.interface.views.taxes.tax_ui import render_taxes
@@ -344,7 +349,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                 def open_capital_targets():
                     st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Category targets')
                 render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_capital_targets=open_capital_targets, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
-                                          current_valued=valued, automatic_history=not offline_demo, show_sold_positions=not hide_empty,
+                                          current_valued=valued, history_holdings=holdings, journal=journal, observation_snapshot=observation_snapshot,
+                                          input_revisions=(snapshot.revision, leverage_context.journal_revision), automatic_history=not offline_demo, show_sold_positions=not hide_empty,
                                           leverage_enabled=(leverage.enabled or actual_active) and leverage_supported,
                                           percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
                                           edit_position=lambda position_id: open_valued_position(position_id, editing=True),
@@ -407,7 +413,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                             render_rebalancing(ordinary_valued.loc[~ordinary_valued.position_id.isin({x.position_id for x in journal.cash_links})] if actual_active else valued)
                     except RebalanceError as exc:
                         st.error(str(exc))
-    if background_prices or market_coordinator.pending(market_workspace) or market_coordinator.revision(market_workspace) != market_revision:
+    if background_prices or market_coordinator.channel_state(market_workspace, 'valuation') != (market_revision, False):
         render_market_status(market_workspace, market_revision, show_caption=False)
     if not tour_active():
         render_alert_dialog(data_dir)
@@ -419,12 +425,15 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
 
 
 def render_market_status(market_workspace, market_revision, *, show_caption=True):
-    pending = market_coordinator.pending(market_workspace)
-    @st.fragment(run_every=.5 if pending else None)
+    from portfolio_app.interface.shared.background_ui import poll_while_mounted
+    @st.fragment
     def market_status():
-        if market_coordinator.revision(market_workspace) != market_revision and refresh_allowed():
+        revision, pending = market_coordinator.channel_state(market_workspace, 'valuation')
+        if not pending and revision != market_revision and refresh_allowed():
             st.rerun()
-        if show_caption and market_coordinator.pending(market_workspace):
+        if pending or revision != market_revision:
+            poll_while_mounted('market_status_tick', 500)
+        if show_caption and pending:
             st.caption('Updating prices in the background · Saved quotes remain visible with their original dates')
     market_status()
 

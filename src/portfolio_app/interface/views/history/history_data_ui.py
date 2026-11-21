@@ -30,11 +30,12 @@ class MissingInput:
     target: str = ''
 
 
-def scope_names(directory, journal, scope):
+def scope_names(directory, journal, scope, *, holdings=None):
     """Readable, scope-restricted names; missing display metadata never exposes IDs."""
     names = {identity: f'Holding {index+1}' for index, identity in enumerate(scope.positions)}
     try:
-        holdings = read_snapshot(directory / 'holdings.csv').holdings
+        if holdings is None:
+            holdings = read_snapshot(directory / 'holdings.csv').holdings
         names.update({row.position_id: str(row['name']) for _, row in holdings.iterrows()
                       if row.position_id in names and pd.notna(row.get('name')) and row['name']})
     except (DataError, OSError):
@@ -64,12 +65,15 @@ def readable_reasons(directory, journal, scope, reasons, *, names=None):
             names[event.id] = f'{event.date or "Undated"} transaction'
     for event in journal.events:
         names[event.id] = f'{event.date} account entry'
+    replacements = sorted(names.items(), key=lambda pair: -len(pair[0]))
     results = []
     for reason in reasons:
         identity, separator, detail = reason.partition(': ')
         message = f'{names.get(identity, "History")}: {detail}' if separator else reason
         message = message.replace('charges have not been confirmed', 'confirm transaction fees')
-        for stored, label in sorted(names.items(), key=lambda pair: -len(pair[0])):
+        for stored, label in replacements:
+            if stored not in message:
+                continue
             if len(stored) < 16 and not any(marker in stored for marker in ('-', ':')):
                 continue
             message = re.sub(r'(?<![\w-])'+re.escape(stored)+r'(?![\w-])', lambda _: label, message)

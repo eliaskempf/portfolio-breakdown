@@ -35,7 +35,7 @@ class MonitoringService:
                 value = self.market.get(spec, refresh=refresh)
                 with self.lock:
                     self.series[key] = value
-            if coordinator.request(self.directory, ('monitoring-browse', key), fetch):
+            if coordinator.request(self.directory, ('monitoring-browse', key), fetch, channel='monitoring'):
                 with self.lock:
                     self.browse_attempts[key] = self.now()
         return series
@@ -45,7 +45,7 @@ class MonitoringService:
         with self.lock:
             if not refresh and self.last_attempt and now-self.last_attempt < timedelta(minutes=5):
                 return
-            if coordinator.request(self.directory, 'monitoring-evaluate', lambda: self.evaluate(refresh=refresh)):
+            if coordinator.request(self.directory, 'monitoring-evaluate', lambda: self.evaluate(refresh=refresh), channel='monitoring'):
                 self.last_attempt = now
 
     def evaluate(self, *, refresh=False):

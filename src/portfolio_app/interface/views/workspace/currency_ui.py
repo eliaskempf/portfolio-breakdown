@@ -184,12 +184,12 @@ def ui_prices(directory, demo=False):
 def render_fx_progress(directory):
     from portfolio_app.market.market_data import coordinator
     workspace = str(directory.resolve())
-    stamp = coordinator.revision(workspace)
-    pending = coordinator.pending(workspace)
+    stamp, pending = coordinator.channel_state(workspace, 'valuation')
 
     @st.fragment(run_every=.5 if pending else None)
     def progress():
-        if pending and coordinator.revision(workspace) != stamp:
+        current, still_pending = coordinator.channel_state(workspace, 'valuation')
+        if pending and (current != stamp or not still_pending):
             st.rerun()
         if pending:
             st.caption('Loading exchange rates…')

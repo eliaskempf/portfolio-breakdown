@@ -32,18 +32,23 @@ class HistoryRefresher:
     def pending(self, directory):
         return self.jobs.pending(Path(directory).resolve(), 'personal-history')
 
-    def request(self, directory, journal, scope, target, *, force=False, today=None):
+    def request(self, directory, journal, scope, target, *, force=False, today=None, input_revisions=None):
         directory = Path(directory).resolve()
         active = {b.position_id for b in journal.securities if b.active}
         scope = HistoryScope(tuple(active.intersection(scope.positions)), scope.accounts)
         dates = scope_dates(journal, scope)
         if not dates:
             return RefreshStatus()
+        if self.pending(directory):
+            return RefreshStatus(pending=True)
         start, end = dates[0], (today or date.today()).isoformat()
-        snapshot = read_snapshot(directory/'holdings.csv')
-        from portfolio_app.ledger.account_journal import load_journal
-        _, journal_revision = load_journal(directory)
-        facts = history_fingerprint(journal), snapshot.revision, SettlementArchive(directory).revision(), end, target
+        if input_revisions is None:
+            from portfolio_app.ledger.account_journal import load_journal
+            holdings_revision = read_snapshot(directory/'holdings.csv').revision
+            _, journal_revision = load_journal(directory)
+        else:
+            holdings_revision, journal_revision = input_revisions
+        facts = history_fingerprint(journal), holdings_revision, SettlementArchive(directory).revision(), end, target
         signature = sha256(repr((scope, start, facts)).encode()).hexdigest()
         identity = str(directory), signature
         with self._lock:
@@ -66,7 +71,7 @@ class HistoryRefresher:
                                 and set(scope.accounts) <= set(covered.accounts)):
                             return RefreshStatus()
             started = self.jobs.request(directory, 'personal-history',
-                lambda: self._run(directory, journal, scope, start, end, target, snapshot.revision, identity, journal_revision))
+                lambda: self._run(directory, journal, scope, start, end, target, holdings_revision, identity, journal_revision))
             if started:
                 self._requests[identity] = scope, start, facts
             return RefreshStatus(pending=started, errors=() if started else ('Market-data queue is busy. Try again shortly.',))

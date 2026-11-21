@@ -18,9 +18,17 @@ ZERO = Decimal(0)
 def daily_time_weighted(calculation, scope, start, end, target, opening, ending, flows):
     if opening < 0 or ending < 0:
         return None, Issue('Time-weighted return is unavailable across negative equity', 'negative_equity')
+    _, (factor, base, invested, reason) = _daily_boundaries(
+        calculation, scope, start, end, target, opening, ending, flows)
+    if reason:
+        return None, reason
+    return _finish_return(factor, base, invested, ending)
+
+
+def _daily_boundaries(calculation, scope, start, end, target, opening, ending, flows):
     # Immutable context: reuse funded-boundary prefixes for range/hover requests.
     cache = calculation._get(('daily_twr', scope, start, target), dict)
-    factor, base, invested = Decimal(1), opening, opening > 0
+    factor, base, invested, reason = Decimal(1), opening, opening > 0, ''
     with localcontext() as context:
         context.prec = 50
         for stamp, entries in groupby(flows, key=lambda f: f.date):
@@ -28,7 +36,7 @@ def daily_time_weighted(calculation, scope, start, end, target, opening, ending,
             if stamp in cache:
                 factor, base, invested, reason = cache[stamp]
                 if reason:
-                    return None, reason
+                    break
                 continue
             incoming = sum((f.amount for f in entries if f.amount > 0), ZERO)
             outgoing = sum((-f.amount for f in entries if f.amount < 0), ZERO)
@@ -64,8 +72,52 @@ def daily_time_weighted(calculation, scope, start, end, target, opening, ending,
                     base = after
             cache[stamp] = factor, base, invested, reason
             if reason:
-                return None, reason
-        if not invested or (not base and ending):
-            return None, Issue('Time-weighted return needs a funded interval with supported boundaries', 'funding')
+                break
+    return cache, (factor, base, invested, reason)
+
+
+def _finish_return(factor, base, invested, ending):
+    if not invested or (not base and ending):
+        return None, Issue('Time-weighted return needs a funded interval with supported boundaries', 'funding')
+    with localcontext() as context:
+        context.prec = 50
         result = float(factor * (ending/base if base else 1) - 1)
     return (result, '') if math.isfinite(result) else (None, Issue('Return exceeds supported numeric range', 'numeric'))
+
+
+def chart_returns(calculation, scope, start, target, values, full_result, negative_dates):
+    """Evaluate dated closes against one sequence of funded flow boundaries."""
+    from bisect import bisect_left
+    from portfolio_app.performance.personal_performance import coverage_reasons
+
+    opening = full_result.opening_value
+    if opening is None or opening < 0:
+        return {}
+    dates = [day for day, value in values.items()
+             if value is not None and value >= 0 and (not negative_dates or day < negative_dates[0])]
+    if full_result.flow_reasons:
+        # For a fixed inception, ledger coverage issues and missing flow facts
+        # accumulate. Find the first affected close without scanning every prefix.
+        def unsupported(day):
+            _, missing = calculation.flows(scope, start, day, target)
+            return bool(missing or coverage_reasons(calculation.journal, scope,
+                calculation.observations, start, day, events_by_position=calculation._events,
+                calculation=calculation))
+        dates = dates[:bisect_left(dates, True, key=unsupported)]
+    if not dates:
+        return {}
+    end = dates[-1]
+    flows, _ = calculation.flows(scope, start, end, target)
+    boundaries, _ = _daily_boundaries(calculation, scope, start, end, target, opening, values[end], flows)
+    flow_days = iter(dict.fromkeys(flow.date for flow in flows))
+    next_day = next(flow_days, None)
+    state = Decimal(1), opening, opening > 0, ''
+    result = {}
+    for day in dates:
+        while next_day is not None and next_day <= day:
+            state = boundaries.get(next_day)
+            if state is None or state[3]:
+                return result
+            next_day = next(flow_days, None)
+        result[day] = _finish_return(*state[:3], values[day])[0]
+    return result

@@ -206,3 +206,19 @@ def test_fetched_data_survives_cache_publication_and_cleanup_failure(tmp_path, n
         assert result.prices == (42.,) and 'could not be saved' in result.note
         assert service.get('SYNTH').prices == (42.,)
     assert provider.calls == 1
+
+
+def test_valuation_revision_tracks_material_results_only(jobs):
+    for key, valuation, changed in [('personal-history', False, True),
+                                    ('price:unchanged', True, False),
+                                    ('price:changed', True, True)]:
+        release = Event()
+        def work():
+            assert release.wait(3)
+            return changed
+        assert jobs.request('workspace', key, work, channel='valuation' if valuation else None)
+        assert jobs.channel_state('workspace', 'valuation') == (0, valuation)
+        release.set()
+        finish(jobs, 'workspace')
+        assert jobs.channel_state('workspace', 'valuation') == (int(valuation and changed), False)
+    assert jobs.revision('workspace') == 3

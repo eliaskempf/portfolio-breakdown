@@ -474,7 +474,7 @@ def render_monitoring(directory, holdings, journal, *, demo=False):
         st.error(str(exc))
 
 
-def watch_monitoring(directory, *, demo=False, disabled=False):
+def watch_monitoring(directory, *, demo=False, disabled=False, visible=True, starting_revision=None):
     """Invisible heartbeat: evaluation remains active regardless of selected tab."""
     if disabled:
         return
@@ -485,16 +485,25 @@ def watch_monitoring(directory, *, demo=False, disabled=False):
     except DataError:
         return  # The Monitoring view reports the corrupt document.
     enabled = any(r['enabled'] for r in doc['rules'])
-    if enabled:
-        service.schedule()
     from portfolio_app.market.market_data import coordinator
-    revision = coordinator.revision(directory)
+    from portfolio_app.interface.shared.background_ui import poll_while_mounted
+    revision = starting_revision
+    if revision is None:
+        revision, _ = coordinator.channel_state(directory, 'monitoring')
     @st.fragment(run_every=60 if enabled else None)
     def heartbeat():
+        nonlocal revision
         if enabled:
             service.schedule()
-        if coordinator.revision(directory) != revision and refresh_allowed():
-            st.rerun()
+        current, pending = coordinator.channel_state(directory, 'monitoring')
+        if current != revision and refresh_allowed():
+            # Background rule evaluations need a page update on other views
+            # only when their visible notifications have changed.
+            if visible or load_monitoring(directory)[0]['events'] != doc['events']:
+                st.rerun()
+            revision = current
+        if pending:
+            poll_while_mounted('monitoring_status_tick', 500)
     heartbeat()
 
 

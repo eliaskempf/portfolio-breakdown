@@ -106,7 +106,7 @@ dialog()
             playwright.expect(page.get_by_role('dialog')).to_be_visible()
             playwright.expect(button).to_have_count(0)
             assert (tmp_path/'app-renders.txt').read_text() == '1'
-            assert (tmp_path/'dialog-renders.txt').read_text() == '2'
+            assert (tmp_path/'dialog-renders.txt').read_text() == ('1' if kind == 'personal' else '2')
             if kind == 'personal':
                 before = (tmp_path/'observation-reads.txt').read_text()
                 page.wait_for_timeout(2500); settle(page)

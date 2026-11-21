@@ -234,3 +234,26 @@ def test_replay_reuses_price_only_dates_but_preserves_separate_fee_dates(monkeyp
     assert len(calculation.securities('2024-01-05').cash) == 1
     assert len(calculation.securities('2024-01-06').cash) == 2
     assert calculation.securities('2024-01-09').positions['holding'].quantity == 2
+
+
+@pytest.mark.parametrize('problem', ['complete', 'missing boundary', 'unknown fees', 'missing fee FX', 'negative equity'])
+def test_hover_series_matches_independent_intervals(problem):
+    from test_daily_twr import example, trade, START, END
+    from portfolio_app.ledger.security_history import Charge
+    from portfolio_app.performance.personal_performance import calculate_history
+    buy = trade('purchase', 'buy', '2024-01-04', 120, 4)
+    sale = trade('sale', 'sell', '2024-01-08', 125, 3)
+    if problem == 'unknown fees':
+        sale = replace(sale, charges_known=False, charges=())
+    if problem == 'missing fee FX':
+        sale = replace(sale, charges=(Charge(D(3), 'USD'),))
+    prices = [(f'2024-01-{n:02}', 100+n) for n in range(1, 11)
+              if n != 6 and (n != 3 or problem != 'missing boundary')]
+    journal, scope, store = example((buy, sale), quantity=1, prices=prices)
+    if problem == 'negative equity':
+        store = replace(store, observations=(*store.observations,
+            Observation('negative', 'value', scope.key, '2024-01-05', D(-1), 'EUR')))
+    view = history_view(journal, scope, store, 'All', today=date.fromisoformat(END))
+    for point in view.points:
+        expected = calculate_history(journal, scope, store, START, point['Date'], annualized=False)
+        assert point['TWR'] == expected.time_weighted

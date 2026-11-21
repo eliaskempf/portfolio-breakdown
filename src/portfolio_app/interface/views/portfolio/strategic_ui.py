@@ -23,7 +23,7 @@ from portfolio_app.performance.performance import position_performance, summariz
 from portfolio_app.portfolio.strategic import bucket_paths, category_labels, bucket_positions, strategic_summary, strategic_tree, strategic_performance
 
 
-def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None, open_capital_targets=None, current_valued=None, automatic_history=False, show_sold_positions=False):
+def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None, open_capital_targets=None, current_valued=None, automatic_history=False, show_sold_positions=False, history_holdings=None, journal=None, observation_snapshot=None, input_revisions=None):
     from portfolio_app.workspace.display_preferences import load_preferences, save_overview_view
     from portfolio_app.portfolio.holdings import DataError
     modes = ['Allocation', 'Performance', *(['Analytics'] if analytics else [])]
@@ -89,7 +89,9 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         from portfolio_app.portfolio.positions import read_snapshot
         from portfolio_app.portfolio.holdings import DataError
         try:
-            history = prepare_portfolio_history(data_dir,read_snapshot(data_dir / 'holdings.csv').holdings,
+            if history_holdings is None:
+                history_holdings = read_snapshot(data_dir / 'holdings.csv').holdings
+            history = prepare_portfolio_history(data_dir, history_holdings, journal=journal, observation_snapshot=observation_snapshot,
                 config=config,bucket=bucket,displayed=valued, current_valued=current_valued if current_valued is not None else valued,
                 include_points=st.session_state.get('strategic_view', 'Performance') == 'Performance',
                 annualized=st.session_state.get('strategic_view', 'Performance') == 'Performance')
@@ -110,7 +112,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                      help='Selected capital as a share of all owned capital, including a funded futures strategy. Excludes debt and any legacy unfunded settlement adjustment.')
         with first:
             twr_help = ''
-            if history and history['view'].all_result.time_weighted_reasons:
+            if percent and history and history['view'].all_result.time_weighted_reasons:
                 from portfolio_app.interface.views.history.history_data_ui import readable_reasons
                 reasons = readable_reasons(data_dir, history['journal'], history['scope'],
                     history['view'].all_result.time_weighted_reasons)
@@ -136,13 +138,14 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         if has_history:
             from portfolio_app.interface.views.history.history_ui import render_portfolio_history
             render_portfolio_history(data_dir,history,label='Category value' if bucket else 'Portfolio value',
-                                     percent=percent,on_toggle_gain=on_toggle_gain,automatic=automatic_history)
+                                     percent=percent,on_toggle_gain=on_toggle_gain,automatic=automatic_history, input_revisions=input_revisions)
         with st.container(key='tour_performance'):
-            table = strategic_performance(valued, config, bucket)
-            if history is not None:
+            if history is None:
+                table = strategic_performance(valued, config, bucket)
+            else:
                 from portfolio_app.performance.gain_comparison import known_category_performance
                 from portfolio_app.interface.shared.currency_display import reporting_currency
-                table = known_category_performance(valued, read_snapshot(data_dir / 'holdings.csv').holdings,
+                table = known_category_performance(valued, history_holdings,
                     config, history['journal'], history['observations'],
                     current_valued if current_valued is not None else valued, bucket, target=reporting_currency(),
                     calculation=history['calculation'], current_values=history['current_values'])

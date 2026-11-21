@@ -23,32 +23,42 @@ def file_stamp(path):
         return (str(path.resolve()), None)
 
 
-def cached_input(key, signature, loader):
+def cached_input(key, signature, loader, *, immutable=False):
     cache = st.session_state.setdefault('parsed_inputs', {})
     previous = cache.get(key)
     if previous is None or previous[0] != signature:
         previous = (signature, loader())
         cache[key] = previous
-    return deepcopy(previous[1])
+    return previous[1] if immutable else deepcopy(previous[1])
+
+
+def observation_snapshot(directory):
+    from portfolio_app.performance.history_observations import FILE, load_observations
+    return cached_input('history_observations', file_stamp(directory / FILE),
+                        lambda: load_observations(directory), immutable=True)
 
 
 def load_inputs(directory):
     directory = Path(directory)
-    if (directory / '.allocation-publication.json').exists():
+    if any((directory / name).exists() for name in ('.allocation-publication.json', '.history-publication.json')):
         from portfolio_app.workspace.workspace_lock import workspace_lock
         with workspace_lock(directory):
             pass
     holdings_path = directory / 'holdings.csv'
-    snapshot = cached_input('holdings', file_stamp(holdings_path), lambda: read_snapshot(holdings_path))
     from portfolio_app.ledger.account_journal import load_journal
     from portfolio_app.ledger.security_history import effective_holdings
     from portfolio_app.portfolio.positions import HoldingsSnapshot
-    journal, journal_revision = cached_input('history_journal', file_stamp(directory / 'account-journal.json'), lambda: load_journal(directory))
-    if journal.securities:
-        snapshot = HoldingsSnapshot(effective_holdings(snapshot.holdings, journal.securities), snapshot.revision)
-    snapshot.holdings.attrs['history_journal_revision'] = journal_revision
+    def effective_snapshot():
+        snapshot = read_snapshot(holdings_path)
+        journal, revision = load_journal(directory)
+        if journal.securities:
+            snapshot = HoldingsSnapshot(effective_holdings(snapshot.holdings, journal.securities), snapshot.revision)
+        snapshot.holdings.attrs['history_journal_revision'] = revision
+        return snapshot
+    journal_stamp = file_stamp(directory / 'account-journal.json')
+    snapshot = cached_input('holdings', (file_stamp(holdings_path), journal_stamp), effective_snapshot)
     path = directory / 'allocation.yaml'
-    allocation = cached_input('allocation', (file_stamp(path), snapshot.revision, file_stamp(directory / 'account-journal.json')), lambda: load_allocation(path, snapshot.holdings))
+    allocation = cached_input('allocation', (file_stamp(path), snapshot.revision, journal_stamp), lambda: load_allocation(path, snapshot.holdings))
     path = directory / 'classifications.yaml'
     classifications = cached_input('classifications', file_stamp(path), lambda: load_classifications(path) if path.exists() else {})
     manifests = sorted((directory / 'etfs').glob('*.yaml'))
