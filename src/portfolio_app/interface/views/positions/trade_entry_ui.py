@@ -17,23 +17,29 @@ def trade_inputs(prefix, journal, *, kind='buy'):
     stamp = left.date_input('Trade date', value=date.today(), max_value=date.today(), key=prefix+'trade_date')
     currency = right.selectbox('Trade currency', REPORTING_CURRENCIES, accept_new_options=True,
         index=REPORTING_CURRENCIES.index(reporting_currency()), key=prefix+'trade_currency').strip().upper()
-    left, middle, right = st.columns(3)
+    amounts = st.columns(4 if kind == 'sell' else 3)
+    left, middle, right = amounts[:3]
     quantity = left.text_input('Quantity bought' if kind == 'buy' else 'Quantity sold', key=prefix+'trade_quantity')
     price = middle.text_input('Unit price', key=prefix+'trade_price')
     fees = right.text_input('Fees', value='0', key=prefix+'trade_fees',
         help='Total fees in the trade currency, entered separately from the unit price.')
+    taxes = amounts[3].text_input('Taxes paid / withheld', value='0', key=prefix+'trade_taxes',
+        help='Actual taxes deducted from this sale in the trade currency. Enter 0 if none. Recorded separately from fees.') if kind == 'sell' else '0'
     try:
         qty = decimal_input(quantity, 'Quantity')
         unit_price = decimal_input(price, 'Unit price')
         charge = decimal_input(fees, 'Fees')
+        tax = decimal_input(taxes, 'Taxes paid / withheld')
         if qty <= 0:
             raise DataError('Enter a quantity greater than zero.')
         identity = st.session_state.setdefault(prefix+'trade_id', uuid4().hex)
         sequence = max([e.sequence for b in journal.securities for e in b.records]+[e.sequence for e in journal.events]+[0])+1
+        # Keep explicit zero sale charges so either amount can be corrected later.
         event = SecurityEvent(identity, kind, stamp.isoformat(), quantity=qty, price=unit_price,
-            currency=currency, charges=(Charge(charge, currency),) if charge else (), charges_known=True,
+            currency=currency, charges=tuple(Charge(amount, currency, kind=charge_kind)
+                for amount, charge_kind in ((charge, 'fee'), (tax, 'tax')) if amount or kind == 'sell'), charges_known=True,
             sequence=sequence)
-        total = event.gross + charge if kind == 'buy' else event.gross - charge
+        total = event.gross + charge if kind == 'buy' else event.gross - charge - tax
         st.caption(f'{"Total paid" if kind == "buy" else "Net proceeds"}: {total:,.2f} {currency}')
         return event, None
     except (DataError, ValueError) as exc:

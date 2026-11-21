@@ -185,8 +185,14 @@ def test_purchase_first_save_history_and_followup_sale(ux_page):
     playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
     playwright.expect(dialog.get_by_role('button', name='Review against portfolio', exact=True)).not_to_be_visible()
     runs.click(page, dialog.get_by_role('button', name='Add sell'))
-    for label, value in [('Quantity sold', '1'), ('Unit price', '110'), ('Fees', '1')]:
+    for label, value in [('Quantity sold', '1'), ('Unit price', '110'), ('Fees', '1'), ('Taxes paid / withheld', '2')]:
         runs.commit_text(page, dialog.get_by_role('textbox', name=label, exact=True), value)
+    playwright.expect(dialog.get_by_text('Net proceeds: 107.00 EUR', exact=True)).to_be_visible()
+    for width in (620, 390):
+        page.set_viewport_size({'width': width, 'height': 950})
+        assert dialog.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
+        playwright.expect(dialog.get_by_role('textbox', name='Taxes paid / withheld', exact=True)).to_be_visible()
+    page.set_viewport_size({'width': 1440, 'height': 1000})
     runs.click(page, dialog.get_by_role('button', name='Save sale', exact=True))
     playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
     journal = load_journal(directory)[0]

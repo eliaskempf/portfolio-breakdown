@@ -14,7 +14,11 @@ belongs in a different account or portfolio. Existing categories and targets are
 preserved when adding a trade to an existing position.
 
 Open a position's **Transactions** view for **Add buy** or **Add sell**. These
-also update the holding immediately when saved. Editing an applied buy or sell
+also update the holding immediately when saved. **Add sell** includes separate
+**Fees** and **Taxes paid / withheld** fields in the trade currency, each defaulting
+to zero. Net proceeds subtract both once; taxes are recorded separately from fees
+and do not change the remaining holding's acquisition cost. Enter actual paid or
+withheld tax, not an estimated tax liability. Editing an applied buy or sell
 with **Save changes** updates its quantity and cost directly while retaining the
 original record for audit. Selling more units than the
 recorded history supports is rejected. Matching trades require confirmation that
@@ -373,8 +377,9 @@ reconstructed cost or affected cash balance is unknown.
 Fees can have their own currency and date; **Starting lots, fees and taxes**
 supports multiple fees and recorded taxes. The old purchase-batch editor retains
 its established blank-fee-means-zero convention.
-Purchase fees enter acquisition cost once; sale fees reduce proceeds. Explicit
-taxes are separate expenses, not additions to the remaining FIFO acquisition cost.
+Purchase fees enter acquisition cost once. Sale fees and taxes reduce net proceeds
+and realized gain. Purchase taxes are separate expenses. Taxes do not increase
+the remaining FIFO acquisition cost.
 
 Sales use FIFO for analytical remaining costs. Enter actual opening lots where
 known. A snapshot's aggregate cost is not an invented set of purchase lots:

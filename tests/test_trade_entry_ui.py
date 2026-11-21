@@ -144,3 +144,70 @@ def test_first_purchase_date_correction_moves_only_synthetic_boundary(tmp_path):
     from portfolio_app.ledger.security_history import selected_events
     events = selected_events(load_journal(tmp_path)[0].securities[0])
     assert [e.date for e in events] == ['2025-12-09', '2025-12-10']
+
+
+def test_sale_taxes_reduce_linked_cash_once_and_remain_editable(tmp_path):
+    from dataclasses import replace
+    from decimal import Decimal as D
+    from portfolio_app.ledger.account_journal import Account, Event, replay, save_journal
+    from portfolio_app.ledger.security_history import selected_events
+    from portfolio_app.interface.views.history.history_ui import _key
+    from test_history_ui import launch
+    from test_trade_commands import trade, save
+
+    save(tmp_path, trade(stamp='2024-01-02', quantity='10', price='10', fee='0'),
+        fields=dict(name='Invented taxed sale'))
+    journal, revision = load_journal(tmp_path)
+    book = replace(journal.securities[0], account_id='cash')
+    save_journal(tmp_path, replace(journal, version=5, securities=(book,),
+        accounts=(Account('cash', 'Invented cash account'),),
+        events=(Event('opening-cash', '2024-01-01', 'cash_open', 'cash', 'EUR', D(1000)),)), revision)
+    app = launch(tmp_path)
+    by_label(app.button, 'Add sell').click().run()
+    assert by_label(app.text_input, 'Taxes paid / withheld').value == '0'
+    by_label(app.text_input, 'Quantity sold').set_value('2')
+    by_label(app.text_input, 'Unit price').set_value('20')
+    by_label(app.text_input, 'Fees').set_value('1')
+    by_label(app.text_input, 'Taxes paid / withheld').set_value('4').run()
+    assert any('Net proceeds: 35.00 EUR' in c.value for c in app.caption)
+    by_label(app.button, 'Save sale').click().run()
+    assert not app.exception and not app.error
+    journal = load_journal(tmp_path)[0]
+    sale = selected_events(journal.securities[0])[-1]
+    assert [(c.kind, c.amount) for c in sale.charges] == [('fee', D(1)), ('tax', D(4))]
+    assert replay(journal).cash['cash', 'EUR'] == D(935)
+    row = effective_holdings(read_snapshot(tmp_path/'holdings.csv').holdings, journal.securities).iloc[0]
+    assert row.shares == 8 and row.acquisition_price == 10
+    from portfolio_app.performance.gain_components import security_gain_components
+    from portfolio_app.performance.history_observations import ObservationStore
+    parts = security_gain_components(journal, book.position_id, ObservationStore(),
+        date.today().isoformat(), current_value=D(80))
+    assert (parts.remaining_cost, parts.realized, parts.expenses) == (D(80), D(15), D(0))
+    key = _key(tmp_path, book.position_id)
+    app.session_state[key+'screen'] = 'edit'
+    app.session_state[key+'edit_record'] = sale.id
+    app.run()
+    by_label(app.text_input, 'Tax 2').set_value('5').run()
+    by_label(app.button, 'Save changes').click().run()
+    assert not app.exception and not app.error
+    assert replay(load_journal(tmp_path)[0]).cash['cash', 'EUR'] == D(934)
+
+
+def test_sale_requires_nonnegative_explicit_taxes_and_preserves_zero_for_correction(tmp_path):
+    from test_history_ui import fixture, launch
+    from portfolio_app.ledger.security_history import selected_events
+    fixture(tmp_path)
+    app = launch(tmp_path)
+    by_label(app.button, 'Add sell').click().run()
+    by_label(app.text_input, 'Quantity sold').set_value('1')
+    by_label(app.text_input, 'Unit price').set_value('20')
+    for invalid in ('-1', '', 'invalid'):
+        by_label(app.text_input, 'Taxes paid / withheld').set_value(invalid).run()
+        by_label(app.button, 'Save sale').click().run()
+        assert app.error and not app.exception
+        assert len(load_journal(tmp_path)[0].securities[0].active_ids) == 1
+    by_label(app.text_input, 'Taxes paid / withheld').set_value('0').run()
+    by_label(app.button, 'Save sale').click().run()
+    assert not app.exception and not app.error
+    sale = selected_events(load_journal(tmp_path)[0].securities[0])[-1]
+    assert [(c.kind, c.amount) for c in sale.charges] == [('fee', 0), ('tax', 0)]
