@@ -160,3 +160,19 @@ def test_one_fx_observation_per_currency_for_manual_and_quoted_holdings(now):
         valued = value_holdings(holdings, service, refresh=True, reporting_currency='GBP')
         assert valued.current_value_reporting.tolist() == pytest.approx(expected)
         assert sorted(provider.fx_calls) == ['GBP', 'USD']
+
+
+def test_marks_keep_each_position_when_source_frames_share_index_labels(now):
+    from portfolio_app.portfolio.holdings import parse_holdings
+    holdings = parse_holdings(
+        'id,name,shares,ticker,manual_price,manual_price_currency,manual_price_date,quantity_unit\n'
+        'first,Invented dated price,2,,30,EUR,2026-09-01,shares\n'
+        'second,Invented market price,3,SYNTHETIC,,,,shares\n'
+        'third,Invented unpriced,1,,,,,shares\n')
+    holdings.index = pd.Index([7, 7, 7], name='source row')
+    valued = value_holdings(holdings, PriceService(CountingProvider(now), now=lambda: now))
+    assert valued.index.equals(holdings.index)
+    assert valued.price_status.tolist() == ['manual', 'fresh', 'missing']
+    assert valued.current_value_reporting.iloc[:2].tolist() == [60., 240.]
+    assert pd.isna(valued.current_value_reporting.iloc[2])
+    assert valued.portfolio_weight.iloc[:2].tolist() == pytest.approx([.2, .8])
