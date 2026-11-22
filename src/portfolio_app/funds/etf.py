@@ -221,31 +221,39 @@ def fund_classifications(classifications, funds, holdings):
 
 
 def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd.DataFrame) -> pd.DataFrame:
-    records = []
-    resolve = constituent_resolver(holdings)
-    for exposure in exposures.to_dict("records"):
-        fund = matching_fund(exposure, funds)
+    # Retain source order while resolving each matched snapshot once across accounts.
+    expanded = []
+    by_fund = {}
+    for source in exposures.to_dict("records"):
+        fund = matching_fund(source, funds)
         if fund is None:
-            records.append(exposure)
+            expanded.append([source])
             continue
+        rows = []
+        expanded.append(rows)
+        source["direct_or_indirect"] = "indirect"
+        if "wkn" in source:
+            source["wkn"] = ""
+        # Fund quantities, quotes and targets do not describe its constituents.
+        for field in ("shares", "acquisition_price", "current_price", "fx_to_reporting", "target_allocation", "portfolio_weight"):
+            if field in source:
+                source[field] = float("nan")
+        _, members = by_fund.setdefault(id(fund), (fund, []))
+        members.append((source, rows))
+
+    resolve = constituent_resolver(holdings)
+    for fund, source_rows in by_fund.values():
+        fallback = fund_kind(fund)
         for constituent in fund_breakdown(fund).to_dict("records"):
-            row = exposure.copy()
-            row["asset_id"], row["asset_name"] = resolve(constituent)
-            row["value"] = exposure["value"] * constituent["weight"]
-            row["ticker"], row["isin"] = constituent["ticker"], constituent["isin"]
-            if 'wkn' in row:
-                row['wkn'] = ''
-            interpreted = interpret_constituent(constituent, fallback_kind=fund_kind(fund))
-            row['instrument_type'] = interpreted.kind
-            row['exposure_kind'] = interpreted.exposure_kind
-            row["source_type"] = "etf_other" if interpreted.residual else "etf_constituent"
-            row["direct_or_indirect"] = "indirect"
-            # Instrument quantities, quotes, and targets do not describe its constituents.
-            for field in ("shares", "acquisition_price", "current_price", "fx_to_reporting", "target_allocation", "portfolio_weight"):
-                if field in row:
-                    row[field] = float("nan")
-            records.append(row)
-    return pd.DataFrame(records, columns=list(dict.fromkeys([*exposures.columns, 'instrument_type', 'exposure_kind'])))
+            asset, name = resolve(constituent)
+            interpreted = interpret_constituent(constituent, fallback_kind=fallback)
+            component = dict(asset_id=asset, asset_name=name, ticker=interpreted.ticker, isin=interpreted.isin,
+                             instrument_type=interpreted.kind, exposure_kind=interpreted.exposure_kind,
+                             source_type="etf_other" if interpreted.residual else "etf_constituent")
+            for source, rows in source_rows:
+                rows.append({**source, **component, "value": source["value"] * interpreted.weight})
+    columns = list(dict.fromkeys([*exposures.columns, "instrument_type", "exposure_kind"]))
+    return pd.DataFrame((row for group in expanded for row in group), columns=columns)
 
 
 def effective_exposure_table(exposures: pd.DataFrame) -> pd.DataFrame:

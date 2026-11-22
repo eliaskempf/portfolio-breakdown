@@ -392,3 +392,28 @@ def test_vaneck_refresh_preserves_reviewed_metadata(configured_fund, provider_xl
     assert reloaded.notes == updated.notes == fund.notes
     assert reloaded.proxy_source == fund.proxy_source and reloaded.summaries == fund.summaries
     pd.testing.assert_frame_equal(reloaded.basket, fund.basket)
+
+
+def test_repeated_fund_positions_share_only_snapshot_facts(fund, positions, monkeypatch):
+    from portfolio_app.funds import etf
+    second_account = positions.loc[[1]].assign(position_id='p4', account='C', current_value_reporting=-500.)
+    positions = pd.concat([positions, second_account], ignore_index=True)
+    exposures = normalize_exposures(positions)
+    checked = []
+    def checked_breakdown(snapshot):
+        checked.append(snapshot.fund_id)
+        return fund_breakdown(snapshot)
+    monkeypatch.setattr(etf, 'fund_breakdown', checked_breakdown)
+
+    rows = expand_etfs(exposures, [fund], positions)
+    assert checked == [fund.fund_id]
+    assert rows.source_position_id.tolist() == ['p1', 'p2', 'p2', 'p2', 'p3', 'p4', 'p4', 'p4']
+    second = rows.loc[rows.source_position_id.eq('p4')]
+    assert second.account.eq('C').all()
+    assert second.value.tolist() == pytest.approx([-40., -35., -425.])
+    assert second.asset_id.tolist() == rows.loc[rows.source_position_id.eq('p2'), 'asset_id'].tolist()
+    assert second.source_type.tolist() == ['etf_constituent', 'etf_constituent', 'etf_other']
+
+    fund.constituents.loc[0, 'weight'] = 2.
+    with pytest.raises(DataError, match='finite fractions'):
+        expand_etfs(exposures, [fund], positions)
