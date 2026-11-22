@@ -31,6 +31,7 @@ def test_navigation_benchmark_portfolio(tmp_path, profile, positions, etfs, comp
         assert len(stocks) == 24 and stocks <= shared
         assert sum(f.constituents.weight.sum() < .99 for f in funds) == 8
     if profile == 'mixed-history':
+        assert {sector for f in funds for sector in f.constituents.sector.unique()} == {f'Invented sector {i}' for i in range(24)}
         from portfolio_app.exposure.company_merges import build_plan, MergeSettings
         from portfolio_app.monitoring.monitoring_store import load_monitoring
         plan = build_plan(holdings, funds, {}, MergeSettings(frozenset()))

@@ -41,7 +41,8 @@ def holdings_and_funds(directory, profile, today):
         (directory / f'{fund_id}.yaml').write_text(yaml.safe_dump(manifest), encoding='utf-8')
         with (directory / manifest['holdings_file']).open('w', newline='', encoding='utf-8') as handle:
             writer = csv.writer(handle)
-            writer.writerow(['constituent_id', 'name', 'ticker', 'isin', 'weight', 'instrument_type'])
+            sectors = profile == 'mixed-history'
+            writer.writerow(['constituent_id', 'name', 'ticker', 'isin', 'weight', 'instrument_type', *(['sector'] if sectors else [])])
             # Half the constituents share identities across funds, including directly held equities.
             # The narrow snapshots cover 90%, exercising the residual allocation as well.
             coverage = .9 if size == 50 else 1.
@@ -51,7 +52,8 @@ def holdings_and_funds(directory, profile, today):
                 constituent = company(identity)
                 if profile == 'mixed-history' and DIRECT_EQUITIES <= row < size // 2 and row % 4 == 0 and index % 3 != 0:
                     constituent = (f'local-{index}-{row}', constituent[1], '', '')
-                writer.writerow([*constituent, weight, 'equity'])
+                sector = [f'Invented sector {identity % 24}'] if sectors else []
+                writer.writerow([*constituent, weight, 'equity', *sector])
         yield fund_id, name, ticker, isin, 'etf', 'equity'
 
 

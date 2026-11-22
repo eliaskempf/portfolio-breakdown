@@ -135,7 +135,7 @@ def exercise(evaluate, control, scenario, *, persistent):
                 refresh_ms=refresh_ms, first=first, range_3m=period, warm=warm, refresh=refresh)
 
 
-def exercise_exposure(evaluate):
+def exercise_exposure(evaluate, *, themes=False):
     """Time the first populated table frame and verify local source disclosure."""
     context = CONTEXT + """
         const tab = name => [...d.querySelectorAll('[role=tab]')].find(t => t.textContent.trim() === name);
@@ -150,6 +150,36 @@ def exercise_exposure(evaluate):
     def read(js):
         return evaluate('(() => {' + context + js + '})()')
 
+    def theme_visit():
+        read("""
+            const control = label => [...d.querySelectorAll('[role=radio], button')].find(e =>
+                visible(e) && e.textContent.trim() === label);
+            w.themeVisit = null;
+            const start = w.performance.now();
+            control('Themes & sectors').click();
+            let drawn = null;
+            function frame() {
+                const plot = d.querySelector('.st-key-exposure_theme_results .js-plotly-plot');
+                const trace = plot?._fullData?.[0], elapsed = w.performance.now() - start;
+                const populated = visible(plot) && plot.querySelector('path.surface') &&
+                    trace?.labels?.includes('Invented sector 0');
+                if (populated && drawn === null) drawn = elapsed;
+                if (populated && !running()) {
+                    w.themeVisit = {chart_ms:drawn, settled_ms:elapsed,
+                        sample:[Array.from(trace.labels), Array.from(trace.values)]};
+                } else if (elapsed > 60000 || exception()) w.themeVisit = {error:'Sector chart did not settle'};
+                else w.requestAnimationFrame(frame);
+            }
+            w.requestAnimationFrame(frame); return true;
+        """)
+        result = wait(lambda: read('return w.themeVisit;'), timeout=65)
+        if 'error' in result:
+            raise RuntimeError(result['error'])
+        read("""[...d.querySelectorAll('[role=radio], button')].find(e =>
+            visible(e) && e.textContent.trim() === 'Assets').click(); return true;""")
+        wait(lambda: read("return !!table()?.querySelector('tr[data-position-id]') && !running();"))
+        return result
+
     def ready():
         try:
             return read('return visible(allocation()) && !running() && !!tab("Exposure");')
@@ -158,7 +188,7 @@ def exercise_exposure(evaluate):
 
     wait(ready, timeout=100)
     ready_at = time.time()
-    visits = []
+    visits, theme_visits = [], []
     for _ in range(3):
         read("""
             w.exposureVisit = null;
@@ -186,6 +216,8 @@ def exercise_exposure(evaluate):
         if 'error' in visit or not visit['sample'][1]:
             raise RuntimeError(visit)
         visits.append(visit)
+        if themes and len(visits) == 3:
+            theme_visits = [theme_visit() for _ in range(2)]
         read("tab('Overview').click(); return true;")
         wait(lambda: ready() and read("return !table() && tab('Overview').getAttribute('aria-selected') === 'true';"))
-    return dict(ready_at=ready_at, visits=visits)
+    return dict(ready_at=ready_at, visits=visits, themes=theme_visits)

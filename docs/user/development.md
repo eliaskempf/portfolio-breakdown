@@ -758,7 +758,10 @@ snapshots each of 50, 500 and 1,500 constituents. The 16,400 constituent rows
 include shared companies, direct/indirect overlap and eight partial snapshots.
 The mixed-history profile uses the same holdings and prices. Some overlapping
 constituents have only fund-local identifiers and company names. It also includes
-4,000 archived monitoring observations. This exercises company matching and
+4,000 archived monitoring observations and 24 invented provider sectors. After
+the timed asset visits, the benchmark opens Themes & sectors twice, records the
+first painted chart and settled frame, and compares every label and value.
+This exercises company matching and
 navigation in a workspace with an alert history. The Exposure benchmark branch
 uses mixed-history on push.
 

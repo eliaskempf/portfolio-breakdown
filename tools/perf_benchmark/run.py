@@ -18,11 +18,11 @@ from fixture import create_workspace
 from renderer import exercise, exercise_exposure, wait
 
 
-def benchmark(executable, workspace, trial, variant, surface, scenario):
+def benchmark(executable, workspace, trial, variant, surface, scenario, *, themes=False):
     trial.mkdir()
     env = dict(os.environ, PORTFOLIO_STATE_DIR=str(workspace.parent / 'state'),
         PORTFOLIO_BENCHMARK_TRIAL=str(trial), PORTFOLIO_BENCHMARK_VARIANT=variant,
-        PORTFOLIO_BENCHMARK_REFRESH=scenario)
+        PORTFOLIO_BENCHMARK_REFRESH=scenario, PORTFOLIO_BENCHMARK_THEMES=str(int(themes)))
     args = [str(executable), '--data-dir', str(workspace), '--offline-demo', '--ignore-workspace-selection']
     if surface == 'browser':
         with socket.socket() as reserve:
@@ -51,7 +51,7 @@ def benchmark(executable, workspace, trial, variant, surface, scenario):
                         args=['--no-sandbox'])
                     page = browser.new_page(viewport={'width':1280,'height':900})
                     page.goto(url)
-                    report = (exercise_exposure(page.evaluate) if scenario == 'exposure' else
+                    report = (exercise_exposure(page.evaluate, themes=themes) if scenario == 'exposure' else
                               exercise(page.evaluate, trial, scenario, persistent=variant != 'baseline'))
                     browser.close()
         finally:
@@ -147,14 +147,23 @@ def run_exposure(candidate, reference, destination, surfaces, pairs, profile):
                 with TemporaryDirectory(prefix='exposure-benchmark-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
                     create_workspace(workspace, profile, today=as_of)
-                    report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, 'exposure')
+                    report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, 'exposure', themes=profile == 'mixed-history')
                     for visit in report['visits']:
                         sample = visit.pop('sample')
                         if sample != expected.setdefault(surface, sample) or visit['rows'] != (12 if profile == 'small' else 100):
                             raise AssertionError('Rendered Exposure rows or expanded preview changed')
+                    for visit in report['themes']:
+                        labels, values = visit.pop('sample')
+                        digest = hashlib.sha256(json.dumps([labels, values]).encode()).hexdigest()
+                        if len(labels) != len(values) or not {f'Invented sector {i}' for i in range(24)} <= set(labels):
+                            raise AssertionError('Sector chart omitted labels or values')
+                        if digest != expected.setdefault((surface, 'themes'), digest):
+                            raise AssertionError('Rendered sector chart changed across visits or binaries')
+                        visit['digest'] = digest
                     result['runs'].append(dict(variant=name, surface=surface, pair=pair, **report))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
-                    print(surface, name, 'Exposure table ms', [round(v['table_ms']) for v in report['visits']], flush=True)
+                    print(surface, name, 'Exposure table ms', [round(v['table_ms']) for v in report['visits']],
+                          'sector chart ms', [round(v['chart_ms']) for v in report['themes']], flush=True)
 
 
 if __name__ == '__main__':

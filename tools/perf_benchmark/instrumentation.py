@@ -112,7 +112,7 @@ def observe_window(trial):
             try:
                 scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
                 if scenario == 'exposure':
-                    metrics = exercise_exposure(window.evaluate_js)
+                    metrics = exercise_exposure(window.evaluate_js, themes=os.environ.get('PORTFOLIO_BENCHMARK_THEMES') == '1')
                 else:
                     metrics = exercise(window.evaluate_js, trial, scenario,
                                        persistent=os.environ['PORTFOLIO_BENCHMARK_VARIANT'] != 'baseline')
