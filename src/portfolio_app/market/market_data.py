@@ -28,23 +28,24 @@ class RequestCoordinator:
         self._channel_revisions = {}
         self._channel_sizes = {}
         self._snapshots = {}
+        self._publishers = {}
         self._errors = {}
         self.capacity = capacity
 
-    def request(self, workspace, key, work, *, channel=None, capture=None):
+    def request(self, workspace, key, work, *, channel=None, capture=None, prepare_write=None):
         identity = str(workspace), key
         with self._lock:
             if identity in self._pending:
                 return False
-            return self._enqueue(workspace, [(key, work)], identity, channel, capture)
+            return self._enqueue(workspace, [(key, work)], identity, channel, capture, prepare_write)
 
-    def request_group(self, workspace, requests, *, channel, capture):
+    def request_group(self, workspace, requests, *, channel, capture, prepare_write=None):
         """Admit all newly discovered legs together, even if they outnumber free workers."""
         batch = str(workspace), channel, capture
         with self._lock:
-            return self._enqueue(workspace, requests, batch, channel, capture)
+            return self._enqueue(workspace, requests, batch, channel, capture, prepare_write)
 
-    def _enqueue(self, workspace, requests, batch, channel, capture):
+    def _enqueue(self, workspace, requests, batch, channel, capture, prepare_write):
         workspace = str(workspace)
         missing = {key: work for key, work in requests if (workspace, key) not in self._pending}
         if not missing:
@@ -54,6 +55,8 @@ class RequestCoordinator:
         group = (workspace, channel) if channel is not None else None
         if group is not None:
             self._channel_sizes[group] = self._channel_sizes.get(group, 0) + len(missing)
+            if prepare_write is not None:
+                self._publishers.setdefault(group, set()).add(prepare_write)
             if capture is not None:
                 snapshots = self._snapshots.setdefault(group, {})
                 if capture not in snapshots:
@@ -83,24 +86,45 @@ class RequestCoordinator:
         except Exception as exc:
             changed = False
             error = str(exc) or type(exc).__name__
-        with self._lock:
-            if group is not None:
-                if changed is not False:
-                    self._channel_revisions[group] = self._channel_revisions.get(group, 0) + 1
-                self._channel_sizes[group] -= 1
-                if not self._channel_sizes[group]:
-                    del self._channel_sizes[group]
-                    self._snapshots.pop(group, None)
-            self._batch_sizes[batch] -= 1
-            if not self._batch_sizes[batch]:
-                del self._batch_sizes[batch]
-            self._pending.remove(identity)
-            self._errors[identity] = error
-            self._revisions[identity[0]] = self._revisions.get(identity[0], 0) + 1
-            self._running -= 1
-            self._dispatch()
-            if not self._pending:
-                self._idle.notify_all()
+        while True:
+            with self._lock:
+                writers = []
+                if group is not None and self._channel_sizes[group] == 1:
+                    for prepare in self._publishers.pop(group, ()):
+                        try:
+                            if write := prepare():
+                                writers.append(write)
+                        except Exception as exc:
+                            error = str(exc) or type(exc).__name__
+                if not writers:
+                    self._finish(identity, group, batch, changed, error)
+                    return
+            # Keep the last request pending while persisting. New readers still see the
+            # prior snapshot; new requests can join without waiting for a filesystem lock.
+            for write in writers:
+                try:
+                    write()
+                except Exception as exc:
+                    error = str(exc) or type(exc).__name__
+
+    def _finish(self, identity, group, batch, changed, error):
+        if group is not None:
+            if changed is not False:
+                self._channel_revisions[group] = self._channel_revisions.get(group, 0) + 1
+            self._channel_sizes[group] -= 1
+            if not self._channel_sizes[group]:
+                del self._channel_sizes[group]
+                self._snapshots.pop(group, None)
+        self._batch_sizes[batch] -= 1
+        if not self._batch_sizes[batch]:
+            del self._batch_sizes[batch]
+        self._pending.remove(identity)
+        self._errors[identity] = error
+        self._revisions[identity[0]] = self._revisions.get(identity[0], 0) + 1
+        self._running -= 1
+        self._dispatch()
+        if not self._pending:
+            self._idle.notify_all()
 
     def pending(self, workspace, key=None):
         with self._lock:
@@ -177,7 +201,8 @@ class BackgroundPrices:
     def submit_waiting(self):
         """Retry a whole valuation rejected while every request slot was occupied."""
         if self._waiting and self.coordinator.request_group(
-                self.workspace, self._waiting, channel='valuation', capture=self.service.cached_reader):
+                self.workspace, self._waiting, channel='valuation', capture=self.service.cached_reader,
+                prepare_write=self.service.take_cache_write):
             self._waiting.clear()
         return bool(self._waiting)
 
@@ -192,11 +217,11 @@ class BackgroundPrices:
             if not live_due and not refresh:
                 return result
             def update():
-                getattr(self.service, kind)(value, refresh=refresh)
+                getattr(self.service, kind)(value, refresh=refresh, defer_save=True)
                 return self.service.cached(key)[0] != current
             if self._deferred is None:
                 self.coordinator.request(self.workspace, key, update, channel='valuation',
-                                         capture=self.service.cached_reader)
+                                         capture=self.service.cached_reader, prepare_write=self.service.take_cache_write)
             else:
                 self._deferred.append((key, update))
         return result

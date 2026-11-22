@@ -32,7 +32,18 @@ def observe_server(trial):
 
             def fx(self, currency):
                 return self.get('fx:' + currency)
-        services(trial.parent / 'synthetic')[0].provider = Provider()
+        service = services(trial.parent / 'synthetic')[0]
+        service.provider = Provider()
+        def observe_quote(kind, fetch):
+            def observed(value, **options):
+                result = fetch(value, **options)
+                if result.status == 'fresh':
+                    index, _ = requests[f'{kind}:{value}']
+                    (trial / f'quote-fetched-{index}').touch()
+                return result
+            return observed
+        service.price = observe_quote('price', service.price)
+        service.fx = observe_quote('fx', service.fx)
     if scenario.startswith('etf-'):
         from portfolio_app.funds.etf_refresh import coordinator as funds, SOURCES
         from portfolio_app.funds.etf_sources import publish_snapshot

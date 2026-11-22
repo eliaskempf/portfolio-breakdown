@@ -267,6 +267,142 @@ def test_concurrent_price_cache_writers_preserve_distinct_keys(tmp_path, now, jo
     assert not restored.cached('price:SYNTH-B')[1]
 
 
+def test_restart_sees_one_complete_price_and_fx_publication(tmp_path, now, jobs, monkeypatch):
+    from unittest.mock import Mock
+    path = tmp_path / '.cache' / 'prices.json'
+    provider = Mock()
+    service = PriceService(provider, path, now=lambda: now)
+    provider.price.return_value = Quote(20, 'USD', now)
+    provider.fx.return_value = Quote(1, 'EUR', now)
+    service.price('SYNTH')
+    service.fx('USD')
+    original = path.read_bytes()
+    writes = []
+    replace = Path.replace
+    def counted(source, target):
+        if target == path:
+            writes.append(target)
+        return replace(source, target)
+    monkeypatch.setattr(Path, 'replace', counted)
+    gate = Event()
+    def fx(currency):
+        assert gate.wait(3)
+        raise ConnectionError('Synthetic FX outage')
+    provider.fx.side_effect = fx
+    provider.price.return_value = Quote(24, 'USD', now)
+    try:
+        reader = BackgroundPrices(service, jobs, tmp_path)
+        with reader.collect_requests():
+            reader.price('SYNTH', refresh=True)
+            reader.fx('USD', refresh=True)
+        deadline = monotonic() + 3
+        while jobs.pending(tmp_path, 'price:SYNTH'):
+            assert monotonic() < deadline
+            Event().wait(.005)
+        assert not writes and path.read_bytes() == original
+        assert PriceService(provider, path, now=lambda: now).cached('price:SYNTH')[0].quote.price == 20
+        assert service.cached('price:SYNTH')[0].quote.price == 24
+        # An independent writer can publish an unrelated ticker before this batch finishes.
+        PriceService(provider, path, now=lambda: now).price('SYNTH-OTHER')
+        assert len(writes) == 1
+        writes.clear()
+    finally:
+        gate.set()
+    finish(jobs, tmp_path)
+    assert len(writes) == 1
+    reopened = PriceService(provider, path, now=lambda: now)
+    assert reopened.cached('price:SYNTH')[0].quote.price == 24
+    assert reopened.cached('price:SYNTH-OTHER')[0].quote.price == 24
+    rate, due = reopened.cached('fx:USD')
+    assert not due and rate.status == 'cached fallback'
+    assert rate.quote.price == 1 and rate.error == 'Synthetic FX outage'
+
+
+def test_new_requests_and_direct_corrections_during_cache_publication(tmp_path, now, jobs, monkeypatch):
+    from unittest.mock import Mock
+    path = tmp_path / 'prices.json'
+    provider = Mock()
+    service = PriceService(provider, path, now=lambda: now)
+    started, release = Event(), Event()
+    write = service._save
+    first = True
+    def pause_first(entries):
+        nonlocal first
+        if first:
+            first = False
+            started.set()
+            assert release.wait(3)
+        write(entries)
+    monkeypatch.setattr(service, '_save', pause_first)
+    provider.price.return_value = Quote(10, 'EUR', now)
+    try:
+        reader = BackgroundPrices(service, jobs, tmp_path)
+        reader.price('SYNTH-A')
+        assert started.wait(1)
+        provider.price.return_value = Quote(12, 'EUR', now)
+        service.price('SYNTH-A', refresh=True)
+        other = BackgroundPrices(service, jobs, tmp_path)
+        assert other.price('SYNTH-A').quote is None
+        assert other.price('SYNTH-B').quote is None
+        deadline = monotonic() + 3
+        while jobs.pending(tmp_path, 'price:SYNTH-B'):
+            assert monotonic() < deadline
+            Event().wait(.005)
+        assert other.still_current()
+    finally:
+        release.set()
+    finish(jobs, tmp_path)
+    reopened = PriceService(provider, path, now=lambda: now)
+    assert [reopened.cached('price:' + key)[0].quote.price for key in ('SYNTH-A', 'SYNTH-B')] == [12, 12]
+
+
+def test_failed_batch_write_preserves_previous_file_and_allows_recovery(tmp_path, now, jobs, monkeypatch):
+    from unittest.mock import Mock
+    path = tmp_path / 'prices.json'
+    provider = Mock()
+    service = PriceService(provider, path, now=lambda: now)
+    provider.price.return_value = Quote(10, 'EUR', now)
+    service.price('SYNTH')
+    previous = path.read_bytes()
+    def unwritable(*args):
+        raise PermissionError('Synthetic unwritable cache')
+    provider.price.return_value = Quote(12, 'EUR', now)
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, 'replace', unwritable)
+        BackgroundPrices(service, jobs, tmp_path).price('SYNTH', refresh=True)
+        finish(jobs, tmp_path)
+    assert path.read_bytes() == previous
+    assert 'could not be saved' in service.cache_warning
+    assert service.cached('price:SYNTH')[0].quote.price == 12
+    BackgroundPrices(service, jobs, tmp_path).price('SYNTH', refresh=True)
+    finish(jobs, tmp_path)
+    assert PriceService(provider, path, now=lambda: now).cached('price:SYNTH')[0].quote.price == 12
+
+
+def test_delayed_price_cache_write_honors_its_original_workspace_selection(tmp_path, now, monkeypatch):
+    from unittest.mock import Mock
+    from portfolio_app.workspace.workspace_lock import write_context
+    from portfolio_app.workspace.workspace_selection import Selection, save_selection
+    monkeypatch.setenv('PORTFOLIO_STATE_DIR', str(tmp_path / 'state'))
+    original, other = tmp_path / 'original', tmp_path / 'other'
+    original.mkdir()
+    other.mkdir()
+    provider = Mock()
+    provider.price.return_value = Quote(10, 'EUR', now)
+    path = original / '.cache' / 'prices.json'
+    service = PriceService(provider, path, now=lambda: now)
+    context = write_context.set((original, Selection(original)))
+    try:
+        service.price('SYNTH', defer_save=True)
+        publish = service.take_cache_write()
+    finally:
+        write_context.reset(context)
+    save_selection(original, Selection(other, 1))
+    publish()
+    assert not path.exists() and 'active portfolio changed' in service.cache_warning
+    assert service.cached('price:SYNTH')[0].quote.price == 10
+
+
 def test_history_uses_memory_if_refresh_cannot_be_saved(tmp_path, now, monkeypatch):
     clock = [now]
     class Provider:

@@ -84,10 +84,12 @@ def exercise(evaluate, control, scenario, *, persistent):
         requests = quote['requests']
         wait(lambda: all((control / f'quote-pending-{i}').exists() for i in range(len(requests))))
         def release_quote(index):
-            request = requests[index]
             (control / f'release-quote-{index}').touch()
+            wait(lambda: (control / f'quote-fetched-{index}').exists())
+        def saved_quotes_match(field):
             path = control.parent / 'synthetic' / '.cache' / 'prices.json'
-            wait(lambda: json.loads(path.read_bytes())[request['key']]['quote']['price'] == request['corrected'])
+            saved = json.loads(path.read_bytes())
+            return all(saved[r['key']]['quote']['price'] == r[field] for r in requests)
         initial = format_money(quote['initial_total'], quote['currency'])
         if wait(lambda: evaluate(read_total)) != initial:
             raise AssertionError(f'Expected cached portfolio value {initial}')
@@ -216,10 +218,14 @@ def exercise(evaluate, control, scenario, *, persistent):
                                   target + ") && !running() && !exception();})()"))
         if wait(lambda: evaluate(read_total)) != initial:
             raise AssertionError('Switching tabs exposed a partially updated portfolio')
+        if not saved_quotes_match('initial'):
+            raise AssertionError('A relaunch would load a partial quote refresh')
         background['publication_start_ms'] = time.time_ns() / 1e6
         release_quote(1)
         corrected = format_money(quote['corrected_total'], quote['currency'])
         wait(lambda: evaluate(read_total) == corrected and evaluate('(() => {' + CONTEXT + 'return !running();})()'))
+        if not saved_quotes_match('corrected'):
+            raise AssertionError('The completed portfolio refresh was missing from the installed cache')
         background.update(initial_total=initial, corrected_total=corrected)
     return dict(digest=digest, ready_at=ready_at, post_intro_ms=(ready_at-animation_done)*1000 if animation_done else None,
                 refresh_ms=refresh_ms, first=first, range_3m=period, warm=warm, refresh=refresh, **background)

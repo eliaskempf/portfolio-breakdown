@@ -778,7 +778,9 @@ results appear in the navigation artifact under `background_checks`. A third
 case refreshes two equity quotes and a portfolio FX rate in
 stages. It checks that Overview navigation and range changes reuse the complete
 cached valuation, that switching through Positions preserves the same visible
-total, and that releasing the last quote publishes the corrected total.
+total, and that releasing the last quote publishes the corrected total. It also
+reads the on-disk quotes and FX rate before and after completion to verify what
+a new application process would load.
 Another case opens Notifications during a pending ETF check. It checks that the
 failure appears inside the panel, its unread count clears, and the chart and
 valuation stay in place while the panel opens, updates and closes.
