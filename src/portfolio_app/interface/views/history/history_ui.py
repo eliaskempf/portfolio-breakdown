@@ -956,12 +956,15 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
         period = st.session_state.get(key+'period') or '1Y'
         current = revision, period, date.today()
         if current != signature:
-            calculation = prepared_history_calculation(directory, journal, observations, revision, target=target)
-            cached = dict(prepared or {}, observations=observations, revision=revision,
+            same_evidence = signature is not None and (signature[0], signature[2]) == (revision, current[2])
+            calculation = (cached['calculation'] if same_evidence else
+                prepared_history_calculation(directory, journal, observations, revision, target=target,
+                    journal_revision=input_revisions[1] if input_revisions else None))
+            cached = dict(cached or {}, observations=observations, revision=revision,
                 calculation=calculation, history_signature=current,
                 view=prepared_history_view(directory, journal, scope, observations, revision, period, target=target,
                                            calculation=calculation))
-            if cached.get('current_valued') is not None:
+            if not same_evidence and cached.get('current_valued') is not None:
                 from portfolio_app.performance.gain_accounting import summarize_known_gain, current_component_values
                 valued = cached['current_valued']
                 cached['current_values'] = current_component_values(valued, journal, calculation=calculation)

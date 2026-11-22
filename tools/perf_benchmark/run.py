@@ -103,6 +103,8 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
                         metrics = benchmark(executable, workspace, trial, variant, surface, scenario)
                         if variant != 'baseline' and launch == 'reopen' and metrics['first_chart_disk_hits'] == 0:
                             raise AssertionError('Relaunch did not reuse persisted history')
+                        if variant == 'navigation' and metrics['range_3m']['journal_fingerprints']:
+                            raise AssertionError('Changing the chart range re-fingerprinted the same journal')
                         for switch in metrics['warm']:
                             if variant == 'navigation' and (switch['valuations'] or switch['journal_fingerprints']):
                                 raise AssertionError(f'Unchanged navigation repeated financial work: {switch}')
