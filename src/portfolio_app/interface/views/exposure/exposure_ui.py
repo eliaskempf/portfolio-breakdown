@@ -128,8 +128,11 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             return
     # Resolve from manual classifications before adding provider fallbacks, so
     # provider metadata is never mistaken for an authoritative manual override.
-    geography = cached_input('geography', (signature, lookthrough),
-                             lambda: resolve_geography(holdings, funds, classifications))
+    manual_classifications = classifications
+
+    def load_geography():
+        return cached_input('geography', (signature, lookthrough),
+                            lambda: resolve_geography(holdings, funds, manual_classifications), immutable=True)
     def classify():
         return sector_classifications(fund_classifications(classifications, funds, holdings), holdings, funds)
     classifications = cached_input('exposure_classifications', (signature, lookthrough), classify)
@@ -316,7 +319,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             render_stock_exposure(selected, expanded_funds, data_dir, query=query, allocation=allocation)
         elif mode == 'Geography':
             with st.container(key='tour_geography'):
-                render_geography(display_exposures, geography, complete=complete, query=query,
+                render_geography(display_exposures, load_geography(), complete=complete, query=query,
                     equity=equity, measure=measure if unified else None)
             if match_note:
                 st.caption(match_note)
@@ -324,7 +327,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             with st.container(key='tour_exposure_assets'):
                 render_assets(display_exposures, selected, holdings, funds, saved_classifications,
                               query=query, show_tickers=show_tickers, show_chart=show_chart, complete=missing == 0,
-                              breakdown=lookthrough, context=str(data_dir.resolve()) + measure, footer=match_note, geography=geography,
+                              breakdown=lookthrough, context=str(data_dir.resolve()) + measure, footer=match_note, load_geography=load_geography,
                               measure=measure if unified else None, equity=equity, contribution_key=contribution_key)
         else:
             render_theme_view(exposures, selected, holdings, classifications, names, dimensions, targets, performance,

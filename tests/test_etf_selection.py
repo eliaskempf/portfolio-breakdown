@@ -250,3 +250,19 @@ def test_return_visits_reuse_expansion_and_invalidate_changed_evidence(multi_fun
         'company': {'classifications': {'sector': [['Invented industry']]}}}))
     app.run()
     assert company()['Labels'] == ['Invented industry']
+
+
+def test_exposure_geography_is_resolved_only_on_demand(multi_fund_workspace, monkeypatch):
+    from portfolio_app.interface.views.exposure import exposure_ui
+    original = exposure_ui.resolve_geography
+    calls = []
+    def resolve(*args):
+        calls.append(1)
+        return original(*args)
+    monkeypatch.setattr(exposure_ui, 'resolve_geography', resolve)
+    app = launch(multi_fund_workspace)
+    assert not app.exception and not calls
+    by_label(app.selectbox, 'Asset classifications').set_value('geography').run()
+    assert not app.exception and len(calls) == 1
+    by_label(app.get('button_group'), 'Exposure view').set_value('Geography').run()
+    assert not app.exception and len(calls) == 1

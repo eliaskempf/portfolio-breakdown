@@ -41,19 +41,19 @@ def preview_facts(exposures, selected):
     return {'labels': names.tolist(), 'assets': by_asset}
 
 
-def render_assets(exposures, selected, holdings, funds, classifications, *, query='', show_tickers=False, show_chart=False, complete=True, breakdown=False, context='exposure', footer='', geography=None, measure=None, equity=None, contribution_key):
+def render_assets(exposures, selected, holdings, funds, classifications, *, query='', show_tickers=False, show_chart=False, complete=True, breakdown=False, context='exposure', footer='', load_geography, measure=None, equity=None, contribution_key):
     default = 'labels' if any('labels' in item for item in classifications.values()) else 'sector'
     titles = {'labels': 'Themes', 'sector': 'Sector', 'geography': 'Geography'}
     taxonomy = st.selectbox('Asset classifications', list(titles), help='Inspect the classifications used to aggregate this asset’s exposure.', index=list(titles).index(default),
                             format_func=titles.get, key='exposure_asset_classifications')
-    def geographic_labels():
+    def geographic_labels(geography):
         labels = {asset: dict(entry) for asset, entry in classifications.items()}
         for asset, entry in geography.classifications(exposures.asset_id).items():
             labels.setdefault(asset, {}).update(entry)
         return labels
 
     def prepare_table():
-        labels = geographic_labels() if geography is not None and taxonomy == 'geography' else classifications
+        labels = geographic_labels(load_geography()) if taxonomy == 'geography' else classifications
         table = asset_exposure_table(exposures, classifications=labels, taxonomy=taxonomy, complete=complete, equity=equity)
         return table, taxonomy_colors(labels, taxonomy)
 
@@ -118,13 +118,13 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
         row = table.loc[table.asset_id.eq(asset)].iloc[0]
         st.subheader(row.Asset)
         st.caption('Unknown values remain unavailable; they are not treated as zero.') if pd.isna(row['Total']) else st.metric('Total exposure', money(row["Total"]), help='Combined direct and indirect exposure to this asset in the portfolio currency.')
-        labels = geographic_labels() if geography is not None else classifications
+        geography = load_geography()
+        labels = geographic_labels(geography)
         for name in taxonomy_names(labels):
             st.write(f'{titles.get(name, name.replace("_", " ").title())}: {describe(labels, asset, name)}')
-        if geography is not None:
-            st.caption('Geography source: ' + geography.sources.get(asset, 'No local metadata'))
-            if reason := geography.reasons.get(asset):
-                st.caption(reason)
+        st.caption('Geography source: ' + geography.sources.get(asset, 'No local metadata'))
+        if reason := geography.reasons.get(asset):
+            st.caption(reason)
         sources = exposure_sources(exposures, selected, asset, measure=measure)
         st.caption('Asset weight uses each source’s selected measure, including signed notional for futures in market exposure. The final percentage is that source’s share of this asset’s total.')
         render_list(frame_rows(sources), [ListColumn('Source', 'Source', help=column_help('Source')), ListColumn('Account', 'Account', help=column_help('Account')),
