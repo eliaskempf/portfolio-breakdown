@@ -1,5 +1,6 @@
 import shutil
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -178,3 +179,28 @@ def test_targets_remain_visible_for_all_zero_or_unpriced_portfolios_when_shown(l
         assert not app.exception
         assert app.tabs[1].dataframe[-1].value["Target portfolio %"].sum() == 50
         assert len(app.tabs[1].get("plotly_chart")) == 0
+
+
+def test_target_only_investment_name_is_formatted_when_displayed(label_data, monkeypatch):
+    from portfolio_app.interface.views.exposure import exposure_ui, label_ui
+    original = exposure_ui.display_name
+    calls = []
+    def format_name(name):
+        if name in ('INVENTED RESERVE INC.', 'Invented Reserve'):
+            calls.append(name)
+        return original(name)
+    monkeypatch.setattr(exposure_ui, 'display_name', format_name)
+    monkeypatch.setattr(label_ui, 'display_name', format_name)
+    (label_data / 'holdings.csv').write_text(
+        'id,name,ticker,shares,target_allocation\na,Synthetic A,NVDA,1,0.2\nb,INVENTED RESERVE INC.,,2,0.3\n')
+    (label_data / 'classifications.yaml').write_text(
+        'a:\n  classifications:\n    labels:\n      - [Together]\n'
+        'b:\n  classifications:\n    labels:\n      - [Together]\n')
+    app = launch(label_data)
+    assert not calls
+    by_label(app.selectbox, 'Detail view').set_value((Label('labels', ('Together',)).key,)).run()
+    assert len(calls) == 1
+    assert not app.exception
+    detail = app.tabs[1].dataframe[-1].value.set_index('Investment')
+    assert detail.loc['Invented Reserve', 'Target portfolio %'] == 30.
+    assert pd.isna(detail.loc['Invented Reserve', 'Value'])

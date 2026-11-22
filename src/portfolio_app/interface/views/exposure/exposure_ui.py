@@ -299,8 +299,6 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         if not unified and "target_allocation" in valued and valued["target_allocation"].notna().any():
             try:
                 targets = target_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group, holdings=holdings)
-                for measure in (targets.known, targets.missing):
-                    measure["asset_name"] = measure["asset_name"].map(display_name)
             except DataError as exc:
                 st.error(str(exc))
                 return valued
@@ -310,8 +308,6 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             except DataError as exc:
                 st.error(str(exc))
                 return valued
-            for amounts in performance.measures():
-                amounts['asset_name'] = amounts['asset_name'].map(display_name)
     match_note = '* Estimated company match · Review or undo in Data & settings → Company merges' if lookthrough and any(group.enabled and group.basis == 'Estimated name match' for group in plan.groups) else ''
     complete = missing == 0
     equity = result.denominator if unified else None

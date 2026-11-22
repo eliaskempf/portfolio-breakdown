@@ -1,5 +1,6 @@
 """A direct comparison of selected labels, alongside the advanced tree views."""
 from portfolio_app.interface.shared.number_format import change_columns
+from portfolio_app.interface.shared.display_names import display_name
 from portfolio_app.interface.shared.chart_hover import chart_hover
 
 from portfolio_app.interface.shared.currency_display import money, money_format, currency_symbol
@@ -156,7 +157,9 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                 # Include targets for assets awaiting a quote in this branch.
                 identities = target_details[0][["asset_id", "asset_name"]].drop_duplicates("asset_id").rename(columns={"asset_name": "Investment"})
                 assets = assets.merge(identities, on="asset_id", how="outer", suffixes=("", "_target"))
-                assets["Investment"] = assets["Investment"].fillna(assets.pop("Investment_target"))
+                target_names = assets.pop("Investment_target")
+                target_only = assets["Investment"].isna()
+                assets.loc[target_only, "Investment"] = target_names.loc[target_only].map(display_name)
                 assets = add_target_columns(assets, assets["asset_id"].tolist(), target_totals(*target_details, key="asset_id"),
                                             portfolio_value=portfolio_value, valuation_complete=valuation_complete)
                 assets = assets.sort_values(["Value", "Investment"], ascending=[False, True],
