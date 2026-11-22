@@ -53,7 +53,9 @@ class RequestCoordinator:
 
     def pending(self, workspace, key=None):
         with self._lock:
-            return any(w == str(workspace) and (key is None or k == key) for w, k in self._pending)
+            if key is not None:
+                return (str(workspace), key) in self._pending
+            return any(w == str(workspace) for w, _ in self._pending)
 
     def revision(self, workspace):
         with self._lock:
@@ -82,10 +84,10 @@ class BackgroundPrices:
         return self.service.cache_warning
 
     def still_current(self):
-        """A mounted valuation can be reused until a quote changes or needs a refresh."""
+        """Reuse mounted quotes while any due replacements are already being fetched."""
         for key, previous in self._results.items():
             result, due = self.service.cached(key)
-            if due or result != previous:
+            if result != previous or (due and not self.coordinator.pending(self.workspace, key)):
                 return False
         return True
 

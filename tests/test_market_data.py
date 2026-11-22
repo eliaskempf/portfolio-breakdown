@@ -40,6 +40,7 @@ def test_slow_quotes_do_not_block_and_requests_are_deduplicated(tmp_path, now, j
         reader = BackgroundPrices(service, jobs, 'one')
         assert reader.price('SYNTH').quote is None
         assert started.wait(1)
+        assert reader.still_current()
         for _ in range(5):
             assert BackgroundPrices(service, jobs, 'one').price('SYNTH').quote is None
         assert provider.calls == 1
@@ -48,6 +49,7 @@ def test_slow_quotes_do_not_block_and_requests_are_deduplicated(tmp_path, now, j
         release.set()
     finish(jobs, 'one')
     assert jobs.revision('one') == 1
+    assert not reader.still_current()
     assert BackgroundPrices(service, jobs, 'one').price('SYNTH').quote.price == 42
     assert PriceService(provider, tmp_path / 'prices.json', now=lambda: now).price('SYNTH').quote.price == 42
     assert provider.calls == 1
@@ -70,6 +72,20 @@ def test_mounted_prices_invalidate_on_quote_change_and_expiry(tmp_path, now, job
     service.price('SYNTH', refresh=True)
     assert not reader.still_current()
     assert provider.price.call_count == 2
+
+
+def test_deferred_navigation_retries_a_due_quote_rejected_by_the_queue(now):
+    from unittest.mock import Mock
+    release = Event()
+    jobs = RequestCoordinator(workers=1, capacity=1)
+    try:
+        assert jobs.request('one', 'other-job', lambda: release.wait(3))
+        reader = BackgroundPrices(PriceService(Mock(), now=lambda: now), jobs, 'one')
+        assert reader.price('SYNTH').quote is None
+        assert not reader.still_current()
+    finally:
+        release.set()
+        jobs.close()
 
 
 def test_stale_quotes_survive_failure_and_respect_cooldown(tmp_path, now, jobs):

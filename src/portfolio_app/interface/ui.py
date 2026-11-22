@@ -375,7 +375,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                                 and st.session_state.get('strategic_view') != 'Analytics'
                                 and (st.session_state.get(unit_key) == '%') == percent
                                 and refresh_allowed() and (ignore_selection or selection(persistent_data_dir) == chosen)
-                                and market_coordinator.channel_state(market_workspace, 'valuation') == (market_revision, False)
+                                and market_coordinator.channel_state(market_workspace, 'valuation')[0] == market_revision
                                 and (not background_prices or price_service.still_current())
                                 and (offline_demo or refresh_revision(data_dir).issues == etf_revision.issues)
                                 and source_stamp(data_dir) == overview_stamp)
