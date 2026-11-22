@@ -121,6 +121,15 @@ class HistoryCalculation:
             self._facts.popitem(last=False)
         return self._facts[key]
 
+    def event_dates(self, scope):
+        from portfolio_app.performance.gain_accounting import scope_dates
+        return self._get(('scope_dates', scope), lambda: scope_dates(self.journal, scope))
+
+    def observation_dates(self, scope, target):
+        from portfolio_app.performance.history_valuation import scope_observation_dates
+        return self._get(('observation_dates', scope, target),
+                         lambda: scope_observation_dates(self.journal, scope, self.observations, target))
+
     def securities(self, stamp=None):
         from portfolio_app.ledger.security_history import SecurityTimeline
         timeline = self._get(('security_timeline',), lambda: SecurityTimeline(self.journal.securities))
@@ -675,16 +684,10 @@ def known_negative_equity_dates(journal, scope, observations, start, end, target
     Missing valuations stay unknown; never fill them to establish eligibility.
     Callers rendering many prefixes can reuse these dates and existing values.
     """
-    from portfolio_app.performance.history_observations import index_observations
-    from portfolio_app.performance.history_valuation import scope_observations
-    observations = index_observations(observations)
     calculation = calculation or HistoryCalculation(journal, observations)
-    active = scope_observations(journal, scope, observations, target)
-    from portfolio_app.performance.gain_accounting import scope_dates
-    dates = set(scope_dates(journal, scope))
-    dates |= {o.date for o in active}
-    negative = {o.date for o in active if o.kind == 'value' and o.subject == scope.key
-                and o.currency == target and start <= o.date <= end and o.amount < 0}
+    recorded = calculation.observation_dates(scope, target)
+    dates = recorded.chart_dates.union(recorded.boundary_dates, calculation.event_dates(scope))
+    negative = {day for day in recorded.negative_equity_dates if start <= day <= end}
     for stamp in sorted(dates):
         if not start <= stamp <= end or stamp in negative:
             continue

@@ -130,3 +130,32 @@ def test_csv_companion_position_dates_include_later_atomic_movements(movement):
     store = ObservationStore((Observation('price', 'price', 'destination', '2024-01-01', 10, 'EUR'),))
     view = history_view(journal, scope, store, 'All', today=date(2024, 1, 3))
     assert any('latest recorded event' in r for r in view.all_result.time_weighted_reasons)
+
+
+def test_chart_and_negative_equity_check_share_scoped_dates(monkeypatch):
+    from portfolio_app.performance import history_valuation
+    from portfolio_app.performance.personal_performance import HistoryCalculation, known_negative_equity_dates
+    journal = Journal()
+    scope = HistoryScope(('invented',))
+    store = ObservationStore((
+        Observation('close', 'value', scope.key, '2024-01-01', 10, 'EUR'),
+        Observation('before', 'value', scope.key, '2024-01-03', -1, 'EUR', side='before', boundary='test-flow'),
+        Observation('different-unit', 'value', scope.key, '2024-01-04', -2, 'USD', side='before', boundary='other-flow'),
+        Observation('other-scope', 'value', HistoryScope(('other',)).key, '2024-01-02', -5, 'EUR'),
+    ))
+    scans = []
+    original = history_valuation.scope_observations
+    def counted(*args):
+        scans.append(args[-1])
+        return original(*args)
+    monkeypatch.setattr(history_valuation, 'scope_observations', counted)
+    calculation = HistoryCalculation(journal, store)
+    history_view(journal, scope, store, 'All', today=date(2024, 1, 5), calculation=calculation)
+    facts = calculation.observation_dates(scope, 'EUR')
+    assert facts.chart_dates == {'2024-01-01'}
+    assert facts.boundary_dates == {'2024-01-03', '2024-01-04'}
+    assert known_negative_equity_dates(journal, scope, store, '2024-01-01', '2024-01-05',
+        calculation=calculation) == ('2024-01-03',)
+    assert scans == ['EUR']
+    assert calculation.observation_dates(scope, 'USD').negative_equity_dates == {'2024-01-04'}
+    assert scans == ['EUR', 'USD']

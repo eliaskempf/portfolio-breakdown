@@ -123,8 +123,6 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     """
     calculation = calculation or HistoryCalculation(journal, observations)
     estimate_notes = []
-    def dates_for(member):
-        return calculation._get(('scope_dates', member), lambda: scope_dates(journal, member))
     estimated = calculation._get(('gain_estimates',), lambda: tuple((b, e) for b in journal.securities
         for e in calculation._events[b.position_id] if e.estimated or e.valuation_quality == 'estimated'
         or any(p.get('quality') == 'estimated' for p in e.costs)))
@@ -147,7 +145,7 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     # as a whole before component fallbacks. Missing internal transfer marks must
     # not prevent cancellation or make a known portfolio gain partial.
     if len(scope.positions) + len(scope.accounts) > 1 and not scope.unresolved:
-        dates = dates_for(scope)
+        dates = calculation.event_dates(scope)
         if dates and dates[0] <= end:
             result = calculate_history(journal, scope, observations, dates[0], end, target, returns=False, calculation=calculation)
             flows, missing = calculation.flows(scope, dates[0], end, target)
@@ -172,7 +170,7 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     parts += [('account:'+identity, HistoryScope(accounts=(identity,))) for identity in scope.accounts]
     gains, values, capitals, reasons = [], [], [], [*scope.unresolved, *estimate_notes]
     for identity, member in parts:
-        dates = dates_for(member)
+        dates = calculation.event_dates(member)
         value = (current_values.get(identity) if current_values is not None else
                  calculation.value(member, end, target).amount)
         values.append(value)

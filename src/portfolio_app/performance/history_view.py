@@ -5,10 +5,9 @@ from dataclasses import dataclass
 from datetime import date
 
 from portfolio_app.performance.history_observations import index_observations
-from portfolio_app.performance.history_valuation import scope_observations
 from portfolio_app.performance.personal_performance import PersonalPerformance, HistoryCalculation, calculate_history, known_negative_equity_dates
 from portfolio_app.performance.history_twr import chart_returns
-from portfolio_app.performance.gain_accounting import GainSummary, scope_dates, summarize_known_gain
+from portfolio_app.performance.gain_accounting import GainSummary, summarize_known_gain
 
 PERIODS = ('1M', '3M', '6M', 'YTD', '1Y', '3Y', '5Y', 'All')
 
@@ -49,15 +48,14 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     calculation = calculation or HistoryCalculation(journal, index_observations(observations))
     observations = calculation.observations
     today = today or date.today()
-    dates = calculation._get(('scope_dates', scope), lambda: scope_dates(journal, scope))
+    dates = calculation.event_dates(scope)
     earliest = date.fromisoformat(min(dates)) if dates else today
     first = period_start(period,today,earliest).isoformat()
     last = today.isoformat()
-    relevant = [o for o in scope_observations(journal, scope, observations, target)
-                if o.kind != 'value' or o.side == 'close']
+    recorded = calculation.observation_dates(scope, target)
     beginning = earliest.isoformat()
     flows, _ = calculation.flows(scope, beginning, last, target)
-    stamps = sorted({o.date for o in relevant if beginning <= o.date <= last} | {f.date for f in flows}
+    stamps = sorted({day for day in recorded.chart_dates if beginning <= day <= last} | {f.date for f in flows}
                     | {d for d in dates if beginning <= d <= last} | {beginning,first,last})
     valuations = {stamp:calculation.value(scope,stamp,target) for stamp in stamps}
     values = {stamp:valuation.amount for stamp,valuation in valuations.items()}

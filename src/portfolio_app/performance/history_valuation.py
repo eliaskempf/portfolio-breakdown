@@ -38,6 +38,25 @@ def scope_observations(journal, scope, observations, target):
                  or o.kind == 'fx' and (o.currency, o.target) in pairs
                  or o.kind == 'value' and o.subject == scope.key)
 
+@dataclass(frozen=True)
+class ScopeObservationDates:
+    chart_dates: frozenset[str]
+    boundary_dates: frozenset[str]
+    negative_equity_dates: frozenset[str]
+
+
+def scope_observation_dates(journal, scope, observations, target):
+    chart, boundaries, negative = set(), set(), set()
+    for observation in scope_observations(journal, scope, observations, target):
+        if observation.kind != 'value' or observation.side == 'close':
+            chart.add(observation.date)
+        else:
+            boundaries.add(observation.date)
+        if observation.kind == 'value' and observation.currency == target and observation.amount < 0:
+            negative.add(observation.date)
+    return ScopeObservationDates(frozenset(chart), frozenset(boundaries), frozenset(negative))
+
+
 # Provider venue codes, not ticker suffixes or an instrument's domicile.
 VENUES = {
     'NYQ': ('XNYS', 'America/New_York'),
