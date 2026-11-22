@@ -84,11 +84,13 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False, show_message
         completed = observed_pending or current != revision
         pending_render = False
         if not pending and completed:
-            # A settings panel shows check times and enables its retry button on completion.
-            details_open = (st.session_state.get('main_tabs') == 'Exposure'
-                            and st.session_state.get('exposure_refresh_open'))
-            pending_render = (details_open or
-                              (source_revision is not None and fund_sources(Path(data_dir)) != source_revision))
+            pending_render = source_revision is not None and fund_sources(Path(data_dir)) != source_revision
+            if st.session_state.get('main_tabs') == 'Exposure' and st.session_state.get('exposure_refresh_open'):
+                observation = st.session_state.get('etf_settings_observation')
+                # Another window can finish a check while this panel has no active timer.
+                if observation and observation[0] == str(Path(data_dir).resolve()):
+                    _, shown, polling = observation
+                    pending_render |= not polling and shown != current
             if pending_render and refresh_allowed():
                 st.rerun()
             if not pending_render:
@@ -131,41 +133,51 @@ def render_refresh_controls(data_dir, holdings, funds, *, demo=False):
         except OSError as exc:
             st.error(f'Could not save refresh preferences: {exc}')
     st.caption('Successful checks: at most daily. Failed attempts can retry after five minutes, or immediately after provider fixes. Offline demos do not download data.')
-    refreshable = [f for f in funds if supported(f) and any(row.get('shares', 0) > 0 and matching_fund(row, [f]) for row in holdings.to_dict('records'))]
+    rows = holdings.to_dict('records')
+    held = [fund for fund in funds if any(row.get('shares', 0) > 0 and matching_fund(row, [fund]) for row in rows)]
     candidates = discovery_candidates(holdings, funds)
-    if st.button('Refresh ETF holdings now', help='Request fresh holdings from configured fund providers; failed downloads retain saved snapshots.', disabled=demo or coordinator.running(data_dir) or not (refreshable or candidates)):
-        coordinator.schedule(data_dir, holdings, funds, force=True)
-        st.rerun()
-    records = read_json(Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json') if not demo else {}
-    for key, row in candidates.items():
-        record = records.get(key, {})
-        st.markdown(f"**{row.get('name', key)}**")
-        st.caption(f"{key} · {record.get('status', 'Awaiting discovery')}")
-        if record.get('error'):
-            st.info(record['error'])
-    unidentified = [row for row in holdings.to_dict('records') if row.get('shares', 0) > 0
+    can_refresh = bool(candidates) or any(supported(fund) for fund in held)
+
+    @status_fragment()
+    def source_status(poll):
+        pending = not demo and coordinator.running(data_dir)
+        if not demo:
+            st.session_state['etf_settings_observation'] = context, refresh_revision(data_dir), pending
+        if pending:
+            poll(2)
+        if st.button('Refresh ETF holdings now', help='Request fresh holdings from configured fund providers; failed downloads retain saved snapshots.', disabled=demo or pending or not can_refresh):
+            coordinator.schedule(data_dir, holdings, funds, force=True)
+            st.rerun()
+        records = read_json(Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json') if not demo else {}
+        for key, row in candidates.items():
+            record = records.get(key, {})
+            st.markdown(f"**{row.get('name', key)}**")
+            st.caption(f"{key} · {record.get('status', 'Awaiting discovery')}")
+            if record.get('error'):
+                st.info(record['error'])
+        for fund in funds:
+            record = records.get(fund.isin, {})
+            st.markdown(f'**{compact_fund_name(fund.name)}**')
+            st.caption(f'Provider holdings date: {fund.as_of} · {snapshot_age_days(fund)} day(s) old')
+            if record.get('checked_at'):
+                st.caption(f'Last successful check: {record["checked_at"]}')
+            if record.get('attempted_at'):
+                st.caption(f'Last attempt: {record["attempted_at"]}')
+            if record.get('error'):
+                st.warning(f'Update failed; saved holdings retained. {record["error"]}')
+            if fund.proxy_source:
+                st.info(f'Proxy: {fund.proxy_source}')
+            if not supported(fund):
+                st.caption('Manual snapshot · No automatic provider configured')
+        if error := coordinator.error(data_dir):
+            st.warning(error)
+
+    source_status()
+    unidentified = [row for row in rows if row.get('shares', 0) > 0
                     and row.get('instrument_type') == 'etf' and not any(row.get(k) for k in ('isin', 'wkn', 'ticker'))]
     if unidentified:
         st.info('Some funds have no identifier. Use Positions → Connect live prices to select their ISIN; snapshot prices can be retained.')
     from portfolio_app.interface.views.funds.etf_setup_ui import render_setup
     render_setup(data_dir, holdings, funds, demo=demo)
-    for fund in funds:
-        record = records.get(fund.isin, {})
-        st.markdown(f'**{compact_fund_name(fund.name)}**')
-        st.caption(f'Provider holdings date: {fund.as_of} · {snapshot_age_days(fund)} day(s) old')
-        if record.get('checked_at'):
-            st.caption(f'Last successful check: {record["checked_at"]}')
-        if record.get('attempted_at'):
-            st.caption(f'Last attempt: {record["attempted_at"]}')
-        if record.get('error'):
-            st.warning(f'Update failed; saved holdings retained. {record["error"]}')
-        if fund.proxy_source:
-            st.info(f'Proxy: {fund.proxy_source}')
-        if not supported(fund):
-            st.caption('Manual snapshot · No automatic provider configured')
-    if error := coordinator.error(data_dir):
-        st.warning(error)
     from portfolio_app.interface.views.funds.etf_ui import render_fund_details
-    held = [fund for fund in funds if any(row.get('shares', 0) > 0 and matching_fund(row, [fund])
-                                         for row in holdings.to_dict('records'))]
     render_fund_details(held, holdings, holdings=holdings, key_prefix='settings_', percentages_only=True)

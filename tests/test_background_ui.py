@@ -53,7 +53,7 @@ def test_pending_open_and_other_editors_also_defer_refresh(monkeypatch):
 
 @pytest.mark.parametrize('outcome,rerenders', [
     ('checked', False), ('already locked', False), ('new breakdown', True),
-    ('unavailable', False), ('worker error', False), ('settings open', True),
+    ('unavailable', False), ('worker error', False), ('settings open', False), ('external check', True),
 ])
 def test_etf_completion_redraws_only_affected_views(tmp_path, monkeypatch, outcome, rerenders):
     import streamlit as st
@@ -74,8 +74,9 @@ def test_etf_completion_redraws_only_affected_views(tmp_path, monkeypatch, outco
     monkeypatch.setattr(ui.coordinator, 'error', lambda _: error[0])
     (tmp_path / 'etfs').mkdir()
     state['parsed_inputs'] = {'funds': (fund_sources(tmp_path), [])}
-    if outcome == 'settings open':
-        state.update(main_tabs='Exposure', exposure_refresh_open=True)
+    if outcome in {'settings open', 'external check'}:
+        state.update(main_tabs='Exposure', exposure_refresh_open=True,
+                     etf_settings_observation=(str(tmp_path), ui.refresh_revision(tmp_path), outcome == 'settings open'))
     ui.render_refresh_status(tmp_path, [], ui.refresh_revision(tmp_path), show_messages=False,
                              render_indicator=indicators.append)
     assert timers == [2] and not renders
@@ -140,3 +141,28 @@ def test_status_timer_disarms_when_the_polling_view_exits(monkeypatch):
     with pytest.raises(RuntimeError, match='Invented interrupted view'):
         status()
     assert intervals == [.15, None]
+
+
+def test_refresh_settings_follow_pending_check_and_restore_retry(tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    from portfolio_app.interface.views.funds import etf_refresh_ui as ui
+    from portfolio_app.funds.etf_refresh import write_json
+
+    running, intervals = [True], []
+    monkeypatch.setattr(ui.coordinator, 'running', lambda _: running[0])
+    monkeypatch.setattr(background_ui, '_set_poll_interval', intervals.append)
+    app = AppTest.from_string(f"""
+from pathlib import Path
+import pandas as pd
+from portfolio_app.interface.views.funds.etf_refresh_ui import render_refresh_controls
+holdings = pd.DataFrame([dict(id='fund', name='Invented ETF', isin='ZZ-FUND', shares=1, instrument_type='etf')])
+render_refresh_controls(Path({str(tmp_path)!r}), holdings, [])
+""").run()
+    def retry():
+        return next(b for b in app.button if b.label == 'Refresh ETF holdings now')
+    assert not app.exception and retry().disabled and intervals == [2]
+    write_json(tmp_path/'.cache/etf-refresh/status.json', {'ZZ-FUND': {'status': 'failed', 'error': 'Invented outage'}})
+    running[0] = False
+    app.run()
+    assert not app.exception and not retry().disabled and intervals[-1] is None
+    assert any(i.value == 'Invented outage' for i in app.info)
