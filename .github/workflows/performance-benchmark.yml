@@ -10,7 +10,7 @@ name: Packaged performance benchmark
       profile:
         description: 'Synthetic portfolio size'
         type: choice
-        options: [etf-heavy, mixed-history, small]
+        options: [etf-heavy, mixed-history, multi-account, small]
         default: etf-heavy
       pairs:
         description: 'Alternating pairs per surface (1 to 10)'
@@ -76,6 +76,7 @@ jobs:
           "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results --pairs "$PAIRS" --experiment "$EXPERIMENT" --profile "$PROFILE" "${reference[@]}"
           if [[ "$CHECK_OVERVIEW" == true ]]; then
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/navigation --pairs "$PAIRS" --experiment navigation --profile "$PROFILE"
+            "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/multi-account --pairs 1 --experiment exposure --surface native --profile multi-account "${reference[@]}"
           fi
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

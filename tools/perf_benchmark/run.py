@@ -20,13 +20,14 @@ from fixture import create_workspace, prepare_fund_check, prepare_fundamental_ch
 from renderer import exercise, exercise_exposure, wait
 
 
-def benchmark(executable, workspace, trial, variant, surface, scenario, *, themes=False):
+def benchmark(executable, workspace, trial, variant, surface, scenario, *, themes=False, company_accounts=False):
     trial.mkdir()
     if scenario == 'exposure' and themes:
         prepare_fundamental_check(workspace)
     env = dict(os.environ, PORTFOLIO_STATE_DIR=str(workspace.parent / 'state'),
         PORTFOLIO_BENCHMARK_TRIAL=str(trial), PORTFOLIO_BENCHMARK_VARIANT=variant,
-        PORTFOLIO_BENCHMARK_REFRESH=scenario, PORTFOLIO_BENCHMARK_THEMES=str(int(themes)))
+        PORTFOLIO_BENCHMARK_REFRESH=scenario, PORTFOLIO_BENCHMARK_THEMES=str(int(themes)),
+        PORTFOLIO_BENCHMARK_COMPANY_ACCOUNTS=str(int(company_accounts)))
     args = [str(executable), '--data-dir', str(workspace), '--offline-demo', '--ignore-workspace-selection']
     if surface == 'browser':
         with socket.socket() as reserve:
@@ -55,7 +56,7 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
                         args=['--no-sandbox'])
                     page = browser.new_page(viewport={'width':1280,'height':900})
                     page.goto(url)
-                    report = (exercise_exposure(page.evaluate, trial, variant, themes=themes) if scenario == 'exposure' else
+                    report = (exercise_exposure(page.evaluate, trial, variant, themes=themes, company_accounts=company_accounts) if scenario == 'exposure' else
                               exercise(page.evaluate, trial, scenario, persistent=variant != 'baseline'))
                     browser.close()
         finally:
@@ -207,7 +208,8 @@ def run_exposure(candidate, reference, destination, surfaces, pairs, profile):
                 with TemporaryDirectory(prefix='exposure-benchmark-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
                     create_workspace(workspace, profile, today=as_of)
-                    report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, 'exposure', themes=profile == 'mixed-history')
+                    report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, 'exposure',
+                                       themes=profile == 'mixed-history', company_accounts=profile == 'multi-account')
                     for visit in report['visits']:
                         sample = visit.pop('sample')
                         if sample != expected.setdefault(surface, sample) or visit['rows'] != (12 if profile == 'small' else 100):
@@ -217,6 +219,10 @@ def run_exposure(candidate, reference, destination, surfaces, pairs, profile):
                         if digest != expected.setdefault((surface, 'detail'), digest):
                             raise AssertionError('Financial source details changed across calls or binaries')
                         visit['digest'] = digest
+                    if report['companies']:
+                        expected_sources = 65624 if profile == 'multi-account' else 16424
+                        if report['companies'][-1]['source_rows'] != expected_sources:
+                            raise AssertionError('Company disclosure lost direct or account-specific fund contributions')
                     for visit in report['companies']:
                         sample = visit.pop('sample')
                         if visit['companies'] != 8950 or len(sample) != 3 or any(len(row) != 6 for row in sample):
@@ -249,7 +255,7 @@ if __name__ == '__main__':
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
     parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure'], default='history')
-    parser.add_argument('--profile', choices=['small', 'etf-heavy', 'mixed-history'], default='small')
+    parser.add_argument('--profile', choices=['small', 'etf-heavy', 'mixed-history', 'multi-account'], default='small')
     parser.add_argument('--reference', type=Path, help='Reference bundle for the Exposure comparison')
     options = parser.parse_args()
     surfaces = ['native','browser'] if options.surface == 'both' else [options.surface]

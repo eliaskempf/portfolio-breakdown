@@ -767,7 +767,12 @@ first painted chart and settled frame, and compares every label and value.
 It also measures the first and repeat opens of asset source details. It compares
 the displayed sources across binaries and checks that opening and closing the
 read-only dialog causes zero additional candidate portfolio valuations. The Exposure benchmark branch
-uses mixed-history on push.
+uses mixed-history on push. It also runs a separate native pair with the
+multi-account profile. That profile holds each of the 24 ETFs in four invented
+accounts alongside 24 direct shares. Its 120 positions have 3,000 purchases and
+87,720 price observations. Each listing has the same price history across its
+accounts. This additional pair opens Assets once and Companies twice. It checks
+the source disclosure for all 65,624 ownership contributions.
 
 Mixed-history navigation also exercises two background providers together on each
 renderer. With Performance already open and a history download held pending,

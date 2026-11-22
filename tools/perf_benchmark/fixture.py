@@ -29,7 +29,7 @@ def holdings_and_funds(directory, profile, today):
         for index in range(12):
             yield f'invented-{index}', f'Invented holding {index}', '', '', 'other', 'non_equity'
         return
-    if profile not in {'etf-heavy', 'mixed-history'}:
+    if profile not in {'etf-heavy', 'mixed-history', 'multi-account'}:
         raise ValueError(f'Unknown portfolio profile {profile!r}')
     directory.mkdir()
     for index in range(DIRECT_EQUITIES):
@@ -42,7 +42,7 @@ def holdings_and_funds(directory, profile, today):
         (directory / f'{fund_id}.yaml').write_text(yaml.safe_dump(manifest), encoding='utf-8')
         with (directory / manifest['holdings_file']).open('w', newline='', encoding='utf-8') as handle:
             writer = csv.writer(handle)
-            sectors = profile == 'mixed-history'
+            sectors = profile in {'mixed-history', 'multi-account'}
             writer.writerow(['constituent_id', 'name', 'ticker', 'isin', 'weight', 'instrument_type', *(['sector'] if sectors else [])])
             # Half the constituents share identities across funds, including directly held equities.
             # The narrow snapshots cover 90%, exercising the residual allocation as well.
@@ -51,7 +51,7 @@ def holdings_and_funds(directory, profile, today):
                 identity = row if row < size // 2 else (index + 1) * max(FUND_SIZES) + row
                 weight = coverage * (size - row) / (size * (size + 1) / 2)
                 constituent = company(identity)
-                if profile == 'mixed-history' and DIRECT_EQUITIES <= row < size // 2 and row % 4 == 0 and index % 3 != 0:
+                if sectors and DIRECT_EQUITIES <= row < size // 2 and row % 4 == 0 and index % 3 != 0:
                     constituent = (f'local-{index}-{row}', constituent[1], '', '')
                 sector = [f'Invented sector {identity % 24}'] if sectors else []
                 writer.writerow([*constituent, weight, 'equity', *sector])
@@ -67,31 +67,41 @@ def create_workspace(directory: Path, profile='small', *, today=None):
 
     columns = ('position_key id name ticker isin shares acquisition_price acquisition_currency bucket_id '
                'instrument_type exposure_kind quantity_unit manual_price manual_price_currency manual_price_date')
+    multi_account = profile == 'multi-account'
+    if multi_account:
+        columns += ' account'
     with (directory / 'holdings.csv').open('w', newline='', encoding='utf-8') as handle:
         writer = csv.writer(handle)
         writer.writerow(columns.split())
         for index, (identity, name, ticker, isin, kind, exposure) in enumerate(
                 holdings_and_funds(directory / 'etfs', profile, today)):
-            writer.writerow([identity, identity, name, ticker, isin, 25, 100, 'EUR', f'group{index % 3}',
-                             kind, exposure, 'units', 110 + index, 'EUR', today.isoformat()])
+            for account in range(4 if multi_account and kind == 'etf' else 1):
+                position = f'{identity}-account-{account}' if multi_account else identity
+                row = [position, identity, name, ticker, isin, 25, 100, 'EUR', f'group{index % 3}',
+                       kind, exposure, 'units', 110 + index, 'EUR', today.isoformat()]
+                if multi_account:
+                    row.append(f'Invented account {account + 1}')
+                writer.writerow(row)
     (directory / 'allocation.yaml').write_text('version: 2\nbuckets:\n' + ''.join(
         f'- id: group{i}\n  name: Invented group {i}\n  target: {target}\n'
         for i, target in enumerate((.4, .3, .3))), encoding='utf-8')
     rows = read_snapshot(directory / 'holdings.csv').holdings
     journal, books, observations = Journal(version=2), [], []
+    instrument_order = {asset: i for i, asset in enumerate(rows.id.unique())}
     for index, (_, row) in enumerate(rows.iterrows()):
         book = book_for(journal, row)
         buys = tuple(SecurityEvent(f'b-{index}-{t}', 'buy', day(t * 30), quantity=Decimal(1),
             price=Decimal(100), currency='EUR', charges_known=True) for t in range(25))
         books.append(reconstruction_candidate(replace(book, records=buys),
             tuple(event.id for event in buys), starts_at_zero=True))
+        price_change = 10 + instrument_order[row.id]
         observations.extend(Observation(f'o-{index}-{t}', 'price', book.position_id, day(t),
-            100 + Decimal((10 + index) * t) / 730, 'EUR', source='invented') for t in range(731))
+            100 + Decimal(price_change * t) / 730, 'EUR', source='invented') for t in range(731))
     save_journal(directory, replace(journal, securities=tuple(books)), None)
     save_observations(directory, ObservationStore(tuple(observations)), None)
     save_overview_view(directory, 'Allocation')
 
-    if profile == 'mixed-history':
+    if profile in {'mixed-history', 'multi-account'}:
         from portfolio_app.monitoring.monitoring import Evaluation, Rule, SeriesSpec
         from portfolio_app.monitoring.monitoring_store import save_rule, record_evaluations, delete_rule
         rule = Rule('invented-archived', 'Invented historical monitor', series=SeriesSpec('ZZ-ARCHIVED'))
@@ -117,9 +127,9 @@ def prepare_fundamental_check(directory):
     expired = datetime.now(timezone.utc) - timedelta(days=2)
     cache = AnalyticsCache(directory / '.cache' / 'fundamentals', now=lambda: expired)
     with (directory / 'holdings.csv').open(newline='', encoding='utf-8') as handle:
-        for row in csv.DictReader(handle):
-            ticker = row['ticker']
-            cache.get('fundamentals-v1:' + ticker, lambda: asdict(benchmark_fundamentals(ticker, 10.)))
+        tickers = dict.fromkeys(row['ticker'] for row in csv.DictReader(handle))
+    for ticker in tickers:
+        cache.get('fundamentals-v1:' + ticker, lambda: asdict(benchmark_fundamentals(ticker, 10.)))
 
 
 def prepare_fund_check(directory):

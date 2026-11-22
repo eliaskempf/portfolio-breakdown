@@ -298,7 +298,7 @@ def exercise_fundamentals(evaluate, trial, variant):
     return result
 
 
-def exercise_exposure(evaluate, trial, variant, *, themes=False):
+def exercise_exposure(evaluate, trial, variant, *, themes=False, company_accounts=False):
     """Time the first populated table frame and verify local source disclosure."""
     context = CONTEXT + """
         const tab = name => [...d.querySelectorAll('[role=tab]')].find(t => t.textContent.trim() === name);
@@ -314,14 +314,16 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False):
         return evaluate('(() => {' + context + js + '})()')
 
     def back_to_assets():
-        read("""[...d.querySelectorAll('[role=radio], button')].find(e =>
-            visible(e) && e.textContent.trim() === 'Assets').click(); return true;""")
+        read("""const assets = [...d.querySelectorAll('[role=radio], button')].find(e =>
+            visible(e) && e.textContent.trim() === 'Assets');
+            assets.scrollIntoView({block:'center'}); assets.click(); return true;""")
         wait(lambda: read("return !!table()?.querySelector('tr[data-position-id]') && !running();"))
 
-    def company_visit():
+    def company_visit(*, check_sources):
         read("""
             const button = [...d.querySelectorAll('[role=radio],button')].find(e =>
                 visible(e) && e.textContent.trim() === 'Companies');
+            button.scrollIntoView({block:'center'});
             w.companyVisit = null;
             const start = w.performance.now();
             button.click();
@@ -336,7 +338,9 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False):
                 if (drawn !== null && rows.length >= 3 && !running()) {
                     w.companyVisit = {grid_ms:drawn, settled_ms:elapsed, companies:Number(grid.getAttribute('aria-rowcount'))-1,
                         sample:rows.slice(0,3)};
-                } else if (elapsed > 60000 || exception()) w.companyVisit = {error:'Company holdings grid did not settle'};
+                } else if (elapsed > 60000 || exception()) w.companyVisit = {error:'Company holdings grid did not settle: ' +
+                    JSON.stringify({selected:button.getAttribute('aria-checked'), running:running(), issuers:grid?.getAttribute('aria-rowcount'),
+                        sampledRows:rows.length, exception:exception()})};
                 else w.requestAnimationFrame(frame);
             }
             w.requestAnimationFrame(frame); return true;
@@ -344,7 +348,20 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False):
         visit = wait(lambda: read('return w.companyVisit;'), timeout=65)
         if 'error' in visit:
             raise RuntimeError(visit['error'])
-        back_to_assets()
+        if check_sources:
+            panel = """
+                const section = [...d.querySelectorAll('.st-key-exposure_results [data-testid=stExpander]')].find(e =>
+                    e.querySelector('summary')?.textContent.includes('Company exposure by source'));
+                const summary = section?.querySelector('summary');
+            """
+            read(panel + "summary.scrollIntoView({block:'center'}); summary.click(); return true;")
+            visit['source_rows'] = wait(lambda: read(panel + """
+                const grid = section?.querySelector('canvas table[role=grid]');
+                const rows = Number(grid?.getAttribute('aria-rowcount')) - 1;
+                return !running() && grid?.querySelector('[role=gridcell]') && rows > 0 && rows;
+            """))
+        else:
+            back_to_assets()
         return visit
 
     def theme_visit():
@@ -420,7 +437,8 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False):
     wait(ready, timeout=100)
     ready_at = time.time()
     visits, theme_visits, details, companies = [], [], [], []
-    for _ in range(3):
+    visits_to_measure = 1 if company_accounts else 3
+    for _ in range(visits_to_measure):
         read("""
             w.exposureVisit = null;
             const start = w.performance.now();
@@ -447,10 +465,11 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False):
         if 'error' in visit or not visit['sample'][1]:
             raise RuntimeError(visit)
         visits.append(visit)
-        if themes and len(visits) == 3:
+        if themes and len(visits) == visits_to_measure:
             theme_visits = [theme_visit() for _ in range(2)]
             details = [detail_visit() for _ in range(2)]
-            companies = [company_visit() for _ in range(2)]
+        if (themes or company_accounts) and len(visits) == visits_to_measure:
+            companies = [company_visit(check_sources=False), company_visit(check_sources=True)]
         read("tab('Overview').click(); return true;")
         wait(lambda: ready() and read("return !table() && tab('Overview').getAttribute('aria-selected') === 'true';"))
     fundamentals = exercise_fundamentals(evaluate, trial, variant) if themes else None
