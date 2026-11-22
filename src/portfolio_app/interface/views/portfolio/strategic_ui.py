@@ -329,7 +329,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 render_list(roots, [ListColumn(column, 'Investment' if flat and column == 'Category' else f'% of {scope}' if column == 'Current (%)' else column,
                             tooltip='Row details' if column == 'Category' else '',
                             secondary=('Assigned category' if flat else 'Account') if column == 'Category' else '',
-                            help=target_help.get(column, column_help(column, scope=scope)), numeric=column not in {'Category', 'Status', 'Assigned category', 'Account'}, signed=column == 'Gap', directional=column == 'Gap (pp)', color_signed=False) for column in columns],
+                            help=target_help.get(column, column_help(column, scope=scope)), numeric=column not in {'Category', 'Status', 'Assigned category', 'Account'}, signed=column in {'Gap', 'Gap (pp)'}, color_signed=False) for column in columns],
                             key='strategic_allocation_table', context=f'{position_context}_{bucket}_{measure}_{flat}',
                             title=title, default_sort='% of exposure' if market else 'Value',
                             children=children, on_open=open_allocation_row)

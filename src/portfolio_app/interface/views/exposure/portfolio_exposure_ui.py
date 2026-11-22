@@ -1,5 +1,5 @@
 """Signed exposure displays and opt-in settings; calculations stay in pure modules."""
-from portfolio_app.interface.shared.number_format import return_percent
+from portfolio_app.interface.shared.number_format import signed_percent
 from portfolio_app.interface.shared.chart_hover import chart_hover
 import pandas as pd
 import plotly.graph_objects as go
@@ -130,7 +130,7 @@ def render_company_move(result, rows):
             pnl, impact = company_move(result, asset, change, rows=rows)
             left, right = st.columns(2)
             left.metric('Estimated P&L', format_money(pnl, result.reporting_currency))
-            right.metric('Portfolio impact', return_percent(impact))
+            right.metric('Portfolio impact', signed_percent(impact))
             sources = rows.loc[rows.asset_id.eq(asset)].copy()
             sources['Channel'] = sources.source_type.map(lambda kind: 'Futures proxy' if kind == 'future' else 'ETF holdings' if kind.startswith('etf_') else 'Direct holdings')
             table = sources.groupby('Channel').exposure_reporting.sum().rename(f'Exposure ({result.reporting_currency})').reset_index()

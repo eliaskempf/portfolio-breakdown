@@ -1,5 +1,5 @@
 """A chart-first historical reconstruction with explicit quarterly roll boundaries."""
-from portfolio_app.interface.shared.number_format import change_number
+from portfolio_app.interface.shared.number_format import signed_number
 from portfolio_app.interface.shared.chart_hover import chart_hover
 from datetime import date
 
@@ -63,7 +63,7 @@ def render_historical(position, directory, context, comparison, settings_area):
                f"{abs(position.contracts)} contracts at a time · {'Short' if position.contracts < 0 else 'Long'}")
     st.info('Observed equity returns; reconstructed FMWN prices using the shared financing source. Actual historical FMWN daily settlements and IBKR margins are unavailable here.')
     st.caption('Cash benchmark: observed historical €STR.' if comparison.benchmark_source == 'ecb' else f'Cash benchmark: shared manual rate {comparison.savings_rate:.3%}.')
-    financing_label = (f'Historical ECB €STR + spread ({change_number(100*comparison.financing_spread, suffix=' pp')})'
+    financing_label = (f'Historical ECB €STR + spread ({signed_number(100*comparison.financing_spread, suffix=' pp')})'
                        if comparison.financing_source == 'ecb' else f'Manual rate {comparison.financing_rate:.3%}')
     st.caption(f'Financing source: {financing_label} · Shared commission €{comparison.roll_fee_per_side:g}/side · '
                f'Slippage {comparison.roll_slippage_points:g} points/side · Cash yield {comparison.cash_rate:.2%} · '

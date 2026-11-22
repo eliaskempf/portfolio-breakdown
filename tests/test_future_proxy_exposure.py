@@ -170,7 +170,7 @@ def test_companion_ui_sunbursts_and_company_move(tmp_path):
     app.run()
     by_label(app.selectbox, 'Company').set_value('stock').run()
     assert by_label(app.metric, 'Estimated P&L').value == '€-3,700.00'
-    assert by_label(app.metric, 'Portfolio impact').value == '▼ 3.08%'
+    assert by_label(app.metric, 'Portfolio impact').value == '-3.08%'
     channels = next(item.value for item in app.dataframe if 'Channel' in item.value)
     assert set(channels.Channel) == {'Direct holdings', 'ETF holdings', 'Futures proxy'}
     for view in ['Themes & sectors', 'Geography']:

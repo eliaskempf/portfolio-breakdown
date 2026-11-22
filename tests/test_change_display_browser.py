@@ -7,6 +7,11 @@ from browser_support import settle
 def test_position_percentage_directions_sort_by_numeric_value(ux_page):
     page, _ = ux_page
     table = page.get_by_role('table', name='Positions', exact=True)
+    allocation = page.get_by_role('table', name='Allocation', exact=True)
+    gap_column = next(i for i, header in enumerate(allocation.get_by_role('columnheader').all_text_contents())
+                      if header.startswith('Gap (pp)'))
+    gaps = allocation.locator('tbody tr').locator(f'td:nth-child({gap_column + 1})').all_text_contents()
+    assert sorted(gaps) == ['+5.76', '-5.76']
     headers = table.locator('thead th').all_text_contents()
     pct = next(i for i, name in enumerate(headers) if 'Return (%)' in name)
     money = next(i for i, name in enumerate(headers) if name.startswith('Gain'))

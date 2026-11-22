@@ -1,5 +1,5 @@
 """One live, persisted set of financial assumptions for all futures views."""
-from portfolio_app.interface.shared.number_format import return_percent, change_number
+from portfolio_app.interface.shared.number_format import return_percent, signed_number, signed_percent
 from datetime import date
 from dataclasses import replace
 import math
@@ -145,11 +145,11 @@ def render_shared_assumptions(position, directory, context, reference, settings_
             index_return = return_estimate['index_return']
             st.caption(f"Sample {return_estimate['start_date']} → {return_estimate['end_date']}: "
                        f"{return_estimate['observations']} daily returns, CAGR {return_percent(return_estimate['cagr'] * 100)}, "
-                       f"fitted GBM drift {return_percent(index_return * 100)}. Adjusted EUNL.DE EUR closes via Yahoo. "
+                       f"fitted GBM drift {signed_percent(index_return * 100)}. Adjusted EUNL.DE EUR closes via Yahoo. "
                        'This estimates index growth, not historical FMWN trading returns; financing is modelled separately.')
         a, b = st.columns(2)
         if historical_drift:
-            a.metric('Historical index drift used', return_percent(index_return * 100) if return_estimate else 'Load history')
+            a.metric('Historical index drift used', signed_percent(index_return * 100) if return_estimate else 'Load history')
         else:
             index_return = a.number_input('Annual index net-total-return drift (%)', min_value=-50., max_value=50.,
                 value=100*saved.index_return, step=1., key=key+'index_return')/100
@@ -162,7 +162,7 @@ def render_shared_assumptions(position, directory, context, reference, settings_
         if financing_source == 'ecb':
             spread = st.number_input('Financing spread over €STR (percentage points)', min_value=-10., max_value=10.,
                 value=100*spread, step=.05, format='%.2f', key=key+'financing_spread')/100
-            financing_label += " · " + change_number(100*spread, suffix=" pp")
+            financing_label += " · " + signed_number(100*spread, suffix=" pp")
             if dated_reference:
                 try:
                     financing = financing_from_estr(dated_reference['estr_rate'], spread)

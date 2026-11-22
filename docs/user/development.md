@@ -57,8 +57,8 @@ gain to total known gain during hover. Any range covering the full holding histo
 uses the shared total known gain calculation, just like All. Personal and price
 histories use currency symbols consistently in summaries, axes and tooltips.
 Leaving restores the latest value and period gain. Clicking the gain badge toggles between amount and cumulative TWR; its metric name and period
-appear only in a concise tooltip. Percentage changes use ▲/▼ throughout metrics, tables and chart tooltips; monetary gains
-keep +/− signs. Zero and unavailable returns have no direction triangle. TWR defaults to the documented daily flow convention; no remaining-cost denominator is substituted. Exact event TWR remains explicit.
+appear only in a concise tooltip. Observed investment returns and price changes use ▲/▼ in metrics, tables and chart tooltips.
+Target gaps (pp), monetary gains, thresholds and model assumptions use numeric signs. Zero and unavailable returns have no direction triangle. TWR defaults to the documented daily flow convention; no remaining-cost denominator is substituted. Exact event TWR remains explicit.
 Annualized money-weighted return always uses full recorded history, independently
 of the chart range or pointer. Keep one summary row below the view tabs.
 The allocation measure switch belongs above the allocation table, aligned with

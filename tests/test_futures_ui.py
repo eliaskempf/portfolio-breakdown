@@ -272,7 +272,7 @@ def test_rolling_requires_history_or_explicit_manual_return(tmp_path):
     by_label(app.number_input, 'Annual index net-total-return drift (%)').set_value(6.).run(timeout=40)
     assert not app.exception
     assert any(item.value == 'Cumulative risk over the holding period' for item in app.subheader)
-    assert any('index drift ▲ 6.00%' in item.value for item in app.caption)
+    assert any('index drift +6.00%' in item.value for item in app.caption)
 
 
 def test_ecb_spread_is_shared_saved_and_available_without_implied_history(tmp_path):
@@ -296,7 +296,7 @@ def test_ecb_spread_is_shared_saved_and_available_without_implied_history(tmp_pa
     assert any('financing 2.00%' in item.value for item in app.caption)
     open_analysis(app, 'Historical quarters')
     assert not app.exception and not app.error
-    assert any('Historical ECB €STR + spread (▲ 0.75 pp)' in item.value for item in app.caption)
+    assert any('Historical ECB €STR + spread (+0.75 pp)' in item.value for item in app.caption)
     historical_end = by_label(app.metric, 'Reconstructed futures end value').value
     by_label(app.number_input, 'Financing spread over €STR (percentage points)').set_value(0.).run()
     assert by_label(app.metric, 'Reconstructed futures end value').value != historical_end
