@@ -12,6 +12,9 @@ from portfolio_app.funds.etf import snapshot_age_days, matching_fund
 from portfolio_app.funds.etf_refresh import coordinator, preferences, save_preferences, read_json, supported, discovery_candidates
 
 
+REFRESH_PROGRESS = 'Discovering and updating ETF holdings · Using saved snapshots'
+
+
 @dataclass(frozen=True)
 class RefreshRevision:
     status_file: tuple
@@ -61,15 +64,20 @@ def refresh_notices(data_dir, funds, *, demo=False, revision=None):
 
 
 def render_refresh_status(data_dir, funds, revision, *, demo=False, show_messages=True,
-                          render_notice=None, include_notices=True):
-    if demo:
-        return  # Offline fixtures have invented dates, not stale provider data.
-    observed_pending = coordinator.running(data_dir)
+                          render_notice=None, include_notices=True, render_indicator=None, panel_open=False, periodic=False):
+    if demo and render_indicator is None:
+        return
+    if revision is None and not demo:
+        revision = refresh_revision(data_dir)
+    observed_pending = not demo and coordinator.running(data_dir)
     source_revision = loaded_fund_sources()
 
-    @st.fragment
+    @st.fragment(run_every=2 if periodic else None)
     def status():
-        nonlocal observed_pending
+        nonlocal observed_pending, revision
+        if demo:
+            render_indicator(None)
+            return
         pending = coordinator.running(data_dir)
         observed_pending |= pending
         current = refresh_revision(data_dir)
@@ -79,19 +87,24 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False, show_message
             # A settings panel shows check times and enables its retry button on completion.
             details_open = (st.session_state.get('main_tabs') == 'Exposure'
                             and st.session_state.get('exposure_refresh_open'))
-            pending_render = (details_open or current.issues != revision.issues or
+            pending_render = (details_open or (panel_open and (observed_pending or current.issues != revision.issues)) or
                               (source_revision is not None and fund_sources(Path(data_dir)) != source_revision))
             if pending_render and refresh_allowed():
                 st.rerun()
-        if pending or pending_render:
+            if not pending_render:
+                observed_pending = False
+                revision = current
+        if (pending or pending_render) and not periodic:
             poll_while_mounted('etf_refresh_status_tick', 2000)
+        if render_indicator is not None:
+            render_indicator(revision if pending else current)
         if not show_messages:
             return
         sections = render_sections('etf_refresh_', 'progress', 'notices')
         notice = render_notice or st.caption
         with sections['progress']:
             if pending:
-                notice('Discovering and updating ETF holdings · Using saved snapshots')
+                notice(REFRESH_PROGRESS)
         if not include_notices:
             return
         with sections['notices']:

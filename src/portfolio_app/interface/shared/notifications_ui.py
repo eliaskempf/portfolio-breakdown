@@ -3,7 +3,8 @@ import streamlit as st
 from hashlib import sha256
 import json
 
-from portfolio_app.interface.views.funds.etf_refresh_ui import refresh_notices, render_refresh_status
+from portfolio_app.interface.views.funds.etf_refresh_ui import REFRESH_PROGRESS, refresh_notices, render_refresh_status
+from portfolio_app.funds.etf_refresh import coordinator
 
 
 def notification_fingerprints(valued, status, *, refresh_issues=(), cache_warning='', exposure_issues=()):
@@ -42,12 +43,8 @@ def notification_bell(slot, directory, funds, valued, status, *, etf_revision=No
             help='Notifications', key='workspace_notifications', on_change='rerun',
             width='stretch', disabled=disabled)
 
-        mounted = False
-        @st.fragment(run_every=2 if journal and journal.positions and not demo else None)
-        def indicator():
-            nonlocal mounted
-            _, refresh_issues = refresh_notices(directory, funds, demo=demo, revision=None if mounted else etf_revision)
-            mounted = True
+        def indicator(revision):
+            _, refresh_issues = refresh_notices(directory, funds, demo=demo, revision=revision)
             from portfolio_app.interface.views.derivatives.settlement_archive_ui import settlement_notices
             _, settlement_issues = settlement_notices(directory, journal)
             current = notification_fingerprints(valued, status,
@@ -71,7 +68,9 @@ def notification_bell(slot, directory, funds, valued, status, *, etf_revision=No
             st.html('<style>.st-key-header_notifications [data-testid="stPopoverButton"]::after {'
                 + f'content:"{badge}";display:{"block" if badge else "none"};'
                 + 'width:auto;min-width:15px;height:15px;padding:0 2px;right:0;top:0;font-size:10px;color:white;line-height:15px;border-radius:8px;text-align:center;}</style>')
-        indicator()
+        render_refresh_status(directory, funds, etf_revision, demo=demo, show_messages=False,
+                              render_indicator=indicator, panel_open=panel.open,
+                              periodic=bool(journal and journal.positions and not demo))
     return panel
 
 
@@ -131,7 +130,8 @@ def render_notifications(directory, funds, revision, valued, status, *, demo=Fal
     for i,message in enumerate(parts):
         _card(Notice('etf_'+str(i), 'ETF data', message, 'warning', Destination('sources'), 'Review ETF sources'), directory)
     # Transient progress is a caption, separate from actionable/unread notices.
-    render_refresh_status(directory, funds, revision, demo=demo, include_notices=False)
+    if not demo and coordinator.running(directory):
+        st.caption(REFRESH_PROGRESS)
     action = []
     def follow_notice(destination, directory):
         navigate(destination, directory)

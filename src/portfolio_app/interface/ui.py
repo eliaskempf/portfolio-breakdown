@@ -11,7 +11,7 @@ from portfolio_app.demo_data.demo import initialize_live_demo, live_demo_pending
 from portfolio_app.funds.etf import validate_fund_listings
 from portfolio_app.interface.views.exposure.exposure_ui import render_analysis
 from portfolio_app.funds.etf_refresh import coordinator
-from portfolio_app.interface.views.funds.etf_refresh_ui import refresh_revision, render_refresh_status
+from portfolio_app.interface.views.funds.etf_refresh_ui import refresh_revision
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.interface.views.positions.position_ui import render_position_editor, render_position_dialog, request_position
 from portfolio_app.portfolio.positions import read_snapshot
@@ -297,9 +297,6 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             render_notifications(data_dir, funds, etf_revision, valued, status, demo=offline_demo,
                 cache_warning=price_service.cache_warning, exposure_issues=exposure_result.issues if exposure_result else (),
                 prices_pending=background_prices and market_coordinator.pending(market_workspace), journal=journal)
-    elif not demo_pending:
-        # Keep background completion reruns active without displaying notices.
-        render_refresh_status(data_dir, funds, etf_revision, demo=offline_demo, show_messages=False)
     if (sandbox or actual_active) and tabs[4].open:
         with tabs[4]:
             if actual_active:

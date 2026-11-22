@@ -53,7 +53,7 @@ def test_pending_open_and_other_editors_also_defer_refresh(monkeypatch):
 
 @pytest.mark.parametrize('outcome,rerenders', [
     ('checked', False), ('already locked', False), ('new breakdown', True),
-    ('unavailable', True), ('worker error', True), ('settings open', True),
+    ('unavailable', False), ('worker error', False), ('settings open', True), ('notifications open', True),
 ])
 def test_etf_completion_redraws_only_affected_views(tmp_path, monkeypatch, outcome, rerenders):
     import streamlit as st
@@ -62,12 +62,12 @@ def test_etf_completion_redraws_only_affected_views(tmp_path, monkeypatch, outco
     from portfolio_app.interface.shared.input_cache import fund_sources
     state = {}
     pending, error = [True], ['']
-    callbacks, timers, renders = [], [], []
+    callbacks, timers, renders, indicators = [], [], [], []
     def fragment(fn):
         callbacks.append(fn)
         return fn
     monkeypatch.setattr(st, 'session_state', state)
-    monkeypatch.setattr(st, 'fragment', fragment)
+    monkeypatch.setattr(st, 'fragment', lambda **kwargs: fragment)
     monkeypatch.setattr(st, 'rerun', lambda: renders.append(True))
     monkeypatch.setattr(ui, 'poll_while_mounted', lambda *a: timers.append(True))
     monkeypatch.setattr(ui.coordinator, 'running', lambda _: pending[0])
@@ -76,7 +76,8 @@ def test_etf_completion_redraws_only_affected_views(tmp_path, monkeypatch, outco
     state['parsed_inputs'] = {'funds': (fund_sources(tmp_path), [])}
     if outcome == 'settings open':
         state.update(main_tabs='Exposure', exposure_refresh_open=True)
-    ui.render_refresh_status(tmp_path, [], ui.refresh_revision(tmp_path), show_messages=False)
+    ui.render_refresh_status(tmp_path, [], ui.refresh_revision(tmp_path), show_messages=False,
+                             render_indicator=indicators.append, panel_open=outcome == 'notifications open')
     assert timers == [True] and not renders
     if outcome != 'already locked':
         write_json(tmp_path / '.cache/etf-refresh/status.json',
@@ -93,3 +94,7 @@ def test_etf_completion_redraws_only_affected_views(tmp_path, monkeypatch, outco
     state['position_edit_dialog'] = False
     callbacks[0]()
     assert bool(renders) == rerenders
+    if outcome == 'unavailable':
+        assert indicators[-1].failures == (('invented', 'unavailable', ''),)
+    elif outcome == 'worker error':
+        assert indicators[-1].error == 'Invented failure'
