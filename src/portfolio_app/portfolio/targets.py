@@ -4,9 +4,9 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from portfolio_app.funds.etf import FundSnapshot, expand_etfs
-from portfolio_app.exposure.exposures import project_contributions
-from portfolio_app.portfolio.grouping import InstrumentGroup, group_exposures
+from portfolio_app.funds.etf import FundSnapshot
+from portfolio_app.exposure.exposure_analysis import project_measures
+from portfolio_app.portfolio.grouping import InstrumentGroup
 
 
 @dataclass
@@ -25,14 +25,8 @@ def target_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *,
     to sum to one; stored targets always refer to the whole portfolio.
     """
     targets = positions.get("target_allocation", pd.Series(float("nan"), index=positions.index))
-    frames = []
-    for measure in (targets.fillna(0), targets.isna().astype(float)):
-        frame = project_contributions(positions, measure)
-        if lookthrough:
-            frame = expand_etfs(frame, funds, positions if holdings is None else holdings)
-        if group is not None:
-            frame = group_exposures(frame, group)
-        frames.append(frame)
+    frames = project_measures(positions, (targets.fillna(0), targets.isna().astype(float)), funds,
+                              positions if holdings is None else holdings, lookthrough=lookthrough, group=group)
     return TargetExposures(*frames)
 
 

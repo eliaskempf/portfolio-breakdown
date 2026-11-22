@@ -4,9 +4,9 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from portfolio_app.funds.etf import FundSnapshot, expand_etfs, matching_fund
-from portfolio_app.exposure.exposures import project_contributions
-from portfolio_app.portfolio.grouping import InstrumentGroup, group_exposures
+from portfolio_app.funds.etf import FundSnapshot, matching_fund
+from portfolio_app.exposure.exposure_analysis import project_measures
+from portfolio_app.portfolio.grouping import InstrumentGroup
 from portfolio_app.performance.performance import cash_balance_only
 
 
@@ -34,18 +34,10 @@ def performance_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *,
     if lookthrough:
         expanded = pd.Series([matching_fund(row, funds) is not None for row in positions.to_dict("records")], index=positions.index)
         known &= ~expanded | grouped
-    frames = []
-    for measure in (positions.cost_basis_reporting.where(known, 0), positions.current_value_reporting.where(known, 0),
-                    (held & ~known).astype(float), (known & positions.get('cost_estimated', pd.Series(False, index=positions.index))).astype(float)):
-        frame = project_contributions(positions, measure)
-        if lookthrough:
-            # Grouped instruments keep their whole value and cost, even when
-            # other funds are expanded. The final group has the same identity.
-            members = frame.source_instrument.isin(group.members) if group else pd.Series(False, index=frame.index)
-            frame = pd.concat([frame.loc[members], expand_etfs(frame.loc[~members], funds, positions if holdings is None else holdings)], ignore_index=True)
-        if group:
-            frame = group_exposures(frame, group)
-        frames.append(frame)
+    measures = (positions.cost_basis_reporting.where(known, 0), positions.current_value_reporting.where(known, 0),
+                (held & ~known).astype(float), (known & positions.get('cost_estimated', pd.Series(False, index=positions.index))).astype(float))
+    frames = project_measures(positions, measures, funds, positions if holdings is None else holdings,
+                              lookthrough=lookthrough, group=group, keep_group_whole=True)
     return PerformanceExposures(*frames)
 
 

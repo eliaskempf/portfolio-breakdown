@@ -417,3 +417,27 @@ def test_repeated_fund_positions_share_only_snapshot_facts(fund, positions, monk
     fund.constituents.loc[0, 'weight'] = 2.
     with pytest.raises(DataError, match='finite fractions'):
         expand_etfs(exposures, [fund], positions)
+
+
+def test_related_measures_share_expansion_and_keep_separate_coverage(fund, positions, monkeypatch):
+    from portfolio_app.exposure.exposure_analysis import project_measures
+    from portfolio_app.exposure.exposures import project_contributions
+    from portfolio_app.funds import etf
+    positions = positions.set_axis([8, 2, 5])
+    positions['source_ordinal'] = ['Invented metadata A', 'Invented metadata B', 'Invented metadata C']
+    measures = [pd.Series(amounts, index=positions.index)
+                for amounts in [(1., -100., float('nan')), (0., 0., float('nan')), (6., float('nan'), 4.)]]
+    expected = [expand_etfs(project_contributions(positions, value), [fund], positions) for value in measures]
+    checked = []
+    def breakdown(snapshot):
+        checked.append(snapshot.fund_id)
+        return fund_breakdown(snapshot)
+    monkeypatch.setattr(etf, 'fund_breakdown', breakdown)
+    actual = project_measures(positions, measures, [fund], positions, lookthrough=True)
+    assert checked == [fund.fund_id]
+    for result, reference in zip(actual, expected):
+        pd.testing.assert_frame_equal(result, reference)
+
+    checked.clear()
+    project_measures(positions, [measures[2]], [fund], positions, lookthrough=True)
+    assert checked == []

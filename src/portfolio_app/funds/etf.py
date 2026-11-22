@@ -220,7 +220,7 @@ def fund_classifications(classifications, funds, holdings):
     return result
 
 
-def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd.DataFrame) -> pd.DataFrame:
+def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd.DataFrame, *, additional_measures=()) -> pd.DataFrame:
     # Retain source order while resolving each matched snapshot once across accounts.
     expanded = []
     by_fund = {}
@@ -251,7 +251,10 @@ def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd
                              instrument_type=interpreted.kind, exposure_kind=interpreted.exposure_kind,
                              source_type="etf_other" if interpreted.residual else "etf_constituent")
             for source, rows in source_rows:
-                rows.append({**source, **component, "value": source["value"] * interpreted.weight})
+                row = {**source, **component, "value": source["value"] * interpreted.weight}
+                for key in additional_measures:
+                    row[key] = source[key] * interpreted.weight
+                rows.append(row)
     columns = list(dict.fromkeys([*exposures.columns, "instrument_type", "exposure_kind"]))
     return pd.DataFrame((row for group in expanded for row in group), columns=columns)
 
