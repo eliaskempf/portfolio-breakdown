@@ -64,11 +64,42 @@ def link_fund_companies(funds, holdings: pd.DataFrame, identities: dict[str, str
     return result
 
 
+def _company_constituents(fund, equity_universe, identity):
+    """Interpret one snapshot for positions with the same equity-coverage evidence."""
+    rows = []
+    for constituent in constituent_records(fund_breakdown(fund)):
+        weight = constituent['weight']
+        if weight == 0:
+            continue
+        linked = bool(text(constituent.get('analysis_asset_id')))
+        residual = constituent['constituent_id'].startswith('etf-other:')
+        # A reviewed link can establish equity membership for a named row.
+        # Only source evidence can establish equity coverage for the residual.
+        interpreted = interpret_constituent(constituent,
+            fallback_kind=fund_kind(fund, equity_declared=equity_universe or (linked and not residual)))
+        if interpreted.kind in NON_EQUITY_KINDS:
+            continue
+        equity = interpreted.kind == 'equity' or interpreted.nested_equity
+        company = ''
+        name = constituent['name']
+        if interpreted.nested_equity:
+            status = 'Unresolved equity fund'
+        elif residual or not equity:
+            status = 'Unresolved equity' if equity else 'Unknown composition'
+        else:
+            status = ''
+            company = constituent.get('analysis_asset_id') or identity(constituent['constituent_id'], constituent['isin'])
+            name = constituent.get('analysis_asset_name') or name
+        rows.append((weight, equity, status, company, name))
+    return rows
+
+
 def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identities=None) -> StockExposure:
     identities = identities or {}
     whole = float(valued.current_value_reporting.sum()) if valued.current_value_reporting.notna().all() else None
     selected = valued.loc[~valued.get('bucket_id', pd.Series('', index=valued.index)).isin(excluded_buckets)]
     known, unknown = [], []
+    components = {}
     stock_total = 0.
     complete = True
     def identity(asset_id, isin):
@@ -83,58 +114,46 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
         declared = position.get('exposure_kind', 'unknown')
         if declared == 'non_equity' or (kind in {'crypto', 'physical', 'cash'} and fund is None):
             continue
-        common = {'Source position': position['position_id'], 'Source instrument': position['name'],
-                  'Bucket': position.get('bucket_id', ''), 'Account': position.get('account', '')}
+        common = position['position_id'], position['name'], position.get('bucket_id', ''), position.get('account', '')
         if pd.isna(value):
-            unknown.append({**common, 'Exposure': position['name'], 'Value': float('nan'), 'Status': 'Missing valuation'})
+            unknown.append((*common, position['name'], float('nan'), 'Missing valuation'))
             complete = False
             continue
         if fund is None:
             if kind == 'equity':
                 stock_total += value
-                known.append({**common, 'Company ID': position.get('analysis_asset_id') or identity(position['id'], position.get('isin', '')),
-                              'Company': position.get('analysis_asset_name') or position['name'], 'Value': value, 'Origin': 'Direct'})
+                company = position.get('analysis_asset_id') or identity(position['id'], position.get('isin', ''))
+                known.append((*common, company, position.get('analysis_asset_name') or position['name'], value, 'Direct'))
             else:
                 if declared == 'equity':
                     stock_total += value
-                unknown.append({**common, 'Exposure': position['name'], 'Value': value,
-                                'Status': 'Unresolved equity' if declared == 'equity' else 'Unknown composition / unsupported instrument'})
+                status = 'Unresolved equity' if declared == 'equity' else 'Unknown composition / unsupported instrument'
+                unknown.append((*common, position['name'], value, status))
                 if declared != 'equity':
                     complete = False
             continue
         equity_universe = fund.equity_fund or declared == 'equity'
-        for constituent in constituent_records(fund_breakdown(fund)):
-            amount = value * constituent['weight']
+        # Provider frames can change between calls, so reuse is local to this calculation.
+        key = id(fund), equity_universe
+        if key not in components:
+            components[key] = _company_constituents(fund, equity_universe, identity)
+        for weight, equity, status, company, name in components[key]:
+            amount = value * weight
             if amount == 0:
                 continue
-            # Company mappings can establish equity membership for named rows;
-            # residual equity coverage still comes only from the source universe.
-            linked = bool(text(constituent.get('analysis_asset_id')))
-            residual = constituent['constituent_id'].startswith('etf-other:')
-            interpreted = interpret_constituent(constituent,
-                fallback_kind=fund_kind(fund, equity_declared=equity_universe or (linked and not residual)))
-            constituent_kind = interpreted.kind
-            if constituent_kind in NON_EQUITY_KINDS:
-                continue
-            if interpreted.nested_equity:
-                stock_total += amount
-                unknown.append({**common, 'Exposure': constituent['name'], 'Value': amount,
-                                'Status': 'Unresolved equity fund'})
-                continue
-            if constituent_kind == 'equity':
+            if equity:
                 stock_total += amount
             else:
                 complete = False
-            if residual or constituent_kind != 'equity':
-                unknown.append({**common, 'Exposure': constituent['name'], 'Value': amount,
-                                'Status': 'Unresolved equity' if constituent_kind == 'equity' else 'Unknown composition'})
+            if status:
+                unknown.append((*common, name, amount, status))
             else:
-                known.append({**common, 'Company ID': constituent.get('analysis_asset_id') or identity(constituent['constituent_id'], constituent['isin']),
-                              'Company': constituent.get('analysis_asset_name') or constituent['name'], 'Value': amount, 'Origin': 'ETF-derived'})
-    sources = pd.DataFrame(known, columns=['Source position', 'Source instrument', 'Bucket', 'Account', 'Company ID', 'Company', 'Value', 'Origin'])
+                known.append((*common, company, name, amount, 'ETF-derived'))
+    common_columns = ['Source position', 'Source instrument', 'Bucket', 'Account']
+    sources = pd.DataFrame(known, columns=[*common_columns, 'Company ID', 'Company', 'Value', 'Origin'])
+    unresolved = pd.DataFrame(unknown, columns=[*common_columns, 'Exposure', 'Value', 'Status'] if unknown else None)
     companies = _company_totals(sources, stock_total if complete else None, whole)
-    return StockExposure(companies, sources,
-                         pd.DataFrame(unknown), stock_total if complete else None, whole)
+    return StockExposure(companies, sources, unresolved, stock_total if complete else None, whole)
 
 
 def _company_totals(sources, stock_total, whole):
