@@ -189,7 +189,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             from portfolio_app.exposure.exposure_presentation import exposure_positions, companion_nodes
             market = measure == 'Market exposure'
             plotted = exposure_positions(valued, exposure_result, future) if market else valued
-            plotted_selection = bucket_positions(plotted, config, bucket)
+            plotted_selection = bucket_positions(plotted, config, bucket) if market else selected
             partial = market and plotted_selection.current_value_reporting.isna().any()
             chart_positions = exposure_positions(valued, exposure_result, future, known_only=True) if partial else plotted
             if partial:
@@ -198,15 +198,18 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 render_exposure_coverage(scoped_rows, plotted)
                 st.caption('Chart and Known exposure show only resolved contributions. Total exposure stays unavailable for affected rows.')
             with chart_column:
-                tree = companion_nodes(sort_allocation_nodes(strategic_tree(chart_positions, config, bucket)), future)
-                if bucket_positions(chart_positions, config, bucket).current_value_reporting.lt(0).any():
+                chart_selection = bucket_positions(chart_positions, config, bucket) if partial else plotted_selection
+                values = chart_selection.current_value_reporting
+                if values.lt(0).any():
                     from portfolio_app.interface.views.exposure.portfolio_exposure_ui import signed_chart
                     amount = 'Exposure' if market else 'Value'
                     table = strategic_summary(chart_positions, config, bucket).rename(columns={'Value': amount})
                     signed_chart(table, 'Category', amount, 'strategic_exposure_chart' if market else 'signed_capital_chart')
-                elif not tree.empty and tree.value.max() > 0:
+                elif values.gt(0).any():
+                    allocation_tree = strategic_tree(chart_positions, config, bucket)
+                    tree = companion_nodes(sort_allocation_nodes(allocation_tree), future)
                     figure = hierarchy_chart(tree, 'Sunburst', preserve_order=True)
-                    reference = strategic_tree(valued, config)
+                    reference = allocation_tree if not market and not bucket else strategic_tree(valued, config)
                     colors = dict(zip(reference.node_id, strategic_colors(reference, config)))
                     position_colors = {json.loads(row.node_id)[2]: colors[row.node_id] for row in reference.itertuples() if row.kind == 'holding'}
                     linked_color = position_colors.get(future.proxy_position_id) if future else None
