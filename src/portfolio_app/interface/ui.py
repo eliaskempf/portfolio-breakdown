@@ -372,6 +372,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                     st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Exposure targets')
                 def open_capital_targets():
                     st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Category targets')
+                def current_analytics():
+                    return st.session_state.get('strategic_view') == 'Analytics' and current_view('Overview')
+
                 def draw_overview():
                     render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_capital_targets=open_capital_targets, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
                                               current_valued=valued, history_holdings=holdings, journal=journal, observation_snapshot=observation_snapshot,
@@ -383,7 +386,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                                                   investment_risk_positions(selected, valued) if actual_active else selected, data_dir, funds, demo=offline_demo, scope=scope, future=scoped_future,
                                                   portfolio_result=overview_exposure if actual_active or sandbox or leverage.liabilities else None,
                                                   portfolio_net_equity=(overview_exposure.net_equity if overview_exposure is not None else
-                                                      valued.loc[valued.shares.gt(0), 'current_value_reporting'].sum(skipna=False)), scoped=scoped))
+                                                      valued.loc[valued.shares.gt(0), 'current_value_reporting'].sum(skipna=False)), scoped=scoped,
+                                                  current_view=current_analytics if view_sources and not supplied_prices else None))
 
                 def current_overview():
                     return st.session_state.get('strategic_view') != 'Analytics' and current_view('Overview')

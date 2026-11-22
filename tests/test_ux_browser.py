@@ -336,10 +336,20 @@ def ux_page(tmp_path, request):
             path = tmp_path / filename
             path.write_text(path.read_text().replace('SYNTH-A', 'VVSM.DE'))
     setup = ''
-    if getattr(request, 'param', '') == 'count_app_runs':
+    if getattr(request, 'param', '') in ('count_app_runs', 'company_details'):
         setup = """from pathlib import Path
 with Path(__file__).with_name('full-runs.log').open('a') as counter:
     print('run', file=counter)
+"""
+    if getattr(request, 'param', '') == 'company_details':
+        setup += """from portfolio_app.interface.views.analytics import portfolio_analytics_ui as analytics
+if not hasattr(analytics, '_original_company_analysis'):
+    analytics._original_company_analysis = analytics.load_company_analysis
+    def count_company_analysis(*args, **kwargs):
+        with Path(__file__).with_name('company-runs.log').open('a') as counter:
+            print('analysis', file=counter)
+        return analytics._original_company_analysis(*args, **kwargs)
+    analytics.load_company_analysis = count_company_analysis
 """
     if getattr(request, 'param', '') == 'pending_fundamentals':
         from dataclasses import asdict

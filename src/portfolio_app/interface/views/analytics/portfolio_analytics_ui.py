@@ -1,10 +1,13 @@
 """Analytics within Overview's existing category navigation and visual style."""
-from portfolio_app.interface.shared.chart_hover import chart_hover
+from functools import cache
 
-from portfolio_app.interface.shared.currency_display import money, reporting_currency
 import pandas as pd
 import streamlit as st
+
+from portfolio_app.interface.shared.chart_hover import chart_hover
 from portfolio_app.interface.shared.charts import chart_config
+from portfolio_app.interface.shared.currency_display import money, reporting_currency
+from portfolio_app.interface.shared.detail_panels import render_detail_panel
 
 from portfolio_app.analytics.analytics import snapshot_analytics
 from portfolio_app.analytics.analytics_service import load_risk
@@ -22,7 +25,7 @@ def coverage(metric, universe):
             if metric.eligible_value > 0 else f'No valued {universe}')
 
 
-def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Portfolio', future=None, portfolio_result=None, scoped=False, portfolio_net_equity=None):
+def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Portfolio', future=None, portfolio_result=None, scoped=False, portfolio_net_equity=None, current_view=None):
     key = context_key(data_dir, demo) + '_overview'
     with st.container(key='tour_risk'):
         with st.container(key='tour_risk_controls'):
@@ -96,40 +99,50 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
         st.metric('Trailing cash yield', display_value(Metric(income.value, 'fraction'), 'distribution_yield'),
                   help='Trailing stock dividends and fund cash distributions for covered holdings. Not a forecast or income received; accumulating share classes pay no cash distributions.')
         st.caption(coverage(income, 'equity and fund'))
-    with st.expander('Valuation, income & fee details'):
-        names = {'trailing_pe': 'Trailing P/E · direct stocks', 'forward_pe': 'Forward P/E · direct stocks',
-                 'fee': 'Weighted annual fee · covered funds', 'fee_reporting': 'Known annual fund costs',
-                 'distribution_yield': 'Trailing cash yield', 'distribution_yield_reporting': 'Annualized trailing distributions'}
-        rows = []
-        for name, metric in summary.metrics.items():
-            unit = reporting_currency() if name.endswith('_reporting') else 'ratio' if name.endswith('_pe') else 'fraction'
-            rows.append({'Metric': names[name], 'Value': display_value(Metric(metric.value, unit), name),
-                         'Covered value': metric.covered_value, 'Eligible value': metric.eligible_value,
-                         'Missing / nonmeaningful positions': metric.excluded_count})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch')
-        st.caption('Missing metrics stay unavailable. Loss-making equities are excluded from P/E. Fees are already reflected in prices; '
-                   'trailing distributions are not a forecast. Buy-in performance is available in the Performance view.')
-    with st.expander('Fundamental sources & data quality'):
-        render_sources(snapshots)
+    render_detail_panel('Valuation, income & fee details', key + '_valuation_details',
+                        lambda: render_valuation_details(summary), current=current_view)
+    render_detail_panel('Fundamental sources & data quality', key + '_fundamental_sources',
+                        lambda: render_sources(snapshots), current=current_view)
     st.markdown('**Concentration**')
     columns = st.columns(3)
     columns[0].metric('Largest holding', '—' if summary.largest_weight is None else f'{summary.largest_weight:.1%}', help='Largest instrument weight in the selected portfolio; repeated instrument IDs are combined.')
     columns[1].metric('Top five', '—' if summary.top_five_weight is None else f'{summary.top_five_weight:.1%}', help='Combined weight of the five largest instruments in this selection.')
     columns[2].metric('Effective holdings', '—' if summary.effective_holdings is None else f'{summary.effective_holdings:.1f}',
                       help='1 / sum of squared value weights. Repeated instrument IDs are combined; fund wrappers count as holdings here.')
-    with st.expander('Underlying company exposure'):
-        render_company_exposure(selected, snapshots, funds, data_dir)
+
+    @cache
+    def company_details():
+        prepared = load_company_analysis(selected, snapshots, funds, data_dir)
+        # Only these tables and notes are displayed on this mounted view.
+        return prepared.exposure.companies.head(10).copy(), prepared.exposure.unresolved, prepared.proxy_notes
+
+    render_detail_panel('Underlying company exposure', key + '_company_exposure',
+                        lambda: render_company_exposure(company_details), current=current_view)
 
 
-def render_company_exposure(valued, snapshots, funds, data_dir):
+def render_valuation_details(summary):
+    names = {'trailing_pe': 'Trailing P/E · direct stocks', 'forward_pe': 'Forward P/E · direct stocks',
+             'fee': 'Weighted annual fee · covered funds', 'fee_reporting': 'Known annual fund costs',
+             'distribution_yield': 'Trailing cash yield', 'distribution_yield_reporting': 'Annualized trailing distributions'}
+    rows = []
+    for name, metric in summary.metrics.items():
+        unit = reporting_currency() if name.endswith('_reporting') else 'ratio' if name.endswith('_pe') else 'fraction'
+        rows.append({'Metric': names[name], 'Value': display_value(Metric(metric.value, unit), name),
+                     'Covered value': metric.covered_value, 'Eligible value': metric.eligible_value,
+                     'Missing / nonmeaningful positions': metric.excluded_count})
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch')
+    st.caption('Missing metrics stay unavailable. Loss-making equities are excluded from P/E. Fees are already reflected in prices; '
+               'trailing distributions are not a forecast. Buy-in performance is available in the Performance view.')
+
+
+def render_company_exposure(load_details):
     try:
-        prepared = load_company_analysis(valued, snapshots, funds, data_dir)
-        company = prepared.exposure
-        st.dataframe(company.companies.head(10), hide_index=True, width='stretch')
-        if not company.unresolved.empty:
+        companies, unresolved, proxy_notes = load_details()
+        st.dataframe(companies, hide_index=True, width='stretch')
+        if not unresolved.empty:
             st.caption('Unresolved look-through exposure is excluded from the named-company ranking.')
-            st.dataframe(company.unresolved, hide_index=True, width='stretch')
-        for note in prepared.proxy_notes:
+            st.dataframe(unresolved, hide_index=True, width='stretch')
+        for note in proxy_notes:
             st.caption(note)
     except DataError as exc:
         st.error(str(exc))

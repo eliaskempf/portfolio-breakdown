@@ -1,12 +1,13 @@
 """Optional company view, separate from strategic allocation and tradable holdings."""
 
 from portfolio_app.interface.shared.currency_display import money
+from portfolio_app.interface.shared.detail_panels import render_detail_panel
 import streamlit as st
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.exposure.stock_exposure import load_company_identities, stock_exposure
 
 
-def render_stock_exposure(valued, funds, data_dir, *, query='', allocation=None):
+def render_stock_exposure(valued, funds, data_dir, *, query='', allocation=None, current_view=None):
     from portfolio_app.portfolio.strategic import category_labels
     labels = category_labels(allocation) if allocation else {}
     buckets = sorted(set(valued.get('bucket_id', [])) - {''})
@@ -31,9 +32,9 @@ def render_stock_exposure(valued, funds, data_dir, *, query='', allocation=None)
     else:
         st.caption(f'Selected stock universe: {money(result.stock_value)}, including unresolved equity residuals. Portfolio percentages use the selected source scope before these additional exclusions.')
     if not result.unresolved.empty:
-        with st.expander('Unresolved exposure and fund residuals'):
-            st.dataframe(result.unresolved, hide_index=True, width='stretch')
-    with st.expander('Company exposure by source'):
-        st.dataframe(result.sources, hide_index=True, width='stretch')
+        render_detail_panel('Unresolved exposure and fund residuals', 'company_unresolved',
+                            lambda: st.dataframe(result.unresolved, hide_index=True, width='stretch'), current=current_view)
+    render_detail_panel('Company exposure by source', 'company_sources',
+                        lambda: st.dataframe(result.sources, hide_index=True, width='stretch'), current=current_view)
     with st.expander('Company coverage & identity'):
         st.write('Instrument types and ETF snapshot composition determine coverage. Partial snapshots keep their actual weights. Different share classes and ADRs remain distinct unless explicitly mapped to a company.')

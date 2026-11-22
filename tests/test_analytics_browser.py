@@ -103,3 +103,36 @@ def test_fundamental_refresh_updates_open_position_dialog_without_rebuilding_par
     playwright.expect(dialog).to_have_count(0)
     playwright.expect(page.get_by_role('searchbox', name='Filter positions')).to_have_value('Regional')
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
+
+
+@pytest.mark.parametrize('ux_page', ['company_details'], indirect=True)
+def test_company_detail_prepares_once_on_open_and_reads_external_changes(ux_page):
+    page, directory = ux_page
+    page.get_by_role('radio', name='Analytics', exact=True).click()
+    label = page.get_by_text('Underlying company exposure', exact=True)
+    label.wait_for()
+    settle(page)
+    section = page.get_by_test_id('stExpander').filter(has=label)
+    analysis = directory / 'company-runs.log'
+    full_runs = directory / 'full-runs.log'
+    before = full_runs.read_text()
+    assert not analysis.exists()
+    playwright.expect(section.get_by_test_id('stDataFrame')).to_have_count(0)
+
+    for _ in range(2):
+        label.click()
+        row = section.locator('canvas tr').filter(has_text='Invented Satellite')
+        playwright.expect(row.locator('[role=gridcell]:text-is("80")').first).to_be_attached()
+        label.click()
+        playwright.expect(section.get_by_test_id('stDataFrame')).to_have_count(0)
+    assert analysis.read_text().splitlines() == ['analysis']
+    assert full_runs.read_text() == before
+
+    holdings = directory / 'holdings.csv'
+    holdings.write_text(holdings.read_text().replace('Invented Satellite,SYNTH-C,1', 'Revised synthetic company,SYNTH-C,2'))
+    label.click()
+    revised = section.locator('canvas tr').filter(has_text='Revised synthetic company')
+    playwright.expect(revised.locator('[role=gridcell]:text-is("160")').first).to_be_attached()
+    assert analysis.read_text().splitlines() == ['analysis', 'analysis']
+    assert full_runs.read_text() != before
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

@@ -253,7 +253,15 @@ def exercise_fundamentals(evaluate, trial, variant):
                 if (drawn === null) drawn = elapsed;
             }
             if (value === '20.00' && !running()) {
+                const detail = [...d.querySelectorAll('[data-testid=stExpander]')].find(section =>
+                    section.querySelector('summary')?.textContent.includes('Underlying company exposure'));
+                if (!detail) {
+                    if (elapsed > 60000) w.fundamentalVisit = {error:'Missing company detail'};
+                    else w.requestAnimationFrame(frame);
+                    return;
+                }
                 w.fundamentalVisit = {metric_ms:drawn, refreshed_ms:elapsed, values:w.fundamentalValues,
+                    closed_company_grids:detail.querySelectorAll('[data-testid=stDataFrame]').length,
                     start_epoch_ms:epoch, end_epoch_ms:epoch+elapsed};
             } else if (elapsed > 60000 || exception()) w.fundamentalVisit = {error:'Fundamentals did not settle'};
             else w.requestAnimationFrame(frame);
@@ -274,6 +282,8 @@ def exercise_fundamentals(evaluate, trial, variant):
     expected = ['10.00', '20.00'] if variant == 'candidate' else ['20.00']
     if result['values'] != expected:
         raise AssertionError(f"Unexpected displayed fundamentals: {result['values']}")
+    if variant == 'candidate' and result['closed_company_grids']:
+        raise AssertionError('Closed Analytics detail mounted company grids')
     return result
 
 

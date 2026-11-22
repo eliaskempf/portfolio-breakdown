@@ -314,7 +314,10 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     display_exposures = effective_exposures if unified or not missing else complete_exposures(effective_exposures, selected)
     with results_area:
         if mode == 'Companies':
-            render_stock_exposure(selected, expanded_funds, data_dir, query=query, allocation=allocation)
+            def current_companies():
+                return st.session_state.get('exposure_view') == 'Companies' and current_view()
+            render_stock_exposure(selected, expanded_funds, data_dir, query=query, allocation=allocation,
+                                  current_view=current_companies if current_view else None)
         elif mode == 'Geography':
             with st.container(key='tour_geography'):
                 render_geography(display_exposures, load_geography(), contribution_key=contribution_key, complete=complete, query=query,
