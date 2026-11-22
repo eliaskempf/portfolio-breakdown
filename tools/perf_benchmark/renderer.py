@@ -24,11 +24,18 @@ def wait(read, timeout=60):
     raise TimeoutError('Timed out waiting for the benchmark window')
 
 
-def interact(evaluate, command):
+def event_count(trial):
+    # Both the native window and external Chromium driver see this trial's server log.
+    return (trial / 'server.jsonl').read_bytes().count(b'\n')
+
+
+def interact(evaluate, command, control):
+    first_event = event_count(control)
+    dispatched = time.monotonic_ns() / 1e6
     evaluate('(() => {' + CONTEXT + 'const label=' + json.dumps(command) + """;
     const control = [...d.querySelectorAll('[role=radio],button')].find(e => visible(e) && e.textContent.trim() === label);
     if (!control) throw Error('Missing control ' + label);
-    const start = w.performance.now(), epoch = w.performance.timeOrigin + start;
+    const start = w.performance.now();
     const previous = history()?.data[0]?.x[0];
     w.benchmarkResult = null;
     control.click();
@@ -41,7 +48,7 @@ def interact(evaluate, command):
         const settled = target && !running() && (label !== 'Performance' ||
             visible(d.querySelector('.st-key-tour_performance .js-plotly-plot .main-svg')));
         confirmations = settled ? confirmations + 1 : 0;
-        if (confirmations >= 2) w.benchmarkResult = {chart_ms:first, settled_ms:elapsed, click_epoch_ms:epoch};
+        if (confirmations >= 2) w.benchmarkResult = {chart_ms:first, settled_ms:elapsed};
         else if (exception() || elapsed > 30000) {
             const active = [...d.querySelectorAll('[role=radio][aria-checked=true]')].map(e => e.textContent.trim());
             w.benchmarkResult = {error:'View failed to settle: ' + JSON.stringify({
@@ -55,6 +62,7 @@ def interact(evaluate, command):
     result = wait(lambda: evaluate('(() => {' + CONTEXT + 'return w.benchmarkResult;})()'))
     if 'error' in result:
         raise RuntimeError(result['error'])
+    result.update(event_range=[first_event, event_count(control)], dispatch_ms=dispatched)
     return result
 
 
@@ -93,18 +101,18 @@ def exercise(evaluate, control, scenario, *, persistent):
         initial = format_money(quote['initial_total'], quote['currency'])
         if wait(lambda: evaluate(read_total)) != initial:
             raise AssertionError(f'Expected cached portfolio value {initial}')
-        background['start_epoch_ms'] = time.time_ns() / 1e6
+        background['start_event'] = event_count(control)
         release_quote(0)
-    first = interact(evaluate, 'Performance')
+    first = interact(evaluate, 'Performance', control)
     wait(lambda: (control / 'pending').exists())
     if scenario == 'quote-pending':
-        interact(evaluate, 'Allocation')
+        interact(evaluate, 'Allocation', control)
         displayed = wait(lambda: evaluate(read_total))
         if displayed != initial:
             raise AssertionError(f'Navigation displayed {displayed} while the complete cached total was {initial}')
         release_quote(2)
-        interact(evaluate, 'Performance')
-    period = interact(evaluate, '3M')
+        interact(evaluate, 'Performance', control)
+    period = interact(evaluate, '3M', control)
     if (control / 'completed').exists():
         raise AssertionError('The date range must be usable during the blocked download')
     evaluate('(() => {' + CONTEXT + """
@@ -143,7 +151,7 @@ def exercise(evaluate, control, scenario, *, persistent):
         background['badge_before'] = read_badge()
         expected = 'failed' if scenario.endswith('-failed') else 'checked'
         status_path = control.parent / 'synthetic' / '.cache' / 'etf-refresh' / 'status.json'
-        background['start_epoch_ms'] = time.time_ns() / 1e6
+        background['start_event'] = event_count(control)
         if opened:
             bell_action('bell.click(); return true;')
             wait(lambda: bell_action('return d.body.innerText.includes("Discovering and updating ETF holdings");'))
@@ -194,21 +202,21 @@ def exercise(evaluate, control, scenario, *, persistent):
     if scenario != 'changed' and (refresh['fades'] or refresh['replaced']):
         raise AssertionError(f'Unchanged refresh disturbed chart {refresh}')
     if scenario.startswith('etf-'):
-        background['end_epoch_ms'] = time.time_ns() / 1e6
+        background['end_event'] = event_count(control)
     series = evaluate('(() => {' + CONTEXT + 'return JSON.stringify(history().data.map(t => [t.name,t.x,Array.from(t.y),t.customdata]));})()')
     digest = hashlib.sha256(series.encode()).hexdigest()
-    interact(evaluate, '1Y')
+    interact(evaluate, '1Y', control)
     warm = []
     for index in range(5):
-        allocation = interact(evaluate, 'Allocation')
+        allocation = interact(evaluate, 'Allocation', control)
         if index == 0 and scenario.endswith('-failed'):
             background['post_notice_navigation'] = allocation
-        warm.append(interact(evaluate, 'Performance'))
-    interact(evaluate, 'Allocation')  # Restore saved view for the next real process.
+        warm.append(interact(evaluate, 'Performance', control))
+    interact(evaluate, 'Allocation', control)  # Restore saved view for the next real process.
     if scenario == 'quote-pending':
         if wait(lambda: evaluate(read_total)) != initial:
             raise AssertionError('Cached value changed during navigation')
-        background['end_epoch_ms'] = time.time_ns() / 1e6
+        background['end_event'] = event_count(control)
         for label in ('Positions', 'Overview'):
             tab = ('(() => {' + CONTEXT + 'const label = ' + json.dumps(label) +
                    '; const tab = [...d.querySelectorAll("[role=tab]")].find(t => t.textContent.trim() === label);')
@@ -220,7 +228,7 @@ def exercise(evaluate, control, scenario, *, persistent):
             raise AssertionError('Switching tabs exposed a partially updated portfolio')
         if not saved_quotes_match('initial'):
             raise AssertionError('A relaunch would load a partial quote refresh')
-        background['publication_start_ms'] = time.time_ns() / 1e6
+        background['publication_start_event'] = event_count(control)
         release_quote(1)
         corrected = format_money(quote['corrected_total'], quote['currency'])
         wait(lambda: evaluate(read_total) == corrected and evaluate('(() => {' + CONTEXT + 'return !running();})()'))
@@ -235,10 +243,11 @@ def exercise_fundamentals(evaluate, trial, variant):
     def read(js):
         return evaluate('(() => {' + CONTEXT + js + '})()')
 
+    first_event = event_count(trial)
     read("""
         const button = [...d.querySelectorAll('[role=radio],button')].find(e =>
             visible(e) && e.textContent.trim() === 'Analytics');
-        const start = w.performance.now(), epoch = w.performance.timeOrigin + start;
+        const start = w.performance.now();
         w.fundamentalVisit = null;
         w.fundamentalValues = [];
         button.click();
@@ -261,8 +270,7 @@ def exercise_fundamentals(evaluate, trial, variant):
                     return;
                 }
                 w.fundamentalVisit = {metric_ms:drawn, refreshed_ms:elapsed, values:w.fundamentalValues,
-                    closed_company_grids:detail.querySelectorAll('[data-testid=stDataFrame]').length,
-                    start_epoch_ms:epoch, end_epoch_ms:epoch+elapsed};
+                    closed_company_grids:detail.querySelectorAll('[data-testid=stDataFrame]').length};
             } else if (elapsed > 60000 || exception()) w.fundamentalVisit = {error:'Fundamentals did not settle'};
             else w.requestAnimationFrame(frame);
         }
@@ -274,9 +282,12 @@ def exercise_fundamentals(evaluate, trial, variant):
             wait(lambda: read("return w.fundamentalValues?.includes('10.00');"))
             # A foreground rerender on each completed listing would publish a partial multiple.
             time.sleep(.7)
+            if read('return w.fundamentalValues;') != ['10.00']:
+                raise AssertionError('Analytics changed the cached multiple before the last listing completed')
         finally:
             (trial / 'release-fundamentals').touch()
     result = wait(lambda: read('return w.fundamentalVisit;'), timeout=65)
+    result['event_range'] = [first_event, event_count(trial)]
     if 'error' in result:
         raise RuntimeError(result['error'])
     expected = ['10.00', '20.00'] if variant == 'candidate' else ['20.00']
@@ -365,12 +376,13 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False):
         return result
 
     def detail_visit():
+        first_event = event_count(trial)
         read("""
             const row = table().querySelector('tbody tr[data-position-id]');
             const toggle = row.querySelector('[data-preview-toggle]');
             if (toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
             w.detailVisit = null;
-            const start = w.performance.now(), epoch = w.performance.timeOrigin + start;
+            const start = w.performance.now();
             row.querySelector('.source-details').click();
             let drawn = null;
             function frame() {
@@ -383,7 +395,7 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False):
                 const populated = visible(sources) && sources.tBodies[0]?.rows.length;
                 if (populated && drawn === null) drawn = elapsed;
                 if (populated && !running()) {
-                    w.detailVisit = {sources_ms:drawn, start_epoch_ms:epoch, sample:sources.tBodies[0].innerText};
+                    w.detailVisit = {sources_ms:drawn, sample:sources.tBodies[0].innerText};
                 } else if (elapsed > 60000 || exception()) w.detailVisit = {error:'Asset sources did not settle'};
                 else w.requestAnimationFrame(frame);
             }
@@ -396,7 +408,7 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False):
         wait(lambda: read("""return !visible(d.querySelector('[role="dialog"]')) && !!table() && !running();"""))
         time.sleep(.35)
         wait(lambda: read('return !!table() && !running() && !exception();'))
-        visit['end_epoch_ms'] = time.time_ns() / 1e6
+        visit['event_range'] = [first_event, event_count(trial)]
         return visit
 
     def ready():

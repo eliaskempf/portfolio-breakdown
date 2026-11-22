@@ -799,7 +799,10 @@ times. To run locally, pass `--experiment exposure --profile etf-heavy` and
 
 The history and navigation job summaries show median and nearest-rank p95 interaction times.
 The JSON artifact retains every sample, including the click-to-first-drawn-chart
-and settled-view measurements, server calculation time and first chart enqueue.
+and settled-view measurements, server calculation time and time from driver
+dispatch to the first server chart enqueue. The renderer times its own frames.
+Server work is counted between ordered event-log boundaries for each action.
+The driver and server use the host monotonic clock for the enqueue measurement.
 Chart paint is sampled at an animation frame with a populated Plotly trace.
 Launch time includes readiness polling and browser startup in browser mode.
 Where the native shell exposes its animation completion, the artifact also

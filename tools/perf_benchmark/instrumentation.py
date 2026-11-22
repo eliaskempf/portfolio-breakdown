@@ -4,14 +4,17 @@ from functools import wraps
 import json
 import os
 import time
+from threading import Lock
 
 
 def observe_server(trial):
     from portfolio_app import application
 
+    record_lock = Lock()
+
     def record(event, **fields):
-        with (trial / 'server.jsonl').open('a', encoding='utf-8') as out:
-            print(json.dumps({'event':event, 'epoch_ms':time.time_ns() / 1e6, **fields}), file=out)
+        with record_lock, (trial / 'server.jsonl').open('a', encoding='utf-8') as out:
+            print(json.dumps({'event':event, 'monotonic_ms':time.monotonic_ns() / 1e6, **fields}), file=out)
 
     def counted(function, event):
         @wraps(function)

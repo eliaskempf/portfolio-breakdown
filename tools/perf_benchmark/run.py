@@ -1,5 +1,7 @@
 """Paired cold and reopened desktop/browser measurements using invented portfolios."""
 import argparse
+from collections import Counter
+import csv
 import hashlib
 import json
 import os
@@ -66,50 +68,58 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
                 proc.wait(timeout=20)
     report['launch_ms'] = (report.pop('ready_at') - started) * 1000
     events = [json.loads(line) for line in (trial / 'server.jsonl').read_text().splitlines()]
+    def interval(measurement):
+        start, end = measurement.pop('event_range')
+        return events[start:end]
+
     if scenario == 'exposure':
         if visit := report['fundamentals']:
-            start, end = visit.pop('start_epoch_ms'), visit.pop('end_epoch_ms')
-            fetched = [e['ticker'] for e in events if e['event'] == 'fundamental_fetched' and start <= e['epoch_ms'] <= end]
-            if len(fetched) != 48 or len(set(fetched)) != 48:
-                raise AssertionError('Each synthetic listing must be fetched exactly once')
-            visit['requests'] = len(fetched)
-            visit['valuations'] = sum(e['event'] == 'portfolio_valued' and start <= e['epoch_ms'] <= end for e in events)
+            start, end = visit.pop('event_range')
+            during = events[start:end]
+            with (workspace / 'holdings.csv').open(newline='', encoding='utf-8') as source:
+                expected = {row['ticker'] for row in csv.DictReader(source)}
+            fetched = Counter(e['ticker'] for e in during if e['event'] == 'fundamental_fetched')
+            outside = [e['ticker'] for e in [*events[:start], *events[end:]] if e['event'] == 'fundamental_fetched']
+            if fetched != Counter(expected) or outside:
+                raise AssertionError(f'Fundamental requests differ: missing={sorted(expected - fetched.keys())}, '
+                                     f'unexpected={sorted(fetched.keys() - expected)}, '
+                                     f'repeated={[key for key, count in fetched.items() if count > 1]}, outside={outside}')
+            visit['requests'] = fetched.total()
+            visit['valuations'] = sum(e['event'] == 'portfolio_valued' for e in during)
             if variant == 'candidate' and visit['valuations'] > 2:
                 raise AssertionError('Partial fundamentals repeatedly revalued the mounted workspace')
         for visit in report['details']:
-            begin, end = visit.pop('start_epoch_ms'), visit.pop('end_epoch_ms')
-            visit['valuations'] = sum(e['event'] == 'portfolio_valued' and begin <= e['epoch_ms'] <= end for e in events)
+            visit['valuations'] = sum(e['event'] == 'portfolio_valued' for e in interval(visit))
             if variant == 'candidate' and visit['valuations']:
                 raise AssertionError(f"Read-only Exposure detail revalued the portfolio {visit['valuations']} times")
         return report
-    if 'start_epoch_ms' in report:
-        start, end = report.pop('start_epoch_ms'), report.pop('end_epoch_ms')
+    if 'start_event' in report:
+        start, end = report.pop('start_event'), report.pop('end_event')
         field = {'quote-pending': 'pending_quote_valuations', 'etf-open-failed': 'open_panel_valuations'}.get(
             scenario, 'idle_valuations')
-        report[field] = sum(e['event'] == 'portfolio_valued' and start <= e['epoch_ms'] <= end for e in events)
+        report[field] = sum(e['event'] == 'portfolio_valued' for e in events[start:end])
         if report[field]:
             raise AssertionError(f'{scenario} revalued the portfolio {report[field]} times before expected')
-    if 'publication_start_ms' in report:
-        start = report.pop('publication_start_ms')
-        report['publication_valuations'] = sum(e['event'] == 'portfolio_valued' and start <= e['epoch_ms'] for e in events)
+    if 'publication_start_event' in report:
+        start = report.pop('publication_start_event')
+        report['publication_valuations'] = sum(e['event'] == 'portfolio_valued' for e in events[start:])
         if report['publication_valuations'] != 1:
             raise AssertionError(f"Completed quote batch triggered {report['publication_valuations']} valuations")
     report['history_calls'] = sum(e['event'] == 'history_calculated' for e in events)
-    first = report['first']
-    report['first_chart_disk_hits'] = sum(e['event'] == 'disk_hit' and e['chart'] and
-        first['click_epoch_ms'] <= e['epoch_ms'] <= first['click_epoch_ms'] + first['settled_ms'] for e in events)
     interactions = [report['first'], report['range_3m'], *report['warm']]
     if 'post_notice_navigation' in report:
         interactions.append(report['post_notice_navigation'])
     for interaction in interactions:
-        begin = interaction.pop('click_epoch_ms')
-        specific = [e for e in events if begin <= e['epoch_ms'] <= begin + interaction['settled_ms']]
+        dispatched = interaction.pop('dispatch_ms')
+        specific = interval(interaction)
+        if interaction is report['first']:
+            report['first_chart_disk_hits'] = sum(e['event'] == 'disk_hit' and e['chart'] for e in specific)
         interaction['history_compute_ms'] = sum(e['duration_ms'] for e in specific if e['event']=='history_calculated')
         interaction['valuations'] = sum(e['event'] == 'portfolio_valued' for e in specific)
         interaction['journal_fingerprints'] = sum(e['event'] == 'journal_fingerprinted' for e in specific)
         sends = [e for e in specific if e['event']=='chart_enqueued']
         if sends:
-            interaction['first_chart_enqueue_ms'] = sends[0]['epoch_ms'] - begin
+            interaction['first_chart_enqueue_ms'] = sends[0]['monotonic_ms'] - dispatched
     post_notice = report.get('post_notice_navigation')
     if post_notice and post_notice['valuations']:
         raise AssertionError(f'Navigating after the ETF notice repeated valuation: {post_notice}')
