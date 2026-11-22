@@ -1,9 +1,11 @@
-"""Repeatable two-year portfolio. No tickers, real accounts or provider access."""
+"""Repeatable two-year portfolio. All identities and prices are invented."""
 import csv
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
+
+import yaml
 
 from portfolio_app.ledger.account_journal import Journal, save_journal
 from portfolio_app.ledger.history_commands import book_for, reconstruction_candidate
@@ -13,22 +15,59 @@ from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.workspace.display_preferences import save_overview_view
 
 
-def create_workspace(directory: Path):
+FUND_SIZES = (50, 500, 1500) * 8
+DIRECT_EQUITIES = 24
+
+
+def company(index):
+    return f'company-{index}', f'Invented company {index}', f'ZZC-{index}', f'ZZ{index:010d}'
+
+
+def holdings_and_funds(directory, profile, today):
+    if profile == 'small':
+        for index in range(12):
+            yield f'invented-{index}', f'Invented holding {index}', '', '', 'other', 'non_equity'
+        return
+    if profile != 'etf-heavy':
+        raise ValueError(f'Unknown portfolio profile {profile!r}')
     directory.mkdir()
-    today = date.today()
+    for index in range(DIRECT_EQUITIES):
+        yield *company(index), 'equity', 'equity'
+    for index, size in enumerate(FUND_SIZES):
+        fund_id = f'fund-{index}'
+        name, ticker, isin = f'Invented fund {index}', f'ZZF-{index}', f'ZZF{index:09d}'
+        manifest = dict(fund_id=fund_id, name=name, isin=isin, tickers=[ticker], as_of=today,
+                        source='Invented benchmark data', holdings_file=f'{fund_id}.csv', equity_fund=True)
+        (directory / f'{fund_id}.yaml').write_text(yaml.safe_dump(manifest), encoding='utf-8')
+        with (directory / manifest['holdings_file']).open('w', newline='', encoding='utf-8') as handle:
+            writer = csv.writer(handle)
+            writer.writerow(['constituent_id', 'name', 'ticker', 'isin', 'weight', 'instrument_type'])
+            # Half the constituents share identities across funds, including directly held equities.
+            # The narrow snapshots cover 90%, exercising the residual allocation as well.
+            coverage = .9 if size == 50 else 1.
+            for row in range(size):
+                identity = row if row < size // 2 else (index + 1) * max(FUND_SIZES) + row
+                weight = coverage * (size - row) / (size * (size + 1) / 2)
+                writer.writerow([*company(identity), weight, 'equity'])
+        yield fund_id, name, ticker, isin, 'etf', 'equity'
+
+
+def create_workspace(directory: Path, profile='small', *, today=None):
+    directory.mkdir()
+    today = today or date.today()
     start = today - timedelta(days=730)
     def day(offset):
         return (start + timedelta(days=offset)).isoformat()
 
-    columns = ('position_key id name ticker shares acquisition_price acquisition_currency bucket_id '
+    columns = ('position_key id name ticker isin shares acquisition_price acquisition_currency bucket_id '
                'instrument_type exposure_kind quantity_unit manual_price manual_price_currency manual_price_date')
     with (directory / 'holdings.csv').open('w', newline='', encoding='utf-8') as handle:
         writer = csv.writer(handle)
         writer.writerow(columns.split())
-        for index in range(12):
-            identity = f'invented-{index}'
-            writer.writerow([identity, identity, f'Invented holding {index}', '', 25, 100, 'EUR',
-                f'group{index % 3}', 'other', 'non_equity', 'units', 110 + index, 'EUR', today.isoformat()])
+        for index, (identity, name, ticker, isin, kind, exposure) in enumerate(
+                holdings_and_funds(directory / 'etfs', profile, today)):
+            writer.writerow([identity, identity, name, ticker, isin, 25, 100, 'EUR', f'group{index % 3}',
+                             kind, exposure, 'units', 110 + index, 'EUR', today.isoformat()])
     (directory / 'allocation.yaml').write_text('version: 2\nbuckets:\n' + ''.join(
         f'- id: group{i}\n  name: Invented group {i}\n  target: {target}\n'
         for i, target in enumerate((.4, .3, .3))), encoding='utf-8')

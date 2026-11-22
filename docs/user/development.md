@@ -750,6 +750,16 @@ switches. The second pair reverses the mode order. A cold launch here means
 an empty application cache and a fresh process. The operating system can still
 have executable or filesystem pages in memory.
 
+Select the input portfolio with the workflow's profile input or the driver's
+`--profile` option. Both profiles use two years of invented EUR prices and 25
+monthly buys per position. The small control has 12 positions and no ETFs.
+The ETF-heavy profile has 24 direct equities and 24 held ETFs, with eight
+snapshots each of 50, 500 and 1,500 constituents. The 16,400 constituent rows
+include shared companies, direct/indirect overlap and eight partial snapshots.
+This measures Overview navigation with fund data present. Timing interaction
+with the Exposure view, longer ledgers and multi-currency histories requires
+separate workloads.
+
 The job summary shows median and nearest-rank p95 interaction times.
 The JSON artifact retains every sample, including the click-to-first-drawn-chart
 and settled-view measurements, server calculation time and first chart enqueue.

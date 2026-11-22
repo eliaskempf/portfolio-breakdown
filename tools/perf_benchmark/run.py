@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from datetime import date
 import platform
 import socket
 from math import ceil
@@ -78,10 +79,11 @@ def benchmark(executable, workspace, trial, variant, surface, scenario):
     return report
 
 
-def run(executable, destination, surfaces, pairs, experiment='history'):
+def run(executable, destination, surfaces, pairs, experiment='history', profile='small'):
     destination.mkdir(parents=True, exist_ok=False)
     variants = ('navigation-reference', 'navigation') if experiment == 'navigation' else ('baseline', 'persistent')
-    result = dict(experiment=experiment, platform=sys.platform, cpu=platform.machine(), revision=os.environ.get('GITHUB_SHA'),
+    as_of = date.today()
+    result = dict(profile=profile, as_of=as_of.isoformat(), experiment=experiment, platform=sys.platform, cpu=platform.machine(), revision=os.environ.get('GITHUB_SHA'),
         runner_image=os.environ.get('ImageVersion'), python=platform.python_version(), runs=[])
     binary = hashlib.sha256(executable.read_bytes()).hexdigest()
     result['binary_sha256'] = binary
@@ -92,7 +94,7 @@ def run(executable, destination, surfaces, pairs, experiment='history'):
             for variant in order:
                 with TemporaryDirectory(prefix='portfolio-benchmark-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
-                    create_workspace(workspace)
+                    create_workspace(workspace, profile, today=as_of)
                     for scenario, launch in [('unchanged','cold'), ('changed','reopen')]:
                         trial = Path(tmp) / launch
                         metrics = benchmark(executable, workspace, trial, variant, surface, scenario)
@@ -119,7 +121,7 @@ def run(executable, destination, surfaces, pairs, experiment='history'):
                 warm = sorted(w['chart_ms'] for r in runs for w in r['warm'])
                 rows.append(f"| {surface} | {launch} | {variant} | {median(r['launch_ms'] for r in runs):.0f} | "
                             f"{median(r['first']['chart_ms'] for r in runs):.0f} | {median(warm):.0f} / {warm[ceil(.95*len(warm))-1]:.0f} |")
-    summary = '\n'.join(rows) + '\n'
+    summary = f'Portfolio profile: {profile}\n\n' + '\n'.join(rows) + '\n'
     print(summary)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
@@ -133,6 +135,7 @@ if __name__ == '__main__':
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
     parser.add_argument('--experiment', choices=['history', 'navigation'], default='history')
+    parser.add_argument('--profile', choices=['small', 'etf-heavy'], default='small')
     options = parser.parse_args()
     run(options.executable.resolve(), options.output.resolve(),
-        ['native','browser'] if options.surface=='both' else [options.surface], options.pairs, options.experiment)
+        ['native','browser'] if options.surface=='both' else [options.surface], options.pairs, options.experiment, options.profile)
