@@ -55,15 +55,18 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
             benchmark_slot = heading.container()
             from portfolio_app.interface.views.onboarding.tour import active
             loaded = st.session_state.get(key + '_risk_loaded', False) or (demo and active())
-            calculate = action.button('Refresh risk' if loaded else 'Calculate risk', help='Calculate historical risk from public price data for this selection; no holdings are changed.', icon=':material/refresh:' if loaded else ':material/analytics:',
-                                      type='secondary', disabled=not benchmark, key=key + '_risk_calculate', width='stretch')
-        if calculate:
-            st.session_state[key + '_risk_loaded'] = True
-            loaded = True
+            refresh_risk = False
+            if loaded:
+                refresh_risk = action.button('Refresh risk', help='Request updated historical prices for this selection.',
+                    icon=':material/refresh:', disabled=not benchmark, key=key + '_risk_refresh', width='stretch')
+            else:
+                action.button('Calculate risk', help='Calculate historical risk using available price histories.',
+                    icon=':material/analytics:', disabled=not benchmark, key=key + '_risk_calculate', width='stretch',
+                    on_click=st.session_state.update, args=({key + '_risk_loaded': True},))
         benchmark_symbol = benchmark
         if loaded and benchmark:
             with st.spinner('Calculating historical risk…'):
-                risk, status = load_risk(selected, data_dir, demo, benchmark, years, calculate and not demo,
+                risk, status = load_risk(selected, data_dir, demo, benchmark, years, refresh_risk and not demo,
                     future=risk_future, portfolio_result=portfolio_result, scoped=scope_active,
                     portfolio_net_equity=portfolio_net_equity)
             benchmark_symbol = status.attrs.get('benchmark_symbol', benchmark)
