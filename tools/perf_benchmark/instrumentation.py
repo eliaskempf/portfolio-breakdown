@@ -6,6 +6,8 @@ import time
 
 
 def observe_server(trial):
+    if os.environ['PORTFOLIO_BENCHMARK_REFRESH'] == 'exposure':
+        return
     from portfolio_app.performance.personal_history_refresh import refresher
     from portfolio_app.performance import history_view as views
     from streamlit.runtime.scriptrunner_utils.script_run_context import ScriptRunContext
@@ -102,14 +104,18 @@ def observe_server(trial):
 
 def observe_window(trial):
     import webview
-    from perf_benchmark.renderer import exercise
+    from perf_benchmark.renderer import exercise, exercise_exposure
     create_window = webview.create_window
     def create(*args, **kwargs):
         window = create_window(*args, **kwargs)
         def inspect():
             try:
-                metrics = exercise(window.evaluate_js, trial, os.environ['PORTFOLIO_BENCHMARK_REFRESH'],
-                                   persistent=os.environ['PORTFOLIO_BENCHMARK_VARIANT'] != 'baseline')
+                scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
+                if scenario == 'exposure':
+                    metrics = exercise_exposure(window.evaluate_js)
+                else:
+                    metrics = exercise(window.evaluate_js, trial, scenario,
+                                       persistent=os.environ['PORTFOLIO_BENCHMARK_VARIANT'] != 'baseline')
             except Exception:
                 import traceback
                 metrics = {'error':traceback.format_exc()}

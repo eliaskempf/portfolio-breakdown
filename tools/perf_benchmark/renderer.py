@@ -133,3 +133,59 @@ def exercise(evaluate, control, scenario, *, persistent):
     interact(evaluate, 'Allocation')  # Restore saved view for the next real process.
     return dict(digest=digest, ready_at=ready_at, post_intro_ms=(ready_at-animation_done)*1000 if animation_done else None,
                 refresh_ms=refresh_ms, first=first, range_3m=period, warm=warm, refresh=refresh)
+
+
+def exercise_exposure(evaluate):
+    """Time the first populated table frame and verify local source disclosure."""
+    context = CONTEXT + """
+        const tab = name => [...d.querySelectorAll('[role=tab]')].find(t => t.textContent.trim() === name);
+        const table = () => {
+            const host = d.querySelector('.st-key-tour_exposure_assets .stBidiComponent');
+            if (!visible(host)) return null;
+            const selector = 'table[aria-label="Exposure assets"]';
+            return host.querySelector(selector) || [host,...host.querySelectorAll('*')]
+                .map(e=>e.shadowRoot?.querySelector(selector)).find(Boolean);
+        };
+    """
+    def read(js):
+        return evaluate('(() => {' + context + js + '})()')
+
+    def ready():
+        try:
+            return read('return visible(allocation()) && !running() && !!tab("Exposure");')
+        except Exception:
+            return False  # Native splash documents are replaced during startup.
+
+    wait(ready, timeout=100)
+    ready_at = time.time()
+    visits = []
+    for _ in range(3):
+        read("""
+            w.exposureVisit = null;
+            const start = w.performance.now();
+            tab('Exposure').click();
+            let drawn = null;
+            function frame() {
+                const t = table(), elapsed = w.performance.now() - start;
+                const rows = t?.querySelectorAll('tbody tr[data-position-id]');
+                if (rows?.length && drawn === null) drawn = elapsed;
+                if (rows?.length && tab('Exposure')?.getAttribute('aria-selected') === 'true' && !running()) {
+                    const row = rows[0], toggle = row.querySelector('[data-preview-toggle]');
+                    if (toggle.getAttribute('aria-expanded') === 'true') toggle.click();
+                    toggle.click();
+                    const preview = row.nextElementSibling?.querySelector('.preview-panel');
+                    w.exposureVisit = {table_ms:drawn, settled_ms:elapsed, rows:rows.length,
+                        sample: [row.innerText, preview?.innerText || '']};
+                    toggle.click();
+                } else if (elapsed > 60000 || exception()) w.exposureVisit = {error:'Exposure table did not settle'};
+                else w.requestAnimationFrame(frame);
+            }
+            w.requestAnimationFrame(frame); return true;
+        """)
+        visit = wait(lambda: read('return w.exposureVisit;'), timeout=65)
+        if 'error' in visit or not visit['sample'][1]:
+            raise RuntimeError(visit)
+        visits.append(visit)
+        read("tab('Overview').click(); return true;")
+        wait(lambda: ready() and read("return !table() && tab('Overview').getAttribute('aria-selected') === 'true';"))
+    return dict(ready_at=ready_at, visits=visits)

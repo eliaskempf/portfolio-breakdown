@@ -5,7 +5,7 @@ name: Packaged performance benchmark
       experiment:
         description: 'Comparison to measure'
         type: choice
-        options: [navigation, history]
+        options: [navigation, history, exposure]
         default: navigation
       profile:
         description: 'Synthetic portfolio size'
@@ -17,7 +17,7 @@ name: Packaged performance benchmark
         type: number
         default: 2
   push:
-    branches: [perf/native-cache-benchmark, perf/overview-navigation, perf/benchmark-scale]
+    branches: [perf/native-cache-benchmark, perf/overview-navigation, perf/benchmark-scale, perf/exposure-navigation]
 permissions:
   contents: read
 concurrency:
@@ -39,10 +39,12 @@ jobs:
         shell: bash
     env:
       PYTHONUNBUFFERED: '1'
+      EXPERIMENT: ${{ inputs.experiment || (github.ref_name == 'perf/exposure-navigation' && 'exposure' || github.ref_name == 'perf/native-cache-benchmark' && 'history' || 'navigation') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
         with:
           version: 0.12.10
@@ -53,17 +55,24 @@ jobs:
           sudo apt-get install -y xvfb libopengl0 libegl1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-randr0 libxcb-shape0 libxcb-xfixes0 libxkbfile1
       - run: uv sync --locked --extra window --group release --group browser
       - run: uv run --no-sync playwright install chromium
+      - name: Build the pre-change Exposure reference with the same measurement driver
+        if: env.EXPERIMENT == 'exposure'
+        run: |
+          git restore --source=66d429fdc71db2b8dacf8d965d193f5b5c57abfa -- src/portfolio_app
+          uv run --no-sync python tools/perf_benchmark/build.py dist/reference
+          git restore --source=HEAD -- src/portfolio_app
       - run: uv run --no-sync python tools/perf_benchmark/build.py dist/performance
       - name: Alternate reference and cached runs in the packaged renderer and Chromium
         env:
           EXECUTABLE: ${{ matrix.executable }}
-          EXPERIMENT: ${{ inputs.experiment || (github.ref_name == 'perf/native-cache-benchmark' && 'history' || 'navigation') }}
-          PROFILE: ${{ inputs.profile || (github.ref_name == 'perf/benchmark-scale' && 'etf-heavy' || 'small') }}
+          PROFILE: ${{ inputs.profile || ((github.ref_name == 'perf/benchmark-scale' || github.ref_name == 'perf/exposure-navigation') && 'etf-heavy' || 'small') }}
           PAIRS: ${{ inputs.pairs || 2 }}
         run: |
           prefix=()
           if [[ "$RUNNER_OS" == Linux ]]; then prefix=(xvfb-run -a); fi
-          "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results --pairs "$PAIRS" --experiment "$EXPERIMENT" --profile "$PROFILE"
+          reference=()
+          if [[ "$EXPERIMENT" == exposure ]]; then reference=(--reference "${EXECUTABLE/dist\/performance/dist\/reference}"); fi
+          "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results --pairs "$PAIRS" --experiment "$EXPERIMENT" --profile "$PROFILE" "${reference[@]}"
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:

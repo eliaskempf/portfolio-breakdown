@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 import time
 
 from fixture import create_workspace
-from renderer import exercise, wait
+from renderer import exercise, exercise_exposure, wait
 
 
 def benchmark(executable, workspace, trial, variant, surface, scenario):
@@ -51,7 +51,8 @@ def benchmark(executable, workspace, trial, variant, surface, scenario):
                         args=['--no-sandbox'])
                     page = browser.new_page(viewport={'width':1280,'height':900})
                     page.goto(url)
-                    report = exercise(page.evaluate, trial, scenario, persistent=variant != 'baseline')
+                    report = (exercise_exposure(page.evaluate) if scenario == 'exposure' else
+                              exercise(page.evaluate, trial, scenario, persistent=variant != 'baseline'))
                     browser.close()
         finally:
             if proc.poll() is None:
@@ -62,6 +63,8 @@ def benchmark(executable, workspace, trial, variant, surface, scenario):
                     proc.terminate()
                 proc.wait(timeout=20)
     report['launch_ms'] = (report.pop('ready_at') - started) * 1000
+    if scenario == 'exposure':
+        return report
     events = [json.loads(line) for line in (trial / 'server.jsonl').read_text().splitlines()]
     report['history_calls'] = sum(e['event'] == 'history_calculated' for e in events)
     first = report['first']
@@ -128,14 +131,44 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
             handle.write(summary)
 
 
+def run_exposure(candidate, reference, destination, surfaces, pairs, profile):
+    destination.mkdir(parents=True, exist_ok=False)
+    result = dict(experiment='exposure', profile=profile, platform=sys.platform, revision=os.environ.get('GITHUB_SHA'),
+                  binaries={name: hashlib.sha256(path.read_bytes()).hexdigest()
+                            for name, path in [('reference', reference), ('candidate', candidate)]}, runs=[])
+    as_of = date.today()
+    expected = {}
+    for surface in surfaces:
+        for pair in range(pairs):
+            order = [('reference', reference), ('candidate', candidate)]
+            for name, exe in (reversed(order) if pair % 2 else order):
+                with TemporaryDirectory(prefix='exposure-benchmark-') as tmp:
+                    workspace = Path(tmp) / 'synthetic'
+                    create_workspace(workspace, profile, today=as_of)
+                    report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, 'exposure')
+                    for visit in report['visits']:
+                        sample = visit.pop('sample')
+                        if sample != expected.setdefault(surface, sample) or visit['rows'] != (100 if profile == 'etf-heavy' else 12):
+                            raise AssertionError('Rendered Exposure rows or expanded preview changed')
+                    result['runs'].append(dict(variant=name, surface=surface, pair=pair, **report))
+                    (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+                    print(surface, name, 'Exposure table ms', [round(v['table_ms']) for v in report['visits']], flush=True)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('executable', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
-    parser.add_argument('--experiment', choices=['history', 'navigation'], default='history')
+    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure'], default='history')
     parser.add_argument('--profile', choices=['small', 'etf-heavy'], default='small')
+    parser.add_argument('--reference', type=Path, help='Reference bundle for the Exposure comparison')
     options = parser.parse_args()
-    run(options.executable.resolve(), options.output.resolve(),
-        ['native','browser'] if options.surface=='both' else [options.surface], options.pairs, options.experiment, options.profile)
+    surfaces = ['native','browser'] if options.surface == 'both' else [options.surface]
+    if options.experiment == 'exposure':
+        if not options.reference:
+            parser.error('--experiment exposure requires --reference')
+        run_exposure(options.executable.resolve(), options.reference.resolve(), options.output.resolve(), surfaces, options.pairs, options.profile)
+    else:
+        run(options.executable.resolve(), options.output.resolve(), surfaces, options.pairs, options.experiment, options.profile)

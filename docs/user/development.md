@@ -760,7 +760,15 @@ This measures Overview navigation with fund data present. Timing interaction
 with the Exposure view, longer ledgers and multi-currency histories requires
 separate workloads.
 
-The job summary shows median and nearest-rank p95 interaction times.
+The Exposure experiment builds both the pre-change reference and the current
+application on each runner. With the ETF-heavy profile it times Overview to
+the first populated Exposure table and two return visits, then opens a source
+preview locally. It compares row counts and sampled row and preview contents
+between binaries. The JSON artifact includes first-table and settled-view
+times. To run locally, pass `--experiment exposure --profile etf-heavy` and
+`--reference` with the reference executable built with the same driver.
+
+The history and navigation job summaries show median and nearest-rank p95 interaction times.
 The JSON artifact retains every sample, including the click-to-first-drawn-chart
 and settled-view measurements, server calculation time and first chart enqueue.
 Chart paint is sampled at an animation frame with a populated Plotly trace.
