@@ -1,0 +1,54 @@
+name: Packaged performance benchmark
+'on':
+  workflow_dispatch: {}
+  push:
+    branches: [perf/native-cache-benchmark]
+permissions:
+  contents: read
+concurrency:
+  group: packaged-performance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-2022, python: '3.12', executable: 'dist/performance/portfolio-app/Portfolio Breakdown.exe'}
+          - {os: ubuntu-22.04, python: '3.12', executable: 'dist/performance/portfolio-window/portfolio-window'}
+          - {os: macos-15, python: '3.13', executable: 'dist/performance/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-window'}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: 0.12.10
+          python-version: ${{ matrix.python }}
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libopengl0 libegl1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-randr0 libxcb-shape0 libxcb-xfixes0 libxkbfile1
+      - run: uv sync --locked --extra window --group release --group browser
+      - run: uv run --no-sync playwright install chromium
+      - run: uv run --no-sync python tools/perf_benchmark/build.py dist/performance
+      - name: Alternate reference and cached runs in the packaged renderer and Chromium
+        env:
+          EXECUTABLE: ${{ matrix.executable }}
+        run: |
+          prefix=()
+          if [[ "$RUNNER_OS" == Linux ]]; then prefix=(xvfb-run -a); fi
+          "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: performance-${{ matrix.os }}
+          path: dist/performance-results/*.json
+          if-no-files-found: warn
