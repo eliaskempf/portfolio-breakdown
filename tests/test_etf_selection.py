@@ -49,6 +49,8 @@ def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(mul
     path = multi_fund_workspace / 'holdings.csv'
     before = path.read_bytes()
     app = launch(multi_fund_workspace)
+    app.session_state['exposure_individual_funds_open'] = True
+    app.run()
     assert not app.exception
     assert not any('Unsupported Fund' in info.value for info in app.info)
     by_label(app.checkbox, 'Show sold positions').check().run()
@@ -67,6 +69,12 @@ def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(mul
     assert table.loc[table.Asset == 'Invented Alpha', 'Total'].iloc[0] == 125.
     assert table.loc[table.Asset == 'Synthetic World', 'Total'].iloc[0] == 100.
     assert table['Total'].sum() == 300.
+    app.session_state['exposure_individual_funds_open'] = False
+    app.run()
+    assert not any(t.label == 'Synthetic World' for t in app.toggle)
+    assert effective(app).loc[lambda t: t.Asset == 'Invented Alpha', 'Total'].item() == 125.
+    app.session_state['exposure_individual_funds_open'] = True
+    app.run()
     # Targets follow the same selective expansion, and the intact fund retains
     # its own performance instead of inheriting missing constituent history.
     theme_view(app)
@@ -84,6 +92,8 @@ def test_master_expands_all_and_per_fund_switch_preserves_totals_and_choices(mul
 
 def test_stock_view_respects_individual_fund_expansion(multi_fund_workspace):
     app = launch(multi_fund_workspace)
+    app.session_state['exposure_individual_funds_open'] = True
+    app.run()
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     by_label(app.toggle, 'Synthetic World').set_value(False).run()
     by_label(app.get('button_group'), 'Exposure view').set_value('Companies').run()
@@ -101,10 +111,12 @@ def test_proxy_status_and_newly_supported_funds_default_on(multi_fund_workspace)
     manifest['proxy_source'] = 'Invented same-index fund; approximate exposure'
     path.write_text(yaml.safe_dump(manifest))
     app = launch(multi_fund_workspace)
+    app.session_state['exposure_individual_funds_open'] = True
+    app.run()
     by_label(app.checkbox, 'Show sold positions').check().run()
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     assert by_label(app.toggle, 'Synthetic World (proxy)').value
-    assert any('Proxy:' in item.value for item in app.info)
+    assert any('Proxy:' in item.value for item in app.caption)
     by_label(app.toggle, 'Synthetic Emerging').set_value(False).run()
     manifest.update(fund_id='new', name='New synthetic breakdown', isin='ZZ4444444444', tickers=['FUND-C'], proxy_source='')
     (directory / 'new.yaml').write_text(yaml.safe_dump(manifest))
@@ -201,6 +213,8 @@ def test_reviewed_company_name_reaches_chart_and_merge_review(multi_fund_workspa
 
 def test_fund_selection_survives_master_hiding_it_in_the_same_rerun(multi_fund_workspace):
     app = launch(multi_fund_workspace)
+    app.session_state['exposure_individual_funds_open'] = True
+    app.run()
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     by_label(app.toggle, 'Synthetic World').set_value(False)
     by_label(app.toggle, 'Break down ETFs').set_value(False).run()

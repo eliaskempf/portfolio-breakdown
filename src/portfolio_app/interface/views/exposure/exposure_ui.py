@@ -103,8 +103,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             field = 'exposure_reporting' if basis == 'Equity only' else 'market_exposure_reporting'
         show_tickers = st.checkbox('Show tickers', help='Display quote tickers alongside investment names.', value=False, key='display_tickers')
         show_chart = st.checkbox('Show largest exposures chart', help='Show a chart of the largest exposures in the current selection.', key='exposure_show_chart')
-        with st.expander('Individual ETFs'):
-            expanded_funds = render_etf_choices(holdings, funds, data_dir, enabled=lookthrough)
+        expanded_funds = render_etf_choices(holdings, funds, data_dir, enabled=lookthrough)
         if st.session_state.pop('exposure_notification_sources', False):
             st.session_state['exposure_refresh_open'] = True
         refresh_panel = st.expander('ETF refresh & snapshots', key='exposure_refresh_open', on_change='rerun')
