@@ -778,6 +778,9 @@ results appear in the navigation artifact under `background_checks`. A third
 case holds one live equity quote pending while switching views and ranges. It
 checks that navigation uses the displayed cached value without revaluing the
 portfolio, then releases a corrected quote and verifies the new visible total.
+Another case opens Notifications during a pending ETF check. It checks that the
+failure appears inside the panel, its unread count clears, and the chart and
+valuation stay in place while the panel opens, updates and closes.
 
 The Exposure experiment builds both the pre-change reference and the current
 application on each runner. With the ETF-heavy profile it times Overview to

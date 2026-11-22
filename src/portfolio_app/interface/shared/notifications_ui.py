@@ -37,16 +37,26 @@ def _monitoring_document(directory):
         return {'events': [], 'notice_seen': [], 'rules': []}
 
 
-def notification_bell(slot, directory, funds, valued, status, *, etf_revision=None, demo=False, cache_warning='', exposure_issues=(), disabled=False, journal=None):
-    with slot:
-        panel = st.popover('Notifications', icon=':material/notifications:',
-            help='Notifications', key='workspace_notifications', on_change='rerun',
-            width='stretch', disabled=disabled)
+def notification_bell(slot, directory, funds, valued, status, *, etf_revision=None, demo=False, cache_warning='', exposure_issues=(), disabled=False, journal=None, background_prices=False):
+    navigated = False
 
+    def follow_notice(destination):
+        nonlocal navigated
+        navigate(destination, directory)
+        navigated = True
+
+    with slot:
         def indicator(revision):
-            _, refresh_issues = refresh_notices(directory, funds, demo=demo, revision=revision)
+            nonlocal navigated
+            if navigated:
+                navigated = False
+                st.rerun(scope='app')
+            panel = st.popover('Notifications', icon=':material/notifications:',
+                help='Notifications', key='workspace_notifications', on_change='rerun',
+                width='stretch', disabled=disabled)
+            refresh_messages, refresh_issues = refresh_notices(directory, funds, demo=demo, revision=revision)
             from portfolio_app.interface.views.derivatives.settlement_archive_ui import settlement_notices
-            _, settlement_issues = settlement_notices(directory, journal)
+            settlement_messages, settlement_issues = settlement_notices(directory, journal)
             current = notification_fingerprints(valued, status,
                 refresh_issues=(*refresh_issues, *settlement_issues),
                 cache_warning=cache_warning, exposure_issues=exposure_issues)
@@ -68,10 +78,16 @@ def notification_bell(slot, directory, funds, valued, status, *, etf_revision=No
             st.html('<style>.st-key-header_notifications [data-testid="stPopoverButton"]::after {'
                 + f'content:"{badge}";display:{"block" if badge else "none"};'
                 + 'width:auto;min-width:15px;height:15px;padding:0 2px;right:0;top:0;font-size:10px;color:white;line-height:15px;border-radius:8px;text-align:center;}</style>')
+            if panel.open:
+                from portfolio_app.market.market_data import coordinator as market
+                with panel:
+                    render_notifications(directory, valued, status, doc, refresh_messages, settlement_messages,
+                        etfs_pending=not demo and coordinator.running(directory),
+                        prices_pending=background_prices and market.pending(workspace), cache_warning=cache_warning,
+                        exposure_issues=exposure_issues, on_navigate=follow_notice)
+
         render_refresh_status(directory, funds, etf_revision, demo=demo, show_messages=False,
-                              render_indicator=indicator, panel_open=panel.open,
-                              periodic=bool(journal and journal.positions and not demo))
-    return panel
+                              render_indicator=indicator, periodic=bool(journal and journal.positions and not demo))
 
 
 def navigate(destination, directory):
@@ -96,21 +112,19 @@ def _render_notice(message):
         st.markdown(message)
 
 
-def _card(notice, directory, *, on_navigate=None):
+def _card(notice, on_navigate):
     with st.container(border=True):
         st.markdown(f'**{notice.title}**')
         st.markdown(notice.message)
         st.caption(notice.severity.title() + (f' · Observed {notice.observed_at}' if notice.observed_at else ''))
-        st.button(notice.action, key='notice_action_'+notice.id, on_click=on_navigate or navigate, args=(notice.destination,directory))
+        st.button(notice.action, key='notice_action_'+notice.id, on_click=on_navigate, args=(notice.destination,))
 
 
-def render_notifications(directory, funds, revision, valued, status, *, demo=False,
-                         cache_warning='', exposure_issues=(), prices_pending=False, journal=None):
+def render_notifications(directory, valued, status, doc, refresh_messages, settlement_messages, *,
+                         etfs_pending, prices_pending, cache_warning, exposure_issues, on_navigate):
     from portfolio_app.interface.shared.notification_model import Notice, Destination
     from portfolio_app.monitoring.monitoring_store import mark_events
-    from portfolio_app.interface.views.derivatives.settlement_archive_ui import settlement_notices
     st.subheader('Notifications')
-    doc = _monitoring_document(directory)
     events = [e for e in doc['events'] if not e.get('resolved') and not e['acknowledged']]
     st.caption(f"{len(events)} active rule alert(s) · Opening this panel marks entries read; acknowledgment is separate.")
     for event in reversed(events):
@@ -122,50 +136,37 @@ def render_notifications(directory, funds, revision, valued, status, *, demo=Fal
             message += ' · '+event['evaluation']['note']
         if event.get('recovered'):
             message += ' · Recovered completed-close event'
-        _card(Notice(event['id'], event['name'], message, event['condition'], Destination('rule',event['rule_id']), 'View rule', event['observed_at']), directory)
+        _card(Notice(event['id'], event['name'], message, event['condition'], Destination('rule',event['rule_id']), 'View rule', event['observed_at']), on_navigate)
         if st.button('Acknowledge', key='notice_ack_'+event['id']):
             mark_events(directory, [event['id']], acknowledge=True)
             st.rerun()
-    parts, _ = refresh_notices(directory, funds, demo=demo, revision=revision)
-    for i,message in enumerate(parts):
-        _card(Notice('etf_'+str(i), 'ETF data', message, 'warning', Destination('sources'), 'Review ETF sources'), directory)
-    # Transient progress is a caption, separate from actionable/unread notices.
-    if not demo and coordinator.running(directory):
-        st.caption(REFRESH_PROGRESS)
-    action = []
-    def follow_notice(destination, directory):
-        navigate(destination, directory)
-        action.append(True)
-    @st.fragment(run_every=2 if journal and journal.positions and not demo else None)
-    def settlement_cards():
-        if action:
-            action.clear()
-            st.rerun(scope='app')
-        messages, _ = settlement_notices(directory, journal)
-        # An empty block alone can leave the previous cards in a popover.
-        # Emit an empty element when the final notice clears as well.
-        with st.container():
-            if not messages:
-                st.empty()
-            for i, message in enumerate(messages):
+    # Explicitly clear provider status when the last progress message or card goes away.
+    provider_status = st.empty()
+    if refresh_messages or etfs_pending or settlement_messages:
+        with provider_status.container():
+            for i, message in enumerate(refresh_messages):
+                _card(Notice('etf_'+str(i), 'ETF data', message, 'warning',
+                    Destination('sources'), 'Review ETF sources'), on_navigate)
+            if etfs_pending:
+                st.caption(REFRESH_PROGRESS)
+            for i, message in enumerate(settlement_messages):
                 _card(Notice('settlement_'+str(i), 'Futures data', message, 'warning',
-                    Destination('settlements'), 'Review settlement history'), directory, on_navigate=follow_notice)
-    settlement_cards()
+                    Destination('settlements'), 'Review settlement history'), on_navigate)
     if prices_pending:
         st.caption('Updating market prices…')
     manual = int(valued.price_status.eq('manual').sum())
     if manual:
         _card(Notice('manual', 'Manually maintained prices', f'{manual} dated manual/snapshot prices · Update these manually or connect live prices.',
-                    'information', Destination('pricing'), 'Review manual prices'), directory)
+                    'information', Destination('pricing'), 'Review manual prices'), on_navigate)
     if cache_warning:
-        _card(Notice('cache', 'Price cache needs attention', cache_warning, 'warning', Destination('pricing'), 'Review pricing'), directory)
+        _card(Notice('cache', 'Price cache needs attention', cache_warning, 'warning', Destination('pricing'), 'Review pricing'), on_navigate)
     if status.estimated_costs:
         _card(Notice('estimated', 'Estimated acquisition FX', f'{status.estimated_costs} positions use estimated FX costs. Performance can change when acquisition conversions are completed.',
-                    'information', Destination('costs'), 'Review acquisition costs'), directory)
+                    'information', Destination('costs'), 'Review acquisition costs'), on_navigate)
     for i,issue in enumerate(dict.fromkeys(exposure_issues)):
-        _card(Notice('exposure_'+str(i), 'Exposure data needs attention', issue, 'warning', Destination('exposure'), 'Review exposure sources'), directory)
+        _card(Notice('exposure_'+str(i), 'Exposure data needs attention', issue, 'warning', Destination('exposure'), 'Review exposure sources'), on_navigate)
     if status.missing_costs or status.missing_prices or status.stale_quotes:
         st.markdown('**Prices & performance**')
         st.dataframe(status.problems, hide_index=True, width='stretch')
         st.button('Complete buy-ins' if status.missing_costs else 'Review pricing',
-            on_click=navigate, args=(Destination('costs' if status.missing_costs else 'pricing'), directory))
+            on_click=on_navigate, args=(Destination('costs' if status.missing_costs else 'pricing'),))

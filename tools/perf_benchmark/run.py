@@ -68,7 +68,8 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
     events = [json.loads(line) for line in (trial / 'server.jsonl').read_text().splitlines()]
     if 'start_epoch_ms' in report:
         start, end = report.pop('start_epoch_ms'), report.pop('end_epoch_ms')
-        field = 'pending_quote_valuations' if scenario == 'quote-pending' else 'idle_valuations'
+        field = {'quote-pending': 'pending_quote_valuations', 'etf-open-failed': 'open_panel_valuations'}.get(
+            scenario, 'idle_valuations')
         report[field] = sum(e['event'] == 'portfolio_valued' and start <= e['epoch_ms'] <= end for e in events)
         if report[field]:
             raise AssertionError(f'{scenario} revalued the portfolio {report[field]} times before expected')
@@ -125,7 +126,7 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
 
         if experiment == 'navigation' and profile == 'mixed-history':
             checks = result.setdefault('background_checks', [])
-            for scenario in ('etf-checked', 'etf-failed', 'quote-pending'):
+            for scenario in ('etf-checked', 'etf-failed', 'quote-pending', 'etf-open-failed'):
                 with TemporaryDirectory(prefix='portfolio-refresh-benchmark-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
                     create_workspace(workspace, profile, today=as_of)

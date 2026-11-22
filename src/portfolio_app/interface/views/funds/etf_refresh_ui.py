@@ -64,7 +64,7 @@ def refresh_notices(data_dir, funds, *, demo=False, revision=None):
 
 
 def render_refresh_status(data_dir, funds, revision, *, demo=False, show_messages=True,
-                          render_notice=None, include_notices=True, render_indicator=None, panel_open=False, periodic=False):
+                          render_notice=None, include_notices=True, render_indicator=None, periodic=False):
     if demo and render_indicator is None:
         return
     if revision is None and not demo:
@@ -87,7 +87,7 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False, show_message
             # A settings panel shows check times and enables its retry button on completion.
             details_open = (st.session_state.get('main_tabs') == 'Exposure'
                             and st.session_state.get('exposure_refresh_open'))
-            pending_render = (details_open or (panel_open and (observed_pending or current.issues != revision.issues)) or
+            pending_render = (details_open or
                               (source_revision is not None and fund_sources(Path(data_dir)) != source_revision))
             if pending_render and refresh_allowed():
                 st.rerun()

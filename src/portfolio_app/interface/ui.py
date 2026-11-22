@@ -289,15 +289,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             from portfolio_app.interface.views.taxes.tax_ui import render_taxes
             render_taxes(data_dir, holdings, journal, funds, valued, demo=offline_demo)
     from portfolio_app.interface.shared.notifications_ui import notification_bell
-    notifications_panel = notification_bell(notifications_slot, data_dir, funds, valued, status, etf_revision=etf_revision,
+    notification_bell(notifications_slot, data_dir, funds, valued, status, etf_revision=etf_revision,
         demo=offline_demo, cache_warning=price_service.cache_warning,
-        exposure_issues=exposure_result.issues if exposure_result else (), disabled=tour_active(), journal=journal)
-    if notifications_panel.open:
-        from portfolio_app.interface.shared.notifications_ui import render_notifications
-        with notifications_panel:
-            render_notifications(data_dir, funds, etf_revision, valued, status, demo=offline_demo,
-                cache_warning=price_service.cache_warning, exposure_issues=exposure_result.issues if exposure_result else (),
-                prices_pending=background_prices and market_coordinator.pending(market_workspace), journal=journal)
+        exposure_issues=exposure_result.issues if exposure_result else (), disabled=tour_active(), journal=journal,
+        background_prices=background_prices)
     if (sandbox or actual_active) and tabs[4].open:
         with tabs[4]:
             if actual_active:

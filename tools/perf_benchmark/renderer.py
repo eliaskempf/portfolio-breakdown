@@ -113,25 +113,40 @@ def exercise(evaluate, control, scenario, *, persistent):
         }
         frame(); return true; })()""")
     if scenario.startswith('etf-'):
-        read_badge = '(() => {' + CONTEXT + """
+        bell = CONTEXT + """
             const bell = [...d.querySelectorAll('.st-key-header_notifications [data-testid=stPopoverButton]')]
                 .find(button => button.textContent.includes('Notifications'));
             if (!bell) throw Error('Notification bell is missing');
-            return Number(w.getComputedStyle(bell,'::after').content.replace(/"/g,'')) || 0;
-        })()"""
+        """
+        def bell_action(js):
+            return evaluate('(() => {' + bell + js + '})()')
+        def read_badge():
+            return bell_action('return Number(w.getComputedStyle(bell,"::after").content.replace(/"/g,"")) || 0;')
+        opened = scenario == 'etf-open-failed'
         wait(lambda: (control / 'etf-pending').exists())
-        background['badge_before'] = evaluate(read_badge)
-        expected = 'failed' if scenario == 'etf-failed' else 'checked'
+        background['badge_before'] = read_badge()
+        expected = 'failed' if scenario.endswith('-failed') else 'checked'
         status_path = control.parent / 'synthetic' / '.cache' / 'etf-refresh' / 'status.json'
         background['start_epoch_ms'] = time.time_ns() / 1e6
+        if opened:
+            bell_action('bell.click(); return true;')
+            wait(lambda: bell_action('return d.body.innerText.includes("Discovering and updating ETF holdings");'))
+            if read_badge():
+                raise AssertionError('Opening Notifications did not mark the displayed notices read')
         (control / 'release-etf').touch()
         wait(lambda: json.loads(status_path.read_bytes()).get('ZZF000000000', {}).get('status') == expected)
-        if expected == 'failed':
-            wait(lambda: evaluate(read_badge) == background['badge_before'] + 1)
+        if opened:
+            wait(lambda: bell_action('return d.body.innerText.includes("1 refresh(es) failed; saved data retained")'
+                                     ' && !d.body.innerText.includes("Discovering and updating ETF holdings");'))
+            bell_action('bell.click(); return true;')
+            wait(lambda: bell_action('return !d.body.innerText.includes("Review ETF sources");'))
+        elif expected == 'failed':
+            wait(lambda: read_badge() == background['badge_before'] + 1)
         # Observe ETF completion on its own before releasing historical prices.
         time.sleep(4.5)
-        background['badge_after'] = evaluate(read_badge)
-        if background['badge_after'] != background['badge_before'] + int(expected == 'failed'):
+        background['badge_after'] = read_badge()
+        expected_badge = 0 if opened else background['badge_before'] + int(expected == 'failed')
+        if background['badge_after'] != expected_badge:
             raise AssertionError(f'Incorrect ETF unread badge: {background}')
     refresh_started = time.perf_counter()
     (control / 'release').touch()

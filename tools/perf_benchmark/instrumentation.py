@@ -38,7 +38,7 @@ def observe_server(trial):
             from perf_benchmark.renderer import wait
             (trial / 'etf-pending').touch()
             wait(lambda: (trial / 'release-etf').exists(), timeout=100)
-            if scenario == 'etf-failed':
+            if scenario.endswith('-failed'):
                 raise ValueError('Invented ETF provider unavailable')
             frame = pd.read_csv(fund.manifest_path.parent / 'fund-0.csv', dtype=str, keep_default_na=False)
             return publish_snapshot(fund, validate_constituents(frame), fund.as_of, prior=fund.manifest_path.read_bytes())
