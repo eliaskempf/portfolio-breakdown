@@ -218,7 +218,7 @@ def mark_events(directory, identities, *, acknowledge=False):
             _write(directory, doc, revision)
 
 
-def remember_notices(directory, current, *, opened=False, previously_seen=None, read_events=()):
+def remember_notices(directory, current, *, opened=False, previously_seen=None, read_events=(), on_write=None):
     """Persist one panel observation, marking only events included in that observation read."""
     current = set(current)
     read_events = set(read_events)
@@ -232,7 +232,10 @@ def remember_notices(directory, current, *, opened=False, previously_seen=None, 
         previous = set(doc['notice_seen'])
         seen = current if opened else previous & current
         events_changed = _mark_events(doc, read_events)
-        if events_changed or seen != previous:
-            doc['notice_seen'] = sorted(seen)
-            _write(directory, doc, revision)
-        return seen
+        if not events_changed and seen == previous:
+            return seen
+        doc['notice_seen'] = sorted(seen)
+        published = _write(directory, doc, revision)
+    if on_write is not None:
+        on_write(revision, published)
+    return seen

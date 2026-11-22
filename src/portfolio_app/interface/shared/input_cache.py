@@ -32,11 +32,15 @@ def cached_input(key, signature, loader, *, immutable=False):
     return previous[1] if immutable else deepcopy(previous[1])
 
 
-def monitoring_document(directory):
-    """Shared validated snapshot for read-only UI consumers of this workspace."""
+def monitoring_snapshot(directory):
+    """The validated document and content revision read from the same bytes."""
     from portfolio_app.monitoring.monitoring_store import FILE, load_monitoring
-    return cached_input('monitoring_document', file_stamp(directory / FILE),
-                        lambda: load_monitoring(directory)[0], immutable=True)
+    return cached_input('monitoring_snapshot', file_stamp(directory / FILE),
+                        lambda: load_monitoring(directory), immutable=True)
+
+
+def monitoring_document(directory):
+    return monitoring_snapshot(directory)[0]
 
 
 def observation_snapshot(directory):

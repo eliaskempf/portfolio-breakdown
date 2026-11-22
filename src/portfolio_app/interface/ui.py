@@ -66,12 +66,12 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return
     preserve_view_inputs()
     data_dir, demo, refresh, settings_panel, notifications_slot = app_header(data_dir, demo_dir, demo=demo)
-    from portfolio_app.interface.shared.overview_navigation import render_panel, source_stamp
+    from portfolio_app.interface.shared.overview_navigation import render_panel, OverviewSources
     from portfolio_app.interface.views.onboarding.tour import active as tour_active
-    overview_stamp = None
+    overview_sources = None
     if st.session_state.get('main_tabs', 'Overview') == 'Overview' and not tour_active():
         try:
-            overview_stamp = source_stamp(data_dir)
+            overview_sources = OverviewSources(data_dir)
         except (DataError, OSError):
             pass  # Normal workspace loading owns recovery and validation messages.
     from portfolio_app.interface.shared.calendar_ui import configure_calendar
@@ -292,7 +292,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     notification_bell(notifications_slot, data_dir, funds, valued, status, etf_revision=etf_revision,
         demo=offline_demo, cache_warning=price_service.cache_warning,
         exposure_issues=exposure_result.issues if exposure_result else (), disabled=tour_active(), journal=journal,
-        background_prices=background_prices)
+        background_prices=background_prices,
+        on_notices_recorded=overview_sources.notices_recorded if overview_sources else None)
     if (sandbox or actual_active) and tabs[4].open:
         with tabs[4]:
             if actual_active:
@@ -373,11 +374,11 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                                 and market_coordinator.channel_state(market_workspace, 'valuation')[0] == market_revision
                                 and (not background_prices or price_service.still_current())
                                 and (offline_demo or refresh_revision(data_dir).issues == etf_revision.issues)
-                                and source_stamp(data_dir) == overview_stamp)
+                                and overview_sources.current())
                     except (DataError, OSError):
                         return False
 
-                if overview_stamp is None or supplied_prices or st.session_state.get('strategic_view') == 'Analytics':
+                if overview_sources is None or supplied_prices or st.session_state.get('strategic_view') == 'Analytics':
                     draw_overview()
                 else:
                     render_panel(draw_overview, current_overview)

@@ -132,3 +132,25 @@ st.metric('Unread', sum(not e['read'] for e in doc['events']))
     reads.clear()
     app.run()
     assert reads == [tmp_path] and app.metric[0].value == '0'
+
+
+@pytest.mark.parametrize('external_edit', ['none', 'before', 'after'])
+def test_overview_reuses_its_own_notification_receipts_and_observes_other_edits(tmp_path, external_edit):
+    from dataclasses import replace
+    from portfolio_app.interface.shared.overview_navigation import OverviewSources
+    from portfolio_app.monitoring import monitoring_store as store
+    from test_monitoring import rule
+
+    sources = OverviewSources(tmp_path)
+    other_window = OverviewSources(tmp_path)
+
+    def edit():
+        store.save_rule(tmp_path, replace(rule(), enabled=False))
+    if external_edit == 'before':
+        edit()
+    store.remember_notices(tmp_path, {'manual'}, opened=True, on_write=sources.notices_recorded)
+    if external_edit == 'after':
+        edit()
+    assert sources.current() == (external_edit == 'none')
+    assert not other_window.current()
+    assert store.load_monitoring(tmp_path)[0]['notice_seen'] == ['manual']

@@ -37,7 +37,8 @@ def _monitoring_document(directory):
         return {'events': [], 'notice_seen': [], 'rules': []}
 
 
-def notification_bell(slot, directory, funds, valued, status, *, etf_revision=None, demo=False, cache_warning='', exposure_issues=(), disabled=False, journal=None, background_prices=False):
+def notification_bell(slot, directory, funds, valued, status, *, etf_revision=None, demo=False, cache_warning='',
+                      exposure_issues=(), disabled=False, journal=None, background_prices=False, on_notices_recorded=None):
     navigated = False
 
     def follow_notice(destination):
@@ -71,7 +72,7 @@ def notification_bell(slot, directory, funds, valued, status, *, etf_revision=No
             from portfolio_app.portfolio.holdings import DataError
             try:
                 remember_notices(directory, current, opened=panel.open, previously_seen=doc['notice_seen'],
-                                 read_events=unread_events if panel.open else ())
+                                 read_events=unread_events if panel.open else (), on_write=on_notices_recorded)
             except (DataError, OSError):
                 pass  # The monitoring area provides persistence recovery guidance.
             badge = str(min(count, 99)) if count and not panel.open else ''
