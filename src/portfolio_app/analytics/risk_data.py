@@ -168,13 +168,14 @@ class RiskHistoryService:
     def eur(self, ticker, years=3, *, refresh=False, memo=None):
         return self.in_currency(ticker, 'EUR', years, refresh=refresh, memo=memo)
 
+    def _listing(self, ticker, years, refresh, memo):
+        if ticker not in memo:
+            memo[ticker] = self.get(ticker, years, refresh=refresh)
+        return memo[ticker]
+
     def in_currency(self, ticker, target, years=3, *, refresh=False, memo=None):
         memo = memo if memo is not None else {}
-        def get(symbol):
-            if symbol not in memo:
-                memo[symbol] = self.get(symbol, years, refresh=refresh)
-            return memo[symbol]
-        result = get(ticker)
+        result = self._listing(ticker, years, refresh, memo)
         if result.prices.empty:
             return result
         currency, factor = quote_unit(result.currency)
@@ -186,7 +187,7 @@ class RiskHistoryService:
             for units, inverse in ((currency, False), (target, True)):
                 if units == 'EUR':
                     continue
-                fx = get(f'{units}EUR=X')
+                fx = self._listing(f'{units}EUR=X', years, refresh, memo)
                 if fx.prices.empty or fx.currency != 'EUR':
                     return AdjustedHistory(pd.Series(dtype=float), target, 'unavailable', note=f'Historical {target} exchange rates unavailable')
                 prices = prices / fx.prices.reindex(prices.index) if inverse else prices * fx.prices.reindex(prices.index)
@@ -200,7 +201,7 @@ class RiskHistoryService:
     def cash(self, source, target, years=3, *, refresh=False, memo=None):
         # EUR cash starts with a constant EUR value on target FX observation dates.
         if source == 'EUR':
-            fx = self.get(f'{target}EUR=X', years, refresh=refresh)
+            fx = self._listing(f'{target}EUR=X', years, refresh, memo if memo is not None else {})
             if fx.currency != 'EUR':
                 return AdjustedHistory(pd.Series(dtype=float), target, 'unavailable', note='Historical cash FX unavailable')
             return AdjustedHistory(daily_prices(1 / fx.prices), target, fx.status, fx.fetched_at, fx.note)

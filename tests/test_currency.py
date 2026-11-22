@@ -288,17 +288,23 @@ def test_cost_component_quantity_must_reconcile():
 def test_reporting_risk_histories_and_foreign_cash(tmp_path):
     from portfolio_app.analytics.risk_data import RiskHistoryService, AdjustedHistory
     dates = pd.date_range('2026-01-01', periods=3)
+    calls = []
     class Provider:
         def fetch(self, ticker, years):
+            calls.append(ticker)
             currency, values = {'SYNTH': ('USD',[100,110,120]), 'USDEUR=X': ('EUR',[.8,.9,1.]),
                                 'GBPEUR=X': ('EUR',[1.2,1.2,1.2])}[ticker]
             return AdjustedHistory(pd.Series(values,index=dates), currency)
     service = RiskHistoryService(Provider(), tmp_path / 'risk')
-    result = service.in_currency('SYNTH', 'GBP')
+    memo = {}
+    result = service.in_currency('SYNTH', 'GBP', refresh=True, memo=memo)
     assert result.prices.tolist() == pytest.approx([80/1.2,99/1.2,100])
     assert result.currency == 'GBP'
-    assert service.cash('USD','GBP').prices.tolist() == pytest.approx([.8/1.2,.9/1.2,1/1.2])
-    assert service.cash('EUR','USD').prices.tolist() == pytest.approx([1/.8,1/.9,1])
+    assert service.cash('USD', 'GBP', refresh=True, memo=memo).prices.tolist() == pytest.approx([.8/1.2,.9/1.2,1/1.2])
+    assert service.cash('EUR', 'USD', refresh=True, memo=memo).prices.tolist() == pytest.approx([1/.8,1/.9,1])
+    assert calls == ['SYNTH', 'USDEUR=X', 'GBPEUR=X']
+    service.cash('EUR', 'USD', refresh=True, memo={})
+    assert calls[-2:] == ['GBPEUR=X', 'USDEUR=X']
 
 
 def test_price_chart_uses_historical_fx_without_changing_native_data():
