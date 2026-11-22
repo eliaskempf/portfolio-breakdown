@@ -13,6 +13,20 @@ Use this guide when adding a screen, moving an action, or presenting a familiar 
 | Entering, correcting and leaving | Identify the affected holding, account or statement in human terms. Preserve correct fields after validation fails. Offer a way back from a pending destructive action. Make any draft loss apparent before it occurs. | Correct a single row, back out of review, then resume. Can you identify what persisted and what still needs applying? |
 | Repeated use | Preserve applicable scope, filters and period when returning to a view. Revalidate choices when the portfolio changes. Keep inactive views inexpensive. | Return to a filtered list after a detail view. Switch workspace and check that a record from the old workspace cannot become a write target. |
 
+## Menus and button placement
+
+The header exposes the active portfolio, live price refresh where available, notifications and one **App menu**. The menu has three destinations. **Preferences** holds appearance, printing, reporting currency and display conventions. **Workspace** holds folder, backup, restore and shutdown. **Help** holds the guide and tour. An error can open the relevant destination directly. Keep actions on individual holdings, filters, rules and targets with the objects they affect.
+
+| Scope or state | Placement and availability |
+| --- | --- |
+| Page, table or chart | Put a create action beside the collection it adds to. Put a refresh, filter or reset beside the results it changes. A selected-row action belongs with the selection. Name the object when several are present. |
+| Form or review | Put completion after the inputs and any review evidence. Use one primary action for the current step. Group it with Cancel or Back in one wrapping row, with the ordinary completion first in reading and keyboard order. Keep alternative destinations separate from Save. |
+| Consequential confirmation | Identify the operation, affected object and effect. Put the safe exit first when confirming a deletion, loss of unsaved work or shutdown. Give the committing button a specific verb. Opening a menu or navigating to a detail must be safe. |
+| Availability | Omit actions outside the current task or workspace. Keep a normal next step visible when the user can meet a prerequisite here. Show the missing requirement beside the relevant input. For typed forms, allow a submit to validate the last edit. Disable a review or commit when its prerequisite is visible and its status updates reliably. Explain an unavailable cross-workspace operation at its usual destination. |
+| Read-only detail | Provide a predictable close or return path. Place edit and follow-up actions with the detail they act on. Verify Escape and return focus when an overlay closes. |
+
+For every changed surface, check the first action a user encounters, the action beside the relevant object, and the final action after completing the inputs. Try an empty, selected and invalid state. At a narrow width, the same actions must remain reachable in the same meaningful order. These conventions draw on the [GOV.UK button guidance](https://design-system.service.gov.uk/components/button/) and the [WAI-ARIA modal dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
+
 ## Financial meaning on screen
 
 - **Position**, **transaction** and **exposure** answer different questions. A saved holding is the editable position. A transaction records a dated event. Exposure may include several positions and ETF constituents. A constituent drilldown should identify its source and lead to the appropriate level of detail.

@@ -184,6 +184,7 @@ def test_asset_filter_includes_received_leg_without_excluding_other_transactions
     assert next(s for s in app.selectbox if s.label == 'Holding to review').value != first
     button(app, 'Accept this holding').click().run()
     assert not app.exception
+    assert not any(b.label == 'Accept this holding' for b in app.button)
     button(app, 'Apply reviewed holdings').click().run()
     assert not app.exception
     journal = load_journal(tmp_path)[0]

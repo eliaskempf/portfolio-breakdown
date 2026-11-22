@@ -19,21 +19,24 @@ def clear_backup():
             del st.session_state[key]
 
 
-def backup_controls(*, demo=False, recovery=False):
-    st.markdown('**Backup & restore**')
-    disabled = demo
+def backup_controls(*, demo, recovery, managed):
+    if demo:
+        st.caption('Backups are available in My portfolio.')
+        return
+
     def open_action(action):
         clear_backup()
         st.session_state['backup_action'] = action
-        st.session_state['workspace_settings'] = False
-    st.button('Create backup', on_click=open_action, args=('create',), disabled=disabled)
-    st.button('Restore backup', on_click=open_action, args=('restore',), disabled=disabled or recovery)
-    if demo:
-        st.caption('Select My portfolio to back up or restore persisted data.')
-    elif recovery:
-        st.caption('Exact-folder recovery mode: relaunch normally to restore and switch.')
-    else:
-        st.caption('Complete portfolio archives. CSV/Excel holdings import is in Positions.')
+        st.session_state['app_menu'] = False
+
+    with st.container(horizontal=True):
+        st.button('Create backup', on_click=open_action, args=('create',),
+                  help='Close external editors before capturing a complete workspace archive.')
+        st.button('Restore backup', on_click=open_action, args=('restore',), disabled=recovery or not managed)
+    if recovery:
+        st.caption('Relaunch normally to restore a backup and switch workspaces.')
+    elif not managed:
+        st.caption('Launch with portfolio-app or the desktop shortcut to restore a backup.')
 
 
 def render_backup_dialog(directory: Path, launch: Path, generation: int) -> bool:
@@ -50,12 +53,16 @@ def render_backup_dialog(directory: Path, launch: Path, generation: int) -> bool
                     with st.spinner('Capturing and verifying portfolio…'):
                         st.session_state['backup_download'] = create_backup(directory)
                     st.session_state['backup_filename'] = datetime.now(timezone.utc).strftime('portfolio-%Y%m%d-%H%M%S.portfolio-backup.zip')
-                st.download_button('Download backup', st.session_state['backup_download'],
-                                   file_name=st.session_state['backup_filename'], mime='application/zip', on_click='ignore')
-                st.caption('Keep this private archive somewhere safe. It is not encrypted. Close external editors before creating a backup.')
+                st.caption('This private archive is unencrypted. Store it somewhere safe.')
             except (DataError, OSError) as exc:
                 st.error(str(exc))
-            if st.button('Close backup'):
+            with st.container(horizontal=True):
+                if 'backup_download' in st.session_state:
+                    st.download_button('Download backup', st.session_state['backup_download'],
+                                       file_name=st.session_state['backup_filename'], mime='application/zip',
+                                       type='primary', on_click='ignore')
+                close = st.button('Close backup')
+            if close:
                 clear_backup()
                 st.rerun()
             return
@@ -64,7 +71,10 @@ def render_backup_dialog(directory: Path, launch: Path, generation: int) -> bool
         if draft is None:
             uploaded = st.file_uploader('Portfolio backup archive', type=['zip'], key='backup_upload', max_upload_size=MAX_ARCHIVE // 1024**2)
             st.caption('Choose a complete Portfolio Breakdown backup; holdings CSV/Excel files use the separate importer.')
-            if st.button('Review backup', disabled=uploaded is None):
+            with st.container(horizontal=True):
+                review = st.button('Review backup', type='primary', disabled=uploaded is None)
+                cancel = st.button('Cancel restore')
+            if review:
                 try:
                     with st.spinner('Validating backup…'):
                         draft = inspect_backup(uploaded.getvalue())
@@ -94,7 +104,10 @@ def render_backup_dialog(directory: Path, launch: Path, generation: int) -> bool
             else:
                 st.info('The verified workspace has been restored. Switching did not complete; retry or keep it for later.')
             st.caption('Confirmation discards unsaved forms and switches this app. The same shortcut or launch path will reopen the restored workspace after restart.')
-            if st.button('Retry switch' if restored else 'Restore and switch', type='primary', disabled=not valid):
+            with st.container(horizontal=True):
+                cancel = st.button('Cancel restore')
+                restore = st.button('Retry switch' if restored else 'Restore and switch', type='primary', disabled=not valid)
+            if restore:
                 try:
                     from portfolio_app.runtime.launcher import request_instance
                     # Do not create a destination if the launcher cannot own it.
@@ -119,7 +132,7 @@ def render_backup_dialog(directory: Path, launch: Path, generation: int) -> bool
                     st.rerun()
                 except (DataError, OSError) as exc:
                     st.error(str(exc))
-        if st.button('Cancel restore'):
+        if cancel:
             clear_backup()
             st.rerun()
     dialog()

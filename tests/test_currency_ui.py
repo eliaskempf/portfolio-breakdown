@@ -20,7 +20,7 @@ def test_manual_setup_skip_persists_currency_and_default(tmp_path, currency):
     assert not app.exception
     assert load_settings(personal).reporting_currency == currency
     by_label(app.button, 'Not now').click().run()
-    assert app.selectbox(key='currency_setting_choice').value == currency
+    assert by_label(app.get('button_group'), 'Portfolio currency').value == currency
     activate(app, 'Positions')
     by_label(app.button, 'Add position').click().run()
     assert by_label(app.selectbox, 'Trade currency').value == currency
@@ -47,7 +47,7 @@ def test_review_categories_preserves_currency_through_modal_unmount(tmp_path):
 
 
 def change_review(app, target):
-    app.selectbox(key='currency_setting_choice').set_value(target).run()
+    by_label(app.get('button_group'), 'Portfolio currency').set_value(target).run()
     by_label(app.button, 'Review currency change').click().run()
     assert not app.exception
 

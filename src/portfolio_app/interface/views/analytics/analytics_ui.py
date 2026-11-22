@@ -15,6 +15,15 @@ def context_key(data_dir, demo=False):
     return 'analytics_' + sha256(f'{data_dir.resolve()}:{demo}:{reporting_currency()}'.encode()).hexdigest()[:12]
 
 
+def fundamentals_refresh_reason(holdings, demo):
+    listed = holdings.ticker.fillna('').ne('')
+    if 'instrument_type' in holdings:
+        listed &= holdings.instrument_type.fillna('').isin({'equity', 'etf', 'unknown', ''})
+    if not listed.any():
+        return 'A stock or fund with a linked ticker is required.'
+    return 'Fundamentals use fixed demo data.' if demo else ''
+
+
 def benchmark_name(symbol):
     if symbol == DEFAULT_BENCHMARK or symbol.startswith(DEFAULT_BENCHMARK + ':'):
         return 'MSCI ACWI · Net return'

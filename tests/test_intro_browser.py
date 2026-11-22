@@ -15,7 +15,7 @@ import pytest
 from portfolio_app.demo_data.demo import create_demo_data
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.settings import theme_options
-from browser_support import settle
+from browser_support import choose_appearance, open_app_menu, settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -186,7 +186,7 @@ def test_window_splash_reveals_actual_input_error(intro_page):
     playwright.expect(frame.get_by_test_id('stAlert').first).to_be_visible(timeout=20000)
     playwright.expect(page.locator('main')).to_have_count(0)
     playwright.expect(frame.locator('[data-portfolio-view-ready="true"]')).to_have_count(1)
-    frame.get_by_role('button', name='Open portfolio settings').click()
+    frame.get_by_role('button', name='Open workspace controls').click()
     playwright.expect(frame.get_by_role('button', name='Restore backup')).to_be_visible()
     assert (workspace / 'holdings.csv').read_text() == 'synthetic,invalid,columns\nexample,only,here\n'
 
@@ -231,11 +231,11 @@ def test_intro_welcome_navigation_and_help(intro_page):
     playwright.expect(dialog).to_have_count(0)
     playwright.expect(page.locator('.js-plotly-plot').first).to_be_visible()
     playwright.expect(frame).to_have_count(0)
-    page.get_by_role('button', name='App help', exact=True).click()
+    open_app_menu(page, 'Help')
     playwright.expect(page.get_by_role('link', name='User guide', exact=False)).to_be_visible()
     playwright.expect(page.get_by_role('link', name='ETF breakdowns', exact=True)).to_have_attribute('href', re.compile(r'/exposure/$'))
     page.keyboard.press('Escape')
-    page.get_by_role('button', name='Portfolio settings', exact=False).click()
+    open_app_menu(page, 'Preferences')
     page.get_by_role('radio', name='%', exact=True).click()
     page.keyboard.press('Escape')
     select_workspace(page, 'My portfolio')
@@ -365,9 +365,7 @@ def test_welcome_cards_follow_selected_theme_with_readable_text(intro_page, them
     page.get_by_role('button', name='Explore demo', exact=True).click()
     page.get_by_role('button', name='Not now', exact=True).click()
     settle(page)
-    page.get_by_role('button', name='Main menu', exact=True).click()
-    page.get_by_test_id(f'stMainMenuItem-theme-{theme}').click()
-    page.keyboard.press('Escape')
+    choose_appearance(page, theme)
     select_workspace(page, 'My portfolio')
     playwright.expect(page.get_by_role('dialog')).to_be_visible()
     for reload in (False, True):

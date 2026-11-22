@@ -35,8 +35,7 @@ def demo_plan_requested() -> bool:
 
 
 def request_tour(workspace: str, *, replay: bool = False) -> None:
-    for key in ('help_menu', 'workspace_settings'):
-        st.session_state[key] = False
+    st.session_state['app_menu'] = False
     st.session_state['tour_request'] = {'workspace': workspace, 'replay': replay}
 
 

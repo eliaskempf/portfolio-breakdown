@@ -290,9 +290,6 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
         st.button('Create account', key=key+'start_account', on_click=st.session_state.update,
                   kwargs={key+'view': 'Cash & financing', key+'cash_action': 'Create account'})
         return
-    if journal.accounts and view not in ('Collateral', 'Cash & financing'):
-        from portfolio_app.interface.views.monitoring.monitoring_ui import request_monitoring
-        st.button('Create account alert', key=key+'monitoring', on_click=request_monitoring)
     if view == 'Cash & financing':
         render_cash(directory, journal, revision, snapshot, valued, state=state)
         return
@@ -308,8 +305,17 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
         render_actual_positions(directory, journal, valued=valued)
     if state.positions:
         render_transaction(directory, journal, revision)
+    elif len(journal.accounts) == 1:
+        account = journal.accounts[0]
+        _account_alert(account.id, account.name, key+'monitoring')
     from portfolio_app.interface.views.history.account_activity_ui import render_activity
     render_activity(directory, journal, revision, key=key+'journal_')
+
+
+def _account_alert(account, name, key):
+    from portfolio_app.interface.views.monitoring.monitoring_ui import request_monitoring
+    st.button('Create account alert', key=key, help=f'Create a monitoring rule for {name}.',
+              on_click=request_monitoring, kwargs={'account': account})
 
 
 def _contract_label(balance, accounts):
@@ -339,15 +345,15 @@ def render_transaction(directory, journal, revision, *, position_ids=None, key_p
     if journal.investments and not balance.spec.investment_id:
         st.caption('This contract is not yet part of a named investment. Use the grouping control above to attribute capital and include its history.')
     contract, account = balance.contract, balance.spec.account_id
+    if key_prefix is None:
+        _account_alert(account, names[account], key+'monitoring')
     actions = ['Record settlement', 'Final settlement / expiry', 'Increase / reduce position', 'Close position', 'Roll position', 'Fee', 'Tax payment / withholding', 'Receive pending cash']
     if key_prefix is not None:
         actions.remove('Roll position')
     action = st.selectbox('Action', actions, key=key+'action')
     day = st.date_input('Event date', max_value=date.today(), key=key+'date')
-    value_day = st.date_input('Cash value date', value=day, key=key+'value_date')
     try:
         candidate = journal
-        base = dict(account_id=account, currency=contract.currency, position_id=identity, value_date=value_day.isoformat())
         if action == 'Receive pending cash':
             choices = [p.id for p in state.pending.values() if p.account_id == account
                        and (position_ids is None or p.position_id in position_ids)]
@@ -358,7 +364,11 @@ def render_transaction(directory, journal, revision, *, position_ids=None, key_p
                 format_func=lambda p: _claim_label(state.pending[p]),
                 key=key+'pending_id')
             candidate = ledger.append_event(candidate, _event(candidate, 'receive', day, account_id=account, reference=pending))
-        elif action in {'Fee', 'Tax payment / withholding'}:
+            _save_review(directory, journal, revision, candidate, key)
+            return
+        value_day = st.date_input('Cash value date', value=day, key=key+'value_date')
+        base = dict(account_id=account, currency=contract.currency, position_id=identity, value_date=value_day.isoformat())
+        if action in {'Fee', 'Tax payment / withholding'}:
             amount = _money_input(f'Amount ({contract.currency})', key+'amount')
             candidate = ledger.append_event(candidate, _event(candidate, 'fee' if action == 'Fee' else 'tax', day, amount=amount, **base))
             if action != 'Fee':
@@ -424,8 +434,7 @@ def render_cash(directory, journal, revision, snapshot, valued, *, state=None):
                   for claim in state.pending.values() if claim.account_id == account]
         if claims:
             st.dataframe(pd.DataFrame(claims), hide_index=True)
-        from portfolio_app.interface.views.monitoring.monitoring_ui import request_monitoring
-        st.button('Create account alert', key=key+'monitoring', on_click=request_monitoring, kwargs={'account': account})
+        _account_alert(account, names[account], key+'monitoring')
     actions = ['Create account', 'Opening currency balance', 'Reconcile cash balance', 'Deposit / withdrawal',
                'Transfer', 'Receive pending cash', 'Currency conversion', 'Record existing debt',
                'Borrow', 'Repay', 'Interest', 'Fee', 'Tax payment']
@@ -441,7 +450,6 @@ def render_cash(directory, journal, revision, snapshot, valued, *, state=None):
             return
         if not account:
             return
-        currency = st.selectbox('Currency', ['EUR','USD','GBP'], key=key+'currency')
         if action == 'Receive pending cash':
             choices = [p.id for p in state.pending.values() if p.account_id == account]
             if not choices:
@@ -451,6 +459,10 @@ def render_cash(directory, journal, revision, snapshot, valued, *, state=None):
             candidate = ledger.append_event(journal, _event(journal, 'receive', day, account_id=account, reference=pending))
             _save_review(directory,journal,revision,candidate,key)
             return
+        if action == 'Transfer' and len(names) == 1:
+            st.info('Create another account before recording an internal transfer.')
+            return
+        currency = st.selectbox('Currency', ['EUR','USD','GBP'], key=key+'currency')
         amount = _money_input('Amount (signed for deposits, withdrawals and interest)', key+'amount')
         note = st.text_input('Description', key=key+'note')
         base = dict(account_id=account, currency=currency, amount=amount, note=note)
@@ -466,9 +478,6 @@ def render_cash(directory, journal, revision, snapshot, valued, *, state=None):
             base['reference'] = st.text_input('Loan identifier', key=key+'loan')
         if kind == 'transfer':
             others = [a for a in names if a != account]
-            if not others:
-                st.info('Create another account before recording an internal transfer.')
-                return
             base['other_account_id'] = st.selectbox('Destination account', others, format_func=names.get, key=key+'destination')
             base['value_date'] = st.date_input('Transfer receipt date', value=day, key=key+'receipt').isoformat()
         if kind == 'fx':

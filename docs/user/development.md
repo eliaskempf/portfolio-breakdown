@@ -6,7 +6,7 @@ Start with [source installation](install.md#source) before running these command
 
 ## Interface design
 
-Use [Designing portfolio workflows](workflow-design.md) for navigation, task language, financial context, accessibility and the UI review checklist.
+Use [Designing portfolio workflows](workflow-design.md) for menu ownership, button placement and availability, task language, financial context, accessibility and the UI review checklist.
 
 The main interface prioritizes quantitative results, exploration and actions.
 Labels, grouping and consistent controls should make the view understandable

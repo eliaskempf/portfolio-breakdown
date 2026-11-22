@@ -126,10 +126,10 @@ def test_replay_restores_view_filters_drafts_and_closes_menu(tmp_path, view):
         by_label(app.number_input, 'Contribution (EUR)').set_value(750.).run()
         click(app, 'Calculate plan')
         expected = {'main_tabs':'Rebalance', 'planning_amount':750., 'rebalance_tabs':'Plan'}
-    app.session_state['help_menu'] = True
+    app.session_state['app_menu'] = True
     click(app, 'Take the tour')
     assert_step(app, 0)
-    assert not app.session_state.to_dict().get('help_menu')
+    assert not app.session_state.to_dict().get('app_menu')
     click(app, 'Skip to Exposure →')
     assert_step(app, 5)
     click(app, 'Skip tour')

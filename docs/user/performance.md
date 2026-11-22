@@ -24,7 +24,7 @@ market closures. Crypto quotes older than 24 hours have a continuous-market note
 
 ## Gains and returns {#performance}
 
-Choose **EUR**, **USD** or **GBP** during manual setup or in **Portfolio settings → Portfolio currency**.
+Choose **EUR**, **USD** or **GBP** during manual setup or in **App menu → Preferences → Portfolio currency**.
 Existing portfolios default to EUR. Changing this setting recalculates values and
 gains from original records; it does not change purchase amounts or currencies.
 Review affected positions before applying. Monetary planning inputs and previous
@@ -82,7 +82,7 @@ return of the entire category. Zero cost permits an absolute gain but no cost-ba
 percentage. TWR/XIRR have their own flow and valuation requirements.
 
 For old costs without dates, supply a converted total or exchange rate, or
-explicitly confirm a **latest FX estimate**. **Portfolio settings** lets you select affected
+explicitly confirm a **latest FX estimate**. **App menu → Preferences** lets you select affected
 positions and review their rates before confirming. Estimates may hide currency
 gains or losses, remain labelled, and keep their confirmed rates across refreshes
 and restarts. An undated conversion or estimate applies only to its saved target

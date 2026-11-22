@@ -191,3 +191,21 @@ def test_native_failure_evidence_is_captured_before_browser_teardown(tmp_path):
             assert saved['capture_errors'][0]['capture'] == 'screenshot'
         finally:
             browser.close()
+
+
+def test_windows_splash_seeds_theme_without_overriding_a_viewer_choice():
+    from portfolio_app.runtime.window_splash import startup_html
+    with browser_session(trace=False) as runner:
+        browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
+        page = browser.new_page()
+        origin = 'http://example.invalid'
+        page.route(origin + '/**', lambda route: route.fulfill(content_type='text/html',
+            body=startup_html(show_intro=False) if route.request.url.endswith('/splash') else '<p>Invented view</p>'))
+        for existing, expected in [(None, 'Dark'), ('Light', 'Light'), ('System', 'System')]:
+            page.goto(origin + '/splash')
+            if existing is not None:
+                page.evaluate("choice => localStorage.setItem('stActiveTheme-/-v2', JSON.stringify(choice))", existing)
+            assert page.evaluate("() => PortfolioSplash.open(location.origin + '/?embed_options=dark_theme')")
+            assert page.locator('#portfolio-app').get_attribute('src') == origin + '/'
+            assert page.evaluate("JSON.parse(localStorage.getItem('stActiveTheme-/-v2'))") == expected
+        browser.close()

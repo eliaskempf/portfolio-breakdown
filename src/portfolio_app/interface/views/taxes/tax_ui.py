@@ -37,7 +37,8 @@ def _poll(directory, signature, instruments):
 def _review(directory, raw, revision, item, year, manual, market, lots, fingerprint):
     key = evidence_key(year, item.instrument)
     token = sha256((key+item.key+str(revision)).encode()).hexdigest()[:16]
-    prefix = 'tax_review_'+token+'_'
+    generation = st.session_state.get('tax_edit_generation', 0)
+    prefix = f'tax_review_{token}_{generation}_'
     with st.form(prefix+'form'):
         st.caption('EUR per share')
         is_fund = True if item.is_fund else st.checkbox('Investment fund', value=manual.get('is_fund', False), key=prefix+'fund')
@@ -70,7 +71,13 @@ def _review(directory, raw, revision, item, year, manual, market, lots, fingerpr
             table = pd.DataFrame([{'Shares': row['quantity'], 'Acquired': row.get('acquired') or ''} for row in rows], columns=['Shares', 'Acquired'])
             edited = st.data_editor(table, num_rows='dynamic', hide_index=True, key=prefix+'lots',
                                    column_config={'Acquired': st.column_config.TextColumn(help='YYYY-MM-DD; any known date before the calculation year suffices for older shares.')})
-        if st.form_submit_button('Save tax inputs'):
+        with st.container(horizontal=True):
+            save = st.form_submit_button('Save tax inputs', type='primary')
+            cancel = st.form_submit_button('Cancel')
+        if cancel:
+            _close_edit()
+            st.rerun()
+        if save:
             try:
                 update = deepcopy(raw)
                 value = dict(is_fund=is_fund, start_price=start.strip(), end_price=end.strip(), price_basis=basis,
@@ -94,7 +101,7 @@ def _review(directory, raw, revision, item, year, manual, market, lots, fingerpr
                 else:
                     update['ownership'].pop(ownership_key, None)
                 save_inputs(directory, update, revision)
-                st.session_state.pop('tax_edit_target', None)
+                _close_edit()
                 st.rerun()
             except (DataError, ValueError) as exc:
                 st.error(str(exc))
@@ -103,6 +110,8 @@ def _review(directory, raw, revision, item, year, manual, market, lots, fingerpr
 
 def _close_edit():
     st.session_state.pop('tax_edit_target', None)
+    # A submitted native form can retain client values after the dialog unmounts.
+    st.session_state['tax_edit_generation'] = st.session_state.get('tax_edit_generation', 0) + 1
 
 
 @st.dialog('Fund tax inputs', width='large', on_dismiss=_close_edit)
@@ -172,8 +181,12 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
             update['settings']['church_rate'] = str(church)
             save_inputs(directory, update, revision)
             raw, revision = load_inputs(directory)
+        market_items = {item.key for item in items if item.ticker and
+                        (item.is_fund or raw['funds'].get(evidence_key(year, item.instrument), {}).get('is_fund'))}
+        refresh_help = ('Select a fund with a linked ticker in Filter to refresh its prices and payouts.'
+                        if not market_items else 'Demo prices and payouts are fixed.' if demo else 'Refresh prices and fund payouts.')
         retry = refresh_slot.button('Refresh', icon=':material/refresh:',
-            disabled=demo, key='tax_refresh', help='Refresh prices and fund payouts')
+            disabled=demo or not market_items, key='tax_refresh', help=refresh_help)
         if allowance:
             st.session_state.pop('tax_allowance_reset', None)
         elif st.session_state.get('tax_allowance_reset'):
@@ -202,7 +215,7 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
             needs_market |= manual.get('distribution_mode', 'Automatic') in ('Automatic', 'Market history') and market.get('distribution_policy') != 'Accumulating'
             if not lots and not item.holding.issues:
                 needs_market = False
-            if item.instrument not in requested and not demo and (needs_market or retry) and (item.is_fund or manual.get('is_fund')):
+            if item.instrument not in requested and not demo and (needs_market or retry) and item.key in market_items:
                 requested.add(item.instrument)
                 pending |= request_market(directory, year, item.instrument, item.ticker, force=retry)
             prepared.append((item, manual, market, inputs, result, lots))

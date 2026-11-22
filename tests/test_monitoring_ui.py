@@ -91,6 +91,7 @@ def test_browse_save_edit_pause_delete_and_recorded_history(tmp_path):
     assert len(doc['rules']) == 1 and doc['rules'][0]['window'] == 10
     assert doc['rules'][0]['period'] == 'months'
     assert app.session_state['monitoring_view'] == 'Tracked rules'
+    assert not by_label(app.button, 'Check all rules now').disabled
     by_label(app.button,'Edit rule').click().run()
     assert not app.exception
     by_label(app.text_input,'Rule name').set_value('Edited invented trend').run()
@@ -99,8 +100,12 @@ def test_browse_save_edit_pause_delete_and_recorded_history(tmp_path):
     assert load_monitoring(tmp_path)[0]['rules'][0]['revision'] == 2
     by_label(app.button,'Pause rule').click().run()
     assert not load_monitoring(tmp_path)[0]['rules'][0]['enabled']
+    assert by_label(app.button, 'Check all rules now').disabled
+    assert 'Resume a rule' in by_label(app.button, 'Check all rules now').help
     by_label(app.button,'Resume rule').click().run()
     by_label(app.button,'Delete rule').click().run()
+    actions = [b.label for b in app.button]
+    assert actions.index('Cancel deletion') < actions.index('Confirm deletion')
     by_label(app.button,'Cancel deletion').click().run()
     assert len(load_monitoring(tmp_path)[0]['rules']) == 1
     assert 'Confirm deletion' not in [b.label for b in app.button]
@@ -111,6 +116,7 @@ def test_browse_save_edit_pause_delete_and_recorded_history(tmp_path):
     by_label(app.button,'Delete rule').click().run()
     by_label(app.button,'Confirm deletion').click().run()
     assert not app.exception and not load_monitoring(tmp_path)[0]['rules']
+    assert 'Check all rules now' not in [button.label for button in app.button]
 
 
 def test_msci_has_no_intraday_option_and_account_limits_require_input(tmp_path):

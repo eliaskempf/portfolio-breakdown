@@ -527,13 +527,14 @@ def smoke(executable, *, interactive=False, welcome_only=False, evidence=None):
                         repeat = subprocess.run(command, cwd=root, env=env, timeout=20)
                         assert repeat.returncode == 0 and process.poll() is None
                         assert window_handle(api, callback, process.pid) == handle
-                        frame.get_by_role('button', name='App help', exact=True).click()
+                        frame.get_by_role('button', name='App menu', exact=True).click()
+                        frame.get_by_text('Help', exact=True).click()
                         help_link = frame.get_by_role('link', name='User guide', exact=False)
                         href = help_link.get_attribute('href')
                         assert href.startswith('http://127.0.0.1:')
                         with urlopen(href, timeout=3) as response:
                             assert b'Portfolio Breakdown' in response.read()
-                        frame.get_by_role('button', name='App help', exact=True).click()
+                        frame.get_by_role('button', name='App menu', exact=True).click()
                         if interactive:
                             file_and_link_checks(page, frame, api, callback, handle, root)
                         # The custom exit command exercises shutdown in borderless mode.

@@ -140,11 +140,12 @@ def smoke(command, evidence=None):
             dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle_app(page)
             expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
             dialog.get_by_role('button', name='Close', exact=True).first.click(); settle_app(page)
-            page.get_by_role('button', name='Portfolio settings', exact=True).click()
+            page.get_by_role('button', name='App menu', exact=True).click()
+            page.get_by_text('Preferences', exact=True).click()
             sold = page.get_by_role('checkbox', name='Show sold positions', exact=True, include_hidden=True)
             if not sold.is_checked():
                 page.get_by_text('Show sold positions', exact=True).click(); settle_app(page)
-            page.get_by_role('button', name='Portfolio settings', exact=True).click(); settle_app(page)
+            page.get_by_role('button', name='App menu', exact=True).click(); settle_app(page)
             table.get_by_text('Invented closed holding', exact=True).click(); settle_app(page)
             dialog.get_by_role('radio', name='Transactions', exact=True).click(); settle_app(page)
             expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_contain_text('26.00')
@@ -156,7 +157,10 @@ def smoke(command, evidence=None):
 
         def settings(page, action):
             settle_app(page)
-            page.get_by_role('button', name='Portfolio settings', exact=True).click()
+            page.get_by_role('button', name='App menu', exact=True).click()
+            heading = page.get_by_text('Workspace', exact=True)
+            if heading.locator('xpath=ancestor::details[1]').get_attribute('open') is None:
+                heading.click()
             page.get_by_role('button', name=action, exact=True).click()
             dialog = page.get_by_role('dialog', name=action, exact=True)
             expect(dialog).to_be_visible()

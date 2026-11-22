@@ -204,7 +204,8 @@ def test_sale_requires_nonnegative_explicit_taxes_and_preserves_zero_for_correct
     for invalid in ('-1', '', 'invalid'):
         by_label(app.text_input, 'Taxes paid / withheld').set_value(invalid).run()
         by_label(app.button, 'Save sale').click().run()
-        assert app.error and not app.exception
+        assert app.error
+        assert any('tax' in item.value.lower() for item in app.caption) and not app.exception
         assert len(load_journal(tmp_path)[0].securities[0].active_ids) == 1
     by_label(app.text_input, 'Taxes paid / withheld').set_value('0').run()
     by_label(app.button, 'Save sale').click().run()

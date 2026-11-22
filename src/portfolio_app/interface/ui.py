@@ -30,12 +30,12 @@ from portfolio_app.application import (historical_for, load_leverage_context, pr
     prepare_exposure, select_price_service)
 
 
-def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None, intro: bool = False, ignore_selection: bool = False) -> None:
+def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None, intro: bool = False, ignore_selection: bool = False, managed: bool = False) -> None:
     from portfolio_app.settings import ensure_app_theme
     ensure_app_theme()
     st.session_state['position_dialog_host_ready'] = False
     from portfolio_app.settings import icon_path
-    from portfolio_app.interface.views.workspace.workspace_ui import app_header, workspace_info
+    from portfolio_app.interface.views.workspace.workspace_ui import app_header, workspace_error, workspace_info
     persistent_data_dir = data_dir
     from portfolio_app.workspace.workspace_selection import selection, Selection
     from portfolio_app.workspace.workspace_lock import write_context, bind_workspace
@@ -65,15 +65,19 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if not render_startup_intro():
             return
     preserve_view_inputs()
-    data_dir, demo, refresh, settings_panel, notifications_slot = app_header(data_dir, demo_dir, demo=demo)
+    data_dir, demo, refresh, settings_panel, workspace_panel, notifications_slot = app_header(data_dir, demo_dir, demo=demo)
     from portfolio_app.interface.shared.calendar_ui import configure_calendar
-    configure_calendar(data_dir, settings_panel)
-    from portfolio_app.interface.views.workspace.backup_ui import backup_controls, render_backup_dialog
-    if not demo and not ignore_selection:
-        bind_workspace(persistent_data_dir, chosen)
     if settings_panel is not None:
         with settings_panel:
-            backup_controls(demo=demo, recovery=ignore_selection)
+            from portfolio_app.interface.shared.appearance_ui import appearance_controls
+            appearance_controls()
+    configure_calendar(data_dir, settings_panel)
+    from portfolio_app.interface.views.workspace.backup_ui import render_backup_dialog
+    if not demo and not ignore_selection:
+        bind_workspace(persistent_data_dir, chosen)
+    if workspace_panel is not None:
+        with workspace_panel:
+            workspace_info(data_dir, persistent_data_dir, demo=demo, managed=managed, recovery=ignore_selection)
     if not demo and render_backup_dialog(data_dir, persistent_data_dir, chosen.generation):
         mark_view_ready()
         return
@@ -88,10 +92,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     try:
         currency_settings = load_settings(data_dir)
     except DataError as exc:
-        if settings_panel is not None:
-            with settings_panel:
-                workspace_info(data_dir, persistent_data_dir, demo=demo)
-        st.error(str(exc))
+        workspace_error(exc, workspace_panel)
         mark_view_ready()
         return
     currency_context = (str(data_dir.resolve()), currency_settings.revision)
@@ -112,7 +113,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         try:
             historical = ObservationFX(load_historical_observations(data_dir)[0], historical)
         except DataError as exc:
-            st.error(str(exc))
+            workspace_error(exc, workspace_panel)
             mark_view_ready()
             return
     display_settings = None
@@ -120,8 +121,6 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         with settings_panel:
             render_currency_setting(data_dir, currency_settings)
             display_settings = st.container()
-            # Recovery controls must also be available when loading inputs fails.
-            workspace_info(data_dir, persistent_data_dir, demo=demo)
     offline_demo = demo and not (data_dir / '.live-demo').exists()
     demo_pending = demo and live_demo_pending(data_dir)
     from portfolio_app.interface.views.ingestion.import_ui import finish_import, apply_import_destination, render_import_next_steps
@@ -140,7 +139,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     try:
         leverage_context = load_leverage_context(data_dir, reporting_currency)
     except DataError as exc:
-        st.error(str(exc))
+        workspace_error(exc, workspace_panel)
         mark_view_ready()
         return
     sandbox, leverage = leverage_context.sandbox, leverage_context.settings
@@ -168,11 +167,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         holdings = snapshot.holdings
         validate_fund_listings(holdings, funds)
     except DataError as exc:
-        st.error(str(exc))
-        if settings_panel is not None:
-            st.button('Open portfolio settings', on_click=st.session_state.update,
-                      kwargs={'workspace_settings': True},
-                      help='Find the data folder and available backup and restore actions.')
+        workspace_error(exc, workspace_panel)
         mark_view_ready()
         return
     coordinator.schedule(data_dir, holdings, funds, demo=offline_demo)
@@ -223,7 +218,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             valued = journal_positions(valued, journal, price_service, reporting_currency=reporting_currency,
                 valuations=valuations, fx_rates=manual_fx)
         except DataError as exc:
-            st.error(str(exc))
+            workspace_error(exc, workspace_panel)
             mark_view_ready()
             return
     if notice := st.session_state.pop('currency_notice', None):
@@ -245,7 +240,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             else:
                 st.warning('Some prices could not be loaded. Choose Refresh prices to try again.')
                 st.dataframe(valued.loc[valued.current_value_reporting.isna(), ['name', 'valuation_note']], hide_index=True)
-                st.caption('You can also explore an offline example with App help → Take the tour, or return to My portfolio using the workspace menu.')
+                st.caption('You can also explore an offline example with App menu → Help → Take the tour, or select My portfolio in the header’s portfolio selector.')
                 mark_view_ready()
         return
     exposure_signature = analytical_signature(valued, funds, str(data_dir.resolve()), reporting_currency, allocation, leverage_context)
@@ -396,7 +391,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                         st.session_state['exposure_target_mode'] = 'Category targets'
                     target_mode = st.segmented_control('Target measure', ['Category targets', 'Exposure targets'], required=True, default='Exposure targets' if leverage.active_basis == 'exposure' else 'Category targets', key='exposure_target_mode') if (leverage.enabled or actual_active) and leverage_supported else 'Category targets'
                     if target_mode == 'Exposure targets':
-                        render_exposure_targets(data_dir, allocation, exposure_result)
+                        render_exposure_targets(data_dir, allocation, exposure_result, active_basis=leverage.active_basis)
                     else:
                         render_allocation_editor(data_dir / 'holdings.csv', snapshot, allocation)
                     if (leverage.enabled or actual_active) and leverage_supported:
@@ -455,8 +450,9 @@ def main():
     parser.add_argument("--demo", action="store_true")
     parser.add_argument("--ignore-workspace-selection", action="store_true")
     parser.add_argument("--skip-intro", action="store_true")
+    parser.add_argument("--managed", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
-    render_app(args.data_dir, demo=args.demo, demo_dir=args.demo_dir, intro=not args.skip_intro, ignore_selection=args.ignore_workspace_selection)
+    render_app(args.data_dir, demo=args.demo, demo_dir=args.demo_dir, intro=not args.skip_intro, ignore_selection=args.ignore_workspace_selection, managed=args.managed)
 
 
 if __name__ == "__main__":

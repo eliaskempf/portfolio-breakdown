@@ -29,7 +29,7 @@ On Ubuntu 22.04/24.04, the desktop workflow provides `candidate-linux-native-x64
 Install its `.deb` and launch **Portfolio Breakdown Experimental** from the
 applications menu. The package name is `portfolio-breakdown-experimental`.
 The browser archive remains available: `./portfolio-app` opens the browser; closing its tab leaves the server
-running until **Portfolio settings → App & workspace → Stop application** or `--stop`.
+running until **App menu → Workspace → Stop application** or `--stop`.
 Portable installs can add a shortcut with `--install-shortcut`.
 
 The experimental Apple Silicon macOS 15+ DMG accompanies a release only after
@@ -40,7 +40,7 @@ rejects quarantined copies, and interactive installation approval on a personal
 Mac remains unverified. This limitation must accompany the release download.
 Do not substitute an older DMG for a fresh same-source candidate.
 
-The app's **App help → User guide** opens the exact bundled public documentation, even
+The app's **App menu → Help → User guide** opens the exact bundled public documentation, even
 without internet or Pages publication. Source guides are under `docs/user/`;
 the static published archive belongs on `gh-pages`. See [user installation guide](user/install.md)
 for detailed installation, upgrades and removal.
@@ -110,7 +110,7 @@ source or invalid portfolio stops the copy rather than silently dropping files.
 
 ## Backup, restore, upgrade and uninstall
 
-For a portable archive while the app runs, use **Portfolio settings → Create
+For a portable archive while the app runs, use **App menu → Workspace → Create
 backup**, then **Download backup**. [Storage and recovery](user/storage.md#backup)
 explains review, restore and confirmed switching. For the separate folder-copy
 commands below, stop the app first:
@@ -163,8 +163,8 @@ Portfolio totals and rebalancing use the selected EUR, USD or GBP reporting
 currency; EUR is the default. Foreign-currency quotes and buy-ins are converted
 when the required FX or cost evidence is available. Existing portfolios skip the welcome dialog.
 
-The header dropdown switches portfolios, **?** opens help, and **Portfolio settings** holds
-display and workspace controls. The animation respects reduced motion and finishes
+The header dropdown switches portfolios. **App menu** contains **Preferences**,
+**Workspace** and **Help**. The animation respects reduced motion and finishes
 automatically. A failed component times out after eight seconds; `--skip-intro`
 disables it for a development server. It plays once per browser
 session, not on tab changes or portfolio switches. For source previews and replay

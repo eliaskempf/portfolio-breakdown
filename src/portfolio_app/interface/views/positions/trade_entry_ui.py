@@ -90,7 +90,7 @@ def render_trade(directory, snapshot, journal, revision, position_id, prefix, *,
                             st.caption(f'Linked cash ({key[1]}): {"Unknown" if key in after.unknown_cash else f"{value:,.2f}"}')
             except (DataError, ValueError) as exc:
                 error = str(exc)
-        if error and event:
+        if error:
             st.caption(error)
     with sections['actions']:
         if st.button('Save purchase' if kind == 'buy' else 'Save sale', type='primary', key=prefix+'save_trade'):

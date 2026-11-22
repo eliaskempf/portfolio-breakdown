@@ -39,7 +39,9 @@ def test_source_scope_filters_before_expansion_search_retains_denominator(multi_
     rows['portfolio'] = ['Satellite', 'Core', 'Core', 'Core']
     rows.to_csv(path, index=False)
     app = launch(multi_fund_workspace)
+    assert by_label(app.button, 'Clear filters').disabled
     by_label(app.selectbox, 'Source scope').set_value('Core').run()
+    assert not by_label(app.button, 'Clear filters').disabled
     assert not app.exception
     assert selected_value(app) == '€200.00'
     by_label(app.text_input, 'Search exposure').set_value('Alpha').run()
@@ -52,6 +54,9 @@ def test_source_scope_filters_before_expansion_search_retains_denominator(multi_
     assert by_label(app.selectbox, 'Source scope').value == ''
     assert by_label(app.text_input, 'Search exposure').value == ''
     assert effective(app)['Total'].sum() == 300
+    assert by_label(app.button, 'Clear filters').disabled
+    by_label(app.multiselect, 'Holdings').set_value([]).run()
+    assert not by_label(app.button, 'Clear filters').disabled
 
 
 def test_missing_source_value_stays_visible_and_percentages_are_unavailable(multi_fund_workspace):

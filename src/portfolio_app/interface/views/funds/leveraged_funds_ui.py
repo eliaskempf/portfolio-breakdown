@@ -6,6 +6,7 @@ from hashlib import sha256
 import pandas as pd
 import streamlit as st
 
+from portfolio_app.interface.shared.removal_ui import confirm_removal
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.funds.leverage_settings import FundFactor, load_leverage_settings, save_leverage_settings
 from portfolio_app.portfolio.positions import read_snapshot
@@ -71,7 +72,8 @@ def render_leveraged_funds(directory, valued):
                          + ('Unknown factor' if value.factor is None else f'{value.factor:g}×'))
                 with st.expander(f'Saved fund {index} provenance'):
                     st.json(value.__dict__)
-                if st.button(f'Remove unavailable fund {index}', key='leveraged_funds_remove_'+pid):
+                if confirm_removal(f'Remove unavailable fund {index}', scope=(directory, 'fund factor', pid, revision),
+                                   keep='Keep recorded factor', consequence='Removing this saved factor also removes its source and benchmark details.'):
                     try:
                         update_fund_factor(directory, pid, None, settings_revision=revision, holdings_revision=snapshot.revision)
                     except (DataError, OSError) as exc:
@@ -103,8 +105,10 @@ def render_leveraged_funds(directory, valued):
                                 format_func=lambda value: names.get(value, 'Unavailable saved proxy · choose a held ETF') if value else 'None')
         st.caption('A reference ETF documents the benchmark approximation. Its holdings are not treated as this fund’s owned basket. '
                    'Unknown means exposure remains incomplete; it is not assumed to be 1×.')
-        save = st.form_submit_button('Save fund factor')
-        remove = st.form_submit_button('Remove recorded factor', disabled=existing is None)
+        save = st.form_submit_button('Save fund factor', type='primary')
+    remove = existing is not None and confirm_removal(
+        'Remove recorded factor', scope=(directory, 'fund factor', position_id, revision), keep='Keep recorded factor',
+        consequence='Removing this saved factor also removes its source and benchmark details.')
     if save or remove:
         try:
             factor = None if remove else FundFactor(position_id, float(number) if known == 'Known' else None,

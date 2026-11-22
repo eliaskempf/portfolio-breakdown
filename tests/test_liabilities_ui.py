@@ -43,15 +43,16 @@ render_liabilities(Path({str(tmp_path)!r}))
     by_label(app.button, 'Save liability').click().run()
     updated = load_leverage_settings(tmp_path)[0].liabilities[0]
     assert updated.id == original.id and updated.balance_eur == 0
-    by_label(app.button, 'Remove liability').click().run()
-    assert app.error and load_leverage_settings(tmp_path)[0].liabilities
-    by_label(app.checkbox, 'Remove this liability').check()
+    assert by_label(app.button, 'Remove liability').disabled
+    assert load_leverage_settings(tmp_path)[0].liabilities
+    by_label(app.checkbox, 'Remove this liability').check().run()
     by_label(app.button, 'Remove liability').click().run()
     assert not app.exception and not app.error
     assert not load_leverage_settings(tmp_path)[0].liabilities
 
 
 def test_unavailable_legacy_fund_retained_until_explicit_removal(tmp_path):
+    from test_ui import open_popover
     from test_leveraged_funds import invented_workspace
     invented_workspace(tmp_path)
     save_leverage_settings(tmp_path, LeverageSettings(fund_factors=(FundFactor('missing-fund', None),)), None)
@@ -66,6 +67,9 @@ render_leveraged_funds(directory, read_snapshot(directory/'holdings.csv').holdin
     assert not app.exception and not app.error
     assert any('no longer match' in c.value for c in app.caption)
     assert (tmp_path / 'leverage-settings.json').read_bytes() == before
+    open_popover(app, 'Remove unavailable fund 1')
+    assert (tmp_path / 'leverage-settings.json').read_bytes() == before
+    assert by_label(app.button, 'Keep recorded factor')
     by_label(app.button, 'Remove unavailable fund 1').click().run()
     assert not app.exception and not app.error
     assert not load_leverage_settings(tmp_path)[0].fund_factors

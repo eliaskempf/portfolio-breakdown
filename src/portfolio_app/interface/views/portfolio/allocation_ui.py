@@ -290,20 +290,26 @@ def render_bulk_bucket_assignment(path, snapshot, config, stamp):
         labels = {r.position_id: f'{r["name"]} · {r.account}' if r.account else r['name']
                   for _, r in snapshot.holdings.iterrows()}
         key = f'bulk_bucket_positions_{path}_{snapshot.revision}'
+        current = st.session_state.get(key, [])
         all_button, clear_button, _ = st.columns([1, 1, 3])
-        all_button.button('Select all', help='Select every displayed position for this operation.', on_click=lambda: st.session_state.update({key: list(labels)}))
-        clear_button.button('Clear selection', help='Deselect all positions without changing saved data.', on_click=lambda: st.session_state.update({key: []}))
+        all_button.button('Select all', disabled=len(current) == len(labels), help='Select every displayed position for this operation.', on_click=lambda: st.session_state.update({key: list(labels)}))
+        clear_button.button('Clear selection', disabled=not current, help='Deselect all positions without changing saved data.', on_click=lambda: st.session_state.update({key: []}))
         selected = st.multiselect('Positions to assign', list(labels), help='Choose the holdings whose category assignment should change.', format_func=labels.get, key=key)
         names = category_labels(config)
         destination = st.selectbox('Destination category', sorted(config.descendants()),
                                    format_func=lambda value: names[value],
                                    help='Only the category changes. Quantities, costs, labels and within-category target percentages stay unchanged.')
-        if st.button(f'Assign {len(selected)} positions', help='Save the selected category assignment to these holdings immediately.', disabled=not selected, type='primary'):
+        changes = snapshot.holdings.loc[snapshot.holdings.position_id.isin(selected) &
+                                        snapshot.holdings.bucket_id.ne(destination), 'position_id'].tolist()
+        hint = ('Select positions to assign.' if not selected else 'These positions are already in this category.'
+                if not changes else 'Save the changed category assignments to holdings.')
+        unit = 'position' if len(changes) == 1 else 'positions'
+        if st.button(f'Assign {len(changes)} {unit}', help=hint, disabled=not changes, type='primary'):
             try:
                 if revision(path.parent / 'allocation.yaml') != stamp:
                     raise DataError('Category settings changed. Reload before assigning positions.')
                 from portfolio_app.portfolio.category_commands import move_category_positions
-                move_category_positions(path.parent, config, selected, destination,
+                move_category_positions(path.parent, config, changes, destination,
                                         holdings_revision=snapshot.revision, allocation_revision=stamp)
             except (DataError, OSError) as exc:
                 st.error(str(exc))

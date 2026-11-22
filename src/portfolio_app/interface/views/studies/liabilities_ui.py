@@ -52,9 +52,11 @@ def render_liabilities(directory, *, future=None):
         account = st.text_input('Account or lender', value=existing.account if existing else '')
         balance = st.text_input('Outstanding balance (EUR)', value=str(existing.balance_eur) if existing and existing.balance_eur is not None else '',
             help='Blank means unknown. Enter 0 for a known zero balance. Record debt once, separately from owned assets.')
-        save = st.form_submit_button('Save liability')
-        confirm = st.checkbox('Remove this liability', disabled=existing is None)
-        remove = st.form_submit_button('Remove liability', disabled=existing is None)
+        save = st.form_submit_button('Save liability', type='primary')
+    remove = False
+    if existing is not None:
+        confirm = st.checkbox('Remove this liability', key=form_key+'_confirm_removal')
+        remove = st.button('Remove liability', key=form_key+'_remove', disabled=not confirm)
     if save or remove:
         try:
             if remove and not confirm:

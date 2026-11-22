@@ -19,6 +19,27 @@ _spec.loader.exec_module(_sync)
 StreamlitReruns = _sync.StreamlitReruns
 
 
+def open_app_menu(page, section):
+    heading = page.get_by_test_id('stPopoverBody').get_by_text(section, exact=True)
+    if not heading.is_visible():
+        page.get_by_role('button', name='App menu', exact=True).click()
+    details = heading.locator('xpath=ancestor::details[1]')
+    if details.get_attribute('open') is None:
+        heading.click()
+    return details
+
+
+def choose_appearance(page, theme, *, standalone=False):
+    scope = page if standalone else open_app_menu(page, 'Preferences')
+    select = scope.get_by_role('combobox', name='Appearance', exact=True)
+    select.select_option(theme)
+    page.wait_for_function(
+        "theme => JSON.parse(localStorage.getItem('stActiveTheme-' + location.pathname + '-v2')) === theme",
+        arg=theme,
+    )
+    if not standalone:
+        page.keyboard.press('Escape')
+
 
 def settle(page, *, timeout=None):
     deadline = None if timeout is None else time.monotonic() + timeout / 1000

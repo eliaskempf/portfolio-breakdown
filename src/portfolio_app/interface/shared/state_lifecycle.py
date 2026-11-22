@@ -158,7 +158,7 @@ FEATURES = (
     FeatureState('fund setup', Keys(prefixes=('etf_setup_',))),
     FeatureState('editors', Keys(names=('view_editor_drafts', 'view_editor_bases')),
         tour_objects=Keys(names=('view_editor_drafts', 'view_editor_bases'))),
-    FeatureState('workspace', Keys(names=('main_tabs', 'portfolio_save_notice', 'empty_overview_add_requested', 'parsed_inputs', 'show_sold_positions', 'hide_empty_positions', 'view_unmounted_inputs')),
+    FeatureState('workspace', Keys(names=('main_tabs', 'portfolio_save_notice', 'confirm_stop', 'empty_overview_add_requested', 'parsed_inputs', 'show_sold_positions', 'hide_empty_positions', 'view_unmounted_inputs')),
         tour_objects=Keys(names=('main_tabs', 'show_sold_positions', 'hide_empty_positions'))),
     FeatureState('view preferences', Keys(prefixes=('depth_', 'geography_', 'etf_lookthrough_', 'etf_excluded_'),
         names=('display_tickers', 'active_portfolio', 'portfolio_workspace_context')), workspace=False,

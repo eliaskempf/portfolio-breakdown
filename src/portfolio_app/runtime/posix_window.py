@@ -31,6 +31,12 @@ def install_navigation(renderer, origin):
         return action == 'allow'
     if renderer == 'qtwebengine':
         from webview.platforms.qt import BrowserView
+        from qtpy.QtPrintSupport import QPrintDialog, QPrinter
+        original_view_init = BrowserView.WebView.__init__
+        def view_init(view, parent):
+            original_view_init(view, parent)
+            attach_qt_print(view, QPrinter, QPrintDialog)
+        BrowserView.WebView.__init__ = view_init
         original_handler_init = BrowserView.NavigationHandler.__init__
         def handler_init(handler, page):
             original_handler_init(handler, page)
@@ -74,6 +80,31 @@ def install_navigation(renderer, origin):
         BrowserView.BrowserDelegate = PortfolioNavigationDelegate
     else:
         raise DataError(f'Unsupported desktop renderer: {renderer}')
+
+
+def attach_qt_print(view, printer_type, dialog_type):
+    """Service window.print() in Qt and keep its printer alive until completion."""
+    printer = None
+
+    def finished(success):
+        nonlocal printer
+        printer = None
+        if not success:
+            LOG.warning('Qt could not print the portfolio view')
+
+    def requested():
+        nonlocal printer
+        if printer is not None:
+            return
+        printer = printer_type()
+        dialog = dialog_type(printer, view)
+        if dialog.exec() == dialog_type.DialogCode.Accepted:
+            view.print(printer)
+        else:
+            printer = None
+
+    view.printRequested.connect(requested)
+    view.printFinished.connect(finished)
 
 
 def save_qt_download(download, choose):

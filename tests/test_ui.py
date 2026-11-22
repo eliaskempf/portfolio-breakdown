@@ -13,6 +13,13 @@ def activate(app, tab, subtab=None):
     return app.run()
 
 
+def open_popover(app, label):
+    popover = next(item for item in app.get('popover') if item.proto.popover.label == label)
+    key = popover.proto.popover.id.split('-', 2)[2]
+    app.session_state[key] = True
+    return app.run()
+
+
 def launch(data_dir, tab="Exposure", subtab=None):
     app = AppTest.from_string(
         "from pathlib import Path\n"

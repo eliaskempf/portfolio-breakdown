@@ -43,6 +43,7 @@ def test_position_presets_details_and_risk(sample_data_dir):
     assert not app.exception
     by_label(app.get('button_group'), 'Position view').set_value('Risk').run()
     assert not app.exception
+    assert by_label(app.button, 'Refresh risk').disabled
     assert by_label(app.text_input, 'Benchmark ticker').value == 'MSCI:892400:NETR'
     by_label(app.selectbox, 'History window').set_value(1).run()
     assert not app.exception
@@ -94,9 +95,11 @@ def test_portfolio_analytics_uses_overview_scope_and_risk(sample_data_dir):
     by_label(app.multiselect, 'Accounts').set_value([]).run()
     assert not app.exception
     assert any('No held positions' in info.value for info in app.info)
+    assert 'Refresh fundamentals' not in [button.label for button in app.button]
 
 
 def test_private_fee_edit_roundtrip_in_invented_workspace(tmp_path):
+    from test_ui import open_popover
     from portfolio_app.analytics.fundamentals import load_fee_overrides
     (tmp_path / 'holdings.csv').write_text('id,name,ticker,isin,shares,instrument_type\nf,Invented fund,FFF,,1,etf\n')
     script = ('from pathlib import Path\n'
@@ -113,6 +116,12 @@ def test_private_fee_edit_roundtrip_in_invented_workspace(tmp_path):
     assert not app.exception
     fee = load_fee_overrides(tmp_path / 'fund-fees.json')['ticker:FFF']
     assert fee.rate == .004 and fee.accumulating
+    open_popover(app, 'Remove private fee')
+    choices = [b.label for b in app.button if b.label in {'Keep private fee', 'Remove private fee'}]
+    assert choices == ['Keep private fee', 'Remove private fee']
+    by_label(app.button, 'Keep private fee').click().run()
+    assert load_fee_overrides(tmp_path / 'fund-fees.json')['ticker:FFF'] == fee
+    open_popover(app, 'Remove private fee')
     by_label(app.button, 'Remove private fee').click().run()
     assert not app.exception
     assert load_fee_overrides(tmp_path / 'fund-fees.json') == {}

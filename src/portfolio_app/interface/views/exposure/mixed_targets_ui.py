@@ -41,18 +41,7 @@ def render_mixed_targets(directory, config, result, saved, revision, universe):
             column_config={'owner': None, 'category': None, 'position': None,
                 'Target (%)': st.column_config.NumberColumn(min_value=0., max_value=100.,
                     help='Share of the parent’s desired exposure. Rows within each parent must total 100%.')})
-        save = st.form_submit_button('Save exposure targets')
-        clear = st.form_submit_button('Clear exposure targets')
-    if clear:
-        from portfolio_app.funds.leverage_settings import load_leverage_settings
-        try:
-            if load_leverage_settings(directory)[0].active_basis == 'exposure':
-                raise DataError('Activate the capital policy before clearing the active exposure policy.')
-            save_exposure_targets(directory, None, config, revision)
-        except (DataError, OSError) as exc:
-            st.error(str(exc))
-        else:
-            st.rerun()
+        save = st.form_submit_button('Save exposure targets', type='primary')
     if save:
         try:
             if multiple is None or edited['Target (%)'].isna().any():

@@ -99,23 +99,6 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
         st.warning(warning)
     if message := st.session_state.pop('position_saved_notice', None):
         st.success(message)
-    action, secondary = st.columns([1, 3])
-    draft_waiting = _has_position_draft() and not st.session_state.get('position_edit_dialog')
-    add_label = 'Discard draft & add position' if draft_waiting else 'Add position'
-    overview_request = st.session_state.pop('empty_overview_add_requested', False)
-    if overview_request and draft_waiting:
-        st.info('An unsaved position draft is available. Resume it or discard it to start another.')
-    if action.button(add_label, help='Record a new purchase or add an existing holding.', type='primary', icon=':material/add:', key='tour_add_position') or (overview_request and not draft_waiting):
-        _clear_editor()
-        st.session_state.update(position_edit_action='Add position', position_edit_dialog=True)
-    if _has_position_draft():
-        if secondary.button('Resume unsaved edit', help='Reopen the position draft kept in this session.'):
-            # Reattach detached widget values even when their state keys remain.
-            for key, value in st.session_state.get('position_draft', {}).items():
-                st.session_state[key] = value
-            if origin := st.session_state.get('position_draft_origin'):
-                st.session_state['position_edit_action'], st.session_state['position_edit_selected'] = origin
-            st.session_state['position_edit_dialog'] = True
     # Apply navigation after remount: an old browser widget value can otherwise
     # restore the import form after a successful save switches to Overview.
     if requested := st.session_state.pop('positions_workflow_request', None):
@@ -147,6 +130,27 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
                 st.session_state['position_saved_notice'] = notice
             st.rerun()
     else:
+        draft_waiting = _has_position_draft() and not st.session_state.get('position_edit_dialog')
+        statement_request = st.session_state.pop('positions_existing_holding_requested', False)
+        add_requested = st.session_state.pop('empty_overview_add_requested', False) or statement_request
+        if add_requested and draft_waiting:
+            st.info('An unsaved position draft is available. Resume it or discard it to start another.')
+        with st.container(horizontal=True, key='position_list_actions'):
+            if draft_waiting and st.button('Resume unsaved edit', type='primary', help='Reopen the position draft kept in this session.'):
+                # Reattach detached widget values even when their state keys remain.
+                for key, value in st.session_state.get('position_draft', {}).items():
+                    st.session_state[key] = value
+                if origin := st.session_state.get('position_draft_origin'):
+                    st.session_state['position_edit_action'], st.session_state['position_edit_selected'] = origin
+                st.session_state['position_edit_dialog'] = True
+            add_label = 'Discard draft & add position' if draft_waiting else 'Add position'
+            add = st.button(add_label, type='secondary' if draft_waiting else 'primary', icon=':material/add:',
+                            help='Record a new purchase or add an existing holding.', key='tour_add_position')
+            if add or (add_requested and not draft_waiting):
+                _clear_editor()
+                if statement_request:
+                    st.session_state['position_edit_fields_entry_mode'] = 'Existing holding'
+                st.session_state.update(position_edit_action='Add position', position_edit_dialog=True)
         if snapshot.holdings.empty and (valued is None or valued.empty):
             st.info('Add a position or import transactions or a holdings snapshot.')
             def start_import(kind):
@@ -607,6 +611,8 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
                 trade_event, trade_error = trade_inputs(prefix, trade_journal)
                 shares, buy_in, currency = 0, None, ''
                 amount_errors = [trade_error] if trade_error else []
+                if trade_error:
+                    st.caption(trade_error)
             else:
                 shares, buy_in, currency, amount_errors = holding_amounts(prefix, row, editing=editing, from_purchases=from_purchases, rows=purchases)
         from portfolio_app.performance.cost_basis import (FIELD, active_components, aggregate_component, encode_components,

@@ -30,8 +30,9 @@ Year-start and year-end **redemption prices** are the legally preferred fund
 prices. Market prices are the statutory fallback when no redemption price is set
 (or it is not set continuously at least monthly). Otherwise the app's market
 prices are an explicitly labelled approximation. **Edit inputs** accepts EUR
-per-share price overrides and an evidence source or assumption. Foreign-currency
-market observations are converted using dated ECB reference rates, with the last
+per-share price overrides and an evidence source or assumption. **Save tax inputs**
+applies the changes to the selected fund and year. **Cancel** discards the edits.
+Foreign-currency market observations are converted using dated ECB reference rates, with the last
 published rate on or before non-publication days (at most seven days old).
 
 Distributions mean the fund's whole-year gross distributions per share, including

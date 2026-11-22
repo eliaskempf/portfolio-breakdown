@@ -52,7 +52,7 @@ not native acceptance. Verify that the file came from the intended candidate.
 ## Launch and stop {#launch-stop}
 
 Launch the installed app from its Start Menu entry or shortcut. To stop it,
-close the standalone window, or choose **Portfolio settings → App & workspace →
+close the standalone window, or choose **App menu → Workspace →
 Stop application** in browser mode. Closing a browser tab alone leaves the
 server running; relaunch the same shortcut to reopen it.
 

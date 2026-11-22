@@ -167,7 +167,8 @@ def test_recovery_controls_remain_available_with_invalid_holdings(tmp_path):
         f'render_app(Path({str(tmp_path)!r}), demo=True)\n', default_timeout=15,
     ).run()
     assert not app.exception and app.error
-    assert {'Open data folder', 'Stop application'} <= {button.label for button in app.button}
+    assert 'Open data folder' in {button.label for button in app.button}
+    assert 'Stop application' not in {button.label for button in app.button}
 
 
 def test_guided_categories_targets_and_first_physical_position(tmp_path):

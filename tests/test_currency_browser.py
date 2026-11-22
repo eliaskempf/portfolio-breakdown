@@ -2,6 +2,7 @@
 import json
 import re
 import pytest
+from browser_support import open_app_menu
 from test_ux_browser import ux_page
 
 playwright = pytest.importorskip('playwright.sync_api')
@@ -13,10 +14,9 @@ def test_currency_review_estimates_and_all_main_tabs(ux_page):
     quotes['fx'] = {c: dict(price=r, currency='EUR', observed_at='2026-09-01T12:00:00+00:00') for c,r in [('USD', .8), ('GBP', 1.2)]}
     (directory / 'demo_prices.json').write_text(json.dumps(quotes))
     original = (directory / 'holdings.csv').read_bytes()
-    page.get_by_role('button', name=re.compile(r'^(?:tune )?Portfolio settings$')).click()
+    open_app_menu(page, 'Preferences')
     settings = page.get_by_test_id('stPopoverBody')
-    settings.get_by_role('combobox', name='Portfolio currency').click()
-    page.get_by_role('option', name='USD', exact=True).click()
+    settings.get_by_role('radio', name='USD', exact=True).click()
     settings.get_by_role('button', name='Review currency change', exact=True).click()
     dialog = page.get_by_role('dialog', name='Change portfolio currency')
     playwright.expect(dialog).to_contain_text('3 positions have incomplete costs')
@@ -24,9 +24,8 @@ def test_currency_review_estimates_and_all_main_tabs(ux_page):
     playwright.expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('€330.00')
     assert (directory / 'holdings.csv').read_bytes() == original
     if not settings.is_visible():
-        page.get_by_role('button', name=re.compile(r'^(?:tune )?Portfolio settings$')).click()
-    settings.get_by_role('combobox', name='Portfolio currency').click()
-    page.get_by_role('option', name='USD', exact=True).click()
+        open_app_menu(page, 'Preferences')
+    settings.get_by_role('radio', name='USD', exact=True).click()
     settings.get_by_role('button', name='Review currency change', exact=True).click()
     dialog.get_by_role('button', name='Apply currency change').click()
     playwright.expect(page.get_by_test_id('stMetric').filter(has=page.get_by_text('Current value', exact=True))).to_contain_text('$412.50')
@@ -75,7 +74,7 @@ def test_tour_returns_to_reporting_currency_and_plan(ux_page, currency, symbol):
     amount.press('Enter')
     page.get_by_role('button', name='Calculate plan', exact=True).click()
     playwright.expect(page.get_by_role('table', name='Suggested trades', exact=True)).to_be_visible()
-    page.get_by_role('button', name='App help', exact=True).click()
+    open_app_menu(page, 'Help')
     page.get_by_role('button', name='Take the tour', exact=True).click()
     playwright.expect(page.locator('.portfolio-tour-overlay')).to_have_attribute('data-ready', 'true')
     playwright.expect(value).to_contain_text('€93,184.35')

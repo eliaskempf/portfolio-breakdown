@@ -17,6 +17,8 @@ CSS = """
 [data-stale="true"][data-portfolio-superseded] {display:none!important;}
 .block-container {max-width:1440px;padding:2rem 2.5rem 3rem;}
 [data-testid="stHeader"] {background:transparent;}
+/* App menu owns appearance and printing. Keep Streamlit's theme handlers mounted. */
+[data-testid="stMainMenu"], [data-testid="stMainMenuPopover"] {display:none !important;}
 /* Keep native, keyboard-accessible field help beside its label, not at the
    far edge of the input. Use semantic test IDs instead of generated classes. */
 [data-testid="stWidgetLabel"] > div:has(> [data-testid="stTooltipIcon"]) {flex:0 0 auto;margin-inline-start:6px;}

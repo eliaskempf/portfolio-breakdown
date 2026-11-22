@@ -8,7 +8,7 @@ import pytest
 from test_import_browser import import_page
 from portfolio_app.ledger.account_journal import load_journal
 from portfolio_app.ledger.security_history import replay_securities
-from browser_support import settle_layout, settle as render_settle
+from browser_support import open_app_menu, settle_layout, settle as render_settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -78,9 +78,9 @@ def test_closed_new_holding_category_survives_browser_review(import_page):
     assert saved.bucket_id == 'invented-category'
     assert next(iter(replay_securities(load_journal(path.parent)[0].securities).positions.values())).quantity == 0
     assert not page.get_by_test_id('stException').count()
-    page.get_by_role('button', name='Portfolio settings', exact=True).click(); settle(page)
+    open_app_menu(page, 'Preferences')
     page.get_by_text('Show sold positions', exact=True).click(); settle(page)
-    page.get_by_role('button', name='Portfolio settings', exact=True).click(); settle(page)
+    page.get_by_role('button', name='App menu', exact=True).click(); settle(page)
     open_transactions(page, 'Aur')
     playwright.expect(page.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
 
@@ -537,9 +537,9 @@ def test_partial_fills_share_one_optional_group_and_apply_together(import_page):
     assert not page.get_by_role('dialog').count()
     journal, _ = load_journal(path.parent)
     assert not page.get_by_role('table', name='Positions', exact=True).get_by_text('Aur', exact=True).count()
-    page.get_by_role('button', name='Portfolio settings', exact=True).click(); settle(page)
+    open_app_menu(page, 'Preferences')
     page.get_by_text('Show sold positions', exact=True).click(); settle(page)
-    page.get_by_role('button', name='Portfolio settings', exact=True).click(); settle(page)
+    page.get_by_role('button', name='App menu', exact=True).click(); settle(page)
     open_transactions(page, 'Aur')
     assert len(journal.transaction_imports) == 4
     assert next(iter(replay_securities(journal.securities).positions.values())).quantity == 0

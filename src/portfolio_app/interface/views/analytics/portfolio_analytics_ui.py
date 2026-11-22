@@ -8,7 +8,7 @@ from portfolio_app.interface.shared.charts import chart_config
 
 from portfolio_app.analytics.analytics import snapshot_analytics
 from portfolio_app.analytics.analytics_service import load_metrics, load_risk
-from portfolio_app.interface.views.analytics.analytics_ui import benchmark_name, context_key, data_quality_caption, display_value, render_sources, risk_settings
+from portfolio_app.interface.views.analytics.analytics_ui import benchmark_name, context_key, data_quality_caption, display_value, fundamentals_refresh_reason, render_sources, risk_settings
 from portfolio_app.interface.shared.charts import correlation_chart
 from portfolio_app.exposure.company_analysis import load_company_analysis
 from portfolio_app.interface.shared.display_names import instrument_name
@@ -27,7 +27,7 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
         with st.container(key='tour_risk_controls'):
             heading, action, options = st.columns([4, 1, 1], vertical_alignment='center')
             heading.markdown('**Historical risk**')
-            with options, st.popover('Options', help='Choose accounts and market-data options for these analytics.', icon=':material/tune:', width='stretch'):
+            with options, st.popover('Options', help='Choose the accounts, benchmark and time window for this analysis.', icon=':material/tune:', width='stretch'):
                 accounts = sorted(valued.account.unique())
                 future_account = '__future_overlay__'
                 while future_account in accounts:
@@ -39,7 +39,6 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
                 selected_accounts = st.multiselect('Accounts', accounts, default=accounts, key=scope_key + '_accounts',
                     format_func=lambda value: 'Futures position · no account assigned' if value == future_account else value)
                 benchmark, years = risk_settings(key)
-                refresh = st.button('Refresh fundamentals', help='Request fresh public company fundamentals for this analysis.', icon=':material/refresh:', disabled=demo, key=key + '_refresh')
             selected = valued.loc[valued.account.isin(selected_accounts) & valued.shares.gt(0)].copy()
             scope_active = scoped or set(selected_accounts) != set(accounts)
             risk_future = future if future_account in selected_accounts else None
@@ -71,7 +70,11 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
     if selected.empty:
         return
     st.divider()
-    st.markdown('**Valuation & income**')
+    with st.container(horizontal=True, vertical_alignment='center', key='fundamentals_toolbar'):
+        st.markdown('**Valuation & income**', width='content')
+        refresh_reason = fundamentals_refresh_reason(selected, demo)
+        refresh = st.button('Refresh fundamentals', icon=':material/refresh:', disabled=bool(refresh_reason),
+                            help=refresh_reason or 'Refresh public fundamentals for the selected holdings.', key=key + '_refresh')
     try:
         with st.spinner('Loading analytics…'):
             snapshots = load_metrics(selected, data_dir, demo=demo, refresh=refresh)

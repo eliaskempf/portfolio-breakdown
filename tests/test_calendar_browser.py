@@ -69,8 +69,7 @@ def test_week_preference_changes_grid_and_preserves_date_selection(calendar_page
     expect(grid.get_by_role('button',name='Tuesday, January 6, 2026',exact=True)).to_be_focused()
     page.keyboard.press('Enter');settle(page)
     expect(page.get_by_text('2026-01-06',exact=True)).to_be_visible()
-    page.get_by_role('combobox',name='Week starts on',exact=True).click()
-    page.get_by_role('option',name='Sunday',exact=True).click();settle(page)
+    page.get_by_role('radio',name='Sunday',exact=True).click();settle(page)
     assert load_preferences(root).week_start=='Sunday'
     expect(page.get_by_text('2026-01-06',exact=True)).to_be_visible()
     field.get_by_role('spinbutton').first.click()
@@ -78,7 +77,7 @@ def test_week_preference_changes_grid_and_preserves_date_selection(calendar_page
     assert grid.locator('thead th').all_text_contents()==['S','M','T','W','T','F','S']
     assert grid.locator('tbody tr').nth(1).get_by_role('button').first.get_attribute('aria-label')=='Sunday, January 4, 2026'
     page.reload();page.get_by_test_id('stDateInput').wait_for();settle(page)
-    expect(page.get_by_role('combobox',name='Week starts on',exact=True)).to_have_value('Sunday')
+    expect(page.get_by_role('radio',name='Sunday',exact=True)).to_be_checked()
     field.get_by_role('spinbutton').first.click()
     expect(grid).to_be_visible()
     assert grid.locator('thead th').all_text_contents()[0]=='S'

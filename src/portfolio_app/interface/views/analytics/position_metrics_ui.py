@@ -1,6 +1,7 @@
 """Position-list views and instrument metrics inside the existing detail dialog."""
 
 from portfolio_app.interface.shared.currency_display import reporting_currency
+from portfolio_app.interface.shared.removal_ui import confirm_removal
 from datetime import date
 
 import pandas as pd
@@ -9,7 +10,7 @@ import streamlit as st
 from portfolio_app.analytics.analytics import metric_value
 from portfolio_app.analytics.analytics_service import load_metrics, load_risk
 from portfolio_app.interface.views.analytics.analytics_ui import (benchmark_name, context_key, data_quality_caption, display_value,
-    render_sources, risk_settings)
+    fundamentals_refresh_reason, render_sources, risk_settings)
 from portfolio_app.analytics.fundamentals import DEFINITIONS, FundFee, Metric, fee_key, finite, load_fee_overrides, save_fee_override
 from portfolio_app.portfolio.holdings import DataError
 
@@ -41,7 +42,16 @@ def position_metric_toolbar(holdings, data_dir, *, demo=False, account_valued=No
         chosen = st.multiselect('Visible metrics', choices, help='Choose which metric columns appear in the position list.', default=PRESETS[view],
                                 format_func=LABELS.get, key=key + '_columns_' + view)
         benchmark, years = risk_settings(key) if view == 'Risk' else ('', 3)
-        refresh = st.button('Refresh metrics', help='Request fresh fundamentals for the displayed instruments.', icon=':material/refresh:', disabled=demo, key=key + '_refresh_' + view)
+        if view == 'Risk':
+            reason = '' if benchmark and 'current_value_reporting' in holdings else 'Choose a benchmark and include valued holdings.'
+            if demo:
+                reason = 'Risk uses fixed demo price history.'
+            label, help_text = 'Refresh risk', 'Refresh the price histories used to estimate risk.'
+        else:
+            reason = fundamentals_refresh_reason(holdings, demo)
+            label, help_text = 'Refresh fundamentals', 'Refresh public fundamentals for the displayed holdings.'
+        refresh = st.button(label, help=reason or help_text, icon=':material/refresh:', disabled=bool(reason),
+                            key=key + '_refresh_' + view)
     snapshots, risk = {}, None
     benchmark_label = benchmark_name(benchmark)
     if view == 'Risk':
@@ -165,7 +175,9 @@ def render_fee_editor(row, data_dir, key):
             verified = st.date_input('Fee verification date', value=date.fromisoformat(current.verified_on) if current else date.today(), max_value=date.today())
             accumulating = st.checkbox('Verified accumulating share class', help='Confirm the share class reinvests distributions; this affects interpretation of its price history.', value=current.accumulating if current else False)
             save = st.form_submit_button('Save private fee', type='primary')
-            remove = st.form_submit_button('Remove private fee', disabled=current is None)
+        remove = current is not None and confirm_removal(
+            'Remove private fee', scope=(data_dir, 'fee', fee_key(row), current), keep='Keep private fee',
+            consequence='Removing the private fee also removes its source, verification date and income-policy override.')
         if save or remove:
             try:
                 if save and rate is None:

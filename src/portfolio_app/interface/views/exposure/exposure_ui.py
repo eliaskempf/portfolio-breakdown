@@ -139,6 +139,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     with filters:
         with st.container():
             metadata = {}
+            narrowed_metadata = False
             for dimension in dimensions:
                 choices = sorted(holdings[dimension].unique())
                 meta_key = f'filter_meta_{dimension}'
@@ -150,6 +151,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                     dimension.replace("_", " ").title(), choices, help='Filter contributing positions by this saved classification.', default=choices,
                     format_func=lambda value: value or "Unspecified", key=f"filter_meta_{dimension}",
                 )
+                narrowed_metadata |= len(metadata[dimension]) < len(choices)
             ids = list(holdings["id"].unique())
             labels = {row.id: (f"{instrument_name(row)} ({row.ticker or row.id.upper()})" if show_tickers else instrument_name(row)) for row in holdings.itertuples()}
             counts = Counter(labels.values())
@@ -192,7 +194,9 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                 st.session_state[f'filter_meta_{dimension}'] = sorted(holdings[dimension].unique())
             for name in names:
                 st.session_state[f'filter_taxonomy_{name}'] = []
-        st.button('Clear filters', help='Restore the full source selection for this analysis.', on_click=clear_filters)
+        active_filters = scope or query or narrowed_metadata or len(selected_ids) < len(ids) or taxonomy_filters
+        st.button('Clear filters', disabled=not active_filters, help='Reset source scope, holdings, classifications and search.',
+                  on_click=clear_filters)
     if price_service is None:
         try:
             from portfolio_app.market.market_data import provider_cache

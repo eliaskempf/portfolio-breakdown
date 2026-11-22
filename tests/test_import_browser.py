@@ -89,6 +89,16 @@ render_app(Path(__file__).parent / 'synthetic-portfolio', demo=True,
         process.wait(timeout=10)
 
 
+def test_statement_import_without_holdings_opens_position_entry(import_page):
+    page, _ = import_page
+    page.streamlit_reruns.click(page, page.get_by_role('radio', name='Import', exact=True))
+    page.streamlit_reruns.click(page, page.get_by_role('radio', name='Statement PDFs', exact=True))
+    page.get_by_role('button', name='Add holding for statement', exact=True).click()
+    playwright.expect(page.get_by_role('radio', name='Positions', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('dialog')).to_be_visible()
+    playwright.expect(page.get_by_role('dialog').get_by_role('radio', name='Existing holding', exact=True)).to_be_checked()
+
+
 @pytest.mark.parametrize('import_page', ['normal', 'delayed_navigation'], indirect=True)
 def test_upload_review_chart_allocation_and_listing(import_page):
     page, path = import_page

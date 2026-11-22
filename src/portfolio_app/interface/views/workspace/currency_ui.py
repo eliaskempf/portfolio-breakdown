@@ -19,13 +19,12 @@ from portfolio_app.application import historical_for
 
 
 def render_currency_setting(directory, settings):
-    st.markdown('**Portfolio**')
-    currency = st.selectbox('Portfolio currency', REPORTING_CURRENCIES,
-        index=REPORTING_CURRENCIES.index(settings.reporting_currency), key='currency_setting_choice')
+    currency = st.segmented_control('Portfolio currency', REPORTING_CURRENCIES, required=True,
+        default=settings.reporting_currency, key='currency_setting_choice')
     if currency != settings.reporting_currency:
         def request_change():
             st.session_state['currency_change_requested'] = currency
-            st.session_state['workspace_settings'] = False
+            st.session_state['app_menu'] = False
         st.button('Review currency change', on_click=request_change)
 
 
@@ -74,7 +73,7 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
         render_fx_progress(directory)
         labels = dict(zip(missing.position_id, missing.name))
         selection = st.multiselect('Estimate missing conversions for selected positions', list(labels),
-            format_func=lambda key: labels[key], key='currency_estimate_selection')
+            format_func=lambda key: labels[key], key='currency_estimate_selection') if labels else []
         signature = (target, snapshot.revision, settings.revision, tuple(selection))
         saved = st.session_state.get('currency_estimate_review')
         if selection and st.button('Review FX estimates'):
@@ -101,7 +100,10 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
             st.warning('These estimates use current FX for historical costs and may hide currency gains or losses. The reviewed rates will stay fixed.')
             token = sha256(repr(saved).encode()).hexdigest()[:12]
             confirmed = st.checkbox('Use these FX estimates for the selected positions', key='currency_estimate_confirm_' + token)
-        if st.button('Apply currency change', type='primary', disabled=bool(selection) and not confirmed):
+        with st.container(horizontal=True):
+            apply = st.button('Apply currency change', type='primary', disabled=bool(selection) and not confirmed)
+            cancel = st.button('Cancel currency change')
+        if apply:
             try:
                 from portfolio_app.workspace.workspace_lock import workspace_lock
                 with workspace_lock(directory):
@@ -118,10 +120,8 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
                 st.session_state.pop('currency_setting_choice', None)
                 reset_currency_views()
                 st.rerun()
-        if st.button('Cancel currency change'):
-            st.session_state.pop('currency_change_requested', None)
-            st.session_state.pop('currency_estimate_review', None)
-            st.session_state.pop('currency_setting_choice', None)
+        if cancel:
+            dismiss()
             st.rerun()
     review()
     return True

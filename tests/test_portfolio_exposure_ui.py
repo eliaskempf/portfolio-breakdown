@@ -124,6 +124,7 @@ def test_overview_summary_scope_and_future_visibility(tmp_path):
 
 
 def test_ordinary_workflow_enablement_and_chart_policy_independence(tmp_path):
+    from test_ui import open_popover
     from portfolio_app.exposure.exposure_targets import ExposureTargets, save_exposure_targets
     from portfolio_app.funds.leverage_settings import load_leverage_settings
     source, _ = synthetic_workspace(tmp_path)
@@ -161,8 +162,27 @@ def test_ordinary_workflow_enablement_and_chart_policy_independence(tmp_path):
     assert all((source/name).read_bytes() == data for name, data in before.items())
     activate(app, 'Rebalance', 'Targets')
     by_label(app.get('button_group'), 'Target measure').set_value('Exposure targets').run()
+    assert not any(item.proto.popover.label == 'Clear exposure targets' for item in app.get('popover'))
+    assert (source/'exposure-targets.json').read_bytes() == policy_bytes
+    assert any('To clear these targets, select Capital allocation' in caption.value for caption in app.caption)
+    by_label(app.selectbox, 'Active planning basis').set_value('capital')
+    by_label(app.button, 'Save active policy').click().run()
+    open_popover(app, 'Clear exposure targets')
+    assert by_label(app.button, 'Keep exposure targets')
+    activate(app, 'Overview')
+    activate(app, 'Rebalance', 'Targets')
+    by_label(app.get('button_group'), 'Target measure').set_value('Exposure targets').run()
+    assert not any(button.label == 'Keep exposure targets' for button in app.button)
+    assert (source/'exposure-targets.json').read_bytes() == policy_bytes
+    open_popover(app, 'Clear exposure targets')
+    by_label(app.button, 'Keep exposure targets').click().run()
+    assert (source/'exposure-targets.json').read_bytes() == policy_bytes
+    open_popover(app, 'Clear exposure targets')
     by_label(app.button, 'Clear exposure targets').click().run()
-    assert any('Activate the capital policy' in x.value for x in app.error)
+    assert not app.exception and not app.error
+    assert load_exposure_targets(source, CONFIG)[0] is None
+    assert not any(item.proto.popover.label == 'Clear exposure targets' for item in app.get('popover'))
+
 
 
 def test_active_future_cannot_disable_and_planner_requires_declared_collateral(tmp_path):

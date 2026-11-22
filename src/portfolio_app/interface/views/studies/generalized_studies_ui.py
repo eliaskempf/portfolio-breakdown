@@ -180,10 +180,9 @@ def render_generalized_studies(directory=None, *, positions=(), reporting_curren
             index=[1, 3, 5, 10].index(saved.get('history_years', 3)), key=prefix+'history_years')
         st.caption('Downloading a proxy does not establish that it tracks this contract. Confirm its index identity, '
                    'currency and return convention below. No fund or index is selected automatically.')
-        if st.button('Load free proxy and dated FX', key=prefix+'load_history'):
+        if st.button('Load free proxy and dated FX', key=prefix+'load_history', disabled=not ticker.strip(),
+                     help='Enter a public listing ticker to load its price and FX history.'):
             try:
-                if not ticker.strip():
-                    raise DataError('Enter an explicit public listing ticker.')
                 rows, provenance = fetch_proxy_rows(ticker, years, reporting_currency, directory)
                 st.session_state[prefix+'history_imported'] = rows
                 st.session_state[prefix+'history_generation'] = st.session_state.get(prefix+'history_generation', 0)+1

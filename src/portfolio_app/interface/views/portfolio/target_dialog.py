@@ -1,5 +1,6 @@
 """Contextual Overview target editing; full policy setup stays in Rebalance."""
 from uuid import uuid4
+import math
 
 import streamlit as st
 
@@ -62,11 +63,20 @@ def render_target_dialog(directory, *, manage_capital=None, manage_exposure=None
                             help=f'Percentage of {draft.label}. These targets must total 100%.')})
                 missing = int(edited.Target.isna().sum())
                 total = float(edited.Target.sum())
-                st.caption(f'{total:g}% assigned' + (f' · {missing} missing' if missing else ' · needs 100%' if abs(total-100)>1e-7 else ''))
-            else:
+                complete = not missing and math.isclose(total, 100., abs_tol=1e-7)
+                st.caption(f'{total:g}% assigned' + (f' · {missing} missing' if missing else '' if complete else ' · needs 100%'))
+            if draft.edits_multiple and multiple is None:
+                st.caption('Enter a total exposure multiple to save.')
+            if not len(edited):
                 st.caption('Target shares follow funded holdings.')
         with st.container(horizontal=True):
-            if draft is not None and st.button('Save',type='primary',key='overview_target_save',disabled=not len(draft.rows) and not draft.edits_multiple):
+            if draft is None or (draft.rows.empty and not draft.edits_multiple):
+                st.button('Manage targets', type='primary', key='overview_target_manage', on_click=manage)
+                if st.button('Close', key='overview_target_cancel'):
+                    dismiss()
+                    st.rerun()
+                return
+            if st.button('Save', type='primary', key='overview_target_save'):
                 try:
                     save_target_edit(draft,edited,multiple=multiple)
                 except (DataError,OSError,ValueError) as exc:

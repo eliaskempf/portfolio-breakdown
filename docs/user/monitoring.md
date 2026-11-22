@@ -19,7 +19,7 @@ then name the rule and choose **Track rule** in the save row above the chart.
 pause/resume and deletion. Position details offer **Track this asset**; account
 and collateral views offer **Create account alert**.
 
-For an offline introduction, choose **App help → Take the tour** and use the chapter
+For an offline introduction, choose **App menu → Help → Take the tour** and use the chapter
 shortcuts to reach Monitoring. Its trend, saved rule, triggered alert and
 acknowledgment use a fresh temporary synthetic workspace. Your existing rules
 and acknowledgments are preserved.

@@ -99,7 +99,16 @@ def test_strategic_drill_down_planned_bucket_and_bulk_assignment(tmp_path, sampl
     by_label(app.button, 'Up one level').click().run()
     assert by_label(app.selectbox, 'Category').value == ''
     position_action(app, 'Strategic allocation')
+    assert by_label(app.button, 'Clear selection').disabled
+    assert by_label(app.button, 'Assign 0 positions').disabled
+    by_label(app.selectbox, 'Destination category').set_value('bucket-1').run()
+    by_label(app.multiselect, 'Positions to assign').set_value(
+        before.loc[before.bucket_id.eq('bucket-1'), 'position_id'].tolist()).run()
+    assert by_label(app.button, 'Assign 0 positions').disabled
+    assert 'already in this category' in by_label(app.button, 'Assign 0 positions').help
     by_label(app.button, 'Select all').click().run()
+    assert by_label(app.button, 'Select all').disabled
+    assert not by_label(app.button, 'Assign 1 position').disabled
     assert len(by_label(app.multiselect, 'Positions to assign').value) == 3
     by_label(app.selectbox, 'Destination category').set_value('planned').run()
     by_label(app.button, 'Assign 3 positions').click().run()

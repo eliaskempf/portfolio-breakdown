@@ -34,6 +34,24 @@ def test_broker_selection_and_allowance_reset(tmp_path):
     assert not app.exception and not app.error
 
 
+def test_refresh_requires_a_selected_fund_with_a_ticker(tmp_path, monkeypatch):
+    create_tax_sample(tmp_path)
+    monkeypatch.setattr('portfolio_app.interface.views.taxes.tax_ui.request_market', lambda *a, **kw: False)
+    app = AppTest.from_string(
+        'from pathlib import Path\n'
+        'from portfolio_app.ledger.account_journal import load_journal\n'
+        'from portfolio_app.portfolio.positions import read_snapshot\n'
+        'from portfolio_app.interface.views.taxes.tax_ui import render_taxes\n'
+        f'root = Path({str(tmp_path)!r})\n'
+        "render_taxes(root, read_snapshot(root / 'holdings.csv').holdings, load_journal(root)[0])"
+    ).run()
+    assert not app.exception
+    assert not by_label(app.button, 'Refresh').disabled
+    by_label(app.multiselect, 'ETFs').set_value([]).run()
+    assert by_label(app.button, 'Refresh').disabled
+    assert 'linked ticker' in by_label(app.button, 'Refresh').help
+
+
 def test_tax_header_reflects_effective_price_bases(tmp_path):
     from portfolio_app.taxes.tax_evidence import save_inputs
     app = launch(tmp_path)
@@ -65,6 +83,17 @@ def test_save_review_and_forecast(tmp_path):
     assert raw['funds']['2026:SYNTHETIC001']['start_price'] == '120'
     assert raw['settings']['church_rate'] == '.09' or D(raw['settings']['church_rate']) == D('.09')
     assert (tmp_path/'account-journal.json').read_bytes() == before
+
+
+def test_cancel_fund_input_changes_preserves_saved_values(tmp_path):
+    app = launch(tmp_path)
+    before = load_inputs(tmp_path)
+    by_label(app.button, 'Edit inputs').click().run()
+    by_label(app.text_input, 'Year-start price override').set_value('987')
+    by_label(app.button, 'Cancel').click().run()
+    assert not app.exception and load_inputs(tmp_path) == before
+    by_label(app.button, 'Edit inputs').click().run()
+    assert by_label(app.text_input, 'Year-start price override').value != '987'
 
 
 def test_inactive_tax_view_does_not_fetch_or_calculate(tmp_path):

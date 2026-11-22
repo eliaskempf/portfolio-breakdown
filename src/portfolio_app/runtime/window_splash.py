@@ -105,8 +105,21 @@ def startup_html(show_intro=True):
         },
         open(url) {
           if (opened) return true;
-          if (new URL(url).origin !== location.origin) return false;
-          opened = true; state = 'document-loaded'; frame.src = url;
+          const target = new URL(url);
+          if (target.origin !== location.origin) return false;
+          // An embed theme forces that choice on every load. Seed the native
+          // viewer preference once so Preferences can change it in this window.
+          const initial = target.searchParams.get('embed_options');
+          if (initial === 'dark_theme' || initial === 'light_theme') {
+            try {
+              const key = 'stActiveTheme-' + target.pathname + '-v2';
+              if (!localStorage.getItem(key)) {
+                localStorage.setItem(key, JSON.stringify(initial === 'dark_theme' ? 'Dark' : 'Light'));
+              }
+              target.searchParams.delete('embed_options');
+            } catch { /* Keep the launch theme if browser storage is unavailable. */ }
+          }
+          opened = true; state = 'document-loaded'; frame.src = target.href;
           return true;
         }
       };

@@ -10,7 +10,7 @@ The persistent default is independent of the launch directory:
 | Windows | `%LOCALAPPDATA%\portfolio-breakdown\portfolio` |
 | macOS | `~/Library/Application Support/portfolio-breakdown/portfolio` |
 
-Open **Portfolio settings → App & workspace** to see the active folder and use
+Open **App menu → Workspace** to see the active folder and use
 **Open data folder** to open it in your file manager. A confirmed restore can
 remember a different active folder for the same shortcut (see below).
 For a custom launch directory, see [advanced launch options](install.md#commands).
@@ -74,7 +74,7 @@ invalid references. See [Futures and leverage](futures.md) for the workflows.
 
 ## Back up and restore {#backup}
 
-Open **Portfolio settings → Create backup** while **My portfolio** is selected.
+Open **App menu → Workspace → Create backup** while **My portfolio** is selected.
 Wait for verification, then choose **Download backup** and save the
 `.portfolio-backup.zip` file. Browser mode uses the browser download flow; the
 Windows window uses its native Save dialog. Canceling the download leaves your
@@ -95,7 +95,7 @@ Third-party provider runtime caches are stored separately from portfolio data.
 
 To restore:
 
-1. Open **Portfolio settings → Restore backup** and select the archive.
+1. Open **App menu → Workspace → Restore backup** and select the archive.
 2. Choose **Review backup**. The app checks format compatibility, paths, file
    sizes, checksums and portfolio data before showing the review.
 3. Review the saved currency, position/category/classification/ETF counts and

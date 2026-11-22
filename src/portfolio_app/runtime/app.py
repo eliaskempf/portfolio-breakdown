@@ -109,7 +109,7 @@ def main(*, presentation: Presentation | None = None) -> None:
                            '--browser.gatherUsageStats=false']
                 if getattr(sys, 'frozen', False):
                     command += ['--server.fileWatcherType=none', '--global.developmentMode=false']
-                command += ['--', '--data-dir', str(directory), '--demo-dir', str(demo_dir)]
+                command += ['--', '--managed', '--data-dir', str(directory), '--demo-dir', str(demo_dir)]
                 if args.ignore_workspace_selection:
                     command.append('--ignore-workspace-selection')
                 if args.skip_intro:

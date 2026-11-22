@@ -38,50 +38,87 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                     reset_workspace()
                     st.session_state['portfolio_workspace_context'] = context
             offline = demo and not (data_dir / '.live-demo').exists()
-            refresh = st.button('Refresh prices', help='Request updated quotes and exchange rates. Unavailable in the synthetic offline demo.', icon=':material/refresh:', type='tertiary', disabled=offline)
+            refresh = not offline and st.button('Refresh prices', help='Request updated quotes and exchange rates.',
+                icon=':material/refresh:', type='tertiary')
             notifications = st.container(key='header_notifications', width=44)
+            preferences = workspace_panel = None
             if touring:
-                st.button('Portfolio settings', icon=':material/tune:', disabled=True)
-                st.button('App help', disabled=True)
-                settings = None
+                st.button('App menu', disabled=True, help='Finish or leave the tour to use the app menu.')
             else:
-                settings = st.popover('Portfolio settings', help='Portfolio display preferences and local workspace controls.', icon=':material/tune:', key='workspace_settings', on_change='rerun')
-                with settings:
-                    st.caption('Appearance: choose Light, Dark or System from the top-right app menu.')
-                with st.popover('App help', help='Help and demo guide', key='help_menu', on_change='rerun'):
-                    from portfolio_app.runtime.documentation import guide_url
-                    from portfolio_app.interface.views.onboarding.tour import request_tour
-                    st.button('Take the tour', on_click=request_tour, args=('demo' if demo else 'manual',),
-                              kwargs={'replay': True})
-                    if guide_url() is None:
-                        st.warning('The guide bundled with this app is unavailable. Reinstall the complete app to restore version-matched help.')
-                    else:
-                        st.link_button('User guide', guide_url(), icon=':material/menu_book:')
-                        st.link_button('Getting started', guide_url('getting-started/'))
-                        st.link_button('Categories and targets', guide_url('allocation/'))
-                        st.link_button('ETF breakdowns', guide_url('exposure/'))
-                        st.link_button('Monitoring and alerts', guide_url('monitoring/'))
-                    if demo and not touring:
-                        st.caption('Invented holdings and buy-ins. Demo changes reset on restart.')
-                        st.caption('Synthetic offline prices.' if offline else 'Public market quotes and history; availability varies.')
-    return data_dir, demo, refresh, settings, notifications
+                menu = st.popover('App menu', key='app_menu', on_change='rerun')
+                if not menu.open:
+                    st.session_state.pop('confirm_stop', None)
+                with menu:
+                    preferences = _menu_section('Preferences')
+                    workspace_panel = _menu_section('Workspace')
+                    with _menu_section('Help'):
+                        _help(demo)
+    return data_dir, demo, refresh, preferences, workspace_panel, notifications
 
 
-def workspace_info(active: Path, persistent: Path, *, demo: bool) -> None:
-    with st.expander('App & workspace'):
-        st.caption(f'Portfolio Breakdown {app_version()} · GPL-3.0-only')
-        st.caption('Temporary demo folder' if demo else 'Portfolio folder')
-        st.code(str(active.resolve()), language=None)
-        if st.button('Open data folder', help='Open the active portfolio’s local storage folder in the file manager.'):
-            from portfolio_app.runtime.desktop import open_folder
-            try:
-                open_folder(active)
-            except OSError as exc:
-                st.error(f'Could not open the folder: {exc}')
-        st.caption('Create backup saves a complete archive while the app runs. Closing the app window stops it; closing a browser tab does not.')
-        if st.button('Stop application', help='Stop this local app process; saved portfolio files remain on disk.'):
-            from portfolio_app.runtime.launcher import stop_instance
-            st.info('Stopping the local application. You can close this tab.')
-            timer = threading.Timer(.5, stop_instance, args=(persistent,))
-            timer.daemon = True
-            timer.start()
+def _section_changed(selected):
+    if st.session_state[selected]:
+        for key in ('menu_preferences', 'menu_workspace', 'menu_help'):
+            if key != selected:
+                st.session_state[key] = False
+    if not st.session_state.get('menu_workspace'):
+        st.session_state.pop('confirm_stop', None)
+
+
+def _menu_section(label):
+    key = 'menu_' + label.lower()
+    return st.expander(label, key=key, on_change=_section_changed, args=(key,))
+
+
+def open_workspace_menu():
+    st.session_state.update(app_menu=True, menu_workspace=True, menu_preferences=False, menu_help=False)
+
+
+def workspace_error(error, workspace_panel):
+    st.error(str(error))
+    if workspace_panel is not None:
+        st.button('Open workspace controls', on_click=open_workspace_menu,
+                  help='Find the data folder and available backup and restore actions.')
+
+
+def _help(demo):
+    from portfolio_app.runtime.documentation import guide_url
+    from portfolio_app.interface.views.onboarding.tour import request_tour
+    if guide_url() is None:
+        st.warning('The guide bundled with this app is unavailable. Reinstall the complete app to restore version-matched help.')
+    else:
+        for title, topic in [('User guide', ''), ('Getting started', 'getting-started/'),
+                             ('Categories and targets', 'allocation/'), ('ETF breakdowns', 'exposure/'),
+                             ('Monitoring and alerts', 'monitoring/')]:
+            st.link_button(title, guide_url(topic))
+    st.button('Take the tour', on_click=request_tour, args=('demo' if demo else 'manual',),
+              kwargs={'replay': True})
+
+
+def workspace_info(active: Path, persistent: Path, *, demo: bool, managed: bool, recovery: bool) -> None:
+    from portfolio_app.interface.views.workspace.backup_ui import backup_controls
+    st.caption('Temporary demo folder' if demo else 'Portfolio folder')
+    st.code(str(active.resolve()), language=None)
+    if st.button('Open data folder', help='Open this workspace in the file manager.'):
+        from portfolio_app.runtime.desktop import open_folder
+        try:
+            open_folder(active)
+        except OSError as exc:
+            st.error(f'Could not open the folder: {exc}')
+    backup_controls(demo=demo, recovery=recovery, managed=managed)
+    st.divider()
+    st.caption(f'Portfolio Breakdown {app_version()} · GPL-3.0-only')
+    if not managed:
+        return
+    if st.session_state.get('confirm_stop'):
+        st.warning('Stop the app for all open windows? Unsaved forms will close.')
+        with st.container(horizontal=True):
+            st.button('Keep running', on_click=st.session_state.pop, args=('confirm_stop', None))
+            if st.button('Confirm stop'):
+                from portfolio_app.runtime.launcher import stop_instance
+                st.info('Stopping the local application. You can close this tab.')
+                timer = threading.Timer(.5, stop_instance, args=(persistent,))
+                timer.daemon = True
+                timer.start()
+    else:
+        st.button('Stop application', on_click=st.session_state.update, kwargs={'confirm_stop': True})

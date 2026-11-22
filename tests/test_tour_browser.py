@@ -2,7 +2,7 @@
 import pytest
 from portfolio_app.interface.views.onboarding.tour_steps import STEPS
 from test_intro_browser import intro_server, intro_page  # noqa: F401
-from browser_support import select_tab, settle
+from browser_support import choose_appearance, open_app_menu, select_tab, settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -107,7 +107,7 @@ def test_demo_tour_every_view_and_menu_replay(intro_page):
     page.get_by_role('textbox', name='Search exposure', exact=True).fill('Nvidia')
     page.get_by_role('textbox', name='Search exposure', exact=True).press('Enter')
     settle(page)
-    page.get_by_role('button', name='App help', exact=True).click()
+    open_app_menu(page, 'Help')
     page.get_by_role('button', name='Take the tour', exact=True).click()
     step(page, 0)
     playwright.expect(page.get_by_role('button', name='Take the tour', exact=True)).to_be_hidden()
@@ -144,10 +144,8 @@ def test_tour_theme_resize_scroll_and_keyboard_exit(intro_page, theme):
     page.goto(url)
     page.get_by_role('button', name='Explore demo', exact=True).click()
     page.get_by_role('button', name='Not now', exact=True).click()
-    page.get_by_role('button', name='Main menu', exact=True).click()
-    page.get_by_test_id(f'stMainMenuItem-theme-{theme}').click()
-    page.keyboard.press('Escape')
-    page.get_by_role('button', name='App help', exact=True).click()
+    choose_appearance(page, theme)
+    open_app_menu(page, 'Help')
     page.get_by_role('button', name='Take the tour', exact=True).click()
     card = step(page, 0)
     playwright.expect(card).to_have_attribute('data-tour-theme', theme.lower())
@@ -180,7 +178,7 @@ def test_tour_theme_resize_scroll_and_keyboard_exit(intro_page, theme):
     playwright.expect(page.get_by_role('tab', name='Overview', exact=True)).to_have_attribute('aria-selected', 'true')
 
 
-def test_help_chevron_keeps_menu_open(intro_page):
+def test_app_menu_chevron_keeps_sections_open(intro_page):
     page, url, _ = intro_page
     page.emulate_media(reduced_motion='reduce')
     page.goto(url)
@@ -189,9 +187,11 @@ def test_help_chevron_keeps_menu_open(intro_page):
     settle(page)
     # Click the actual icon position: changing expand_more to expand_less must
     # not detach the event target and dismiss the menu as an outside click.
-    icon = page.get_by_role('button', name='App help', exact=True).get_by_test_id('stIconMaterial')
+    icon = page.get_by_role('button', name='App menu', exact=True).get_by_test_id('stIconMaterial')
     bounds = icon.bounding_box()
     page.mouse.click(bounds['x'] + bounds['width']/2, bounds['y'] + bounds['height']/2)
+    playwright.expect(page.get_by_text('Help', exact=True)).to_be_visible()
+    open_app_menu(page, 'Help')
     playwright.expect(page.get_by_role('button', name='Take the tour', exact=True)).to_be_visible()
     page.keyboard.press('Escape')
     playwright.expect(page.get_by_role('button', name='Take the tour', exact=True)).to_be_hidden()

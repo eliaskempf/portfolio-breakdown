@@ -49,7 +49,7 @@ def configure_calendar(directory, settings_panel):
                     save_preferences(directory, st.session_state[key], preferences.revision)
                 except DataError as exc:
                     st.session_state['calendar_preference_error'] = str(exc)
-            st.selectbox('Week starts on', WEEK_STARTS, index=WEEK_STARTS.index(preferences.week_start),
+            st.segmented_control('Week starts on', WEEK_STARTS, default=preferences.week_start, required=True,
                 key=key, on_change=save, help='First weekday in all date pickers. Saved for this portfolio.')
             if error := st.session_state.pop('calendar_preference_error', None):
                 st.error(error)

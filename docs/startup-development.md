@@ -35,7 +35,7 @@ uv run portfolio-app --foreground --offline-demo --data-dir /tmp/portfolio-start
 
 On Windows, use an equivalent new temporary path. The app chooses a free loopback
 port and opens the browser. The intro precedes a two-choice welcome dialog.
-Use Explore demo to check the header, workspace dropdown, question-mark help,
+Use Explore demo to check the header, workspace dropdown, App menu Help section,
 Settings, navigation and position dialogs without market network access. Use
 Start my portfolio to check optional categories/targets and first-position entry.
 Skip setup to check empty Positions and its Add/import actions. Physical asset

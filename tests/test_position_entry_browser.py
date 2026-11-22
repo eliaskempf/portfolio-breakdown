@@ -4,7 +4,7 @@ import re
 import pytest
 
 from test_ux_browser import playwright, ux_page  # noqa: F401
-from browser_support import select_tab, settle
+from browser_support import open_app_menu, select_tab, settle
 
 
 def add_manually(page, *, purchase=False):
@@ -38,6 +38,22 @@ def test_recording_method_and_draft_survive_inspecting_another_position(ux_page)
     page.keyboard.press('Escape')
     playwright.expect(dialog).to_have_count(0)
     playwright.expect(page.get_by_role('button', name='Discard draft & add position', exact=True)).to_be_visible()
+    actions = page.locator('.st-key-position_list_actions')
+    for width in (1440, 390):
+        page.set_viewport_size({'width': width, 'height': 1000})
+        resume = actions.get_by_role('button', name='Resume unsaved edit', exact=True)
+        discard = actions.get_by_role('button', name='Discard draft & add position', exact=True)
+        playwright.expect(resume).to_have_attribute('kind', 'primary')
+        playwright.expect(discard).to_have_attribute('kind', 'secondary')
+        resume.focus()
+        page.keyboard.press('Tab')
+        playwright.expect(discard).to_be_focused()
+    page.set_viewport_size({'width': 1440, 'height': 1000})
+    tools = page.get_by_role('radiogroup', name='Position tools')
+    page.streamlit_reruns.click(page, tools.get_by_role('radio', name='Import', exact=True))
+    playwright.expect(page.get_by_role('button', name='Discard draft & add position', exact=True)).to_have_count(0)
+    playwright.expect(page.get_by_role('button', name='Resume unsaved edit', exact=True)).to_have_count(0)
+    page.streamlit_reruns.click(page, tools.get_by_role('radio', name='Positions', exact=True))
     table = page.get_by_role('table', name='Positions', exact=True)
     edit = table.get_by_role('button', name='Edit Invented Global · First', exact=True)
     page.streamlit_reruns.click(page, edit)
@@ -131,12 +147,10 @@ def test_search_selection_and_settings_help(ux_page):
     header.focus()
     playwright.expect(table.locator('.header-help').filter(has_text='Desired allocation')).to_be_visible()
     assert 'portfolio' in header.get_attribute('aria-description').lower()
-    page.get_by_role('button', name=re.compile(r'^(?:tune )?Portfolio settings$')).click()
-    playwright.expect(page.get_by_text('Appearance: choose Light, Dark or System from the top-right app menu.', exact=True)).to_be_visible()
+    open_app_menu(page, 'Preferences')
+    playwright.expect(page.get_by_text('Portfolio currency', exact=True)).to_be_visible()
     page.keyboard.press('Escape')
-    page.get_by_role('button', name='Main menu', exact=True).click()
-    playwright.expect(page.get_by_text('Clear cache', exact=True)).to_have_count(0)
-    page.keyboard.press('Escape')
+    playwright.expect(page.get_by_role('button', name='Main menu', exact=True)).to_be_hidden()
     select_tab(page, 'Positions')
     page.get_by_role('button', name=re.compile(r'^(?:add )?Add position$')).click()
     dialog = page.get_by_role('dialog')
@@ -208,15 +222,17 @@ def test_purchase_first_save_history_and_followup_sale(ux_page):
     playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
     playwright.expect(dialog.get_by_role('button', name='Review against portfolio', exact=True)).not_to_be_visible()
     runs.click(page, dialog.get_by_role('button', name='Add sell'))
-    for label, value in [('Quantity sold', '1'), ('Unit price', '110'), ('Fees', '1'), ('Taxes paid / withheld', '2')]:
+    for label, value in [('Quantity sold', '1'), ('Fees', '1'), ('Taxes paid / withheld', '2')]:
         runs.commit_text(page, dialog.get_by_role('textbox', name=label, exact=True), value)
-    playwright.expect(dialog.get_by_text('Net proceeds: 107.00 EUR', exact=True)).to_be_visible()
     for width in (620, 390):
         page.set_viewport_size({'width': width, 'height': 950})
         assert dialog.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
         playwright.expect(dialog.get_by_role('textbox', name='Taxes paid / withheld', exact=True)).to_be_visible()
     page.set_viewport_size({'width': 1440, 'height': 1000})
-    runs.click(page, dialog.get_by_role('button', name='Save sale', exact=True))
+    # Submit directly from the final field. Blurring must not consume the first Save click.
+    price = dialog.get_by_role('textbox', name='Unit price', exact=True)
+    price.fill('110')
+    dialog.get_by_role('button', name='Save sale', exact=True).click()
     playwright.expect(dialog.get_by_role('table', name='Transactions', exact=True)).to_be_visible()
     journal = load_journal(directory)[0]
     assert len(journal.securities[0].active_ids) == 3

@@ -75,6 +75,7 @@ def test_windows_streamlit_launch_uses_frozen_dispatch(tmp_path, monkeypatch):
         main()
     assert seen[0][1:3] == ['--internal-streamlit', 'run']
     assert '--server.fileWatcherType=none' in seen[0]
+    assert '--managed' in seen[0][seen[0].index('--') + 1:]
 
 
 def test_windowed_entry_uses_console_companion_for_server(monkeypatch, tmp_path):

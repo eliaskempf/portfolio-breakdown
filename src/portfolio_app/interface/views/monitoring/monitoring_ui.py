@@ -302,7 +302,14 @@ def _account_editor(directory, holdings, journal, *, demo=False, existing=None):
     delivery = _delivery(key, existing)
     with st.popover('Data freshness', icon=':material/schedule:'):
         age = _freshness(key+'age_', existing.max_age_minutes if existing else 10080, label='Maximum valuation / FX age')
+    fields = ((name, 'rule name'), (threshold_text, 'trigger percentage'), (warning_text, 'warning percentage'))
+    missing = [label for value, label in fields if not value.strip()]
+    if missing:
+        st.caption('Required to save: ' + ', '.join(missing) + '.')
     if st.button('Save account rule', type='primary', key=key+'save'):
+        if missing:
+            st.error('Complete the required fields above.')
+            return
         try:
             threshold, warning = float(threshold_text), float(warning_text)
         except ValueError as exc:
@@ -354,8 +361,7 @@ def _account_inputs(rule, values, holdings, journal):
                 for r in inputs['requirements']]), hide_index=True, width='stretch')
 
 
-def _tracked(directory, holdings, journal, *, demo=False):
-    doc, _ = load_monitoring(directory)
+def _tracked(directory, holdings, journal, doc, *, demo=False):
     rules = {r['id']:rule_from_dict(r) for r in doc['rules']}
     if not rules:
         st.info('No tracked rules yet. Browse an indicator or create an account alert.')
@@ -397,9 +403,9 @@ def _tracked(directory, holdings, journal, *, demo=False):
     if st.session_state.get('monitoring_delete_requested') == identity:
         st.warning('Delete this saved rule? Recorded observations and alerts will remain in History.')
         with st.container(horizontal=True):
-            confirm = st.button('Confirm deletion', key='monitoring_delete_confirm')
             st.button('Cancel deletion', key='monitoring_delete_cancel',
                       on_click=st.session_state.pop, args=('monitoring_delete_requested', None))
+            confirm = st.button('Confirm deletion', key='monitoring_delete_confirm')
         if confirm:
             delete_rule(directory, identity, rule.revision)
             st.session_state.pop('monitoring_delete_requested', None)
@@ -469,25 +475,27 @@ def render_monitoring(directory, holdings, journal, *, demo=False):
     if view != 'Tracked rules':
         st.session_state.pop('monitoring_delete_requested', None)
     try:
-        if view == 'Tracked rules':
+        doc, _ = load_monitoring(directory)
+        if view == 'Tracked rules' and doc['rules']:
             service = monitoring_for(directory, demo=demo)
             status, check = st.columns([4,1.5], vertical_alignment='center')
             status.caption('Last rule check · '+observation_time(service.last_success),
                 help='Last completed evaluation pass over all enabled saved rules. Individual results may be stale or unavailable; see the Data column below. Checks run every five minutes while the app is open, on any tab.')
-            if check.button('Check all rules now', key='monitoring_refresh', width='stretch',
-                            help='Request a fresh evaluation of all enabled saved rules. This does not refer to the instrument being explored in Browse.'):
+            enabled = any(rule['enabled'] for rule in doc['rules'])
+            if check.button('Check all rules now', key='monitoring_refresh', width='stretch', disabled=not enabled,
+                            help='Check every enabled rule.' if enabled else 'Resume a rule to check it.'):
                 service.schedule(refresh=True)
             if service.error:
                 st.warning(service.error)
-        _monitoring_banners(load_monitoring(directory)[0])
+        _monitoring_banners(doc)
         if view == 'Browse':
             _browse(directory, holdings, demo=demo)
         elif view == 'Tracked rules':
-            _tracked(directory, holdings, journal, demo=demo)
+            _tracked(directory, holdings, journal, doc, demo=demo)
         elif view == 'Account alerts':
             _account_editor(directory, holdings, journal, demo=demo)
         else:
-            _history(load_monitoring(directory)[0])
+            _history(doc)
     except (DataError, OSError) as exc:
         st.error(str(exc))
 
@@ -590,9 +598,10 @@ def render_alert_event(directory, rule, event, *, review=None):
             st.write('Recorded account inputs · '+rule.currency)
         if evaluation.get('note'):
             st.write(evaluation['note'])
-    a,b = st.columns(2)
-    a.button('View rule', key='monitoring_dialog_'+event['id'], on_click=review, args=(event['rule_id'],), width='stretch', disabled=review is None)
-    if b.button('Acknowledge alert', type='primary', key='monitoring_ack_'+event['id'], width='stretch',
+    acknowledge, details = st.columns(2) if review is not None else (st, None)
+    if details is not None:
+        details.button('View rule', key='monitoring_dialog_'+event['id'], on_click=review, args=(event['rule_id'],), width='stretch')
+    if acknowledge.button('Acknowledge alert', type='primary', key='monitoring_ack_'+event['id'], width='stretch',
                 help='Silence this alert episode. The rule remains enabled and rearms after recovery.'):
         mark_events(directory, [event['id']], acknowledge=True)
         st.rerun()

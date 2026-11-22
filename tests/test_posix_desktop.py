@@ -303,3 +303,36 @@ def test_cocoa_evidence_requires_all_hosted_opt_ins(monkeypatch, tmp_path, missi
     assert not enabled()
     with pytest.raises(RuntimeError, match='disposable hosted probe'):
         PanelEvidence(tmp_path)
+
+
+def test_qt_print_cancel_and_async_completion_allow_another_request():
+    from types import SimpleNamespace
+    from portfolio_app.runtime.posix_window import attach_qt_print
+
+    callbacks = {}
+    printed = []
+    view = SimpleNamespace(
+        printRequested=SimpleNamespace(connect=lambda slot: callbacks.update(request=slot)),
+        printFinished=SimpleNamespace(connect=lambda slot: callbacks.update(finish=slot)),
+        print=printed.append,
+    )
+    outcomes = iter((False, True, True))
+
+    class Dialog:
+        DialogCode = SimpleNamespace(Accepted=True)
+
+        def __init__(self, printer, parent):
+            assert parent is view
+
+        def exec(self):
+            return next(outcomes)
+
+    attach_qt_print(view, object, Dialog)
+    callbacks['request']()
+    assert printed == []
+    callbacks['request']()
+    callbacks['request']()
+    assert len(printed) == 1
+    callbacks['finish'](True)
+    callbacks['request']()
+    assert len(printed) == 2 and printed[0] is not printed[1]

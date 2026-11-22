@@ -9,7 +9,7 @@ from urllib.request import urlopen
 import pytest
 from browser_runtime import browser_session, start_server
 from tax_sample import create_tax_sample
-from browser_support import StreamlitReruns, settle
+from browser_support import choose_appearance, StreamlitReruns, settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -67,7 +67,19 @@ def test_tax_year_broker_selection_review_and_navigation(tmp_path):
             page.get_by_text('Fund details', exact=True).click(); settle(page)
             page.get_by_role('button', name='Edit inputs', exact=True).click(); settle(page)
             page.get_by_text('Price overrides', exact=True).click(); settle(page)
-            page.get_by_role('textbox', name='Year-start price override', exact=True).fill('101')
+            price_override = page.get_by_role('textbox', name='Year-start price override', exact=True)
+            original = price_override.input_value()
+            price_override.fill('987')
+            page.get_by_role('button', name='Save tax inputs', exact=True).focus()
+            page.keyboard.press('Tab')
+            cancel = page.get_by_role('dialog').get_by_role('button', name='Cancel', exact=True)
+            playwright.expect(cancel).to_be_focused()
+            cancel.press('Enter')
+            playwright.expect(page.get_by_role('dialog')).to_have_count(0)
+            page.get_by_role('button', name='Edit inputs', exact=True).click(); settle(page)
+            page.get_by_text('Price overrides', exact=True).click(); settle(page)
+            playwright.expect(price_override).to_have_value(original)
+            price_override.fill('101')
             page.get_by_role('textbox', name='Evidence / assumption', exact=True).fill('Invented browser assumption')
             page.get_by_role('button', name='Save tax inputs', exact=True).click(); settle(page)
             playwright.expect(page.get_by_text('€355.97', exact=True)).to_be_visible()
@@ -82,9 +94,7 @@ def test_tax_year_broker_selection_review_and_navigation(tmp_path):
             assert not page.get_by_test_id('stException').count()
             assert page.get_by_test_id('stMetric').first.bounding_box()['y'] < 500
             for theme in ('Dark', 'Light'):
-                page.get_by_role('button', name='Main menu', exact=True).click()
-                page.get_by_test_id(f'stMainMenuItem-theme-{theme}').click()
-                page.keyboard.press('Escape'); settle(page)
+                choose_appearance(page, theme); settle(page)
                 assert page.get_by_role('tab', name='Taxes', exact=True).evaluate('(el) => getComputedStyle(el).color') == 'rgb(84, 112, 198)'
             page.reload(); settle(page)
             page.get_by_role('tab', name='Taxes', exact=True).click(); settle(page)

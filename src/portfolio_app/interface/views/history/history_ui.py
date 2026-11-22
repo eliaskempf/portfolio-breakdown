@@ -178,7 +178,10 @@ def _remove_transactions(directory, journal, revision, snapshot, book, row, key)
     from portfolio_app.ledger.history_commands import changed_positions
     if not changed_positions(journal, candidates):
         st.caption('These entries are not applied. Your portfolio balances stay unchanged.')
-        if st.button('Remove transactions', type='primary', key=key+'remove_pending'):
+        with st.container(horizontal=True):
+            st.button('Keep transactions', key=key+'keep_pending', on_click=_history_action, args=(key, 'list'))
+            remove = st.button('Remove transactions', key=key+'remove_pending')
+        if remove:
             save_history(directory, candidates[0], other_changes=tuple(candidates[1:]),
                 expected_journal_revision=revision, expected_holdings_revision=snapshot.revision, activate=True)
             _history_action(key, 'list')
@@ -187,7 +190,7 @@ def _remove_transactions(directory, journal, revision, snapshot, book, row, key)
     owner = candidates[0]
     source_row = snapshot.holdings.loc[snapshot.holdings.position_id.eq(owner.position_id)].iloc[0]
     _activation(directory, journal, revision, snapshot, owner, source_row, key+'remove_',
-        resolution='accept', show_review=True, action_label='Remove transactions', other_changes=tuple(candidates[1:]),
+        resolution='accept', show_review=True, removal=True, other_changes=tuple(candidates[1:]),
         return_key=key)
 
 
@@ -535,7 +538,7 @@ def _legacy_evidence(directory, journal, revision, snapshot, book, row, key):
         st.rerun()
 
 
-def _activation(directory, journal, revision, snapshot, candidate, row, key, *, resolution, review_container=None, show_review=False, action_label=None, other_changes=(), return_key=None):
+def _activation(directory, journal, revision, snapshot, candidate, row, key, *, resolution, review_container=None, show_review=False, removal=False, other_changes=(), return_key=None):
     from portfolio_app.interface.shared.currency_display import reporting_currency
     from portfolio_app.performance.history_observations import ObservationFX
     historical = ObservationFX(load_observations(directory)[0])
@@ -587,7 +590,7 @@ def _activation(directory, journal, revision, snapshot, candidate, row, key, *, 
         st.session_state.pop(key+'reviewed', None)
         st.session_state[(return_key or _key(directory, candidate.position_id))+'screen'] = 'list'
         st.rerun()
-    preview = render_history_review(build, key=key, apply=apply, keep=keep, action_label=action_label)
+    preview = render_history_review(build, key=key, apply=apply, keep=keep, removal=removal)
     if preview is None:
         return
     candidate = next(b for b in preview.journal.securities if b.position_id == candidate.position_id)

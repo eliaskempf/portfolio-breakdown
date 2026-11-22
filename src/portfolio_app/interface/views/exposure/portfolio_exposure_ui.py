@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from portfolio_app.interface.shared.money import euros, format_money
+from portfolio_app.interface.shared.removal_ui import confirm_removal
 from portfolio_app.interface.shared.charts import chart_config
 
 from portfolio_app.interface.shared.charts import style_figure
@@ -138,7 +139,7 @@ def render_company_move(result, rows):
         st.caption('Identified exposure only. Isolated company price move with other prices and FX unchanged. Futures contribution uses approximate index weights; this is not a forecast of correlated market moves.')
 
 
-def render_exposure_targets(directory, config, result):
+def render_exposure_targets(directory, config, result, *, active_basis):
     st.subheader('Exposure targets')
     if config is None or not config.leaves():
         st.info('Save strategic categories first to configure exposure targets using stable category IDs.')
@@ -155,7 +156,8 @@ def render_exposure_targets(directory, config, result):
             st.error(str(read_error))
             return
     if saved:
-        st.caption(f'Saved policy: {saved.universe} exposure · {saved.multiple:g}× whole-portfolio net equity')
+        policy_label = 'Active policy' if active_basis == 'exposure' else 'Saved policy'
+        st.caption(f'{policy_label} · {saved.universe} exposure · {saved.multiple:g}× whole-portfolio net equity')
         labels = {'': 'Portfolio', **category_labels(config)}
         scope = st.selectbox('Target hierarchy', list(labels), format_func=labels.get, key='exposure_control_target_hierarchy')
         try:
@@ -180,7 +182,26 @@ def render_exposure_targets(directory, config, result):
     if weights == 'mixed':
         from portfolio_app.interface.views.exposure.mixed_targets_ui import render_mixed_targets
         render_mixed_targets(directory, config, result, saved, revision, universe)
+    else:
+        _category_exposure_targets(directory, config, saved, revision, universe, weights, labels, converting)
+    if saved is None:
         return
+    if active_basis == 'exposure':
+        st.caption('To clear these targets, select Capital allocation under Active planning basis and save the policy.')
+    elif confirm_removal('Clear exposure targets', scope=(directory, 'exposure targets', revision),
+                         keep='Keep exposure targets',
+                         consequence='Clearing removes the saved exposure policy, including its total multiple and target weights.'):
+        try:
+            if load_leverage_settings(directory)[0].active_basis == 'exposure':
+                raise DataError('Activate the capital policy before clearing the active exposure policy.')
+            save_exposure_targets(directory, None, config, revision)
+        except (DataError, OSError) as exc:
+            st.error(str(exc))
+        else:
+            st.rerun()
+
+
+def _category_exposure_targets(directory, config, saved, revision, universe, weights, labels, converting):
     leaves = sorted(config.leaves()) if weights == 'leaves' else [b.id for b in config.buckets]
     with st.form('exposure_target_form_' + str(revision)):
         policy = st.selectbox('Exposure policy', ['composition', 'overlay_only'], index=(['composition', 'overlay_only'].index(saved.policy) if saved else None),
@@ -196,18 +217,15 @@ def render_exposure_targets(directory, config, result):
         overlay_categories = sorted(config.descendants())
         overlay = st.selectbox('Overlay destination (overlay-only policy)', overlay_categories,
                               index=overlay_categories.index(saved.overlay_bucket) if saved and saved.overlay_bucket in overlay_categories else None, format_func=labels.get)
-        save = st.form_submit_button('Save exposure targets')
-        clear = st.form_submit_button('Clear exposure targets')
-    if save or clear:
+        save = st.form_submit_button('Save exposure targets', type='primary')
+    if save:
         try:
-            if clear and load_leverage_settings(directory)[0].active_basis == 'exposure':
-                raise DataError('Activate the capital policy before clearing the active exposure policy.')
-            if save and (multiple is None or policy is None):
+            if multiple is None or policy is None:
                 raise DataError('Choose an exposure policy and total multiple.')
             composition = {row['Bucket ID']: float(row['Exposure composition (%)']) for row in edited.to_dict('records') if pd.notna(row['Exposure composition (%)'])}
-            if save and policy == 'composition' and len(composition) != len(leaves):
+            if policy == 'composition' and len(composition) != len(leaves):
                 raise DataError('Set every leaf composition explicitly, including zeros.')
-            target = None if clear else ExposureTargets(float(multiple), policy, {k: v/100 for k, v in composition.items()} if policy == 'composition' else {}, overlay or '' if policy == 'overlay_only' else '', version=2, universe=universe, weights=weights)
+            target = ExposureTargets(float(multiple), policy, {k: v/100 for k, v in composition.items()} if policy == 'composition' else {}, overlay or '' if policy == 'overlay_only' else '', version=2, universe=universe, weights=weights)
             save_exposure_targets(directory, target, config, revision)
         except (DataError, OSError) as exc:
             st.error(str(exc))

@@ -158,7 +158,7 @@ existing manual holdings only switch when you explicitly choose live spot pricin
 
 ## Calendar layout
 
-Date pickers show Monday through Sunday by default. Choose **Portfolio settings →
+Date pickers show Monday through Sunday by default. Choose **App menu → Preferences →
 Week starts on** to switch between Monday and Sunday. This preference is saved
 with the portfolio and applies to its date pickers without changing recorded dates.
 

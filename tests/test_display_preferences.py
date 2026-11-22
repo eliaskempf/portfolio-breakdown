@@ -32,12 +32,12 @@ from portfolio_app.interface.shared.calendar_ui import configure_calendar
 configure_calendar(Path({str(tmp_path)!r}),st.container())
 '''
     app=AppTest.from_string(script).run()
-    assert by_label(app.selectbox,'Week starts on').value=='Monday'
-    by_label(app.selectbox,'Week starts on').select('Sunday').run()
+    assert by_label(app.get('button_group'),'Week starts on').value=='Monday'
+    by_label(app.get('button_group'),'Week starts on').set_value('Sunday').run()
     assert not app.exception
     assert load_preferences(tmp_path).week_start=='Sunday'
     reopened=AppTest.from_string(script).run()
-    assert by_label(reopened.selectbox,'Week starts on').value=='Sunday'
+    assert by_label(reopened.get('button_group'),'Week starts on').value=='Sunday'
 
 
 def test_invalid_preferences_are_not_overwritten(tmp_path):

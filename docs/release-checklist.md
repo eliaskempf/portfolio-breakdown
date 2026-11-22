@@ -114,8 +114,8 @@ not a pending manual task.
       retained and concurrent edits are rejected.
 - [ ] EUR/USD/GBP selection survives guided setup, Skip setup, Finish later and
       restart. New buy-ins default to the reporting currency; existing originals stay intact.
-- [ ] Portfolio settings currency review supports cancellation, exclusions and explicit
-      per-position FX-estimate confirmation. Portfolio settings closes before the review dialog.
+- [ ] App menu → Preferences currency review supports cancellation, exclusions and explicit
+      per-position FX-estimate confirmation. The menu closes before the review dialog.
       Estimates remain labelled and fixed across refreshes; reverting currency restores
       original-currency costs. Missing purchase FX affects gains, not current-value totals.
 - [ ] Mixed-currency purchase batches, per-row dates/rates and supplied converted
@@ -126,8 +126,11 @@ not a pending manual task.
       missing prices/FX and cached fallback stay visible. Manual pricing remains
       available and existing manual holdings stay unchanged until explicitly switched.
       Unit changes clear draft amounts; editing preserves the stored unit.
-- [ ] Header workspace dropdown, question-mark help and Portfolio settings work at desktop
-      and narrow widths; Portfolio settings retains recovery controls with invalid inputs.
+- [ ] The workspace selector and single App menu work at desktop and narrow widths.
+      Preferences, Workspace and Help can each be opened by keyboard. Invalid inputs retain the Workspace recovery actions.
+- [ ] On changed screens, check actions with an empty selection, an eligible item and an open draft.
+      Submit directly after typing the last required value. Cancel a consequential action,
+      revisit its source and verify the saved object and available buttons.
 - [ ] Demo targets (60/25/10/5), equity 70/30 split, mixed gains/losses, both
       equity ETF issuer breakdowns, real price history and rebalancing work with
       live public data. Retry/missing-data states are honest; quantities initialize
@@ -165,7 +168,7 @@ not a pending manual task.
 - [ ] Spaces and non-ASCII paths work.
 - [ ] Offline/stale/missing data states are understandable.
 - [ ] Migration, backup and restoration preserve an invented complete workspace.
-- [ ] Portfolio settings creates a `.portfolio-backup.zip` with currency settings,
+- [ ] App menu → Workspace creates a `.portfolio-backup.zip` with currency settings,
       purchase-cost/FX metadata, categories/targets, classifications, ETF holdings
       and baskets, overrides, caches and document backups. Verify downloaded bytes.
 - [ ] In browser and Windows WebView2 modes, native upload/Save dialogs work and

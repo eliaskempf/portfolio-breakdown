@@ -14,6 +14,7 @@ from urllib.request import urlopen
 
 import pytest
 
+from browser_support import choose_appearance
 from test_grid_browser import page as page, playwright
 
 
@@ -26,10 +27,12 @@ import pandas as pd
 import streamlit as st
 from portfolio_app.portfolio.allocation import Allocation, Bucket
 from portfolio_app.interface.shared.presentation import apply_style
+from portfolio_app.interface.shared.appearance_ui import appearance_controls
 from portfolio_app.interface.views.portfolio.strategic_ui import render_strategic_overview
 from portfolio_app.interface.shared.search_widget import render_search_box
 st.set_page_config(layout="wide")
 apply_style()
+appearance_controls()
 config = Allocation((Bucket("first category:α", "First category", target=.65),
                      Bucket("second", "Second category", target=.25),
                      Bucket("empty", "Empty category", target=.1)))
@@ -90,9 +93,7 @@ def test_chart_click_updates_category_positions_and_back(page):
 
 
 def test_dark_mode_reaches_chart_and_search_and_survives_reload(page):
-    page.get_by_role("button", name="Main menu", exact=True).click()
-    page.get_by_test_id("stMainMenuItem-theme-Dark").click()
-    page.keyboard.press("Escape")
+    choose_appearance(page, 'Dark', standalone=True)
     background = page.get_by_test_id("stApp").evaluate("el => getComputedStyle(el).backgroundColor")
     assert sum(int(c) for c in background.removeprefix("rgb(").removesuffix(")").split(",")) < 200
     search_color = page.get_by_role('searchbox', name='Filter positions').evaluate("el => getComputedStyle(el).color")

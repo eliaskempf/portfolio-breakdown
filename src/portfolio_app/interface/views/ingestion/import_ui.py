@@ -66,6 +66,8 @@ def _statement_position(directory, snapshot):
     labels = position_labels(positions)
     if not labels:
         st.info('Add the holding first to import its Consorsbank buy or sale statements.')
+        st.button('Add holding for statement', on_click=st.session_state.update,
+                  kwargs={'positions_workflow_request': 'Positions', 'positions_existing_holding_requested': True})
         return
     select = st.selectbox('Holding on the statement', list(labels), format_func=labels.get,
                           index=None, placeholder='Choose a holding', key='import_pdf_position')

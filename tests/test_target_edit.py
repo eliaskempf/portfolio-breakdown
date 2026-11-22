@@ -93,6 +93,12 @@ def test_context_dialog_cancel_save_and_full_editor(workspace):
     assert path.read_bytes() == before
     app.button(key='overview_capital_targets').click().run()
     key = next(key for key in app.session_state.to_dict() if key.startswith('overview_target_editor_'))
+    app.session_state[key] = dict(edited_rows={0:{'Target':1.},1:{'Target':1.}},added_rows=[],deleted_rows=[])
+    app.run()
+    app.button(key='overview_target_save').click().run()
+    assert any('must total 100%' in error.value for error in app.error)
+    assert any('needs 100%' in note.value for note in app.caption)
+    assert path.read_bytes() == before
     app.session_state[key] = dict(edited_rows={0:{'Target':60.},1:{'Target':40.}},added_rows=[],deleted_rows=[])
     app.run()
     assert app.button(key='overview_target_manage').label == 'Discard edits & manage targets'

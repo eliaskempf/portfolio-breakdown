@@ -147,7 +147,7 @@ def _balances(preview, key, *, review_step='', reviewed=()):
     return position
 
 
-def render_history_review(build_preview, *, key, apply, keep, action_label=None, keep_label='Keep portfolio unchanged'):
+def render_history_review(build_preview, *, key, apply, keep, removal=False, keep_label='Keep portfolio unchanged'):
     """Build from unchanged evidence, then recompute exclusions before final acceptance."""
     try:
         preview = build_preview(set())
@@ -171,7 +171,7 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
             st.button('Save exclusions', key=key+'exclude', type='primary', on_click=apply, args=(excluded,))
         st.button(keep_label, key=key+'keep', on_click=keep)
         return preview
-    multiple = len(preview.comparisons) > 1 and action_label is None
+    multiple = len(preview.comparisons) > 1 and not removal
     review_step, choices = '', {}
     if multiple:
         from portfolio_app.ledger.security_history import history_fingerprint
@@ -190,11 +190,11 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
         st.caption(preview.starting_note)
     checkpoints = True
     if preview.checkpoints:
-        checkpoints = review_control(st.checkbox, 'Accept the displayed replacement balances', key=key+'checkpoints')
         table = pd.DataFrame(preview.checkpoints)
         names = {c['position_id']:c['name'] for c in preview.comparisons}
         table.insert(0, 'Position', table.position_id.map(names))
         st.dataframe(table.drop(columns=['position_id']), hide_index=True, width='stretch')
+        checkpoints = review_control(st.checkbox, 'Accept the displayed replacement balances', key=key+'checkpoints')
     if preview.warnings:
         with st.expander('Transaction details'):
             for warning in preview.warnings:
@@ -219,7 +219,7 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
             following = next((p for p in remaining if p not in current['choices']), position)
             st.session_state[key+'holding'] = following
             st.session_state.setdefault('import_controls', {})[key+'holding'] = following
-        with st.container(horizontal=True):
+        if not complete:
             st.button('Accept this holding', key=key+'confirm_asset_'+review_step+'_'+digest(position)[:16],
                       disabled=blocked or position in choices,
                       on_click=decide, type='primary')
@@ -231,10 +231,15 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
             st.button(keep_label, key=key+'keep', on_click=keep)
         return preview
     with st.container(horizontal=True, key=key+'actions'):
-        if st.button(action_label or 'Apply history', key=key+'save', disabled=blocked, type='primary',
-                     help='Apply the displayed balances and retain selected similar entries.'):
-            apply(excluded)
-        st.button(keep_label, key=key+'keep', on_click=keep)
+        if removal:
+            st.button('Keep transactions', key=key+'keep', on_click=keep)
+            if st.button('Remove transactions', key=key+'save', disabled=blocked):
+                apply(excluded)
+        else:
+            if st.button('Apply history', key=key+'save', disabled=blocked, type='primary',
+                         help='Apply the displayed balances and retain selected similar entries.'):
+                apply(excluded)
+            st.button(keep_label, key=key+'keep', on_click=keep)
     return preview
 
 

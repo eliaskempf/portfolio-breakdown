@@ -9,7 +9,7 @@ import yaml
 from portfolio_app.studies.futures import FuturePosition
 from portfolio_app.studies.futures_workspace import SANDBOX_FILE
 from test_ux_browser import ux_page, playwright  # noqa: F401
-from browser_support import select_tab, settle
+from browser_support import open_app_menu, select_tab, settle
 
 
 def large_snapshot(directory, count):
@@ -104,7 +104,7 @@ def test_tour_restores_futures_exposure_controls(ux_page, measure):
     page.get_by_text('Look through funds & futures', exact=True).click()
     settle(page)
     before = {p: p.read_bytes() for p in directory.iterdir() if p.suffix in {'.json', '.yaml', '.csv'}}
-    page.get_by_role('button', name='App help', exact=True).click()
+    open_app_menu(page, 'Help')
     page.get_by_role('button', name='Take the tour', exact=True).click()
     card = page.locator('.st-key-app_tour')
     playwright.expect(card).to_be_visible()

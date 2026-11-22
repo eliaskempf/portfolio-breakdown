@@ -471,8 +471,13 @@ def test_bulk_removal_select_all_previews_and_preserves_originals(transaction_pa
         assert dialog.get_by_text('Units differ', exact=True).count() == 1
     else:
         assert dialog.get_by_text('These entries are not applied. Your portfolio balances stay unchanged.', exact=True).count() == 1
-    # Cancelling is read-only; choosing again then confirms the same two entries.
-    dialog.get_by_role('button', name='Back to transactions', exact=False).click(); settle(page)
+    keep = dialog.get_by_role('button', name='Keep transactions', exact=True)
+    remove = dialog.get_by_role('button', name='Remove transactions', exact=True)
+    keep.focus()
+    page.keyboard.press('Tab')
+    from playwright.sync_api import expect
+    expect(remove).to_be_focused()
+    keep.press('Enter'); settle(page)
     assert load_journal(root)[1] == before
     dialog.get_by_role('checkbox', name='Select all transactions', exact=True).check()
     dialog.get_by_role('button', name='Remove selected (2)', exact=True).click(); settle(page)
@@ -486,7 +491,6 @@ def test_bulk_removal_select_all_previews_and_preserves_originals(transaction_pa
     assert dialog.get_by_role('checkbox', name='Select all transactions', exact=True).count() == 0
     assert dialog.get_by_role('button', name='Review against portfolio', exact=True).count() == 0
     assert dialog.get_by_role('button', name='Replace balance', exact=True).count() == 0
-    from playwright.sync_api import expect
     expect(dialog.get_by_text('No transactions yet.', exact=True)).to_be_visible()
     assert dialog.get_by_role('button', name='Import PDFs', exact=True).is_enabled()
     assert not page.get_by_test_id('stException').count()

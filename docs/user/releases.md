@@ -77,7 +77,7 @@ earlier transactions or prove an earlier zero balance. Review the stated startin
 point before applying an export that begins after you already owned assets.
 
 Closed positions retain their transactions, categories, targets and supported
-gains. **Portfolio settings → Show sold positions** reveals them in the relevant
+gains. **App menu → Preferences → Show sold positions** reveals them in the relevant
 lists. Hiding them does not erase history or redistribute targets. A zero-unit
 holding needs no current price to establish its zero current value.
 
@@ -138,7 +138,7 @@ personal realized performance and do not forecast future returns.
 
 ### Upgrade from 0.1.0 {#upgrade-020}
 
-1. Record the active workspace shown in **Portfolio settings → App & workspace**.
+1. Record the active workspace shown in **App menu → Workspace**.
    A remembered restore selection can differ from the original `--data-dir`.
    Create and download a [complete workspace backup](storage.md#backup), retain
    the old application, and stop it before installing the update.

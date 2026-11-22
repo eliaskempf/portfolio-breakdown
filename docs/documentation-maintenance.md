@@ -136,7 +136,7 @@ server, independently of Pages publication. A source checkout also serves its
 the commands above before starting the app. Without that output the current
 source app links to `https://eliaskempf.github.io/portfolio-breakdown/dev/`.
 Source developers must rebuild docs and restart the owning app after guide edits.
-If the packaged guide or its index is missing, the app's help menu reports it
+If the packaged guide or its index is missing, the Help section of the App menu reports it
 as unavailable and recommends reinstalling the complete app. It does not substitute
 development documentation; the in-app tour remains available.
 

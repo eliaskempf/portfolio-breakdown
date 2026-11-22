@@ -22,11 +22,11 @@ available quotes and FX; subsequent refreshes preserve quantities and edits.
 The first load shows **Preparing your demo…** while prices arrive, then opens
 the overview automatically.
 If initialization cannot obtain prices, use **Refresh prices** or choose
-**App help → Take the tour** for the offline example. Missing fund downloads leave that fund whole.
+**App menu → Help → Take the tour** for the offline example. Missing fund downloads leave that fund whole.
 
 ### Take the tour {#tour}
 
-Choose **Take the tour** at the optional welcome prompt, or **App help → Take the tour**
+Choose **Take the tour** at the optional welcome prompt, or **App menu → Help → Take the tour**
 anytime. **Not now** dismisses the prompt. The app remembers dismissal for this
 computer's user account.
 
@@ -127,7 +127,7 @@ Finish or skip the tour first. In the header's **Portfolio workspace** dropdown,
 select **My portfolio**. Demo holdings are not copied. An empty workspace offers
 **Start my portfolio**; an existing workspace loads its saved holdings.
 
-Open **Portfolio settings → App & workspace** to confirm the actual folder
+Open **App menu → Workspace** to confirm the actual folder
 before saving. The installed app manages its persistent workspace for you.
 Use the same shortcut on subsequent starts;
 [Storage](storage.md#location) explains default folders and
@@ -173,19 +173,19 @@ live-price linking.
 Next, check [prices and cost coverage](performance.md#valuation), then assign
 positions and complete targets in **Rebalance → Targets**. Category changes and
 position targets have separate saves. Missing buy-ins do not prevent allocation
-analysis. Change reporting currency later through **Portfolio settings → Portfolio
+analysis. Change reporting currency later through **App menu → Preferences → Portfolio
 currency → Review currency change**; inspect conversion gaps before applying.
 New buy-ins default to the reporting currency; original saved costs keep theirs.
 
 ## Make a backup and verify persistence {#first-backup}
 
-1. With **My portfolio** selected, save or cancel open edits. Open **Portfolio
-   settings → Create backup** and wait for archive verification.
+1. With **My portfolio** selected, save or cancel open edits. Open **App menu → Workspace →
+   Create backup** and wait for archive verification.
 2. Choose **Download backup** and save the `.portfolio-backup.zip` file to a
    protected backup location. It contains saved workspace files, including costs,
    currency, targets and ETF snapshots. Unsaved forms are not included. Demo and
    tour workspaces cannot be backed up through this action.
-3. Stop the app using **Portfolio settings → App & workspace → Stop application**
+3. Stop the app using **App menu → Workspace → Stop application**
    or close its standalone Windows window. Closing a browser tab alone does not
    stop the server. Relaunch the same shortcut or data path and check your saved
    holding and reporting currency.
@@ -194,6 +194,6 @@ Keep backups private: they are unencrypted. [Storage and recovery](storage.md#ba
 explains verified restore into a new folder, review/cancel behavior and switching
 workspaces. A backup should exist before you change files outside the app.
 
-Use **App help → User guide** for version-matched help. **Portfolio settings** holds
-portfolio and workspace controls; the top-right app menu offers Light, Dark and
-System appearance. Hover or keyboard-focus help controls for units and scope.
+Use **App menu → Help → User guide** for version-matched help. **Preferences** holds
+Light, Dark and System appearance, portfolio currency and display choices.
+**Workspace** holds the data folder, backup, restore and application controls. Hover or keyboard-focus help controls for units and scope.

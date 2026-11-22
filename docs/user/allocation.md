@@ -67,7 +67,7 @@ Exposure filters and ETF expansion do not alter strategic ownership.
 The allocation table shows immediate subcategories alongside directly owned investments.
 Category rows start collapsed. Open a row's chevron to reveal its investments
 and subcategories, slightly indented beneath the combined value and target.
-Closed positions are hidden in expanded and flattened groups unless **Show sold positions** is enabled in Portfolio settings. Their history and targets remain retained. Account subtitles are prefixed **Account:** to distinguish them from category ownership.
+Closed positions are hidden in expanded and flattened groups unless **Show sold positions** is enabled under **App menu → Preferences**. Their history and targets remain retained. Account subtitles are prefixed **Account:** to distinguish them from category ownership.
 Expansion changes only the table; the chart, selection and percentage denominator
 stay unchanged. Sorting keeps members beneath their category. Click an investment
 to open its details. Member rows are included in their parent totals, not additional
@@ -120,6 +120,9 @@ Their shares must total 100% within each parent. Flexible categories retain one 
 exposure target. For other categories without subcategories, **Categories with individual
 exposure targets** optionally enables a member split. Exposure targets remain independent
 of capital targets; changing a chart measure does not activate a planning policy.
+To remove a saved exposure policy, save **Capital allocation** under **Active planning
+basis**. In the exposure target editor, select **Clear exposure targets** to review the
+removal, then keep or clear the policy.
 
 Existing leaf and category-only policies retain their saved meaning. If grouping or moving
 positions makes one invalid, select the mixed convention and explicitly save the new
@@ -132,7 +135,7 @@ universe to Total market requires an explicit save in the exposure target editor
 Data-coverage details appear when hovering over category names. Unassigned means
 no strategic category is assigned; an empty zero-value/zero-exposure row is hidden.
 Offsetting long and short exposures remain represented even if their net is zero.
-The **Notifications** bell beside **Portfolio settings** holds stale ETF snapshots, manual-price notices,
+The **Notifications** bell beside **App menu** holds stale ETF snapshots, manual-price notices,
 valuation/performance gaps and refresh problems. Tooltips explain metrics and
 table columns without adding paragraphs to the overview.
 A dot marks unread notices. Opening the panel marks current notices as seen;

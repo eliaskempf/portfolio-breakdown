@@ -1,6 +1,6 @@
 """Analytics fits the refactored navigation; all screenshots use invented data."""
 from test_ux_browser import ux_page, playwright
-from browser_support import settle
+from browser_support import choose_appearance, settle
 
 
 def test_analytics_views_dialog_and_mobile_layout(ux_page):
@@ -8,6 +8,11 @@ def test_analytics_views_dialog_and_mobile_layout(ux_page):
     assert page.get_by_role('tab').all_text_contents()[:4] == ['Overview', 'Exposure', 'Positions', 'Rebalance']
     page.get_by_role('radio', name='Analytics', exact=True).click()
     playwright.expect(page.get_by_text('Direct-stock P/E', exact=True)).to_be_visible()
+    toolbar = page.locator('.st-key-fundamentals_toolbar')
+    refresh = toolbar.get_by_role('button', name='Refresh fundamentals', exact=True)
+    playwright.expect(refresh).to_be_visible()
+    playwright.expect(refresh).to_be_disabled()
+    playwright.expect(toolbar.get_by_text('Valuation & income', exact=True)).to_be_visible()
     page.screenshot(path=str(directory / 'analytics-overview.png'), full_page=True)
     assert page.get_by_test_id('stException').count() == 0, page.get_by_test_id('stException').all_text_contents()
     playwright.expect(page.get_by_role('checkbox', name='Show portfolio analytics')).to_have_count(0)
@@ -31,14 +36,10 @@ def test_analytics_views_dialog_and_mobile_layout(ux_page):
     page.get_by_role('switch', name='Expand', exact=True).press('Space')
     playwright.expect(page.get_by_role('switch', name='Expand', exact=True)).not_to_be_checked()
     page.wait_for_function("document.querySelector('.st-key-risk_correlations .js-plotly-plot')?.getBoundingClientRect().height === 420")
-    page.get_by_role('button', name='Main menu', exact=True).click()
-    page.get_by_test_id('stMainMenuItem-theme-Dark').click()
-    page.keyboard.press('Escape')
+    choose_appearance(page, 'Dark')
     chart.scroll_into_view_if_needed()
     page.screenshot(path=str(directory / 'analytics-correlations-dark.png'), full_page=True)
-    page.get_by_role('button', name='Main menu', exact=True).click()
-    page.get_by_test_id('stMainMenuItem-theme-Light').click()
-    page.keyboard.press('Escape')
+    choose_appearance(page, 'Light')
     page.get_by_role('tab', name='Positions', exact=True).click()
     page.get_by_role('radio', name='Valuation', exact=True).click()
     table = page.get_by_role('table', name='Positions', exact=True)

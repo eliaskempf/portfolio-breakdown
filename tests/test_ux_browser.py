@@ -1,5 +1,5 @@
 """Full app regressions with invented positions and offline prices only."""
-from browser_support import reveal_earlier_history
+from browser_support import choose_appearance, open_app_menu, reveal_earlier_history
 from browser_runtime import browser_session, start_server
 import json
 import os
@@ -407,7 +407,7 @@ def open_settings(page):
     # not toggle that visible panel closed before checking its controls.
     panel = page.get_by_test_id('stPopoverBody')
     if not panel.is_visible():
-        page.get_by_role('button', name=re.compile(r'^(?:tune )?Portfolio settings$')).click()
+        open_app_menu(page, 'Preferences')
     playwright.expect(panel).to_be_visible()
 
 
@@ -674,9 +674,7 @@ def test_nested_categories_refresh_holding_click_and_dark_mode(ux_page):
     playwright.expect(page.get_by_role('dialog')).to_have_count(0)
     click_slice(page, 'ETF core')
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('Long term')
-    page.get_by_role('button', name='Main menu', exact=True).click()
-    page.get_by_test_id('stMainMenuItem-theme-Dark').click()
-    page.keyboard.press('Escape')
+    choose_appearance(page, 'Dark')
     page.screenshot(path=str(directory / 'overview-dark.png'))
     assert page.get_by_test_id('stException').count() == 0
 
@@ -922,3 +920,34 @@ def test_personal_history_is_visible_with_periods_ending_today(ux_page):
     dialog.get_by_role('radio', name='Price', exact=True).click()
     assert dialog.get_by_test_id('stMetric').all_text_contents() == position_headlines
     assert not page.get_by_test_id('stException').count()
+
+
+def test_appearance_and_print_preserve_menu_focus_and_browser_session(ux_page):
+    from streamlit.proto.BackMsg_pb2 import BackMsg
+    page, _ = ux_page
+    page.emulate_media(color_scheme='light')
+    preferences = open_app_menu(page, 'Preferences')
+    select = preferences.get_by_role('combobox', name='Appearance', exact=True)
+    print_view = preferences.get_by_role('button', name='Print view', exact=True)
+    playwright.expect(page.get_by_role('button', name='Main menu')).to_have_count(0)
+    settle(page)
+    reruns = []
+    def observe(payload):
+        message = BackMsg.FromString(payload)
+        if message.WhichOneof('type') == 'rerun_script' and not message.rerun_script.is_auto_rerun:
+            reruns.append(message.rerun_script.fragment_id)
+    page.streamlit_reruns.socket.on('framesent', observe)
+    select.focus()
+    select.press('End')
+    playwright.expect(page.get_by_test_id('stApp')).to_have_css('background-color', 'rgb(17, 21, 28)')
+    playwright.expect(select).to_be_focused()
+    select.press('Home')
+    playwright.expect(page.get_by_test_id('stApp')).to_have_css('background-color', 'rgb(255, 255, 255)')
+    page.emulate_media(color_scheme='dark')
+    playwright.expect(page.get_by_test_id('stApp')).to_have_css('background-color', 'rgb(17, 21, 28)')
+    playwright.expect(select).to_have_value('System')
+    page.evaluate('() => { window.print = () => { window.printRequestedByViewer = true } }')
+    print_view.focus()
+    print_view.press('Enter')
+    assert page.evaluate('window.printRequestedByViewer') and not reruns
+    playwright.expect(print_view).to_be_focused()

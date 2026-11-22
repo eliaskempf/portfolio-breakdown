@@ -245,6 +245,22 @@ def test_context_target_dialog_navigation_and_save(category_page):
     dialog.wait_for(state='hidden')
     settle(page)
     assert (workspace/'exposure-targets.json').read_bytes() == before
+    page.get_by_role('button', name='Edit targets', exact=True).click()
+    canvas = dialog.get_by_test_id('stDataFrame').locator('canvas').first
+    canvas.scroll_into_view_if_needed()
+    bounds = canvas.bounding_box()
+    x = bounds['x'] + bounds['width'] - 45
+    field = page.locator('[id^="gdg-overlay-"]').locator('input,textarea').first
+    page.mouse.dblclick(x, bounds['y'] + 48)
+    field.fill('45')
+    field.press('Enter')
+    playwright.expect(dialog.get_by_text('95% assigned', exact=False)).to_be_visible()
+    page.mouse.dblclick(x, bounds['y'] + 82)
+    field.fill('55')
+    dialog.get_by_role('button', name='Save', exact=True).click()
+    playwright.expect(dialog).to_have_count(0)
+    saved = load_exposure_targets(workspace, load_allocation(workspace/'allocation.yaml'))[0]
+    assert saved.composition['group'] == .45 and saved.members['sleeve']['p3'] == .55
     choose(page,'Category','Portfolio')
     page.get_by_role('button',name='Edit targets',exact=True).click()
     dialog.wait_for()

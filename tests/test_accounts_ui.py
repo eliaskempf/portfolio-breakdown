@@ -218,3 +218,19 @@ def test_empty_account_setup_and_scoped_actions(tmp_path):
     by_label(app.button, 'Create account alert').click().run()
     assert by_label(app.selectbox, 'Monitored account').value == 'second'
     assert load_journal(tmp_path)[0] == journal
+
+
+def test_contract_alert_opens_the_selected_contract_account(tmp_path):
+    from portfolio_app.ledger import account_journal as ledger
+    _, journal, contract = invented(tmp_path)
+    journal = ledger.add_account(journal, ledger.Account('second', 'Second invented account'))
+    journal = ledger.add_position(journal, ledger.PositionSpec('second-position', 'second', contract.id))
+    save_journal(tmp_path, journal, None)
+    app = launch_actual(tmp_path)
+    activate(app, 'Futures')
+    by_label(app.selectbox, 'Contract position').set_value('second-position').run()
+    alert = by_label(app.button, 'Create account alert')
+    assert 'Second invented account' in alert.help
+    alert.click().run()
+    assert by_label(app.selectbox, 'Monitored account').value == 'second'
+    assert not app.exception and load_journal(tmp_path)[0] == journal

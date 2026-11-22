@@ -70,11 +70,11 @@ def test_delayed_accept_click_cannot_accept_an_unseen_holding(import_page):
         reviewed.add(shown)
         playwright.expect(page.get_by_text(f'Reviewed {count} / 6', exact=True)).to_be_visible()
     assert reviewed == set(quantities)
-    playwright.expect(accept).to_be_disabled()
+    playwright.expect(accept).to_have_count(0)
     playwright.expect(apply).to_be_enabled()
     holding.click()
     page.get_by_role('option', name=first+' · Reviewed', exact=True).click(); settle(page)
-    playwright.expect(accept).to_be_disabled()
+    playwright.expect(accept).to_have_count(0)
     apply.click(); settle(page)
     saved = effective_holdings(read_snapshot(path).holdings, load_journal(path.parent)[0].securities)
     assert dict(zip(saved.name, saved.shares)) == quantities

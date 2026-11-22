@@ -152,7 +152,7 @@ def test_named_liability_and_company_controls(workflow_page):
     assert item.balance_eur is None
     select(page, 'Liability', 'Invented reserve loan · Invented lender')
     playwright.expect(page.get_by_role('textbox', name='Liability name', exact=True)).to_have_value('Invented reserve loan')
-    playwright.expect(page.get_by_role('button', name='Remove liability', exact=True)).to_be_enabled()
+    playwright.expect(page.get_by_role('button', name='Remove liability', exact=True)).to_be_disabled()
     balance = page.get_by_role('textbox', name='Outstanding balance (EUR)', exact=True)
     balance.fill('0')
     balance.press('Tab')
@@ -168,6 +168,13 @@ def test_named_liability_and_company_controls(workflow_page):
     page.reruns.click(page, page.get_by_role('button', name='Save fund factor', exact=True))
     settings = load_leverage_settings(root/'funds')[0]
     assert settings.liabilities[0].id == item.id and settings.fund_factors[0].factor == -2
+    page.reruns.click(page, page.get_by_role('button', name='Remove recorded factor', exact=True))
+    keep = page.get_by_role('button', name='Keep recorded factor', exact=True)
+    keep.focus()
+    page.keyboard.press('Tab')
+    playwright.expect(page.get_by_role('button', name='Remove recorded factor', exact=True).last).to_be_focused()
+    page.reruns.click(page, keep)
+    assert load_leverage_settings(root/'funds')[0] == settings
     page.reruns.click(page, page.get_by_text('Companies', exact=True))
     playwright.expect(page.get_by_role('checkbox', name='Show stock-only company exposure')).to_have_count(0)
     playwright.expect(page.get_by_text('Selected stock universe:', exact=False)).to_be_visible()
@@ -187,6 +194,13 @@ def test_study_results_precede_assumptions_and_inputs_stay_explicit(workflow_pag
     assumptions = page.get_by_text('Cash, collateral and currency', exact=True)
     assert chart.bounding_box()['y'] < assumptions.bounding_box()['y']
     playwright.expect(page.get_by_role('textbox', name='Product identifier', exact=True)).to_have_value('SYNTHETIC')
+    paths = page.get_by_text('Paths, histories and roll calendar', exact=True)
+    paths.click()
+    proxy = page.get_by_role('button', name='Load free proxy and dated FX', exact=True)
+    playwright.expect(proxy).to_be_disabled()
+    fill(page, 'Optional free proxy ticker', 'SYNTHETIC')
+    playwright.expect(proxy).to_be_enabled()
+    paths.click()
     assumptions.click(); settle(page)
     playwright.expect(page.get_by_role('spinbutton', name='Allowed settlement-currency debit', exact=True)).to_be_visible()
     field = page.get_by_role('spinbutton', name='Signed scenario contracts', exact=True)
@@ -194,6 +208,23 @@ def test_study_results_precede_assumptions_and_inputs_stay_explicit(workflow_pag
     playwright.expect(page.get_by_text('Inputs changed. Run the study to refresh the results.', exact=True)).to_be_visible()
     playwright.expect(chart).to_have_count(0)
     assert (root/'accounts'/ledger.FILE).read_bytes() == before
+
+
+def test_pending_cash_shows_only_fields_used_by_the_receipt(futures_page):
+    from browser_support import select_tab
+    page, root, journal, _ = futures_page
+    select_tab(page, 'Futures')
+    select(page, 'Action', 'Receive pending cash')
+    playwright.expect(page.get_by_text('Cash value date', exact=True)).to_have_count(0)
+    select(page, 'Action', 'Fee')
+    playwright.expect(page.get_by_text('Cash value date', exact=True)).to_be_visible()
+    page.reruns.click(page, page.get_by_role('radio', name='Cash & financing', exact=True))
+    select(page, 'Cash action', 'Receive pending cash')
+    playwright.expect(page.get_by_role('combobox', name='Currency', exact=True)).to_have_count(0)
+    select(page, 'Cash action', 'Deposit / withdrawal')
+    playwright.expect(page.get_by_role('combobox', name='Currency', exact=True)).to_be_visible()
+    assert ledger.load_journal(root)[0] == journal
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
 
 def test_journal_selection_and_draft_survive_main_app_navigation(futures_page):
