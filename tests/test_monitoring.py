@@ -173,3 +173,13 @@ def test_alert_copy_describes_condition_and_actual_observation():
     assert 'at or below ▼ 2.00% relative to its 3-session SMA' in condition_text
     assert '▼ 3.25% from its 3-session SMA' in observed
     assert observation_time('2026-10-12T14:05:49.034+02:00')=='12 Oct 2026, 12:05 UTC'
+
+
+def test_daily_monthly_average_uses_finished_month_only_on_its_final_close():
+    dates = ('2026-06-30', '2026-07-01', '2026-07-31', '2026-08-03', '2026-08-31',
+             '2026-09-01', '2026-09-30', '2026-10-01', '2026-10-09')
+    series = history((10., 16., 20., 21., 30., 38., 40., 47., 50.), dates)
+    frame = indicator_frame(replace(rule(period='months'), window=2), series, now=NOW)
+    expected = pd.Series([float('nan'), float('nan'), 15., 15., 25., 25., 35., 35., 35.],
+                         index=frame.index, name='sma')
+    pd.testing.assert_series_equal(frame.sma, expected)

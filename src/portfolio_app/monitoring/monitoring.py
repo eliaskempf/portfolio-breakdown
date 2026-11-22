@@ -145,22 +145,19 @@ def indicator_frame(rule, series, *, now=None):
     if rule.period == 'months':
         monthly = completed.resample('ME').last()
         # A month becomes complete when the next local calendar month begins.
-        monthly = monthly.loc[monthly.index.to_period('M') < pd.Period(local_today, freq='M')]
+        current_month = pd.Period(local_today, freq='M')
+        monthly = monthly.loc[monthly.index.to_period('M') < current_month]
         averages = monthly.rolling(rule.window, min_periods=rule.window).mean()
         # Mapping the *month*, not resampling a forward-filled daily series, keeps
         # missing source months invalid until a full consecutive window exists.
         keys = completed.index.to_period('M')
         ready = averages.copy()
         ready.index = ready.index.to_period('M')
-        sma = pd.Series([ready.get(k, float('nan')) if k < pd.Period(local_today, freq='M')
-                         else ready.get(k-1, float('nan')) for k in keys], index=completed.index)
-        # During any historical month use the preceding completed month, except
-        # its final observation (the month-end decision includes that close).
-        for key in keys.unique():
-            rows = completed.index[keys == key]
-            sma.loc[rows] = ready.get(key-1, float('nan'))
-            if key < pd.Period(local_today, freq='M'):
-                sma.loc[rows[-1]] = ready.get(key, float('nan'))
+        # Each session uses the preceding month's average, except for the last
+        # completed session of a finished month, which includes that month's close.
+        final_close = ~keys.duplicated(keep='last') & (keys < current_month)
+        reference_month = keys.where(final_close, keys - 1)
+        sma = pd.Series(ready.reindex(reference_month).to_numpy(), index=completed.index)
     else:
         sma = completed.rolling(rule.window, min_periods=rule.window).mean()
     result = pd.DataFrame({'price': completed, 'sma': sma})
