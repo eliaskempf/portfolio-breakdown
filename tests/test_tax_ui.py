@@ -93,3 +93,24 @@ def test_accumulating_funds_calculate_automatically_with_existing_metadata(tmp_p
     by_label(app.selectbox, 'Calculation year').set_value(2025).run()
     assert by_label(app.metric, 'Vorabpauschale').value == '€442.75'
     assert not any(b.label == 'Resolve missing inputs' for b in app.button)
+
+
+def test_tax_interactions_reuse_price_index_until_evidence_changes(tmp_path, monkeypatch):
+    from portfolio_app.interface.views.taxes import tax_ui
+    from portfolio_app.performance.history_observations import Observation, ObservationStore, save_observations
+    snapshots = []
+    original = tax_ui.observation_market
+    def recorded(item, index, year, boundary):
+        snapshots.append(index)
+        return original(item, index, year, boundary)
+    monkeypatch.setattr(tax_ui, 'observation_market', recorded)
+    app = launch(tmp_path)
+    initial = snapshots[0]
+    by_label(app.selectbox, 'Calculation year').set_value(2025).run()
+    assert all(index is initial for index in snapshots)
+    new_price = Observation('invented', 'price', 'invented-position', '2025-01-02', D('90'), 'EUR')
+    save_observations(tmp_path, ObservationStore((new_price,)), None)
+    app.run()
+    assert not app.exception
+    assert snapshots[-1] is not initial
+    assert snapshots[-1]['invented-position'] == (new_price,)

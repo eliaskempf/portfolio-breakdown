@@ -1,7 +1,9 @@
 """Prepare tax candidates and results without Streamlit or portfolio mutations."""
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from hashlib import sha256
+from types import MappingProxyType
 import json
 
 from portfolio_app.taxes.tax_history import project_holdings, depot_key, TaxHolding
@@ -91,12 +93,12 @@ def index_observations(observations):
     for observation in active_observations(observations):
         if observation.kind == 'price' and observation.currency == 'EUR' and observation.side == 'close':
             result[observation.subject].append(observation)
-    return dict(result)
+    return MappingProxyType({subject: tuple(prices) for subject, prices in result.items()})
 
 
 def observation_market(candidate, observations, year, as_of):
     """Reuse EUR dated closes, without treating observed absence as distributions."""
-    indexed = observations if isinstance(observations, dict) else index_observations(observations)
+    indexed = observations if isinstance(observations, Mapping) else index_observations(observations)
     prices = sorted((o for p in candidate.holding.positions for o in indexed.get(p, ())
                      if f'{year}-01-01' <= o.date <= as_of), key=lambda o: o.date)
     if not prices:
