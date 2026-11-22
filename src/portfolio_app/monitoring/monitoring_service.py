@@ -8,6 +8,7 @@ from threading import RLock
 import pandas as pd
 
 from portfolio_app.market.market_data import coordinator
+from portfolio_app.monitoring import monitoring
 from portfolio_app.monitoring.monitoring import (SeriesSpec, Evaluation, condition, evaluate_with_history,
     evaluate_account, unavailable, utc_now)
 from portfolio_app.monitoring.monitoring_market import MonitoringMarket, SyntheticMonitoringProvider
@@ -62,11 +63,20 @@ class MonitoringService:
                     self.browse_attempts[key] = self.now()
                 return series
 
+            frames = {}
+            def frame_for(rule, series, *, now):
+                # fetch_series fixes one source snapshot per spec for this evaluation pass.
+                day = pd.Timestamp(now).tz_convert(series.timezone).date()
+                key = (rule.series, rule.period, rule.window, rule.cadence, day)
+                if key not in frames:
+                    frames[key] = monitoring.indicator_frame(rule, series, now=now)
+                return frames[key]
+
             for rule in rules:
                 try:
                     if rule.kind == 'sma':
                         series = fetch_series(rule.series)
-                        latest, frame = evaluate_with_history(rule, series, now=self.now())
+                        latest, frame = evaluate_with_history(rule, series, now=self.now(), frame_for=frame_for)
                         previous = doc['states'].get(rule.id, {}).get('last_valid', {}).get('observed_at')
                         if rule.cadence != 'intraday' and latest.quality == 'valid' and previous:
                             frame = frame.dropna()

@@ -173,7 +173,7 @@ def evaluate_series(rule, series, *, now=None, frame=None):
     return latest
 
 
-def evaluate_with_history(rule, series, *, now=None, frame=None):
+def evaluate_with_history(rule, series, *, now=None, frame=None, frame_for=None):
     """Evaluate live freshness from the full indicator history shared with charts and catch-up."""
     now = now or utc_now()
     if series.quality != 'valid':
@@ -181,7 +181,8 @@ def evaluate_with_history(rule, series, *, now=None, frame=None):
     if rule.series.currency and series.currency != rule.series.currency:
         return unavailable('The source returned a different currency. Review this rule.'), None
     if frame is None:
-        frame = indicator_frame(rule, series, now=now)
+        calculate = frame_for or indicator_frame
+        frame = calculate(rule, series, now=now)
     return _latest_indicator(rule, series, frame, now), frame
 
 
