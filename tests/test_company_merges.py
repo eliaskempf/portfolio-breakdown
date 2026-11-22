@@ -169,3 +169,21 @@ def test_reviewed_links_survive_identifier_enrichment_and_plain_provider_refresh
         assert stock_exposure(linked, funds).companies['Total'].tolist() == [150.]
         disabled.update(m['node'] for m in plan.groups[0].members)
         assert not build_plan(rows, snapshots, reviewed, MergeSettings(disabled)).groups[0].enabled
+
+
+def test_inventory_formats_source_labels_once_per_held_fund(monkeypatch):
+    from portfolio_app.exposure import company_merges
+    holdings, funds = universe()
+    frames = []
+    for fund in funds:
+        constituents = pd.concat([fund.constituents.assign(constituent_id=f'row-{i}') for i in range(20)])
+        frames.append(replace(fund, constituents=constituents))
+    original = company_merges.display_name
+    labels = []
+    def counted(name):
+        labels.append(name)
+        return original(name)
+    monkeypatch.setattr(company_merges, 'display_name', counted)
+    items = company_merges.inventory(holdings, frames, {})
+    assert len(items) == 40
+    assert labels == [fund.name for fund in funds]

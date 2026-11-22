@@ -79,22 +79,27 @@ def inventory(holdings: pd.DataFrame, funds: list[FundSnapshot], reviewed: dict)
         if row.get('instrument_type') == 'equity':
             items.append(dict(node=f"direct:{row['id']}", asset_id=row['id'], name=row['name'], isin=row.get('isin', ''),
                               ticker=row.get('ticker', ''), source='Direct holdings', origin='direct', date='', fund=''))
-    equity_isins = {r['isin'] for f in funds for r in f.constituents.to_dict('records') if r.get('instrument_type') == 'equity' and r['isin']}
+    equity_isins = set()
+    for fund in funds:
+        frame = fund.constituents
+        if 'instrument_type' in frame:
+            equity_isins.update(filter(None, frame.loc[frame.instrument_type.eq('equity'), 'isin']))
     held = {f.isin for r in holdings.to_dict('records') if (f := matching_fund(r, funds)) is not None}
     for fund in funds:
         if fund.isin not in held:
             continue
-        for row in fund.constituents.to_dict('records'):
-            kind = row.get('instrument_type')
-            key = identity(row['constituent_id'], row['isin'])
-            legacy_equity = (not isinstance(kind, str) or not kind) and (fund.equity_fund or row['isin'] in equity_isins or key in reviewed)
-            if row['weight'] <= 0 or (kind != 'equity' and not legacy_equity):
+        source = display_name(fund.name) + (' (proxy)' if fund.proxy_source else '')
+        as_of = str(fund.as_of)
+        for row in fund.constituents.itertuples(index=False):
+            kind = getattr(row, 'instrument_type', None)
+            key = identity(row.constituent_id, row.isin)
+            legacy_equity = (not isinstance(kind, str) or not kind) and (fund.equity_fund or row.isin in equity_isins or key in reviewed)
+            if row.weight <= 0 or (kind != 'equity' and not legacy_equity):
                 continue
-            ticker = row.get('source_ticker') or row['ticker']
-            items.append(dict(node=f"fund:{fund.isin}:{row['constituent_id']}", asset_id=row['constituent_id'], name=row['name'],
-                              isin=row['isin'], ticker=ticker if isinstance(ticker, str) else '',
-                              source=display_name(fund.name) + (' (proxy)' if fund.proxy_source else ''),
-                              origin=fund.isin, date=str(fund.as_of), fund=fund.isin))
+            ticker = getattr(row, 'source_ticker', '') or row.ticker
+            items.append(dict(node=f"fund:{fund.isin}:{row.constituent_id}", asset_id=row.constituent_id, name=row.name,
+                              isin=row.isin, ticker=ticker if isinstance(ticker, str) else '',
+                              source=source, origin=fund.isin, date=as_of, fund=fund.isin))
     return items
 
 
