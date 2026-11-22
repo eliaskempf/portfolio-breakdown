@@ -10,7 +10,7 @@ import yaml
 
 from portfolio_app.application import PortfolioInputs
 from portfolio_app.portfolio.allocation import load_allocation
-from portfolio_app.funds.etf import load_funds
+from portfolio_app.funds.etf import FundCatalog
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.exposure.taxonomy import load_classifications
 
@@ -69,7 +69,8 @@ def load_inputs(directory):
     path = directory / 'classifications.yaml'
     classifications = cached_input('classifications', file_stamp(path), lambda: load_classifications(path) if path.exists() else {})
     signature = fund_sources(directory)
-    funds = cached_input('funds', signature, lambda: load_funds(directory / 'etfs'))
+    catalog = st.session_state.setdefault('fund_catalog', FundCatalog())
+    funds = cached_input('funds', signature, lambda: catalog.load(directory / 'etfs'))
     return PortfolioInputs(snapshot, allocation, classifications, funds)
 
 

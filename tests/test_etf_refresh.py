@@ -66,6 +66,31 @@ def test_refresh_is_nonblocking_single_writer_and_persists_throttle(refresh_work
     assert len(calls) == 2
 
 
+def test_discovery_reuses_constituents_across_candidates(refresh_workspace, monkeypatch):
+    path, _, _ = refresh_workspace
+    holdings = pd.DataFrame([dict(isin=f'ZZ000000000{i}', shares=1, instrument_type='etf')
+                             for i in range(3)])
+    reads = []
+    read = pd.read_csv
+
+    def count(path, **kwargs):
+        reads.append(path.name)
+        return read(path, **kwargs)
+
+    def unavailable(row):
+        raise ValueError('Invented provider has no breakdown')
+
+    monkeypatch.setattr(pd, 'read_csv', count)
+    service = RefreshCoordinator(discover=unavailable)
+    assert service.schedule(path, holdings, [])
+    join(service, path)
+    assert not service.error(path)
+    records = read_json(path / '.cache/etf-refresh/status.json')
+    assert {key: record['status'] for key, record in records.items()} == {
+        key: 'unavailable' for key in holdings['isin']}
+    assert reads == ['invented.csv']
+
+
 def test_failures_keep_snapshots_and_are_throttled_with_manual_retry(refresh_workspace):
     path, holdings, funds = refresh_workspace
     before = {p.name: p.read_bytes() for p in (path / 'etfs').iterdir()}

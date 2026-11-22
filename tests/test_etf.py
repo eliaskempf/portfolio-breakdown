@@ -441,3 +441,41 @@ def test_related_measures_share_expansion_and_keep_separate_coverage(fund, posit
     checked.clear()
     project_measures(positions, [measures[2]], [fund], positions, lookthrough=True)
     assert checked == []
+
+
+def test_fund_catalog_reuses_only_unchanged_validated_files(tmp_path, monkeypatch):
+    from portfolio_app.funds.etf import FundCatalog
+    header = 'constituent_id,name,ticker,isin,weight\n'
+    for i in (1, 2):
+        (tmp_path / f'f{i}.yaml').write_text(
+            f'fund_id: f{i}\nname: Invented {i}\nisin: ZZ000000000{i}\ntickers: []\n'
+            f'as_of: 2025-01-01\nsource: synthetic\nholdings_file: h{i}.csv\n')
+        (tmp_path / f'h{i}.csv').write_text(header + f'c{i},Invented,,,.5\n')
+    read = pd.read_csv
+    reads = []
+    def track(path, **kwargs):
+        reads.append(path.name)
+        return read(path, **kwargs)
+    monkeypatch.setattr(pd, 'read_csv', track)
+    catalog = FundCatalog()
+    funds = catalog.load(tmp_path)
+    funds[0].constituents.loc[0, 'weight'] = .9
+    assert catalog.load(tmp_path)[0].constituents.weight.item() == .5
+    assert reads == ['h1.csv', 'h2.csv']
+
+    (tmp_path / 'h2.csv').write_text(header + 'c2,Invented,,,.625\n')
+    assert catalog.load(tmp_path)[1].constituents.weight.item() == .625
+    assert reads == ['h1.csv', 'h2.csv', 'h2.csv']
+    (tmp_path / 'h2.csv').write_text(header + 'c2,Invented,,,2\n')
+    with pytest.raises(DataError, match='finite fractions'):
+        catalog.load(tmp_path)
+    # A cached substitute basket can never bypass the holdings sign restriction.
+    (tmp_path / 'h2.csv').write_text(header + 'c2,Invented,,,.5\n')
+    (tmp_path / 'basket.csv').write_text(header + 'long,Long,,,.6\nshort,Short,,,-.2\n')
+    manifest = tmp_path / 'f1.yaml'
+    original = manifest.read_text()
+    manifest.write_text(original + 'basket_file: basket.csv\n')
+    assert catalog.load(tmp_path)[0].basket.weight.tolist() == [.6, -.2]
+    manifest.write_text(original.replace('h1.csv', 'basket.csv'))
+    with pytest.raises(DataError, match='finite fractions'):
+        catalog.load(tmp_path)

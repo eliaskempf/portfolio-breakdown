@@ -64,17 +64,50 @@ def validate_constituents(frame: pd.DataFrame, *, allow_signed: bool = False) ->
     return result
 
 
+def _read_constituents(path: Path, *, allow_signed: bool = False) -> pd.DataFrame:
+    frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+    return validate_constituents(frame, allow_signed=allow_signed)
+
+
+class FundCatalog:
+    """Reuse validated constituent files across reads of a changing fund directory."""
+
+    def __init__(self):
+        self._files = {}
+
+    def load(self, directory: Path) -> list[FundSnapshot]:
+        current = {}
+
+        def read(path: Path, *, allow_signed: bool = False) -> pd.DataFrame:
+            stat = path.stat()
+            key = (path.resolve(), allow_signed)
+            version = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+            previous = current.get(key) or self._files.get(key)
+            if previous is None or previous[0] != version:
+                previous = (version, _read_constituents(path, allow_signed=allow_signed))
+            current[key] = previous
+            return previous[1].copy()
+
+        funds = _load_funds(directory, read)
+        self._files = current
+        return funds
+
+
 def load_funds(directory: Path) -> list[FundSnapshot]:
+    return _load_funds(directory, _read_constituents)
+
+
+def _load_funds(directory, read_constituents):
     funds = []
     for manifest in sorted(directory.glob("*.yaml")):
         try:
             raw = yaml.safe_load(manifest.read_text(encoding="utf-8"))
-            frame = pd.read_csv(manifest.parent / raw["holdings_file"], dtype=str, keep_default_na=False)
+            frame = read_constituents(manifest.parent / raw["holdings_file"])
             fund = FundSnapshot(
                 fund_id=raw["fund_id"], name=raw["name"], isin=raw["isin"].upper(),
                 tickers=tuple(ticker.upper() for ticker in raw["tickers"]),
                 as_of=date.fromisoformat(str(raw["as_of"])), source=raw["source"],
-                constituents=validate_constituents(frame),
+                constituents=frame,
                 manifest_path=manifest,
                 equity_fund=raw.get('equity_fund', False),
                 proxy_source=raw.get('proxy_source', ''), notes=raw.get('notes', ''),
@@ -82,8 +115,7 @@ def load_funds(directory: Path) -> list[FundSnapshot]:
                     'provider': '', 'product_url': '', 'asset_class': '', 'replication': '',
                     'breakdown_basis': 'holdings', 'wkn': '', 'summaries': {},
                 }.items()},
-                basket=validate_constituents(pd.read_csv(manifest.parent / raw['basket_file'], dtype=str,
-                    keep_default_na=False), allow_signed=True) if raw.get('basket_file') else None,
+                basket=read_constituents(manifest.parent / raw['basket_file'], allow_signed=True) if raw.get('basket_file') else None,
             )
             if not fund.fund_id or not fund.name or len(fund.isin) != 12:
                 raise ValueError("Fund ID, name, and a 12-character ISIN are required")
