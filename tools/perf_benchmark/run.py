@@ -14,12 +14,14 @@ import sys
 from tempfile import TemporaryDirectory
 import time
 
-from fixture import create_workspace, prepare_fund_check, prepare_quote_check
+from fixture import create_workspace, prepare_fund_check, prepare_fundamental_check, prepare_quote_check
 from renderer import exercise, exercise_exposure, wait
 
 
 def benchmark(executable, workspace, trial, variant, surface, scenario, *, themes=False):
     trial.mkdir()
+    if scenario == 'exposure' and themes:
+        prepare_fundamental_check(workspace)
     env = dict(os.environ, PORTFOLIO_STATE_DIR=str(workspace.parent / 'state'),
         PORTFOLIO_BENCHMARK_TRIAL=str(trial), PORTFOLIO_BENCHMARK_VARIANT=variant,
         PORTFOLIO_BENCHMARK_REFRESH=scenario, PORTFOLIO_BENCHMARK_THEMES=str(int(themes)))
@@ -51,7 +53,7 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
                         args=['--no-sandbox'])
                     page = browser.new_page(viewport={'width':1280,'height':900})
                     page.goto(url)
-                    report = (exercise_exposure(page.evaluate, themes=themes) if scenario == 'exposure' else
+                    report = (exercise_exposure(page.evaluate, trial, variant, themes=themes) if scenario == 'exposure' else
                               exercise(page.evaluate, trial, scenario, persistent=variant != 'baseline'))
                     browser.close()
         finally:
@@ -65,6 +67,15 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
     report['launch_ms'] = (report.pop('ready_at') - started) * 1000
     events = [json.loads(line) for line in (trial / 'server.jsonl').read_text().splitlines()]
     if scenario == 'exposure':
+        if visit := report['fundamentals']:
+            start, end = visit.pop('start_epoch_ms'), visit.pop('end_epoch_ms')
+            fetched = [e['ticker'] for e in events if e['event'] == 'fundamental_fetched' and start <= e['epoch_ms'] <= end]
+            if len(fetched) != 48 or len(set(fetched)) != 48:
+                raise AssertionError('Each synthetic listing must be fetched exactly once')
+            visit['requests'] = len(fetched)
+            visit['valuations'] = sum(e['event'] == 'portfolio_valued' and start <= e['epoch_ms'] <= end for e in events)
+            if variant == 'candidate' and visit['valuations'] > 2:
+                raise AssertionError('Partial fundamentals repeatedly revalued the mounted workspace')
         for visit in report['details']:
             begin, end = visit.pop('start_epoch_ms'), visit.pop('end_epoch_ms')
             visit['valuations'] = sum(e['event'] == 'portfolio_valued' and begin <= e['epoch_ms'] <= end for e in events)

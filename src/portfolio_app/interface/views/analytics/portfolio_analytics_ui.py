@@ -7,7 +7,8 @@ import streamlit as st
 from portfolio_app.interface.shared.charts import chart_config
 
 from portfolio_app.analytics.analytics import snapshot_analytics
-from portfolio_app.analytics.analytics_service import load_metrics, load_risk
+from portfolio_app.analytics.analytics_service import load_risk
+from portfolio_app.interface.views.analytics.metric_updates import view_metrics
 from portfolio_app.interface.views.analytics.analytics_ui import benchmark_name, context_key, data_quality_caption, display_value, render_sources, risk_settings
 from portfolio_app.interface.shared.charts import correlation_chart
 from portfolio_app.exposure.company_analysis import load_company_analysis
@@ -73,8 +74,7 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
     st.divider()
     st.markdown('**Valuation & income**')
     try:
-        with st.spinner('Loading analytics…'):
-            snapshots = load_metrics(selected, data_dir, demo=demo, refresh=refresh)
+        snapshots = view_metrics(selected, data_dir, demo=demo, refresh=refresh)
     except DataError as exc:
         st.error(str(exc))
         return

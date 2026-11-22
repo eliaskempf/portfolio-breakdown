@@ -7,7 +7,8 @@ import pandas as pd
 import streamlit as st
 
 from portfolio_app.analytics.analytics import metric_value
-from portfolio_app.analytics.analytics_service import load_metrics, load_risk
+from portfolio_app.analytics.analytics_service import load_risk
+from portfolio_app.interface.views.analytics.metric_updates import view_metrics
 from portfolio_app.interface.views.analytics.analytics_ui import (benchmark_name, context_key, data_quality_caption, display_value,
     render_sources, risk_settings)
 from portfolio_app.analytics.fundamentals import DEFINITIONS, FundFee, Metric, fee_key, finite, load_fee_overrides, save_fee_override
@@ -66,8 +67,7 @@ def position_metric_toolbar(holdings, data_dir, *, demo=False, account_valued=No
                 st.info(risk.note)
     else:
         try:
-            with st.spinner('Loading instrument metrics…'):
-                snapshots = load_metrics(holdings, data_dir, demo=demo, refresh=refresh)
+            snapshots = view_metrics(holdings, data_dir, demo=demo, refresh=refresh)
             data_quality_caption(snapshots)
         except DataError as exc:
             st.error(str(exc))
@@ -120,8 +120,7 @@ def render_instrument_metrics(row, data_dir, *, demo=False):
     refresh = refresh_column.button('Refresh', help='Request updated market data for this view.', icon=':material/refresh:', type='tertiary',
                                     disabled=demo, key=key + '_refresh')
     try:
-        with st.spinner('Loading metrics…'):
-            snapshots = load_metrics(pd.DataFrame([dict(row)]), data_dir, demo=demo, refresh=refresh)
+        snapshots = view_metrics(pd.DataFrame([dict(row)]), data_dir, demo=demo, refresh=refresh, dialog=True, editing_key=key + '_fee_open')
     except DataError as exc:
         st.error(str(exc))
         return
@@ -154,7 +153,7 @@ def render_instrument_metrics(row, data_dir, *, demo=False):
 
 
 def render_fee_editor(row, data_dir, key):
-    with st.expander('Maintain fund fee'):
+    with st.expander('Maintain fund fee', key=key + '_fee_open', on_change='rerun'):
         st.caption('A private override for this share class, with its verification date and source.')
         path = data_dir / 'fund-fees.json'
         current = load_fee_overrides(path).get(fee_key(row))

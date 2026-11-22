@@ -231,7 +231,53 @@ def exercise(evaluate, control, scenario, *, persistent):
                 refresh_ms=refresh_ms, first=first, range_3m=period, warm=warm, refresh=refresh, **background)
 
 
-def exercise_exposure(evaluate, *, themes=False):
+def exercise_fundamentals(evaluate, trial, variant):
+    def read(js):
+        return evaluate('(() => {' + CONTEXT + js + '})()')
+
+    read("""
+        const button = [...d.querySelectorAll('[role=radio],button')].find(e =>
+            visible(e) && e.textContent.trim() === 'Analytics');
+        const start = w.performance.now(), epoch = w.performance.timeOrigin + start;
+        w.fundamentalVisit = null;
+        w.fundamentalValues = [];
+        button.click();
+        let drawn = null;
+        function frame() {
+            const elapsed = w.performance.now() - start;
+            const metric = [...d.querySelectorAll('[data-testid=stMetric]')].find(e =>
+                e.querySelector('[data-testid=stMetricLabel]')?.textContent.trim() === 'Direct-stock P/E');
+            const value = metric?.querySelector('[data-testid=stMetricValue]')?.textContent.trim();
+            if (visible(metric) && value && value !== w.fundamentalValues.at(-1)) {
+                w.fundamentalValues.push(value);
+                if (drawn === null) drawn = elapsed;
+            }
+            if (value === '20.00' && !running()) {
+                w.fundamentalVisit = {metric_ms:drawn, refreshed_ms:elapsed, values:w.fundamentalValues,
+                    start_epoch_ms:epoch, end_epoch_ms:epoch+elapsed};
+            } else if (elapsed > 60000 || exception()) w.fundamentalVisit = {error:'Fundamentals did not settle'};
+            else w.requestAnimationFrame(frame);
+        }
+        w.requestAnimationFrame(frame); return true;
+    """)
+    if variant == 'candidate':
+        try:
+            wait(lambda: (trial / 'fundamental-waiting').exists())
+            wait(lambda: read("return w.fundamentalValues?.includes('10.00');"))
+            # A foreground rerender on each completed listing would publish a partial multiple.
+            time.sleep(.7)
+        finally:
+            (trial / 'release-fundamentals').touch()
+    result = wait(lambda: read('return w.fundamentalVisit;'), timeout=65)
+    if 'error' in result:
+        raise RuntimeError(result['error'])
+    expected = ['10.00', '20.00'] if variant == 'candidate' else ['20.00']
+    if result['values'] != expected:
+        raise AssertionError(f"Unexpected displayed fundamentals: {result['values']}")
+    return result
+
+
+def exercise_exposure(evaluate, trial, variant, *, themes=False):
     """Time the first populated table frame and verify local source disclosure."""
     context = CONTEXT + """
         const tab = name => [...d.querySelectorAll('[role=tab]')].find(t => t.textContent.trim() === name);
@@ -385,4 +431,5 @@ def exercise_exposure(evaluate, *, themes=False):
             companies = [company_visit() for _ in range(2)]
         read("tab('Overview').click(); return true;")
         wait(lambda: ready() and read("return !table() && tab('Overview').getAttribute('aria-selected') === 'true';"))
-    return dict(ready_at=ready_at, visits=visits, themes=theme_visits, details=details, companies=companies)
+    fundamentals = exercise_fundamentals(evaluate, trial, variant) if themes else None
+    return dict(ready_at=ready_at, visits=visits, themes=theme_visits, details=details, companies=companies, fundamentals=fundamentals)

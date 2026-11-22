@@ -26,6 +26,12 @@ def bind_workspace(launch, chosen):
         _contexts[str(chosen.directory)] = context
 
 
+def workspace_context(directory: Path):
+    """Capture the selection that owns work started in this script or a dialog fragment."""
+    with _mutex:
+        return write_context.get() or _contexts.get(str(directory))
+
+
 def document_workspace(path: Path) -> Path:
     """Resolve the root for the application's root, ETF and cache documents."""
     path = Path(path).absolute()
@@ -60,8 +66,7 @@ def workspace_lock(directory: Path, *, check_context=True):
         with write_lock(directory / '.workspace.lock'):
             # Streamlit can run dialog fragments on a new script thread without
             # rerunning render_app. Their old document paths must remain fenced.
-            with _mutex:
-                context = write_context.get() or _contexts.get(key)
+            context = workspace_context(directory)
             if check_context and context is not None:
                 from portfolio_app.workspace.workspace_selection import selection
                 launch, expected = context

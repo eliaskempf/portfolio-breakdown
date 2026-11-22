@@ -230,11 +230,22 @@ class FundamentalsService:
     def __init__(self, provider: FundamentalsProvider, directory: Path | None = None, *, now=utc_now):
         self.provider, self.cache = provider, AnalyticsCache(directory, now=now)
 
+    def cached(self, ticker: str):
+        ticker = ticker.strip().upper()
+        if not ticker:
+            return Fundamentals('', note='No listing ticker'), False
+        result, due = self.cache.cached('fundamentals-v1:' + ticker)
+        return self._decode(ticker, result), due
+
     def get(self, ticker: str, *, refresh=False):
         if not ticker:
             return Fundamentals('', note='No listing ticker')
         ticker = ticker.strip().upper()
         result = self.cache.get('fundamentals-v1:' + ticker, lambda: asdict(self.provider.fetch(ticker)), refresh=refresh)
+        return self._decode(ticker, result)
+
+    @staticmethod
+    def _decode(ticker, result):
         try:
             raw = result.data or {}
             metrics = {key: Metric(**value) for key, value in raw.get('metrics', {}).items() if key in DEFINITIONS}

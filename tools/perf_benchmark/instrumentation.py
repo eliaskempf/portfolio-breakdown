@@ -22,6 +22,21 @@ def observe_server(trial):
 
     application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
     if os.environ['PORTFOLIO_BENCHMARK_REFRESH'] == 'exposure':
+        if os.environ.get('PORTFOLIO_BENCHMARK_THEMES') == '1':
+            from perf_benchmark.fixture import benchmark_fundamentals
+            from portfolio_app.analytics.fundamentals import YahooFundamentalsProvider
+            def fetch(self, ticker):
+                if ticker == 'ZZF-23' and os.environ['PORTFOLIO_BENCHMARK_VARIANT'] == 'candidate':
+                    (trial / 'fundamental-waiting').touch()
+                    deadline = time.monotonic() + 60
+                    while not (trial / 'release-fundamentals').exists():
+                        if time.monotonic() > deadline:
+                            raise TimeoutError('Synthetic fundamentals release was not received')
+                        time.sleep(.05)
+                time.sleep(.12)
+                record('fundamental_fetched', ticker=ticker)
+                return benchmark_fundamentals(ticker, 20.)
+            YahooFundamentalsProvider.fetch = fetch
         return
     from portfolio_app.performance.personal_history_refresh import refresher
     from portfolio_app.performance import history_view as views
@@ -162,7 +177,7 @@ def observe_window(trial):
             try:
                 scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
                 if scenario == 'exposure':
-                    metrics = exercise_exposure(window.evaluate_js, themes=os.environ.get('PORTFOLIO_BENCHMARK_THEMES') == '1')
+                    metrics = exercise_exposure(window.evaluate_js, trial, os.environ['PORTFOLIO_BENCHMARK_VARIANT'], themes=os.environ.get('PORTFOLIO_BENCHMARK_THEMES') == '1')
                 else:
                     metrics = exercise(window.evaluate_js, trial, scenario,
                                        persistent=os.environ['PORTFOLIO_BENCHMARK_VARIANT'] != 'baseline')

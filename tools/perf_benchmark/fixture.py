@@ -100,6 +100,28 @@ def create_workspace(directory: Path, profile='small', *, today=None):
         record_evaluations(directory, rule, checks, now=datetime.combine(today, time.min, timezone.utc))
         delete_rule(directory, rule.id, rule.revision)
 
+def benchmark_fundamentals(ticker, ratio):
+    from portfolio_app.analytics.fundamentals import normalize_info
+
+    if ticker.startswith('ZZC-'):
+        return normalize_info(ticker, {'quoteType': 'EQUITY', 'trailingPE': ratio})
+    if ticker.startswith('ZZF-'):
+        return normalize_info(ticker, {'quoteType': 'ETF'}, {'fee': .0025})
+    raise ValueError('Unexpected listing in synthetic fundamentals benchmark')
+
+
+def prepare_fundamental_check(directory):
+    from dataclasses import asdict
+    from portfolio_app.analytics.analytics_cache import AnalyticsCache
+
+    expired = datetime.now(timezone.utc) - timedelta(days=2)
+    cache = AnalyticsCache(directory / '.cache' / 'fundamentals', now=lambda: expired)
+    with (directory / 'holdings.csv').open(newline='', encoding='utf-8') as handle:
+        for row in csv.DictReader(handle):
+            ticker = row['ticker']
+            cache.get('fundamentals-v1:' + ticker, lambda: asdict(benchmark_fundamentals(ticker, 10.)))
+
+
 def prepare_fund_check(directory):
     """Publish a stale synthetic snapshot whose next identical export can be checked."""
     from portfolio_app.funds.etf import load_funds

@@ -13,6 +13,10 @@ from portfolio_app.analytics.risk_data import DemoRiskHistoryProvider, RiskHisto
 def load_metrics(holdings, data_dir, *, demo=False, fetch=True, refresh=False):
     provider = DemoFundamentalsProvider() if demo else YahooFundamentalsProvider()
     service = FundamentalsService(provider, None if demo else data_dir / '.cache' / 'fundamentals')
+    return compose_metrics(holdings, data_dir, lambda ticker: service.get(ticker, refresh=refresh), demo=demo, fetch=fetch)
+
+
+def compose_metrics(holdings, data_dir, listing, *, demo=False, fetch=True):
     overrides = load_fee_overrides(data_dir / 'fund-fees.json')
     result, listings = {}, {}
     for row in holdings.drop_duplicates('id').to_dict('records'):
@@ -20,7 +24,7 @@ def load_metrics(holdings, data_dir, *, demo=False, fetch=True, refresh=False):
         ticker = row['ticker']
         if fetch and kind in {'equity', 'etf', 'unknown'} and ticker:
             if ticker not in listings:
-                listings[ticker] = service.get(ticker, refresh=refresh)
+                listings[ticker] = listing(ticker)
             snapshot = listings[ticker]
         else:
             snapshot = Fundamentals(ticker, kind)

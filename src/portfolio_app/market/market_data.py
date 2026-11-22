@@ -14,13 +14,16 @@ from portfolio_app.market.prices import PriceService, YahooProvider
 
 class RequestCoordinator:
     """Bound outstanding requests, count a portfolio batch once, and share workers fairly."""
-    def __init__(self, workers=4, capacity=256):
+    def __init__(self, workers=4, capacity=256, *, channel_limits=None):
         self._pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix='market-data')
         self._lock = RLock()
         self._idle = Condition(self._lock)
         self._pending = set()
         self._queue = OrderedDict()
         self._batch_sizes = {}
+        self._available_by_channel = dict(channel_limits or {})
+        if any(slots < 1 for slots in self._available_by_channel.values()):
+            raise ValueError('Channel concurrency must be positive')
         self._workers = workers
         self._running = 0
         self._closed = False
@@ -72,7 +75,16 @@ class RequestCoordinator:
 
     def _dispatch(self):
         while self._queue and self._running < self._workers:
-            batch, queue = self._queue.popitem(last=False)
+            for batch, queue in self._queue.items():
+                group = queue[0][2]
+                channel = group[1] if group else None
+                if self._available_by_channel.get(channel, 1) > 0:
+                    break
+            else:
+                return
+            del self._queue[batch]
+            if channel in self._available_by_channel:
+                self._available_by_channel[channel] -= 1
             context, identity, group, work = queue.popleft()
             if queue:
                 self._queue[batch] = queue
@@ -108,6 +120,9 @@ class RequestCoordinator:
                     error = str(exc) or type(exc).__name__
 
     def _finish(self, identity, group, batch, changed, error):
+        channel = group[1] if group else None
+        if channel in self._available_by_channel:
+            self._available_by_channel[channel] += 1
         if group is not None:
             if changed is not False:
                 self._channel_revisions[group] = self._channel_revisions.get(group, 0) + 1
@@ -251,7 +266,8 @@ class BackgroundHistory:
         return self.coordinator.pending(self.workspace, ('history', ticker, period))
 
 
-coordinator = RequestCoordinator()
+# Slow optional fundamentals must leave workers available for valuation and FX.
+coordinator = RequestCoordinator(channel_limits={'fundamentals': 2})
 _services = {}
 _services_lock = RLock()
 

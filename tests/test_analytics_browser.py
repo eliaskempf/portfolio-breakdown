@@ -1,4 +1,5 @@
 """Analytics fits the refactored navigation; all screenshots use invented data."""
+import pytest
 from test_ux_browser import ux_page, playwright
 from browser_support import settle
 
@@ -73,3 +74,32 @@ def test_analytics_views_dialog_and_mobile_layout(ux_page):
     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
     page.screenshot(path=str(directory / 'analytics-narrow.png'), full_page=True)
     assert page.get_by_test_id('stException').count() == 0
+
+
+@pytest.mark.parametrize('ux_page', ['pending_fundamentals'], indirect=True)
+def test_fundamental_refresh_updates_open_position_dialog_without_rebuilding_parent(ux_page):
+    page, directory = ux_page
+    page.get_by_role('tab', name='Positions', exact=True).click()
+    page.get_by_role('radio', name='Valuation', exact=True).click()
+    table = page.get_by_role('table', name='Positions', exact=True)
+    page.get_by_role('searchbox', name='Filter positions').fill('Regional')
+    table.locator('tbody tr').first.click()
+    dialog = page.get_by_role('dialog')
+    dialog.locator('[data-position-view-ready="History"]').wait_for(state='attached')
+    dialog.get_by_role('radio', name='Key metrics', exact=True).click()
+    metric = dialog.get_by_test_id('stMetric').filter(has_text='P/E (trailing)').get_by_test_id('stMetricValue')
+    playwright.expect(metric).to_have_text('10.00')
+    assert (directory / 'requested-SYNTH-B').exists()
+    before = (directory / 'full-runs.log').read_text()
+    (directory / 'release-SYNTH-B').touch()
+    page.wait_for_timeout(800)
+    playwright.expect(metric).to_have_text('10.00')
+    for ticker in ('SYNTH-A', 'SYNTH-C'):
+        (directory / ('release-' + ticker)).touch()
+    playwright.expect(metric).to_have_text('20.00', timeout=10000)
+    assert (directory / 'full-runs.log').read_text() == before
+    assert len(list(directory.glob('requested-SYNTH-*'))) == 3
+    dialog.get_by_role('button', name='Close', exact=True).last.click()
+    playwright.expect(dialog).to_have_count(0)
+    playwright.expect(page.get_by_role('searchbox', name='Filter positions')).to_have_value('Regional')
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

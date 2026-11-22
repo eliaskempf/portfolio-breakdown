@@ -341,6 +341,35 @@ def ux_page(tmp_path, request):
 with Path(__file__).with_name('full-runs.log').open('a') as counter:
     print('run', file=counter)
 """
+    if getattr(request, 'param', '') == 'pending_fundamentals':
+        from dataclasses import asdict
+        from datetime import datetime, timedelta, timezone
+        from portfolio_app.analytics.analytics_cache import AnalyticsCache
+        from portfolio_app.analytics.fundamentals import normalize_info
+        cache = AnalyticsCache(tmp_path / '.cache' / 'fundamentals', now=lambda: datetime.now(timezone.utc) - timedelta(days=2))
+        for ticker in ('SYNTH-A', 'SYNTH-B', 'SYNTH-C'):
+            cached = normalize_info(ticker, {'quoteType': 'EQUITY', 'trailingPE': 10.})
+            cache.get('fundamentals-v1:' + ticker, lambda: asdict(cached))
+        setup = """from pathlib import Path
+import time
+from portfolio_app.analytics.fundamentals import YahooFundamentalsProvider, normalize_info
+from portfolio_app.interface.views.analytics import position_metrics_ui, metric_updates
+root = Path(__file__).parent
+with (root / 'full-runs.log').open('a') as runs:
+    print('run', file=runs)
+def fetch(self, ticker):
+    (root / ('requested-' + ticker)).touch()
+    deadline = time.monotonic() + 30
+    while not (root / ('release-' + ticker)).exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError('Synthetic provider release timed out')
+        time.sleep(.02)
+    return normalize_info(ticker, {'quoteType': 'EQUITY', 'trailingPE': 20.})
+YahooFundamentalsProvider.fetch = fetch
+def metrics(holdings, directory, **options):
+    return metric_updates.view_metrics(holdings, directory, **dict(options, demo=False))
+position_metrics_ui.view_metrics = metrics
+"""
     if str(getattr(request, 'param', '')).startswith('slow_purchase_selection'):
         # Keep intermediate DOM states observable even on a fast test machine.
         setup = '''import time
@@ -378,6 +407,9 @@ if not hasattr(position_ui, '_original_remember_draft'):
             yield page, tmp_path
             browser.close()
     finally:
+        if getattr(request, 'param', '') == 'pending_fundamentals':
+            for ticker in ('SYNTH-A', 'SYNTH-B', 'SYNTH-C'):
+                (tmp_path / ('release-' + ticker)).touch()
         process.terminate(); process.wait(timeout=10)
 
 
