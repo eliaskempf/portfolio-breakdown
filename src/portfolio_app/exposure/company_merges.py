@@ -157,18 +157,18 @@ def build_plan(holdings: pd.DataFrame, funds: list[FundSnapshot], reviewed: dict
             parents[i] = parents[parents[i]]
             i = parents[i]
         return i
-    def join(indices):
-        roots = sorted({root(i) for i in indices})
-        for r in roots[1:]:
-            parents[r] = roots[0]
-    keys = defaultdict(list)
-    for i, item in enumerate(items):
-        key = identity(item['asset_id'], item['isin'])
-        keys[('reviewed', reviewed[key]) if key in reviewed else ('security', key)].append(i)
-    for indices in keys.values():
-        join(indices)
+    # Start with exact identity components. Keep their origins and reviewed issuer
+    # alongside the union-find tree so checking a name never scans unrelated assets.
+    representatives, origins, issuers = {}, defaultdict(set), {}
     names = defaultdict(list)
     for i, item in enumerate(items):
+        key = identity(item['asset_id'], item['isin'])
+        exact = ('reviewed', reviewed[key]) if key in reviewed else ('security', key)
+        component = representatives.setdefault(exact, i)
+        parents[i] = component
+        origins[component].add(item['origin'])
+        if key in reviewed:
+            issuers[component] = reviewed[key]
         name = normalized_name(item['name'])
         if len(name) >= 4:
             names[name].append(i)
@@ -177,20 +177,28 @@ def build_plan(holdings: pd.DataFrame, funds: list[FundSnapshot], reviewed: dict
         components = {root(i) for i in indices}
         if len(components) < 2:
             continue
-        members = [i for i in range(len(items)) if root(i) in components]
-        per_source = defaultdict(set)
-        verified = set()
-        for i in members:
-            per_source[items[i]['origin']].add(root(i))
-            key = identity(items[i]['asset_id'], items[i]['isin'])
-            if key in reviewed:
-                verified.add(reviewed[key])
-        # Two different rows in one fund or conflicting reviewed companies make
-        # the name ambiguous. Do not join them even via a third provider.
-        if len(verified) > 1 or any(len(parts) > 1 for parts in per_source.values()):
+        verified = {issuers[c] for c in components if c in issuers}
+        if len(verified) > 1:
             continue
-        join(members)
-        estimated.update(members)
+        # Check all transitive members, including aliases with a different name.
+        # Grow the largest set in place only after every origin check passes.
+        leader = max(components, key=lambda c: len(origins[c]))
+        others = components - {leader}
+        additional = set()
+        for component in others:
+            sources = origins[component]
+            if not sources.isdisjoint(origins[leader]) or not sources.isdisjoint(additional):
+                break
+            additional.update(sources)
+        else:
+            origins[leader].update(additional)
+            for component in others:
+                parents[component] = leader
+                del origins[component]
+            if verified:
+                issuers[leader] = next(iter(verified))
+            # A single member marks every eventual superset as an estimated match.
+            estimated.add(indices[0])
     groups = defaultdict(list)
     for i in range(len(items)):
         groups[root(i)].append(i)

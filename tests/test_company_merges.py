@@ -187,3 +187,43 @@ def test_inventory_formats_source_labels_once_per_held_fund(monkeypatch):
     items = company_merges.inventory(holdings, frames, {})
     assert len(items) == 40
     assert labels == [fund.name for fund in funds]
+
+
+def test_each_estimated_name_checks_only_its_identity_components(monkeypatch):
+    from portfolio_app.exposure import company_merges
+    holdings, funds = universe()
+    count = 150
+    snapshots = []
+    for index, fund in enumerate(funds):
+        rows = pd.DataFrame([dict(constituent_id=f'{index}-{n}', name=f'Invented issuer {n}',
+                                  isin='', ticker='', weight=1/count, instrument_type='equity')
+                             for n in range(count)])
+        snapshots.append(replace(fund, constituents=rows))
+    # Count full-universe index scans. Looking up every other issuer for each
+    # estimated name makes a pair of broad funds quadratic.
+    full_scans = []
+    def observed_range(*args):
+        if args == (2 * count,):
+            full_scans.append(1)
+        return range(*args)
+    monkeypatch.setattr(company_merges, 'range', observed_range, raising=False)
+    plan = build_plan(holdings, snapshots, {}, MergeSettings(set()))
+    assert len(plan.groups) == count
+    assert all(g.basis == 'Estimated name match' and len(g.members) == 2 for g in plan.groups)
+    assert len(full_scans) <= 3
+
+
+def test_aliased_component_retains_its_origin_and_estimated_status(monkeypatch):
+    from portfolio_app.exposure import company_merges
+    # The exact security Y has two names and two origins. Its alias in C must
+    # prevent merging the second, different security from C through that name.
+    records = [('A', 'X', 'Invented north'), ('B', 'Y', 'Invented north'),
+               ('C', 'Y', 'Invented south'), ('C', 'Z', 'Invented south')]
+    items = [dict(node=f'n{i}', asset_id=identity, isin=identity, name=name, origin=origin,
+                  source=origin, fund=origin, date='', ticker='')
+             for i, (origin, identity, name) in enumerate(records)]
+    monkeypatch.setattr(company_merges, 'inventory', lambda *args: items)
+    plan = build_plan(pd.DataFrame(), [], {}, MergeSettings(set()))
+    assert len(plan.groups) == 1
+    assert plan.groups[0].basis == 'Estimated name match'
+    assert [m['node'] for m in plan.groups[0].members] == ['n0', 'n1', 'n2']
