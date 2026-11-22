@@ -67,7 +67,14 @@ def test_assets_expose_sector_geography_and_all_detail_classifications(geography
     assert any('Geography source: Synthetic' in item.value for item in app.caption)
 
 
-def test_region_country_drilldown_search_and_etf_toggle(geography_workspace):
+def test_region_country_drilldown_search_and_etf_toggle(geography_workspace, monkeypatch):
+    from portfolio_app.interface.views.exposure import geography_ui
+    allocate = geography_ui.geography_allocations
+    projections = []
+    def count(*args):
+        projections.append(True)
+        return allocate(*args)
+    monkeypatch.setattr(geography_ui, 'geography_allocations', count)
     app = launch(geography_workspace)
     open_geography(app)
     table = breakdown(app).set_index('Category')
@@ -91,7 +98,9 @@ def test_region_country_drilldown_search_and_etf_toggle(geography_workspace):
     by_label(app.text_input, 'Search exposure').set_value('Alpha').run()
     assert breakdown(app)['% of selected portfolio'].tolist() == [100 * 175 / 800]
     by_label(app.text_input, 'Search exposure').set_value('').run()
+    assert len(projections) == 1
     by_label(app.toggle, 'Break down ETFs').set_value(False).run()
+    assert len(projections) == 2
     table = breakdown(app).set_index('Category')
     assert table.loc['Unknown geography', 'Value'] == 200
     assert table['Value'].sum() == 800

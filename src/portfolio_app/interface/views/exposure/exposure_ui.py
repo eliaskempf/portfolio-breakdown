@@ -317,7 +317,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             render_stock_exposure(selected, expanded_funds, data_dir, query=query, allocation=allocation)
         elif mode == 'Geography':
             with st.container(key='tour_geography'):
-                render_geography(display_exposures, load_geography(), complete=complete, query=query,
+                render_geography(display_exposures, load_geography(), contribution_key=contribution_key, complete=complete, query=query,
                     equity=equity, measure=measure if unified else None)
             if match_note:
                 st.caption(match_note)
