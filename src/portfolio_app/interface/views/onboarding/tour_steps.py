@@ -13,6 +13,7 @@ class TourStep:
     calculate_plan: bool = False
     interactive: str = ''
     detached_anchors: tuple[str, ...] = ()
+    target_scope: str = ''
 
     @property
     def highlight_groups(self) -> tuple[tuple[str, ...], ...]:
@@ -51,14 +52,14 @@ STEPS = (
         'Add position creates a holding. Select a row to inspect a position and its price history; use its pencil to edit quantities, buy-ins, and other details.',
         ('.st-key-tour_add_position', '.st-key-tour_position_list')),
     TourStep('Positions', 'Keep your portfolio up to date',
-        'Use Bulk add purchases to record several purchases, Update balances to adjust holdings, or Import to add transactions or initialize holdings from a report.',
-        ('.st-key-positions_workflow',)),
+        'Import transactions or holdings here. More actions includes Bulk add purchases and Update balances.',
+        ('.st-key-position_list_actions',)),
     TourStep('Rebalance', 'Set category targets',
-        'Category targets divide money between categories, relative to their parent. In this demo, Equities targets 60% of the whole portfolio. Subcategories use their parent category as the total.',
+        'Choose Portfolio to review its category targets. Equities has a 60% target in this demo.',
         ('.st-key-rebalance_tabs [role="tablist"]', '.st-key-tour_category_targets'), 'Targets'),
     TourStep('Rebalance', 'Set targets within a category',
-        'Position targets divide a category between its holdings. Within Equities, this demo targets 70% World ETF and 30% Emerging Markets ETF. Both percentages are shares of Equities.',
-        ('.st-key-tour_position_targets',), 'Targets'),
+        'Equities targets 70% World ETF and 30% Emerging Markets ETF. Edit targets opens the same editor as Overview.',
+        ('.st-key-tour_position_targets',), 'Targets', target_scope='equity'),
     TourStep('Rebalance', 'Plan how to invest new money',
         'Choose a planning scope and contribution, then Calculate plan. Options control eligible positions and purchase rules. This demo uses a €500 contribution.',
         ('.st-key-rebalance_tabs [role="tablist"]', '.st-key-planning_scope', '.st-key-planning_amount', '.st-key-planning_calculate'), 'Plan'),

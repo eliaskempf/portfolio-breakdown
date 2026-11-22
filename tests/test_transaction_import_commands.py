@@ -228,3 +228,59 @@ def test_new_import_rejects_category_when_allocation_was_removed(tmp_path):
         save_transaction_import(tmp_path, rows, {('Portfolio','AUR'):'closed'}, **options)
     assert (tmp_path/'holdings.csv').read_bytes() == before
     assert not (tmp_path/'account-journal.json').exists()
+
+
+def test_kept_decision_and_new_holding_rollback_together(tmp_path, monkeypatch):
+    import portfolio_app.ledger.account_journal as storage
+    from portfolio_app.ingestion.transaction_csv import read_csv
+    header = 'reference,date,type,asset,quantity,amount,currency'
+    def rows(*lines):
+        return read_csv('\n'.join((header, *lines)))
+    first = rows('a,2024-02-02,buy,AUR,1,10,EUR')
+    save_transaction_import(tmp_path, first, {}, expected_journal_revision=None, expected_holdings_revision=None)
+    before, stamp = load_journal(tmp_path)
+    batch = rows('a,2024-02-02,buy,AUR,1,11,EUR', 'b,2024-03-01,buy,ORB,3,30,EUR')
+    options = dict(keep_ids=[batch[0].identity], selected_ids=[batch[1].identity], starts_at_zero=True,
+        additions=[dict(position_key='orb', id='orb', name='Invented Orb', account='Portfolio')],
+        accept_reconciliation=True, comparison_date='2024-03-02', expected_holdings_revision=None)
+    mapping = {('Portfolio','ORB'): 'orb'}
+    def fail(*args):
+        raise OSError('invented interruption')
+    with monkeypatch.context() as patch:
+        patch.setattr(storage, 'save_journal', fail)
+        with pytest.raises(OSError, match='invented interruption'):
+            save_transaction_import(tmp_path, batch, mapping, expected_journal_revision=stamp, **options)
+    assert load_journal(tmp_path) == (before, stamp)
+    assert not (tmp_path/'holdings.csv').exists()
+    result = save_transaction_import(tmp_path, batch, mapping, expected_journal_revision=stamp, **options)
+    assert result.applied == 1 and len(result.journal.kept_imports) == 1
+    assert set(read_snapshot(tmp_path/'holdings.csv').holdings.position_id) == {'orb'}
+    with pytest.raises(DataError, match='changed'):
+        save_transaction_import(tmp_path, batch, mapping, expected_journal_revision=stamp, **options)
+
+
+def test_import_freezes_legacy_position_identity_and_rolls_back_failure(tmp_path, monkeypatch):
+    import portfolio_app.ledger.account_journal as storage
+    from portfolio_app.ingestion.transaction_csv import read_csv
+    path = tmp_path/'holdings.csv'
+    original = b'id,name,shares\naur,Invented Aurora,3\n'
+    path.write_bytes(original)
+    snapshot = read_snapshot(path)
+    assert 'position_key' not in snapshot.holdings
+    position = snapshot.holdings.position_id.item()
+    rows = read_csv('reference,date,type,asset,quantity,amount,currency\na,2024-02-02,buy,AUR,1,10,EUR\n')
+    mapping = {('Portfolio', 'AUR'): position}
+    options = dict(expected_journal_revision=None, expected_holdings_revision=snapshot.revision)
+    def interrupted(*args):
+        raise OSError('invented write failure')
+    with monkeypatch.context() as patch:
+        patch.setattr(storage, 'save_journal', interrupted)
+        with pytest.raises(OSError, match='invented write failure'):
+            save_transaction_import(tmp_path, rows, mapping, **options)
+    assert path.read_bytes() == original and load_journal(tmp_path)[1] is None
+    result = save_transaction_import(tmp_path, rows, mapping, **options)
+    frozen = read_snapshot(path).holdings
+    assert frozen.position_id.tolist() == frozen.position_key.tolist() == [position]
+    assert path.read_text().splitlines()[0] == 'id,name,shares,position_key'
+    assert frozen.shares.tolist() == [3]
+    assert result.journal.transaction_imports[0].positions == (('Portfolio', 'AUR', position),)

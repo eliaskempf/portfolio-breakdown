@@ -139,7 +139,7 @@ backup service to protect against drive loss. SHA-256 detects damage; it does
 not prove who created an archive. Archives are limited to 200 MiB compressed,
 1 GiB expanded and 10,000 files. Links, unsafe/non-portable filenames and absolute
 ETF file references are refused. Unsupported archive versions require a compatible
-app; they are never silently converted. CSV/Excel **Import holdings** remains a
+app; they are never silently converted. CSV/Excel **Import → Holdings snapshot** remains a
 separate workflow under Positions.
 
 ### Advanced folder-copy commands
@@ -200,9 +200,11 @@ An automated scan cannot recognize all personal details.
 ### Transaction-history compatibility {#transaction-history-compatibility}
 
 Opening a legacy workspace does not convert its purchase batches or rewrite the
-journal. Securities-history saves use account journal version 5; dated
-allocations require at least version 2. Saves retain a private backup. Versions
-1–5 remain readable, and existing native futures events preserve their meaning. Older
+journal. Securities history uses version 5 of the account journal. Saving **Keep
+current** for a changed CSV transaction upgrades the journal to version 6 to
+retain those source facts and the comparison receipt. Dated allocations require
+at least version 2. Saves retain a private backup. Versions 1–6 remain readable,
+and existing native futures events preserve their meaning. Older
 application versions may not read the current journal;
 use a compatible application or restore the complete pre-upgrade backup into a
 separate workspace. Do not replace only the journal while retaining newer history.

@@ -114,7 +114,7 @@ def save_category_settings(directory, config, key, mode, buy, sell, *, holdings_
                               allocation_revision=allocation_revision)
 
 
-def move_category_positions(directory, config, members, destination, *, holdings_revision, allocation_revision):
+def move_category_positions(directory, config, members, destination, *, holdings_revision, allocation_revision, clear_targets=False):
     """Move source ownership and retire obsolete priority entries in one publication."""
     directory = Path(directory)
     with workspace_lock(directory):
@@ -129,6 +129,8 @@ def move_category_positions(directory, config, members, destination, *, holdings
         raw = pd.read_csv(StringIO(content), dtype=str, keep_default_na=False)
         raw.loc[positions.position_id.isin(members), 'bucket_id'] = destination
         moved = set(positions.loc[positions.position_id.isin(members) & positions.bucket_id.ne(destination), 'position_id'])
+        if clear_targets and 'within_bucket_target' in raw:
+            raw.loc[positions.position_id.isin(moved),'within_bucket_target'] = ''
         candidate = Allocation(tuple(replace(b, buy_priority=tuple(key for key in b.buy_priority if key not in moved),
             sell_priority=tuple(key for key in b.sell_priority if key not in moved)) for b in config.buckets), 3)
         publish_category_edit(directory, candidate, raw.to_csv(index=False), holdings_revision=holdings_revision,

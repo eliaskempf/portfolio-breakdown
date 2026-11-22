@@ -507,7 +507,14 @@ def external_flows(journal, scope, observations, start, end, target, *, security
         if not (start < stamp <= end or (include_start and start == stamp)):
             return
         value = convert(amount, currency, target, stamp, observations)
-        reason = '' if value is not None else Issue(f'{identity}: missing cash amount or dated FX', 'transaction' if amount is None else 'fx')
+        reason = ''
+        if value is None:
+            if amount is None:
+                reason = Issue(f'{identity}: missing cash amount on {stamp}', 'transaction')
+            elif not currency:
+                reason = Issue(f'{identity}: missing cash currency on {stamp}', 'transaction')
+            else:
+                reason = Issue(f'{identity}: missing {currency}/{target} FX on {stamp}', 'fx')
         flows.append(ExternalFlow(identity, stamp, sequence, value, reason, event_id,
             convert(expense, currency, target, stamp, observations) or ZERO,
             convert(income, currency, target, stamp, observations) or ZERO, (identity,)))

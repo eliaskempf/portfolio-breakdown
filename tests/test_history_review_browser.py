@@ -28,7 +28,7 @@ def test_delayed_accept_click_cannot_accept_an_unseen_holding(import_page):
         server.on_message(receive)
     page.route_web_socket('**/_stcore/stream', route)
     page.reload()
-    page.get_by_role('button', name='Import transactions', exact=True).wait_for()
+    page.get_by_role('button', name='Import', exact=True).wait_for()
     quantities = dict(zip(('AUR', 'BRN', 'CEL', 'DUS', 'EKO', 'FLX'), range(1, 7)))
     content = 'reference,date,type,asset,quantity,amount,currency\n'+''.join(
         f'invented-{asset},2024-01-02,buy,{asset},{quantity},10,EUR\n'

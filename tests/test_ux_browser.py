@@ -425,7 +425,7 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     assert_gain_color(value_card.get_by_test_id('stMetricDelta'), positive=True)
     playwright.expect(page.locator('.st-key-strategic_crumb_')).to_have_count(0)
     value_card.get_by_role('button', name='Show gain as percentage').click()
-    playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_have_text('—')
+    playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_have_text('Unavailable')
     open_settings(page)
     playwright.expect(page.get_by_role('radio', name='%', exact=True)).to_be_checked()
     page.keyboard.press('Escape')
@@ -464,7 +464,7 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('ETF core')
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     value_card.get_by_role('button', name='Show gain as percentage').press('Space')
-    playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_have_text('—')
+    playwright.expect(value_card.get_by_test_id('stMetricDelta')).to_have_text('Unavailable')
     playwright.expect(page.get_by_role('combobox', name='Category', exact=True)).to_have_value('ETF core')
     open_settings(page)
     page.get_by_role('radio', name='€', exact=True).click()
@@ -502,7 +502,7 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     page.wait_for_function("document.querySelector('.js-plotly-plot')?.layout.xaxis.title.text === 'Gain'")
     assert chart.evaluate('el => Array.from(el._fullData[0].x)') == [-10, 40]
     page.get_by_role('radio', name='Return (%)', exact=True).click()
-    playwright.expect(page.get_by_text('TWR unavailable · Choose Gain for supported monetary results.',exact=True)).to_be_visible()
+    playwright.expect(page.get_by_text('TWR unavailable',exact=True)).to_be_visible()
     page.screenshot(path=str(directory / 'performance.png'))
     page.get_by_role('radio', name='Allocation', exact=True).click()
     page.get_by_role('button', name='Up one level', exact=True).click()
@@ -533,7 +533,7 @@ def test_position_details_edit_cancel_and_preserved_filter(ux_page):
     playwright.expect(value).to_contain_text('-€10.00')
     assert_gain_color(value.get_by_test_id('stMetricDelta'), positive=False)
     annualized = dialog.get_by_test_id('stMetric').filter(has=page.get_by_text('Annualized return', exact=True))
-    playwright.expect(annualized.get_by_test_id('stMetricValue')).to_have_text('—')
+    playwright.expect(annualized.get_by_test_id('stMetricValue')).to_have_text('Unavailable')
     dialog.get_by_role('radio', name='Details', exact=True).click()
     playwright.expect(dialog.get_by_test_id('stDataFrame').first).to_be_visible()
     page.screenshot(path=str(directory / 'details.png'))
@@ -701,7 +701,7 @@ def test_tiny_labels_reappear_when_scoped_and_losses_are_red(ux_page):
     open_settings(page)
     page.get_by_role('radio', name='%', exact=True).click()
     page.keyboard.press('Escape')
-    playwright.expect(card.get_by_test_id('stMetricDelta')).to_have_text('—')
+    playwright.expect(card.get_by_test_id('stMetricDelta')).to_have_text('Unavailable')
 
 
 def test_transaction_review_defaults_to_first_purchase_and_applies_once(ux_page):

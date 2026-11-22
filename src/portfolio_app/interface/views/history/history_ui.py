@@ -952,7 +952,7 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
 def _render_history_results(directory, journal, scope, *, key, label='Historical value', prepared=None, percent=False, on_toggle_gain=None, automatic=False, refresh=None, include_inputs=True, show_summary=True):
     from portfolio_app.interface.shared.currency_display import reporting_currency, money
     from portfolio_app.performance.history_view import PERIODS
-    from portfolio_app.interface.shared.presentation import return_percent
+    from portfolio_app.interface.shared.number_format import return_metric
     target = reporting_currency()
     observations, revision = (prepared['observations'],prepared['revision']) if prepared else load_observations(directory)
     # Reserve the summary above the controls, while reading the widget first.
@@ -963,11 +963,11 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     start,end,result = view.start,view.end,view.result
     full = view.all_result
     known = (prepared.get('current_gain') if prepared else None) or view.all_known
-    from portfolio_app.interface.views.history.history_data_ui import readable_reasons, scope_names
+    from portfolio_app.interface.views.history.history_data_ui import brief_reasons, readable_reasons, render_return_inputs, scope_names
     names = scope_names(directory, journal, scope)
     def explanation(reasons):
         messages = readable_reasons(directory, journal, scope, reasons, names=names)
-        return ' '.join(messages[:3]) + (' More missing dates are listed in Correct market data.' if len(messages) > 3 else '')
+        return brief_reasons(messages)
     total_value, capital = known.value, known.capital
     gain = known.amount if view.covers_full_history else result.gain
     twr = full.time_weighted if view.covers_full_history else result.time_weighted
@@ -982,15 +982,24 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
             st.session_state[unit_key] = not st.session_state.get(unit_key, False)
         interaction_key = value_key
     displayed_gain = (100*twr if twr is not None else None) if percent else gain
-    gain_text = return_percent(displayed_gain) if percent else (money(gain,signed=True) if gain is not None else '—')
+    gain_text = return_metric(displayed_gain) if percent else (money(gain,signed=True) if gain is not None else 'Unavailable')
     gain_tooltip = ('Daily TWR · ' if percent else 'Gain · ') + ('All history' if view.covers_full_history else period) + (' · Click for amount' if percent else ' · Click for TWR')
     gain_help = ('Estimated TWR: uses supplied transaction estimates and the normal daily timing convention.'
                  if (full if view.covers_full_history else result).estimated else '') if percent else (
                      known.coverage_help if known.coverage_note == 'Estimated gain' else '')
     if gain_help:
         gain_tooltip += ' · '+gain_help
+    twr_result = full if view.covers_full_history else result
+    indexed = prepared['calculation'].observations if prepared and prepared.get('calculation') else None
     with summary:
-        if show_summary and (total_value is not None or full.ending_value is not None):
+        if not show_summary and twr is None:
+            with st.container(horizontal=True, vertical_alignment='center'):
+                status = st.empty()
+                details = render_return_inputs(directory, journal, scope, observations, revision,
+                                               twr_result.time_weighted_reasons, key+'twr_', indexed=indexed)
+                if details or percent:
+                    status.caption('TWR unavailable', help=explanation(twr_result.time_weighted_reasons))
+        if show_summary:
             cols = st.columns([2,1,1])
             with cols[0].container(key=value_key):
                 st.metric(label, money(total_value), delta=gain_text,
@@ -1001,16 +1010,24 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
                         + explanation((full if view.covers_full_history else result).time_weighted_reasons if percent else known.reasons))
                 if known.partial and known.coverage_note != 'Estimated gain':
                     st.caption(known.coverage_note, help=known.coverage_help)
+            if percent and twr is None:
+                with cols[0]:
+                    render_return_inputs(directory, journal, scope, observations, revision,
+                        twr_result.time_weighted_reasons, key+'twr_', indexed=indexed)
             from portfolio_app.interface.shared.metric_interactions import toggle_gain_unit
             toggle_gain_unit(percent=percent, on_toggle=on_toggle_gain, container_key=value_key, interaction_key=interaction_key, tooltip=gain_tooltip)
             with cols[1].container(key=key+'hover_capital'):
                 st.metric('Invested capital', money(capital),
                     help=f'Known opening acquisition cost (account opening equity for cash/debt/futures), plus net external contributions. After sales this is not remaining acquisition cost and can be negative. Snapshot market value separately seeds returns. Current basis as of {known.as_of}; unchanged by chart period.')
-            cols[2].metric('Annualized return', return_percent(None if full.money_weighted is None else 100*full.money_weighted),
+            cols[2].metric('Annualized return', return_metric(None if full.money_weighted is None else 100*full.money_weighted),
                 help=f'All history · {view.all_start} – {view.all_end}. Money-weighted; fixed across periods and hover.'
                     + (f' Annualized from a short interval of {full.days} days.' if full.days < 365 else '')
                     + (' Estimated return: uses supplied estimates in dated flows.' if full.estimated else '')
                     + (' '+explanation(full.money_weighted_reasons) if full.money_weighted is None else ''))
+            if full.money_weighted is None:
+                with cols[2]:
+                    render_return_inputs(directory, journal, scope, observations, revision,
+                                         full.money_weighted_reasons, key+'annualized_', indexed=indexed)
     # Keep sibling paths stable as the chart appears and loading/retry controls
     # change. Streamlit otherwise shows the new caption beside its stale copy
     # until the fragment finishes rendering.
@@ -1042,7 +1059,7 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
             # on their current/all-history basis in both Price and Holdings.
             trace = next(t for t in figure.data if t.name == 'Value')
             trace.text = [f'Total gain: {money(p["Total gain"], signed=True)}<br>TWR: '
-                          + return_percent(None if p['TWR'] is None else 100*p['TWR']) for p in points]
+                          + return_metric(None if p['TWR'] is None else 100*p['TWR']) for p in points]
             trace.hovertemplate = trace.hovertemplate.replace('<extra>', '<br>%{text}<extra>')
         if any(p.get('Price as of') or p.get('FX as of') for p in points):
             trace = next(t for t in figure.data if t.name == 'Value')

@@ -25,6 +25,8 @@ playwright = pytest.importorskip('playwright.sync_api')
 def workflow_page(tmp_path):
     accounts = tmp_path / 'accounts'; accounts.mkdir()
     _, journal, _ = invented(accounts)
+    journal = ledger.append_event(journal, ledger.Event('second-fee', '2026-01-02', 'fee', account_id='a',
+        currency='EUR', position_id='p', amount=9))
     ledger.save_journal(accounts, journal, None)
     funds = tmp_path / 'funds'; funds.mkdir()
     invented_workspace(funds)
@@ -114,8 +116,16 @@ def test_journal_review_cancel_save_and_stale_revision(workflow_page):
     page, root = workflow_page
     original = (root/'accounts'/ledger.FILE).read_bytes()
     page.get_by_text('Recorded transactions', exact=True).click(); settle(page)
-    select(page, 'Transaction details', '2026-01-02 · Fee · Invented account · SYNTH 2027-03-19 · 8.00 EUR')
-    select(page, 'Entry action', 'Correct entry')
+    table = page.get_by_role('table', name='Recorded transactions')
+    fees = table.get_by_role('row').filter(has=page.get_by_role('cell', name='Fee', exact=True))
+    playwright.expect(fees).to_have_count(2)
+    playwright.expect(table.get_by_role('columnheader', name='Date', exact=False)).to_have_attribute('aria-sort', 'descending')
+    assert fees.first.get_attribute('data-position-id') == 'second-fee'
+    fee = fees.filter(has=page.get_by_role('cell', name='8.00', exact=True))
+    fee.focus()
+    fee.press('Enter')
+    settle(page)
+    page.get_by_role('button', name='Correct entry', exact=True).click(); settle(page)
     playwright.expect(page.get_by_role('textbox', name='Corrected amount', exact=True)).to_have_value('8.00')
     fill(page, 'Corrected amount', '3')
     page.reruns.click(page, page.get_by_role('button', name='Review correction', exact=True))
@@ -123,7 +133,7 @@ def test_journal_review_cancel_save_and_stale_revision(workflow_page):
     assert (root/'accounts'/ledger.FILE).read_bytes() == original
     page.reruns.click(page, page.get_by_role('button', name='Cancel correction', exact=True))
     playwright.expect(page.get_by_role('button', name='Save correction', exact=True)).to_have_count(0)
-    select(page, 'Entry action', 'Correct entry')
+    page.get_by_role('button', name='Correct entry', exact=True).click(); settle(page)
     fill(page, 'Corrected amount', '4')
     page.reruns.click(page, page.get_by_role('button', name='Review correction', exact=True))
     current, revision = ledger.load_journal(root/'accounts')
@@ -136,7 +146,7 @@ def test_journal_review_cancel_save_and_stale_revision(workflow_page):
     page.reruns.click(page, page.get_by_role('button', name='Save correction', exact=True))
     saved, _ = ledger.load_journal(root/'accounts')
     assert saved.events[:-1] == external.events and saved.events[-1].replaces == 'fee'
-    assert ledger.replay(saved).cash['a', 'EUR'] == 19995
+    assert ledger.replay(saved).cash['a', 'EUR'] == 19986
     playwright.expect(page.get_by_text('Replacement:', exact=False)).to_be_visible()
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
@@ -232,19 +242,19 @@ def test_journal_selection_and_draft_survive_main_app_navigation(futures_page):
     page, root, journal, _ = futures_page
     select_tab(page, 'Futures')
     page.get_by_text('Recorded transactions', exact=True).click(); settle(page)
-    open_select(page, 'Transaction details')
-    page.get_by_role('option').filter(has_text=' · Trade · ').click(); settle(page)
-    open_select(page, 'Transaction details')
-    page.get_by_role('option').filter(has_text=' · Fee · ').click(); settle(page)
-    select(page, 'Entry action', 'Correct entry')
+    table = page.get_by_role('table', name='Recorded transactions')
+    trade = table.get_by_role('row').filter(has=page.get_by_role('cell', name='Trade', exact=True)).first
+    trade.click(); settle(page)
+    page.get_by_role('button', name='Back to transactions', exact=True).click(); settle(page)
+    table.get_by_role('row').filter(has=page.get_by_role('cell', name='Fee', exact=True)).first.click(); settle(page)
+    page.get_by_role('button', name='Correct entry', exact=True).click(); settle(page)
     fill(page, 'Corrected amount', '3')
     select_tab(page, 'Exposure')
     select_tab(page, 'Futures')
-    page.get_by_text('Recorded transactions', exact=True).click(); settle(page)
     playwright.expect(page.get_by_role('textbox', name='Corrected amount', exact=True)).to_have_value('3')
     page.get_by_role('button', name='Review correction', exact=True).click(); settle(page)
     playwright.expect(page.get_by_text('Accounting effects', exact=True)).to_be_visible()
     page.get_by_role('button', name='Cancel correction', exact=True).click(); settle(page)
-    select(page, 'Entry action', 'Correct entry')
+    page.get_by_role('button', name='Correct entry', exact=True).click(); settle(page)
     playwright.expect(page.get_by_role('textbox', name='Corrected amount', exact=True)).to_have_value('8.00')
     assert ledger.load_journal(root)[0] == journal

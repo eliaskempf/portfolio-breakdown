@@ -268,12 +268,12 @@ amounts, quantities, prices and correction status. A dated claim is distinct fro
 a received cash payment. Internal identifiers and source details are under
 **Entry provenance**.
 
-Select **Transaction details → Correct entry** to edit prefilled facts, compare
+Select a transaction row (or focus it and press **Enter**). Choose **Correct entry** to edit prefilled facts, compare
 the original and replacement, and choose **Review correction → Save correction**.
 The replacement cancels the original's accounting effect and supplies corrected
 facts in one revision-checked write; both records remain in history. Changed
 inputs or a concurrently updated journal require another review. **Cancel
-correction** discards the draft. **Reverse only** explicitly removes an entry's
+correction** discards the draft. **Back to transactions** returns to the filtered journal. **Reverse only** explicitly removes an entry's
 effect without a replacement. Invalid dependent histories block saving and show
 later entries to review. Linked rolls and collateral entries direct you to their
 source workflows rather than allowing partial edits.
@@ -411,7 +411,7 @@ withhold the reference chart rather than relabelling prices.
 
 ## Margin accounts and collateral
 
-For an account without a futures position, open **Positions → Position tools →
+For an account without a futures position, open **Positions → More actions →
 Accounts & futures**, then **Cash & financing → Create account**. This opens the
 same account workflow without requiring a placeholder contract.
 It offers the same **Existing balance** and **Newly funded account** choices.
@@ -422,7 +422,7 @@ before inception.
 Open a cash, loan or pending-cash row in Overview or Positions to see its account
 in **Futures → Cash & financing**. The account opens with its balances and no
 transaction selected. Use **Cash action** to record a change or **Back** to
-return to the originating view. **Positions → Accounts & futures** also opens
+return to the originating view. **Positions → More actions → Accounts & futures** also opens
 this workspace once an account exists.
 
 **Cash & financing** records opening balances, reconciliations, deposits,

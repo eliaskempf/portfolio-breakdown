@@ -42,10 +42,10 @@ def test_performance_summary_and_holdings_with_static_prices(tmp_path, sample_da
     table = next(item.value for item in app.tabs[1].dataframe if 'shares' in item.value)
     assert table.loc[table.id == 'c', 'Performance'].isna().all()  # Foreign costs aren't EUR returns.
     by_label(app.get('button_group'), 'Performance display').set_value('%').run()
-    assert overview_metric(app).delta == '—'
+    assert overview_metric(app).delta == 'Unavailable'
     by_label(app.multiselect, 'Holdings').set_value(['a']).run()
     assert not app.exception
-    assert overview_metric(app).delta == '—'
+    assert overview_metric(app).delta == 'Unavailable'
     assert next(item.value for item in app.tabs[1].dataframe if 'shares' in item.value).Performance.tolist() == [100 / 3]
     by_label(app.get('button_group'), 'Performance display').set_value('€').run()
     assert next(item.value for item in app.tabs[1].dataframe if 'shares' in item.value).Performance.tolist() == [20]

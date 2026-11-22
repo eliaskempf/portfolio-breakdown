@@ -91,9 +91,9 @@ read [Exposure and ETFs](exposure.md#look-through) before interpreting them.
 
 Open **Positions** and select a row for details and available price history.
 Use its pencil to edit, or **Add position** to try a new holding. A demo edit
-changes only the temporary demo. **Position tools** also offers **Bulk add
-purchases**, **Update balances**, **Connect live prices** and **Import**.
-Import opens transactions and works with existing holdings. Its **Holdings snapshot**
+changes only the temporary demo. **More actions** offers **Bulk add
+purchases**, **Update balances**, **Connect live prices** and **Accounts & futures**.
+The **Import** button opens transactions and works with existing holdings. Its **Holdings snapshot**
 option initializes an empty portfolio from a current holdings report.
 
 A price chart is instrument history, not your return history. **Update balances**
@@ -164,15 +164,14 @@ choose **Physical asset → Gold spot price** and enter fine-gold weight; see
 [physical gold](positions.md#physical-gold).
 
 For a holdings report, keep the portfolio empty and choose **Import →
-Holdings snapshot**, or the empty-list **Import holdings** button. Upload, map and review the report before
+Holdings snapshot**. Upload, map and review the report before
 **Import reviewed positions**. Check number formats, units and dates; saving
 cannot be undone by canceling the review afterwards. FinanzManager recognition
 is provisional. See [Import](import.md#import) for supported files and later
 live-price linking.
 
 Next, check [prices and cost coverage](performance.md#valuation), then assign
-positions and complete targets in **Rebalance → Targets**. Category changes and
-position targets have separate saves. Missing buy-ins do not prevent allocation
+positions and complete targets in **Rebalance → Targets**. Choose a parent and use **Edit targets** to save its immediate category and position weights together. Missing buy-ins do not prevent allocation
 analysis. Change reporting currency later through **App menu → Preferences → Portfolio
 currency → Review currency change**; inspect conversion gaps before applying.
 New buy-ins default to the reporting currency; original saved costs keep theirs.

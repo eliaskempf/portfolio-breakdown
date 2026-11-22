@@ -34,7 +34,7 @@ def test_navigation_retains_inputs_but_not_triggers_uploads_or_editor_patches():
 
 
 def test_journal_inputs_reassign_only_when_unmounted_or_returning():
-    saved = {'main_tabs': 'Futures', 'accounts_example_view': 'Positions & transactions',
+    saved = {'main_tabs': 'Futures', 'accounts_example_view': 'Positions & transactions', 'accounts_example_journal_panel': True,
              'accounts_example_journal_selected': 'fee', 'accounts_example_journal_edit_fee_action': 'Correct entry',
              'accounts_example_journal_edit_fee_amount': '3', 'accounts_example_journal_edit_fee_save': False}
     assert not set(retained_inputs(saved))
@@ -42,6 +42,7 @@ def test_journal_inputs_reassign_only_when_unmounted_or_returning():
     unmounted = set(retained_inputs(saved))
     assert 'accounts_example_journal_edit_fee_amount' in unmounted
     assert 'accounts_example_journal_edit_fee_save' not in unmounted
+    assert 'accounts_example_journal_panel' in unmounted
     saved['main_tabs'] = 'Futures'
     assert set(retained_inputs(saved, returning=unmounted)) == unmounted
     assert not set(retained_inputs(saved))

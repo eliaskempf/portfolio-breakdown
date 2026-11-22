@@ -629,7 +629,7 @@ def test_portfolio_import_opens_statement_for_chosen_holding(ux_page):
     page, directory = ux_page
     before = (directory / 'holdings.csv').read_bytes()
     page.get_by_role('tab', name='Positions', exact=True).click()
-    page.get_by_role('radio', name='Import', exact=True).click()
+    page.get_by_role('button', name='Import', exact=True).click()
     page.get_by_role('radio', name='Statement PDFs', exact=True).click()
     open_import = page.get_by_role('button', name='Open statement import', exact=True)
     expect(open_import).to_be_disabled()

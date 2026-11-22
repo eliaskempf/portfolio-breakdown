@@ -467,7 +467,7 @@ def _smoke(command, evidence, installation):
                     expect(page.get_by_role('textbox', name='Instrument name', exact=True)).to_have_value('')
                     runs.click(page, page.get_by_role('button', name='Cancel', exact=True))
                     assert not (workspace / 'holdings.csv').exists()
-                    runs.click(page, page.get_by_role('radio', name='Import', exact=True))
+                    runs.click(page, page.get_by_role('button', name='Import', exact=True))
                     runs.click(page, page.get_by_role('radio', name='Holdings snapshot', exact=True))
                     # Wait for the snapshot uploader to replace the old single-
                     # file transaction uploader after the mode switch rerenders.

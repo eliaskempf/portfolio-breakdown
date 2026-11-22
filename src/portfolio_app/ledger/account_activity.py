@@ -22,10 +22,17 @@ AMOUNT_KINDS = {'cash_open', 'cash_adjust', 'cash_flow', 'fee', 'tax', 'interest
 
 def entry_context(journal, event):
     """A reversal inherits its original's display scope, never its postings."""
-    events = {e.id: e for e in journal.events}
+    return _context(event, *_context_indices(journal))
+
+
+def _context_indices(journal):
+    return ({e.id: e for e in journal.events}, {p.id: p for p in journal.positions},
+            {c.id: c for c in journal.contracts}, {i.id: i for i in journal.investments})
+
+
+def _context(event, events, positions, contracts, investments):
     while event.kind == 'void' and event.replaces:
         event = events[event.replaces]
-    positions = {p.id: p for p in journal.positions}
     if event.kind == 'receive' and event.reference in events:
         linked = events[event.reference]
         position = positions.get(linked.position_id)
@@ -35,8 +42,8 @@ def entry_context(journal, event):
         position = positions.get(event.position_id)
         account = event.account_id or (position.account_id if position else '')
         denomination = event.currency
-    contract = next((c for c in journal.contracts if position and c.id == position.contract_id), None)
-    investment = next((i for i in journal.investments if position and i.id == position.investment_id), None)
+    contract = contracts.get(position.contract_id) if position else None
+    investment = investments.get(position.investment_id) if position else None
     name = ' · '.join(x for x in (investment.name if investment else '',
                                   f'{contract.product} {contract.expiry}' if contract else '') if x)
     return account, position.id if position else '', denomination or (contract.currency if contract else ''), name
@@ -58,7 +65,8 @@ def activity_rows(journal):
     roots = {}
     for event in journal.events:
         roots[event.id] = roots[event.replaces] if event.replaces else event.id
-    events = {event.id: event for event in journal.events}
+    indices = _context_indices(journal)
+    events = indices[0]
     receipts_by_root, posted = defaultdict(list), defaultdict(list)
     for movement in state.cash_movements:
         posted[movement.event_id, movement.account_id].append(movement.amount)
@@ -68,7 +76,7 @@ def activity_rows(journal):
     names = {a.id: a.name for a in journal.accounts}
     rows = []
     for _, event in sorted(enumerate(journal.events), key=lambda pair: (pair[1].date, pair[1].sequence, pair[0]), reverse=True):
-        account, position, denomination, name = entry_context(journal, event)
+        account, position, denomination, name = _context(event, *indices)
         successor = replacements.get(event.id)
         status = ('Reversed' if successor.kind == 'void' else 'Corrected') if successor else (
             'Reversal' if event.kind == 'void' else 'Replacement' if event.replaces else 'Recorded')
@@ -98,7 +106,7 @@ def activity_rows(journal):
             'Quantity': str(event.amount) if event.kind == 'reserve' and event.holding_id else (
                 str(event.quantity) if event.kind in {'snapshot', 'trade'} else None),
             'Price': str(event.price) if event.price is not None else None,
-            'Status': status, 'Cash timing': timing})
+            'Status': status, 'Cash timing': timing, 'Note': event.note})
     return rows
 
 

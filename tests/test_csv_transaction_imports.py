@@ -308,3 +308,95 @@ def test_sub_cent_linked_cash_is_not_silently_rounded():
     retained=prepare_import(j,holdings(),[row],MAPPING)
     assert retained.journal.transaction_imports[0].facts['gross_amount']=='100.004'
     assert replay(retained.journal).cash['funding','EUR']==300
+
+
+def test_keep_source_variant_preserves_authority_pending_coverage_and_legacy_shape():
+    from portfolio_app.performance.personal_performance import unresolved_receipts
+    original = scenario()[0]
+    active = activated([original]).journal
+    assert 'kept_imports' not in journal_to_dict(active)
+    changed = normalize({**original.raw, 'gross_amount': '110'})
+    further = normalize({**original.raw, 'gross_amount': '120'})
+    pending = prepare_import(active, holdings(), [further], MAPPING, correction_ids=[further.identity]).journal
+    result = prepare_import(pending, holdings(), [changed], {}, keep_ids=[changed.identity])
+    kept = result.journal
+    assert kept.version == 6 and result.applied == 0
+    assert kept.securities == pending.securities and kept.transaction_imports == pending.transaction_imports
+    assert unresolved_receipts(kept) == unresolved_receipts(pending)
+    assert len(kept.kept_imports) == 1 and kept.kept_imports[0].replaces == further.identity
+    assert journal_from_dict(journal_to_dict(kept)) == kept
+    # A repeat carrying the “select all” default cannot apply a remembered variant.
+    again = prepare_import(kept, holdings(), [changed], {}, selected_ids=[changed.identity])
+    assert again.journal == kept and again.applied == again.added == 0
+    with pytest.raises(DataError, match='different facts'):
+        prepare_import(kept, holdings(), [normalize({**original.raw, 'gross_amount': '111'})], {})
+    with pytest.raises(DataError, match='conflicting import decisions'):
+        prepare_import(kept, holdings(), [changed], {}, correction_ids=[changed.identity])
+    with pytest.raises(DataError, match='changed facts'):
+        prepare_import(active, holdings(), [original], MAPPING, keep_ids=[original.identity])
+
+
+def test_remembered_decisions_ignore_incidental_layout_but_respect_explicit_changes():
+    from portfolio_app.ingestion.transaction_csv import read_csv
+    header = 'reference,date,type,asset,quantity,amount,currency,order'
+    a = 'a,2024-02-02,buy,AUR,1,10,EUR,'
+    b = 'b,2024-02-02,buy,AUR,1,20,EUR,'
+    def upload(*lines):
+        return read_csv('\n'.join((header, *lines)))
+    base = prepare_import(Journal(), holdings(), upload(a, b), {}).journal
+    changed = a.replace(',10,', ',11,')
+    row = upload(changed)[0]
+    kept = prepare_import(base, holdings(), [row], {}, keep_ids=[row.identity]).journal
+    rearranged = upload(b, changed.replace(',11,', ',11.00,'))
+    repeat = prepare_import(kept, holdings(), rearranged, {})
+    assert repeat.journal == kept
+    with pytest.raises(DataError, match='different facts'):
+        prepare_import(kept, holdings(), upload(changed + '9'), {})
+
+
+def test_reconsider_keeps_comparison_and_authority_lineages_after_later_edit_and_removal():
+    from portfolio_app.ledger.history_commands import correct_transaction, remove_transactions, replace_book
+    original = scenario()[0]
+    active = activated([original]).journal
+    declined = normalize({**original.raw, 'gross_amount': '110'})
+    latest = normalize({**original.raw, 'gross_amount': '120'})
+    kept = prepare_import(active, holdings(), [declined], {}, keep_ids=[declined.identity]).journal
+    changed = prepare_import(kept, holdings(), [latest], MAPPING, selected_ids=[latest.identity],
+                             correction_ids=[latest.identity]).journal
+    book = changed.securities[0]
+    edited = correct_transaction(book, latest.identity, quantity=D('9'))
+    edited = replace(edited, active_ids=tuple(i for i in edited.active_ids if i != latest.identity) + (edited.records[-1].id,))
+    removed = remove_transactions(edited, [edited.records[-1].id])
+    changed = replace_book(changed, removed)
+    assert changed.version == 6 and changed.kept_imports == kept.kept_imports
+    assert prepare_import(changed, holdings(), [declined], MAPPING, selected_ids=[declined.identity]).journal == changed
+    choices = dict(correction_ids=[declined.identity], reconsider_ids=[declined.identity])
+    with pytest.raises(DataError, match='Review the saved keep decision'):
+        prepare_import(changed, holdings(), [declined], MAPPING, **choices)
+    restored = prepare_import(changed, holdings(), [declined], MAPPING, selected_ids=[declined.identity], **choices).journal
+    assert restored.kept_imports[0].replaces == original.identity
+    assert restored.transaction_imports[-1].replaces == latest.identity
+    assert restored.securities[0].records[-1].replaces == removed.records[-1].id
+    assert restored.securities[0].records[-1].id == declined.identity
+    assert journal_from_dict(journal_to_dict(restored)) == restored
+    removed_again = replace_book(restored, remove_transactions(restored.securities[0], [declined.identity]))
+    assert removed_again.kept_imports == kept.kept_imports
+    again = prepare_import(removed_again, holdings(), [declined], MAPPING, selected_ids=[declined.identity])
+    assert again.journal == removed_again and again.applied == 0
+
+
+def test_explicit_reconsideration_uses_the_saved_version_after_a_later_order_change():
+    header = 'reference,date,type,asset,quantity,amount,currency,order\n'
+    def source(amount, order=''):
+        return read_csv(header + f'a,2024-01-02,buy,AUR,1,{amount},EUR,{order}\n')[0]
+    first, declined, reordered = source(10), source(11), source(11, 7)
+    mapping = {('Portfolio', 'AUR'): 'desk'}
+    applied = prepare_import(Journal(), holdings(), [first], mapping, selected_ids=[first.identity], starts_at_zero=True).journal
+    kept = prepare_import(applied, holdings(), [declined], {}, keep_ids=[declined.identity]).journal
+    later = prepare_import(kept, holdings(), [reordered], mapping, correction_ids=[reordered.identity],
+                           selected_ids=[reordered.identity]).journal
+    recovered = prepare_import(later, holdings(), [declined], mapping, reconsider_ids=[declined.identity],
+                               correction_ids=[declined.identity], selected_ids=[declined.identity]).journal
+    assert recovered.transaction_imports[-1].facts['sequence'] == declined.facts['sequence']
+    assert recovered.transaction_imports[-1].replaces == reordered.identity
+    assert recovered.kept_imports == kept.kept_imports

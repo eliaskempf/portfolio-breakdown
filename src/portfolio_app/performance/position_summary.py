@@ -4,22 +4,26 @@ from datetime import date
 import streamlit as st
 
 from portfolio_app.interface.shared.currency_display import money, reporting_currency
-from portfolio_app.interface.shared.presentation import return_percent
+from portfolio_app.interface.shared.number_format import return_metric
 
 
 def render_position_summary(row, directory, journal, *, has_history, demo=False):
     from portfolio_app.interface.views.history.history_ui import prepared_history_view, prepared_history_calculation
     from portfolio_app.performance.history_observations import HistoryScope, load_observations
     from portfolio_app.performance.personal_history_refresh import refresher
+    from portfolio_app.interface.shared.dialog_runtime import local_dialog_updates
     scope = HistoryScope((row.position_id,))
     target = reporting_currency()
     if has_history and not demo:
         refresher.request(directory, journal, scope, target)
+    from portfolio_app.performance.performance import is_cash_balance
+    balance_only = not has_history and is_cash_balance(row)
     cached, signature = None, None
 
     # A retry can begin inside the chart after this region has mounted. Keep
     # watching evidence revisions so completion also updates headlines in Price.
     @st.fragment(run_every=2 if has_history and not demo else None)
+    @local_dialog_updates()
     def summary():
         nonlocal cached, signature
         # The row is the current valuation; the chart never supplies a different
@@ -33,9 +37,13 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
         gain_help = 'Current value less recorded acquisition cost. Earlier realized gains, income and expenses are not reconstructed.'
         capital_help = 'Recorded acquisition cost of the current holding; earlier purchases and proceeds are not reconstructed.'
         return_help = 'Requires applied transaction history and dated valuations. Market-price returns are not personal returns.'
+        if balance_only:
+            gain_note = ''
+            gain_help = row.get('performance_note') or 'Cash balance without an acquisition basis.'
+            return_help = 'A cash balance alone cannot establish a money-weighted return.'
         if has_history:
             from portfolio_app.performance.gain_accounting import summarize_known_gain, amount
-            from portfolio_app.interface.views.history.history_data_ui import readable_reasons
+            from portfolio_app.interface.views.history.history_data_ui import brief_reasons, readable_reasons
             from portfolio_app.interface.shared.input_cache import file_stamp
             current = file_stamp(directory/'history-observations.json'), date.today()
             if current != signature:
@@ -45,8 +53,8 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
                     target=target, include_points=False, calculation=calculation)
                 known = summarize_known_gain(journal, scope, observations, date.today().isoformat(), target,
                     current_values={row.position_id: amount(value)}, summary_rows=row.to_frame().T, calculation=calculation)
-                cached, signature = (view, known), current
-            view, known = cached
+                cached, signature = (view, known, observations, revision, calculation.observations), current
+            view, known, observations, revision, indexed = cached
             gain, capital = known.amount, known.capital
             gain_note = known.coverage_note if known.partial and known.coverage_note != 'Estimated gain' else ''
             gain_help = known.coverage_help
@@ -63,7 +71,7 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
                 return_help += ' Estimated return: uses supplied estimates in dated transaction inputs.'
             if annualized is None:
                 reasons = readable_reasons(directory, journal, scope, full.money_weighted_reasons)
-                return_help += ' ' + ' '.join(reasons[:3])
+                return_help += ' ' + brief_reasons(reasons)
         with st.container(key='position_summary'):
             first, second, third = st.columns([2, 1, 1])
             with first.container(key='position_summary_value'):
@@ -75,5 +83,10 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False)
             second.metric('Invested capital', money(capital), help=capital_help)
             if not has_history and row.get('cost_estimated'):
                 second.caption('Estimated cost', help=row.get('cost_note') or 'Acquisition cost uses an estimated conversion.')
-            third.metric('Annualized return', return_percent(annualized), help=return_help)
+            third.metric('Annualized return', return_metric(annualized, cash_balance=balance_only), help=return_help)
+            if has_history and annualized is None:
+                from portfolio_app.interface.views.history.history_data_ui import render_return_inputs
+                with third:
+                    render_return_inputs(directory, journal, scope, observations, revision,
+                                         full.money_weighted_reasons, 'position_edit_return_'+row.position_id+'_', indexed=indexed)
     summary()

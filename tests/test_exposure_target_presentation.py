@@ -166,7 +166,12 @@ def test_normal_overview_market_targets_and_editor_navigation(tmp_path):
     assert app.button(key='overview_target_manage')
     app.button(key='overview_target_manage').click().run()
     assert by_label(app.get('button_group'), 'Target measure').value == 'Exposure targets'
-    assert by_label(app.number_input, 'Desired total exposure (× net equity)').value == 1.5
+    assert by_label(app.selectbox, 'Target hierarchy').value == 'core'
+    assert any('1.5× whole-portfolio net equity' in item.value for item in app.caption)
+    by_label(app.selectbox, 'Target hierarchy').set_value('').run()
+    app.button(key='targets_edit_exposure').click().run()
+    assert by_label(app.number_input, 'Total exposure (× net equity)').value == 1.5
+    app.button(key='overview_target_cancel').click().run()
     activate(app, 'Overview')
     by_label(app.get('button_group'), 'Allocation measure').set_value('Capital allocation').run()
     assert 'value' in [column['key'] for column in list_data(app, 'Positions')['columns']]

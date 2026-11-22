@@ -21,7 +21,7 @@ def test_welcome_demo_and_manual_save_are_isolated(tmp_path):
     app = launch_workspaces(personal, demo)
     assert not app.exception and not app.tabs
     assert {button.label for button in app.button} >= {'Explore demo', 'Start my portfolio'}
-    assert 'Import holdings' not in {button.label for button in app.button}
+    assert 'Import' not in {button.label for button in app.button}
     by_label(app.button, 'Explore demo').click().run()
     assert not app.exception
     assert by_label(app.selectbox, 'Portfolio workspace').value == 'Demo portfolio'
@@ -56,10 +56,10 @@ def test_import_choice_and_workspace_switch_clear_first_use_state(tmp_path):
     by_label(app.button, 'Skip setup').click().run()
     assert app.session_state['main_tabs'] == 'Overview'
     activate(app, 'Positions')
-    by_label(app.button, 'Import transactions').click().run()
+    by_label(app.button, 'Import').click().run()
     assert not app.exception
     assert app.session_state['main_tabs'] == 'Positions'
-    assert by_label(app.get('button_group'), 'Position tools').value == 'Import'
+    assert app.session_state['positions_workflow'] == 'Import'
     assert app.get('file_uploader')
     assert not (personal / 'holdings.csv').exists()
     by_label(app.selectbox, 'Portfolio workspace').set_value('Demo portfolio').run()

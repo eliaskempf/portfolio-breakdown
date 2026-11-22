@@ -25,6 +25,8 @@ def test_overview_and_category_saves_skip_hidden_views(tmp_path):
         assert not exposure.called and not rebalance.called
         by_label(app.button, 'Enable reviewed allocation').click().run()
         assert not app.exception
+        app.session_state['targets_structure_open'] = True
+        app.run()
         by_label(app.button, 'Save categories').click().run()
         assert not app.exception
         assert not exposure.called and not rebalance.called
@@ -82,6 +84,8 @@ def test_editor_rows_survive_lazy_tab_roundtrip(tmp_path):
     app = app_for(tmp_path)
     activate(app, 'Rebalance', 'Targets')
     by_label(app.button, 'Enable reviewed allocation').click().run()
+    app.session_state['targets_structure_open'] = True
+    app.run()
     key = next(k for k in app.session_state.to_dict() if k.startswith('targets_categories_') and '_rows_' in k)
     app.session_state[key] = {'edited_rows': {0: {'Name': 'Invented new category'}}, 'added_rows': [], 'deleted_rows': []}
     app.run()

@@ -6,12 +6,17 @@ import pandas as pd
 from portfolio_app.performance.cost_basis import active_components, resolve_cost
 
 
+def is_cash_balance(row):
+    return row.get('instrument_type') == 'cash' and not any(
+        part.get('amount') not in ('', None) for part in active_components(row))
+
+
 def cash_balance_only(positions):
     """Cash without a recorded cost is a balance, not an incomplete purchase."""
     cash = positions.get('instrument_type', pd.Series('', index=positions.index)).eq('cash')
     result = pd.Series(False, index=positions.index)
     for index, row in positions.loc[cash].iterrows():
-        result.at[index] = not any(part.get('amount') not in ('', None) for part in active_components(row))
+        result.at[index] = is_cash_balance(row)
     return result
 
 

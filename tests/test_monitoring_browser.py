@@ -135,7 +135,7 @@ def test_indicator_browse_save_and_notification_destination(monitoring_page):
     bell.click()
     playwright.expect(icon).to_be_visible()
     page.get_by_role('button',name='Connect live prices',exact=True).click()
-    playwright.expect(page.get_by_role('radio', name='Connect live prices', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('heading', name='Connect live prices', exact=True)).to_be_visible()
     playwright.expect(page.get_by_role('tab',name='Positions',exact=True)).to_have_attribute('aria-selected','true')
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 

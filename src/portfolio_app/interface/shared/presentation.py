@@ -3,7 +3,7 @@
 from portfolio_app.interface.shared.currency_display import money
 
 from html import escape
-from portfolio_app.interface.shared.number_format import return_percent
+from portfolio_app.interface.shared.number_format import return_metric, return_percent
 
 import streamlit as st
 from portfolio_app.settings import GAIN_COLOR, LOSS_COLOR
@@ -132,15 +132,17 @@ def performance_metric(label: str, value: str, amount, *, key: str, qualified=Fa
         st.metric(label, value, help=help)
 
 
-def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False, freshness=None, known=None, twr=None, twr_estimated=False, freshness_rows=None, twr_help=''):
+def value_metric(value, performance, *, missing=0, percent=False, key, on_toggle_gain=None, label=None, funded_gain=False, strategy_gain=False, freshness=None, known=None, twr=None, twr_estimated=False, freshness_rows=None, twr_help='', balance_only=False):
     """One value card with an adjacent, optionally clickable unrealized gain."""
     gain = performance.return_pct if percent else performance.gain_reporting
-    gain_text = ('N/A · Cash balance' if performance.cash_only else 'Unavailable') if gain is None else return_percent(gain) if percent else money(gain, signed=True)
     if known is not None:
         gain = (100*twr if twr is not None else None) if percent else known.amount
-        gain_text = ('—' if gain is None else return_percent(gain)) if percent else (
-            'N/A · Cash balance' if gain is None and performance.cash_only else
-            'Unavailable' if gain is None else money(gain, signed=True))
+    if percent:
+        gain_text = return_metric(gain, cash_balance=balance_only or (known is None and performance.cash_only))
+    elif gain is None:
+        gain_text = 'N/A · Cash balance' if performance.cash_only else 'Unavailable'
+    else:
+        gain_text = money(gain, signed=True)
     from portfolio_app.interface.shared.freshness_ui import render_freshness
     from portfolio_app.derivatives.futures_valuation import summarize_freshness
     gain_help = ('Estimated TWR: uses supplied transaction estimates.' if twr_estimated else '') if percent else (

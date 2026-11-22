@@ -147,7 +147,8 @@ def _balances(preview, key, *, review_step='', reviewed=()):
     return position
 
 
-def render_history_review(build_preview, *, key, apply, keep, removal=False, keep_label='Keep portfolio unchanged'):
+def render_history_review(build_preview, *, key, apply, keep, removal=False, keep_label='Keep portfolio unchanged',
+                          decisions_pending=False):
     """Build from unchanged evidence, then recompute exclusions before final acceptance."""
     try:
         preview = build_preview(set())
@@ -169,6 +170,8 @@ def render_history_review(build_preview, *, key, apply, keep, removal=False, kee
         st.caption('No new transactions selected')
         if preview.excluded:
             st.button('Save exclusions', key=key+'exclude', type='primary', on_click=apply, args=(excluded,))
+        elif decisions_pending and st.button('Save decisions', key=key+'decisions', type='primary'):
+            apply(excluded)
         st.button(keep_label, key=key+'keep', on_click=keep)
         return preview
     multiple = len(preview.comparisons) > 1 and not removal

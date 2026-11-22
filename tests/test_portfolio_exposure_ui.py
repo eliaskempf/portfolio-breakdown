@@ -55,8 +55,8 @@ def test_saved_overlay_default_allocation_signed_views_and_navigation(tmp_path):
     activate(app, 'Rebalance', 'Targets')
     by_label(app.get('button_group'), 'Target measure').set_value('Exposure targets').run()
     assert not app.exception
+    by_label(app.selectbox, 'Exposure policy').set_value('overlay_only').run()
     assert by_label(app.number_input, 'Desired total exposure (× net equity)').value is None
-    by_label(app.selectbox, 'Exposure policy').set_value('overlay_only')
     by_label(app.number_input, 'Desired total exposure (× net equity)').set_value(1.2)
     by_label(app.selectbox, 'Overlay destination (overlay-only policy)').set_value('core')
     by_label(app.button, 'Save exposure targets').click().run()

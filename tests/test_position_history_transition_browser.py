@@ -156,7 +156,7 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             dialog.get_by_role('radio', name='History', exact=True).click(); settle(page)
             dialog.get_by_role('radio', name='Price', exact=True).click(); settle(page)
             annualized = metrics.filter(has_text='Annualized return').get_by_test_id('stMetricValue')
-            playwright.expect(annualized).not_to_have_text('—')
+            playwright.expect(annualized).not_to_have_text('Unavailable')
             previous_return = annualized.inner_text()
             store, revision = load_observations(tmp_path)
             correction = Observation('correction', 'price', 'position-0', date.today().isoformat(), 15, 'EUR', replaces='2')

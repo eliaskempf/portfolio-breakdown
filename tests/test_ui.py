@@ -46,7 +46,11 @@ def position_action(app, action, position_id='position-0'):
         return by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     if action in {'Positions', 'Update balances', 'Bulk add purchases'}:
         activate(app, 'Positions')
-        return by_label(app.get('button_group'), 'Position tools').set_value(action).run()
+        if app.session_state['positions_workflow'] == action:
+            return app
+        if app.session_state['positions_workflow'] != 'Positions':
+            by_label(app.button, 'Back to positions').click().run()
+        return app if action == 'Positions' else by_label(app.button, action).click().run()
     if action == 'Strategic allocation':
         return activate(app, 'Rebalance', 'Targets')
     app.session_state['position_edit_selected'] = position_id
@@ -265,7 +269,8 @@ def test_empty_holdings(tmp_path):
     app = launch(tmp_path)
     assert not app.exception
     activate(app, 'Positions')
-    assert any('Add a position or import transactions' in item.value for item in app.info)
+    assert any(item.value == 'No positions' for item in app.caption)
+    assert by_label(app.button, 'Import')
 
 
 def test_provider_failures_do_not_crash_app(sample_data_dir):

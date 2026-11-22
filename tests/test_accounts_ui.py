@@ -184,7 +184,7 @@ def test_empty_account_setup_and_scoped_actions(tmp_path):
     _, journal, _ = invented(tmp_path)
     app = launch_actual(tmp_path)
     activate(app, 'Positions')
-    by_label(app.get('button_group'), 'Position tools').set_value('Accounts & futures').run()
+    by_label(app.button, 'Accounts & futures').click().run()
     assert not any(b.label == 'Create account alert' for b in app.button)
     by_label(app.button, 'Create account').click().run()
     assert by_label(app.text_input, 'Account name')

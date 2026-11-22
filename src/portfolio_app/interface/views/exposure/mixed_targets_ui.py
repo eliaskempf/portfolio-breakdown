@@ -9,7 +9,7 @@ from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.portfolio.strategic import category_labels
 
 
-def render_mixed_targets(directory, config, result, saved, revision, universe):
+def render_mixed_targets(directory, config, result, saved, revision, universe, *, valid):
     labels = {'': 'Portfolio', **category_labels(config)}
     capital = result.capital
     sources = capital.loc[capital.bucket_id.ne('')].drop_duplicates('source_position_id')
@@ -21,6 +21,8 @@ def render_mixed_targets(directory, config, result, saved, revision, universe):
         default=[key for key in optional if key in saved.members] if compatible else [], format_func=labels.get,
         key=f'exposure_member_categories_{revision}_{universe}',
         help='Optional for categories without subcategories. Direct investments beside subcategories always need targets. Flexible groups keep one combined target.')
+    if valid and compatible and set(selected) == set(saved.members).intersection(optional):
+        return
     member_categories = internal | set(selected)
     records = []
     for bucket in config.buckets:

@@ -113,6 +113,7 @@ def test_flat_category_navigation_and_planning(category_page):
     choose(page,'Allocation category','Example sleeve')
     playwright.expect(page.get_by_text('100% assigned',exact=True)).to_be_visible()
     choose(page,'Allocation category','Example sleeve › Example chips')
+    page.get_by_text('Internal allocation settings',exact=True).click()
     playwright.expect(page.get_by_role('radio',name='Flexible',exact=True)).to_be_checked()
     select_tab(page,'Plan')
     page.streamlit_reruns.click(page,page.get_by_role('button',name='Calculate plan',exact=True))
@@ -186,8 +187,13 @@ def test_mixed_market_exposure_overview_targets_and_planning(category_page):
     target_view = page.get_by_role('radio',name='Exposure targets',exact=True)
     if not target_view.is_checked():
         page.streamlit_reruns.click(page,target_view)
-    playwright.expect(page.get_by_role('combobox',name='Composition weights',exact=True)).to_have_value('Categories and investments within each parent')
-    page.streamlit_reruns.click(page,page.get_by_role('button',name='Save exposure targets',exact=True))
+    choose(page,'Target hierarchy','Example sleeve')
+    page.get_by_role('button',name='Edit targets',exact=True).click()
+    dialog = page.get_by_role('dialog')
+    playwright.expect(dialog.get_by_text('Example sleeve',exact=True)).to_be_visible()
+    playwright.expect(dialog.get_by_text('100% assigned',exact=True)).to_be_visible()
+    dialog.get_by_role('button',name='Save',exact=True).click()
+    playwright.expect(dialog).to_have_count(0)
     select_tab(page,'Plan')
     for name in ('Invented investment 0','Invented investment 1','Invented investment 2'):
         page.get_by_role('combobox',name='Permitted instruments',exact=True).click()
@@ -205,6 +211,7 @@ def test_create_category_and_return_to_flat_view(category_page):
     page,directory = category_page
     select_tab(page,'Rebalance')
     select_tab(page,'Targets')
+    page.get_by_text('Category structure',exact=True).click()
     page.get_by_role('button',name='Create category from selection',exact=True).click()
     panel = page.get_by_test_id('stPopoverBody')
     for label in ('Invented investment 0 · Account 0', 'Invented investment 1 · Account 1'):
@@ -276,5 +283,21 @@ def test_context_target_dialog_navigation_and_save(category_page):
     dialog.wait_for()
     dialog.get_by_role('button',name='Manage targets',exact=True).click()
     dialog.wait_for(state='hidden')
-    page.get_by_role('combobox',name='Composition weights',exact=True).wait_for()
+    choose(page,'Target hierarchy','Example sleeve')
+    page.get_by_role('button',name='Edit targets',exact=True).click()
+    canvas = dialog.get_by_test_id('stDataFrame').locator('canvas').first
+    canvas.scroll_into_view_if_needed()
+    bounds = canvas.bounding_box()
+    x = bounds['x'] + bounds['width'] - 45
+    page.mouse.dblclick(x, bounds['y'] + 48)
+    playwright.expect(field).to_have_value('45')
+    field.fill('60')
+    field.press('Enter')
+    playwright.expect(dialog.get_by_text('115% assigned', exact=False)).to_be_visible()
+    page.mouse.dblclick(x,bounds['y'] + 82)
+    field.fill('40')
+    dialog.get_by_role('button',name='Save',exact=True).click()
+    playwright.expect(dialog).to_have_count(0)
+    saved = load_exposure_targets(workspace,load_allocation(workspace/'allocation.yaml'))[0]
+    assert saved.composition['group'] == .6 and saved.members['sleeve']['p3'] == .4
     assert not page.get_by_test_id('stException').count()

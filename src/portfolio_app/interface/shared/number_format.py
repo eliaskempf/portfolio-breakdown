@@ -13,6 +13,13 @@ def return_percent(value) -> str:
     return change_number(value, suffix='%')
 
 
+def return_metric(value, *, cash_balance=False) -> str:
+    """Headline and detail return status; a finite percentage always takes precedence."""
+    if value is not None and isfinite(value):
+        return return_percent(value)
+    return 'N/A · Cash balance' if cash_balance else 'Unavailable'
+
+
 def change_columns(frame, *, percent=(), points=()):
     """Style changes without converting numeric columns to sortable strings."""
     formats = {key: return_percent for key in percent if key in frame}

@@ -68,31 +68,38 @@ def test_portfolio_results_are_trades_only_readable_and_display_changes_keep_pla
     assert all((workspace / name).read_bytes() == content for name, content in before.items())
 
 
-def test_filtered_target_edits_survive_switches_and_save_by_identity(workspace):
+def test_scoped_target_edits_save_by_identity_and_reopen_from_overview(workspace):
     app = launch(workspace, tab='Rebalance', subtab='Targets')
-    assert not app.exception
-    by_label(app.selectbox, 'Position category').set_value('active').run()
-    edit(app, 'targets_positions_', {0: {'within_bucket_target': 40.}, 1: {'within_bucket_target': 60.}})
-    by_label(app.selectbox, 'Position category').set_value('core').run()
-    edit(app, 'targets_positions_', {0: {'within_bucket_target': None}})
-    activate(app, 'Overview')
-    activate(app, 'Rebalance', 'Targets')
-    assert by_label(app.selectbox, 'Position category').value == 'core'
-    by_label(app.selectbox, 'Position category').set_value('active').run()
-    rows = next(item.value for item in app.dataframe if 'within_bucket_target' in item.value)
-    assert rows.within_bucket_target.tolist() == [40., 60.]
-    by_label(app.button, 'Save position targets').click().run()
+    by_label(app.selectbox, 'Allocation category').set_value('active').run()
+    app.button(key='targets_edit_capital').click().run()
+    key = next(k for k in app.session_state.to_dict() if k.startswith('overview_target_editor_'))
+    app.session_state[key] = dict(edited_rows={0:{'Target':40.},1:{'Target':60.}},added_rows=[],deleted_rows=[])
+    app.button(key='overview_target_save').click().run()
     assert not app.exception and not app.error
-    saved = read_snapshot(workspace / 'holdings.csv').holdings
-    assert saved.loc[saved.id.eq('b'), 'within_bucket_target'].item() == .4
-    assert saved.loc[saved.id.eq('c'), 'within_bucket_target'].item() == .6
-    assert saved.loc[saved.id.eq('a'), 'within_bucket_target'].isna().all()
-    assert saved.shares.tolist() == [2, 1, 1]
+    assert load_allocation(workspace/'allocation.yaml').version == 2
+    activate(app, 'Overview')
+    by_label(app.selectbox,'Category').set_value('active').run()
+    app.button(key='overview_capital_targets').click().run()
+    assert app.session_state['overview_target_dialog']['draft'].rows.Target.tolist() == [40.,60.]
+    app.button(key='overview_target_cancel').click().run()
+    activate(app, 'Rebalance', 'Targets')
+    by_label(app.selectbox, 'Allocation category').set_value('core').run()
+    app.button(key='targets_edit_capital').click().run()
+    key = next(k for k in app.session_state.to_dict() if k.startswith('overview_target_editor_'))
+    app.session_state[key] = dict(edited_rows={0:{'Target':None}},added_rows=[],deleted_rows=[])
+    app.run()
+    by_label(app.button,'Save incomplete split').click().run()
+    assert not app.exception and not app.error
+    saved = read_snapshot(workspace/'holdings.csv').holdings.set_index('position_id')
+    assert saved.loc['second','within_bucket_target'] == .4 and saved.loc['third','within_bucket_target'] == .6
+    assert saved.loc[['first'],'within_bucket_target'].isna().all()
 
 
 def test_category_add_discard_delete_and_block_in_use(workspace):
     app = launch(workspace, tab='Rebalance', subtab='Targets')
     original = (workspace / 'allocation.yaml').read_bytes()
+    app.session_state['targets_structure_open'] = True
+    app.run()
     by_label(app.text_input, 'Category name').set_value('Invented future')
     by_label(app.button, 'Add to draft').click().run()
     assert not app.exception
@@ -122,43 +129,46 @@ def test_category_add_discard_delete_and_block_in_use(workspace):
 def test_target_reassignment_remains_visible_in_draft_and_discard_restores(workspace):
     original = (workspace / 'holdings.csv').read_bytes()
     app = launch(workspace, tab='Rebalance', subtab='Targets')
+    app.session_state['targets_assignments_open'] = True
+    app.run()
     by_label(app.selectbox, 'Position category').set_value('active').run()
-    edit(app, 'targets_positions_', {0: {'Category': 'Core category', 'within_bucket_target': 0.}})
+    edit(app, 'targets_positions_', {0: {'Category': 'Core category'}})
     by_label(app.selectbox, 'Position category').set_value('core').run()
     rows = next(item.value for item in app.dataframe if 'within_bucket_target' in item.value)
     assert rows.name.tolist() == ['Invented Asset', 'Invented Asset']
-    assert rows.within_bucket_target.tolist() == [100., 0.]
+    assert rows.within_bucket_target.tolist() == [100., 50.]
     key = next(k for k in app.session_state.to_dict() if k.startswith('targets_positions_') and k.endswith('_discard'))
     app.button(key=key).click().run()
     assert not app.exception
     rows = next(item.value for item in app.dataframe if 'within_bucket_target' in item.value)
     assert len(rows) == 3
     assert (workspace / 'holdings.csv').read_bytes() == original
+    by_label(app.selectbox,'Position category').set_value('active').run()
+    edit(app, 'targets_positions_', {0:{'Category':'Core category'}})
+    assert by_label(app.button,'Save assignments').disabled
+    by_label(app.radio,'Targets after moving').set_value('Clear targets').run()
+    by_label(app.button,'Save assignments').click().run()
+    assert not app.exception and not app.error
+    saved = read_snapshot(workspace/'holdings.csv').holdings.set_index('position_id')
+    assert saved.loc['second','bucket_id'] == 'core'
+    assert saved.loc[['second'],'within_bucket_target'].isna().all()
+    assert saved.loc['first','within_bucket_target'] == 1. and saved.loc['third','within_bucket_target'] == .5
 
 
-def test_stale_target_save_keeps_external_update_and_draft(workspace, monkeypatch):
-    import portfolio_app.interface.views.portfolio.allocation_ui as allocation_ui
+def test_stale_target_save_keeps_external_update_and_draft(workspace):
     app = launch(workspace, tab='Rebalance', subtab='Targets')
-    edit(app, 'targets_positions_', {0: {'within_bucket_target': 75.}})
-    path = workspace / 'holdings.csv'
-    external = path.read_text().replace('SYN-A,2,', 'SYN-A,3,')
-    save = allocation_ui.patch_holdings
-
-    def concurrent_save(*args, **kwargs):
-        path.write_text(external)
-        return save(*args, **kwargs)
-
-    monkeypatch.setattr(allocation_ui, 'patch_holdings', concurrent_save)
-    by_label(app.button, 'Save position targets').click().run()
-    assert not app.exception
-    assert app.error
+    by_label(app.selectbox,'Allocation category').set_value('active').run()
+    app.button(key='targets_edit_capital').click().run()
+    key = next(k for k in app.session_state.to_dict() if k.startswith('overview_target_editor_'))
+    app.session_state[key] = dict(edited_rows={0:{'Target':75.},1:{'Target':25.}},added_rows=[],deleted_rows=[])
+    app.run()
+    path = workspace/'holdings.csv'
+    external = path.read_text().replace('SYN-A,2,','SYN-A,3,')
+    path.write_text(external)
+    app.button(key='overview_target_save').click().run()
+    assert not app.exception and app.error
     assert path.read_text() == external
-    # AppTest exposes the editor's fixed baseline, not its browser-applied edits.
-    # Check the retained result and widget delta after the rejected save.
-    key = editor_key(app, 'targets_positions_')
-    rows = app.session_state['view_editor_drafts'][key]
-    assert rows.within_bucket_target.iloc[0] == 75.
-    assert app.session_state[key]['edited_rows'][0]['within_bucket_target'] == 75.
+    assert app.session_state[key]['edited_rows'][0]['Target'] == 75.
 
 
 def test_category_plan_respects_ancestor_protection_with_unrelated_missing_prices(workspace):

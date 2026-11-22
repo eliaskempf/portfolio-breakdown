@@ -7,7 +7,7 @@ import streamlit as st
 from portfolio_app.interface.shared.display_names import instrument_name
 from portfolio_app.market.history import HistoryService, DemoHistoryProvider
 from portfolio_app.market.market_data import history_for
-from portfolio_app.interface.shared.presentation import return_percent
+from portfolio_app.interface.shared.number_format import return_metric
 
 
 def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edit=None, funds=()):
@@ -121,12 +121,13 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
             is_active=_position_view_guard(row.position_id))
         return
     names = {b.id: b.name for b in allocation.buckets} if allocation else {}
+    from portfolio_app.performance.performance import is_cash_balance
     details = {'Quantity': f"{row.shares:g} {row.get('quantity_unit') or 'units'}", 'Account': row.get('account') or '—',
                'Category': names.get(row.get('bucket_id'), row.get('portfolio') or 'Unassigned'),
                'Average buy-in': money(row.get('acquisition_price'), currency=row.get('acquisition_currency') or 'currency unspecified'),
                'Total buy-in': money(row.shares * row.acquisition_price, currency=row.get('acquisition_currency') or 'currency unspecified'),
                'Unrealized gain': money(row.get('unrealized_gain_reporting'), signed=True),
-               'Return on cost': return_percent(row.get('return_pct')),
+               'Return on cost': return_metric(row.get('return_pct'), cash_balance=is_cash_balance(row)),
                'Reporting buy-in': money(row.get('cost_basis_reporting')),
                'Reporting average buy-in': money(row.get('cost_basis_reporting') / row.shares if row.shares else None),
                'Market price': money(row.get('current_price'), currency=row.get('quote_currency') or ''),
@@ -165,7 +166,7 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
                 'Saved rate': conversion.get('rate', ''), 'Rate date': conversion.get('observed_on', '')})
         st.dataframe(pd.DataFrame(records), hide_index=True)
     if row.get('performance_note'):
-        st.info(row.performance_note + '. Use Edit position to complete your buy-in.')
+        st.caption(row.performance_note)
     if row.get('valuation_note'):
         st.caption(row.valuation_note)
 

@@ -37,7 +37,7 @@ export default function({parentElement}) {
             if (text) {
               const raw = valid ? point.customdata?.[metric.gainPercent ? 1 : 0] : null;
               const amount = points ? (raw == null ? null : raw * (metric.gainPercent ? 100 : 1)) : metric.gainAmount;
-              const gain = points ? (amount == null ? '—' : metric.gainPercent ?
+              const gain = points ? (amount == null ? 'Unavailable' : metric.gainPercent ?
                 (amount > 0 ? '▲ ' : amount < 0 ? '▼ ' : '') + number.format(Math.abs(amount)) + '%' : signed(amount)) : metric.gainSummary;
               if (text.textContent !== gain) text.textContent = gain;
               const tooltip = points ? (metric.gainPercent ? 'TWR · ' : 'Gain · ') + 'All history' + (valid ? ' to ' + date.format(new Date(point.x)) : '') +

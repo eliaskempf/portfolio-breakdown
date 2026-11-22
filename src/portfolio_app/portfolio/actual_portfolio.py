@@ -40,6 +40,15 @@ def validate_links(journal, holdings):
             raise DataError('An account-linked holding is missing. Reconcile its account binding.')
 
 
+def position_keys_content(path, snapshot):
+    """Freeze only the existing effective identities in a legacy holdings document."""
+    raw = pd.read_csv(StringIO(path.read_text(encoding='utf-8-sig')), dtype=str, keep_default_na=False)
+    raw['position_key'] = snapshot.holdings.position_id.tolist()
+    content = raw.to_csv(index=False)
+    parse_holdings(content)
+    return content
+
+
 def freeze_position_keys(directory, expected_revision):
     """Identity-only save; existing effective IDs and financial data are retained."""
     path = directory / 'holdings.csv'
@@ -49,10 +58,7 @@ def freeze_position_keys(directory, expected_revision):
             raise DataError('Holdings changed. Reload before linking an account.')
         if 'position_key' in snapshot.holdings or not path.exists():
             return snapshot
-        raw = pd.read_csv(StringIO(path.read_text(encoding='utf-8-sig')), dtype=str, keep_default_na=False)
-        raw['position_key'] = snapshot.holdings.position_id.tolist()
-        content = raw.to_csv(index=False)
-        parse_holdings(content)
+        content = position_keys_content(path, snapshot)
         save_document(path, content, expected_revision)
         return read_snapshot(path)
 

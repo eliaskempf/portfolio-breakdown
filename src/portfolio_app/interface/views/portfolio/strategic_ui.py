@@ -110,11 +110,13 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                      help='Selected capital as a share of all owned capital, including a funded futures strategy. Excludes debt and any legacy unfunded settlement adjustment.')
         with first:
             twr_help = ''
-            if history and history['view'].all_result.time_weighted_reasons:
-                from portfolio_app.interface.views.history.history_data_ui import readable_reasons
+            if percent and history and history['view'].all_result.time_weighted_reasons:
+                from portfolio_app.interface.views.history.history_data_ui import brief_reasons, readable_reasons
                 reasons = readable_reasons(data_dir, history['journal'], history['scope'],
                     history['view'].all_result.time_weighted_reasons)
-                twr_help = ' '.join(reasons[:3]) + ' Open Performance for details and corrections.'
+                twr_help = brief_reasons(reasons)
+            if percent and performance.cash_only and not has_history:
+                twr_help = 'A cash balance alone cannot establish an investment return.'
             value_metric(exposure_result.net_equity if exposure_result is not None and not bucket else subtotal,
                          performance, missing=missing, percent=percent, key='overview_value',
                          on_toggle_gain=on_toggle_gain,
@@ -122,8 +124,13 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                          funded_gain=exposure_result is not None, strategy_gain=has_strategy, freshness=freshness, freshness_rows=selected,
                          known=history.get('current_gain') if history else None,
                          twr=history['view'].all_result.time_weighted if history else None,
-                         twr_help=twr_help,
+                         twr_help=twr_help, balance_only=performance.cash_only and not has_history,
                          twr_estimated=history['view'].all_result.estimated if history else False)
+            if percent and history and history['view'].all_result.time_weighted is None:
+                from portfolio_app.interface.views.history.history_data_ui import render_return_inputs
+                render_return_inputs(data_dir, history['journal'], history['scope'], history['observations'],
+                    history['revision'], history['view'].all_result.time_weighted_reasons,
+                    history['key']+'allocation_twr_', indexed=history['calculation'].observations)
         if second is not None:
             with second:
                 from portfolio_app.interface.views.exposure.portfolio_exposure_ui import render_equity_exposure_metric
@@ -165,11 +172,13 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 render_comparison_freshness(valued, table.attrs.get('valuation_members', {}),
                     available.Category.tolist(), chart_key='category_performance_chart')
             elif chart_percent and table['Gain'].notna().any():
-                st.caption('TWR unavailable · Choose Gain for supported monetary results.')
+                st.caption('TWR unavailable', help='Choose Gain to see supported monetary results.')
             elif performance.cash_only:
-                st.info('N/A — cash balance. Purchase-based return does not apply without a recorded conversion basis; interest is separate.')
+                st.caption('N/A · Cash balance', help='Purchase-based return needs a recorded acquisition or conversion basis. Interest is separate.')
+            elif chart_percent:
+                st.caption('TWR unavailable', help='Requires dated valuations and cash flows for the selected category.')
             else:
-                st.info('Add convertible buy-ins to see performance for this category.')
+                st.caption('Gain unavailable', help='Requires comparable purchase costs and valuations for the selected category.')
         return
     else:
         with st.container(key='overview_allocation'):

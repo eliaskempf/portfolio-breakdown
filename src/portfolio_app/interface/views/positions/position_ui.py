@@ -99,13 +99,14 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
         st.warning(warning)
     if message := st.session_state.pop('position_saved_notice', None):
         st.success(message)
-    # Apply navigation after remount: an old browser widget value can otherwise
-    # restore the import form after a successful save switches to Overview.
     if requested := st.session_state.pop('positions_workflow_request', None):
         st.session_state['positions_workflow'] = requested
-    workflow = st.segmented_control('Position tools', ['Positions', 'Bulk add purchases', 'Update balances', 'Import', 'Connect live prices', 'Accounts & futures'], help='Choose between individual holdings, purchase batches, balance replacement and imports.',
-                                    required=True, default=st.session_state.get('positions_workflow', 'Positions'),
-                                    key='positions_workflow', on_change=_dismiss)
+    workflow = st.session_state.setdefault('positions_workflow', 'Positions')
+    if workflow != 'Positions':
+        st.button('Back to positions', icon=':material/arrow_back:', type='tertiary',
+                  on_click=_open_position_task, args=('Positions',))
+    if workflow in ('Import', 'Bulk add purchases'):
+        st.subheader(workflow)
     if workflow == 'Accounts & futures':
         if has_accounts:
             st.session_state.update(accounts_open_requested=True, accounts_return_tab='Positions',
@@ -151,17 +152,16 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
                 if statement_request:
                     st.session_state['position_edit_fields_entry_mode'] = 'Existing holding'
                 st.session_state.update(position_edit_action='Add position', position_edit_dialog=True)
+            st.button('Import', on_click=_open_position_task, args=('Import',),
+                      help='Transaction CSV, statement PDFs or holdings snapshot.')
+            with st.popover('More actions', key='positions_actions'):
+                for task in ('Bulk add purchases', 'Update balances', 'Connect live prices', 'Accounts & futures'):
+                    if task in ('Update balances', 'Connect live prices') and snapshot.holdings.empty:
+                        continue
+                    st.button(task, on_click=_open_position_task, args=(task,))
         if snapshot.holdings.empty and (valued is None or valued.empty):
-            st.info('Add a position or import transactions or a holdings snapshot.')
-            def start_import(kind):
-                st.session_state['positions_workflow'] = 'Import'
-                st.session_state['import_kind'] = kind
-            with st.container(horizontal=True):
-                st.button('Import transactions', on_click=start_import, args=('Transactions',))
-                st.button('Import holdings', help='Initialize an empty portfolio from a current holdings report.',
-                          on_click=start_import, args=('Holdings snapshot',))
+            st.caption('No positions')
         else:
-            st.caption('Select a position for details and price history. Use the pencil to edit.')
             with st.container(key='tour_position_list'):
                 render_position_list(path, snapshot, allocation, valued=valued, account_valued=account_valued, percent=percent, demo=demo)
     if workflow == 'Positions':
@@ -187,6 +187,11 @@ def _remember_draft():
 def _dismiss():
     _remember_draft()
     st.session_state['position_edit_dialog'] = False
+
+
+def _open_position_task(task):
+    _dismiss()
+    st.session_state['positions_workflow'] = task
 
 
 def _dismiss_dialog():

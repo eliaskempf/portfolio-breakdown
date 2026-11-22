@@ -41,7 +41,7 @@ def test_mixed_editor_and_all_planning_modes(workspace):
     by_label(app.selectbox,'Allocation category').set_value('sleeve').run()
     assert not app.exception
     frame = next(item.value for item in app.dataframe if 'kind' in item.value)
-    assert frame.kind.tolist() == ['Category','Investment']
+    assert frame.kind.tolist() == ['category','position']
     assert frame.Target.sum() == 100
     by_label(app.selectbox,'Allocation category').set_value('group').run()
     assert by_label(app.get('button_group'),'Internal allocation').value == 'flexible'
@@ -67,6 +67,8 @@ def test_create_category_in_legacy_workspace_and_edit_priorities(workspace):
     rows.to_csv(workspace/'holdings.csv',index=False)
     (workspace/'allocation.yaml').write_text(allocation_content(Allocation((Bucket('sleeve','Example sleeve',target=1.),))))
     app = launch(workspace, tab='Rebalance',subtab='Targets')
+    app.session_state['targets_structure_open'] = True
+    app.run()
     by_label(app.multiselect,'Investments to combine').set_value(['p1','p2']).run()
     by_label(app.text_input,'New category name').set_value('Invented combined').run()
     assert by_label(app.number_input,'Combined target (% of parent)').value == 50.
@@ -78,18 +80,20 @@ def test_create_category_in_legacy_workspace_and_edit_priorities(workspace):
     editor = next(key for key in app.session_state.to_dict() if key.startswith('targets_member_editor_') and key.endswith('flexible'))
     app.session_state[editor] = {'edited_rows':{0:{'Buy':1,'Sell':2},1:{'Buy':2,'Sell':1}},'added_rows':[],'deleted_rows':[]}
     app.run()
-    by_label(app.button,'Save allocation').click().run()
+    by_label(app.button,'Save priorities').click().run()
     assert not app.exception and not app.error
     saved = next(b for b in load_allocation(workspace/'allocation.yaml').buckets if b.id == group.id)
     assert saved.buy_priority == ('p1','p2') and saved.sell_priority == ('p2','p1')
     # Retained member targets use the old denominator; switching to fixed needs review.
     by_label(app.get('button_group'),'Internal allocation').set_value('targets').run()
-    by_label(app.button,'Save allocation').click().run()
+    by_label(app.button,'Review member targets').click().run()
+    app.button(key='overview_target_save').click().run()
     assert any('100%' in item.value for item in app.error)
-    editor = next(key for key in app.session_state.to_dict() if key.startswith('targets_member_editor_') and key.endswith('targets'))
+    assert not any(button.label == 'Save incomplete split' for button in app.button)
+    editor = next(key for key in app.session_state.to_dict() if key.startswith('overview_target_editor_'))
     app.session_state[editor] = {'edited_rows':{0:{'Target':40},1:{'Target':60}},'added_rows':[],'deleted_rows':[]}
     app.run()
-    by_label(app.button,'Save allocation').click().run()
+    app.button(key='overview_target_save').click().run()
     assert not app.exception and not app.error
     assert not load_allocation(workspace/'allocation.yaml').flexible(group.id)
 

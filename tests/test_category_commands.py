@@ -69,7 +69,8 @@ def test_next_workspace_access_recovers_pending_category_save(workspace):
     assert {name:(directory/name).read_text() for name in originals} == originals
 
 
-def test_moving_members_removes_stale_priorities_atomically(workspace):
+@pytest.mark.parametrize('clear_targets',[False,True])
+def test_moving_members_removes_stale_priorities_atomically(workspace,clear_targets):
     from portfolio_app.portfolio.category_commands import move_category_positions
     directory, config = workspace
     key = create_category(directory, config, ['p1','p2'], 'Invented group', .5,
@@ -78,11 +79,17 @@ def test_moving_members_removes_stale_priorities_atomically(workspace):
     save_category_settings(directory, config, key, 'flexible', ['p1','p2'], ['p2','p1'],
                            holdings_revision=revision(directory/'holdings.csv'), allocation_revision=revision(directory/'allocation.yaml'))
     config = load_allocation(directory/'allocation.yaml')
-    move_category_positions(directory, config, ['p1'], 'parent', holdings_revision=revision(directory/'holdings.csv'), allocation_revision=revision(directory/'allocation.yaml'))
+    move_category_positions(directory, config, ['p1','p3'], 'parent', clear_targets=clear_targets, holdings_revision=revision(directory/'holdings.csv'), allocation_revision=revision(directory/'allocation.yaml'))
     positions = read_snapshot(directory/'holdings.csv').holdings
     config = load_allocation(directory/'allocation.yaml', positions)
     assert next(b for b in config.buckets if b.id == key).buy_priority == ('p2',)
     assert positions.loc[positions.position_id.eq('p1'), 'bucket_id'].item() == 'parent'
+    targets = positions.set_index('position_id').within_bucket_target
+    if clear_targets:
+        assert targets.loc[['p1']].isna().all()
+    else:
+        assert targets['p1'] == .2
+    assert targets['p2'] == .3 and targets['p3'] == .5
 
 
 def test_regular_position_editor_updates_category_priorities(workspace):

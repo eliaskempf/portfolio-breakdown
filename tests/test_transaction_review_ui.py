@@ -84,6 +84,50 @@ def test_new_source_after_rejected_correction_shows_surviving_manual_edit(tmp_pa
     assert any('11' in table.value.to_string() for table in app.table)
 
 
+def test_full_export_with_only_kept_and_already_applied_rows_finishes_review(tmp_path):
+    header = 'reference,date,type,asset,quantity,amount,currency\n'
+    original = header + 'a,2024-01-02,buy,BTC,1,10,EUR\nb,2024-01-03,buy,BTC,2,20,EUR\n'
+    app = launch(tmp_path, original.encode())
+    button(app, 'Review against portfolio').click().run()
+    button(app, 'Apply history').click().run()
+    before, revision = load_journal(tmp_path)
+    app = launch(tmp_path, original.replace(',10,', ',11,').encode())
+    next(w for w in app.radio if w.label == 'Source decision').set_value('Keep current').run()
+    button(app, 'Review against portfolio').click().run()
+    assert not app.exception
+    assert button(app, 'Save decisions')
+    button(app, 'Back to import').click().run()
+    assert (before, revision) == load_journal(tmp_path)
+    button(app, 'Review against portfolio').click().run()
+    button(app, 'Save decisions').click().run()
+    saved, after = load_journal(tmp_path)
+    assert after != revision and saved.securities == before.securities
+    assert len(saved.kept_imports) == 1
+
+
+def test_reloading_changed_portfolio_requires_fresh_source_choice(tmp_path):
+    from portfolio_app.ledger.transaction_import_commands import save_transaction_import
+    from portfolio_app.portfolio.positions import read_snapshot
+    header = 'reference,date,type,asset,quantity,amount,currency\n'
+    original = header + 'a,2024-01-02,buy,BTC,1,10,EUR\n'
+    save_transaction_import(tmp_path, read_csv(original), {}, expected_journal_revision=None,
+                            expected_holdings_revision=None)
+    app = launch(tmp_path, original.replace(',10,', ',11,').encode())
+    next(w for w in app.radio if w.label == 'Source decision').set_value('Keep current').run()
+    assert button(app, 'Save decisions')
+    baseline, stamp = load_journal(tmp_path)
+    revised = read_csv(original.replace(',10,', ',12,'))
+    save_transaction_import(tmp_path, revised, {}, expected_journal_revision=stamp,
+                            expected_holdings_revision=read_snapshot(tmp_path/'holdings.csv').revision,
+                            correction_ids=[revised[0].identity])
+    app.run()
+    button(app, 'Reload transaction review').click().run()
+    assert not app.exception
+    assert next(w for w in app.radio if w.label == 'Source decision').value is None
+    assert button(app, 'Save evidence only').disabled
+    assert load_journal(tmp_path)[0].kept_imports == baseline.kept_imports == ()
+
+
 def test_matching_holdings_preview_then_confirm_without_blanket_checkboxes(tmp_path):
     (tmp_path/'holdings.csv').write_text('id,name,ticker,instrument_type,shares,acquisition_price,acquisition_currency\n'
         'invented-btc,Bitcoin,BTC-EUR,crypto,2,50,EUR\n')
@@ -446,3 +490,22 @@ def test_changing_reviewed_entries_requires_fresh_asset_decisions(tmp_path):
     assert button(app, 'Apply reviewed holdings').disabled
     assert any(c.value == 'Reviewed 0 / 2' for c in app.caption)
     assert not load_journal(tmp_path)[0].securities
+
+
+def test_save_only_keep_decisions_with_other_rows_deselected(tmp_path):
+    from portfolio_app.ledger.transaction_import_commands import save_transaction_import
+    header = 'reference,date,type,asset,quantity,amount,currency\n'
+    base = header + 'a,2024-01-02,buy,BTC,1,10,EUR\n'
+    saved = save_transaction_import(tmp_path, read_csv(base), {}, expected_journal_revision=None,
+                                    expected_holdings_revision=None).journal
+    incoming = base.replace(',10,', ',11,') + 'b,2024-01-03,buy,BTC,1,20,EUR\n'
+    app = launch(tmp_path, incoming.encode())
+    next(w for w in app.radio if w.label == 'Source decision').set_value('Keep current').run()
+    assert any(c.value == 'Keep on save · 1' for c in app.caption)
+    next(w for w in app.multiselect if w.label == 'Included transactions').set_value([]).run()
+    button(app, 'Save decisions').click().run()
+    journal, _ = load_journal(tmp_path)
+    assert not app.exception and journal.transaction_imports == saved.transaction_imports
+    assert len(journal.kept_imports) == 1 and journal.securities == saved.securities
+    assert any(c.value == 'Kept current · 1' for c in app.caption)
+    assert not (tmp_path/'holdings.csv').exists()

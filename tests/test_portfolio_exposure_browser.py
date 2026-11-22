@@ -147,7 +147,7 @@ def test_normal_and_sandbox_exposure_controls(ux_page):  # noqa: F811
     destination.press('Enter')
     playwright.expect(destination).to_have_value('ETF core')
     page.get_by_role('button', name='Save exposure targets', exact=True).click()
-    playwright.expect(page.get_by_text('Gap = desired', exact=False)).to_be_visible()
+    playwright.expect(page.get_by_role('button', name='Edit targets',exact=True)).to_be_visible()
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
     # Change only synthetic persisted data to check above-100% chart rendering.
     position = FuturePosition(contracts=1, entry_price=5., mark_price=5., bucket_id='core')

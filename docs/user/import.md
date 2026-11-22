@@ -17,8 +17,7 @@ export/version has been verified. Look for a current depot/holdings report and
 **Bericht exportieren**. Available formats and columns depend on your version.
 Use CSV, delimited TXT/TSV or Excel XLS/XLSX. QIF and PDF are unsupported.
 
-1. In **Positions**, choose **Import → Holdings snapshot** (or the empty-list
-   **Import holdings** button) and upload one or more files, for example separate depot reports.
+1. In **Positions**, choose **Import → Holdings snapshot** and upload one or more files, for example separate depot reports.
 2. Check worksheet, header row, delimiter, encoding and German/English number
    formatting. Inspect the preview before trusting suggested mappings.
 3. Map instrument name and quantity. When both Bank and FinanzManager quantities
@@ -43,7 +42,7 @@ Accepted fields are saved locally with revision checking and private backups.
 
 ## Connect a live listing later {#live-listings}
 
-Open **Positions → Connect live prices**, select the imported instrument, search
+Open **Positions → More actions → Connect live prices**, select the imported instrument, search
 for a listing, and verify the ISIN and exchange. Existing ISINs must match.
 Missing results do not invalidate the saved position. WKN-only or ISIN-only
 holdings can remain unpriced until a suitable listing is available.
@@ -172,8 +171,16 @@ and fees paid from another asset are reviewed with all affected holdings. Origin
 evidence remains retained. Reimporting the same references does not duplicate
 transactions or undo later edits/removals. Moving rows within an export keeps
 their previously accepted order; use an explicit `order` to correct chronology.
-Changed source rows show their changed fields and require approval individually,
-including a warning when they replace a later edit or removal. Economically similar rows from different sources require a
+For a changed source row, choose **Keep current** to preserve the saved transaction,
+including a later edit or removal, or **Use correction** to review the incoming changes.
+Complete each choice before saving. **Save decisions** remembers the choices when
+every changed row is kept. Mixed batches save the decisions with the other evidence
+or applied transactions. The same source facts are recognized on later uploads.
+A further change to those facts requires a new choice. To revisit a saved choice,
+open **Saved imports → Reconsider kept correction**, choose the source revision
+and select **Use correction**. Review the current history before applying it.
+Discarding the review before
+saving leaves the earlier decisions in place. Economically similar rows from different sources require a
 review rather than automatic deletion.
 
 Prepare wallet/staking movements and personal approximations before import when

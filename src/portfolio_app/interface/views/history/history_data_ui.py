@@ -11,7 +11,7 @@ import streamlit as st
 
 from portfolio_app.ledger.account_journal import effective_events
 from portfolio_app.performance.history_observations import (
-    Observation, active_observations, add_observation, lookup, rate, save_observations,
+    Observation, active_observations, add_observation, index_observations, lookup, rate, save_observations,
 )
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.performance.history_diagnostics import issue_tree
@@ -64,10 +64,16 @@ def readable_reasons(directory, journal, scope, reasons, *, names=None):
             names[event.id] = f'{event.date or "Undated"} transaction'
     for event in journal.events:
         names[event.id] = f'{event.date} account entry'
-    results = []
-    for reason in reasons:
+    results = {}
+    # Daily-return wrappers include their children's raw display text. Render
+    # that evidence separately so holding names survive de-duplication.
+    for reason in issue_tree(reasons):
+        causes = getattr(reason, 'causes', ())
+        if causes:
+            reason = str(reason).removesuffix(' '.join(causes)).rstrip()
         identity, separator, detail = reason.partition(': ')
-        message = f'{names.get(identity, "History")}: {detail}' if separator else reason
+        label = identity if re.fullmatch(r'\d{4}-\d{2}-\d{2}', identity) else names.get(identity, 'History')
+        message = f'{label}: {detail}' if separator else reason
         message = message.replace('charges have not been confirmed', 'confirm transaction fees')
         for stored, label in sorted(names.items(), key=lambda pair: -len(pair[0])):
             if len(stored) < 16 and not any(marker in stored for marker in ('-', ':')):
@@ -75,9 +81,13 @@ def readable_reasons(directory, journal, scope, reasons, *, names=None):
             message = re.sub(r'(?<![\w-])'+re.escape(stored)+r'(?![\w-])', lambda _: label, message)
         message = re.sub(r'\bsecurity:[^\s,;]+', 'payment', message)
         message = re.sub(r'\b[a-f0-9]{24,64}\b', 'record', message)
-        if message not in results:
-            results.append(message)
+        results[message] = None
     return tuple(results)
+
+
+def brief_reasons(messages):
+    summary = ' '.join(messages[:3])
+    return summary + (f' (+{len(messages)-3} more)' if len(messages) > 3 else '')
 
 
 def _subjects(journal, scope):
@@ -102,6 +112,40 @@ def _currencies(journal, scope, observations, target):
     return currencies - {''}
 
 
+def _dated_inputs(reasons, journal, scope, observations):
+    """Return only the correctable market evidence named by this calculation."""
+    subjects = None
+    missing = set()
+    for reason in issue_tree(reasons):
+        identity, separator, detail = reason.partition(': ')
+        if not separator:
+            continue
+        price = re.fullmatch(r'missing (?:price|exact-contract mark) on (\d{4}-\d{2}-\d{2})', detail)
+        if price:
+            if subjects is None:
+                subjects = _subjects(journal, scope)
+            if identity in subjects:
+                observations = index_observations(observations)
+                series = observations.price_series.get(identity)
+                if series:
+                    currency = series[-1][-1].currency
+                else:
+                    contract_id = next((p.contract_id for p in journal.positions if p.id == identity), identity)
+                    currency = next((c.currency for c in journal.contracts if c.id == contract_id), '')
+                missing.add(MissingInput('price', identity, price[1], currency))
+        fx = re.search(r'([A-Z]{3})/([A-Z]{3}) FX on (\d{4}-\d{2}-\d{2})$', detail)
+        if fx:
+            observations = index_observations(observations)
+            if detail.startswith('missing value or '):
+                from portfolio_app.performance.history_valuation import valuation_fx
+                existing, _ = valuation_fx(observations, fx[1], fx[2], fx[3])
+            else:
+                existing = rate(observations, fx[1], fx[2], fx[3])
+            if existing is None:
+                missing.add(MissingInput('fx', fx[1]+'/'+fx[2], fx[3], fx[1], fx[2]))
+    return missing
+
+
 def missing_inputs(view, journal, scope, observations, target):
     """Only explicit, dated missing prices/rates become correction tasks."""
     reasons = [reason for _, values in view.missing for reason in values]
@@ -109,22 +153,7 @@ def missing_inputs(view, journal, scope, observations, target):
         for field in ('value_reasons', 'flow_reasons', 'capital_reasons',
                       'money_weighted_reasons', 'time_weighted_reasons'):
             reasons.extend(getattr(result, field))
-    subjects = _subjects(journal, scope)
-    missing = set()
-    for reason in issue_tree(reasons):
-        identity, separator, detail = reason.partition(': ')
-        if not separator:
-            continue
-        price = re.fullmatch(r'missing (?:price|exact-contract mark) on (\d{4}-\d{2}-\d{2})', detail)
-        if price and identity in subjects:
-            known = [o for o in active_observations(observations) if o.kind == 'price' and o.subject == identity]
-            currency = known[-1].currency if known else ''
-            contract = next((c for c in journal.contracts if c.id == identity or any(
-                p.id == identity and p.contract_id == c.id for p in journal.positions)), None)
-            missing.add(MissingInput('price', identity, price[1], currency or (contract.currency if contract else '')))
-        fx = re.search(r'([A-Z]{3})/([A-Z]{3}) FX on (\d{4}-\d{2}-\d{2})$', detail)
-        if fx and rate(observations, fx[1], fx[2], fx[3]) is None:
-            missing.add(MissingInput('fx', fx[1]+'/'+fx[2], fx[3], fx[1], fx[2]))
+    missing = _dated_inputs(reasons, journal, scope, observations)
     # Flow diagnostics deliberately do not guess whether a missing cash amount is FX.
     # Offer a rate only when the amount and its actual currency are known.
     for cash in replay_securities(journal.securities).cash:
@@ -143,6 +172,50 @@ def missing_inputs(view, journal, scope, observations, target):
             if rate(observations, event.other_currency, target, event.date) is None:
                 missing.add(MissingInput('fx', event.other_currency+'/'+target, event.date, event.other_currency, target))
     return tuple(sorted(missing, key=lambda item: (item.date, item.kind, item.subject)))
+
+
+def render_return_inputs(directory, journal, scope, observations, revision, reasons, key, *, indexed=None):
+    """Open the existing evidence editor beside the metric without leaving its scope."""
+    if not reasons:
+        return
+    issues = sorted(_dated_inputs(reasons, journal, scope, indexed or observations), key=lambda i: (i.date, i.kind, i.subject))
+    many_reasons = sum(1 for _ in issue_tree(reasons)) > 3
+    if not issues and not many_reasons:
+        return False
+    label = f'Missing inputs ({len(issues)})' if issues else 'Return details'
+    if len(issues) == 1:
+        label = 'Add price' if issues[0].kind == 'price' else 'Add exchange rate'
+    panel = st.popover(label, key=key+'open', on_change='rerun')
+    if not panel.open:
+        return True
+    with panel:
+        names = scope_names(directory, journal, scope)
+        if many_reasons:
+            messages = readable_reasons(directory, journal, scope, reasons, names=names)
+            reasons_panel = st.expander(f'Reasons ({len(messages)})') if issues else st.container()
+            with reasons_panel:
+                for message in messages:
+                    st.text(message)
+        if not issues:
+            return True
+
+        def describe(issue):
+            subject = f'{issue.currency}/{issue.target}' if issue.kind == 'fx' else names.get(issue.subject, 'Holding')
+            return f'{subject} · {issue.date}'
+        issue = issues[0]
+        if 1 < len(issues) <= 5:
+            issue = st.radio('Missing input', issues, format_func=describe, key=key+'input')
+        elif len(issues) > 5:
+            issue = st.selectbox('Missing input', issues, format_func=describe, key=key+'input')
+        else:
+            st.caption(describe(issue))
+        input_key = key+f'{issue.kind}_{issue.subject}_{issue.date}_'
+        currency = issue.currency
+        if issue.kind == 'price':
+            currency = st.text_input('Price currency', value=currency, key=input_key+'currency').strip().upper()
+        _save_form(directory, observations, revision, kind=issue.kind, subject=issue.subject,
+                   stamp=issue.date, currency=currency, target=issue.target, key=input_key)
+    return True
 
 
 def scoped_observations(journal, scope, observations, target):

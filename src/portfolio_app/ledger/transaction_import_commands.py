@@ -7,7 +7,6 @@ from pathlib import Path
 import pandas as pd
 
 from portfolio_app.ledger.account_journal import load_journal, save_journal
-from portfolio_app.portfolio.actual_portfolio import freeze_position_keys
 from portfolio_app.portfolio.holdings import DataError, parse_holdings
 from portfolio_app.portfolio.positions import EMPTY_CSV, read_snapshot
 from portfolio_app.ledger.security_history import effective_holdings, selected_events, affected_positions
@@ -104,11 +103,14 @@ def save_transaction_import(directory, rows, mapping, *, expected_journal_revisi
             return replace(preview,journal=journal)
         effective_holdings(preview_holdings, proposed.securities)
         _validate_categories(directory, preview_holdings)
+        if (content is None and 'position_key' not in snapshot.holdings and snapshot.revision is not None and
+                (proposed.securities != journal.securities or proposed.transaction_imports != journal.transaction_imports)):
+            from portfolio_app.portfolio.actual_portfolio import position_keys_content
+            content = position_keys_content(directory/'holdings.csv', snapshot)
         if content is not None:
             from portfolio_app.ledger.history_publication import publish_positions_and_history
             publish_positions_and_history(directory, content, proposed, snapshot.revision, revision)
         else:
-            snapshot = freeze_position_keys(directory, snapshot.revision)
             save_journal(directory, proposed, revision)
         return replace(preview,journal=proposed)
 

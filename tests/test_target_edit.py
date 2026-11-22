@@ -110,3 +110,74 @@ def test_context_dialog_cancel_save_and_full_editor(workspace):
     app.button(key='overview_target_manage').click().run()
     assert not app.exception
     assert by_label(app.selectbox,'Allocation category')
+
+
+@pytest.mark.parametrize('origin', ['Overview','Rebalance'])
+def test_legacy_whole_portfolio_targets_do_not_enable_categories(tmp_path, origin):
+    from portfolio_app.portfolio.positions import read_snapshot
+    (tmp_path/'holdings.csv').write_text(
+        'id,name,ticker,shares,portfolio,target_allocation\na,Invented A,AAA,1,One,.3\nb,Invented B,BBB,2,Two,.7\n')
+    (tmp_path/'demo_prices.json').write_text('{"prices": {}, "fx": {}}')
+    app = launch(tmp_path,tab=origin,subtab='Targets' if origin == 'Rebalance' else None)
+    key = 'overview_capital_targets' if origin == 'Overview' else 'targets_edit_capital'
+    app.button(key=key).click().run()
+    assert app.session_state['overview_target_dialog']['draft'].rows.Target.tolist() == [30.,70.]
+    editor = next(k for k in app.session_state.to_dict() if k.startswith('overview_target_editor_'))
+    app.session_state[editor] = dict(edited_rows={0:{'Target':25.},1:{'Target':75.}},added_rows=[],deleted_rows=[])
+    app.button(key='overview_target_save').click().run()
+    assert not app.exception and not app.error
+    assert read_snapshot(tmp_path/'holdings.csv').holdings.target_allocation.tolist() == [.25,.75]
+    assert not (tmp_path/'allocation.yaml').exists()
+
+
+def test_minimal_legacy_csv_supplies_missing_target_and_account_defaults(tmp_path):
+    (tmp_path/'holdings.csv').write_text('id,name,shares\na,Invented A,1\n')
+    draft = prepare_target_edit(tmp_path,None,'')
+    assert draft.rows.Account.tolist() == ['']
+    assert draft.rows.Target.isna().all()
+    save_target_edit(draft,draft.rows.assign(Target=[100.]))
+    assert pd.read_csv(tmp_path/'holdings.csv').target_allocation.tolist() == [1.]
+    assert not (tmp_path/'allocation.yaml').exists()
+
+
+def test_unset_category_target_column_is_blank_until_saved(tmp_path):
+    path = tmp_path/'holdings.csv'
+    path.write_text('id,name,shares,bucket_id\na,Invented A,1,held\n')
+    config = Allocation((Bucket('held','Held',target=1.),))
+    (tmp_path/'allocation.yaml').write_text(allocation_content(config))
+    draft = prepare_target_edit(tmp_path,config,'held')
+    assert draft.rows.Target.isna().all()
+    save_target_edit(draft,draft.rows.assign(Target=[100.]))
+    assert pd.read_csv(path).within_bucket_target.tolist() == [1.]
+    assert load_allocation(tmp_path/'allocation.yaml').version == 2
+
+
+def test_equity_only_leaf_edit_preserves_universe_version_and_zero_branch(workspace):
+    config = Allocation((Bucket('sleeve','Sleeve',target=.6),Bucket('group','Group','sleeve',.5),
+        Bucket('a','One','group',.5),Bucket('b','Two','group',.5),Bucket('c','Other',target=.4)))
+    path = workspace/'holdings.csv'
+    rows = pd.read_csv(path)
+    rows['bucket_id'] = ['a','b','c']
+    rows.to_csv(path,index=False)
+    (workspace/'allocation.yaml').write_text(allocation_content(config))
+    before = path.read_bytes()
+    saved = ExposureTargets(1.2,'composition',{'c':1.})
+    save_exposure_targets(workspace,saved,config,None)
+    with pytest.raises(DataError,match='equity only'):
+        prepare_target_edit(workspace,config,'',market=True)
+    draft = prepare_target_edit(workspace,config,'',market=True,policy_settings=True,whole_leaf_split=True)
+    edited = draft.rows.copy()
+    edited['Target'] = edited.identity.map({'a':20.,'b':30.,'c':50.})
+    save_target_edit(draft,edited,multiple=1.25)
+    result = load_exposure_targets(workspace,config)[0]
+    assert result == replace(saved,composition={'a':.2,'b':.3,'c':.5},multiple=1.25)
+    assert path.read_bytes() == before
+
+
+def test_changed_exposure_source_rejects_open_scope(exposure_workspace):
+    config, _, policy, result = mixed()
+    draft = prepare_target_edit(exposure_workspace,config,'sleeve',market=True,exposure_result=result)
+    (exposure_workspace/'futures-sandbox.json').write_text('{}')
+    with pytest.raises(DataError,match='changed while editing'):
+        save_target_edit(draft,draft.rows)
+    assert load_exposure_targets(exposure_workspace,config)[0] == policy

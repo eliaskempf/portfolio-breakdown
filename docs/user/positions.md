@@ -1,5 +1,9 @@
 # Positions and buy-ins {#positions}
 
+Positions opens on the holdings list. **Add position** and **Import** sit beside it.
+**More actions** contains bulk purchases, balance updates, price connections and
+accounts. **Back to positions** restores the list view, search and sort.
+
 ## Record a purchase {#purchases-single}
 
 In **Positions → Add position**, **New purchase** is selected by default.
@@ -94,7 +98,7 @@ FIFO carrying costs and realized gains; it is not a tax-lot reporting service.
 
 In **Update balances**, **Manage history and linked balances** opens the transaction history or cash account that owns a managed balance.
 
-Use **Positions → Update balances** for several current summaries at once.
+Use **Positions → More actions → Update balances** for several current summaries at once.
 Review quantities and optional buy-ins, select average or total cost entry, then
 confirm and save the snapshot. Repeating a balance snapshot replaces quantities;
 it does not add purchases. Targets and classifications stay saved. Quantity

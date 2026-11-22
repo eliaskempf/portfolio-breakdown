@@ -71,3 +71,19 @@ def test_invalid_or_linked_correction_cannot_change_source(tmp_path):
     with pytest.raises(DataError, match='linked transaction'):
         correct_entry(grouped, 'open', {'price': 1001})
     assert (tmp_path / ledger.FILE).read_bytes() == before
+
+
+def test_history_list_indexes_references_once(tmp_path, monkeypatch):
+    from portfolio_app.ledger import account_activity
+    _, journal, _ = invented(tmp_path)
+    calls = []
+    original = account_activity._context_indices
+
+    def count_indices(journal):
+        calls.append(len(journal.events))
+        return original(journal)
+
+    monkeypatch.setattr(account_activity, '_context_indices', count_indices)
+    rows = activity_rows(journal)
+    assert calls == [len(journal.events)]
+    assert {row['entry_id'] for row in rows} == {event.id for event in journal.events}

@@ -22,7 +22,7 @@ def settle(page):
 
 
 def upload(page, content):
-    page.get_by_role('button', name='Import transactions', exact=True).click()
+    page.get_by_role('button', name='Import', exact=True).click()
     settle(page)
     page.locator('input[type=file]').set_input_files({'name':'invented-transactions.csv', 'mimeType':'text/csv', 'buffer':content})
     settle(page)
@@ -40,8 +40,8 @@ def open_existing_import(page):
     if positions.get_attribute('aria-selected') != 'true':
         runs.click(page, positions)
     playwright.expect(positions).to_have_attribute('aria-selected', 'true')
-    imports = page.get_by_role('radio', name='Import', exact=True)
-    if imports.get_attribute('aria-checked') != 'true':
+    imports = page.get_by_role('button', name='Import', exact=True)
+    if not page.get_by_role('heading', name='Import', exact=True).is_visible():
         runs.click(page, imports)
 
 
@@ -103,17 +103,17 @@ def open_transactions(page, name):
 
 
 def open_correction(page, index):
-    checkbox = page.get_by_role('checkbox', name='Use this correction', exact=True, include_hidden=True).nth(index)
-    if not checkbox.is_visible():
+    radio = page.get_by_role('radio', name='Use correction', exact=True, include_hidden=True).nth(index)
+    if not radio.is_visible():
         page.get_by_text(re.compile('^Changed transaction ·')).nth(index).click()
     settle_layout(page)
-    checkbox = page.get_by_role('checkbox', name='Use this correction', exact=True, include_hidden=True).nth(index)
-    playwright.expect(checkbox).to_be_visible()
-    return checkbox
+    radio = page.get_by_role('radio', name='Use correction', exact=True, include_hidden=True).nth(index)
+    playwright.expect(radio).to_be_visible()
+    return radio
 
 
 def test_correction_target_is_reachable_after_expansion():
-    """An idle DOM can still clip a checkbox during a real height animation."""
+    """An idle DOM can still clip a radio control during a real height animation."""
     with browser_session() as runner:
         browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),
                                          args=['--no-sandbox'])
@@ -125,7 +125,7 @@ def test_correction_target_is_reachable_after_expansion():
                 <details style="box-sizing:border-box;border:1px solid">
                     <summary>Changed transaction · Invented correction</summary>
                     <div style="padding:24px"><div style="height:100px">Source comparison</div>
-                    <label><input type="checkbox">Use this correction</label></div>
+                    <label><input type="radio">Use correction</label></div>
                 </details></div>''')
             page.evaluate('''() => {
                 window.decoration = document.querySelector('#decoration').animate(
@@ -146,9 +146,9 @@ def test_correction_target_is_reachable_after_expansion():
                     };
                 };
             }''')
-            checkbox = open_correction(page, 0)
+            radio = open_correction(page, 0)
             # Check target geometry, not whether a particular wait API ran.
-            bounds = checkbox.evaluate('''element => {
+            bounds = radio.evaluate('''element => {
                 const target = element.closest('label').getBoundingClientRect();
                 const clip = element.closest('details').getBoundingClientRect();
                 return {top: target.top, bottom: target.bottom,
@@ -156,8 +156,8 @@ def test_correction_target_is_reachable_after_expansion():
             }''')
             assert bounds['clipTop'] <= bounds['top'] < bounds['bottom'] <= bounds['clipBottom'], bounds
             assert page.evaluate("window.decoration.playState === 'running'")
-            page.get_by_text('Use this correction', exact=True).click()
-            playwright.expect(checkbox).to_be_checked()
+            page.get_by_text('Use correction', exact=True).click()
+            playwright.expect(radio).to_be_checked()
         finally:
             browser.close()
 
@@ -169,7 +169,7 @@ def test_second_same_day_file_has_order_review_before_apply(import_page):
     page.get_by_role('button',name='Review against portfolio',exact=True).click(); settle(page)
     page.get_by_role('button',name='Apply history',exact=True).click(); settle(page)
     page.get_by_role('tab',name='Positions',exact=True).click(); settle(page)
-    page.get_by_role('radio',name='Import',exact=True).click(); settle(page)
+    page.get_by_role('button',name='Import',exact=True).click(); settle(page)
     page.locator('input[type=file]').set_input_files({'name':'invented-second.csv','mimeType':'text/csv',
         'buffer':header+b'b,2024-01-02,sell,BTC,1,30,EUR\n'})
     settle(page)
@@ -225,7 +225,7 @@ def test_changed_sources_show_fields_and_require_individual_decisions(import_pag
         expected_holdings_revision=read_snapshot(path).revision, activate=True, accept_balance_change=True)
     page.reload(); settle(page)
     page.get_by_role('tab', name='Positions', exact=True).click(); settle(page)
-    page.get_by_role('radio', name='Import', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Import', exact=True).click(); settle(page)
     incoming = header+'a,2024-01-02,buy,AUR,10,101,EUR\nb,2024-01-03,buy,AUR,5,62,EUR\n'
     pending = incoming.replace(',101,', ',unknown,' if invalid_pending else ',102,').replace(',62,', ',61,')
     page.locator('input[type=file]').set_input_files({'name': 'invented-invalid-correction.csv', 'mimeType': 'text/csv',
@@ -234,9 +234,9 @@ def test_changed_sources_show_fields_and_require_individual_decisions(import_pag
     playwright.expect(page.get_by_role('button', name='Save evidence only', exact=True)).to_be_visible()
     assert not page.get_by_test_id('stException').count()
     for index in range(2):
-        checkbox = open_correction(page, index)
-        page.get_by_text('Use this correction', exact=True).nth(index).click(); settle(page)
-        playwright.expect(checkbox).to_be_checked()
+        radio = open_correction(page, index)
+        page.get_by_text('Use correction', exact=True).nth(index).click(); settle(page)
+        playwright.expect(radio).to_be_checked()
     page.get_by_role('button', name='Save evidence only', exact=True).click(); settle(page)
     assert len(load_journal(path.parent)[0].transaction_imports) == 4
     page.locator('input[type=file]').set_input_files({'name': 'invented-corrections.csv', 'mimeType': 'text/csv', 'buffer': incoming.encode()})
@@ -247,23 +247,118 @@ def test_changed_sources_show_fields_and_require_individual_decisions(import_pag
     playwright.expect(expanders).to_have_count(2)
     open_correction(page, 0)
     if removal:
-        playwright.expect(page.get_by_text('This restores a transaction you removed.', exact=True)).to_be_visible()
+        playwright.expect(page.get_by_text('Use correction restores your removed transaction.', exact=True)).to_be_visible()
     else:
-        playwright.expect(page.get_by_text('This replaces your later edit to this transaction.', exact=True)).to_be_visible()
+        playwright.expect(page.get_by_text('Use correction replaces your later edit.', exact=True)).to_be_visible()
         playwright.expect(page.get_by_text('Current history', exact=True)).to_be_visible()
         playwright.expect(page.get_by_role('cell', name='11', exact=True)).to_be_visible()
     playwright.expect(page.get_by_text('Gross amount', exact=True).nth(0)).to_be_visible()
-    checks = page.get_by_role('checkbox', name='Use this correction', exact=True, include_hidden=True)
-    page.get_by_text('Use this correction', exact=True).nth(0).click(); settle(page)
-    playwright.expect(checks.nth(0)).to_be_checked()
+    checks = page.get_by_role('radio', name='Use correction', exact=True, include_hidden=True)
+    page.get_by_text('Keep current', exact=True).nth(0).click(); settle(page)
+    playwright.expect(page.get_by_role('radio', name='Keep current', exact=True).first).to_be_checked()
     playwright.expect(review).to_be_disabled()
     open_correction(page, 1)
-    page.get_by_text('Use this correction', exact=True).nth(1).click(); settle(page)
+    page.get_by_text('Use correction', exact=True).nth(1).click(); settle(page)
     playwright.expect(checks.nth(1)).to_be_checked()
     playwright.expect(review).to_be_enabled()
     review.click(); settle(page)
     playwright.expect(page.get_by_role('button', name='Apply history', exact=True)).to_be_visible()
-    assert replay_securities(load_journal(path.parent)[0].securities).positions['aur'].quantity == (5 if removal else 16)
+    quantity = 5 if removal else 16
+    assert replay_securities(load_journal(path.parent)[0].securities).positions['aur'].quantity == quantity
+    assert not load_journal(path.parent)[0].kept_imports
+    page.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
+    saved, _ = load_journal(path.parent)
+    assert replay_securities(saved.securities).positions['aur'].quantity == quantity
+    assert {r.facts['gross_amount'] for r in saved.kept_imports} == {'101'}
+    assert saved.transaction_imports[-1].facts['gross_amount'] == '62'
+    assert not page.get_by_test_id('stException').count()
+
+
+def test_keep_current_cancel_and_reimport(import_page):
+    from portfolio_app.ingestion.transaction_csv import read_csv
+    from portfolio_app.ledger.transaction_import_commands import save_transaction_import
+    page, path = import_page
+    header = 'reference,date,type,asset,quantity,amount,currency'
+    original = header + '\na,2024-01-02,buy,AUR,2,20,EUR\n'
+    save_transaction_import(path.parent, read_csv(original), {},
+        expected_holdings_revision=None, expected_journal_revision=None)
+    # The saved source has no position. Declining a changed version must never
+    # require a mapping, even when that version cannot be used as a transaction.
+    open_existing_import(page)
+    def send(amount):
+        page.locator('input[type=file]').set_input_files({'name': 'invented-changes.csv', 'mimeType': 'text/csv',
+            'buffer': original.replace(',20,', f',{amount},').encode()})
+        settle(page)
+    send('unknown')
+    open_correction(page, 0)
+    page.get_by_text('Keep current', exact=True).click(); settle(page)
+    save = page.get_by_role('button', name='Save decisions', exact=True)
+    playwright.expect(save).to_be_enabled()
+    page.get_by_role('button', name='Discard review', exact=True).click(); settle(page)
+    assert not load_journal(path.parent)[0].kept_imports and not path.exists()
+    send('unknown')
+    open_correction(page, 0)
+    keep = page.get_by_role('radio', name='Keep current', exact=True)
+    playwright.expect(keep).not_to_be_checked()
+    keep.focus()
+    page.keyboard.press('Space'); settle(page)
+    save.click(); settle(page)
+    assert len(load_journal(path.parent)[0].kept_imports) == 1 and not path.exists()
+    open_existing_import(page)
+    send('unknown')
+    playwright.expect(page.get_by_text('Kept current · 1', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_text(re.compile('^Changed transaction ·'))).to_have_count(0)
+    send('22')
+    open_correction(page, 0)
+    playwright.expect(keep).not_to_be_checked()
+    playwright.expect(page.get_by_role('button', name='Review against portfolio', exact=True)).to_be_disabled()
+
+
+def test_saved_keep_can_be_reconsidered_after_removal_without_reupload(import_page):
+    from portfolio_app.ingestion.transaction_csv import read_csv
+    from portfolio_app.ledger.history_commands import remove_transactions, save_history
+    from portfolio_app.portfolio.positions import read_snapshot
+    from portfolio_app.ledger.transaction_import_commands import save_transaction_import
+    page, path = import_page
+    original = 'reference,date,type,asset,quantity,amount,currency\na,2024-01-02,buy,AUR,1,10,EUR\n'
+    first = read_csv(original)[0]
+    updated = read_csv(original.replace(',1,10,', ',3,30,'))[0]
+    mapping = {('Portfolio', 'AUR'): 'aur'}
+    save_transaction_import(path.parent, [first], mapping, expected_journal_revision=None, expected_holdings_revision=None,
+        additions=[dict(position_key='aur', id='aur', name='Invented Aurora', account='Portfolio')],
+        selected_ids=[first.identity], starts_at_zero=True, accept_reconciliation=True, comparison_date='2024-01-04')
+    journal, stamp = load_journal(path.parent)
+    snapshot = read_snapshot(path)
+    save_history(path.parent, remove_transactions(journal.securities[0], [first.identity]),
+                 expected_journal_revision=stamp, expected_holdings_revision=snapshot.revision,
+                 activate=True, accept_balance_change=True)
+    _, stamp = load_journal(path.parent)
+    save_transaction_import(path.parent, [updated], {}, expected_journal_revision=stamp,
+                            expected_holdings_revision=snapshot.revision, keep_ids=[updated.identity])
+    before, stamp = load_journal(path.parent)
+    open_existing_import(page)
+    page.get_by_text('Saved imports', exact=True).click(); settle(page)
+    selector = page.get_by_role('combobox', name='Reconsider kept correction', exact=True)
+    selector.click()
+    page.get_by_role('option', name=re.compile('AUR')).click(); settle(page)
+    radio = open_correction(page, 0)
+    playwright.expect(page.get_by_role('radio', name='Keep current', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_text('Use correction restores your removed transaction.', exact=True)).to_be_visible()
+    page.get_by_text('Use correction', exact=True).click(); settle(page)
+    playwright.expect(radio).to_be_checked()
+    playwright.expect(page.get_by_role('button', name='Save evidence only')).to_have_count(0)
+    review = page.get_by_role('button', name='Review against portfolio', exact=True)
+    review.click(); settle(page)
+    page.get_by_role('button', name='Back to import', exact=True).click(); settle(page)
+    assert load_journal(path.parent) == (before, stamp)
+    review.click(); settle(page)
+    page.get_by_role('button', name='Apply history', exact=True).click(); settle(page)
+    after, _ = load_journal(path.parent)
+    assert after.kept_imports == before.kept_imports and after.transaction_imports[-1].id == updated.identity
+    assert replay_securities(after.securities).positions['aur'].quantity == 3
+    open_existing_import(page)
+    page.get_by_text('Saved imports', exact=True).click(); settle(page)
+    playwright.expect(selector).to_have_count(0)
     assert not page.get_by_test_id('stException').count()
 
 
@@ -504,14 +599,14 @@ def test_existing_portfolio_opens_transaction_import_directly(import_page):
 
 def test_discard_exists_only_for_a_review_and_stays_in_import(import_page):
     page, path = import_page
-    page.get_by_role('button', name='Import transactions', exact=True).click(); settle(page)
+    page.get_by_role('button', name='Import', exact=True).click(); settle(page)
     assert not page.get_by_role('button', name='Cancel transaction import', exact=True).count()
     assert not page.get_by_role('button', name='Discard review', exact=True).count()
     page.locator('input[type=file]').set_input_files({'name':'invented.csv', 'mimeType':'text/csv',
         'buffer': b'reference,date,type,asset,quantity,amount,currency\nb,2024-01-02,buy,BTC,1,100,EUR\n'})
     settle(page)
     page.get_by_role('button', name='Discard review', exact=True).click(); settle(page)
-    playwright.expect(page.get_by_role('radio', name='Import', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('heading', name='Import', exact=True)).to_be_visible()
     playwright.expect(page.get_by_role('radio', name='Transaction CSV', exact=True)).to_be_checked()
     playwright.expect(page.get_by_role('button', name='Download CSV template', exact=True)).to_be_visible()
     assert not page.get_by_role('button', name='Discard review', exact=True).count()

@@ -73,7 +73,7 @@ def test_personal_headlines_are_identical_across_charts_ranges_and_tabs(tmp_path
 def test_summary_only_uses_recorded_cost_and_leaves_annualized_return_unknown(tmp_path):
     app, _ = launch(tmp_path, history=False)
     assert headlines(app) == [('Position value', '€300.00', '+€220.00'),
-        ('Invested capital', '€80.00', ''), ('Annualized return', '—', '')]
+        ('Invested capital', '€80.00', ''), ('Annualized return', 'Unavailable', '')]
     assert not any(c.label == 'History type' for c in app.get('button_group'))
     assert any(c.value == 'Unrealized gain only' for c in app.caption)
 
@@ -110,3 +110,39 @@ def test_retired_history_selector_ignores_queued_callback(tmp_path, monkeypatch,
     # can retire this widget before its already-queued callback is invoked.
     metadata.callback(*(metadata.callback_args or ()), **(metadata.callback_kwargs or {}))
     assert state == before
+
+
+def test_cash_balance_has_local_reason_without_market_correction(tmp_path):
+    app = AppTest.from_string(f"""
+from pathlib import Path
+from portfolio_app.ledger.account_journal import Journal
+from portfolio_app.performance.position_summary import render_position_summary
+from portfolio_app.performance.performance import position_performance
+from test_cash_performance import cash
+row = position_performance(cash()).iloc[0]
+render_position_summary(row, Path({str(tmp_path)!r}), Journal(), has_history=False, demo=True)
+""").run()
+    assert not app.exception
+    assert 'cash balance' in by_label(app.metric, 'Annualized return').proto.help.lower()
+    assert not app.get('popover')
+
+
+@pytest.mark.parametrize('cost,expected', [('', 'N/A · Cash balance'), ('0.8', '▲ 25.00%')])
+def test_cash_details_show_finite_return_only_with_recorded_basis(tmp_path, cost, expected):
+    (tmp_path/'holdings.csv').write_text(
+        'position_key,id,name,shares,acquisition_price,acquisition_currency,instrument_type\n'
+        f'cash,cur,Invented balance,100,{cost},EUR,cash\n')
+    app = AppTest.from_string(f"""
+from pathlib import Path
+from portfolio_app.interface.views.positions.position_detail import render_position_detail
+from portfolio_app.portfolio.positions import read_snapshot
+from portfolio_app.performance.performance import position_performance
+root = Path({str(tmp_path)!r})
+holdings = read_snapshot(root/'holdings.csv').holdings.assign(
+    current_value_reporting=100., current_price=1., quote_currency='USD')
+row = position_performance(holdings).iloc[0]
+render_position_detail(row, root, demo=True)
+""").run()
+    by_label(app.get('button_group'), 'Position detail view').set_value('Details').run()
+    assert not app.exception
+    assert app.dataframe[0].value.set_index('Position').Details['Return on cost'] == expected

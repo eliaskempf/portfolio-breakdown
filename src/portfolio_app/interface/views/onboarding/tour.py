@@ -114,6 +114,8 @@ def _move(index: int) -> None:
         from portfolio_app.interface.views.onboarding.tour_monitoring import prepare_step
         prepare_step(demo_directory(), step.view)
     else:
+        if step.view == 'Targets':
+            st.session_state['targets_allocation_scope'] = step.target_scope
         st.session_state.update(rebalance_tabs=step.view, planning_scope='Portfolio contribution', planning_amount=500.)
 
 

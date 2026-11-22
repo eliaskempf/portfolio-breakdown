@@ -36,7 +36,8 @@ def launch(tmp_path, monkeypatch, content=None, *, workspaces=False):
         by_label(app.button, 'Skip setup').click().run()
         from test_ui import activate
         activate(app, 'Positions')
-    by_label(app.button, 'Import holdings').click().run()
+    by_label(app.button, 'Import').click().run()
+    by_label(app.get('button_group'), 'Import type').set_value('Holdings snapshot').run()
     return app, directory / 'holdings.csv'
 
 
@@ -65,7 +66,7 @@ def test_import_snapshots_then_allocation_and_live_linking(tmp_path, monkeypatch
     assert app.session_state['rebalance_tabs'] == 'Targets'
     assert 'Dismiss import tips' not in {button.label for button in app.button}
     activate(app, 'Positions')
-    by_label(app.get('button_group'), 'Position tools').set_value('Connect live prices').run()
+    by_label(app.button, 'Connect live prices').click().run()
     assert not app.exception
     by_label(app.text_input, 'Search by ISIN, WKN, ticker or name').set_value('NVDA').run()
     by_label(app.button, 'Search listings').click().run()
@@ -109,12 +110,12 @@ def test_optional_prices_and_costs_do_not_block_minimal_import(tmp_path, monkeyp
     assert stored.acquisition_price.isna().all()
     original = path.read_bytes()
     activate(app, 'Positions')
-    by_label(app.get('button_group'), 'Position tools').set_value('Import').run()
+    by_label(app.button, 'Import').click().run()
     assert not app.exception
     by_label(app.get('button_group'), 'Import type').set_value('Holdings snapshot').run()
     assert any('Holdings snapshots initialize an empty portfolio' in item.value for item in app.info)
     by_label(app.button, 'Update balances').click().run()
-    assert by_label(app.get('button_group'), 'Position tools').value == 'Update balances'
+    assert app.session_state['positions_workflow'] == 'Update balances'
     assert original == path.read_bytes()
 
 

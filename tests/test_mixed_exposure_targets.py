@@ -149,12 +149,15 @@ def test_mixed_overview_editor_and_plan_ui(exposure_workspace):
     by_label(app.get('button_group'),'Target measure').set_value('Exposure targets').run()
     assert not app.exception and not app.error
     assert by_label(app.selectbox,'Composition weights').value == 'mixed'
-    frame = next(item.value for item in app.dataframe if 'Within' in item.value)
-    assert len(frame) == 3
-    key = next(key for key in app.session_state.to_dict() if key.startswith('exposure_mixed_editor_'))
-    changes = {i:{'Target (%)':60. if row.category == 'group' else 40.} for i,row in frame.iterrows() if row.owner == 'sleeve'}
+    assert not any(button.label == 'Save exposure targets' for button in app.button)
+    by_label(app.selectbox,'Target hierarchy').set_value('sleeve').run()
+    by_label(app.button,'Edit targets').click().run()
+    frame = next(item.value for item in app.dataframe if 'identity' in item.value)
+    assert len(frame) == 2
+    key = next(key for key in app.session_state.to_dict() if key.startswith('overview_target_editor_'))
+    changes = {i:{'Target':60. if row.identity == 'group' else 40.} for i,row in frame.iterrows()}
     app.session_state[key] = {'edited_rows':changes,'added_rows':[],'deleted_rows':[]}
-    by_label(app.button,'Save exposure targets').click().run()
+    app.button(key='overview_target_save').click().run()
     assert not app.exception and not app.error
     saved,_ = load_exposure_targets(exposure_workspace,mixed()[0])
     assert saved.composition['group'] == .6 and saved.members['sleeve']['p3'] == .4

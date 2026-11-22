@@ -765,6 +765,12 @@ and publishes positions and history together with recoverable publication. The i
 renders the same preview that the save command recomputes.
 
 Journal version 5 retains import provenance, correction lineage and void records.
+Version 6 keeps explicitly declined CSV source variants in `kept_imports`. Each
+kept receipt points to the previously saved source receipt. Only the original
+`transaction_imports` collection supplies transaction authority and pending
+coverage. Reuploads use normalized facts for both collections. When a user reconsiders
+a kept variant, its earlier comparison remains in `kept_imports` and the accepted
+receipt joins the current correction lineage in `transaction_imports`.
 Older journals retain their semantics and remain readable. New position identities
 and listing connections remain staged until application; publication recovers as
 one holdings/history pair, never partially applied swap or transfer legs. Derived cash postings remain

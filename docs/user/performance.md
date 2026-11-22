@@ -339,7 +339,11 @@ fees and income. Execution prices may support standalone security boundaries,
 but do not value other assets in a portfolio. Neither method changes saved trade dates.
 Historical value points and monetary gains can remain useful when returns cannot
 be calculated. The affected metric’s help explains its own missing requirements;
-other metrics do not inherit that restriction.
+other metrics do not inherit that restriction. An unsupported return reads **Unavailable**. For a missing dated price or FX
+rate, open **Add price**, **Add exchange rate** or **Missing inputs** beside the
+affected return. Choose the missing observation when several are listed. Check its
+holding or currency pair and date, enter the value, and choose **Save value**. The same position, category and period stay selected.
+Each return updates when its own inputs are complete.
 
 Original acquisition costs remain separate from opening market value, so gains
 before the tracking boundary are not attributed to the tracked period. FIFO is

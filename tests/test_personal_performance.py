@@ -206,3 +206,18 @@ def test_external_security_transfer_is_contribution_without_fabricating_purchase
     assert not reasons and flows[0].amount==50
     from portfolio_app.ledger.security_history import replay_securities
     assert replay_securities((b,)).positions['holding'].costs[0]['amount']==''
+
+
+@pytest.mark.parametrize('amount,currency,description,kind', [
+    (None, 'GBP', 'missing cash amount', 'transaction'),
+    (D(3), '', 'missing cash currency', 'transaction'),
+    (D(3), 'GBP', 'missing GBP/EUR FX', 'fx'),
+])
+def test_flow_repair_identifies_the_actual_dated_evidence(amount, currency, description, kind):
+    from portfolio_app.ledger.security_history import SecurityCash
+    from portfolio_app.performance.history_diagnostics import issue_kind
+    cash = SecurityCash('event', 'holding', '', '2024-01-03', 1, currency, amount, 'fee')
+    _, reasons = external_flows(Journal(), HistoryScope(('holding',)), ObservationStore(),
+        '2024-01-01', '2024-01-04', 'EUR', security_cash=(cash,))
+    assert len(reasons) == 1 and issue_kind(reasons[0]) == kind
+    assert str(reasons[0]).endswith(description + ' on 2024-01-03')

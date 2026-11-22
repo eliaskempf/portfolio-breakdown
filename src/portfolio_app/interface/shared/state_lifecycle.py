@@ -72,8 +72,14 @@ def accounts_mounted(key, state):
     base, field = key.split('journal_', 1)
     if state.get(base+'view', 'Positions & transactions') != 'Positions & transactions':
         return False
+    if field == 'panel':
+        return True
+    if not state.get(base+'journal_panel', False):
+        return False
+    selected = state.get(base+'journal_selected', '')
+    if field in {'accounts', 'positions', 'actions', 'since', 'until'}:
+        return not selected
     if field.startswith('edit_'):
-        selected = state.get(base+'journal_selected', '')
         prefix = 'edit_'+selected+'_'
         return field.startswith(prefix) and (field == prefix+'action' or
             state.get(base+'journal_'+prefix+'action') == 'Correct entry')
@@ -119,9 +125,9 @@ FEATURES = (
         tour=Keys(prefixes=('rebalance_', 'planning_'), names=('ignore_empty_positions',)),
         tour_objects=Keys(names=('portfolio_contribution_result', 'planning_actual_preview', 'planning_exposure_preview'))),
     FeatureState('targets', Keys(prefixes=('targets_', 'bulk_bucket_')),
-        inputs=Keys(names=('targets_allocation_scope',), prefixes=('bulk_bucket_positions_', 'targets_category_mode_', 'targets_create_category_'), predicate=lambda key: key.startswith('targets_') and key.endswith('_filter')),
+        inputs=Keys(names=('targets_allocation_scope','targets_structure_open','targets_assignments_open'), prefixes=('bulk_bucket_positions_', 'targets_category_mode_', 'targets_create_category_'), predicate=lambda key: key.startswith('targets_') and key.endswith('_filter')),
         mounted=tab('Rebalance', 'rebalance_tabs', 'Targets'),
-        tour=Keys(prefixes=('bulk_bucket_positions_',), predicate=lambda key: key.startswith('targets_') and key.endswith('_filter')),
+        tour=Keys(names=('targets_allocation_scope',), prefixes=('bulk_bucket_positions_',), predicate=lambda key: key.startswith('targets_') and key.endswith('_filter')),
         tour_objects=Keys(names=('targets_drafts',))),
     FeatureState('position editor', Keys(prefixes=('position_edit_', 'position_draft'), names=('position_saved_notice',)),
         inputs=Keys(prefixes=('position_edit_fields_', 'position_edit_history_')),
@@ -142,7 +148,7 @@ FEATURES = (
         mounted=analytics_mounted, tour=Keys(prefixes=('analytics_',))),
     FeatureState('actual accounts', Keys(prefixes=('accounts_',)),
         inputs=Keys(prefixes=('accounts_input_',), predicate=lambda key: '_journal_' in key and key.endswith(
-            ('accounts', 'positions', 'actions', 'since', 'until', 'selected', 'action', 'date', 'note',
+            ('accounts', 'positions', 'actions', 'since', 'until', 'panel', 'selected', 'action', 'date', 'note',
              'position', 'account', 'currency', 'destination', 'quantity', 'price', 'amount'))),
         mounted=accounts_mounted,
         currency=Keys(prefixes=('accounts_',))),

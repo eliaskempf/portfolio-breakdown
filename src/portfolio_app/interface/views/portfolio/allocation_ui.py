@@ -5,6 +5,8 @@ from dataclasses import replace
 from portfolio_app.portfolio.strategic import category_labels
 from pathlib import Path
 
+from hashlib import sha256
+
 import pandas as pd
 import streamlit as st
 from portfolio_app.interface.shared.view_state import persistent_editor
@@ -86,7 +88,7 @@ def _discard_draft(key):
             del st.session_state[widget]
 
 
-def _bucket_editor(config, key, holdings=None):
+def _bucket_editor(config, key, holdings=None, *, migration=False):
     labels = category_labels(config)
     frame = pd.DataFrame([{'ID': b.id, 'Name': b.name, 'Parent': labels.get(b.parent, 'Portfolio'),
                            'Target (% of parent)': None if b.target is None else 100 * b.target,
@@ -129,14 +131,14 @@ def _bucket_editor(config, key, holdings=None):
                 st.session_state.pop(key + '_delete_selection', None)
                 st.rerun()
     edited = persistent_editor(draft['rows'], num_rows='fixed', hide_index=True, width='stretch', height='content',
-        key=f"{key}_rows_{draft['generation']}", disabled=['ID'],
+        key=f"{key}_rows_{draft['generation']}", disabled=['ID'] if migration else ['ID','Target (% of parent)'],
         column_config={'ID': None, 'Name': st.column_config.TextColumn(required=True),
             'Parent': st.column_config.SelectboxColumn(options=['Portfolio', *labels.values()], required=True),
-            'Target (% of parent)': None if config.version == 3 else st.column_config.NumberColumn(min_value=0., max_value=100.,
+            'Target (% of parent)': None if not migration else st.column_config.NumberColumn(min_value=0., max_value=100.,
                 help='Blank means unspecified; zero is an explicit target. Sibling targets should total 100%.'),
             'Protect from selling': st.column_config.CheckboxColumn()})
     draft['rows'] = edited
-    if config.version != 3:
+    if migration:
         _category_summary(edited, holdings, config)
     return edited
 
@@ -187,7 +189,7 @@ def category_position_editor(positions, config, *, key, extra=(), filtered=False
         disabled=['position_id', 'name', *extra], key=f"{key}_rows_{draft['generation']}",
         column_config={'position_id': None, 'name': 'Investment', 'account': 'Account',
             'Category': st.column_config.SelectboxColumn(options=['Unassigned', *choices], required=True),
-            'within_bucket_target': st.column_config.NumberColumn('Target (% of category)', min_value=0., max_value=100.,
+            'within_bucket_target': None if filtered else st.column_config.NumberColumn('Target (% of category)', min_value=0., max_value=100.,
                 help='Blank means unspecified; zero is an explicit target.')})
     # Assignment by identity also preserves deliberately cleared target cells.
     merged = rows.set_index('position_id')
@@ -199,14 +201,21 @@ def category_position_editor(positions, config, *, key, extra=(), filtered=False
 
 
 def render_allocation_editor(path: Path, snapshot, config):
+    from portfolio_app.portfolio.target_edit import target_holdings
+    snapshot = replace(snapshot, holdings=target_holdings(snapshot.holdings))
     st.subheader('Categories and targets')
-    st.caption('Category targets are relative to their parent; position targets are relative to their category.')
     config_path = path.parent / 'allocation.yaml'
     stamp = revision(config_path)
     if config is None:
+        from portfolio_app.interface.views.portfolio.target_dialog import request_target_edit, render_target_dialog
+        if not snapshot.holdings.empty:
+            st.button('Edit targets', key='targets_edit_capital', icon=':material/edit:',
+                      on_click=request_target_edit, args=(path.parent,None,''),
+                      help='Edit whole-portfolio position targets.')
+        render_target_dialog(path.parent)
         proposed, preview = migration_preview(snapshot.holdings)
         st.info('Enable strategic allocation with a reviewed migration. Existing whole-portfolio targets stay preserved in the CSV. No macro percentages are prefilled.')
-        rows = _bucket_editor(proposed, f'targets_migration_categories_{snapshot.revision}', preview)
+        rows = _bucket_editor(proposed, f'targets_migration_categories_{snapshot.revision}', preview, migration=True)
         st.caption('Review the proposed categories and position assignments before enabling strategic allocation.')
         preview = preview.copy()
         preview['Legacy target (% of portfolio)'] = preview.get('target_allocation', float('nan')) * 100
@@ -226,46 +235,71 @@ def render_allocation_editor(path: Path, snapshot, config):
                 st.rerun()
         return
     from portfolio_app.interface.views.portfolio.category_editor import render_create_category, render_member_editor
-    render_create_category(path, snapshot, config, stamp)
-    if config.version == 3:
-        render_member_editor(path, snapshot, config, stamp)
-        render_bulk_bucket_assignment(path, snapshot, config, stamp)
-        # Structural edits keep their existing draft/review workflow below.
-    with st.expander('Category structure') if config.version == 3 else st.container(key='tour_category_targets'):
-        st.subheader('Categories')
-        category_key = f'targets_categories_{stamp}_{snapshot.revision}'
-        rows = _bucket_editor(config, category_key, snapshot.holdings)
-        save, discard, _ = st.columns([1, 1, 3])
-        discard.button('Discard changes', help='Restore the saved values and discard this editor’s changes.', key=category_key + '_discard', on_click=_discard_draft, args=(category_key,))
-        if save.button('Save categories', help='Validate and save the category hierarchy and its targets.', type='primary'):
-            try:
-                if revision(path) != snapshot.revision:
-                    raise DataError('Positions changed. Reload before saving categories.')
-                save_allocation(config_path, _config_from_rows(rows, config), snapshot.holdings, stamp)
-            except (DataError, OSError, ValueError) as exc:
-                st.error(str(exc))
-            else:
-                _discard_draft(category_key)
-                st.session_state['portfolio_save_notice'] = 'Categories saved.'
-                st.rerun()
+    from portfolio_app.interface.views.portfolio.target_dialog import request_target_edit, render_target_dialog, target_split_status
+    from portfolio_app.portfolio.target_edit import capital_target_rows
+    names = {'': 'Portfolio', **category_labels(config)}
+    if st.session_state.get('targets_allocation_scope', '') not in names:
+        st.session_state['targets_allocation_scope'] = ''
+    with st.container(key='tour_category_targets'):
+        scope = st.selectbox('Allocation category', list(names), format_func=names.get, key='targets_allocation_scope')
+    node = next((b for b in config.buckets if b.id == scope), None)
+    owner = node.parent if node and config.flexible(scope) else scope
+    records = capital_target_rows(config, owner, snapshot.holdings)
+    with st.container(key='tour_position_targets'):
+        if records:
+            frame = pd.DataFrame(records)
+            if owner != scope:
+                st.caption(f'Shared target · {names[owner]}')
+            st.dataframe(frame, hide_index=True, width='stretch', column_config={'identity':None, 'kind':None,
+                         'Account':'Account' if frame.Account.ne('').any() else None,
+                         'Target':st.column_config.NumberColumn('Target (%)',format='%.2f')})
+            st.caption(target_split_status(frame.Target)[1])
+            st.button('Edit targets', icon=':material/edit:', key='targets_edit_capital', on_click=request_target_edit,
+                      args=(path.parent, config, scope))
+        else:
+            st.caption('No members in this category.')
+    if node and not config.children(scope):
+        with st.expander('Internal allocation settings'):
+            render_member_editor(path, snapshot, config, stamp, scope)
+    structure = st.expander('Category structure', key='targets_structure_open', on_change='rerun')
+    if structure.open:
+        with structure:
+            render_create_category(path, snapshot, config, stamp)
+            render_bulk_bucket_assignment(path, snapshot, config, stamp)
+            st.subheader('Categories')
+            category_key = f'targets_categories_{stamp}_{snapshot.revision}'
+            rows = _bucket_editor(config, category_key, snapshot.holdings)
+            save, discard, _ = st.columns([1, 1, 3])
+            discard.button('Discard changes', help='Restore the saved values and discard this editor’s changes.', key=category_key + '_discard', on_click=_discard_draft, args=(category_key,))
+            if save.button('Save categories', help='Validate and save the category hierarchy and its targets.', type='primary'):
+                try:
+                    if revision(path) != snapshot.revision:
+                        raise DataError('Positions changed. Reload before saving categories.')
+                    save_allocation(config_path, _config_from_rows(rows, config), snapshot.holdings, stamp)
+                except (DataError, OSError, ValueError) as exc:
+                    st.error(str(exc))
+                else:
+                    _discard_draft(category_key)
+                    st.session_state['portfolio_save_notice'] = 'Categories saved.'
+                    st.rerun()
+    render_target_dialog(path.parent)
     if config.version == 3:
         return
-    with st.container(key='tour_position_targets'):
-        st.subheader('Position targets')
-        render_bulk_bucket_assignment(path, snapshot, config, stamp)
-        settings = st.expander('Internal allocation settings', key='targets_internal_settings', on_change='rerun')
-        if settings.open:
-            with settings:
-                render_member_editor(path, snapshot, config, stamp)
+    assignments = st.expander('Position assignments', key='targets_assignments_open', on_change='rerun')
+    if not assignments.open:
+        return
+    with assignments:
         positions = snapshot.holdings.copy()
         positions['bucket_id'] = positions.get('bucket_id', '')
         positions['within_bucket_target'] = positions.get('within_bucket_target', float('nan')) * 100
         position_key = f'targets_positions_{snapshot.revision}_{stamp}'
         edited = category_position_editor(positions, config, key=position_key, extra=['account'], filtered=True)
-        _target_summary(edited, config)
+        before = snapshot.holdings.set_index('position_id').bucket_id
+        moves = {r.position_id:r.bucket_id for r in edited.itertuples() if before[r.position_id] != r.bucket_id}
+        choice = _moved_targets(snapshot.holdings, moves, position_key)
         save, discard, _ = st.columns([1, 1, 3])
         discard.button('Discard changes', help='Restore the saved values and discard this editor’s changes.', key=position_key + '_discard', on_click=_discard_draft, args=(position_key,))
-        if save.button('Save position targets', help='Save the displayed position targets within their assigned categories.', type='primary'):
+        if save.button('Save assignments', help='Save the reviewed category assignments.', type='primary', disabled=not moves or choice is None):
             try:
                 if revision(config_path) != stamp:
                     raise DataError('Category settings changed. Reload before saving.')
@@ -273,14 +307,27 @@ def render_allocation_editor(path: Path, snapshot, config):
                 changes = edited.set_index('position_id')
                 candidate['bucket_id'] = candidate.position_id.map(changes.bucket_id).fillna('')
                 validate_allocation(config, candidate)
-                patch_holdings(path, {r.position_id: {'bucket_id': r.bucket_id or '', 'within_bucket_target': r.within_bucket_target / 100}
-                                      for r in edited.itertuples()}, expected_revision=snapshot.revision)
+                updates = {pid:{'bucket_id':destination} for pid,destination in moves.items()}
+                if choice == 'Clear targets':
+                    for update in updates.values():
+                        update['within_bucket_target'] = None
+                patch_holdings(path, updates, expected_revision=snapshot.revision)
             except (DataError, OSError) as exc:
                 st.error(str(exc))
             else:
                 _discard_draft(position_key)
-                st.session_state['portfolio_save_notice'] = 'Position targets saved.'
+                st.session_state['portfolio_save_notice'] = 'Assignments saved.'
                 st.rerun()
+
+
+def _moved_targets(holdings, moves, key):
+    affected = holdings.loc[holdings.position_id.isin(moves) & holdings.within_bucket_target.notna()]
+    if affected.empty:
+        return 'Keep percentages'
+    signature = sha256(repr(sorted(moves.items())).encode()).hexdigest()[:12]
+    return st.radio('Targets after moving', ['Keep percentages','Clear targets'], index=None, horizontal=True,
+                    key=f'{key}_moved_targets_{signature}',
+                    help='A kept percentage applies to the new category. Clearing leaves the target unspecified.')
 
 
 def render_bulk_bucket_assignment(path, snapshot, config, stamp):
@@ -298,18 +345,19 @@ def render_bulk_bucket_assignment(path, snapshot, config, stamp):
         names = category_labels(config)
         destination = st.selectbox('Destination category', sorted(config.descendants()),
                                    format_func=lambda value: names[value],
-                                   help='Only the category changes. Quantities, costs, labels and within-category target percentages stay unchanged.')
+                                   help='Choose the category that will own these positions.')
         changes = snapshot.holdings.loc[snapshot.holdings.position_id.isin(selected) &
                                         snapshot.holdings.bucket_id.ne(destination), 'position_id'].tolist()
         hint = ('Select positions to assign.' if not selected else 'These positions are already in this category.'
                 if not changes else 'Save the changed category assignments to holdings.')
+        choice = _moved_targets(snapshot.holdings, dict.fromkeys(changes,destination), key)
         unit = 'position' if len(changes) == 1 else 'positions'
-        if st.button(f'Assign {len(changes)} {unit}', help=hint, disabled=not changes, type='primary'):
+        if st.button(f'Assign {len(changes)} {unit}', help=hint, disabled=not changes or choice is None, type='primary'):
             try:
                 if revision(path.parent / 'allocation.yaml') != stamp:
                     raise DataError('Category settings changed. Reload before assigning positions.')
                 from portfolio_app.portfolio.category_commands import move_category_positions
-                move_category_positions(path.parent, config, changes, destination,
+                move_category_positions(path.parent, config, changes, destination, clear_targets=choice == 'Clear targets',
                                         holdings_revision=snapshot.revision, allocation_revision=stamp)
             except (DataError, OSError) as exc:
                 st.error(str(exc))

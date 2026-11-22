@@ -256,3 +256,33 @@ _market_form(path,journal,scope,store,revision,scope_names(path,journal,scope),'
     app.date_input[0].set_value(date(2024, 1, 3)).run()
     assert next(t for t in app.text_input if t.label == 'Quote listing').value == ''
     assert next(t for t in app.text_input if t.label == 'Source').value == 'manual'
+
+
+def test_distinct_holding_names_and_unrepairable_reasons_remain_available(tmp_path):
+    from portfolio_app.interface.views.history.history_data_ui import brief_reasons
+    from portfolio_app.performance.history_diagnostics import HistoryIssue
+    journal, scope, _, _ = fixture(tmp_path)
+    reason = 'missing price on 2024-01-02'
+    children = (f'position-0: {reason}', f'position-1: {reason}')
+    reasons = [HistoryIssue('Boundary. '+' '.join(children), 'boundary', children),
+               'Incomplete history', 'Negative equity']
+    names = {'position-0': 'Xetra-Gold', 'position-1': 'Gold'}
+    visible = readable_reasons(tmp_path, journal, scope, reasons, names=names)
+    assert visible == ('Boundary.', 'Xetra-Gold: '+reason, 'Gold: '+reason, 'Incomplete history', 'Negative equity')
+    assert brief_reasons(visible).endswith('(+2 more)')
+
+
+def test_additional_nonmarket_reasons_open_without_a_market_editor(tmp_path):
+    from test_ui import open_popover
+    app = AppTest.from_string(f"""
+from pathlib import Path
+from portfolio_app.ledger.account_journal import Journal
+from portfolio_app.performance.history_observations import ObservationStore, HistoryScope
+from portfolio_app.interface.views.history.history_data_ui import render_return_inputs
+render_return_inputs(Path({str(tmp_path)!r}), Journal(), HistoryScope(), ObservationStore(), None,
+    ('Unreviewed transactions', 'Negative equity', 'Unknown payment amount', 'Unresolved withholding'), 'test_')
+""").run()
+    open_popover(app, 'Return details')
+    assert not app.exception
+    assert 'Unresolved withholding' in [line.value for line in app.text]
+    assert not app.text_input and not app.button

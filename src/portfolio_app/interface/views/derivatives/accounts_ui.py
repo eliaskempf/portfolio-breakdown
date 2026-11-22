@@ -40,7 +40,8 @@ def _decimal_entry(label, key, placeholder):
 
 
 def _save_review(directory, journal, revision, candidate, key, *, holdings_revision=None,
-                 review_label='Review changes', save_label='Save reviewed changes', compare_balances=False):
+                 review_label='Review changes', save_label='Save reviewed changes', compare_balances=False,
+                 cancel_button=None, destructive=False):
     """Require explicit review; preserve the exact reviewed candidate on reruns."""
     if candidate == journal:
         st.session_state.pop(key+'pending', None)
@@ -50,17 +51,21 @@ def _save_review(directory, journal, revision, candidate, key, *, holdings_revis
     raw = asdict(candidate)
     raw['events'] = [{k:v for k,v in asdict(e).items() if k != 'id'} for e in candidate.events]
     signature = json.dumps(raw, default=str, sort_keys=True)
-    if st.button(review_label, key=key + 'review'):
-        state = ledger.replay(candidate)
-        st.session_state[key + 'pending'] = (candidate, revision, holdings_revision, signature)
     pending = st.session_state.get(key + 'pending')
-    if pending is None:
-        return
-    proposed, expected, held_revision, reviewed_signature = pending
-    if reviewed_signature != signature or revision != expected:
-        st.session_state.pop(key + 'pending', None)
-        st.caption('Inputs changed. Review the updated entries before saving.')
-        return
+    if pending and (pending[1] != revision or pending[3] != signature):
+        st.session_state.pop(key + 'pending')
+        pending = None
+        st.caption('Review expired', help='The inputs or journal changed. Review the current entries before saving.')
+    if not pending:
+        with st.container(horizontal=True):
+            if st.button(review_label, key=key + 'review'):
+                pending = (candidate, revision, holdings_revision, signature)
+                st.session_state[key + 'pending'] = pending
+            if cancel_button and not pending:
+                cancel_button()
+        if not pending:
+            return
+    proposed, expected, held_revision, _ = pending
     st.markdown('**Reviewed changes**')
     events = proposed.events[len(journal.events):]
     if events:
@@ -83,8 +88,13 @@ def _save_review(directory, journal, revision, candidate, key, *, holdings_revis
         if effects:
             st.markdown('**Accounting effects**')
             st.dataframe(pd.DataFrame(effects), hide_index=True, width='stretch')
-    st.caption('Save posts the reviewed entries above. Review again to include changed inputs.')
-    if st.button(save_label, type='primary', key=key + 'save'):
+    with st.container(horizontal=True):
+        if cancel_button and destructive:
+            cancel_button()
+        save = st.button(save_label, type='primary', key=key + 'save', help='Post the reviewed entries together.')
+        if cancel_button and not destructive:
+            cancel_button()
+    if save:
         try:
             from portfolio_app.workspace.workspace_lock import workspace_lock
             from portfolio_app.portfolio.actual_portfolio import freeze_position_keys, validate_links

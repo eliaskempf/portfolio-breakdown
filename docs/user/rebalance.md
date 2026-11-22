@@ -1,6 +1,9 @@
 # Rebalance {#planning}
 
-Configure [targets](allocation.md#targets), then open **Rebalance → Plan**.
+Under **Rebalance → Targets**, select a category and use **Edit targets** to change
+the same scoped percentages shown in Overview. Use **Category structure** for
+membership and **Policy settings** for the structure of a separate exposure policy.
+See [Categories and targets](allocation.md#targets). Then open **Rebalance → Plan**.
 The default **Portfolio contribution** scope offers **Contribution** in the reporting currency and
 **Options**, then **Calculate plan**. To use **Rebalancing mode**, select
 **Within a category** and choose a **Planning category**. Legacy portfolios

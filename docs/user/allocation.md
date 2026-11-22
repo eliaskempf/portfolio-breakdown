@@ -6,27 +6,26 @@ Open **Rebalance → Targets**. In an older workspace, review the preview for
 enabling strategic allocation before saving. The app preserves legacy target
 cells; it does not infer a global plan from current market values.
 
-Add categories, save them, then use saved categories as parents. Assign each
-position to one category. A category can contain both investments and subcategories. Unassigned positions stay visible. Review and save
-category edits and position targets separately; **Discard changes** abandons a
-draft. Move child categories and positions before deleting their parent.
+Choose an **Allocation category**, then **Edit targets**. Overview opens the same
+editor for its selected category. **Portfolio** shows top-level categories. Within
+a category, the rows are its immediate subcategories and directly owned holdings.
 
-Category targets are percentages of their **parent**. A position target is a
-percentage of its **own category**. Global targets multiply these fractions.
-For example, in an invented plan a category targeting 40% of the portfolio and a
-position targeting 25% within it imply a 10% portfolio target. Under **Member targets**, immediate subcategory and investment
-targets together must be complete and sum to 100%; the app does not silently normalize
-saved targets. Blank means unknown, while zero is an explicit target.
+Category and position targets are percentages of their parent. For example,
+a category targeting 40% of Portfolio and an investment targeting 25% within it
+imply a 10% portfolio target. **Save** applies a complete 100% split. **Save incomplete
+split** stores unfinished capital targets for later. Blank means unspecified and
+zero means an explicit zero target. Rebalancing requires complete targets for the
+scope being planned.
 
-[![Targets editor showing Equities at 60% of Portfolio and its two fund positions at 70% and 30% of Equities, with separate save buttons.](assets/demo-targets.png)](assets/demo-targets.png)
+**Category structure** holds names, parents, sale protection, grouping and
+assignment. Save new categories before selecting them as parents. Move child
+categories and investments before deleting a parent. In older category portfolios,
+**Position assignments** also supports reviewing several assignments in one draft.
+Saving a percentage edit preserves the workspace's existing allocation version.
 
-*Synthetic offline example: 60% for Equities × 70% for its World ETF gives a 42%
-portfolio target. The two grids use different denominators. Save categories and
-Save position targets commit their respective edits separately. These percentages
-illustrate the controls, not a recommended allocation. Open the image for detail.*
-
-Moving a position preserves its within-category target. Check the destination's
-total after moving it. Zero-quantity positions can carry nonzero targets for
+When moving a position with an assigned target, choose **Keep percentages** or
+**Clear targets**. A kept percentage uses its new category as the denominator.
+Review the destination's total after the move. Zero-quantity positions can carry nonzero targets for
 future investments. Empty categories retain their targets without artificial
 chart area.
 
@@ -43,12 +42,11 @@ trigger internal rebalancing. Set **Buy priority** and **Sell priority** separat
 using rank 1 for the first choice. Before planning a direction, rank every member
 or leave all ranks blank until ready. A single member needs no ordering.
 
-Open **Internal allocation settings** in an existing workspace to adopt this
-editor. After adoption, **Allocation category** shows child categories and directly
-owned investments in one target table. **Category structure** contains naming,
-parent and sale-protection controls. **Assign positions** moves investments;
-review the destination targets after moving. To dissolve a category, move its
-positions out, then delete the empty category.
+Select a category and open **Internal allocation settings** to change its mode
+or priorities. **Save priorities** applies flexible allocation and the chosen order.
+**Review member targets** opens the percentage editor before switching back to
+fixed targets. **Assign positions** moves investments. To dissolve a category,
+move its positions out, then delete the empty category.
 
 Switching to Flexible preserves saved member target numbers but stops using them.
 Switching back to **Member targets** requires reviewing a complete 100% split.
@@ -95,14 +93,16 @@ requires no target leverage multiple and does not create target currency amounts
 or change saved percentages. A separately saved market-exposure policy takes
 precedence; an equity-only or invalid policy is not replaced by this fallback.
 Use **Edit targets** beside either table heading for a compact editor of the selected
-category’s target percentages. The split must total 100%; **Save** applies it and
-**Cancel** discards it. A group with one shared target opens its parent’s split.
+category’s target percentages. A complete split totals 100%. **Cancel** discards the edits. A group with one shared target opens its parent’s split.
 At Portfolio scope, a saved exposure policy also offers its total exposure
 multiple. **Manage targets** opens the full configuration for policy settings,
 category structure and member priorities. With unsaved edits, **Discard edits & manage targets** opens the saved configuration.
 Hover over the heading for its measure definition. Exposure targets are a separate policy under
-**Rebalance → Targets → Exposure targets**: choose a desired total multiple of
-portfolio net equity and category composition. Capital targets stay unchanged.
+**Rebalance → Targets → Exposure targets**. Select a hierarchy level and choose
+**Edit targets** for a saved policy. At Portfolio, the same editor sets the total
+multiple. **Policy settings** configures the universe, weight convention and
+optional member breakdown. Creating or replacing a policy previews all required
+weights together before saving. Capital targets stay unchanged.
 
 Target amounts always use the saved whole-portfolio policy. Within a selected
 category, current percentages divide by its current exposure, and target
@@ -128,7 +128,9 @@ Existing leaf and category-only policies retain their saved meaning. If grouping
 positions makes one invalid, select the mixed convention and explicitly save the new
 split in the editor. No targets are silently redistributed. Moved, missing or newly added
 investments in a scope with individual targets require review, including zero balances.
-A saved equity-only policy is labeled as
+For a leaf-based policy, **Policy settings → Edit whole-portfolio leaf shares**
+opens all leaves against a single portfolio denominator. This also lets you give
+a zero-budget branch an explicit split. A saved equity-only policy is labeled as
 such and is not compared against the broader Market exposure view. Switching its
 universe to Total market requires an explicit save in the exposure target editor.
 
@@ -166,6 +168,7 @@ membership becomes **Unclassified**. An **Assigned here** chart leaf preserves
 value attached directly to an internal node. An empty file mapping `{}` is valid.
 
 Legacy workspaces without strategic allocation use whole-portfolio position
-targets in `target_allocation`. Filtered legacy targets retain their original
-portfolio basis. Review migration in Targets before relying on category-relative
+targets in `target_allocation`. **Edit targets** opens that whole-portfolio split
+from Overview or Rebalance. Editing it keeps the workspace in its legacy format.
+Filtered legacy targets retain their original portfolio basis. Review migration in Targets before relying on category-relative
 planning. See [Exposure](exposure.md#filters) for analytical filtering.

@@ -124,7 +124,7 @@ def _reimport_key(row, *, include_order):
     return include_order, digest(facts)
 
 
-def retain_import_interpretations(rows, receipts):
+def retain_import_interpretations(rows, receipts, kept=(), *, reconsider_ids=()):
     """Match incidental CSV layout changes without rewriting stored evidence.
 
     Initial file order establishes chronology. Subsequent exports keep that
@@ -133,14 +133,23 @@ def retain_import_interpretations(rows, receipts):
     """
     retained = {}
     latest = {}
-    for receipt in receipts:
-        row = TransactionRow(receipt.raw, receipt.facts, receipt.issues)
-        for include_order in (False, True):
-            retained[_reimport_key(row, include_order=include_order)] = row
-        latest[row.key] = row
+    reconsider = {}
+    for group, supplies_order in ((kept, False), (receipts, True)):
+        for receipt in group:
+            row = TransactionRow(receipt.raw, receipt.facts, receipt.issues)
+            if not supplies_order and receipt.id in reconsider_ids:
+                reconsider[receipt.id] = row
+            for include_order in (False, True):
+                retained[_reimport_key(row, include_order=include_order)] = row
+            if supplies_order:
+                latest[row.key] = row
     result = []
     for row in rows:
-        existing = retained.get(_reimport_key(row, include_order=not _implicit_order(row)))
+        # An explicitly reopened saved receipt retains its exact original order,
+        # even if a subsequent export recorded the same facts in another order.
+        existing = reconsider.get(row.identity) if reconsider else None
+        if existing is None:
+            existing = retained.get(_reimport_key(row, include_order=not _implicit_order(row)))
         if existing is not None:
             row = replace(existing, row_number=row.row_number)
         elif (previous := latest.get(row.key)) is not None and _implicit_order(row):

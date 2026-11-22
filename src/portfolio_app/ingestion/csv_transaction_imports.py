@@ -93,7 +93,7 @@ def _previous_event(receipt, receipts, owners, primary):
 
 
 def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, selected_ids=(),
-                   starts_at_zero=False, allow_incomplete=False, correction_ids=(), accept_duplicates=False,
+                   starts_at_zero=False, allow_incomplete=False, correction_ids=(), keep_ids=(), reconsider_ids=(), accept_duplicates=False,
                    target='EUR', historical=None, aggregate_accounts=(), excluded_ids=(), order_overrides=None):
     """Retain every row; only selected, explicitly interpretable rows become active.
 
@@ -104,11 +104,23 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
     cash_accounts = cash_accounts or {}
     selected_ids, correction_ids = set(selected_ids), set(correction_ids)
     rows = tuple(rows)
-    interpreted = retain_import_interpretations(rows, journal.transaction_imports)
+    reconsider_ids = set(reconsider_ids)
+    interpreted = retain_import_interpretations(rows, journal.transaction_imports, journal.kept_imports, reconsider_ids=reconsider_ids)
     aliases = {row.identity: retained.identity for row, retained in zip(rows, interpreted)}
     selected_ids = {aliases.get(identity, identity) for identity in selected_ids}
     correction_ids = {aliases.get(identity, identity) for identity in correction_ids}
     excluded_ids = {aliases.get(identity, identity) for identity in excluded_ids}
+    keep_ids = {aliases.get(identity, identity) for identity in keep_ids}
+    kept = {item.id: item for item in journal.kept_imports}
+    inputs = set(aliases.values())
+    remembered = kept.keys() - {item.id for item in journal.transaction_imports} if kept else set()
+    reconsider_ids = {aliases.get(identity, identity) for identity in reconsider_ids}
+    if not reconsider_ids <= remembered & correction_ids & selected_ids & inputs:
+        raise DataError('Review the saved keep decision before using this correction.')
+    skip_ids = keep_ids | (remembered - reconsider_ids)
+    if keep_ids - inputs or skip_ids & (correction_ids | excluded_ids):
+        raise DataError('Review the conflicting import decisions again.')
+    selected_ids.difference_update(skip_ids)
     rows = interpreted
     identities = {id(row): row.identity for row in rows}
     batch_domain = 'file:'+digest(sorted(identities.values()))
@@ -124,7 +136,7 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
     if aggregate_accounts:
         if any(cash_accounts.values()):
             raise DataError('Aggregate asset imports use outside tracked cash; keep linked cash in custody imports.')
-        if any(a not in aggregate_accounts for r in rows for a, _ in r.pairs):
+        if any(a not in aggregate_accounts for r in rows if identities[id(r)] not in skip_ids for a, _ in r.pairs):
             raise DataError('Review every source location in the aggregate scope; do not exclude earlier activity.')
         by_asset = {}
         for (account, asset), pos in mapping.items():
@@ -186,6 +198,15 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
         unchanged = owner is not None and (identity in owner.active_ids or identity in owner.replaced)
         old = latest.get(row.key)
         existing = known.get(identity)
+        if identity in kept and identity in skip_ids:
+            duplicates += 1
+            continue
+        if identity in keep_ids:
+            if not old or existing or not all(row.key):
+                raise DataError('Keep current requires changed facts for a saved source transaction.')
+            kept[identity] = ImportReceipt(identity, row.raw, row.facts, row.issues, replaces=old.id)
+            added += 1
+            continue
         pairs = row.pairs if not row.issues else ()
         positions = []
         for account, asset in pairs:
@@ -359,7 +380,8 @@ def prepare_import(journal, holdings, rows, mapping, *, cash_accounts=None, sele
     if matches and not accept_duplicates:
         raise DataError('Matching economic transactions require review as distinct executions.')
     version = max(journal.version, 5 if ordered_corrections or any(r.facts.get('schema_version') == '3' for r in receipts) else 4 if any(r.facts.get('schema_version') == '2' for r in receipts) else 3)
-    proposed = replace(journal, version=version, securities=tuple(books.values()), transaction_imports=tuple(receipts))
+    proposed = replace(journal, version=max(version, 6) if kept else version, securities=tuple(books.values()),
+                       transaction_imports=tuple(receipts), kept_imports=tuple(kept.values()))
     from portfolio_app.ledger.history_commands import history_comparisons
     comparisons = [dict(c, before_cost=None if c['before_cost'] is None else str(c['before_cost']),
                         after_cost=None if c['after_cost'] is None else str(c['after_cost']))

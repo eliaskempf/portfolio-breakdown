@@ -144,9 +144,14 @@ def render_exposure_targets(directory, config, result, *, active_basis):
     if config is None or not config.leaves():
         st.info('Save strategic categories first to configure exposure targets using stable category IDs.')
         return
+    valid = True
     try:
         saved, revision = load_exposure_targets(directory, config)
+        if saved and saved.weights == 'mixed':
+            from portfolio_app.exposure.mixed_exposure_targets import validate_source_membership
+            validate_source_membership(result, saved, config)
     except DataError as exc:
+        valid = False
         st.warning(str(exc))
         try:
             saved, revision = load_exposure_targets(directory, config, validate=False)
@@ -155,35 +160,51 @@ def render_exposure_targets(directory, config, result, *, active_basis):
         except DataError as read_error:
             st.error(str(read_error))
             return
+    from portfolio_app.interface.views.portfolio.target_dialog import request_target_edit, render_target_dialog
     if saved:
         policy_label = 'Active policy' if active_basis == 'exposure' else 'Saved policy'
         st.caption(f'{policy_label} · {saved.universe} exposure · {saved.multiple:g}× whole-portfolio net equity')
         labels = {'': 'Portfolio', **category_labels(config)}
         scope = st.selectbox('Target hierarchy', list(labels), format_func=labels.get, key='exposure_control_target_hierarchy')
+        if valid:
+            edit_scope = '' if saved.policy == 'overlay_only' else scope
+            st.button('Edit targets', icon=':material/edit:', key='targets_edit_exposure',
+                      on_click=request_target_edit, args=(directory,config,edit_scope),
+                      kwargs={'market':True, 'exposure_result':result, 'policy_settings':True})
         try:
-            st.dataframe(exposure_gaps(result, saved, config, parent=scope).drop(columns=['Bucket ID', 'Owner ID', 'Position ID'], errors='ignore'), hide_index=True, width='stretch')
-            st.caption('Gap = desired − current exposure; percentages use net equity. These are exposure gaps, not purchase budgets.')
+            gaps = exposure_gaps(result, saved, config, parent=scope)
+            st.dataframe(gaps.drop(columns=['Bucket ID','Owner ID','Position ID'], errors='ignore'), hide_index=True, width='stretch',
+                column_config={f'Gap ({result.reporting_currency})':st.column_config.NumberColumn(
+                    help='Desired minus current exposure in reporting currency. A cash trade can require a different amount.'),
+                    'Gap (pp)':st.column_config.NumberColumn(help='Desired minus current exposure as a percentage of net equity.'),
+                    'Composition gap (pp)':st.column_config.NumberColumn(help='Desired minus current share of total exposure, in percentage points.')})
         except DataError as exc:
             st.warning(str(exc))
     else:
         st.info('Exposure targets are unset. Existing capital targets are unchanged.')
-    labels = category_labels(config)
-    universe = st.selectbox('Target exposure universe', ['equity', 'market'], index=['equity', 'market'].index(saved.universe) if saved else 1,
-        format_func=lambda value: {'equity': 'Equity only', 'market': 'Total market (including gold and crypto)'}[value], key='exposure_control_universe_' + str(revision))
-    conventions = ['leaves', 'parent_relative', 'mixed']
-    mixed_owners = {b.parent for b in config.buckets if b.parent}
-    mixed = result.capital.bucket_id.isin(mixed_owners).any() if 'bucket_id' in result.capital else False
-    weights = st.selectbox('Composition weights', conventions, index=conventions.index(saved.weights) if saved else 2 if mixed else 1,
-        format_func=lambda value: {'leaves': 'Leaf shares of total exposure', 'parent_relative': 'Category shares within each parent',
-            'mixed': 'Categories and investments within each parent'}[value], key='exposure_control_weights_' + str(revision))
-    converting = saved is not None and (universe != saved.universe or weights != saved.weights)
-    if converting:
-        st.warning('Saving explicitly replaces the exposure universe or weight convention. Enter the new weights; saved capital targets stay unchanged.')
-    if weights == 'mixed':
-        from portfolio_app.interface.views.exposure.mixed_targets_ui import render_mixed_targets
-        render_mixed_targets(directory, config, result, saved, revision, universe)
-    else:
-        _category_exposure_targets(directory, config, saved, revision, universe, weights, labels, converting)
+    with st.expander('Policy settings', expanded=not saved or not valid):
+        labels = category_labels(config)
+        universe = st.selectbox('Target exposure universe', ['equity', 'market'], index=['equity', 'market'].index(saved.universe) if saved else 1,
+            format_func=lambda value: {'equity': 'Equity only', 'market': 'Total market (including gold and crypto)'}[value], key='exposure_control_universe_' + str(revision))
+        conventions = ['leaves', 'parent_relative', 'mixed']
+        mixed_owners = {b.parent for b in config.buckets if b.parent}
+        mixed = result.capital.bucket_id.isin(mixed_owners).any() if 'bucket_id' in result.capital else False
+        weights = st.selectbox('Composition weights', conventions, index=conventions.index(saved.weights) if saved else 2 if mixed else 1,
+            format_func=lambda value: {'leaves': 'Leaf shares of total exposure', 'parent_relative': 'Category shares within each parent',
+                'mixed': 'Categories and investments within each parent'}[value], key='exposure_control_weights_' + str(revision))
+        converting = saved is not None and (universe != saved.universe or weights != saved.weights)
+        if converting:
+            st.warning('Review the replacement exposure policy before saving.')
+        if weights == 'mixed':
+            from portfolio_app.interface.views.exposure.mixed_targets_ui import render_mixed_targets
+            render_mixed_targets(directory, config, result, saved, revision, universe, valid=valid)
+        else:
+            _category_exposure_targets(directory, config, saved, revision, universe, weights, labels, converting, valid)
+        if valid and saved and saved.policy == 'composition' and saved.weights == 'leaves':
+            st.button('Edit whole-portfolio leaf shares', on_click=request_target_edit, args=(directory,config,''),
+                      kwargs={'market':True,'exposure_result':result,'policy_settings':True,'whole_leaf_split':True},
+                      help='Set absolute shares of portfolio exposure, including branches with a zero current target.')
+    render_target_dialog(directory)
     if saved is None:
         return
     if active_basis == 'exposure':
@@ -201,28 +222,41 @@ def render_exposure_targets(directory, config, result, *, active_basis):
             st.rerun()
 
 
-def _category_exposure_targets(directory, config, saved, revision, universe, weights, labels, converting):
+def _category_exposure_targets(directory, config, saved, revision, universe, weights, labels, converting, valid):
     leaves = sorted(config.leaves()) if weights == 'leaves' else [b.id for b in config.buckets]
-    with st.form('exposure_target_form_' + str(revision)):
-        policy = st.selectbox('Exposure policy', ['composition', 'overlay_only'], index=(['composition', 'overlay_only'].index(saved.policy) if saved else None),
-            format_func=lambda key: {'composition': 'Category composition', 'overlay_only': 'Keep funded allocation; overlay in one category'}[key])
+    policy = st.selectbox('Exposure policy', ['composition', 'overlay_only'], index=(['composition', 'overlay_only'].index(saved.policy) if saved else None),
+        format_func=lambda key: {'composition': 'Category composition', 'overlay_only': 'Keep funded allocation; overlay in one category'}[key])
+    overlay_categories = sorted(config.descendants())
+    overlay = st.selectbox('Overlay destination (overlay-only policy)', overlay_categories,
+                          index=overlay_categories.index(saved.overlay_bucket) if saved and saved.overlay_bucket in overlay_categories else None,
+                          format_func=labels.get) if policy == 'overlay_only' else ''
+    if saved and valid and not converting and policy == saved.policy:
+        if policy == 'overlay_only' and overlay and overlay != saved.overlay_bucket:
+            if st.button('Save overlay destination'):
+                from dataclasses import replace
+                try:
+                    save_exposure_targets(directory, replace(saved, overlay_bucket=overlay), config, revision)
+                except (DataError, OSError) as exc:
+                    st.error(str(exc))
+                else:
+                    st.rerun()
+        return
+    if policy is None:
+        return
+    with st.form(f'exposure_target_form_{revision}_{universe}_{weights}_{policy}'):
         multiple = st.number_input('Desired total exposure (× net equity)', min_value=0., value=saved.multiple if saved else None, step=.05)
-        st.caption('Composition sets category shares of the declared exposure universe. Parent-relative weights multiply down the hierarchy; each sibling group totals 100%. '
-                   'Overlay-only retains funded exposures and puts the remainder in one category. Targets remain nonnegative.')
-        frame = pd.DataFrame({'Bucket ID': leaves, 'Category': [labels[x] for x in leaves],
-                              'Exposure composition (%)': [saved.composition.get(x, 0.)*100 if saved and not converting and saved.policy == 'composition' else None for x in leaves]})
-        from portfolio_app.interface.shared.view_state import persistent_editor
-        edited = persistent_editor(frame, key='exposure_composition_' + str(revision) + universe + weights, hide_index=True, disabled=['Bucket ID', 'Category'], width='stretch',
-            column_config={'Exposure composition (%)': st.column_config.NumberColumn(min_value=0., max_value=100.)})
-        overlay_categories = sorted(config.descendants())
-        overlay = st.selectbox('Overlay destination (overlay-only policy)', overlay_categories,
-                              index=overlay_categories.index(saved.overlay_bucket) if saved and saved.overlay_bucket in overlay_categories else None, format_func=labels.get)
+        if policy == 'composition':
+            frame = pd.DataFrame({'Bucket ID': leaves, 'Category': [labels[x] for x in leaves],
+                                  'Exposure composition (%)': [saved.composition.get(x, 0.)*100 if saved and not converting and saved.policy == 'composition' else None for x in leaves]})
+            from portfolio_app.interface.shared.view_state import persistent_editor
+            edited = persistent_editor(frame, key='exposure_composition_' + str(revision) + universe + weights, hide_index=True, disabled=['Bucket ID', 'Category'], width='stretch',
+                column_config={'Exposure composition (%)': st.column_config.NumberColumn(min_value=0., max_value=100.)})
         save = st.form_submit_button('Save exposure targets', type='primary')
     if save:
         try:
             if multiple is None or policy is None:
                 raise DataError('Choose an exposure policy and total multiple.')
-            composition = {row['Bucket ID']: float(row['Exposure composition (%)']) for row in edited.to_dict('records') if pd.notna(row['Exposure composition (%)'])}
+            composition = {row['Bucket ID']: float(row['Exposure composition (%)']) for row in edited.to_dict('records') if pd.notna(row['Exposure composition (%)'])} if policy == 'composition' else {}
             if policy == 'composition' and len(composition) != len(leaves):
                 raise DataError('Set every leaf composition explicitly, including zeros.')
             target = ExposureTargets(float(multiple), policy, {k: v/100 for k, v in composition.items()} if policy == 'composition' else {}, overlay or '' if policy == 'overlay_only' else '', version=2, universe=universe, weights=weights)

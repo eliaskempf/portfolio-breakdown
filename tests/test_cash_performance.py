@@ -62,7 +62,7 @@ def test_normal_app_cash_has_no_buy_in_warning_and_no_invented_gain(tmp_path):
     activate(app,'Overview')
     by_label(app.get('button_group'),'Overview view').set_value('Performance').run()
     assert not app.exception
-    assert any('N/A' in w.value and 'cash balance' in w.value for w in app.info)
+    assert any(w.value == 'N/A · Cash balance' and 'conversion basis' in w.help for w in app.caption)
     assert not any('Add convertible buy-ins' in w.value for w in app.info)
     settled=append_events(journal,[Event('profit','2026-01-03','settlement',account_id='a',position_id='p',price=1010)])
     projected=journal_positions(prepared.valued,settled,service)

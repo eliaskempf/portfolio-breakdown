@@ -155,7 +155,7 @@ _render_history_results(root, journal, scope, key='test_', include_inputs=False,
         app.segmented_control[0].set_value(period).run()
         assert not app.exception
         assert app.metric[0].delta == ('+€20.00' if period == '1M' else '+€50.00')
-        assert app.metric[2].value != '—'
+        assert app.metric[2].value != 'Unavailable'
         assert not any(c.value == 'History not confirmed' for c in app.caption)
 
 
@@ -234,3 +234,15 @@ def test_replay_reuses_price_only_dates_but_preserves_separate_fee_dates(monkeyp
     assert len(calculation.securities('2024-01-05').cash) == 1
     assert len(calculation.securities('2024-01-06').cash) == 2
     assert calculation.securities('2024-01-09').positions['holding'].quantity == 2
+
+
+def test_latest_unvalued_event_retains_its_specific_dated_input():
+    from portfolio_app.performance.history_diagnostics import issue_tree
+    journal, scope, store = fixture()
+    book = journal.securities[0]
+    event = SecurityEvent('income', 'distribution', '2024-06-15', amount=D(1), currency='EUR', charges_known=True)
+    journal = replace(journal, securities=(replace(book, records=(*book.records, event),
+                                                    active_ids=(*book.active_ids, event.id)),))
+    view = history_view(journal, scope, store, 'All', today=date(2024, 6, 16))
+    for reasons in (view.all_result.money_weighted_reasons, view.all_result.time_weighted_reasons):
+        assert any(str(reason) == 'holding: missing price on 2024-06-15' for reason in issue_tree(reasons))

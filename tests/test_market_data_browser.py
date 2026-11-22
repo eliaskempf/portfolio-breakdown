@@ -112,8 +112,12 @@ render_app(directory)
             start = time.monotonic()
             page.get_by_role('tab', name='Rebalance', exact=True).click()
             page.get_by_role('tab', name='Targets', exact=True).click()
-            playwright.expect(page.get_by_role('button', name='Save categories')).to_be_visible()
+            playwright.expect(page.get_by_role('button',name='Edit targets',exact=True)).to_be_visible()
             timings['navigate_to_targets'] = time.monotonic() - start
+            start = time.monotonic()
+            page.get_by_text('Category structure',exact=True).click()
+            playwright.expect(page.get_by_role('button', name='Save categories')).to_be_visible()
+            timings['open_structure'] = time.monotonic() - start
             before = (tmp_path / 'allocation.yaml').stat().st_mtime_ns
             start = time.monotonic()
             page.get_by_role('button', name='Save categories').click()

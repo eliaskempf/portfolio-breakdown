@@ -36,10 +36,10 @@ def test_allocation_explains_full_history_twr_gap_even_when_recent_return_is_kno
     app.run()
     assert not app.exception
     metric = by_label(app.metric, 'Current value')
-    assert metric.delta == '—'
+    assert metric.delta == 'Unavailable'
     assert '2024-01-03' in metric.proto.help and 'Invented investment' in metric.proto.help
     assert 'TWR: all recorded history' in metric.proto.help
-    assert 'Open Performance' in metric.proto.help
+    assert any(panel.proto.popover.label == 'Add price' for panel in app.get('popover'))
 
 
 @pytest.mark.parametrize('remove_current_row', [False, True])
@@ -73,7 +73,7 @@ def test_fully_liquidated_history_has_shared_gain_without_current_quote(tmp_path
     assert by_label(app.metric,'Portfolio value').value=='€0.00'
     assert '+€22.00' in by_label(app.metric,'Portfolio value').delta
     assert by_label(app.metric,'Invested capital').value=='€-22.00'
-    assert by_label(app.metric,'Annualized return').value!='—'
+    assert by_label(app.metric,'Annualized return').value!='Unavailable'
     assert xirr_calls
     assert ('estimates' in by_label(app.metric, 'Portfolio value').proto.help) == estimated
     assert ('Estimated return' in by_label(app.metric, 'Annualized return').proto.help) == estimated

@@ -15,6 +15,7 @@ from functools import lru_cache
 from datetime import date
 from decimal import Decimal
 from hashlib import sha256
+from itertools import chain
 import json
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -204,9 +205,11 @@ class Journal:
     securities: tuple[SecurityBook, ...] = ()
     capital_history: tuple[CapitalAllocation, ...] = ()
     transaction_imports: tuple[ImportReceipt, ...] = ()
+    # Source variants explicitly declined at review, with their comparison receipt.
+    kept_imports: tuple[ImportReceipt, ...] = ()
 
     def __post_init__(self):
-        if type(self.version) is not int or self.version not in (1, 2, 3, 4, 5):
+        if type(self.version) is not int or self.version not in (1, 2, 3, 4, 5, 6):
             raise DataError('Unsupported account journal version.')
         object.__setattr__(self, 'transaction_imports', tuple(self.transaction_imports))
         if self.transaction_imports and self.version < 3:
@@ -220,6 +223,27 @@ class Journal:
             if not isinstance(item, ImportReceipt) or item.id in seen_imports or (item.replaces and item.replaces not in seen_imports):
                 raise DataError('Invalid import identity or correction lineage.')
             seen_imports.add(item.id)
+        object.__setattr__(self, 'kept_imports', tuple(self.kept_imports))
+        if self.kept_imports:
+            if self.version < 6:
+                raise DataError('Kept import decisions require journal version 6.')
+            source_order = {item.id: i for i, item in enumerate(self.transaction_imports)}
+            kept = set()
+            for item in self.kept_imports:
+                if not isinstance(item, ImportReceipt) or item.id in kept or item.positions:
+                    raise DataError('Invalid kept import decision.')
+                comparison = source_order.get(item.replaces)
+                if comparison is None:
+                    raise DataError('Missing comparison receipt for a kept import decision.')
+                earlier = self.transaction_imports[comparison].facts
+                if (earlier['source_id'], earlier['event_id']) != (item.facts['source_id'], item.facts['event_id']):
+                    raise DataError('Invalid comparison receipt for a kept import decision.')
+                # After explicit reconsideration, both receipts remain: the
+                # original comparison and the later accepted correction.
+                accepted = source_order.get(item.id)
+                if accepted is not None and (accepted <= comparison or not self.transaction_imports[accepted].replaces):
+                    raise DataError('A reconsidered import requires a later correction receipt.')
+                kept.add(item.id)
         object.__setattr__(self, 'securities', tuple(self.securities))
         object.__setattr__(self, 'capital_history', tuple(self.capital_history))
         seen_allocations = set()
@@ -744,6 +768,8 @@ def roll(journal, *, close: Event, opening: Event, charges: Iterable[Event] = ()
 
 def journal_to_dict(journal):
     result = asdict(journal)
+    if journal.version < 6:
+        result.pop('kept_imports')
     for book in result['securities']:
         for event in book['records']:
             for field in ('order_domain', 'order_time'):
@@ -754,7 +780,7 @@ def journal_to_dict(journal):
             for event in book['records']:
                 event.pop('estimated')
     else:
-        for receipt in result['transaction_imports']:
+        for receipt in chain(result['transaction_imports'], result.get('kept_imports', ())):
             if receipt['facts'].get('schema_version') == '3':
                 receipt['facts'] = {k: v for k, v in receipt['facts'].items() if v != ''}
     if journal.version < 4:
@@ -788,12 +814,13 @@ def journal_from_dict(raw):
     from portfolio_app.ledger.security_history import book_from_dict
     fields['securities'] = tuple(book_from_dict(item) for item in fields.get('securities', ()))
     from portfolio_app.ingestion.transaction_csv import FIELDS_V3
-    receipts = []
-    for item in fields.get('transaction_imports', ()):
-        if item['facts'].get('schema_version') == '3':
-            item = {**item, 'facts': {**dict.fromkeys(FIELDS_V3, ''), **item['facts']}}
-        receipts.append(ImportReceipt(**item))
-    fields['transaction_imports'] = tuple(receipts)
+    for name in ('transaction_imports', 'kept_imports'):
+        receipts = []
+        for item in fields.get(name, ()):
+            if item['facts'].get('schema_version') == '3':
+                item = {**item, 'facts': {**dict.fromkeys(FIELDS_V3, ''), **item['facts']}}
+            receipts.append(ImportReceipt(**item))
+        fields[name] = tuple(receipts)
     fields['capital_history'] = tuple(CapitalAllocation(**item) for item in fields.get('capital_history', ()))
     result = Journal(**fields)
     replay(result)

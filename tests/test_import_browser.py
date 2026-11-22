@@ -81,7 +81,7 @@ render_app(Path(__file__).parent / 'synthetic-portfolio', demo=True,
                     };
                 })()''')
             page.goto(f'http://127.0.0.1:{port}')
-            page.get_by_role('button', name='Import holdings', exact=True).wait_for()
+            page.get_by_role('button', name='Import', exact=True).wait_for()
             yield page, tmp_path / 'synthetic-portfolio' / 'holdings.csv'
             browser.close()
     finally:
@@ -89,12 +89,18 @@ render_app(Path(__file__).parent / 'synthetic-portfolio', demo=True,
         process.wait(timeout=10)
 
 
+def open_snapshot_import(page):
+    runs = page.streamlit_reruns
+    runs.click(page, page.get_by_role('button', name='Import', exact=True))
+    runs.click(page, page.get_by_role('radio', name='Holdings snapshot', exact=True))
+
+
 def test_statement_import_without_holdings_opens_position_entry(import_page):
     page, _ = import_page
-    page.streamlit_reruns.click(page, page.get_by_role('radio', name='Import', exact=True))
+    page.streamlit_reruns.click(page, page.get_by_role('button', name='Import', exact=True))
     page.streamlit_reruns.click(page, page.get_by_role('radio', name='Statement PDFs', exact=True))
     page.get_by_role('button', name='Add holding for statement', exact=True).click()
-    playwright.expect(page.get_by_role('radio', name='Positions', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('button', name='Back to positions', exact=True)).to_have_count(0)
     playwright.expect(page.get_by_role('dialog')).to_be_visible()
     playwright.expect(page.get_by_role('dialog').get_by_role('radio', name='Existing holding', exact=True)).to_be_checked()
 
@@ -102,7 +108,7 @@ def test_statement_import_without_holdings_opens_position_entry(import_page):
 @pytest.mark.parametrize('import_page', ['normal', 'delayed_navigation'], indirect=True)
 def test_upload_review_chart_allocation_and_listing(import_page):
     page, path = import_page
-    page.get_by_role('button', name='Import holdings', exact=True).click()
+    open_snapshot_import(page)
     page.locator('input[type=file]').set_input_files({
         'name': 'invented-holdings.csv', 'mimeType': 'text/csv',
         'buffer': ('Name;Stück/Nennwert Bank;Stück/Nennwert FinanzManager;ISIN;Kurs;Kursdatum;Währung\n'
@@ -135,7 +141,7 @@ def test_upload_review_chart_allocation_and_listing(import_page):
         page.streamlit_reruns.wait()
         settle(page)
     playwright.expect(save).to_be_enabled()
-    playwright.expect(page.get_by_role('radio', name='Import', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('heading', name='Import', exact=True)).to_be_visible()
     playwright.expect(page.get_by_role('radio', name='Holdings snapshot', exact=True)).to_be_checked()
     playwright.expect(page.get_by_role('combobox', name='Quantity (required)', exact=True)).to_have_value('Stück/Nennwert Bank')
     save.click()
@@ -148,11 +154,12 @@ def test_upload_review_chart_allocation_and_listing(import_page):
     page.get_by_role('button', name='Set up allocation', exact=True).click()
     page.get_by_role('button', name='Enable reviewed allocation', exact=True).wait_for()
     page.get_by_role('button', name='Enable reviewed allocation', exact=True).click()
-    page.get_by_role('button', name='Save categories', exact=True).wait_for()
+    page.get_by_role('combobox', name='Allocation category', exact=True).wait_for()
     assert path.with_name('allocation.yaml').exists()
     playwright.expect(page.get_by_role('button', name='Dismiss import tips')).to_have_count(0)
     page.get_by_role('tab', name='Positions', exact=True).click()
-    page.get_by_role('radio', name='Connect live prices', exact=True).click()
+    page.get_by_role('button', name='More actions', exact=True).click()
+    page.get_by_role('button', name='Connect live prices', exact=True).click()
     page.get_by_role('button', name='Search listings', exact=True).click()
     page.get_by_role('combobox', name='Price listing', exact=True).click()
     page.get_by_role('combobox', name='Price listing', exact=True).fill('NVDA')
@@ -179,7 +186,7 @@ def test_upload_review_chart_allocation_and_listing(import_page):
 
 def test_post_import_shortcut_opens_listing_setup_and_clears_tips(import_page):
     page, _ = import_page
-    page.get_by_role('button', name='Import holdings', exact=True).click()
+    open_snapshot_import(page)
     page.locator('input[type=file]').set_input_files({
         'name': 'invented.csv', 'mimeType': 'text/csv', 'buffer': b'Name;Quantity\nInvented fund;2\n',
     })
@@ -187,7 +194,7 @@ def test_post_import_shortcut_opens_listing_setup_and_clears_tips(import_page):
     page.get_by_role('button', name='Import reviewed positions', exact=True).click()
     page.get_by_role('button', name='Connect live prices', exact=True).click()
     playwright.expect(page.get_by_role('tab', name='Positions', exact=True)).to_have_attribute('aria-selected', 'true')
-    playwright.expect(page.get_by_role('radio', name='Connect live prices', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('heading', name='Connect live prices', exact=True)).to_be_visible()
     playwright.expect(page.get_by_role('button', name='Search listings', exact=True)).to_be_visible()
     page.get_by_role('tab', name='Overview', exact=True).click()
     playwright.expect(page.get_by_role('table', name='Positions', exact=True)).to_contain_text('Invented fund')
@@ -196,13 +203,13 @@ def test_post_import_shortcut_opens_listing_setup_and_clears_tips(import_page):
 
 def test_cancel_upload_writes_nothing(import_page):
     page, path = import_page
-    page.get_by_role('button', name='Import holdings', exact=True).click()
+    open_snapshot_import(page)
     page.locator('input[type=file]').set_input_files({
         'name': 'invented.csv', 'mimeType': 'text/csv', 'buffer': b'Name;Quantity\nInvented asset;2,5\n',
     })
     page.get_by_role('button', name='Import reviewed positions', exact=True).wait_for()
     page.get_by_role('button', name='Cancel import', exact=True).click()
-    page.get_by_role('button', name='Import holdings', exact=True).wait_for()
+    page.get_by_role('button', name='Import', exact=True).wait_for()
     assert not path.exists()
     assert page.locator('[data-testid="stException"]').count() == 0
 
@@ -210,7 +217,7 @@ def test_cancel_upload_writes_nothing(import_page):
 def test_remove_upload_discards_draft_and_new_upload_uses_new_rows(import_page):
     page, path = import_page
     runs = page.streamlit_reruns
-    runs.click(page, page.get_by_role('button', name='Import holdings', exact=True))
+    open_snapshot_import(page)
     uploader = page.locator('input[type=file]')
     uploader.set_input_files({'name': 'first.csv', 'mimeType': 'text/csv',
                              'buffer': b'Name;Quantity\nInvented first;2\n'})
