@@ -12,6 +12,7 @@ from portfolio_app.interface.shared.view_state import reset_workspace
 def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
     """Workspace selection and global actions; no persistent portfolio writes."""
     from portfolio_app.interface.views.onboarding.tour import active, demo_directory
+    default_index = int(demo)
     touring = active()
     if touring:
         data_dir, demo = demo_directory(), True
@@ -22,12 +23,13 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                 image = f'<img alt="" src="data:image/svg+xml;base64,{b64encode(icon.read_bytes()).decode()}" />' if icon else ''
                 st.html(f'<div class="app-brand">{image}<span>Breakdown</span></div>')
             if demo_dir is not None:
-                # Keep the widget default stable across reruns. Changing index
-                # from 0 to None lets the browser clear an implicit selection.
-                if st.session_state.get('active_portfolio') is None:
-                    st.session_state['active_portfolio'] = 'Demo portfolio' if demo else 'My portfolio'
-                workspace = st.selectbox('Portfolio workspace', ['My portfolio', 'Demo portfolio'], help='Switch between your local portfolio and the separate demonstration workspace.',
-                    index=0, key='active_portfolio', label_visibility='collapsed', width=200, disabled=touring)
+                choices = ['My portfolio', 'Demo portfolio']
+                # The browser's initial value follows the launcher even before a rerun.
+                # Keep it independent of later workspace switches and the guided tour.
+                if 'active_portfolio' in st.session_state and st.session_state.active_portfolio is None:
+                    st.session_state['active_portfolio'] = choices[default_index]
+                workspace = st.selectbox('Portfolio workspace', choices, help='Switch between your local portfolio and the separate demonstration workspace.',
+                    index=default_index, key='active_portfolio', label_visibility='collapsed', width=200, disabled=touring)
                 demo = workspace == 'Demo portfolio'
                 if demo and not touring:
                     data_dir = demo_dir

@@ -21,7 +21,8 @@ playwright = pytest.importorskip('playwright.sync_api')
 
 
 @pytest.fixture
-def intro_server(tmp_path_factory):
+def intro_server(tmp_path_factory, request):
+    start_in_demo = getattr(request, 'param', False)
     directory = tmp_path_factory.mktemp('synthetic-intro')
     create_demo_data(directory / 'demo')
     fixture_path = directory / 'demo' / 'demo_prices.json'
@@ -30,11 +31,11 @@ def intro_server(tmp_path_factory):
     fixture['fx']['USD'] = dict(price=.8, currency='EUR', observed_at='2026-01-05T00:00:00Z')
     fixture_path.write_text(json.dumps(fixture), encoding='utf-8')
     app = directory / 'app.py'
-    app.write_text('''
+    app.write_text(f'''
 from pathlib import Path
 from portfolio_app.interface.ui import render_app
 from portfolio_app.market.prices import PriceService, StaticProvider
-render_app(Path(__file__).parent / 'empty', demo_dir=Path(__file__).parent / 'demo', intro=True,
+render_app(Path(__file__).parent / 'empty', demo_dir=Path(__file__).parent / 'demo', demo={start_in_demo}, intro={not start_in_demo},
            price_service=PriceService(StaticProvider(Path(__file__).parent / 'demo' / 'demo_prices.json')))
 ''', encoding='utf-8')
     with socket.socket() as sock:
@@ -76,6 +77,25 @@ def select_workspace(page, name):
     page.get_by_role('combobox', name='Portfolio workspace', exact=True).click()
     page.get_by_role('option', name=name, exact=True).click()
     settle(page)
+
+
+@pytest.mark.parametrize('intro_server', [True], indirect=True)
+def test_demo_launch_selects_populated_workspace_on_first_visit_and_reload(intro_page):
+    page, url, directory = intro_page
+    page.goto(url)
+    picker = page.get_by_role('combobox', name='Portfolio workspace', exact=True)
+    playwright.expect(picker).to_have_value('Demo portfolio')
+    playwright.expect(page.locator('.js-plotly-plot').first).to_be_visible()
+    page.get_by_role('tab', name='Positions', exact=True).click()
+    rows = page.get_by_role('table', name='Positions', exact=True).locator('tbody tr')
+    playwright.expect(rows).to_have_count(len(read_snapshot(directory/'demo'/'holdings.csv').holdings))
+    select_workspace(page, 'My portfolio')
+    playwright.expect(picker).to_have_value('My portfolio')
+    playwright.expect(page.get_by_role('button', name='Start my portfolio', exact=True)).to_be_visible()
+    page.reload()
+    playwright.expect(picker).to_have_value('Demo portfolio')
+    playwright.expect(page.locator('.js-plotly-plot').first).to_be_visible()
+    playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
 
 
 def test_native_startup_asset_plays_centered_without_a_server(intro_page):
