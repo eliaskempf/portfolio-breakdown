@@ -15,10 +15,19 @@ from portfolio_app.workspace.storage import revision
 @dataclass(frozen=True)
 class RiskSnapshot:
     settings: tuple
+    proxy_inputs: tuple
     holdings: pd.DataFrame
     histories: RiskHistoryService
     result: RiskAnalytics
     sources: pd.DataFrame
+
+    def inputs_current(self):
+        return all(revision(path) == saved for path, saved in self.proxy_inputs) and self.histories.inputs_current()
+
+
+def mounted_risk_current(result):
+    snapshot = st.session_state.get('analytics_risk_snapshot')
+    return isinstance(snapshot, RiskSnapshot) and snapshot.result is result and snapshot.inputs_current()
 
 
 def view_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future=None,
@@ -31,18 +40,19 @@ def view_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
     positions = valued.loc[:, [field for field in fields if field in valued]]
     today = date.today()
     actual = bool(valued.attrs.get('actual_accounts'))
-    # Actual contract proxies can reference a position outside the selected accounts.
-    proxy_inputs = (revision(data_dir / 'holdings.csv'), revision(data_dir / LEVERAGE_FILE)) if actual else ()
-    settings = (data_dir.resolve(), demo, today, benchmark, years, actual, proxy_inputs, future, scoped,
+    settings = (data_dir.resolve(), demo, today, benchmark, years, actual, future, scoped,
                 portfolio_result is not None, portfolio_result.net_equity if portfolio_result is not None else portfolio_net_equity)
     previous = st.session_state.get('analytics_risk_snapshot')
     if (not refresh and isinstance(previous, RiskSnapshot) and previous.settings == settings
-            and previous.holdings.equals(positions) and previous.histories.inputs_current()):
+            and previous.holdings.equals(positions) and previous.inputs_current()):
         return previous.result, previous.sources
 
+    # An actual contract proxy can be outside the selected accounts.
+    proxy_paths = (data_dir / 'holdings.csv', data_dir / LEVERAGE_FILE) if actual else ()
+    proxy_inputs = tuple((path, revision(path)) for path in proxy_paths)
     service = RiskHistoryService.for_workspace(data_dir, demo, track_inputs=True)
     result, sources = load_risk(positions, data_dir, demo, benchmark, years, refresh, future=future,
         service=service, today=today, portfolio_result=portfolio_result, scoped=scoped, portfolio_net_equity=portfolio_net_equity)
     cached_sources = sources.assign(Status=sources.Status.replace('fresh', 'cached'))
-    st.session_state['analytics_risk_snapshot'] = RiskSnapshot(settings, positions.copy(), service, result, cached_sources)
+    st.session_state['analytics_risk_snapshot'] = RiskSnapshot(settings, proxy_inputs, positions.copy(), service, result, cached_sources)
     return result, sources

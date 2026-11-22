@@ -777,7 +777,7 @@ the source disclosure for all 65,624 ownership contributions.
 The native historical-risk comparison uses 48 market-valued listings. It starts
 with the benchmark and 47 adjusted histories already cached. The first Calculate
 action should request the missing listing once. Expanding and collapsing the
-matrix should reuse the calculation. Each sample records request and calculation
+matrix should reuse the calculation and avoid a portfolio valuation. Each sample records request and calculation
 counts, click-to-chart time and settled time, and compares all three displayed
 risk estimates and the full correlation matrix across binaries. Select the
 `risk` experiment with a listed-equity profile to run it on both renderers.

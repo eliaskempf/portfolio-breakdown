@@ -4,6 +4,7 @@ from test_ux_browser import ux_page, playwright
 from browser_support import settle
 
 
+@pytest.mark.parametrize('ux_page', ['count_app_runs'], indirect=True)
 def test_analytics_views_dialog_and_mobile_layout(ux_page):
     page, directory = ux_page
     assert page.get_by_role('tab').all_text_contents()[:4] == ['Overview', 'Exposure', 'Positions', 'Rebalance']
@@ -23,6 +24,8 @@ def test_analytics_views_dialog_and_mobile_layout(ux_page):
     assert chart.evaluate('el => el.layout.xaxis.ticktext') == ['Invented Global', 'Invented Regional', 'Invented Satellite']
     assert chart.bounding_box()['height'] >= 420
     assert chart.bounding_box()['y'] < page.get_by_text('Holdings risk', exact=True).bounding_box()['y']
+    settle(page)
+    before = (directory / 'full-runs.log').read_text()
     page.get_by_text('Expand', exact=True).click()
     playwright.expect(page.get_by_role('switch', name='Expand', exact=True)).to_be_checked()
     playwright.expect(chart).to_be_visible()
@@ -32,6 +35,13 @@ def test_analytics_views_dialog_and_mobile_layout(ux_page):
     page.get_by_role('switch', name='Expand', exact=True).press('Space')
     playwright.expect(page.get_by_role('switch', name='Expand', exact=True)).not_to_be_checked()
     page.wait_for_function("document.querySelector('.st-key-risk_correlations .js-plotly-plot')?.getBoundingClientRect().height === 420")
+    page.get_by_role('button', name='Columns', exact=True).click()
+    page.get_by_role('button', name='Remove Beta', exact=True).click()
+    page.keyboard.press('Escape')
+    settle(page)
+    headers = page.locator('[data-testid=stDataFrame]:visible canvas table [role=columnheader]')
+    assert 'Volatility (%)' in headers.all_text_contents() and 'Beta' not in headers.all_text_contents()
+    assert (directory / 'full-runs.log').read_text() == before
     page.get_by_role('button', name='Main menu', exact=True).click()
     page.get_by_test_id('stMainMenuItem-theme-Dark').click()
     page.keyboard.press('Escape')

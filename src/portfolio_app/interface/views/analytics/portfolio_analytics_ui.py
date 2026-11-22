@@ -7,10 +7,10 @@ import streamlit as st
 from portfolio_app.interface.shared.chart_hover import chart_hover
 from portfolio_app.interface.shared.charts import chart_config
 from portfolio_app.interface.shared.currency_display import money, reporting_currency
-from portfolio_app.interface.shared.detail_panels import render_detail_panel
+from portfolio_app.interface.shared.detail_panels import render_detail_panel, render_view_fragment
 
 from portfolio_app.analytics.analytics import snapshot_analytics
-from portfolio_app.interface.views.analytics.risk_updates import view_risk
+from portfolio_app.interface.views.analytics.risk_updates import mounted_risk_current, view_risk
 from portfolio_app.interface.views.analytics.metric_updates import view_metrics
 from portfolio_app.interface.views.analytics.analytics_ui import benchmark_name, context_key, data_quality_caption, display_value, render_sources, risk_settings
 from portfolio_app.interface.shared.charts import correlation_chart
@@ -70,7 +70,8 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
                     future=risk_future, portfolio_result=portfolio_result, scoped=scope_active,
                     portfolio_net_equity=portfolio_net_equity)
             benchmark_symbol = status.attrs.get('benchmark_symbol', benchmark)
-            render_risk_dashboard(risk, status, selected, future=risk_future, scoped=scope_active)
+            render_risk_dashboard(risk, status, selected, future=risk_future, scoped=scope_active,
+                current_view=(lambda: current_view() and mounted_risk_current(risk)) if current_view else None)
         else:
             st.caption('Calculate to view risk and holdings correlations.')
         with benchmark_slot:
@@ -195,7 +196,7 @@ def render_risk_details(result, status, names, *, scoped=False):
     st.dataframe(status, hide_index=True, width='stretch')
 
 
-def render_risk_dashboard(result, status, holdings, *, future=None, scoped=False):
+def render_risk_dashboard(result, status, holdings, *, future=None, scoped=False, current_view=None):
     names = {row.id: instrument_name(row) for row in holdings.itertuples()}
     if future is not None:
         names['future:overlay'] = f'{future.instrument} future · index proxy'
@@ -230,30 +231,38 @@ def render_risk_dashboard(result, status, holdings, *, future=None, scoped=False
             # A blocked estimate needs its reason without requiring exploration.
             st.caption(result.note)
     if not result.holdings.empty:
-        correlations = result.correlations.dropna(how='all').dropna(axis=1, how='all')
-        with st.container(key='risk_correlations'):
-            heading, expand = st.columns([4, 1], vertical_alignment='center')
-            heading.markdown('**Holdings correlations**', help='Pairwise correlations on the same weekly sample. Positions with no defined correlations are omitted here but remain in the risk calculations. Foreign-currency cash retains its FX correlations; blank cells are not zero.')
-            if correlations.empty:
-                st.caption('No varying returns to compare.')
-            else:
-                expanded = expand.toggle('Expand', key='analytics_correlations_expanded', help='Enlarge the correlation matrix and show full investment names.')
-                figure = correlation_chart(correlations, names, compact=not expanded)
-                st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
-        frame = result.holdings.copy()
-        frame.insert(0, 'Investment', [names.get(key, key) for key in frame.index])
-        labels = {'Weight': 'Weight / subset capital (%)' if scoped else 'Weight / net equity (%)' if result.integrated else 'Allocation (%)',
-                  'Annual volatility': 'Volatility (%)', 'Volatility contribution': 'Volatility contribution (pp)',
-                  'Risk share': 'Share of risk (%)', 'Beta contribution': 'Contribution to subset beta' if scoped else 'Beta contribution'}
-        for field in ('Weight', 'Annual volatility', 'Volatility contribution', 'Risk share'):
-            frame[field] *= 100
-        heading, options = st.columns([5, 1], vertical_alignment='center')
-        heading.markdown('**Holdings risk**', help='Volatility contributions sum to the displayed estimate. Negative contributions indicate diversification.')
-        with options.popover('Columns', width='stretch'):
-            visible = st.multiselect('Risk columns', [field for field in frame.columns if field != 'Investment'],
-                default=['Weight', 'Beta', 'Annual volatility', 'Risk share'], format_func=lambda field: labels.get(field, field),
-                key='analytics_risk_columns')
-        frame = frame.rename(columns=labels)
-        st.dataframe(frame, hide_index=True, width='stretch',
-            column_order=['Investment', *[labels.get(field, field) for field in visible]],
-            column_config={field: st.column_config.NumberColumn(format='%.2f') for field in frame.columns if field != 'Investment'})
+        render_view_fragment('analytics_risk_matrix', lambda: render_risk_matrix(result, names), current=current_view)
+        render_view_fragment('analytics_risk_table', lambda: render_risk_holdings(result, names, scoped), current=current_view)
+
+
+def render_risk_matrix(result, names):
+    correlations = result.correlations.dropna(how='all').dropna(axis=1, how='all')
+    with st.container(key='risk_correlations'):
+        heading, expand = st.columns([4, 1], vertical_alignment='center')
+        heading.markdown('**Holdings correlations**', help='Pairwise correlations on the same weekly sample. Positions with no defined correlations are omitted here but remain in the risk calculations. Foreign-currency cash retains its FX correlations; blank cells are not zero.')
+        if correlations.empty:
+            st.caption('No varying returns to compare.')
+        else:
+            expanded = expand.toggle('Expand', key='analytics_correlations_expanded', help='Enlarge the correlation matrix and show full investment names.')
+            figure = correlation_chart(correlations, names, compact=not expanded)
+            st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
+
+
+def render_risk_holdings(result, names, scoped):
+    frame = result.holdings.copy()
+    frame.insert(0, 'Investment', [names.get(key, key) for key in frame.index])
+    labels = {'Weight': 'Weight / subset capital (%)' if scoped else 'Weight / net equity (%)' if result.integrated else 'Allocation (%)',
+              'Annual volatility': 'Volatility (%)', 'Volatility contribution': 'Volatility contribution (pp)',
+              'Risk share': 'Share of risk (%)', 'Beta contribution': 'Contribution to subset beta' if scoped else 'Beta contribution'}
+    for field in ('Weight', 'Annual volatility', 'Volatility contribution', 'Risk share'):
+        frame[field] *= 100
+    heading, options = st.columns([5, 1], vertical_alignment='center')
+    heading.markdown('**Holdings risk**', help='Volatility contributions sum to the displayed estimate. Negative contributions indicate diversification.')
+    with options.popover('Columns', width='stretch'):
+        visible = st.multiselect('Risk columns', [field for field in frame.columns if field != 'Investment'],
+            default=['Weight', 'Beta', 'Annual volatility', 'Risk share'], format_func=lambda field: labels.get(field, field),
+            key='analytics_risk_columns')
+    frame = frame.rename(columns=labels)
+    st.dataframe(frame, hide_index=True, width='stretch',
+        column_order=['Investment', *[labels.get(field, field) for field in visible]],
+        column_config={field: st.column_config.NumberColumn(format='%.2f') for field in frame.columns if field != 'Investment'})

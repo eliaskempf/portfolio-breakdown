@@ -85,6 +85,8 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
                 raise AssertionError(f'Risk action {index} expected {expected}, received {requests}')
             action['requests'] = requests.total()
             action['valuations'] = sum(e['event'] == 'portfolio_valued' for e in during)
+            if index and variant == 'candidate' and action['valuations']:
+                raise AssertionError('Resizing a current risk matrix revalued the portfolio')
             action['calculations'] = sum(e['event'] == 'risk_calculated' for e in during)
             if action['calculations'] != (1 if index == 0 or variant == 'reference' else 0):
                 raise AssertionError(f'Unexpected risk calculation count on action {index}: {action}')
