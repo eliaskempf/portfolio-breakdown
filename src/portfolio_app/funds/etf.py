@@ -179,6 +179,18 @@ def validate_fund_listings(holdings: pd.DataFrame, funds: list[FundSnapshot]) ->
             raise DataError("SMH is the US-listed fund's price ticker. For the UCITS fund use a qualified ticker such as SMH.L (USD) or VVSM.DE.")
 
 
+def constituent_records(frame: pd.DataFrame):
+    """Read normalized text and weight columns in bulk, retaining provider metadata."""
+    canonical = all(dtype == 'float64' or (isinstance(dtype, pd.StringDtype) and dtype.na_value is not pd.NA)
+                    for dtype in frame.dtypes)
+    if not canonical or not len(frame.columns):
+        # Let pandas box arbitrary extension types, nullable values and date metadata.
+        return iter(frame.to_dict('records'))
+    names = tuple(frame.columns)
+    columns = [series.to_numpy(dtype=object) for _, series in frame.items()]
+    return (dict(zip(names, values)) for values in zip(*columns))
+
+
 def fund_breakdown(fund: FundSnapshot) -> pd.DataFrame:
     result = validate_constituents(fund.constituents)
     residual = max(0.0, 1 - math.fsum(result["weight"]))
@@ -231,7 +243,7 @@ def resolve_constituent_asset(constituent: dict, holdings: pd.DataFrame) -> tupl
 def resolved_constituents(funds, holdings):
     resolve = constituent_resolver(holdings)
     for fund in funds:
-        for row in fund.constituents.to_dict('records'):
+        for row in constituent_records(fund.constituents):
             yield resolve(row)[0], row
 
 
@@ -276,7 +288,7 @@ def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd
     resolve = constituent_resolver(holdings)
     for fund, source_rows in by_fund.values():
         fallback = fund_kind(fund)
-        for constituent in fund_breakdown(fund).to_dict("records"):
+        for constituent in constituent_records(fund_breakdown(fund)):
             asset, name = resolve(constituent)
             interpreted = interpret_constituent(constituent, fallback_kind=fallback)
             component = dict(asset_id=asset, asset_name=name, ticker=interpreted.ticker, isin=interpreted.isin,

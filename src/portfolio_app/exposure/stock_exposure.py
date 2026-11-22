@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from portfolio_app.funds.etf import fund_breakdown, matching_fund
+from portfolio_app.funds.etf import constituent_records, fund_breakdown, matching_fund
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.funds.constituents import NON_EQUITY_KINDS, fund_kind, interpret_constituent, text
 
@@ -103,7 +103,7 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
                     complete = False
             continue
         equity_universe = fund.equity_fund or declared == 'equity'
-        for constituent in fund_breakdown(fund).to_dict('records'):
+        for constituent in constituent_records(fund_breakdown(fund)):
             amount = value * constituent['weight']
             if amount == 0:
                 continue

@@ -4,7 +4,7 @@ from dataclasses import fields
 
 import pandas as pd
 
-from portfolio_app.funds.etf import constituent_resolver, matching_fund
+from portfolio_app.funds.etf import constituent_records, constituent_resolver, matching_fund
 from portfolio_app.exposure.exposure_presentation import canonical_asset_names
 
 
@@ -107,7 +107,7 @@ def analysis_contributions(result, sources, funds, selected_ids, *, measure='Mar
     metadata = {}
     resolve = constituent_resolver(sources)
     for fund in funds:
-        for item in fund.constituents.to_dict('records'):
+        for item in constituent_records(fund.constituents):
             asset, _ = resolve(item)
             metadata.setdefault(asset, (item.get('ticker', ''), item.get('isin', '')))
     for row in sources.to_dict('records'):

@@ -9,7 +9,7 @@ import math
 import pandas as pd
 
 from portfolio_app.portfolio.allocation import Allocation
-from portfolio_app.funds.etf import constituent_resolver, fund_breakdown, matching_fund
+from portfolio_app.funds.etf import constituent_records, constituent_resolver, fund_breakdown, matching_fund
 from portfolio_app.studies.futures import CONTRACTS, require_eur_reporting
 from portfolio_app.funds.constituents import NON_EQUITY_KINDS, fund_kind, interpret_constituent
 
@@ -149,7 +149,7 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
             proxy = matching_fund(candidates.iloc[0].to_dict(), funds) if not candidates.empty else None
             if proxy is not None and proxy_id not in factors:
                 method = f'ETF holdings proxy: {proxy.name}; {proxy.proxy_source or proxy.source}. Approximate index composition.'
-                for constituent in fund_breakdown(proxy).to_dict('records'):
+                for constituent in constituent_records(fund_breakdown(proxy)):
                     interpreted = interpret_constituent(constituent, fallback_kind=fund_kind(proxy))
                     known = interpreted.proxy_company_known
                     aid, name = resolve(constituent) if known else ('future-other:' + position['id'], position['name'] + ' · Unresolved proxy remainder')
@@ -176,7 +176,7 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
             add(common, position.get('analysis_asset_id') or position['id'], position.get('analysis_asset_name') or position['name'], value, value, 'instrument')
         elif fund:
             basis = fund_kind(fund, equity_declared=declared == 'equity')
-            for constituent in fund_breakdown(fund).to_dict('records'):
+            for constituent in constituent_records(fund_breakdown(fund)):
                 amount = value * constituent['weight']
                 if not amount:
                     continue
@@ -237,7 +237,7 @@ def calculate_portfolio_exposure(valued, funds=(), *, future=None, allocation=No
             proxy = linked_fund(future, valued, funds)
             if proxy and future.contracts and future.proxy_position_id not in factors:
                 method = f'ETF holdings proxy: {proxy.name}; {proxy.proxy_source or proxy.source}. Approximate index composition.'
-                for constituent in fund_breakdown(proxy).to_dict('records'):
+                for constituent in constituent_records(fund_breakdown(proxy)):
                     weight = constituent['weight']
                     if not weight:
                         continue

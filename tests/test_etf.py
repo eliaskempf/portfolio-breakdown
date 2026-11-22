@@ -479,3 +479,18 @@ def test_fund_catalog_reuses_only_unchanged_validated_files(tmp_path, monkeypatc
     manifest.write_text(original.replace('h1.csv', 'basket.csv'))
     with pytest.raises(DataError, match='finite fractions'):
         catalog.load(tmp_path)
+
+
+def test_constituent_records_preserve_normalized_and_provider_specific_values():
+    from decimal import Decimal
+    from portfolio_app.funds.etf import constituent_records
+    frame = pd.DataFrame({'name': ['Invented', None], 'weight': [.75, float('nan')]})
+    for snapshot in (frame, frame.assign(quantity=pd.array([1, pd.NA], dtype='Int64'),
+                                         published=pd.to_datetime(['2025-01-01', None], utc=True),
+                                         metadata=[{'weight': Decimal('0.75')}, None])):
+        rows = list(constituent_records(snapshot))
+        expected = snapshot.to_dict('records')
+        assert list(rows[0]) == list(expected[0])
+        pd.testing.assert_frame_equal(pd.DataFrame(rows), pd.DataFrame(expected))
+        if 'quantity' in snapshot:
+            assert rows[1]['quantity'] is None
