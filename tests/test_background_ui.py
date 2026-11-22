@@ -69,7 +69,7 @@ def test_etf_completion_redraws_only_affected_views(tmp_path, monkeypatch, outco
     monkeypatch.setattr(st, 'session_state', state)
     monkeypatch.setattr(st, 'fragment', lambda **kwargs: fragment)
     monkeypatch.setattr(st, 'rerun', lambda: renders.append(True))
-    monkeypatch.setattr(ui, 'poll_while_mounted', lambda *a: timers.append(True))
+    monkeypatch.setattr(background_ui, '_set_poll_interval', timers.append)
     monkeypatch.setattr(ui.coordinator, 'running', lambda _: pending[0])
     monkeypatch.setattr(ui.coordinator, 'error', lambda _: error[0])
     (tmp_path / 'etfs').mkdir()
@@ -78,7 +78,7 @@ def test_etf_completion_redraws_only_affected_views(tmp_path, monkeypatch, outco
         state.update(main_tabs='Exposure', exposure_refresh_open=True)
     ui.render_refresh_status(tmp_path, [], ui.refresh_revision(tmp_path), show_messages=False,
                              render_indicator=indicators.append, panel_open=outcome == 'notifications open')
-    assert timers == [True] and not renders
+    assert timers == [2] and not renders
     if outcome != 'already locked':
         write_json(tmp_path / '.cache/etf-refresh/status.json',
                    {'invented': {'status': 'unavailable' if outcome == 'unavailable' else 'checked'}})
@@ -90,7 +90,7 @@ def test_etf_completion_redraws_only_affected_views(tmp_path, monkeypatch, outco
     state['position_edit_dialog'] = True
     timers.clear()
     callbacks[0]()
-    assert not renders and bool(timers) == rerenders
+    assert not renders and timers == ([] if rerenders else [None])
     state['position_edit_dialog'] = False
     callbacks[0]()
     assert bool(renders) == rerenders
@@ -98,3 +98,45 @@ def test_etf_completion_redraws_only_affected_views(tmp_path, monkeypatch, outco
         assert indicators[-1].failures == (('invented', 'unavailable', ''),)
     elif outcome == 'worker error':
         assert indicators[-1].error == 'Invented failure'
+
+
+def test_status_timer_updates_only_when_cadence_changes_and_resets_on_remount(monkeypatch):
+    import streamlit as st
+    monkeypatch.setattr(st, 'fragment', lambda: lambda fn: fn)
+    intervals = []
+    monkeypatch.setattr(background_ui, '_set_poll_interval', intervals.append)
+    pending = [False]
+
+    def status(poll):
+        if pending[0]:
+            poll(.5)
+
+    active = background_ui.status_fragment(run_every=60)(status)
+    active()
+    pending[0] = True
+    active()
+    active()
+    pending[0] = False
+    active()
+    assert intervals == [60, .5, 60]
+
+    idle = background_ui.status_fragment()(status)
+    idle()
+    idle()
+    assert intervals == [60, .5, 60, None]
+
+
+def test_status_timer_disarms_when_the_polling_view_exits(monkeypatch):
+    import streamlit as st
+    monkeypatch.setattr(st, 'fragment', lambda: lambda fn: fn)
+    intervals = []
+    monkeypatch.setattr(background_ui, '_set_poll_interval', intervals.append)
+    @background_ui.status_fragment()
+    def status(poll):
+        if intervals:
+            raise RuntimeError('Invented interrupted view')
+        poll(.15)
+    status()
+    with pytest.raises(RuntimeError, match='Invented interrupted view'):
+        status()
+    assert intervals == [.15, None]

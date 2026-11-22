@@ -1,5 +1,6 @@
 """Identical frame sampling in WebView2, Qt, WKWebView and the browser."""
 import hashlib
+import json
 import time
 
 CONTEXT = """const w = document.querySelector('iframe#portfolio-app')?.contentWindow || window;
@@ -24,7 +25,6 @@ def wait(read, timeout=60):
 
 
 def interact(evaluate, command):
-    import json
     evaluate('(() => {' + CONTEXT + 'const label=' + json.dumps(command) + """;
     const control = [...d.querySelectorAll('[role=radio],button')].find(e => visible(e) && e.textContent.trim() === label);
     if (!control) throw Error('Missing control ' + label);
@@ -42,7 +42,12 @@ def interact(evaluate, command):
             visible(d.querySelector('.st-key-tour_performance .js-plotly-plot .main-svg')));
         confirmations = settled ? confirmations + 1 : 0;
         if (confirmations >= 2) w.benchmarkResult = {chart_ms:first, settled_ms:elapsed, click_epoch_ms:epoch};
-        else if (exception() || elapsed > 30000) w.benchmarkResult = {error:'View failed to settle: ' + label};
+        else if (exception() || elapsed > 30000) {
+            const active = [...d.querySelectorAll('[role=radio][aria-checked=true]')].map(e => e.textContent.trim());
+            w.benchmarkResult = {error:'View failed to settle: ' + JSON.stringify({
+                label, active, history:!!visible(chart), allocation:!!visible(allocation()), running:running(),
+                exception:exception()})};
+        }
         else w.requestAnimationFrame(frame);
     }
     w.requestAnimationFrame(frame);
@@ -68,6 +73,19 @@ def exercise(evaluate, control, scenario, *, persistent):
             return False  # The native startup document is replaced on Qt and Cocoa.
     wait(is_ready, timeout=100)
     ready_at = time.time()
+    background = {}
+    if scenario == 'quote-pending':
+        from portfolio_app.interface.shared.money import format_money
+        quote = json.loads((control.parent / 'quote-check.json').read_bytes())
+        read_total = '(() => {' + CONTEXT + """
+            const metric = d.querySelector('.st-key-overview_value [data-testid=stMetricValue]');
+            return visible(metric) && metric.textContent.trim();
+        })()"""
+        wait(lambda: (control / 'quote-pending').exists())
+        initial = format_money(quote['initial_total'], quote['currency'])
+        if wait(lambda: evaluate(read_total)) != initial:
+            raise AssertionError(f'Expected cached portfolio value {initial}')
+        background['start_epoch_ms'] = time.time_ns() / 1e6
     first = interact(evaluate, 'Performance')
     wait(lambda: (control / 'pending').exists())
     period = interact(evaluate, '3M')
@@ -94,9 +112,7 @@ def exercise(evaluate, control, scenario, *, persistent):
             if (!state.done) w.requestAnimationFrame(frame);
         }
         frame(); return true; })()""")
-    background = {}
     if scenario.startswith('etf-'):
-        import json
         read_badge = '(() => {' + CONTEXT + """
             const bell = [...d.querySelectorAll('.st-key-header_notifications [data-testid=stPopoverButton]')]
                 .find(button => button.textContent.includes('Notifications'));
@@ -146,7 +162,7 @@ def exercise(evaluate, control, scenario, *, persistent):
         raise AssertionError(f'Unexpected refresh result {refresh}')
     if scenario != 'changed' and (refresh['fades'] or refresh['replaced']):
         raise AssertionError(f'Unchanged refresh disturbed chart {refresh}')
-    if background:
+    if scenario.startswith('etf-'):
         background['end_epoch_ms'] = time.time_ns() / 1e6
     series = evaluate('(() => {' + CONTEXT + 'return JSON.stringify(history().data.map(t => [t.name,t.x,Array.from(t.y),t.customdata]));})()')
     digest = hashlib.sha256(series.encode()).hexdigest()
@@ -156,6 +172,14 @@ def exercise(evaluate, control, scenario, *, persistent):
         interact(evaluate, 'Allocation')
         warm.append(interact(evaluate, 'Performance'))
     interact(evaluate, 'Allocation')  # Restore saved view for the next real process.
+    if scenario == 'quote-pending':
+        if wait(lambda: evaluate(read_total)) != initial:
+            raise AssertionError('Cached value changed during navigation')
+        background['end_epoch_ms'] = time.time_ns() / 1e6
+        (control / 'release-quote').touch()
+        corrected = format_money(quote['corrected_total'], quote['currency'])
+        wait(lambda: evaluate(read_total) == corrected)
+        background.update(initial_total=initial, corrected_total=corrected)
     return dict(digest=digest, ready_at=ready_at, post_intro_ms=(ready_at-animation_done)*1000 if animation_done else None,
                 refresh_ms=refresh_ms, first=first, range_3m=period, warm=warm, refresh=refresh, **background)
 

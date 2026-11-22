@@ -452,14 +452,14 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
 
 
 def render_market_status(market_workspace, market_revision, *, show_caption=True):
-    from portfolio_app.interface.shared.background_ui import poll_while_mounted
-    @st.fragment
-    def market_status():
+    from portfolio_app.interface.shared.background_ui import status_fragment
+    @status_fragment()
+    def market_status(poll):
         revision, pending = market_coordinator.channel_state(market_workspace, 'valuation')
         if not pending and revision != market_revision and refresh_allowed():
             st.rerun()
         if pending or revision != market_revision:
-            poll_while_mounted('market_status_tick', 500)
+            poll(.5)
         if show_caption and pending:
             st.caption('Updating prices in the background · Saved quotes remain visible with their original dates')
     market_status()

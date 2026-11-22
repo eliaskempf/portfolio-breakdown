@@ -89,7 +89,10 @@ account states between cash/account event dates. A settlement value date alone
 does not release a pending receipt; explicit receipt events remain authoritative.
 Background data refreshes must remain local to the affected result. Dialog polling
 fragments must stop writing when their captured position or view is no longer
-selected; a stale timer must not draw into a replacement view. Verify actual
+selected; a stale timer must not draw into a replacement view. Status pollers
+use the runtime's fragment timer through `status_fragment`. A callback requests
+the next interval while work is pending. Returning to its default interval or
+stopping the timer leaves widget events available for user interactions. Verify actual
 transitions with delayed synthetic data: settled screenshots alone miss old
 controls and charts briefly appearing during a switch.
 
@@ -771,7 +774,10 @@ the ETF worker receives an identical snapshot or a provider failure. The driver
 checks the unread badge, then releases unchanged historical prices. It samples
 the mounted chart for fades and replacements, counts portfolio valuations while
 idle, and compares the financial series with the ordinary navigation run. These
-results appear in the navigation artifact under `background_checks`.
+results appear in the navigation artifact under `background_checks`. A third
+case holds one live equity quote pending while switching views and ranges. It
+checks that navigation uses the displayed cached value without revaluing the
+portfolio, then releases a corrected quote and verifies the new visible total.
 
 The Exposure experiment builds both the pre-change reference and the current
 application on each runner. With the ETF-heavy profile it times Overview to

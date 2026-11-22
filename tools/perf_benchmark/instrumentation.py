@@ -13,6 +13,20 @@ def observe_server(trial):
     from streamlit.runtime.scriptrunner_utils.script_run_context import ScriptRunContext
 
     scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
+    if scenario == 'quote-pending':
+        from datetime import datetime, timezone
+        from perf_benchmark.renderer import wait
+        from portfolio_app.market.market_data import services
+        from portfolio_app.market.prices import Quote
+        settings = json.loads((trial.parent / 'quote-check.json').read_bytes())
+        class Provider:
+            def price(self, ticker):
+                if ticker != settings['ticker']:
+                    raise ValueError(f'Unexpected benchmark ticker {ticker}')
+                (trial / 'quote-pending').touch()
+                wait(lambda: (trial / 'release-quote').exists(), timeout=180)
+                return Quote(settings['corrected'], settings['currency'], datetime.now(timezone.utc))
+        services(trial.parent / 'synthetic')[0].provider = Provider()
     if scenario.startswith('etf-'):
         from portfolio_app.funds.etf_refresh import coordinator as funds, SOURCES
         from portfolio_app.funds.etf_sources import publish_snapshot

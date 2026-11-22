@@ -1,5 +1,6 @@
 """Repeatable two-year portfolio. All identities and prices are invented."""
 import csv
+import json
 from dataclasses import replace
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -109,3 +110,29 @@ def prepare_fund_check(directory):
     manifest.write_text(yaml.safe_dump(raw), encoding='utf-8')
     fund = next(f for f in load_funds(manifest.parent) if f.manifest_path == manifest)
     publish_snapshot(fund, fund.constituents, fund.as_of, prior=manifest.read_bytes())
+
+
+def prepare_quote_check(directory):
+    """Use a due cached price for one equity in the generated EUR portfolio."""
+    holdings = directory / 'holdings.csv'
+    with holdings.open(newline='', encoding='utf-8') as handle:
+        rows = list(csv.DictReader(handle))
+    row = next(r for r in rows if r['instrument_type'] == 'equity')
+    total = sum(int(r['shares']) * int(r['manual_price']) for r in rows)
+    price = int(row['manual_price'])
+    currency = row['manual_price_currency']
+    scenario = dict(ticker=row['ticker'], currency=currency, corrected=price + 5,
+                    initial_total=total, corrected_total=total + 5 * int(row['shares']))
+    (directory.parent / 'quote-check.json').write_text(json.dumps(scenario), encoding='utf-8')
+    for column in ('manual_price', 'manual_price_currency', 'manual_price_date'):
+        row[column] = ''
+    with holdings.open('w', newline='', encoding='utf-8') as handle:
+        writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+    cached = (datetime.now(timezone.utc) - timedelta(minutes=16)).isoformat()
+    quote = dict(price=price, currency=currency, observed_at=cached)
+    path = directory / '.cache' / 'prices.json'
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps({'price:' + row['ticker']: dict(quote=quote, attempted_at=cached, error='')}),
+                    encoding='utf-8')

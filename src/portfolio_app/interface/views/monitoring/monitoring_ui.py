@@ -490,12 +490,12 @@ def watch_monitoring(directory, *, demo=False, evaluate_rules=True, visible=True
         return  # The Monitoring view reports the corrupt document.
     enabled = evaluate_rules and any(r['enabled'] for r in doc['rules'])
     from portfolio_app.market.market_data import coordinator
-    from portfolio_app.interface.shared.background_ui import poll_while_mounted
+    from portfolio_app.interface.shared.background_ui import status_fragment
     revision = starting_revision
     if revision is None:
         revision, _ = coordinator.channel_state(directory, 'monitoring')
-    @st.fragment(run_every=60 if enabled else None)
-    def heartbeat():
+    @status_fragment(run_every=60 if enabled else None)
+    def heartbeat(poll):
         nonlocal revision
         if enabled:
             service.schedule()
@@ -507,7 +507,7 @@ def watch_monitoring(directory, *, demo=False, evaluate_rules=True, visible=True
                 st.rerun()
             revision = current
         if pending:
-            poll_while_mounted('monitoring_status_tick', 500)
+            poll(.5)
     heartbeat()
 
 

@@ -14,7 +14,7 @@ import sys
 from tempfile import TemporaryDirectory
 import time
 
-from fixture import create_workspace, prepare_fund_check
+from fixture import create_workspace, prepare_fund_check, prepare_quote_check
 from renderer import exercise, exercise_exposure, wait
 
 
@@ -66,11 +66,12 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
     if scenario == 'exposure':
         return report
     events = [json.loads(line) for line in (trial / 'server.jsonl').read_text().splitlines()]
-    if scenario.startswith('etf-'):
+    if 'start_epoch_ms' in report:
         start, end = report.pop('start_epoch_ms'), report.pop('end_epoch_ms')
-        report['idle_valuations'] = sum(e['event'] == 'portfolio_valued' and start <= e['epoch_ms'] <= end for e in events)
-        if report['idle_valuations']:
-            raise AssertionError(f"Idle provider completions revalued the portfolio {report['idle_valuations']} times")
+        field = 'pending_quote_valuations' if scenario == 'quote-pending' else 'idle_valuations'
+        report[field] = sum(e['event'] == 'portfolio_valued' and start <= e['epoch_ms'] <= end for e in events)
+        if report[field]:
+            raise AssertionError(f'{scenario} revalued the portfolio {report[field]} times before expected')
     report['history_calls'] = sum(e['event'] == 'history_calculated' for e in events)
     first = report['first']
     report['first_chart_disk_hits'] = sum(e['event'] == 'disk_hit' and e['chart'] and
@@ -124,14 +125,17 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
 
         if experiment == 'navigation' and profile == 'mixed-history':
             checks = result.setdefault('background_checks', [])
-            for scenario in ('etf-checked', 'etf-failed'):
+            for scenario in ('etf-checked', 'etf-failed', 'quote-pending'):
                 with TemporaryDirectory(prefix='portfolio-refresh-benchmark-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
                     create_workspace(workspace, profile, today=as_of)
-                    prepare_fund_check(workspace)
+                    if scenario == 'quote-pending':
+                        prepare_quote_check(workspace)
+                    else:
+                        prepare_fund_check(workspace)
                     metrics = benchmark(executable, workspace, Path(tmp) / 'trial', 'navigation', surface, scenario)
                     if metrics['digest'] != expected['unchanged']:
-                        raise AssertionError('ETF status or unchanged history altered the rendered financial series')
+                        raise AssertionError('Provider check altered the rendered historical series')
                     checks.append(dict(surface=surface, scenario=scenario, **metrics))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
 

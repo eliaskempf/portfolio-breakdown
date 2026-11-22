@@ -1,5 +1,9 @@
 """Keep background collection from interrupting an open editor or detail view."""
+from functools import wraps
+
 import streamlit as st
+from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
+from streamlit.runtime.scriptrunner_utils.script_run_context import ThreadState, get_script_run_ctx
 
 
 def refresh_allowed():
@@ -9,16 +13,44 @@ def refresh_allowed():
                        if key.endswith(('_dialog_open', '_dialog_requested'))))
 
 
-def poll_while_mounted(key, milliseconds):
-    """Send ticks to the owning status fragment only while work is pending."""
-    timer = st.components.v2.component('background_status_timer', js="""
-        export default function({data, setTriggerValue, parentElement}) {
-            clearInterval(parentElement.pollTimer);
-            parentElement.pollTimer = setInterval(() => {
-                if (parentElement.isConnected) setTriggerValue('tick', Date.now());
-                else clearInterval(parentElement.pollTimer);
-            }, data);
-            return () => clearInterval(parentElement.pollTimer);
-        }
-    """)
-    timer(key=key, data=milliseconds, on_tick_change=lambda: None)
+def _set_poll_interval(seconds):
+    """Use the same timer messages as Streamlit's run_every and fragment unmount."""
+    ctx = get_script_run_ctx()
+    fragment = ThreadState.get().fragment_id
+    if ctx is None:
+        return
+    if fragment is None:
+        raise RuntimeError('A status timer requires a mounted Streamlit fragment')
+    message = ForwardMsg()
+    if seconds is None:
+        message.stop_auto_rerun.fragment_ids.append(fragment)
+    else:
+        message.auto_rerun.fragment_id = fragment
+        message.auto_rerun.interval = seconds
+    ctx.enqueue(message)
+
+
+def status_fragment(*, run_every=None):
+    """Poll a status fragment on demand without submitting a browser widget event."""
+    def decorate(render):
+        previous = object()  # A remounted fragment may inherit a client timer for its ID.
+
+        @st.fragment()
+        @wraps(render)
+        def status():
+            nonlocal previous
+            interval = run_every
+
+            def poll(seconds):
+                nonlocal interval
+                interval = seconds
+
+            try:
+                render(poll)
+            finally:
+                if interval != previous:
+                    _set_poll_interval(interval)
+                    previous = interval
+
+        return status
+    return decorate

@@ -973,11 +973,11 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
             signature = current
         # Poll only the status element. On a revision, Overview also owns the
         # category comparison, while position charts can update locally.
-        from portfolio_app.interface.shared.background_ui import poll_while_mounted, refresh_allowed
+        from portfolio_app.interface.shared.background_ui import refresh_allowed, status_fragment
         pending_update = None
-        @st.fragment
+        @status_fragment()
         @local_dialog_updates()
-        def status():
+        def status(poll):
             nonlocal refresh, observation_stamp, pending_update
             if is_active is not None and not is_active():
                 return
@@ -992,16 +992,16 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
                     future = start_update(directory, journal, revision, scope, period, target, today)
                     if future is None:
                         # Another chart or workspace currently occupies the bounded queue.
-                        poll_while_mounted(key+'refresh_tick', 250)
+                        poll(0.25)
                         return
                     pending_update = latest_stamp, today, future
                 stamp, requested_day, future = pending_update
                 if not future.done():
-                    poll_while_mounted(key+'refresh_tick', 150)
+                    poll(0.15)
                     return
                 pending_update = None
                 if (latest_stamp, today) != (stamp, requested_day):
-                    poll_while_mounted(key+'refresh_tick', 150)
+                    poll(0.15)
                     return
                 if future.exception() is None:
                     update = future.result()
@@ -1026,7 +1026,7 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
                 st.rerun()
             watch_dialog = prepared is None and st.session_state.get('position_edit_dialog')
             if refresh.pending or watch_dialog or changed:
-                poll_while_mounted(key+'refresh_tick', 2000)
+                poll(2)
         _render_history_results(directory, journal, scope, prepared=cached,
             render_status=status, automatic=True, include_inputs=False, **options)
     history_region()
@@ -1192,9 +1192,13 @@ def _load_market_observations(directory, journal, scope, observations, revision,
 
 
 def _automatic_history_status(key, refresh):
+    # Publish the empty state as well. Another fragment can start its tick
+    # before the browser retires elements from the preceding status update.
+    notice = st.empty()
     if refresh.pending:
-        st.caption('Loading historical prices and FX…')
+        notice.caption('Loading historical prices and FX…')
     elif getattr(refresh, 'errors', ()):
-        st.caption('Some historical market data is unavailable', help=' '.join(refresh.errors))
-        if st.button('Retry prices', key=key+'fetch_retry'):
-            return True
+        with notice.container():
+            st.caption('Some historical market data is unavailable', help=' '.join(refresh.errors))
+            if st.button('Retry prices', key=key+'fetch_retry'):
+                return True

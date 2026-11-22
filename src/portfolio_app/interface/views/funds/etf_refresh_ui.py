@@ -4,7 +4,7 @@ from pathlib import Path
 import streamlit as st
 
 from portfolio_app.interface.shared.render_sections import render_sections
-from portfolio_app.interface.shared.background_ui import poll_while_mounted, refresh_allowed
+from portfolio_app.interface.shared.background_ui import refresh_allowed, status_fragment
 from portfolio_app.interface.shared.input_cache import cached_input, file_stamp, fund_sources, loaded_fund_sources
 
 from portfolio_app.interface.shared.display_names import compact_fund_name
@@ -72,8 +72,8 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False, show_message
     observed_pending = not demo and coordinator.running(data_dir)
     source_revision = loaded_fund_sources()
 
-    @st.fragment(run_every=2 if periodic else None)
-    def status():
+    @status_fragment(run_every=2 if periodic else None)
+    def status(poll):
         nonlocal observed_pending, revision
         if demo:
             render_indicator(None)
@@ -95,7 +95,7 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False, show_message
                 observed_pending = False
                 revision = current
         if (pending or pending_render) and not periodic:
-            poll_while_mounted('etf_refresh_status_tick', 2000)
+            poll(2)
         if render_indicator is not None:
             render_indicator(revision if pending else current)
         if not show_messages:
