@@ -91,7 +91,7 @@ class LabelSelection:
     def _valued(exposures, overlap):
         if overlap not in {"split", "overlap"}:
             raise ValueError("Choose how to allocate assets matching multiple labels.")
-        valued = exposures.loc[exposures["value"].notna()]
+        valued = exposures.loc[exposures["value"].notna(), ["asset_id", "asset_name", "value"]]
         if any(not math.isfinite(value) for value in valued["value"]):
             raise ValueError("Label comparison requires finite exposure values.")
         return valued

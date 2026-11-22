@@ -219,3 +219,19 @@ def test_secondary_measures_match_full_comparison_without_building_a_chart(compa
                                         ['asset_id', 'asset_name', 'value']].reset_index(drop=True)
         actual = selection.measure_values(rows, overlap=policy, root=branch)
         pd.testing.assert_frame_equal(actual, expected, check_dtype=not expected.empty)
+
+
+def test_comparison_does_not_iterate_unrelated_source_metadata(comparison_data, monkeypatch):
+    from portfolio_app.exposure.label_comparison import LabelSelection
+    rows, classes = comparison_data
+    selection = LabelSelection(classes, [Label('labels', ('Group A',)), Label('labels', ('Group B',))])
+    expected = selection.compare(rows, overlap='split')
+    wide = rows.assign(extra_source_metadata='Invented account')
+    original = pd.DataFrame.itertuples
+    def checked(frame, *args, **kwargs):
+        assert 'extra_source_metadata' not in frame
+        return original(frame, *args, **kwargs)
+    monkeypatch.setattr(pd.DataFrame, 'itertuples', checked)
+    actual = selection.compare(wide, overlap='split')
+    pd.testing.assert_frame_equal(actual.allocations, expected.allocations)
+    pd.testing.assert_frame_equal(selection.measure_values(wide, overlap='split'), expected.table[['Label', 'Value']])

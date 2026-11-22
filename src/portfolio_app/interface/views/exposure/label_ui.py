@@ -67,10 +67,12 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         st.info("Choose one or more labels to compare their combined asset allocations.")
         return
     selection = LabelSelection(classifications, labels)
-    has_overlap = any(row.value != 0 and len(selection.matches(row.asset_id)) > 1 for row in exposures.itertuples())
-    if targets is not None:
-        for measure in (targets.known, targets.missing):
-            has_overlap |= any(row.value > 0 and len(selection.matches(row.asset_id)) > 1 for row in measure.itertuples())
+    def overlaps(asset_ids):
+        return any(len(selection.matches(asset)) > 1 for asset in asset_ids.unique())
+    has_overlap = overlaps(exposures.loc[exposures.value.ne(0).fillna(True), 'asset_id'])
+    if targets is not None and not has_overlap:
+        has_overlap = any(overlaps(measure.loc[measure.value.gt(0), 'asset_id'])
+                          for measure in (targets.known, targets.missing))
     policy = "split"  # With disjoint labels, both policies give the same result.
     with controls:
         if has_overlap:
