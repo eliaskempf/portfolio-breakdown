@@ -100,8 +100,45 @@ def test_stock_view_respects_individual_fund_expansion(multi_fund_workspace):
     assert not app.exception and not app.error
     companies = next(item.value for item in app.dataframe if 'Company ID' in item.value and 'Total' in item.value)
     assert companies['Total'].sum() == 125.
+    app.session_state['company_unresolved'] = True
+    app.run()
     unresolved = next(item.value for item in app.dataframe if 'Status' in item.value and 'Exposure' in item.value)
     assert 'Synthetic World' in unresolved.Exposure.tolist()
+
+
+def test_company_search_reuses_ownership_until_positions_or_fund_weights_change(multi_fund_workspace, monkeypatch):
+    from portfolio_app.interface.views.exposure import stock_ui
+    calculate = stock_ui.stock_exposure
+    calls = []
+
+    def count(*args, **kwargs):
+        calls.append(1)
+        return calculate(*args, **kwargs)
+
+    monkeypatch.setattr(stock_ui, 'stock_exposure', count)
+
+    app = launch(multi_fund_workspace)
+    by_label(app.get('button_group'), 'Exposure view').set_value('Companies').run()
+
+    def visible_totals():
+        assert not app.exception and not app.error
+        return next(item.value for item in app.dataframe if 'Company ID' in item.value)['Total'].tolist()
+
+    assert visible_totals() == [175.]
+    by_label(app.text_input, 'Search exposure').set_value('absent synthetic name').run()
+    assert visible_totals() == []
+    by_label(app.text_input, 'Search exposure').set_value('alpha').run()
+    assert visible_totals() == [175.]
+    assert len(calls) == 1
+
+    weights = multi_fund_workspace / 'etfs' / 'world.csv'
+    weights.write_text(weights.read_text().replace(',0.5,equity', ',0.2,equity'))
+    app.run()
+    assert visible_totals() == [145.]
+    assert len(calls) == 2
+    by_label(app.multiselect, 'Holdings').set_value(['company', 'world']).run()
+    assert visible_totals() == [120.]
+    assert len(calls) == 3
 
 
 def test_proxy_status_and_newly_supported_funds_default_on(multi_fund_workspace):

@@ -1,13 +1,17 @@
 """Optional company view, separate from strategic allocation and tradable holdings."""
 
+import streamlit as st
+
+from portfolio_app.exposure.exposure_workspace import analytical_signature
+from portfolio_app.exposure.stock_exposure import load_company_identities, stock_exposure
 from portfolio_app.interface.shared.currency_display import money
 from portfolio_app.interface.shared.detail_panels import render_detail_panel
-import streamlit as st
+from portfolio_app.interface.shared.input_cache import cached_input
 from portfolio_app.portfolio.holdings import DataError
-from portfolio_app.exposure.stock_exposure import load_company_identities, stock_exposure
 
 
-def render_stock_exposure(valued, funds, data_dir, *, query='', allocation=None, current_view=None):
+def render_stock_exposure(valued, funds, data_dir, *, query='', allocation=None, current_view=None,
+                          contribution_key=None, identities=None):
     from portfolio_app.portfolio.strategic import category_labels
     labels = category_labels(allocation) if allocation else {}
     buckets = sorted(set(valued.get('bucket_id', [])) - {''})
@@ -18,8 +22,12 @@ def render_stock_exposure(valued, funds, data_dir, *, query='', allocation=None,
                'Company percentages use the selected stock universe; portfolio percentages use the source scope before these additional exclusions. '
                'This ownership view does not treat futures notional as funded capital.')
     try:
-        result = stock_exposure(valued, funds, excluded_buckets=excluded,
-                                identities=load_company_identities(data_dir / 'company-identities.yaml'))
+        if identities is None:
+            identities = load_company_identities(data_dir / 'company-identities.yaml')
+        if contribution_key is None:
+            contribution_key = analytical_signature(valued, funds, str(data_dir.resolve()), identities)
+        result = cached_input('stock_exposure', (contribution_key, frozenset(excluded)),
+            lambda: stock_exposure(valued, funds, excluded_buckets=excluded, identities=identities), immutable=True)
     except DataError as exc:
         st.error(str(exc))
         return
