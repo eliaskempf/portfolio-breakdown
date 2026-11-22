@@ -163,9 +163,10 @@ class MarginCoverage:
         return self.eligible_collateral-self.maintenance_requirement
 
 
-def margin_coverage(journal, holdings, valued, account_id, denomination, *, reporting_currency='EUR', fx_rates=None):
+def margin_coverage(journal, holdings, valued, account_id, denomination, *, reporting_currency='EUR', fx_rates=None, state=None):
     """Entered requirement coverage; loans and liquidity remain separate facts.
 
+    A supplied state must be the current replay of this journal.
     Current asset declines cap eligibility pro rata across reservations. Missing
     valuation or FX suppresses the aggregate rather than counting an unknown as
     zero. Bank/transit cash is never included as pledged broker collateral.
@@ -173,7 +174,8 @@ def margin_coverage(journal, holdings, valued, account_id, denomination, *, repo
     currency(denomination); currency(reporting_currency)
     if account_id not in {account.id for account in journal.accounts}:
         raise DataError('Unknown margin account.')
-    state = replay(journal)
+    if state is None:
+        state = replay(journal)
     holdings_rows, valued_rows = _holding_rows(holdings), _holding_rows(valued)
     owners = {link.position_id: link.account_id for link in journal.holding_links}
     reservations = [item for item in state.reservations.values() if item.account_id == account_id]

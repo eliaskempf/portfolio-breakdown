@@ -222,7 +222,7 @@ def _latest_indicator(rule, series, frame, now):
                       inputs={'currency': series.currency, 'basis': rule.series.basis})
 
 
-def evaluate_account(rule, journal, holdings, valued, *, reporting_currency='EUR', fx_rates=None, now=None):
+def evaluate_account(rule, journal, holdings, valued, *, reporting_currency='EUR', fx_rates=None, now=None, state=None):
     from portfolio_app.ledger.account_journal import replay, effective_events
     from portfolio_app.derivatives.account_margin import conversion_rate, margin_coverage
     from decimal import Decimal
@@ -232,7 +232,7 @@ def evaluate_account(rule, journal, holdings, valued, *, reporting_currency='EUR
         return unavailable('The monitored account no longer exists.')
     if rule.kind == 'coverage':
         coverage = margin_coverage(journal, holdings, valued, rule.account_id, rule.currency,
-                                   reporting_currency=reporting_currency, fx_rates=fx_rates)
+                                   reporting_currency=reporting_currency, fx_rates=fx_rates, state=state)
         if coverage.eligible_collateral is None or coverage.maintenance_requirement is None:
             return unavailable('Complete collateral valuations, FX and a maintenance requirement are needed.')
         if coverage.maintenance_requirement <= 0:
@@ -244,7 +244,8 @@ def evaluate_account(rule, journal, holdings, valued, *, reporting_currency='EUR
                                'eligible_value': float(r.eligible_value) if r.eligible_value is not None else None, 'issue': r.issue} for r in coverage.collateral],
                   'requirements': [{'date': r.as_of, 'source': r.source} for r in journal.margin_requirements if r.account_id == rule.account_id]}
         return Evaluation(stamp, value, condition=condition(value, rule), inputs=inputs, note=' '.join(coverage.issues))
-    state = replay(journal)
+    if state is None:
+        state = replay(journal)
     def convert(amount, currency):
         rate = conversion_rate(fx_rates, currency, rule.currency, reporting_currency)
         if rate is None:
