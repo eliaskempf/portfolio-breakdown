@@ -17,7 +17,7 @@ from portfolio_app.portfolio.valuation import value_holdings
 
 
 @pytest.mark.parametrize('expanded', [False, True])
-def test_demo_separates_sector_inapplicability_from_unknown_without_dropping_value(tmp_path, expanded):
+def test_demo_separates_sector_inapplicability_from_unknown_without_dropping_value(tmp_path, expanded, monkeypatch):
     create_demo_data(tmp_path)
     holdings = load_holdings(tmp_path / 'holdings.csv')
     funds = load_funds(tmp_path / 'etfs')
@@ -26,6 +26,18 @@ def test_demo_separates_sector_inapplicability_from_unknown_without_dropping_val
     before = deepcopy(classes)
     resolved = sector_classifications(classes, holdings, funds)
     assert classes == before
+    from portfolio_app.funds import etf
+    original = etf.constituent_resolver
+    resolutions = []
+    def counted(source):
+        resolve = original(source)
+        def observe(row):
+            resolutions.append(row['constituent_id'])
+            return resolve(row)
+        return observe
+    monkeypatch.setattr(etf, 'constituent_resolver', counted)
+    assert sector_classifications(saved, holdings, funds, include_provider=True) == resolved
+    assert len(resolutions) == sum(len(fund.constituents) for fund in funds)
     valued = value_holdings(holdings, PriceService(StaticProvider(tmp_path / 'demo_prices.json')))
     exposures = prepare_exposures(valued, funds, holdings, lookthrough=expanded)
     allocations = classify_exposures(exposures, resolved, 'sector')

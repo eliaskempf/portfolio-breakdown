@@ -1,12 +1,12 @@
 """Distinguish assets without a business sector from missing sector metadata."""
 from collections import defaultdict
 
-from portfolio_app.funds.etf import constituent_resolver, matching_fund
+from portfolio_app.funds.etf import add_provider_classifications, matching_fund, resolved_constituents
 
 NO_SECTOR = 'No business sector'
 
 
-def sector_classifications(classifications, holdings, funds):
+def sector_classifications(classifications, holdings, funds, *, include_provider=False):
     """Add analytical fallbacks without modifying saved or provider classifications.
 
     Only explicit instrument/asset-class evidence qualifies. Bonds, unknown ETFs
@@ -34,10 +34,10 @@ def sector_classifications(classifications, holdings, funds):
                 and fund.constituents.instrument_type.eq('overnight_rate').all()
                 and abs(fund.constituents.weight.sum() - 1.) <= 1e-12):
             candidates[asset].add('Money market')
-    resolve = constituent_resolver(holdings)
-    for fund in funds:
-        for row in fund.constituents.to_dict('records'):
-            observe(resolve(row)[0], row)
+    for asset, row in resolved_constituents(funds, holdings):
+        if include_provider:
+            add_provider_classifications(result, asset, row)
+        observe(asset, row)
     for asset, entry in classifications.items():
         for path in entry.get('asset_class', ()):
             if path[-1].casefold() == 'gold':

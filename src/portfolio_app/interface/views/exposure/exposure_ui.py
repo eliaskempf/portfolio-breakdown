@@ -15,7 +15,7 @@ from portfolio_app.interface.shared.charts import chart_config
 from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension
 from portfolio_app.interface.shared.charts import bar_chart, hierarchy_chart, hierarchy_table, pie_chart, sort_allocation_nodes
 from portfolio_app.interface.shared.display_names import display_name, instrument_name, named_holdings
-from portfolio_app.funds.etf import matching_fund, fund_classifications
+from portfolio_app.funds.etf import matching_fund
 from portfolio_app.interface.views.funds.etf_refresh_ui import render_refresh_controls
 from portfolio_app.interface.views.funds.etf_selection import render_etf_choices, render_etf_toggle
 from portfolio_app.interface.views.exposure.exposure_assets_ui import render_assets
@@ -134,7 +134,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         return cached_input('geography', (signature, lookthrough),
                             lambda: resolve_geography(holdings, funds, manual_classifications), immutable=True)
     def classify():
-        return sector_classifications(fund_classifications(classifications, funds, holdings), holdings, funds)
+        return sector_classifications(classifications, holdings, funds, include_provider=True)
     classifications = cached_input('exposure_classifications', (signature, lookthrough), classify)
     names = taxonomy_names(classifications)
     with filters:

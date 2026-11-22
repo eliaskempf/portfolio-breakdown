@@ -196,19 +196,27 @@ def resolve_constituent_asset(constituent: dict, holdings: pd.DataFrame) -> tupl
     return constituent_resolver(holdings)(constituent)
 
 
-def fund_classifications(classifications, funds, holdings):
-    """Provider sector/country paths are fallbacks; local taxonomies always win."""
-    result = {asset: dict(taxonomies) for asset, taxonomies in classifications.items()}
+def resolved_constituents(funds, holdings):
     resolve = constituent_resolver(holdings)
     for fund in funds:
         for row in fund.constituents.to_dict('records'):
-            asset_id, _ = resolve(row)
-            for column, taxonomy in [('sector', 'sector'), ('country', 'geography'),
-                                     ('issuer', 'issuer'), ('market_currency', 'currency'),
-                                     ('maturity_band', 'maturity'), ('credit_rating', 'credit_quality')]:
-                label = row.get(column)
-                if isinstance(label, str) and label.strip() and label not in {'Unknown', '-'}:
-                    result.setdefault(asset_id, {}).setdefault(taxonomy, ((label.strip(),),))
+            yield resolve(row)[0], row
+
+
+def add_provider_classifications(result, asset_id, row):
+    for column, taxonomy in [('sector', 'sector'), ('country', 'geography'),
+                             ('issuer', 'issuer'), ('market_currency', 'currency'),
+                             ('maturity_band', 'maturity'), ('credit_rating', 'credit_quality')]:
+        label = row.get(column)
+        if isinstance(label, str) and label.strip() and label not in {'Unknown', '-'}:
+            result.setdefault(asset_id, {}).setdefault(taxonomy, ((label.strip(),),))
+
+
+def fund_classifications(classifications, funds, holdings):
+    """Provider sector/country paths are fallbacks; local taxonomies always win."""
+    result = {asset: dict(taxonomies) for asset, taxonomies in classifications.items()}
+    for asset_id, row in resolved_constituents(funds, holdings):
+        add_provider_classifications(result, asset_id, row)
     return result
 
 
