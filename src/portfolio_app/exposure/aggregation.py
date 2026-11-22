@@ -1,6 +1,7 @@
 """Value-conserving allocation trees shared by every chart and table."""
 
 from collections import defaultdict
+from functools import cache
 import json
 
 import pandas as pd
@@ -43,7 +44,11 @@ def build_tree(
     terminal_values: dict[TaxonomyPath, float] = defaultdict(float)
     asset_values: dict[tuple[TaxonomyPath, str], float] = defaultdict(float)
     asset_names: dict[str, str] = {}
-    root_id = _node_id("category", root)
+    @cache
+    def category_id(path):
+        return _node_id("category", path)
+
+    root_id = category_id(root)
     for row in allocations.itertuples(index=False):
         if not is_descendant(row.path, root):
             continue
@@ -53,11 +58,11 @@ def build_tree(
         asset_names[row.asset_id] = min(asset_names.get(row.asset_id, row.asset_name), row.asset_name)
         for length in range(len(root), len(path) + 1):
             prefix = path[:length]
-            node_id = _node_id("category", prefix)
+            node_id = category_id(prefix)
             if node_id not in nodes:
                 nodes[node_id] = {
                     "node_id": node_id,
-                    "parent_id": "" if prefix == root else _node_id("category", prefix[:-1]),
+                    "parent_id": "" if prefix == root else category_id(prefix[:-1]),
                     "label": prefix[-1] if prefix else root_label,
                     "path": prefix,
                     "depth": length - len(root),
@@ -71,17 +76,17 @@ def build_tree(
         for (path, asset_id), value in sorted(asset_values.items()):
             node_id = _node_id("asset", path, asset_id)
             nodes[node_id] = {
-                "node_id": node_id, "parent_id": _node_id("category", path),
+                "node_id": node_id, "parent_id": category_id(path),
                 "label": asset_names[asset_id], "path": path, "depth": len(path) - len(root) + 1,
                 "value": value, "kind": "holding",
             }
     else:
         parents = {node["parent_id"] for node in nodes.values()}
         for path, value in terminal_values.items():
-            if _node_id("category", path) in parents:
+            if category_id(path) in parents:
                 node_id = _node_id("assigned", path)
                 nodes[node_id] = {
-                    "node_id": node_id, "parent_id": _node_id("category", path),
+                    "node_id": node_id, "parent_id": category_id(path),
                     "label": "Assigned here", "path": path, "depth": len(path) - len(root) + 1,
                     "value": value, "kind": "assigned",
                 }
