@@ -135,3 +135,31 @@ def test_yahoo_history_requests_adjustment(monkeypatch):
             return pd.DataFrame({'Close': [100., 102.]}, index=pd.date_range('2026-01-01', periods=2))
     monkeypatch.setattr(yf, 'Ticker', lambda ticker: Ticker())
     assert YahooRiskHistoryProvider().fetch('INVENTED', 3).prices.tolist() == [100., 102.]
+
+
+def test_asset_risk_shares_benchmark_fridays_across_distinct_trading_calendars(monkeypatch):
+    from portfolio_app.analytics import risk
+    benchmark = history(np.tile(market(), 2))
+    # Duplicates, weekend trading and an exchange holiday span the first
+    # window boundary. A missing whole week must also remove the next return.
+    first = benchmark.copy()
+    first.index -= pd.Timedelta(days=6)
+    second = benchmark.drop(benchmark.index[-43]).copy()
+    second.index -= pd.Timedelta(days=1)
+    second = pd.concat([second, second.iloc[-12:-11] * 1.01]).iloc[::-1]
+    histories = {'first': first, 'second': second}
+    frame = held(list(histories), [65, 35])
+    explicit = {key: weekly_returns(prices, today=TODAY) for key, prices in histories.items()}
+    expected = risk_analytics(frame, {}, benchmark, years=3, today=TODAY, return_series=explicit)
+    calendars = []
+    original = risk.weekly_returns
+    def counted(series, **kwargs):
+        calendars.append(len(series))
+        return original(series, **kwargs)
+    monkeypatch.setattr(risk, 'weekly_returns', counted)
+    actual = risk_analytics(frame, histories, benchmark, years=3, today=TODAY)
+    assert calendars == [len(benchmark)]
+    assert actual.observations == expected.observations > 52
+    assert actual.beta == expected.beta and actual.volatility == expected.volatility
+    pd.testing.assert_frame_equal(actual.holdings, expected.holdings)
+    pd.testing.assert_frame_equal(actual.correlations, expected.correlations)
