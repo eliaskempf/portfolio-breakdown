@@ -47,6 +47,50 @@ def test_rule_revision_conflicts_pause_delete_and_history_are_preserved(tmp_path
     assert len(doc['observations']) == 1 and doc['events'][0]['resolved']
 
 
+def test_worker_reuses_validated_revision_and_observes_concurrent_edits(tmp_path, monkeypatch):
+    from portfolio_app.monitoring import monitoring_store as store
+    r = rule()
+    store.save_rule(tmp_path, r)
+    loads = []
+    original = store.load_monitoring
+    def counted(directory):
+        loads.append(directory)
+        return original(directory)
+    monkeypatch.setattr(store, 'load_monitoring', counted)
+    worker = store.EvaluationWriter(tmp_path)
+    assert worker.enabled_rules() == [(r, None)]
+    warning = Evaluation('2026-10-09', -1.5, condition='approaching')
+    assert worker.record(r, [warning], now=NOW)
+    assert not worker.record(r, [warning], now=NOW)
+    assert loads == [tmp_path]
+    event = original(tmp_path)[0]['events'][0]
+    store.mark_events(tmp_path, [event['id']], acknowledge=True)
+    loads.clear()
+    assert worker.record(r, [replace(warning, value=-3., condition='triggered')], now=NOW)
+    assert loads == [tmp_path]
+    assert original(tmp_path)[0]['events'][0]['acknowledged']
+    store.save_rule(tmp_path, replace(r, revision=2, enabled=False), expected_rule_revision=1)
+    assert not worker.record(r, [warning], now=NOW)
+    assert len(original(tmp_path)[0]['observations']) == 2
+
+
+def test_worker_discards_unpublished_changes_after_write_failure(tmp_path, monkeypatch):
+    from portfolio_app.monitoring import monitoring_store as store
+    r = rule()
+    store.save_rule(tmp_path, r)
+    worker = store.EvaluationWriter(tmp_path)
+    value = Evaluation('2026-10-09', -3., condition='triggered')
+    def fail(*args):
+        raise OSError('Invented write failure')
+    with monkeypatch.context() as patch:
+        patch.setattr(store, '_write', fail)
+        with pytest.raises(OSError):
+            worker.record(r, [value], now=NOW)
+    assert not load_monitoring(tmp_path)[0]['events']
+    assert worker.record(r, [value], now=NOW)
+    assert len(load_monitoring(tmp_path)[0]['events']) == 1
+
+
 def test_corrupt_monitoring_is_retained(tmp_path):
     path=tmp_path/'monitoring.json'
     path.write_text('{bad')

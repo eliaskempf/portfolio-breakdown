@@ -12,7 +12,7 @@ from portfolio_app.monitoring import monitoring
 from portfolio_app.monitoring.monitoring import (SeriesSpec, Evaluation, condition, evaluate_with_history,
     evaluate_account, unavailable, utc_now)
 from portfolio_app.monitoring.monitoring_market import MonitoringMarket, SyntheticMonitoringProvider
-from portfolio_app.monitoring.monitoring_store import load_monitoring, record_evaluations, rule_from_dict
+from portfolio_app.monitoring.monitoring_store import EvaluationWriter
 
 
 class MonitoringService:
@@ -52,8 +52,8 @@ class MonitoringService:
 
     def evaluate(self, *, refresh=False):
         try:
-            doc, _ = load_monitoring(self.directory)
-            rules = [rule_from_dict(r) for r in doc['rules'] if r['enabled']]
+            writer = EvaluationWriter(self.directory)
+            rules = writer.enabled_rules()
             @cache
             def fetch_series(spec):
                 series = self.market.get(spec, refresh=refresh)
@@ -72,12 +72,11 @@ class MonitoringService:
                     frames[key] = monitoring.indicator_frame(rule, series, now=now)
                 return frames[key]
 
-            for rule in rules:
+            for rule, previous in rules:
                 try:
                     if rule.kind == 'sma':
                         series = fetch_series(rule.series)
                         latest, frame = evaluate_with_history(rule, series, now=self.now(), frame_for=frame_for)
-                        previous = doc['states'].get(rule.id, {}).get('last_valid', {}).get('observed_at')
                         if rule.cadence != 'intraday' and latest.quality == 'valid' and previous:
                             frame = frame.dropna()
                             after = max(str(previous)[:10], rule.created_at[:10])
@@ -86,8 +85,8 @@ class MonitoringService:
                                 condition(float(row.distance), rule), inputs={'currency': series.currency, 'basis': rule.series.basis},
                                 note='Recovered completed-close observation; recorded after reopening.') for day, row in history.iterrows()]
                             if recovered:
-                                record_evaluations(self.directory, rule, recovered, recovered=True, now=self.now())
-                        record_evaluations(self.directory, rule, [latest], now=self.now())
+                                writer.record(rule, recovered, recovered=True, now=self.now())
+                        writer.record(rule, [latest], now=self.now())
                     else:
                         journal, holdings, valued, currency, rates, input_stamp, fx_quality = self.account_inputs([rule], refresh=refresh)
                         evaluation = evaluate_account(rule, journal, holdings, valued, reporting_currency=currency, fx_rates=rates, now=self.now())
@@ -103,9 +102,9 @@ class MonitoringService:
                         if stale or fx_quality:
                             evaluation = unavailable('Backing-asset prices or required FX are stale/unavailable. Last valid condition is retained.', quality='stale')
                         evaluation = replace(evaluation, observed_at=input_stamp)
-                        record_evaluations(self.directory, rule, [evaluation], now=self.now())
+                        writer.record(rule, [evaluation], now=self.now())
                 except Exception:
-                    record_evaluations(self.directory, rule, [unavailable('Evaluation failed. Review the rule inputs or refresh its data.')], now=self.now())
+                    writer.record(rule, [unavailable('Evaluation failed. Review the rule inputs or refresh its data.')], now=self.now())
             self.last_success, self.error = self.now().isoformat(), ''
         except Exception:
             self.error = 'Monitoring could not update. Review the saved monitoring document or retry.'
