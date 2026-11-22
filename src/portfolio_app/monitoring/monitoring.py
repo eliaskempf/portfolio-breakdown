@@ -168,13 +168,24 @@ def indicator_frame(rule, series, *, now=None):
     return result
 
 
-def evaluate_series(rule, series, *, now=None):
+def evaluate_series(rule, series, *, now=None, frame=None):
+    latest, _ = evaluate_with_history(rule, series, now=now, frame=frame)
+    return latest
+
+
+def evaluate_with_history(rule, series, *, now=None, frame=None):
+    """Evaluate live freshness from the full indicator history shared with charts and catch-up."""
     now = now or utc_now()
     if series.quality != 'valid':
-        return unavailable(series.note or 'Market data unavailable.', quality=series.quality)
+        return unavailable(series.note or 'Market data unavailable.', quality=series.quality), None
     if rule.series.currency and series.currency != rule.series.currency:
-        return unavailable('The source returned a different currency. Review this rule.')
-    frame = indicator_frame(rule, series, now=now)
+        return unavailable('The source returned a different currency. Review this rule.'), None
+    if frame is None:
+        frame = indicator_frame(rule, series, now=now)
+    return _latest_indicator(rule, series, frame, now), frame
+
+
+def _latest_indicator(rule, series, frame, now):
     if frame.empty:
         return unavailable('No completed observations available.')
     latest = frame.iloc[-1]

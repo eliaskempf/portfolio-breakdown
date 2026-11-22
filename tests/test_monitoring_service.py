@@ -39,7 +39,14 @@ def test_factory_alias_shares_service_and_background_completion(tmp_path, monkey
     assert service.browse(spec).dates
 
 
-def test_catchup_only_completed_closes_after_recorded_observation(tmp_path):
+def test_catchup_only_completed_closes_after_recorded_observation(tmp_path, monkeypatch):
+    from portfolio_app.monitoring import monitoring
+    original = monitoring.indicator_frame
+    calculated = []
+    def counted(*args, **kwargs):
+        calculated.append(1)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(monitoring, 'indicator_frame', counted)
     r=replace(rule(),created_at='2026-10-01T00:00:00+00:00')
     save_rule(tmp_path,r)
     record_evaluations(tmp_path,r,[Evaluation('2026-10-06',1.,condition='normal')],now=NOW-timedelta(days=5))
@@ -51,6 +58,7 @@ def test_catchup_only_completed_closes_after_recorded_observation(tmp_path):
     assert not service.error
     assert [o['evaluation']['observed_at'] for o in doc['observations']] == ['2026-10-06','2026-10-07','2026-10-08','2026-10-09']
     assert doc['events'][0]['recovered'] and doc['events'][0]['resolved']
+    assert len(calculated) == 1
     service.evaluate()
     assert len(load_monitoring(tmp_path)[0]['observations']) == 4
 

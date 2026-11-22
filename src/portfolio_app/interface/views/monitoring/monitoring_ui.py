@@ -10,6 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from portfolio_app.interface.shared.background_ui import refresh_allowed
+from portfolio_app.interface.shared.input_cache import cached_input
 
 from portfolio_app.interface.shared.charts import style_figure
 from portfolio_app.portfolio.holdings import DataError
@@ -54,7 +55,10 @@ def describe(rule):
 def _plot(rule, series, *, key='monitoring_chart_', show_condition=True, tracked=True):
     # Calculate with all source history before clipping; a display window must
     # never shorten the SMA's warm-up or change a saved rule's live evaluation.
-    frame = indicator_frame(rule, series)
+    now = utc_now()
+    local_day = pd.Timestamp(now).tz_convert(series.timezone).date()
+    frame = cached_input('monitoring_chart_history', (series, rule.period, rule.window, rule.cadence, local_day),
+                         lambda: indicator_frame(rule, series, now=now), immutable=True)
     if frame.empty:
         st.info('No completed observations available.')
         return
@@ -99,7 +103,7 @@ def _plot(rule, series, *, key='monitoring_chart_', show_condition=True, tracked
         warning = rule.threshold + (rule.warning_band if rule.direction == 'below' else -rule.warning_band)
         if rule.warning_band:
             figure.add_scatter(x=display.index, y=display.sma*(1+warning/100), name='Approaching boundary', line=dict(color='#d3ac57', dash='dot'))
-    current = evaluate_series(rule, series)
+    current = evaluate_series(rule, series, now=now, frame=frame)
     if rule.cadence == 'intraday' and series.quote is not None and series.quote_at and start <= pd.Timestamp(series.quote_at).date() <= end:
         figure.add_scatter(x=[series.quote_at], y=[series.quote], name='Latest observation', mode='markers', marker=dict(size=10))
         if current.reference is not None:

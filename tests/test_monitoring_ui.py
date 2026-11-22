@@ -201,3 +201,21 @@ def test_first_visit_shows_plain_world_sma_until_a_threshold_is_entered(tmp_path
     assert traces()==['Completed close','SMA']
     assert by_label(app.button,'Track rule').disabled
     assert not app.exception
+
+
+def test_chart_range_and_threshold_reuse_full_monitoring_history(tmp_path, monkeypatch):
+    from portfolio_app.interface.views.monitoring import monitoring_ui
+    original = monitoring_ui.indicator_frame
+    calls = []
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(monitoring_ui, 'indicator_frame', counted)
+    app = launch(tmp_path)
+    assert not app.exception and calls == [1]
+    by_label(app.selectbox, 'Chart period').set_value('1 year').run()
+    assert not app.exception and calls == [1]
+    by_label(app.number_input, 'Distance from SMA trigger (%)').set_value(-3.).run()
+    assert not app.exception and calls == [1]
+    by_label(app.selectbox, 'SMA preset').set_value('10 months').run()
+    assert not app.exception and calls == [1, 1]

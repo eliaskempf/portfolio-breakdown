@@ -7,8 +7,8 @@ from threading import RLock
 import pandas as pd
 
 from portfolio_app.market.market_data import coordinator
-from portfolio_app.monitoring.monitoring import (SeriesSpec, Evaluation, condition, evaluate_series,
-    evaluate_account, indicator_frame, unavailable, utc_now)
+from portfolio_app.monitoring.monitoring import (SeriesSpec, Evaluation, condition, evaluate_with_history,
+    evaluate_account, unavailable, utc_now)
 from portfolio_app.monitoring.monitoring_market import MonitoringMarket, SyntheticMonitoringProvider
 from portfolio_app.monitoring.monitoring_store import load_monitoring, record_evaluations, rule_from_dict
 
@@ -60,10 +60,10 @@ class MonitoringService:
                             series_key = json.dumps(vars(rule.series), sort_keys=True)
                             self.series[series_key] = series
                             self.browse_attempts[series_key] = self.now()
-                        latest = evaluate_series(rule, series, now=self.now())
+                        latest, frame = evaluate_with_history(rule, series, now=self.now())
                         previous = doc['states'].get(rule.id, {}).get('last_valid', {}).get('observed_at')
                         if rule.cadence != 'intraday' and latest.quality == 'valid' and previous:
-                            frame = indicator_frame(rule, series, now=self.now()).dropna()
+                            frame = frame.dropna()
                             after = max(str(previous)[:10], rule.created_at[:10])
                             history = frame.loc[(frame.index > pd.Timestamp(after)) & (frame.index < pd.Timestamp(latest.observed_at))]
                             recovered = [Evaluation(day.date().isoformat(), float(row.distance), float(row.sma), float(row.price),
