@@ -127,7 +127,10 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
         forecast = year == date.today().year
         boundary = min(f'{year}-12-31', date.today().isoformat())
         fingerprint = sha256(repr((journal, holdings.to_dict('records'))).encode()).hexdigest()
-        all_items = cached_input('tax_candidates', (fingerprint, boundary, repr(funds)),
+        # Eligibility uses fund identities. Constituent rows and weights have no
+        # bearing on which purchased lots appear in the calculator.
+        fund_isins = frozenset(fund.isin for fund in funds)
+        all_items = cached_input('tax_candidates', (fingerprint, boundary, fund_isins),
             lambda: candidates(holdings, journal, boundary, funds, valued))
         if forecast and valued is not None:
             from dataclasses import replace

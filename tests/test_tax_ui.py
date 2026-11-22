@@ -114,3 +114,26 @@ def test_tax_interactions_reuse_price_index_until_evidence_changes(tmp_path, mon
     assert not app.exception
     assert snapshots[-1] is not initial
     assert snapshots[-1]['invented-position'] == (new_price,)
+
+
+def test_tax_candidates_depend_on_fund_identities_not_constituents(tmp_path, monkeypatch):
+    from portfolio_app.interface.views.taxes import tax_ui
+    original = tax_ui.candidates
+    calls = []
+    def counted(*args):
+        calls.append(1)
+        return original(*args)
+    monkeypatch.setattr(tax_ui, 'candidates', counted)
+    app = launch(tmp_path)
+    etfs = tmp_path / 'etfs'
+    etfs.mkdir(exist_ok=True)
+    (etfs / 'invented.yaml').write_text('fund_id: invented\nname: Invented fund\nisin: ZZ0000000001\n'
+        'tickers: [INVENTED]\nas_of: 2025-10-01\nsource: Invented data\nholdings_file: invented.csv\n')
+    path = etfs / 'invented.csv'
+    path.write_text('constituent_id,name,ticker,isin,weight\na,Invented A,,,0.5\n')
+    calls.clear()
+    app.run()
+    assert not app.exception and len(calls) == 1
+    path.write_text(path.read_text().replace('0.5', '0.25'))
+    app.run()
+    assert not app.exception and len(calls) == 1
