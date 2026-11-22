@@ -9,6 +9,7 @@ import streamlit as st
 from portfolio_app.interface.shared.charts import chart_config
 
 from portfolio_app.interface.shared.charts import style_figure
+from portfolio_app.exposure.exposure_tables import asset_search_mask
 from portfolio_app.exposure.geography import (
     COUNTRY_UNSPECIFIED, SPECIAL, UNKNOWN, Geography, geography_allocations, geography_table,
 )
@@ -27,8 +28,7 @@ def render_geography(exposures: pd.DataFrame, geography: Geography, *, contribut
         'geography_allocations', (contribution_key, complete), prepare, immutable=True)
     country_value = total - unknown - regional_only - special
     if query.strip():
-        terms = exposures[['asset_name', 'ticker']].fillna('').agg(' '.join, axis=1).str.casefold()
-        matching = set(exposures.loc[terms.str.contains(query.strip().casefold(), regex=False), 'asset_id'])
+        matching = set(exposures.loc[asset_search_mask(exposures.asset_name, exposures.ticker, query), 'asset_id'])
         allocations = allocations.loc[allocations.asset_id.isin(matching)]
     if allocations.empty:
         st.info('No assets match this search.')

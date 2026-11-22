@@ -5,6 +5,12 @@ from portfolio_app.interface.shared.display_names import instrument_name
 from portfolio_app.exposure.label_presentation import asset_badges
 
 
+def asset_search_mask(names: pd.Series, tickers: pd.Series, query: str) -> pd.Series:
+    """Match a literal substring across the displayed asset name and ticker."""
+    terms = names.fillna('') + ' ' + tickers.fillna('')
+    return terms.str.casefold().str.contains(query.strip().casefold(), regex=False)
+
+
 def complete_exposures(exposures, selected):
     """Keep unavailable source valuations visible without fabricating weights."""
     result = exposures.copy()

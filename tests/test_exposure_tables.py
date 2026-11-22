@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.exposure.exposure_tables import asset_exposure_table, complete_exposures, exposure_sources
+from portfolio_app.exposure.exposure_tables import asset_exposure_table, asset_search_mask, complete_exposures, exposure_sources
 
 
 def test_complete_asset_view_merges_sources_and_keeps_unclassified():
@@ -128,3 +128,10 @@ def test_compact_previews_cap_sources_without_changing_exposure_percentages():
     exposures.loc[0, 'value'] = float('nan')
     _, *items = preview_facts(exposures, selected)['assets']['a']
     assert all(share is None for _, _, share in items)
+
+
+def test_asset_search_matches_literal_text_across_name_and_ticker_preserving_indices():
+    rows = pd.DataFrame({'name': ['Invented Straße', None, 'Other', None],
+                         'ticker': ['ZZ.1', 'Z[2]', None, None]}, index=[8, 4, 8, 3])
+    for query, indices in [(' STRASSE zz. ', [8]), ('[2]', [4]), ('other', [8]), ('ZZx1', [])]:
+        assert rows.index[asset_search_mask(rows.name, rows.ticker, query)].tolist() == indices

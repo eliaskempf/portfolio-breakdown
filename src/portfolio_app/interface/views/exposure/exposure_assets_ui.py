@@ -13,7 +13,7 @@ from portfolio_app.interface.shared.charts import chart_config
 from portfolio_app.interface.shared.charts import style_figure
 from portfolio_app.funds.etf import matching_fund
 from portfolio_app.interface.views.funds.etf_ui import render_fund_details
-from portfolio_app.exposure.exposure_tables import asset_exposure_table, asset_source_amounts, exposure_sources
+from portfolio_app.exposure.exposure_tables import asset_exposure_table, asset_search_mask, asset_source_amounts, exposure_sources
 from portfolio_app.exposure.label_presentation import taxonomy_colors
 from portfolio_app.interface.shared.list_ui import BOUNDED_LIST_HEIGHT, ListColumn, frame_rows, render_list
 from portfolio_app.exposure.taxonomy import describe, taxonomy_names
@@ -59,8 +59,7 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
 
     table, colors = cached_input('exposure_assets_table', (contribution_key, taxonomy, complete, equity), prepare_table)
     if query.strip():
-        terms = table[['Asset', 'Ticker']].fillna('').agg(' '.join, axis=1).str.casefold()
-        table = table.loc[terms.str.contains(query.strip().casefold(), regex=False)].reset_index(drop=True)
+        table = table.loc[asset_search_mask(table.Asset, table.Ticker, query)].reset_index(drop=True)
         st.caption(f'{len(table)} matching assets · Search keeps percentages relative to the selected portfolio')
     if table.empty:
         st.info('No assets match this search.')
