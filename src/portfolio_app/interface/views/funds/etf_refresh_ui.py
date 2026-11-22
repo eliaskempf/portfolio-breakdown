@@ -8,7 +8,7 @@ from portfolio_app.interface.shared.background_ui import refresh_allowed, status
 from portfolio_app.interface.shared.input_cache import cached_input, file_stamp, fund_sources, loaded_fund_sources
 
 from portfolio_app.interface.shared.display_names import compact_fund_name
-from portfolio_app.funds.etf import snapshot_age_days, matching_fund
+from portfolio_app.funds.etf import snapshot_age_days, group_fund_positions
 from portfolio_app.funds.etf_refresh import coordinator, preferences, save_preferences, read_json, supported, discovery_candidates
 
 
@@ -134,7 +134,8 @@ def render_refresh_controls(data_dir, holdings, funds, *, demo=False):
             st.error(f'Could not save refresh preferences: {exc}')
     st.caption('Successful checks: at most daily. Failed attempts can retry after five minutes, or immediately after provider fixes. Offline demos do not download data.')
     rows = holdings.to_dict('records')
-    held = [fund for fund in funds if any(row.get('shares', 0) > 0 and matching_fund(row, [fund]) for row in rows)]
+    groups = group_fund_positions(funds, (row for row in rows if row.get('shares', 0) > 0))
+    held = [fund for fund, positions in zip(funds, groups, strict=True) if positions]
     candidates = discovery_candidates(holdings, funds)
     can_refresh = bool(candidates) or any(supported(fund) for fund in held)
 

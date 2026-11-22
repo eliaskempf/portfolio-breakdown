@@ -11,7 +11,7 @@ import pytest
 from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension
 from portfolio_app.funds.etf import (
     FundSnapshot, effective_exposure_table, expand_etfs, fund_breakdown,
-    load_funds, matching_fund, snapshot_age_days, validate_constituents,
+    group_fund_positions, load_funds, matching_fund, snapshot_age_days, validate_constituents,
 )
 from portfolio_app.exposure.exposures import normalize_exposures
 from portfolio_app.portfolio.grouping import InstrumentGroup, group_classifications, group_exposures, group_members_table
@@ -37,6 +37,50 @@ def positions():
         {"position_id": "p2", "id": "semis", "name": "SMH UCITS", "ticker": "VVSM.DE", "isin": "IE00BMC38736", "current_value_reporting": 10000., "portfolio": "AI", "account": "B"},
         {"position_id": "p3", "id": "us-smh", "name": "US SMH", "ticker": "SMH", "isin": "US92189F6768", "current_value_reporting": 500., "portfolio": "Core", "account": "B"},
     ])
+
+
+def test_fund_position_groups_preserve_identifier_priority_order_and_shared_listings(fund):
+    first = replace(fund, isin='ISIN-A', wkn='WKN-A', tickers=('SHARED', 'SHARED'))
+    second = replace(fund, isin='ISIN-B', wkn='WKN-B', tickers=('SHARED', 'B'))
+    funds = [first, second]
+    rows = [
+        {'isin': ' isin-a ', 'wkn': 'WKN-B', 'ticker': 'B'},
+        {'isin': 'UNKNOWN', 'ticker': 'SHARED'},
+        {'wkn': ' wkn-b ', 'ticker': 'SHARED'},
+        {'wkn': 'UNKNOWN', 'ticker': 'SHARED'},
+        {'ticker': ' shared '},
+        {},
+        {'isin': 'ISIN-A', 'account': 'another synthetic account'},
+    ]
+    groups = group_fund_positions(funds, iter(rows))
+    assert groups == [[rows[0], rows[4], rows[6]], [rows[2], rows[4]]]
+    assert groups == [[row for row in rows if matching_fund(row, [item])] for item in funds]
+    assert matching_fund(rows[4], funds) is None
+
+
+def test_closed_fund_panels_read_label_positions_once_and_skip_selected_values(fund, positions, monkeypatch):
+    from types import SimpleNamespace
+    from portfolio_app.interface.views.funds import etf_ui
+
+    second = replace(fund, fund_id='another', isin='SYNTHETIC', tickers=(), name='Example fund')
+    selected = positions.iloc[:1]
+    reads = []
+    labels = []
+    original = pd.DataFrame.to_dict
+
+    def records(frame, *args, **kwargs):
+        reads.append(id(frame))
+        return original(frame, *args, **kwargs)
+
+    def closed(label, **kwargs):
+        labels.append(label)
+        return SimpleNamespace(open=False)
+
+    monkeypatch.setattr(pd.DataFrame, 'to_dict', records)
+    monkeypatch.setattr(etf_ui.st, 'expander', closed)
+    etf_ui.render_fund_details([fund, second], selected, holdings=positions)
+    assert labels == ['ETF breakdown: Smh', 'ETF breakdown: Example fund']
+    assert reads == [id(positions)]
 
 
 def test_partial_weights_and_source_values_are_conserved(fund, positions):

@@ -1,5 +1,6 @@
 """ETF snapshots and value-preserving expansion into normalized exposures."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
 import math
@@ -138,14 +139,44 @@ def _load_funds(directory, read_constituents):
     return funds
 
 
+def _position_listing(position: dict) -> tuple[str, str]:
+    # An explicit ISIN or WKN is authoritative even when the ticker conflicts.
+    for field in ('isin', 'wkn', 'ticker'):
+        value = str(position.get(field, '')).strip().upper()
+        if value:
+            return field, value
+    return '', ''
+
+
 def matching_fund(position: dict, funds: list[FundSnapshot]) -> FundSnapshot | None:
-    isin = str(position.get("isin", "")).strip().upper()
-    ticker = str(position.get("ticker", "")).strip().upper()
-    wkn = str(position.get('wkn', '')).strip().upper()
-    # An explicit ISIN is authoritative; a conflicting ticker must not select another fund.
-    matches = [fund for fund in funds if (isin == fund.isin if isin else
-               wkn == fund.wkn if wkn else bool(ticker) and ticker in fund.tickers)]
+    field, value = _position_listing(position)
+    if not value:
+        return None
+    if field == 'ticker':
+        matches = [fund for fund in funds if value in fund.tickers]
+    else:
+        matches = [fund for fund in funds if getattr(fund, field) == value]
     return matches[0] if len(matches) == 1 else None
+
+
+def group_fund_positions(funds: list[FundSnapshot], rows: Iterable[dict]) -> list[list[dict]]:
+    """Group positions in input order for each fund, as when checking its listings separately."""
+    by_listing = {}
+    groups = []
+    for fund in funds:
+        group = []
+        groups.append(group)
+        listings = {('isin', fund.isin), ('wkn', fund.wkn)}
+        listings.update(('ticker', ticker) for ticker in fund.tickers)
+        for key in listings:
+            if key[1]:
+                by_listing.setdefault(key, []).append(group)
+    if not by_listing:
+        return groups
+    for row in rows:
+        for group in by_listing.get(_position_listing(row), ()):
+            group.append(row)
+    return groups
 
 
 def smh_group_candidates(holdings: pd.DataFrame, funds: list[FundSnapshot]) -> tuple[set[str], set[str], set[str]]:

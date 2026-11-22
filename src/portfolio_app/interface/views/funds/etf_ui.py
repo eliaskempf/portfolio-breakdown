@@ -7,7 +7,7 @@ import plotly.express as px
 import streamlit as st
 from portfolio_app.interface.shared.charts import chart_config
 
-from portfolio_app.funds.etf import FundSnapshot, fund_breakdown, matching_fund, constituent_resolver, snapshot_age_days
+from portfolio_app.funds.etf import FundSnapshot, fund_breakdown, group_fund_positions, constituent_resolver, snapshot_age_days
 from portfolio_app.interface.shared.display_names import display_name, compact_fund_name, instrument_name
 from portfolio_app.exposure.taxonomy import Classifications, describe, taxonomy_names
 from portfolio_app.funds.providers.vaneck import refresh_snapshot
@@ -53,10 +53,14 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
                         classifications: Classifications | None = None, show_tickers: bool = False,
                         classification_names: list[str] | None = None, key_prefix: str = '',
                         percentages_only: bool = False) -> None:
-    for fund in funds:
-        source = selected if holdings is None else holdings
-        position = next((row for row in source.to_dict('records') if matching_fund(row, [fund]) is not None), None)
-        label = instrument_name(position) if position else compact_fund_name(fund.name)
+    if not funds:
+        return
+    source = selected if holdings is None else holdings
+    source_groups = group_fund_positions(funds, source.to_dict('records'))
+    selected_groups = source_groups if source is selected else None
+    for index, fund in enumerate(funds):
+        positions = source_groups[index]
+        label = instrument_name(positions[0]) if positions else compact_fund_name(fund.name)
         panel = st.expander(f"ETF breakdown: {label}", key=f'{key_prefix}etf_detail_{fund.fund_id}', on_change='rerun')
         if not panel.open:
             continue
@@ -89,7 +93,9 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
             table = classified_fund_table(fund, selected if holdings is None else holdings, classifications or {})
             table["name"] = table["name"].map(display_name)
             table["Fund allocation %"] = table["weight"] * 100
-            fund_positions = [] if percentages_only else [row for row in selected.to_dict("records") if matching_fund(row, [fund]) is not None]
+            if not percentages_only and selected_groups is None:
+                selected_groups = group_fund_positions(funds, selected.to_dict('records'))
+            fund_positions = () if percentages_only else selected_groups[index]
             columns = ["name", "ticker", "Fund allocation %"]
             if fund.asset_class in {'fixed_income', 'money_market'}:
                 columns += [c for c in ('isin', 'instrument_type', 'issuer', 'market_currency', 'maturity', 'credit_rating') if c in table]
