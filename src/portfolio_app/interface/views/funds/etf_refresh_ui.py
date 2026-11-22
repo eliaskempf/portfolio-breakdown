@@ -1,33 +1,53 @@
 """Lightweight status and preferences for the app-owned background updater."""
+from dataclasses import dataclass
 from pathlib import Path
 import streamlit as st
 
 from portfolio_app.interface.shared.render_sections import render_sections
-from portfolio_app.interface.shared.background_ui import refresh_allowed
+from portfolio_app.interface.shared.background_ui import poll_while_mounted, refresh_allowed
+from portfolio_app.interface.shared.input_cache import cached_input, file_stamp, fund_sources, loaded_fund_sources
 
 from portfolio_app.interface.shared.display_names import compact_fund_name
 from portfolio_app.funds.etf import snapshot_age_days, matching_fund
 from portfolio_app.funds.etf_refresh import coordinator, preferences, save_preferences, read_json, supported, discovery_candidates
 
 
+@dataclass(frozen=True)
+class RefreshRevision:
+    status_file: tuple
+    failures: tuple
+    error: str
+
+    @property
+    def issues(self):
+        return self.failures, self.error
+
+
 def refresh_revision(data_dir):
+    path = Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json'
     try:
-        return (Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json').stat().st_mtime_ns
+        stamp = file_stamp(path)
     except OSError:
-        return 0
+        stamp = (str(path), None)
+
+    def issues():
+        return tuple(sorted((key, record['status'], record.get('error', ''))
+                            for key, record in read_json(path).items() if isinstance(record, dict)
+                            and record.get('status') in {'failed', 'unavailable'}))
+    failures = cached_input('etf_refresh_failures', stamp, issues, immutable=True)
+    return RefreshRevision(stamp, failures, coordinator.error(data_dir))
 
 
-def refresh_notices(data_dir, funds, *, demo=False):
+def refresh_notices(data_dir, funds, *, demo=False, revision=None):
     """Messages and stable issue identities, shared with the unread indicator."""
     if demo:
         return [], ()
-    records = read_json(Path(data_dir) / '.cache' / 'etf-refresh' / 'status.json')
+    revision = revision or refresh_revision(data_dir)
     old = [(f.isin, str(f.as_of)) for f in funds if snapshot_age_days(f) > 7]
-    failed = [(f.isin, records[f.isin].get('error', '')) for f in funds
-              if records.get(f.isin, {}).get('status') == 'failed']
-    unavailable = [(key, record.get('error', '')) for key, record in records.items()
-                   if record.get('status') == 'unavailable']
-    error = coordinator.error(data_dir)
+    fund_ids = {f.isin for f in funds}
+    failed = [(key, error) for key, status, error in revision.failures if status == 'failed' and key in fund_ids]
+    unavailable = [(key, error) for key, status, error in revision.failures if status == 'unavailable']
+    error = revision.error
     parts = ([f'{len(old)} outdated ETF snapshot(s)'] if old else []) + (
         [f'{len(failed)} refresh(es) failed; saved data retained'] if failed else [])
     if unavailable:
@@ -44,13 +64,27 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False, show_message
                           render_notice=None, include_notices=True):
     if demo:
         return  # Offline fixtures have invented dates, not stale provider data.
-    running = not demo and coordinator.running(data_dir)
+    observed_pending = coordinator.running(data_dir)
+    source_revision = loaded_fund_sources()
 
-    @st.fragment(run_every=2 if running else None)
+    @st.fragment
     def status():
-        pending = not demo and coordinator.running(data_dir)
-        if not pending and (running or refresh_revision(data_dir) != revision) and refresh_allowed():
-            st.rerun()
+        nonlocal observed_pending
+        pending = coordinator.running(data_dir)
+        observed_pending |= pending
+        current = refresh_revision(data_dir)
+        completed = observed_pending or current != revision
+        pending_render = False
+        if not pending and completed:
+            # A settings panel shows check times and enables its retry button on completion.
+            details_open = (st.session_state.get('main_tabs') == 'Exposure'
+                            and st.session_state.get('exposure_refresh_open'))
+            pending_render = (details_open or current.issues != revision.issues or
+                              (source_revision is not None and fund_sources(Path(data_dir)) != source_revision))
+            if pending_render and refresh_allowed():
+                st.rerun()
+        if pending or pending_render:
+            poll_while_mounted('etf_refresh_status_tick', 2000)
         if not show_messages:
             return
         sections = render_sections('etf_refresh_', 'progress', 'notices')
@@ -61,7 +95,7 @@ def render_refresh_status(data_dir, funds, revision, *, demo=False, show_message
         if not include_notices:
             return
         with sections['notices']:
-            parts, _ = refresh_notices(data_dir, funds)
+            parts, _ = refresh_notices(data_dir, funds, revision=current)
             if render_notice is not None:
                 for part in parts:
                     notice(part)

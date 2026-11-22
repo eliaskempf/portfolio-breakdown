@@ -166,7 +166,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             if sandbox:
                 st.json(asdict(sandbox[0]))
             st.json(asdict(leverage))
-    etf_revision = refresh_revision(data_dir)
+    etf_revision = None if offline_demo else refresh_revision(data_dir)
     try:
         inputs = load_inputs(data_dir)
         snapshot, allocation, classifications, funds = inputs
@@ -288,7 +288,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             from portfolio_app.interface.views.taxes.tax_ui import render_taxes
             render_taxes(data_dir, holdings, journal, funds, valued, demo=offline_demo)
     from portfolio_app.interface.shared.notifications_ui import notification_bell
-    notifications_panel = notification_bell(notifications_slot, data_dir, funds, valued, status,
+    notifications_panel = notification_bell(notifications_slot, data_dir, funds, valued, status, etf_revision=etf_revision,
         demo=offline_demo, cache_warning=price_service.cache_warning,
         exposure_issues=exposure_result.issues if exposure_result else (), disabled=tour_active(), journal=journal)
     if notifications_panel.open:
@@ -379,7 +379,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                                 and refresh_allowed() and (ignore_selection or selection(persistent_data_dir) == chosen)
                                 and market_coordinator.channel_state(market_workspace, 'valuation') == (market_revision, False)
                                 and (not background_prices or price_service.still_current())
-                                and refresh_revision(data_dir) == etf_revision and source_stamp(data_dir) == overview_stamp)
+                                and (offline_demo or refresh_revision(data_dir).issues == etf_revision.issues)
+                                and source_stamp(data_dir) == overview_stamp)
                     except (DataError, OSError):
                         return False
 

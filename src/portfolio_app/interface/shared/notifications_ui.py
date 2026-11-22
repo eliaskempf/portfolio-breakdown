@@ -36,15 +36,18 @@ def _monitoring_document(directory):
         return {'events': [], 'notice_seen': [], 'rules': []}
 
 
-def notification_bell(slot, directory, funds, valued, status, *, demo=False, cache_warning='', exposure_issues=(), disabled=False, journal=None):
+def notification_bell(slot, directory, funds, valued, status, *, etf_revision=None, demo=False, cache_warning='', exposure_issues=(), disabled=False, journal=None):
     with slot:
         panel = st.popover('Notifications', icon=':material/notifications:',
             help='Notifications', key='workspace_notifications', on_change='rerun',
             width='stretch', disabled=disabled)
 
+        mounted = False
         @st.fragment(run_every=2 if journal and journal.positions and not demo else None)
         def indicator():
-            _, refresh_issues = refresh_notices(directory, funds, demo=demo)
+            nonlocal mounted
+            _, refresh_issues = refresh_notices(directory, funds, demo=demo, revision=None if mounted else etf_revision)
+            mounted = True
             from portfolio_app.interface.views.derivatives.settlement_archive_ui import settlement_notices
             _, settlement_issues = settlement_notices(directory, journal)
             current = notification_fingerprints(valued, status,
@@ -124,7 +127,7 @@ def render_notifications(directory, funds, revision, valued, status, *, demo=Fal
         if st.button('Acknowledge', key='notice_ack_'+event['id']):
             mark_events(directory, [event['id']], acknowledge=True)
             st.rerun()
-    parts, _ = refresh_notices(directory, funds, demo=demo)
+    parts, _ = refresh_notices(directory, funds, demo=demo, revision=revision)
     for i,message in enumerate(parts):
         _card(Notice('etf_'+str(i), 'ETF data', message, 'warning', Destination('sources'), 'Review ETF sources'), directory)
     # Transient progress is a caption, separate from actionable/unread notices.

@@ -74,6 +74,12 @@ def load_inputs(directory):
     return PortfolioInputs(snapshot, allocation, classifications, funds)
 
 
+def loaded_fund_sources():
+    """File revisions used by the session's last successful fund load."""
+    saved = st.session_state.get('parsed_inputs', {}).get('funds')
+    return saved[0] if saved is not None else None
+
+
 def fund_sources(directory):
     manifests = sorted((directory / 'etfs').glob('*.yaml'))
     manifest_stamp = tuple(file_stamp(p) for p in manifests)

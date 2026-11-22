@@ -2,6 +2,8 @@
 from datetime import datetime, timezone, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from portfolio_app.interface.shared import background_ui; from portfolio_app.interface.views.derivatives import settlement_archive_ui
 
 
@@ -47,3 +49,47 @@ def test_pending_open_and_other_editors_also_defer_refresh(monkeypatch):
         assert not background_ui.refresh_allowed()
     monkeypatch.setattr(st,'session_state',{})
     assert background_ui.refresh_allowed()
+
+
+@pytest.mark.parametrize('outcome,rerenders', [
+    ('checked', False), ('already locked', False), ('new breakdown', True),
+    ('unavailable', True), ('worker error', True), ('settings open', True),
+])
+def test_etf_completion_redraws_only_affected_views(tmp_path, monkeypatch, outcome, rerenders):
+    import streamlit as st
+    from portfolio_app.interface.views.funds import etf_refresh_ui as ui
+    from portfolio_app.funds.etf_refresh import write_json
+    from portfolio_app.interface.shared.input_cache import fund_sources
+    state = {}
+    pending, error = [True], ['']
+    callbacks, timers, renders = [], [], []
+    def fragment(fn):
+        callbacks.append(fn)
+        return fn
+    monkeypatch.setattr(st, 'session_state', state)
+    monkeypatch.setattr(st, 'fragment', fragment)
+    monkeypatch.setattr(st, 'rerun', lambda: renders.append(True))
+    monkeypatch.setattr(ui, 'poll_while_mounted', lambda *a: timers.append(True))
+    monkeypatch.setattr(ui.coordinator, 'running', lambda _: pending[0])
+    monkeypatch.setattr(ui.coordinator, 'error', lambda _: error[0])
+    (tmp_path / 'etfs').mkdir()
+    state['parsed_inputs'] = {'funds': (fund_sources(tmp_path), [])}
+    if outcome == 'settings open':
+        state.update(main_tabs='Exposure', exposure_refresh_open=True)
+    ui.render_refresh_status(tmp_path, [], ui.refresh_revision(tmp_path), show_messages=False)
+    assert timers == [True] and not renders
+    if outcome != 'already locked':
+        write_json(tmp_path / '.cache/etf-refresh/status.json',
+                   {'invented': {'status': 'unavailable' if outcome == 'unavailable' else 'checked'}})
+    if outcome == 'new breakdown':
+        (tmp_path / 'etfs/new.yaml').write_text('holdings_file: invented.csv')
+    if outcome == 'worker error':
+        error[0] = 'Invented failure'
+    pending[0] = False
+    state['position_edit_dialog'] = True
+    timers.clear()
+    callbacks[0]()
+    assert not renders and bool(timers) == rerenders
+    state['position_edit_dialog'] = False
+    callbacks[0]()
+    assert bool(renders) == rerenders
