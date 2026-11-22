@@ -149,3 +149,30 @@ def test_not_applicable_clears_episode_without_mistaking_missing_data_for_recove
     record_evaluations(tmp_path,r,[Evaluation('2026-10-11',quality='not_applicable',note='No debt or backing assets.')],now=NOW)
     doc,_=load_monitoring(tmp_path)
     assert doc['states'][r.id]['condition']=='normal' and doc['events'][0]['resolved']
+
+
+def test_panel_persists_displayed_notices_and_events_in_one_transaction(tmp_path):
+    from unittest.mock import patch
+    from portfolio_app.monitoring import monitoring_store as store
+
+    saved = rule()
+    store.save_rule(tmp_path, saved)
+    warning = Evaluation('2026-10-09', -1.5, condition='approaching')
+    store.record_evaluations(tmp_path, saved, [warning], now=NOW)
+    snapshot = store.load_monitoring(tmp_path)[0]
+    displayed = [event['id'] for event in snapshot['events']]
+    # A new episode level arrives after the panel took its snapshot.
+    store.record_evaluations(tmp_path, saved, [replace(warning, condition='triggered')], now=NOW)
+    with patch.object(store, 'load_monitoring', wraps=store.load_monitoring) as reads, \
+         patch.object(store, '_write', wraps=store._write) as writes:
+        assert store.remember_notices(tmp_path, {'manual'}, opened=True,
+                                      previously_seen=snapshot['notice_seen'], read_events=displayed) == {'manual'}
+        assert reads.call_count == writes.call_count == 1
+        store.remember_notices(tmp_path, {'manual'}, opened=True, previously_seen={'manual'})
+        assert reads.call_count == writes.call_count == 1
+        store.remember_notices(tmp_path, {'manual'}, opened=True, previously_seen={'manual'}, read_events=displayed)
+        assert reads.call_count == 2 and writes.call_count == 1
+    doc = store.load_monitoring(tmp_path)[0]
+    assert doc['notice_seen'] == ['manual']
+    assert [(e['read'], e['acknowledged']) for e in doc['events']] == [(True, False), (False, False)]
+    assert len(doc['observations']) == 2

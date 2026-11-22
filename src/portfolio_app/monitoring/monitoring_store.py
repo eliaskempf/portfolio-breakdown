@@ -196,35 +196,43 @@ def _apply_evaluations(doc, rule, evaluations, recovered, now):
     return changed
 
 
-def mark_events(directory, identities, *, acknowledge=False):
-    if not identities:
-        return
-    with workspace_lock(directory):
-        doc, revision = load_monitoring(directory)
-        changed = False
+def _mark_events(doc, identities, *, acknowledge=False):
+    changed = False
+    if identities:
         for event in doc['events']:
             if event['id'] in identities:
                 changed |= not event['read'] or (acknowledge and not event['acknowledged'])
                 event['read'] = True
                 if acknowledge:
                     event['acknowledged'] = True
-        if changed:
+    return changed
+
+
+def mark_events(directory, identities, *, acknowledge=False):
+    identities = set(identities)
+    if not identities:
+        return
+    with workspace_lock(directory):
+        doc, revision = load_monitoring(directory)
+        if _mark_events(doc, identities, acknowledge=acknowledge):
             _write(directory, doc, revision)
 
 
-def remember_notices(directory, current, *, opened=False, previously_seen=None):
-    if previously_seen is None:
-        previously_seen = load_monitoring(directory)[0]['notice_seen']
-    previous = set(previously_seen)
-    retained = set(current) if opened else previous & set(current)
-    if retained == previous:
-        return retained
+def remember_notices(directory, current, *, opened=False, previously_seen=None, read_events=()):
+    """Persist one panel observation, marking only events included in that observation read."""
+    current = set(current)
+    read_events = set(read_events)
+    if previously_seen is not None and not read_events:
+        previous = set(previously_seen)
+        retained = current if opened else previous & current
+        if retained == previous:
+            return retained
     with workspace_lock(directory):
         doc, revision = load_monitoring(directory)
-        seen = set(doc['notice_seen']) & set(current)
-        if opened:
-            seen = set(current)
-        if seen != set(doc['notice_seen']):
+        previous = set(doc['notice_seen'])
+        seen = current if opened else previous & current
+        events_changed = _mark_events(doc, read_events)
+        if events_changed or seen != previous:
             doc['notice_seen'] = sorted(seen)
             _write(directory, doc, revision)
         return seen

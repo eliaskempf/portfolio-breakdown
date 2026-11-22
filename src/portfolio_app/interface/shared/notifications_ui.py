@@ -64,14 +64,14 @@ def notification_bell(slot, directory, funds, valued, status, *, etf_revision=No
             seen = st.session_state.setdefault('notification_seen', {})
             workspace = str(directory.resolve())
             saved_seen = set(doc['notice_seen']) | set(seen.get(workspace, ()))
-            count = len(current-saved_seen) + sum(not e['read'] for e in doc['events'])
+            unread_events = [e['id'] for e in doc['events'] if not e['read']]
+            count = len(current-saved_seen) + len(unread_events)
             _, seen[workspace] = unread_notifications(current, saved_seen, opened=panel.open)
-            from portfolio_app.monitoring.monitoring_store import remember_notices, mark_events
+            from portfolio_app.monitoring.monitoring_store import remember_notices
             from portfolio_app.portfolio.holdings import DataError
             try:
-                remember_notices(directory, current, opened=panel.open, previously_seen=doc['notice_seen'])
-                if panel.open:
-                    mark_events(directory, [e['id'] for e in doc['events'] if not e['read']])
+                remember_notices(directory, current, opened=panel.open, previously_seen=doc['notice_seen'],
+                                 read_events=unread_events if panel.open else ())
             except (DataError, OSError):
                 pass  # The monitoring area provides persistence recovery guidance.
             badge = str(min(count, 99)) if count and not panel.open else ''
