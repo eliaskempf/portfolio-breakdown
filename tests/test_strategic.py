@@ -152,3 +152,20 @@ def test_tree_propagates_missing_counts_without_rescanning_categories(positions,
     flat = strategic_tree(positions, config, 'long', flat=True)
     assert flat.missing_prices.tolist() == [1, 1]
     assert scans == ['long']
+
+
+def test_root_allocation_uses_one_tree_for_chart_and_colors(positions, config):
+    from streamlit.testing.v1 import AppTest
+    def draw():
+        import streamlit as st
+        from unittest.mock import patch
+        from portfolio_app.interface.views.portfolio import strategic_ui
+        with patch.object(strategic_ui, 'strategic_tree', wraps=strategic_ui.strategic_tree) as tree:
+            strategic_ui.render_strategic_overview(st.session_state.positions, st.session_state.config)
+        st.session_state.tree_calls = tree.call_count
+    app = AppTest.from_function(draw)
+    app.session_state.positions = positions
+    app.session_state.config = config
+    app.run()
+    assert not app.exception
+    assert app.session_state.tree_calls == 1

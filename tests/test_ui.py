@@ -583,18 +583,3 @@ def test_inactive_leverage_skips_portfolio_exposure_cache_key(sample_data_dir, m
     assert not app.exception
     activate(app, 'Positions')
     assert not app.exception
-
-
-def test_root_allocation_uses_one_tree_for_chart_and_colors(tmp_path, sample_data_dir, monkeypatch):
-    from portfolio_app.interface.views.portfolio import strategic_ui
-    shutil.copytree(sample_data_dir, tmp_path, dirs_exist_ok=True)
-    app = launch(tmp_path)
-    calls = []
-    original = strategic_ui.strategic_tree
-    def tree(valued, config, bucket=''):
-        calls.append(bucket)
-        return original(valued, config, bucket)
-    monkeypatch.setattr(strategic_ui, 'strategic_tree', tree)
-    activate(app, 'Overview')
-    assert not app.exception
-    assert calls == ['']
