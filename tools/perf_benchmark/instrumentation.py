@@ -12,6 +12,24 @@ def observe_server(trial):
     from portfolio_app.performance import history_view as views
     from streamlit.runtime.scriptrunner_utils.script_run_context import ScriptRunContext
 
+    scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
+    if scenario.startswith('etf-'):
+        from portfolio_app.funds.etf_refresh import coordinator as funds, SOURCES
+        from portfolio_app.funds.etf_sources import publish_snapshot
+        from portfolio_app.funds.etf import validate_constituents
+        import pandas as pd
+        # This registry entry exists only in the disposable benchmark process.
+        SOURCES['ZZF000000000'] = None
+        def refresh(fund):
+            from perf_benchmark.renderer import wait
+            (trial / 'etf-pending').touch()
+            wait(lambda: (trial / 'release-etf').exists(), timeout=100)
+            if scenario == 'etf-failed':
+                raise ValueError('Invented ETF provider unavailable')
+            frame = pd.read_csv(fund.manifest_path.parent / 'fund-0.csv', dtype=str, keep_default_na=False)
+            return publish_snapshot(fund, validate_constituents(frame), fund.as_of, prior=fund.manifest_path.read_bytes())
+        funds.refresh = refresh
+
     def download(directory, journal, scope, store, start, end, target):
         from perf_benchmark.renderer import wait
         (trial / 'pending').touch()

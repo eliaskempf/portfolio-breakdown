@@ -98,3 +98,14 @@ def create_workspace(directory: Path, profile='small', *, today=None):
         checks = (Evaluation((today - timedelta(days=days)).isoformat(), 1.) for days in range(4000, 0, -1))
         record_evaluations(directory, rule, checks, now=datetime.combine(today, time.min, timezone.utc))
         delete_rule(directory, rule.id, rule.revision)
+
+def prepare_fund_check(directory):
+    """Publish a stale synthetic snapshot whose next identical export can be checked."""
+    from portfolio_app.funds.etf import load_funds
+    from portfolio_app.funds.etf_sources import publish_snapshot
+    manifest = directory / 'etfs' / 'fund-0.yaml'
+    raw = yaml.safe_load(manifest.read_bytes())
+    raw['as_of'] -= timedelta(days=1)
+    manifest.write_text(yaml.safe_dump(raw), encoding='utf-8')
+    fund = next(f for f in load_funds(manifest.parent) if f.manifest_path == manifest)
+    publish_snapshot(fund, fund.constituents, fund.as_of, prior=manifest.read_bytes())

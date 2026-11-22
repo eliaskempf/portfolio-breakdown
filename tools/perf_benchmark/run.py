@@ -14,7 +14,7 @@ import sys
 from tempfile import TemporaryDirectory
 import time
 
-from fixture import create_workspace
+from fixture import create_workspace, prepare_fund_check
 from renderer import exercise, exercise_exposure, wait
 
 
@@ -66,6 +66,11 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
     if scenario == 'exposure':
         return report
     events = [json.loads(line) for line in (trial / 'server.jsonl').read_text().splitlines()]
+    if scenario.startswith('etf-'):
+        start, end = report.pop('start_epoch_ms'), report.pop('end_epoch_ms')
+        report['idle_valuations'] = sum(e['event'] == 'portfolio_valued' and start <= e['epoch_ms'] <= end for e in events)
+        if report['idle_valuations']:
+            raise AssertionError(f"Idle provider completions revalued the portfolio {report['idle_valuations']} times")
     report['history_calls'] = sum(e['event'] == 'history_calculated' for e in events)
     first = report['first']
     report['first_chart_disk_hits'] = sum(e['event'] == 'disk_hit' and e['chart'] and
@@ -116,6 +121,19 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
                         (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
                         print(surface, pair, variant, launch, 'first chart ms', round(metrics['first']['chart_ms']),
                               'warm median ms', round(median(r['chart_ms'] for r in metrics['warm'])), flush=True)
+
+        if experiment == 'navigation' and profile == 'mixed-history':
+            checks = result.setdefault('background_checks', [])
+            for scenario in ('etf-checked', 'etf-failed'):
+                with TemporaryDirectory(prefix='portfolio-refresh-benchmark-') as tmp:
+                    workspace = Path(tmp) / 'synthetic'
+                    create_workspace(workspace, profile, today=as_of)
+                    prepare_fund_check(workspace)
+                    metrics = benchmark(executable, workspace, Path(tmp) / 'trial', 'navigation', surface, scenario)
+                    if metrics['digest'] != expected['unchanged']:
+                        raise AssertionError('ETF status or unchanged history altered the rendered financial series')
+                    checks.append(dict(surface=surface, scenario=scenario, **metrics))
+                    (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
 
     rows = ['| Surface | Launch | Reuse | Launch to ready (ms) | First chart (ms) | Warm chart median / p95 (ms) |',
             '|---|---|---|---:|---:|---:|']

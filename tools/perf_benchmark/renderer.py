@@ -94,6 +94,29 @@ def exercise(evaluate, control, scenario, *, persistent):
             if (!state.done) w.requestAnimationFrame(frame);
         }
         frame(); return true; })()""")
+    background = {}
+    if scenario.startswith('etf-'):
+        import json
+        read_badge = '(() => {' + CONTEXT + """
+            const bell = [...d.querySelectorAll('.st-key-header_notifications [data-testid=stPopoverButton]')]
+                .find(button => button.textContent.includes('Notifications'));
+            if (!bell) throw Error('Notification bell is missing');
+            return Number(w.getComputedStyle(bell,'::after').content.replace(/"/g,'')) || 0;
+        })()"""
+        wait(lambda: (control / 'etf-pending').exists())
+        background['badge_before'] = evaluate(read_badge)
+        expected = 'failed' if scenario == 'etf-failed' else 'checked'
+        status_path = control.parent / 'synthetic' / '.cache' / 'etf-refresh' / 'status.json'
+        background['start_epoch_ms'] = time.time_ns() / 1e6
+        (control / 'release-etf').touch()
+        wait(lambda: json.loads(status_path.read_bytes()).get('ZZF000000000', {}).get('status') == expected)
+        if expected == 'failed':
+            wait(lambda: evaluate(read_badge) == background['badge_before'] + 1)
+        # Observe ETF completion on its own before releasing historical prices.
+        time.sleep(4.5)
+        background['badge_after'] = evaluate(read_badge)
+        if background['badge_after'] != background['badge_before'] + int(expected == 'failed'):
+            raise AssertionError(f'Incorrect ETF unread badge: {background}')
     refresh_started = time.perf_counter()
     (control / 'release').touch()
     wait(lambda: (control / 'completed').exists())
@@ -121,8 +144,10 @@ def exercise(evaluate, control, scenario, *, persistent):
     refresh = evaluate('(() => {' + CONTEXT + 'w.benchmarkRefresh.done=true; return w.benchmarkRefresh;})()')
     if not refresh['preserved'] or refresh['changes'] != int(scenario == 'changed') or refresh['delta'] != (25 if scenario == 'changed' else 0):
         raise AssertionError(f'Unexpected refresh result {refresh}')
-    if scenario == 'unchanged' and (refresh['fades'] or refresh['replaced']):
+    if scenario != 'changed' and (refresh['fades'] or refresh['replaced']):
         raise AssertionError(f'Unchanged refresh disturbed chart {refresh}')
+    if background:
+        background['end_epoch_ms'] = time.time_ns() / 1e6
     series = evaluate('(() => {' + CONTEXT + 'return JSON.stringify(history().data.map(t => [t.name,t.x,Array.from(t.y),t.customdata]));})()')
     digest = hashlib.sha256(series.encode()).hexdigest()
     interact(evaluate, '1Y')
@@ -132,7 +157,7 @@ def exercise(evaluate, control, scenario, *, persistent):
         warm.append(interact(evaluate, 'Performance'))
     interact(evaluate, 'Allocation')  # Restore saved view for the next real process.
     return dict(digest=digest, ready_at=ready_at, post_intro_ms=(ready_at-animation_done)*1000 if animation_done else None,
-                refresh_ms=refresh_ms, first=first, range_3m=period, warm=warm, refresh=refresh)
+                refresh_ms=refresh_ms, first=first, range_3m=period, warm=warm, refresh=refresh, **background)
 
 
 def exercise_exposure(evaluate, *, themes=False):

@@ -765,6 +765,14 @@ This exercises company matching and
 navigation in a workspace with an alert history. The Exposure benchmark branch
 uses mixed-history on push.
 
+Mixed-history navigation also exercises two background providers together on each
+renderer. With Performance already open and a history download held pending,
+the ETF worker receives an identical snapshot or a provider failure. The driver
+checks the unread badge, then releases unchanged historical prices. It samples
+the mounted chart for fades and replacements, counts portfolio valuations while
+idle, and compares the financial series with the ordinary navigation run. These
+results appear in the navigation artifact under `background_checks`.
+
 The Exposure experiment builds both the pre-change reference and the current
 application on each runner. With the ETF-heavy profile it times Overview to
 the first populated Exposure table and two return visits, then opens a source
