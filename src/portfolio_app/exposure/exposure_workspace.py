@@ -8,11 +8,15 @@ from portfolio_app.funds.etf import constituent_resolver, matching_fund
 from portfolio_app.exposure.exposure_presentation import canonical_asset_names
 
 
-def analytical_signature(valued, funds, *policies):
+def analytical_signature(valued, funds, *policies, fund_revision=None):
     """Ignore advancing quote ages, never amounts, identities or pricing inputs."""
     diagnostics = {'price_age_hours', 'fx_age_hours', 'price_observed_at', 'fx_observed_at'}
     digest = sha256(valued.drop(columns=list(diagnostics), errors='ignore').to_json(double_precision=15).encode())
     digest.update(repr(policies).encode())
+    if fund_revision is not None:
+        # The loader supplies the revisions of the exact manifests and constituent files it read.
+        digest.update(repr(fund_revision).encode())
+        return digest.hexdigest()
     for fund in funds:
         for field in fields(fund):
             value = getattr(fund, field.name)

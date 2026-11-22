@@ -49,7 +49,7 @@ from portfolio_app.interface.views.exposure.geography_ui import render_geography
 from portfolio_app.exposure.sector_classification import sector_classifications
 
 
-def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False, source_valued=None, performance_percent=False, allocation=None, etf_revision=0, on_toggle_gain=None, exposure_result=None, leverage_context=None):
+def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False, source_valued=None, performance_percent=False, allocation=None, fund_revision=None, on_toggle_gain=None, exposure_result=None, leverage_context=None):
     dimensions = metadata_dimensions(holdings)
     unified = exposure_result is not None
     if unified:
@@ -116,7 +116,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             identities = load_company_identities(data_dir / 'company-identities.yaml')
             company_names = load_company_names(data_dir / 'company-names.yaml')
             signature = analytical_signature(holdings, funds, str(data_dir.resolve()),
-                settings, identities, company_names, classifications)
+                settings, identities, company_names, classifications, fund_revision=fund_revision)
             plan = cached_input('company_plan', signature,
                 lambda: build_plan(holdings, funds, identities, settings, classifications, company_names), immutable=True)
             render_company_merges(plan, settings, data_dir / 'company-merges.yaml')

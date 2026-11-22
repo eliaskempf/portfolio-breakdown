@@ -583,3 +583,36 @@ def test_inactive_leverage_skips_portfolio_exposure_cache_key(sample_data_dir, m
     assert not app.exception
     activate(app, 'Positions')
     assert not app.exception
+
+
+def test_exposure_reuses_loaded_fund_revision_and_displays_same_day_corrections(tmp_path, monkeypatch):
+    import pandas as pd
+    etfs = tmp_path / 'etfs'
+    etfs.mkdir()
+    (etfs / 'invented.yaml').write_text(
+        'fund_id: sample\nname: Invented fund\nisin: ZZ1234567890\ntickers: []\n'
+        'as_of: 2026-01-01\nsource: synthetic\nholdings_file: rows.csv\n')
+    header = 'constituent_id,name,ticker,isin,weight\n'
+    csv = etfs / 'rows.csv'
+    csv.write_text(header + 'company,Invented company,ZZZ,,0.4\n')
+    (tmp_path / 'holdings.csv').write_text(
+        'id,name,isin,shares,instrument_type,manual_price,manual_price_currency,manual_price_date,quantity_unit\n'
+        'sample,Invented fund,ZZ1234567890,2,etf,100,EUR,2026-01-01,units\n')
+    serialize = pd.DataFrame.to_json
+    def check(frame, *args, **kwargs):
+        assert 'constituent_id' not in frame.columns, 'The loaded fund already has a source revision'
+        return serialize(frame, *args, **kwargs)
+    monkeypatch.setattr(pd.DataFrame, 'to_json', check)
+    app = launch(tmp_path)
+    assert not app.exception and not list(app.error), [item.value for item in app.error]
+    by_label(app.toggle, 'Break down ETFs').set_value(True).run()
+    def indirect():
+        assert not app.exception
+        rows = list_frame(app, 'Exposure assets')
+        return rows.loc[rows.Ticker.eq('ZZZ'), 'ETF-derived'].item()
+    assert indirect() == 80
+    app.run()
+    assert indirect() == 80
+    csv.write_text(header + 'company,Invented company,ZZZ,,0.6\n')
+    app.run()
+    assert indirect() == 120

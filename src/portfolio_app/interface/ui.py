@@ -22,7 +22,7 @@ from portfolio_app.interface.shared.presentation import apply_style, empty_overv
 from portfolio_app.portfolio.allocation import migration_preview
 from portfolio_app.interface.views.portfolio.strategic_ui import render_strategic_overview
 from portfolio_app.interface.views.portfolio.scoped_ui import render_scoped_rebalancing
-from portfolio_app.interface.shared.input_cache import load_inputs, cached_input
+from portfolio_app.interface.shared.input_cache import load_inputs, cached_input, loaded_fund_sources
 from portfolio_app.exposure.exposure_workspace import analytical_signature
 from portfolio_app.market.market_data import coordinator as market_coordinator, prices_for
 from portfolio_app.interface.shared.view_state import preserve_view_inputs, finish_view_inputs
@@ -170,6 +170,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     try:
         inputs = load_inputs(data_dir)
         snapshot, allocation, classifications, funds = inputs
+        fund_revision = loaded_fund_sources()
         if snapshot.holdings.attrs.get('history_journal_revision') != leverage_context.journal_revision:
             st.rerun()
         holdings = snapshot.holdings
@@ -256,7 +257,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     exposure_result = None
     if feature_active:
         exposure_result = cached_input(
-            'portfolio_exposure', analytical_signature(valued, funds, str(data_dir.resolve()), allocation, leverage_context),
+            'portfolio_exposure', analytical_signature(valued, funds, str(data_dir.resolve()), allocation, leverage_context, fund_revision=fund_revision),
             lambda: prepare_exposure(valued, funds, allocation, leverage_context))
     display_valued, display_exposure = valued, exposure_result
     if actual_active:
@@ -392,7 +393,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             else:
                 render_analysis(data_dir, holdings, classifications, funds, demo=offline_demo,
                     price_service=price_service, source_valued=visible, performance_percent=percent,
-                    allocation=allocation, etf_revision=etf_revision, on_toggle_gain=toggle_unit,
+                    allocation=allocation, fund_revision=fund_revision, on_toggle_gain=toggle_unit,
                     exposure_result=exposure_result, leverage_context=leverage_context)
     if rebalance.open and not unsupported_records:
         with rebalance:
