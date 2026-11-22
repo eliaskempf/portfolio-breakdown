@@ -105,7 +105,7 @@ def test_grouped_totals_keep_residuals_zero_and_unknown_sources_distinct():
 
 
 def test_compact_previews_cap_sources_without_changing_exposure_percentages():
-    from portfolio_app.interface.views.exposure.exposure_assets_ui import source_previews
+    from portfolio_app.interface.views.exposure.exposure_assets_ui import preview_facts
     selected = pd.DataFrame([dict(position_id=f'p{i}', name=f'Invented Fund {i}', account='', current_value_reporting=1000.) for i in range(6)])
     exposures = pd.DataFrame([dict(asset_id='a', asset_name='Invented Company', ticker='', source_position_id=f'p{i}',
                                     direct_or_indirect='indirect', value=float((i + 1) * 10)) for i in range(6)])
@@ -113,19 +113,18 @@ def test_compact_previews_cap_sources_without_changing_exposure_percentages():
     remainder['asset_id'], remainder['asset_name'] = 'other', 'Invented Other'
     remainder['value'] = 1000. - remainder['value']
     exposures = pd.concat([exposures, remainder], ignore_index=True)
-    preview = source_previews(exposures, selected, asset_exposure_table(exposures))['a']
-    assert preview['more'] == 2
-    assert len(preview['items']) == 4
-    assert preview['items'][0] == dict(label='Invented Fund 5', amount='€60.00', share='28.57%')
-    assert preview['items'][-1]['label'] == 'Invented Fund 2'
-    # Search and unrelated holdings must not change asset-relative source shares.
-    table = asset_exposure_table(exposures)
-    assert table.loc[table.asset_id.eq('a'), 'Allocation %'].item() == 3.5
-    assert source_previews(exposures, selected, table.loc[table.asset_id.eq('a')])['a'] == preview
+    facts = preview_facts(exposures, selected)
+    more, *items = facts['assets']['a']
+    assert more == 2
+    assert len(items) == 4
+    label, amount, share = items[0]
+    assert (facts['labels'][label], amount, share) == ('Invented Fund 5', 60., 28.57)
+    assert facts['labels'][items[-1][0]] == 'Invented Fund 2'
+    assert asset_exposure_table(exposures).loc[lambda t: t.asset_id.eq('a'), 'Allocation %'].item() == 3.5
     selected = pd.concat([selected, pd.DataFrame([dict(position_id='unpriced', name='Invented Unpriced',
                                                       account='', current_value_reporting=float('nan'))])], ignore_index=True)
     # A missing unrelated valuation does not erase known asset-relative shares.
-    assert source_previews(exposures, selected, asset_exposure_table(exposures, complete=False))['a'] == preview
+    assert preview_facts(exposures, selected) == facts
     exposures.loc[0, 'value'] = float('nan')
-    preview = source_previews(exposures, selected, asset_exposure_table(exposures, complete=False))['a']
-    assert all(item['share'] == '—' for item in preview['items'])
+    _, *items = preview_facts(exposures, selected)['assets']['a']
+    assert all(share is None for _, _, share in items)

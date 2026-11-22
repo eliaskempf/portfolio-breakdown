@@ -196,7 +196,7 @@ export default function({parentElement:root,data,setTriggerValue}) {
       const item=data.rows.find(item=>item.id===id);
       if(tr&&item){
         updateToggle(tr,item);
-        if(id===state.expandedId && data.previews?.[id])tr.after(previewRow(item));
+        if(id===state.expandedId && data.previews?.assets?.[id])tr.after(previewRow(item));
       }
     }
     body.querySelector('tr[data-position-id="'+CSS.escape(row.id)+'"] [data-preview-toggle]')?.focus({preventScroll:true});
@@ -216,27 +216,33 @@ export default function({parentElement:root,data,setTriggerValue}) {
     const td=element('td','');td.colSpan=columns.length+(data.editable?1:0);
     const panel=element('section','');panel.className='preview-panel';panel.setAttribute('role','region');
     panel.setAttribute('aria-label','Sources for '+row[columns[0].key]);
-    const content=data.previews[row.id];
+    const [more,...sources]=data.previews.assets[row.id];
     alignPreview(panel,row);
     const items=element('ul','');items.className='preview-items';items.setAttribute('aria-label','Source contributions');
-    for(const source of content.items){
+    for(const [source,amountValue,shareValue] of sources){
+      const sourceLabel=data.previews.labels[source];
+      const amountText=amountValue==null?'Unavailable':data.previews.symbol+amountValue.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
       const item=element('li','');
-      const label=element('span','');label.className='tree-branch tree-label';label.title=source.label;label.appendChild(element('span',source.label));
+      const label=element('span','');label.className='tree-branch tree-label';label.title=sourceLabel;label.appendChild(element('span',sourceLabel));
       const amount=element('span','');amount.className='tree-branch tree-amount';
       amount.style.gridColumn=String(columns.findIndex(column=>column.key===data.previewValueColumn)+1);
-      amount.appendChild(element('span',source.amount));
-      const share=element('span',source.share+' of asset');share.className='tree-share';share.title='Share of this asset’s total exposure';
+      amount.appendChild(element('span',amountText));
+      const share=element('span',(shareValue==null?'—':shareValue.toFixed(2)+'%')+' of asset');share.className='tree-share';share.title='Share of this asset’s total exposure';
       share.style.gridColumn=String(columns.findIndex(column=>column.key===data.previewShareColumn)+1);
       item.append(label,amount,share);
       items.appendChild(item);
     }
     panel.appendChild(items);
-    if(content.more){const more=element('p','+'+content.more+' more in Details');more.className='preview-more';panel.appendChild(more);}
+    if(more){const note=element('p','+'+more+' more in Details');note.className='preview-more';panel.appendChild(note);}
     td.appendChild(panel);outer.appendChild(td);return outer;
   };
   const freshnessKeys=new Set(['valuationLabel','valuationDetail','valuationQualified','valuationCompact','note']);
-  const structure=JSON.stringify({...data,rows:data.rows.map(row=>Object.fromEntries(
-    Object.entries(row).filter(([key])=>!freshnessKeys.has(key))))});
+  // Exposure supplies a content revision covering its rows and source facts.
+  // Other lists can patch quote ages without replacing the mounted rows.
+  const structure=data.previewColumn
+    ?JSON.stringify([data.context,data.revision,data.columns,data.maxHeight,data.pageSize,data.previews.symbol])
+    :JSON.stringify({...data,rows:data.rows.map(row=>Object.fromEntries(
+      Object.entries(row).filter(([key])=>!freshnessKeys.has(key))))});
   const retainRows=root.listStructure===structure;
   root.listStructure=structure;root.listData=data;
   const render=(retain=false)=>{
@@ -391,7 +397,7 @@ export default function({parentElement:root,data,setTriggerValue}) {
       if(data.previewColumn)updateToggle(tr,row);
       body.appendChild(tr);
       if(row.id===state.detailId && row.details?.length)body.appendChild(detailRow(row));
-      if(row.id===state.expandedId && data.previews?.[row.id])body.appendChild(previewRow(row));
+      if(row.id===state.expandedId && data.previews?.assets?.[row.id])body.appendChild(previewRow(row));
     }
     root.querySelector('.empty').hidden=rows.length!==0;
   };

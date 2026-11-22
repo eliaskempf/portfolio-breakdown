@@ -46,7 +46,7 @@ def asset_exposure_table(exposures, *, classifications=None, taxonomy='labels', 
     return result.sort_values(['Total', 'Asset'], ascending=[False, True], na_position='last', ignore_index=True)
 
 
-def source_contributions(exposures, selected, *, measure=None):
+def asset_source_amounts(exposures, selected):
     """Aggregate all asset/source pairs once, with asset-relative denominators."""
     grouped = exposures.groupby(['asset_id', 'source_position_id', 'direct_or_indirect'], sort=False).value
     values = grouped.sum().mask(grouped.count() < grouped.size()).rename('Value').reset_index()
@@ -63,6 +63,13 @@ def source_contributions(exposures, selected, *, measure=None):
             ['asset_id', 'source_position_id', 'direct_or_indirect', 'source_channel']]
         values = values.merge(channels, on=['asset_id', 'source_position_id', 'direct_or_indirect'], how='left')
         values['Exposure'] = values.pop('source_channel')
+    return values
+
+
+def source_contributions(exposures, selected, *, measure=None):
+    values = asset_source_amounts(exposures, selected)
+    positions = selected.set_index('position_id')
+    source = values.source_position_id
     values['Position value'] = source.map(positions['current_value_reporting']) if 'current_value_reporting' in positions else float('nan')
     if measure == 'Market exposure':
         totals = exposures.groupby('source_position_id').value

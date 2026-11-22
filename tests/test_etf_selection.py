@@ -208,3 +208,45 @@ def test_fund_selection_survives_master_hiding_it_in_the_same_rerun(multi_fund_w
     assert not app.exception and not app.error
     assert not by_label(app.toggle, 'Synthetic World').value
     assert by_label(app.toggle, 'Synthetic Emerging').value
+
+
+def test_return_visits_reuse_expansion_and_invalidate_changed_evidence(multi_fund_workspace, monkeypatch):
+    from portfolio_app.interface.views.exposure import exposure_ui, exposure_assets_ui
+
+    calls = []
+    for module, name in ((exposure_ui, 'prepare_exposures'), (exposure_assets_ui, 'preview_facts')):
+        original = getattr(module, name)
+        def counted(*args, _call=original, **kwargs):
+            calls.append(_call.__name__)
+            return _call(*args, **kwargs)
+        monkeypatch.setattr(module, name, counted)
+
+    app = launch(multi_fund_workspace)
+    def company():
+        assert not app.exception
+        return effective(app).loc[lambda t: t.Asset.eq('Invented Alpha')].iloc[0]
+
+    assert company()['Total'] == 175.
+    calls.clear()
+    activate(app, 'Overview')
+    activate(app, 'Exposure')
+    by_label(app.text_input, 'Search exposure').set_value('Alpha').run()
+    assert company()['Total'] == 175.
+    assert not calls
+
+    path = multi_fund_workspace / 'etfs/world.csv'
+    path.write_text(path.read_text().replace('0.5,equity', '0.3,equity'))
+    app.run()
+    assert company()['Total'] == 155.
+    assert calls == ['prepare_exposures', 'preview_facts']
+    quotes = multi_fund_workspace / 'demo_prices.json'
+    data = json.loads(quotes.read_text())
+    data['prices']['COMPANY']['price'] = 120
+    quotes.write_text(json.dumps(data))
+    app.run()
+    assert company()['Total'] == 175.
+
+    (multi_fund_workspace / 'classifications.yaml').write_text(yaml.safe_dump({
+        'company': {'classifications': {'sector': [['Invented industry']]}}}))
+    app.run()
+    assert company()['Labels'] == ['Invented industry']
