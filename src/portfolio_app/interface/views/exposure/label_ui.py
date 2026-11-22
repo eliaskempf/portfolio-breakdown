@@ -14,7 +14,7 @@ from portfolio_app.interface.shared.charts import chart_config
 from portfolio_app.interface.shared.charts import bar_chart, hierarchy_chart, pie_chart, sort_allocation_nodes
 from portfolio_app.interface.shared.chart_navigation import sync_chart_category
 from portfolio_app.exposure.label_comparison import (
-    available_labels, compare_labels, comparison_assets, comparison_tree, immediate_children, label_memberships,
+    available_labels, comparison_assets, comparison_tree, immediate_children, LabelSelection,
 )
 from portfolio_app.interface.shared.presentation import allocation_total
 from portfolio_app.performance.performance_allocation import PerformanceExposures, add_performance_column
@@ -65,12 +65,11 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
     if not labels:
         st.info("Choose one or more labels to compare their combined asset allocations.")
         return
-    memberships = label_memberships(exposures, classifications, labels)
-    has_overlap = any(row.value != 0 and len(memberships[row.asset_id]) > 1 for row in exposures.itertuples())
+    selection = LabelSelection(classifications, labels)
+    has_overlap = any(row.value != 0 and len(selection.matches(row.asset_id)) > 1 for row in exposures.itertuples())
     if targets is not None:
         for measure in (targets.known, targets.missing):
-            target_memberships = label_memberships(measure, classifications, labels)
-            has_overlap |= any(row.value > 0 and len(target_memberships[row.asset_id]) > 1 for row in measure.itertuples())
+            has_overlap |= any(row.value > 0 and len(selection.matches(row.asset_id)) > 1 for row in measure.itertuples())
     policy = "split"  # With disjoint labels, both policies give the same result.
     with controls:
         if has_overlap:
@@ -84,13 +83,13 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         chart_types = ["Bar"] if has_overlap and policy == "overlap" else ["Bar", "Pie", "Sunburst", "Treemap"]
         chart_type = st.selectbox("Chart", chart_types, help='Choose how the selected analysis is visualized.', index=chart_types.index("Sunburst") if "Sunburst" in chart_types else 0,
                                   key=f"label_compare_chart_{policy}")
-    comparison = compare_labels(exposures, classifications, labels, overlap=policy)
+    comparison = selection.compare(exposures, overlap=policy)
     if comparison.unmatched_value:
         st.caption(f'Outside selected labels: {money(comparison.unmatched_value)} · These assets remain in the Assets view.')
-    performance_comparisons = [compare_labels(measure, classifications, labels, overlap=policy) for measure in performance.measures()] if performance else None
+    performance_comparisons = [selection.compare(measure, overlap=policy) for measure in performance.measures()] if performance else None
     target_comparisons = None
     if targets is not None:
-        target_comparisons = [compare_labels(measure, classifications, labels, overlap=policy)
+        target_comparisons = [selection.compare(measure, overlap=policy)
                               for measure in (targets.known, targets.missing)]
         target_caption(valuation_complete=valuation_complete)
     if comparison.allocations.empty:
@@ -194,8 +193,8 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                                        key="Label", value="Value", percent=performance_percent)
     if not complete:
         table[['Portfolio %', 'Selected labels %']] = float('nan')
-        unknown_memberships = label_memberships(exposures.loc[exposures.value.isna()], classifications, labels)
-        unknown_labels = {label.title for matches in unknown_memberships.values() for label in matches}
+        unknown_assets = exposures.loc[exposures.value.isna(), "asset_id"].unique()
+        unknown_labels = {label.title for asset in unknown_assets for label in selection.matches(asset)}
         table.loc[table.Label.isin(unknown_labels), 'Value'] = float('nan')
     if market:
         table['% of portfolio equity'] = table.Value * 100 / equity if complete and equity and equity > 0 else float('nan')

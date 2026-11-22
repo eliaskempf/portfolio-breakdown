@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import json
 import math
-from typing import Literal
+from typing import Literal, Mapping
 
 import pandas as pd
 
@@ -37,14 +37,13 @@ def matching_labels(asset_id: str, classifications: Classifications, labels: lis
     Matching two paths beneath a selected parent does not count the asset twice.
     This tests membership, without applying the taxonomy's allocation splits.
     """
-    return tuple(label for label in dict.fromkeys(labels) if any(
-        is_descendant(path, label.path)
-        for path in paths_for(classifications, asset_id, label.taxonomy)
-    ))
+    return tuple(LabelSelection(classifications, labels).matches(asset_id))
 
 
 def label_memberships(exposures: pd.DataFrame, classifications: Classifications, labels: list[Label]) -> dict[str, tuple[Label, ...]]:
-    return {asset: matching_labels(asset, classifications, labels) for asset in exposures["asset_id"].unique()}
+    selection = LabelSelection(classifications, labels)
+    return {asset: tuple(selection.matches(asset)) for asset in exposures["asset_id"].unique()}
+
 
 
 @dataclass
@@ -61,6 +60,82 @@ class LabelComparison:
         return max(0.0, self.portfolio_value - self.matched_value)
 
 
+class LabelSelection:
+    """Classification evidence shared by all measures in one selected-label view."""
+
+    def __init__(self, classifications: Classifications, labels: list[Label]):
+        self.classifications = classifications
+        self.labels = tuple(dict.fromkeys(labels))
+        self._keys = {label: label.key for label in self.labels}
+        self._order = {label: index for index, label in enumerate(self.labels)}
+        self._by_taxonomy = {}
+        for label in self.labels:
+            depths = self._by_taxonomy.setdefault(label.taxonomy, {})
+            depths.setdefault(len(label.path), {})[label.path] = label
+        self._assets: dict[str, dict[Label, tuple[TaxonomyPath, ...]]] = {}
+
+    def matches(self, asset_id: str) -> Mapping[Label, tuple[TaxonomyPath, ...]]:
+        """Selected labels in selection order, each with its distinct matching paths."""
+        if asset_id not in self._assets:
+            found = {}
+            for taxonomy, depths in self._by_taxonomy.items():
+                for path in dict.fromkeys(paths_for(self.classifications, asset_id, taxonomy)):
+                    for depth, choices in depths.items():
+                        label = choices.get(path[:depth])
+                        if label is not None:
+                            found.setdefault(label, []).append(path)
+            self._assets[asset_id] = {label: tuple(found[label]) for label in sorted(found, key=self._order.__getitem__)}
+        return self._assets[asset_id]
+
+    def compare(self, exposures: pd.DataFrame, *, overlap: Literal["split", "overlap"]) -> LabelComparison:
+        if overlap not in {"split", "overlap"}:
+            raise ValueError("Choose how to allocate assets matching multiple labels.")
+        labels = self.labels
+        valued = exposures.loc[exposures["value"].notna()]
+        if any(not math.isfinite(value) for value in valued["value"]):
+            raise ValueError("Label comparison requires finite exposure values.")
+        totals = dict.fromkeys(labels, 0.0)
+        assets = {label: set() for label in labels}
+        portfolio_value = math.fsum(valued["value"])
+        matched, overlapping, allocations, details = [], [], [], []
+        # ETF providers can name the same asset differently. A holding leaf must
+        # still merge by asset identity, including when it has several source rows.
+        asset_names = valued.drop_duplicates("asset_id").set_index("asset_id")["asset_name"].to_dict()
+        for row in valued.itertuples(index=False):
+            matches = self.matches(row.asset_id)
+            if not matches:
+                continue
+            matched.append(row.value)
+            if len(matches) > 1:
+                overlapping.append(row.value)
+            for label, paths in matches.items():
+                key = self._keys[label]
+                assigned = row.value / len(matches) if overlap == "split" else row.value
+                totals[label] += assigned
+                assets[label].add(row.asset_id)
+                allocations.append({"asset_id": row.asset_id, "asset_name": row.asset_name,
+                                    "path": (key,), "value": assigned})
+                for path in paths:
+                    details.append({"asset_id": row.asset_id, "asset_name": asset_names[row.asset_id],
+                                    "path": (key, *path[len(label.path):]), "value": assigned / len(paths)})
+        matched_value = math.fsum(matched)
+        # Include explicitly chosen zero-value labels in the comparison table.
+        table = pd.DataFrame([{
+            "Label": label.title, "Value": totals[label], "Assets": len(assets[label]),
+            "Selected labels %": 100 * totals[label] / matched_value if matched_value > 0 else float("nan"),
+            "Portfolio %": 100 * totals[label] / portfolio_value if portfolio_value > 0 else float("nan"),
+        } for label in labels], columns=["Label", "Value", "Assets", "Selected labels %", "Portfolio %"])
+        table = table.sort_values(["Value", "Label"], ascending=[False, True], kind="stable", ignore_index=True)
+        nodes = build_tree(pd.DataFrame(allocations, columns=ALLOCATION_COLUMNS), root_label="Selected labels")
+        titles = {label.key: label.title for label in labels}
+        nodes.loc[nodes["depth"] == 1, "label"] = nodes.loc[nodes["depth"] == 1, "label"].map(titles)
+        nodes["path"] = nodes["path"].map(lambda path: (titles[path[0]],) if path else ())
+        if matched_value > 0:
+            nodes["percentage"] = nodes["value"] / matched_value
+        return LabelComparison(table, nodes, pd.DataFrame(details, columns=ALLOCATION_COLUMNS),
+                               portfolio_value, matched_value, math.fsum(overlapping))
+
+
 def compare_labels(exposures: pd.DataFrame, classifications: Classifications, labels: list[Label],
                    *, overlap: Literal["split", "overlap"]) -> LabelComparison:
     """Compare whole matched exposures, after filtering and optional ETF expansion.
@@ -70,54 +145,7 @@ def compare_labels(exposures: pd.DataFrame, classifications: Classifications, la
     comparison is meaningful. Tree charts must only be used in split mode (or
     when overlapping_value is zero).
     """
-    if overlap not in {"split", "overlap"}:
-        raise ValueError("Choose how to allocate assets matching multiple labels.")
-    labels = list(dict.fromkeys(labels))
-    valued = exposures.loc[exposures["value"].notna()]
-    if any(not math.isfinite(value) for value in valued["value"]):
-        raise ValueError("Label comparison requires finite exposure values.")
-    memberships = label_memberships(valued, classifications, labels)
-    totals = dict.fromkeys(labels, 0.0)
-    assets = {label: set() for label in labels}
-    portfolio_value = math.fsum(valued["value"])
-    matched, overlapping, allocations, details = [], [], [], []
-    # ETF providers can name the same asset differently. A holding leaf must
-    # still merge by asset identity, including when it has several source rows.
-    asset_names = valued.drop_duplicates("asset_id").set_index("asset_id")["asset_name"].to_dict()
-    for row in valued.itertuples(index=False):
-        matches = memberships[row.asset_id]
-        if not matches:
-            continue
-        matched.append(row.value)
-        if len(matches) > 1:
-            overlapping.append(row.value)
-        for label in matches:
-            assigned = row.value / len(matches) if overlap == "split" else row.value
-            totals[label] += assigned
-            assets[label].add(row.asset_id)
-            allocations.append({"asset_id": row.asset_id, "asset_name": row.asset_name,
-                                "path": (label.key,), "value": assigned})
-            paths = tuple(dict.fromkeys(path for path in paths_for(classifications, row.asset_id, label.taxonomy)
-                                        if is_descendant(path, label.path)))
-            for path in paths:
-                details.append({"asset_id": row.asset_id, "asset_name": asset_names[row.asset_id],
-                                "path": (label.key, *path[len(label.path):]), "value": assigned / len(paths)})
-    matched_value = math.fsum(matched)
-    # Include explicitly chosen zero-value labels in the comparison table.
-    table = pd.DataFrame([{
-        "Label": label.title, "Value": totals[label], "Assets": len(assets[label]),
-        "Selected labels %": 100 * totals[label] / matched_value if matched_value > 0 else float("nan"),
-        "Portfolio %": 100 * totals[label] / portfolio_value if portfolio_value > 0 else float("nan"),
-    } for label in labels], columns=["Label", "Value", "Assets", "Selected labels %", "Portfolio %"])
-    table = table.sort_values(["Value", "Label"], ascending=[False, True], kind="stable", ignore_index=True)
-    nodes = build_tree(pd.DataFrame(allocations, columns=ALLOCATION_COLUMNS), root_label="Selected labels")
-    titles = {label.key: label.title for label in labels}
-    nodes.loc[nodes["depth"] == 1, "label"] = nodes.loc[nodes["depth"] == 1, "label"].map(titles)
-    nodes["path"] = nodes["path"].map(lambda path: (titles[path[0]],) if path else ())
-    if matched_value > 0:
-        nodes["percentage"] = nodes["value"] / matched_value
-    return LabelComparison(table, nodes, pd.DataFrame(details, columns=ALLOCATION_COLUMNS),
-                           portfolio_value, matched_value, math.fsum(overlapping))
+    return LabelSelection(classifications, labels).compare(exposures, overlap=overlap)
 
 
 def comparison_tree(comparison: LabelComparison, labels: list[Label], *,

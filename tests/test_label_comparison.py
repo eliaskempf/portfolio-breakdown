@@ -175,3 +175,28 @@ def test_unknown_and_parent_assigned_assets_remain_visible_in_drill():
     detail = immediate_children(comparison_tree(comparison, labels, root=(labels[0].key,)))
     assert detail.loc[detail.is_leaf, "value"].sum() == 80
     assert set(detail.loc[detail.is_leaf, "label"]) == {"Synthetic A", "Child"}
+
+
+def test_selection_shares_classification_evidence_across_measures(monkeypatch):
+    from portfolio_app.exposure import label_comparison
+    parent = Label('theme', ('A',))
+    child = Label('theme', ('A', 'B'))
+    missing = Label('sector', ('Unclassified',))
+    path = ('A', 'B')
+    classified = {'a': {'theme': (path, path, ('A', 'C'))}}
+    rows = pd.DataFrame([dict(asset_id='a', asset_name='Asset A', value=12.)])
+    calls = []
+    original = label_comparison.paths_for
+    def lookup(classes, asset, taxonomy):
+        calls.append((asset, taxonomy))
+        return original(classes, asset, taxonomy)
+    monkeypatch.setattr(label_comparison, 'paths_for', lookup)
+    selection = label_comparison.LabelSelection(classified, [child, missing, parent, child])
+    matches = selection.matches('a')
+    assert list(matches) == [child, missing, parent]
+    assert matches[parent] == (path, ('A', 'C'))
+    for amount in (12., -6.):
+        compared = selection.compare(rows.assign(value=amount), overlap='split')
+        assert compared.matched_value == compared.overlapping_value == amount
+        assert compared.allocations.value.sum() == pytest.approx(amount)
+    assert calls == [('a', 'theme'), ('a', 'sector')]
