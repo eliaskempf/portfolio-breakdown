@@ -1,4 +1,4 @@
-from list_helpers import list_frame
+from list_helpers import exposure_breakdown, list_frame
 from pathlib import Path
 import shutil
 import sys
@@ -352,7 +352,8 @@ def test_etf_breakdown_and_look_through(tmp_path, sample_data_dir):
     by_label(app.toggle, "Break down ETFs").set_value(True).run()
     assert not app.exception
     effective = list_frame(app, 'Exposure assets')
-    nvidia = effective.loc[effective["Ticker"] == "NVDA"].iloc[0]
+    breakdown = exposure_breakdown(app)
+    nvidia = breakdown.loc[breakdown.Ticker.eq('NVDA')].iloc[0]
     assert nvidia["Direct"] == 800
     assert nvidia["ETF-derived"] == pytest.approx(nvidia_indirect)
     assert effective["Total"].sum() == pytest.approx(1800)
@@ -608,7 +609,7 @@ def test_exposure_reuses_loaded_fund_revision_and_displays_same_day_corrections(
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     def indirect():
         assert not app.exception
-        rows = list_frame(app, 'Exposure assets')
+        rows = exposure_breakdown(app)
         return rows.loc[rows.Ticker.eq('ZZZ'), 'ETF-derived'].item()
     assert indirect() == 80
     app.run()

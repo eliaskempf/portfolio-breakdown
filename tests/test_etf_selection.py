@@ -7,7 +7,7 @@ import yaml
 from streamlit.testing.v1 import AppTest
 
 from test_ui import by_label, launch, theme_view
-from list_helpers import list_frame
+from list_helpers import exposure_breakdown, list_frame
 from test_ui import activate
 
 
@@ -139,7 +139,7 @@ def test_reviewed_company_mapping_reaches_allocation_and_stock_ui(multi_fund_wor
     app = launch(multi_fund_workspace)
     by_label(app.toggle, 'Break down ETFs').set_value(True).run()
     assert not app.exception and not app.error
-    company = effective(app).loc[lambda x: x.Asset == 'Invented Alpha'].iloc[0]
+    company = exposure_breakdown(app).loc[lambda x: x.Asset == 'Invented Alpha'].iloc[0]
     assert company['Direct'] == 100.
     assert company['ETF-derived'] == 100.
     by_label(app.get('button_group'), 'Exposure view').set_value('Companies').run()

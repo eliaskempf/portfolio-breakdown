@@ -3,7 +3,7 @@ import pytest
 
 from test_etf_selection import multi_fund_workspace as multi_fund_workspace, effective
 from test_ui import launch, by_label, selected_value
-from list_helpers import list_data
+from list_helpers import exposure_breakdown, list_data
 
 
 def test_default_exposure_is_all_assets_without_chart_or_label_requirement(multi_fund_workspace):
@@ -20,11 +20,15 @@ def test_default_exposure_is_all_assets_without_chart_or_label_requirement(multi
     assert by_label(app.tabs[1].metric, 'Portfolio share').value == '100.0%'
     assert not any('source positions' in caption.value or 'use a proxy' in caption.value for caption in app.tabs[1].caption)
     assert list_data(app, 'Exposure assets')['maxHeight'] == 620
-    assert 'Direct' not in {column['key'] for column in list_data(app, 'Exposure assets')['columns']}
+    data = list_data(app, 'Exposure assets')
+    assert data['rows']['fields'] == ['asset_id', *(column['key'] for column in data['columns'])]
+    assert 'Ticker' not in data['rows']['fields'] and 'Direct' not in data['rows']['fields']
+    by_label(app.checkbox, 'Show tickers').check().run()
+    assert 'Ticker' in list_data(app, 'Exposure assets')['rows']['fields']
     by_label(app.toggle, 'Break down ETFs').set_value(False).run()
     table = effective(app)
     assert table['Total'].sum() == 300
-    assert table['ETF-derived'].sum() == 0
+    assert exposure_breakdown(app)['ETF-derived'].sum() == 0
     assert list_data(app, 'Exposure assets')['maxHeight'] is None
 
 
@@ -40,8 +44,9 @@ def test_source_scope_filters_before_expansion_search_retains_denominator(multi_
     by_label(app.text_input, 'Search exposure').set_value('Alpha').run()
     table = effective(app)
     assert table.Asset.tolist() == ['Invented Alpha']
-    assert table['Direct'].tolist() == [0]
-    assert table['ETF-derived'].tolist() == [75]
+    breakdown = exposure_breakdown(app)
+    assert breakdown['Direct'].tolist() == [0]
+    assert breakdown['ETF-derived'].tolist() == [75]
     assert table['Allocation %'].tolist() == [37.5]
     by_label(app.button, 'Clear filters').click().run()
     assert by_label(app.selectbox, 'Source scope').value == ''

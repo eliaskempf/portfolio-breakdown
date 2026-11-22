@@ -11,7 +11,8 @@ from portfolio_app.funds.leverage_settings import MarginLiability
 from test_future_proxy_exposure import fixture, calculate, write_proxy
 from test_portfolio_exposure_ui import synthetic_workspace
 from test_futures_ui import launch
-from test_ui import activate, by_label, list_frame
+from list_helpers import exposure_breakdown, list_frame
+from test_ui import activate, by_label
 
 
 @pytest.mark.parametrize('contracts', [1, -1, -3])
@@ -141,7 +142,7 @@ def test_actual_account_exposure_and_funded_views(tmp_path):
     app = launch_actual(tmp_path)
     activate(app, 'Exposure')
     assert not app.exception
-    assert list_frame(app, 'Exposure assets')['Futures-derived'].abs().sum() > 0
+    assert exposure_breakdown(app)['Futures-derived'].abs().sum() > 0
     for measure in ['Funded value', 'Market exposure']:
         by_label(app.selectbox, 'Analysis measure').set_value(measure).run()
         for view in ['Assets', 'Themes & sectors', 'Geography']:

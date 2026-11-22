@@ -83,8 +83,10 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
     if 'Known exposure' in table:
         columns.insert(3 if show_tickers else 2, ListColumn('Known exposure', 'Known exposure', numeric=True, width=150,
             help='Sum of resolved contributions only. An unavailable total can still have known contributions; the remainder is not zero.'))
-    list_key = (contribution_key, taxonomy, complete, equity, query.strip().casefold())
-    rows = cached_input('exposure_asset_rows', list_key, lambda: packed_frame_rows(table, id_column='asset_id'), immutable=True)
+    fields = ['asset_id', *(column.key for column in columns)]
+    list_key = (contribution_key, taxonomy, complete, equity, query.strip().casefold(), tuple(fields))
+    rows = cached_input('exposure_asset_rows', list_key,
+                        lambda: packed_frame_rows(table[fields], id_column='asset_id'), immutable=True)
     revision = sha256(repr(list_key).encode()).hexdigest()
     facts = cached_input('exposure_preview_facts', contribution_key,
                         lambda: preview_facts(exposures, selected), immutable=True)
@@ -107,7 +109,7 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
         figure.update_layout(height=max(260, 30 * len(largest)), xaxis_title='Exposure', margin=dict(t=12, b=20, l=12, r=12))
         st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
     asset = st.session_state.get('exposure_asset_detail')
-    if asset not in set(table.asset_id):
+    if asset not in rows.ids:
         st.session_state.pop('exposure_asset_detail', None)
         return
     def dismiss():
