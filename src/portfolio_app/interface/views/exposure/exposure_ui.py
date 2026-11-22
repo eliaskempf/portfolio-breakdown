@@ -105,9 +105,12 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         show_chart = st.checkbox('Show largest exposures chart', help='Show a chart of the largest exposures in the current selection.', key='exposure_show_chart')
         with st.expander('Individual ETFs'):
             expanded_funds = render_etf_choices(holdings, funds, data_dir, enabled=lookthrough)
-        refresh_panel = st.expander('ETF refresh & snapshots', expanded=st.session_state.pop('exposure_notification_sources', False))
-        with refresh_panel:
-            render_refresh_controls(data_dir, holdings, funds, demo=demo)
+        if st.session_state.pop('exposure_notification_sources', False):
+            st.session_state['exposure_refresh_open'] = True
+        refresh_panel = st.expander('ETF refresh & snapshots', key='exposure_refresh_open', on_change='rerun')
+        if refresh_panel.open:
+            with refresh_panel:
+                render_refresh_controls(data_dir, holdings, funds, demo=demo)
         display_group = smh_group_control(holdings, funds)
         try:
             settings = load_settings(data_dir / 'company-merges.yaml')
@@ -223,8 +226,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                              percent=performance_percent, key='exposure_value', on_toggle_gain=on_toggle_gain,
                              freshness=summarize_freshness(selected), freshness_rows=selected)
             second.metric('Portfolio share', f'{100 * selected_total / total:.1f}%' if not missing and not all_missing and total else '—', help='Current value of this selection divided by total portfolio value.')
-    with refresh_panel:
-        if lookthrough:
+    if lookthrough and refresh_panel.open:
+        with refresh_panel:
             intact = sum(row.get('shares', 0) > 0 and row.get('instrument_type') == 'etf'
                          and matching_fund(row, expanded_funds) is None for row in selected.to_dict('records'))
             if intact:

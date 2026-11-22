@@ -58,3 +58,12 @@ def test_missing_source_value_stays_visible_and_percentages_are_unavailable(mult
     assert table.loc[table.Asset.eq('Unsupported Fund'), 'Total'].isna().all()
     assert table['Allocation %'].isna().all()
     assert any('full portfolio percentages are blank' in warning.value for warning in app.warning)
+
+
+def test_refresh_controls_open_from_a_notification(multi_fund_workspace):
+    app = launch(multi_fund_workspace)
+    assert not any(button.label == 'Refresh ETF holdings now' for button in app.button)
+    app.session_state['exposure_notification_sources'] = True
+    app.run()
+    assert not app.exception
+    assert by_label(app.button, 'Refresh ETF holdings now').disabled  # Offline demo.
