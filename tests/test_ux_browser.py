@@ -336,6 +336,11 @@ def ux_page(tmp_path, request):
             path = tmp_path / filename
             path.write_text(path.read_text().replace('SYNTH-A', 'VVSM.DE'))
     setup = ''
+    if getattr(request, 'param', '') == 'count_app_runs':
+        setup = """from pathlib import Path
+with Path(__file__).with_name('full-runs.log').open('a') as counter:
+    print('run', file=counter)
+"""
     if str(getattr(request, 'param', '')).startswith('slow_purchase_selection'):
         # Keep intermediate DOM states observable even on a fast test machine.
         setup = '''import time
@@ -415,6 +420,30 @@ def assert_gain_color(locator, *, positive):
     color = locator.evaluate('el => getComputedStyle(el).color')
     channels = [int(value) for value in re.findall(r'\d+', color)[:3]]
     assert (channels[1] > channels[0]) if positive else (channels[0] > channels[1])
+
+
+@pytest.mark.parametrize('ux_page', ['count_app_runs'], indirect=True)
+def test_overview_switch_reuses_snapshot_until_external_quote_changes(ux_page):
+    page, directory = ux_page
+    counter = directory / 'full-runs.log'
+    value = page.locator('.st-key-overview_value').get_by_test_id('stMetric')
+    playwright.expect(value).to_contain_text('€330.00')
+    settle(page)
+    before = counter.read_text()
+    for mode in ('Performance', 'Allocation', 'Performance'):
+        page.get_by_role('radio', name=mode, exact=True).click()
+        panel = '.st-key-tour_performance' if mode == 'Performance' else '.st-key-overview_allocation'
+        page.locator(panel + ' .main-svg').first.wait_for()
+        settle(page)
+        assert counter.read_text() == before
+    quotes = directory / 'demo_prices.json'
+    data = json.loads(quotes.read_text())
+    data['prices']['SYNTH-A']['price'] = 110
+    quotes.write_text(json.dumps(data))
+    page.get_by_role('radio', name='Allocation', exact=True).click()
+    playwright.expect(value).to_contain_text('€350.00')
+    settle(page)
+    assert len(counter.read_text().splitlines()) == len(before.splitlines()) + 1
 
 
 def test_category_scope_performance_and_tab_roundtrip(ux_page):

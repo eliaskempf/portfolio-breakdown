@@ -49,15 +49,22 @@ def _key(directory, identity):
     return 'personal_history_' + sha256((str(directory.resolve())+identity).encode()).hexdigest()[:12] + '_'
 
 
-def prepared_history_calculation(directory, journal, observations, revision, *, target=None):
+def prepared_history_calculation(directory, journal, observations, revision, *, target=None, journal_revision=None):
     """One session-owned ledger context across scopes and range switches."""
     from portfolio_app.interface.shared.currency_display import reporting_currency
     from portfolio_app.performance.personal_performance import HistoryCalculation
     from portfolio_app.ledger.security_history import history_fingerprint
     target = target or reporting_currency()
-    signature = str(directory.resolve()), history_fingerprint(journal), revision, target, date.today()
     cache = st.session_state.setdefault('parsed_inputs', {})
     previous = cache.get('history_calculation')
+    workspace = str(directory.resolve())
+    if journal_revision is None:
+        fingerprint = history_fingerprint(journal)
+    else:
+        from portfolio_app.interface.shared.input_cache import cached_input
+        fingerprint = cached_input('journal_history_fingerprint', (workspace, journal_revision),
+                                   lambda: history_fingerprint(journal), immutable=True)
+    signature = workspace, fingerprint, revision, target, date.today()
     if previous is None or previous[0] != signature:
         # Results and ledger facts must expire together when evidence changes.
         for key in list(cache):
@@ -858,7 +865,7 @@ def _replace_balance(directory, journal, revision, snapshot, book, row, key):
         st.caption(str(exc))
 
 
-def prepare_portfolio_history(directory, holdings, *, config, journal=None, observation_snapshot=None, bucket='', displayed=None, current_valued=None, include_points=True, annualized=True):
+def prepare_portfolio_history(directory, holdings, *, config, journal=None, journal_revision=None, observation_snapshot=None, bucket='', displayed=None, current_valued=None, include_points=True, annualized=True):
     """Read once before choosing the initial Overview tab; no UI side effects."""
     from portfolio_app.interface.shared.currency_display import reporting_currency
     if journal is None:
@@ -881,7 +888,7 @@ def prepare_portfolio_history(directory, holdings, *, config, journal=None, obse
     key = _key(directory, scope.key)
     observations, revision = observation_snapshot or load_observations(directory)
     period = st.session_state.get(key+'period') or '1Y'
-    calculation = prepared_history_calculation(directory, journal, observations, revision)
+    calculation = prepared_history_calculation(directory, journal, observations, revision, journal_revision=journal_revision)
     view = prepared_history_view(directory,journal,scope,observations,revision,period,target=reporting_currency(),
                                  include_points=include_points,calculation=calculation,annualized=annualized,persist=True)
     from portfolio_app.performance.gain_accounting import current_component_values, summarize_known_gain
@@ -919,6 +926,8 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
     def request_refresh(**kwargs):
         if input_revisions is not None:
             kwargs['input_revisions'] = input_revisions
+            if prepared is not None:
+                kwargs['fingerprint'] = prepared['calculation'].fingerprint
         return refresher.request(directory, journal, scope, target, **kwargs)
     refresh = request_refresh()
     cached = prepared

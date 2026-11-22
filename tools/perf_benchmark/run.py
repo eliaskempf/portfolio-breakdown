@@ -50,7 +50,7 @@ def benchmark(executable, workspace, trial, variant, surface, scenario):
                         args=['--no-sandbox'])
                     page = browser.new_page(viewport={'width':1280,'height':900})
                     page.goto(url)
-                    report = exercise(page.evaluate, trial, scenario, persistent=variant=="persistent")
+                    report = exercise(page.evaluate, trial, scenario, persistent=variant != 'baseline')
                     browser.close()
         finally:
             if proc.poll() is None:
@@ -70,22 +70,25 @@ def benchmark(executable, workspace, trial, variant, surface, scenario):
         begin = interaction.pop('click_epoch_ms')
         specific = [e for e in events if begin <= e['epoch_ms'] <= begin + interaction['settled_ms']]
         interaction['history_compute_ms'] = sum(e['duration_ms'] for e in specific if e['event']=='history_calculated')
+        interaction['valuations'] = sum(e['event'] == 'portfolio_valued' for e in specific)
+        interaction['journal_fingerprints'] = sum(e['event'] == 'journal_fingerprinted' for e in specific)
         sends = [e for e in specific if e['event']=='chart_enqueued']
         if sends:
             interaction['first_chart_enqueue_ms'] = sends[0]['epoch_ms'] - begin
     return report
 
 
-def run(executable, destination, surfaces, pairs):
+def run(executable, destination, surfaces, pairs, experiment='history'):
     destination.mkdir(parents=True, exist_ok=False)
-    result = dict(platform=sys.platform, cpu=platform.machine(), revision=os.environ.get('GITHUB_SHA'),
+    variants = ('navigation-reference', 'navigation') if experiment == 'navigation' else ('baseline', 'persistent')
+    result = dict(experiment=experiment, platform=sys.platform, cpu=platform.machine(), revision=os.environ.get('GITHUB_SHA'),
         runner_image=os.environ.get('ImageVersion'), python=platform.python_version(), runs=[])
     binary = hashlib.sha256(executable.read_bytes()).hexdigest()
     result['binary_sha256'] = binary
     expected = {}
     for surface in surfaces:
         for pair in range(pairs):
-            order = ('baseline','persistent') if pair % 2 == 0 else ('persistent','baseline')
+            order = variants if pair % 2 == 0 else reversed(variants)
             for variant in order:
                 with TemporaryDirectory(prefix='portfolio-benchmark-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
@@ -93,8 +96,13 @@ def run(executable, destination, surfaces, pairs):
                     for scenario, launch in [('unchanged','cold'), ('changed','reopen')]:
                         trial = Path(tmp) / launch
                         metrics = benchmark(executable, workspace, trial, variant, surface, scenario)
-                        if variant == 'persistent' and launch == 'reopen' and metrics['first_chart_disk_hits'] == 0:
+                        if variant != 'baseline' and launch == 'reopen' and metrics['first_chart_disk_hits'] == 0:
                             raise AssertionError('Relaunch did not reuse persisted history')
+                        for switch in metrics['warm']:
+                            if variant == 'navigation' and (switch['valuations'] or switch['journal_fingerprints']):
+                                raise AssertionError(f'Unchanged navigation repeated financial work: {switch}')
+                            if variant == 'navigation-reference' and not switch['valuations']:
+                                raise AssertionError('Reference switch missed the normal valuation path')
                         if metrics['digest'] != expected.setdefault(scenario, metrics['digest']):
                             raise AssertionError('Rendered series or gain data differs across runs')
                         result['runs'].append(dict(surface=surface, pair=pair, variant=variant, launch=launch, **metrics))
@@ -106,7 +114,7 @@ def run(executable, destination, surfaces, pairs):
             '|---|---|---|---:|---:|---:|']
     for surface in surfaces:
         for launch in ('cold','reopen'):
-            for variant in ('baseline','persistent'):
+            for variant in variants:
                 runs = [r for r in result['runs'] if (r['surface'],r['launch'],r['variant']) == (surface, launch, variant)]
                 warm = sorted(w['chart_ms'] for r in runs for w in r['warm'])
                 rows.append(f"| {surface} | {launch} | {variant} | {median(r['launch_ms'] for r in runs):.0f} | "
@@ -124,6 +132,7 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path)
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
+    parser.add_argument('--experiment', choices=['history', 'navigation'], default='history')
     options = parser.parse_args()
     run(options.executable.resolve(), options.output.resolve(),
-        ['native','browser'] if options.surface=='both' else [options.surface], options.pairs)
+        ['native','browser'] if options.surface=='both' else [options.surface], options.pairs, options.experiment)

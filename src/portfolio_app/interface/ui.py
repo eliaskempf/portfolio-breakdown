@@ -66,6 +66,14 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return
     preserve_view_inputs()
     data_dir, demo, refresh, settings_panel, notifications_slot = app_header(data_dir, demo_dir, demo=demo)
+    from portfolio_app.interface.shared.overview_navigation import render_panel, source_stamp
+    from portfolio_app.interface.views.onboarding.tour import active as tour_active
+    overview_stamp = None
+    if st.session_state.get('main_tabs', 'Overview') == 'Overview' and not tour_active():
+        try:
+            overview_stamp = source_stamp(data_dir)
+        except (DataError, OSError):
+            pass  # Normal workspace loading owns recovery and validation messages.
     from portfolio_app.interface.shared.calendar_ui import configure_calendar
     configure_calendar(data_dir, settings_panel)
     from portfolio_app.interface.views.workspace.backup_ui import backup_controls, render_backup_dialog
@@ -77,7 +85,6 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if not demo and render_backup_dialog(data_dir, persistent_data_dir, chosen.generation):
         mark_view_ready()
         return
-    from portfolio_app.interface.views.onboarding.tour import active as tour_active
     if tour_active():
         write_context.set(None)
         # Always value the isolated tour with its own synthetic quotes.
@@ -203,7 +210,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if render_guided_setup(data_dir, snapshot, allocation):
             mark_view_ready()
             return
-    background_prices = price_service is None and not offline_demo
+    supplied_prices = price_service is not None
+    background_prices = not supplied_prices and not offline_demo
     market_workspace = str(data_dir.resolve())
     market_revision, _ = market_coordinator.channel_state(market_workspace, 'valuation')
     price_service = select_price_service(data_dir, offline_demo=offline_demo, supplied=price_service, live_prices=prices_for)
@@ -348,17 +356,35 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                     st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Exposure targets')
                 def open_capital_targets():
                     st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Category targets')
-                render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_capital_targets=open_capital_targets, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
-                                          current_valued=valued, history_holdings=holdings, journal=journal, observation_snapshot=observation_snapshot,
-                                          input_revisions=(snapshot.revision, leverage_context.journal_revision), automatic_history=not offline_demo, show_sold_positions=not hide_empty,
-                                          leverage_enabled=(leverage.enabled or actual_active) and leverage_supported,
-                                          percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
-                                          edit_position=lambda position_id: open_valued_position(position_id, editing=True),
-                                          analytics=lambda selected, scope, scoped_future, scoped: render_portfolio_analytics(
-                                              investment_risk_positions(selected, valued) if actual_active else selected, data_dir, funds, demo=offline_demo, scope=scope, future=scoped_future,
-                                              portfolio_result=overview_exposure if actual_active or sandbox or leverage.liabilities else None,
-                                              portfolio_net_equity=(overview_exposure.net_equity if overview_exposure is not None else
-                                                  valued.loc[valued.shares.gt(0), 'current_value_reporting'].sum(skipna=False)), scoped=scoped))
+                def draw_overview():
+                    render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_capital_targets=open_capital_targets, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
+                                              current_valued=valued, history_holdings=holdings, journal=journal, observation_snapshot=observation_snapshot,
+                                              input_revisions=(snapshot.revision, leverage_context.journal_revision), automatic_history=not offline_demo, show_sold_positions=not hide_empty,
+                                              leverage_enabled=(leverage.enabled or actual_active) and leverage_supported,
+                                              percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
+                                              edit_position=lambda position_id: open_valued_position(position_id, editing=True),
+                                              analytics=lambda selected, scope, scoped_future, scoped: render_portfolio_analytics(
+                                                  investment_risk_positions(selected, valued) if actual_active else selected, data_dir, funds, demo=offline_demo, scope=scope, future=scoped_future,
+                                                  portfolio_result=overview_exposure if actual_active or sandbox or leverage.liabilities else None,
+                                                  portfolio_net_equity=(overview_exposure.net_equity if overview_exposure is not None else
+                                                      valued.loc[valued.shares.gt(0), 'current_value_reporting'].sum(skipna=False)), scoped=scoped))
+
+                def current_overview():
+                    try:
+                        return (st.session_state.get('main_tabs', 'Overview') == 'Overview'
+                                and st.session_state.get('strategic_view') != 'Analytics'
+                                and (st.session_state.get(unit_key) == '%') == percent
+                                and refresh_allowed() and (ignore_selection or selection(persistent_data_dir) == chosen)
+                                and market_coordinator.channel_state(market_workspace, 'valuation') == (market_revision, False)
+                                and (not background_prices or price_service.still_current())
+                                and refresh_revision(data_dir) == etf_revision and source_stamp(data_dir) == overview_stamp)
+                    except (DataError, OSError):
+                        return False
+
+                if overview_stamp is None or supplied_prices or st.session_state.get('strategic_view') == 'Analytics':
+                    draw_overview()
+                else:
+                    render_panel(draw_overview, current_overview)
     if exposure.open and not unsupported_records:
         with exposure:
             if visible.empty and exposure_result is None:

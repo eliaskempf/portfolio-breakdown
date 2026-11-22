@@ -731,7 +731,17 @@ against each packaged server. The benchmark builds a disposable binary from the
 release PyInstaller spec with an additional measurement hook. Only the benchmark
 build contains the synthetic provider and timing probes.
 
-Each runner compares two modes of the same binary. The reference bypasses
+Each runner compares two modes of the same binary. The navigation experiment
+keeps persistent history and background refresh active in both modes. Its
+reference runs the whole application when switching views. The candidate
+renders the mounted Overview panel using the validated portfolio snapshot.
+The job checks for repeated valuations and journal serialization on warm
+switches and records their call counts per interaction. Workspace edits,
+global controls, expired or changed quotes, and completed background updates
+use ordinary application loading. The next panel interaction after one minute
+also revalidates time-sensitive inputs. Idle navigation schedules no timer.
+
+In the history experiment the reference bypasses
 persisted history and background chart calculation. The candidate uses both.
 Each pair starts with a new synthetic portfolio, then completely exits and
 reopens the same workspace. Each process measures the first Allocation to

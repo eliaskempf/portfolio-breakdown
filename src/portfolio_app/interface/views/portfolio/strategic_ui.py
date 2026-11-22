@@ -92,6 +92,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             if history_holdings is None:
                 history_holdings = read_snapshot(data_dir / 'holdings.csv').holdings
             history = prepare_portfolio_history(data_dir, history_holdings, journal=journal, observation_snapshot=observation_snapshot,
+                journal_revision=input_revisions[1] if input_revisions else None,
                 config=config,bucket=bucket,displayed=valued, current_valued=current_valued if current_valued is not None else valued,
                 include_points=st.session_state.get('strategic_view', 'Performance') == 'Performance',
                 annualized=st.session_state.get('strategic_view', 'Performance') == 'Performance')

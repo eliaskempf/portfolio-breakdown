@@ -32,7 +32,7 @@ class HistoryRefresher:
     def pending(self, directory):
         return self.jobs.pending(Path(directory).resolve(), 'personal-history')
 
-    def request(self, directory, journal, scope, target, *, force=False, today=None, input_revisions=None):
+    def request(self, directory, journal, scope, target, *, force=False, today=None, input_revisions=None, fingerprint=None):
         directory = Path(directory).resolve()
         active = {b.position_id for b in journal.securities if b.active}
         scope = HistoryScope(tuple(active.intersection(scope.positions)), scope.accounts)
@@ -48,7 +48,7 @@ class HistoryRefresher:
             _, journal_revision = load_journal(directory)
         else:
             holdings_revision, journal_revision = input_revisions
-        facts = history_fingerprint(journal), holdings_revision, SettlementArchive(directory).revision(), end, target
+        facts = fingerprint or history_fingerprint(journal), holdings_revision, SettlementArchive(directory).revision(), end, target
         signature = sha256(repr((scope, start, facts)).encode()).hexdigest()
         identity = str(directory), signature
         with self._lock:

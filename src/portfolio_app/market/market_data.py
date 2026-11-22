@@ -81,6 +81,14 @@ class BackgroundPrices:
     def cache_warning(self):
         return self.service.cache_warning
 
+    def still_current(self):
+        """A mounted valuation can be reused until a quote changes or needs a refresh."""
+        for key, previous in self._results.items():
+            result, due = self.service.cached(key)
+            if due or result != previous:
+                return False
+        return True
+
     def _read(self, kind, value, refresh):
         key = f'{kind}:{value}'
         if key in self._results:

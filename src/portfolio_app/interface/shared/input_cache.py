@@ -61,6 +61,12 @@ def load_inputs(directory):
     allocation = cached_input('allocation', (file_stamp(path), snapshot.revision, journal_stamp), lambda: load_allocation(path, snapshot.holdings))
     path = directory / 'classifications.yaml'
     classifications = cached_input('classifications', file_stamp(path), lambda: load_classifications(path) if path.exists() else {})
+    signature = fund_sources(directory)
+    funds = cached_input('funds', signature, lambda: load_funds(directory / 'etfs'))
+    return PortfolioInputs(snapshot, allocation, classifications, funds)
+
+
+def fund_sources(directory):
     manifests = sorted((directory / 'etfs').glob('*.yaml'))
     manifest_stamp = tuple(file_stamp(p) for p in manifests)
     def holdings_files():
@@ -77,6 +83,4 @@ def load_inputs(directory):
     except (OSError, ValueError, yaml.YAMLError):
         # Use the canonical loader's validation/error reporting.
         files = []
-    signature = (str(directory.resolve()), manifest_stamp, tuple(file_stamp(p) for p in files))
-    funds = cached_input('funds', signature, lambda: load_funds(directory / 'etfs'))
-    return PortfolioInputs(snapshot, allocation, classifications, funds)
+    return str(directory.resolve()), manifest_stamp, tuple(file_stamp(p) for p in files)

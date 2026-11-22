@@ -41,6 +41,34 @@ def observe_server(trial):
         if msg.HasField('delta') and msg.delta.new_element.HasField('plotly_chart'):
             record('chart_enqueued', bytes=msg.ByteSize())
         return enqueue(ctx, msg)
+    from portfolio_app import application
+    from portfolio_app.ledger import security_history
+    from functools import wraps
+
+    def counted(function, event):
+        @wraps(function)
+        def call(*args, **kwargs):
+            record(event)
+            return function(*args, **kwargs)
+        return call
+
+    application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
+    security_history.history_fingerprint = counted(security_history.history_fingerprint, 'journal_fingerprinted')
+    variant = os.environ['PORTFOLIO_BENCHMARK_VARIANT']
+    if variant == 'navigation-reference':
+        from portfolio_app.interface.shared import overview_navigation
+        overview_navigation.render_panel = lambda draw, is_current: draw()
+        from portfolio_app.interface.views.history import history_ui
+        prepare = history_ui.prepared_history_calculation
+        def without_revision(*args, **kwargs):
+            kwargs.pop('journal_revision', None)
+            return prepare(*args, **kwargs)
+        history_ui.prepared_history_calculation = without_revision
+        request = refresher.request
+        def without_fingerprint(*args, **kwargs):
+            kwargs.pop('fingerprint', None)
+            return request(*args, **kwargs)
+        refresher.request = without_fingerprint
     views.history_view = calculate
     ScriptRunContext.enqueue = observe_enqueue
     from portfolio_app.performance import history_update, history_view_cache
@@ -81,7 +109,7 @@ def observe_window(trial):
         def inspect():
             try:
                 metrics = exercise(window.evaluate_js, trial, os.environ['PORTFOLIO_BENCHMARK_REFRESH'],
-                                   persistent=os.environ['PORTFOLIO_BENCHMARK_VARIANT']=='persistent')
+                                   persistent=os.environ['PORTFOLIO_BENCHMARK_VARIANT'] != 'baseline')
             except Exception:
                 import traceback
                 metrics = {'error':traceback.format_exc()}

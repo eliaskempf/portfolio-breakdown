@@ -53,6 +53,25 @@ def test_slow_quotes_do_not_block_and_requests_are_deduplicated(tmp_path, now, j
     assert provider.calls == 1
 
 
+def test_mounted_prices_invalidate_on_quote_change_and_expiry(tmp_path, now, jobs):
+    from unittest.mock import Mock
+    clock = [now]
+    provider = Mock()
+    provider.price.return_value = Quote(10, 'EUR', now)
+    service = PriceService(provider, now=lambda: clock[0])
+    service.price('SYNTH')
+    reader = BackgroundPrices(service, jobs, tmp_path)
+    reader.price('SYNTH')
+    assert reader.still_current()
+    clock[0] += service.ttl
+    assert not reader.still_current()
+    clock[0] = now
+    provider.price.return_value = Quote(11, 'EUR', now)
+    service.price('SYNTH', refresh=True)
+    assert not reader.still_current()
+    assert provider.price.call_count == 2
+
+
 def test_stale_quotes_survive_failure_and_respect_cooldown(tmp_path, now, jobs):
     clock = [now]
     class Provider:

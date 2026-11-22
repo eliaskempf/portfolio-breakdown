@@ -2,12 +2,17 @@ name: Packaged performance benchmark
 'on':
   workflow_dispatch:
     inputs:
+      experiment:
+        description: 'Comparison to measure'
+        type: choice
+        options: [navigation, history]
+        default: navigation
       pairs:
         description: 'Alternating pairs per surface (1 to 10)'
         type: number
         default: 2
   push:
-    branches: [perf/native-cache-benchmark]
+    branches: [perf/native-cache-benchmark, perf/overview-navigation]
 permissions:
   contents: read
 concurrency:
@@ -47,11 +52,12 @@ jobs:
       - name: Alternate reference and cached runs in the packaged renderer and Chromium
         env:
           EXECUTABLE: ${{ matrix.executable }}
+          EXPERIMENT: ${{ inputs.experiment || (github.ref_name == 'perf/overview-navigation' && 'navigation' || 'history') }}
           PAIRS: ${{ inputs.pairs || 2 }}
         run: |
           prefix=()
           if [[ "$RUNNER_OS" == Linux ]]; then prefix=(xvfb-run -a); fi
-          "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results --pairs "$PAIRS"
+          "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results --pairs "$PAIRS" --experiment "$EXPERIMENT"
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
