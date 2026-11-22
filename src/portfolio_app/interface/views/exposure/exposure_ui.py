@@ -251,7 +251,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             # Recalculate only when analytical inputs or company identities change.
             # Proxy lookup keeps the full source universe, independent of scope.
             merged_valued = valued.loc[valued.position_id.isin(original_valued.position_id)].copy()
-            result_key = analytical_signature(merged_valued, (), signature, lookthrough, allocation, leverage_context)
+            result_key = analytical_signature(merged_valued, (), signature, lookthrough, allocation, leverage_context.exposure_options(merged_valued))
             result = cached_input('analysis_exposure', result_key,
                 lambda: prepare_exposure(merged_valued, funds, allocation, leverage_context))
             contribution_key = (result_key, tuple(selected.position_id), measure, field, tuple(f.isin for f in expanded_funds))

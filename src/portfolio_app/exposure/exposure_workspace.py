@@ -12,7 +12,7 @@ def analytical_signature(valued, funds, *policies, fund_revision=None):
     """Ignore advancing quote ages, never amounts, identities or pricing inputs."""
     diagnostics = {'price_age_hours', 'fx_age_hours', 'price_observed_at', 'fx_observed_at'}
     digest = sha256(valued.drop(columns=list(diagnostics), errors='ignore').to_json(double_precision=15).encode())
-    digest.update(repr(policies).encode())
+    digest.update(repr((valued.attrs.get('reporting_currency'), policies)).encode())
     if fund_revision is not None:
         # The loader supplies the revisions of the exact manifests and constituent files it read.
         digest.update(repr(fund_revision).encode())

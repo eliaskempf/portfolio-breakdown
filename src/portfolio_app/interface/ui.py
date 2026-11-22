@@ -257,7 +257,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     exposure_result = None
     if feature_active:
         exposure_result = cached_input(
-            'portfolio_exposure', analytical_signature(valued, funds, str(data_dir.resolve()), allocation, leverage_context, fund_revision=fund_revision),
+            'portfolio_exposure', analytical_signature(valued, funds, str(data_dir.resolve()), allocation, leverage_context.exposure_options(valued), fund_revision=fund_revision),
             lambda: prepare_exposure(valued, funds, allocation, leverage_context))
     display_valued, display_exposure = valued, exposure_result
     if actual_active:

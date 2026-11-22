@@ -64,3 +64,28 @@ def test_refresh_is_explicit_and_target_preparation_preserves_input_snapshot(tmp
     prepare_application(inputs, service, refresh=True)
     assert provider.price.call_count == 2
     pd.testing.assert_frame_equal(holdings, original)
+
+
+def test_exposure_cache_uses_effective_leverage_inputs_and_currency(tmp_path):
+    from dataclasses import replace
+    from portfolio_app.exposure.exposure_workspace import analytical_signature
+    from portfolio_app.funds.leverage_settings import LeverageSettings, MarginLiability
+    from portfolio_app.ledger.account_journal import Journal
+    from portfolio_app.ledger.security_history import SecurityBook
+
+    valued = pd.DataFrame({'reporting_currency': ['EUR']})
+    valued.attrs['reporting_currency'] = 'EUR'
+    liability = MarginLiability('invented', 'Invented debt', 50.)
+    ctx = replace(load_leverage_context(tmp_path, 'EUR'), active=True, settings=LeverageSettings(liabilities=(liability,)))
+    def key(context):
+        return analytical_signature(valued, (), context.exposure_options(valued))
+
+    original = key(ctx)
+    other = replace(ctx, journal_revision='new', journal=replace(Journal(version=2), securities=(SecurityBook('position', 'invented', ('0', '', '')),)))
+    assert key(other) == original
+    adopted = replace(other, journal=replace(other.journal, adopted_liability_ids=(liability.id,)))
+    assert key(adopted) != original
+    assert adopted.exposure_options(valued)['liabilities'] == ()
+    assert key(replace(ctx, settings=LeverageSettings(liabilities=(replace(liability, balance_eur=None),)))) != original
+    valued.attrs['reporting_currency'] = 'USD'
+    assert key(ctx) != original

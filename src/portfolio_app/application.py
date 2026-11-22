@@ -40,6 +40,17 @@ class LeverageContext:
     def future(self):
         return self.sandbox[0] if self.sandbox and not (self.journal and self.journal.accounts) else None
 
+    def exposure_options(self, valued):
+        """Only the effective leverage inputs used to calculate exposure."""
+        if not self.active:
+            return None
+        future = self.future
+        liabilities = tuple(item for item in self.settings.liabilities
+                            if not self.journal or item.id not in self.journal.adopted_liability_ids)
+        use_display_currency = (future is None and not self.settings.liabilities) or bool(self.journal and self.journal.accounts)
+        return dict(future=future, liabilities=liabilities, fund_factors=self.settings.fund_factors,
+                    reporting_currency=valued.attrs.get('reporting_currency', 'EUR') if use_display_currency else None)
+
 
 def load_leverage_context(directory, reporting_currency):
     sandbox = load_sandbox(directory)
@@ -131,9 +142,7 @@ def prepare_application(inputs, prices, *, refresh=False, reporting_currency='EU
 
 def prepare_exposure(valued, funds, allocation, context):
     """Keep optional EUR exposure behind eligibility and the caller's lifecycle."""
-    if not context.active:
+    options = context.exposure_options(valued)
+    if options is None:
         return None
-    return calculate_portfolio_exposure(valued, funds, future=context.future, allocation=allocation,
-        liabilities=tuple(x for x in context.settings.liabilities if not context.journal or x.id not in context.journal.adopted_liability_ids),
-        fund_factors=context.settings.fund_factors,
-        reporting_currency=valued.attrs.get('reporting_currency', 'EUR') if context.future is None and not context.settings.liabilities or context.journal and context.journal.accounts else None)
+    return calculate_portfolio_exposure(valued, funds, allocation=allocation, **options)
