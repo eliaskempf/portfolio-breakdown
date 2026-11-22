@@ -774,6 +774,14 @@ accounts alongside 24 direct shares. Its 120 positions have 3,000 purchases and
 accounts. This additional pair opens Assets once and Companies twice. It checks
 the source disclosure for all 65,624 ownership contributions.
 
+The native historical-risk comparison uses 48 market-valued listings. It starts
+with the benchmark and 47 adjusted histories already cached. The first Calculate
+action should request the missing listing once. Expanding and collapsing the
+matrix should reuse the calculation. Each sample records request and calculation
+counts, click-to-chart time and settled time, and compares all three displayed
+risk estimates and the full correlation matrix across binaries. Select the
+`risk` experiment with a listed-equity profile to run it on both renderers.
+
 Mixed-history navigation also exercises two background providers together on each
 renderer. With Performance already open and a history download held pending,
 the ETF worker receives an identical snapshot or a provider failure. The driver

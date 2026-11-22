@@ -16,14 +16,16 @@ import sys
 from tempfile import TemporaryDirectory
 import time
 
-from fixture import create_workspace, prepare_fund_check, prepare_fundamental_check, prepare_quote_check
-from renderer import exercise, exercise_exposure, wait
+from fixture import create_workspace, prepare_fund_check, prepare_fundamental_check, prepare_quote_check, prepare_risk_check
+from renderer import measure_view, wait
 
 
 def benchmark(executable, workspace, trial, variant, surface, scenario, *, themes=False, company_accounts=False):
     trial.mkdir()
     if scenario == 'exposure' and themes:
         prepare_fundamental_check(workspace)
+    if scenario == 'risk':
+        risk_listings = prepare_risk_check(workspace)
     env = dict(os.environ, PORTFOLIO_STATE_DIR=str(workspace.parent / 'state'),
         PORTFOLIO_BENCHMARK_TRIAL=str(trial), PORTFOLIO_BENCHMARK_VARIANT=variant,
         PORTFOLIO_BENCHMARK_REFRESH=scenario, PORTFOLIO_BENCHMARK_THEMES=str(int(themes)),
@@ -56,8 +58,7 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
                         args=['--no-sandbox'])
                     page = browser.new_page(viewport={'width':1280,'height':900})
                     page.goto(url)
-                    report = (exercise_exposure(page.evaluate, trial, variant, themes=themes, company_accounts=company_accounts) if scenario == 'exposure' else
-                              exercise(page.evaluate, trial, scenario, persistent=variant != 'baseline'))
+                    report = measure_view(page.evaluate, trial, variant, scenario, themes=themes, company_accounts=company_accounts)
                     browser.close()
         finally:
             if proc.poll() is None:
@@ -73,6 +74,23 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         start, end = measurement.pop('event_range')
         return events[start:end]
 
+    if scenario == 'risk':
+        for index, action in enumerate(report['actions']):
+            during = interval(action)
+            requests = Counter(e['ticker'] for e in during if e['event'] == 'adjusted_fetched')
+            expected = []
+            if index == 0:
+                expected = risk_listings[-1:] if variant == 'candidate' else risk_listings
+            if requests != Counter(expected):
+                raise AssertionError(f'Risk action {index} expected {expected}, received {requests}')
+            action['requests'] = requests.total()
+            action['valuations'] = sum(e['event'] == 'portfolio_valued' for e in during)
+            action['calculations'] = sum(e['event'] == 'risk_calculated' for e in during)
+            if action['calculations'] != (1 if index == 0 or variant == 'reference' else 0):
+                raise AssertionError(f'Unexpected risk calculation count on action {index}: {action}')
+            if action['holdings'] != len(risk_listings) - 1 or any(value in ('', '—') for value in action['metrics']):
+                raise AssertionError('Incomplete risk estimates or correlation matrix')
+        return report
     if scenario == 'exposure':
         if visit := report['fundamentals']:
             start, end = visit.pop('event_range')
@@ -194,9 +212,43 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
             handle.write(summary)
 
 
-def run_exposure(candidate, reference, destination, surfaces, pairs, profile):
+def check_exposure(report, expected, surface, profile):
+    for visit in report['visits']:
+        sample = visit.pop('sample')
+        if sample != expected.setdefault(surface, sample) or visit['rows'] != (12 if profile == 'small' else 100):
+            raise AssertionError('Rendered Exposure rows or expanded preview changed')
+    for visit in report['details']:
+        digest = hashlib.sha256(visit.pop('sample').encode()).hexdigest()
+        if digest != expected.setdefault((surface, 'detail'), digest):
+            raise AssertionError('Financial source details changed across calls or binaries')
+        visit['digest'] = digest
+    if report['companies']:
+        expected_sources = 65624 if profile == 'multi-account' else 16424
+        if report['companies'][-1]['source_rows'] != expected_sources:
+            raise AssertionError('Company disclosure lost direct or account-specific fund contributions')
+    for visit in report['companies']:
+        sample = visit.pop('sample')
+        if visit['companies'] != 8950 or len(sample) != 3 or any(len(row) != 6 for row in sample):
+            raise AssertionError('Company grid omitted synthetic issuers or financial fields')
+        # Different summation algorithms can differ below display precision.
+        cells = [[name, *(round(float(value), 8) for value in values)] for name, *values in sample]
+        digest = hashlib.sha256(json.dumps(cells).encode()).hexdigest()
+        if digest != expected.setdefault((surface, 'companies'), digest):
+            raise AssertionError('Company names, values or denominators changed across visits or binaries')
+        visit['digest'] = digest
+    for visit in report['themes']:
+        labels, values = visit.pop('sample')
+        digest = hashlib.sha256(json.dumps([labels, values]).encode()).hexdigest()
+        if len(labels) != len(values) or not {f'Invented sector {i}' for i in range(24)} <= set(labels):
+            raise AssertionError('Sector chart omitted labels or values')
+        if digest != expected.setdefault((surface, 'themes'), digest):
+            raise AssertionError('Rendered sector chart changed across visits or binaries')
+        visit['digest'] = digest
+
+
+def run_comparison(candidate, reference, destination, surfaces, pairs, profile, experiment):
     destination.mkdir(parents=True, exist_ok=False)
-    result = dict(experiment='exposure', profile=profile, platform=sys.platform, revision=os.environ.get('GITHUB_SHA'),
+    result = dict(experiment=experiment, profile=profile, platform=sys.platform, revision=os.environ.get('GITHUB_SHA'),
                   binaries={name: hashlib.sha256(path.read_bytes()).hexdigest()
                             for name, path in [('reference', reference), ('candidate', candidate)]}, runs=[])
     as_of = date.today()
@@ -205,47 +257,24 @@ def run_exposure(candidate, reference, destination, surfaces, pairs, profile):
         for pair in range(pairs):
             order = [('reference', reference), ('candidate', candidate)]
             for name, exe in (reversed(order) if pair % 2 else order):
-                with TemporaryDirectory(prefix='exposure-benchmark-') as tmp:
+                with TemporaryDirectory(prefix=experiment + '-benchmark-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
                     create_workspace(workspace, profile, today=as_of)
-                    report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, 'exposure',
+                    report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, experiment,
                                        themes=profile == 'mixed-history', company_accounts=profile == 'multi-account')
-                    for visit in report['visits']:
-                        sample = visit.pop('sample')
-                        if sample != expected.setdefault(surface, sample) or visit['rows'] != (12 if profile == 'small' else 100):
-                            raise AssertionError('Rendered Exposure rows or expanded preview changed')
-                    for visit in report['details']:
-                        digest = hashlib.sha256(visit.pop('sample').encode()).hexdigest()
-                        if digest != expected.setdefault((surface, 'detail'), digest):
-                            raise AssertionError('Financial source details changed across calls or binaries')
-                        visit['digest'] = digest
-                    if report['companies']:
-                        expected_sources = 65624 if profile == 'multi-account' else 16424
-                        if report['companies'][-1]['source_rows'] != expected_sources:
-                            raise AssertionError('Company disclosure lost direct or account-specific fund contributions')
-                    for visit in report['companies']:
-                        sample = visit.pop('sample')
-                        if visit['companies'] != 8950 or len(sample) != 3 or any(len(row) != 6 for row in sample):
-                            raise AssertionError('Company grid omitted synthetic issuers or financial fields')
-                        # Different summation algorithms can differ below display precision.
-                        cells = [[name, *(round(float(value), 8) for value in values)] for name, *values in sample]
-                        digest = hashlib.sha256(json.dumps(cells).encode()).hexdigest()
-                        if digest != expected.setdefault((surface, 'companies'), digest):
-                            raise AssertionError('Company names, values or denominators changed across visits or binaries')
-                        visit['digest'] = digest
-                    for visit in report['themes']:
-                        labels, values = visit.pop('sample')
-                        digest = hashlib.sha256(json.dumps([labels, values]).encode()).hexdigest()
-                        if len(labels) != len(values) or not {f'Invented sector {i}' for i in range(24)} <= set(labels):
-                            raise AssertionError('Sector chart omitted labels or values')
-                        if digest != expected.setdefault((surface, 'themes'), digest):
-                            raise AssertionError('Rendered sector chart changed across visits or binaries')
-                        visit['digest'] = digest
+                    if experiment == 'risk':
+                        for action in report['actions']:
+                            sample = (action['metrics'], action['digest'])
+                            if sample != expected.setdefault(surface, sample):
+                                raise AssertionError('Risk metrics or correlations changed across actions or binaries')
+                        print(surface, name, 'risk chart ms', [round(a['chart_ms']) for a in report['actions']], flush=True)
+                    else:
+                        check_exposure(report, expected, surface, profile)
+                        print(surface, name, 'Exposure table ms', [round(v['table_ms']) for v in report['visits']],
+                              'sector chart ms', [round(v['chart_ms']) for v in report['themes']],
+                              'company grid ms', [round(v['grid_ms']) for v in report['companies']], flush=True)
                     result['runs'].append(dict(variant=name, surface=surface, pair=pair, **report))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
-                    print(surface, name, 'Exposure table ms', [round(v['table_ms']) for v in report['visits']],
-                          'sector chart ms', [round(v['chart_ms']) for v in report['themes']],
-                          'company grid ms', [round(v['grid_ms']) for v in report['companies']], flush=True)
 
 
 if __name__ == '__main__':
@@ -254,14 +283,17 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path)
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
-    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure'], default='history')
+    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk'], default='history')
     parser.add_argument('--profile', choices=['small', 'etf-heavy', 'mixed-history', 'multi-account'], default='small')
-    parser.add_argument('--reference', type=Path, help='Reference bundle for the Exposure comparison')
+    parser.add_argument('--reference', type=Path, help='Reference bundle for a paired comparison')
     options = parser.parse_args()
     surfaces = ['native','browser'] if options.surface == 'both' else [options.surface]
-    if options.experiment == 'exposure':
+    if options.experiment in {'exposure', 'risk'}:
         if not options.reference:
-            parser.error('--experiment exposure requires --reference')
-        run_exposure(options.executable.resolve(), options.reference.resolve(), options.output.resolve(), surfaces, options.pairs, options.profile)
+            parser.error('A paired binary comparison requires --reference')
+        if options.experiment == 'risk' and options.profile == 'small':
+            parser.error('The risk benchmark requires a profile with listed equities and ETFs')
+        run_comparison(options.executable.resolve(), options.reference.resolve(), options.output.resolve(), surfaces,
+                       options.pairs, options.profile, options.experiment)
     else:
         run(options.executable.resolve(), options.output.resolve(), surfaces, options.pairs, options.experiment, options.profile)

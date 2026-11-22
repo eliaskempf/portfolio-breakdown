@@ -474,3 +474,66 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False, company_account
         wait(lambda: ready() and read("return !table() && tab('Overview').getAttribute('aria-selected') === 'true';"))
     fundamentals = exercise_fundamentals(evaluate, trial, variant) if themes else None
     return dict(ready_at=ready_at, visits=visits, themes=theme_visits, details=details, companies=companies, fundamentals=fundamentals)
+
+
+def exercise_risk(evaluate, trial):
+    context = CONTEXT + """
+        const button = name => [...d.querySelectorAll('button,[role=radio]')].find(e => visible(e) &&
+            (e.querySelector('p')?.textContent.trim() === name || e.textContent.trim() === name));
+        const matrix = () => d.querySelector('.st-key-risk_correlations .js-plotly-plot');
+    """
+    def read(js):
+        return evaluate('(() => {' + context + js + '})()')
+    def ready():
+        try:
+            return read("return visible(allocation()) && !!button('Analytics') && !running();")
+        except Exception:
+            return False  # The native startup document is replaced.
+    wait(ready, timeout=100)
+    ready_at = time.time()
+    read("button('Analytics').click(); return true;")
+    wait(lambda: read("return !!button('Calculate risk') && !running();"))
+    actions = []
+    for action in ('calculate', 'expand', 'collapse'):
+        start_event = event_count(trial)
+        read("""
+            const action = """ + json.dumps(action) + """;
+            const previous = matrix()?.layout?.height;
+            const control = action === 'calculate' ? button('Calculate risk') :
+                d.querySelector('.st-key-risk_correlations [role=switch]');
+            control.scrollIntoView({block:'center'});
+            w.riskVisit = null;
+            const start = w.performance.now();
+            control.click();
+            let drawn = null;
+            function frame() {
+                const chart = matrix(), elapsed = w.performance.now() - start;
+                const metrics = [...d.querySelectorAll('.st-key-tour_risk_metrics [data-testid=stMetricValue]')]
+                    .map(e => e.textContent.trim());
+                const painted = visible(chart) && chart?.layout?.height !== previous &&
+                    !!chart.querySelector('.heatmaplayer image') && metrics.length === 3;
+                if (painted && drawn === null) drawn = elapsed;
+                if (painted && !running()) {
+                    const trace = chart.data[0];
+                    w.riskVisit = {chart_ms:drawn, settled_ms:elapsed, metrics, holdings:trace.x.length,
+                        matrix:JSON.stringify(trace.z)};
+                } else if (elapsed > 60000 || exception()) w.riskVisit = {error:'Risk matrix did not settle: ' + action};
+                else w.requestAnimationFrame(frame);
+            }
+            w.requestAnimationFrame(frame); return true;
+        """)
+        result = wait(lambda: read('return w.riskVisit;'), timeout=65)
+        if 'error' in result:
+            raise RuntimeError(result['error'])
+        result['digest'] = hashlib.sha256(result.pop('matrix').encode()).hexdigest()
+        result['event_range'] = [start_event, event_count(trial)]
+        actions.append(result)
+    return dict(ready_at=ready_at, actions=actions)
+
+
+def measure_view(evaluate, trial, variant, scenario, *, themes=False, company_accounts=False):
+    if scenario == 'risk':
+        return exercise_risk(evaluate, trial)
+    if scenario == 'exposure':
+        return exercise_exposure(evaluate, trial, variant, themes=themes, company_accounts=company_accounts)
+    return exercise(evaluate, trial, scenario, persistent=variant != 'baseline')

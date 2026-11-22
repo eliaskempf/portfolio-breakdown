@@ -120,16 +120,44 @@ def benchmark_fundamentals(ticker, ratio):
     raise ValueError('Unexpected listing in synthetic fundamentals benchmark')
 
 
-def prepare_fundamental_check(directory):
+def prepare_fundamental_check(directory, *, expired=True):
     from dataclasses import asdict
     from portfolio_app.analytics.analytics_cache import AnalyticsCache
 
-    expired = datetime.now(timezone.utc) - timedelta(days=2)
-    cache = AnalyticsCache(directory / '.cache' / 'fundamentals', now=lambda: expired)
+    stamp = datetime.now(timezone.utc) - (timedelta(days=2) if expired else timedelta())
+    cache = AnalyticsCache(directory / '.cache' / 'fundamentals', now=lambda: stamp)
     with (directory / 'holdings.csv').open(newline='', encoding='utf-8') as handle:
         tickers = dict.fromkeys(row['ticker'] for row in csv.DictReader(handle))
     for ticker in tickers:
         cache.get('fundamentals-v1:' + ticker, lambda: asdict(benchmark_fundamentals(ticker, 10.)))
+
+
+def prepare_risk_check(directory):
+    """Use market-valued positions and leave one adjusted listing history missing."""
+    from portfolio_app.analytics.risk_data import DEFAULT_BENCHMARK, DemoRiskHistoryProvider, RiskHistoryService
+
+    prepare_fundamental_check(directory, expired=False)
+    path = directory / 'holdings.csv'
+    with path.open(newline='', encoding='utf-8') as handle:
+        rows = list(csv.DictReader(handle))
+    stamp = datetime.now(timezone.utc).isoformat()
+    quotes = {}
+    for row in rows:
+        quotes['price:' + row['ticker']] = dict(quote=dict(price=float(row['manual_price']), currency='EUR',
+            observed_at=stamp), attempted_at=stamp, error='')
+        for column in ('manual_price', 'manual_price_currency', 'manual_price_date'):
+            row[column] = ''
+    with path.open('w', newline='', encoding='utf-8') as handle:
+        writer = csv.DictWriter(handle, fieldnames=rows[0])
+        writer.writeheader()
+        writer.writerows(rows)
+    (directory / '.cache' / 'prices.json').write_text(json.dumps(quotes), encoding='utf-8')
+    listings = list(dict.fromkeys(row['ticker'] for row in rows))
+    service = RiskHistoryService(DemoRiskHistoryProvider(), directory / '.cache' / 'risk-history')
+    requests = [DEFAULT_BENCHMARK + ':EUR', *listings]
+    for ticker in requests[:-1]:
+        service.get(ticker)
+    return requests
 
 
 def prepare_fund_check(directory):

@@ -24,6 +24,16 @@ def observe_server(trial):
         return call
 
     application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
+    if os.environ['PORTFOLIO_BENCHMARK_REFRESH'] == 'risk':
+        from portfolio_app.analytics import analytics_service
+        from portfolio_app.analytics.risk_data import DemoRiskHistoryProvider, MarketRiskHistoryProvider
+        def adjusted(self, ticker, years):
+            time.sleep(.03)
+            record('adjusted_fetched', ticker=ticker)
+            return DemoRiskHistoryProvider.fetch(self, ticker, years)
+        MarketRiskHistoryProvider.fetch = adjusted
+        analytics_service.risk_analytics = counted(analytics_service.risk_analytics, 'risk_calculated')
+        return
     if os.environ['PORTFOLIO_BENCHMARK_REFRESH'] == 'exposure':
         if os.environ.get('PORTFOLIO_BENCHMARK_THEMES') == '1':
             from perf_benchmark.fixture import benchmark_fundamentals
@@ -172,20 +182,16 @@ def observe_server(trial):
 
 def observe_window(trial):
     import webview
-    from perf_benchmark.renderer import exercise, exercise_exposure
+    from perf_benchmark.renderer import measure_view
     create_window = webview.create_window
     def create(*args, **kwargs):
         window = create_window(*args, **kwargs)
         def inspect():
             try:
                 scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
-                if scenario == 'exposure':
-                    metrics = exercise_exposure(window.evaluate_js, trial, os.environ['PORTFOLIO_BENCHMARK_VARIANT'],
-                        themes=os.environ.get('PORTFOLIO_BENCHMARK_THEMES') == '1',
-                        company_accounts=os.environ.get('PORTFOLIO_BENCHMARK_COMPANY_ACCOUNTS') == '1')
-                else:
-                    metrics = exercise(window.evaluate_js, trial, scenario,
-                                       persistent=os.environ['PORTFOLIO_BENCHMARK_VARIANT'] != 'baseline')
+                metrics = measure_view(window.evaluate_js, trial, os.environ['PORTFOLIO_BENCHMARK_VARIANT'], scenario,
+                    themes=os.environ.get('PORTFOLIO_BENCHMARK_THEMES') == '1',
+                    company_accounts=os.environ.get('PORTFOLIO_BENCHMARK_COMPANY_ACCOUNTS') == '1')
             except Exception:
                 import traceback
                 metrics = {'error':traceback.format_exc()}
