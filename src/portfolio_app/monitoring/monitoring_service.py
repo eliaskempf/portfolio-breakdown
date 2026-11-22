@@ -22,14 +22,6 @@ if TYPE_CHECKING:
     from portfolio_app.market.prices import PriceResult
 
 
-class _PassPrices:
-    """Share the result of each requested instrument or currency within this pass."""
-    def __init__(self, service):
-        self.now = service.now
-        self.price = cache(service.price)
-        self.fx = cache(service.fx)
-
-
 @dataclass(frozen=True)
 class _AccountSources:
     journal: 'Journal'
@@ -151,7 +143,7 @@ class MonitoringService:
         from portfolio_app.portfolio.positions import read_snapshot
         from portfolio_app.portfolio.portfolio_settings import load_settings
         from portfolio_app.portfolio.valuation import value_holdings
-        from portfolio_app.market.prices import PriceService, StaticProvider, YahooProvider, Quote
+        from portfolio_app.market.prices import PriceService, StaticProvider, YahooProvider, Quote, QuoteSnapshot
         from portfolio_app.market.fx import current_rate
         from portfolio_app.workspace.workspace_lock import workspace_lock
         with workspace_lock(self.directory):
@@ -178,7 +170,7 @@ class MonitoringService:
                 observed = pd.Timestamp(day).tz_localize(series.timezone).to_pydatetime()
                 return Quote(price, series.currency, observed)
         provider = StaticProvider(self.directory/'demo_prices.json') if self.demo else AccountQuotes()
-        prices = _PassPrices(PriceService(provider, self.directory/'.cache'/'monitoring-account-prices.json',
+        prices = QuoteSnapshot(PriceService(provider, self.directory/'.cache'/'monitoring-account-prices.json',
                                          now=self.now, ttl=timedelta(minutes=5)))
         @cache
         def value_positions(identities):

@@ -1,11 +1,12 @@
 """Reporting-currency valuation; unavailable prices are unknown, never zero or cost basis."""
 
 import math
+from functools import cache
 from datetime import datetime, timezone
 
 import pandas as pd
 
-from portfolio_app.market.prices import PriceService
+from portfolio_app.market.prices import PriceService, QuoteSnapshot
 from portfolio_app.market.fx import current_rate
 from portfolio_app.portfolio.physical_assets import pricing_key, price_unit_factor
 
@@ -29,9 +30,13 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
     if 'manual_price' in active:
         active = active.loc[active.manual_price.isna()]
     keys = {pricing_key(row) for _, row in active.iterrows()} - {""}
-    price_results = {key: prices.price(key, refresh=refresh) for key in keys}
-    currencies = {item.quote.currency for item in price_results.values() if item.quote}
-    fx_results = {currency: current_rate(prices, currency, reporting_currency, refresh=refresh) for currency in currencies}
+    quotes = prices if isinstance(prices, QuoteSnapshot) else QuoteSnapshot(prices)
+    price_results = {key: quotes.price(key, refresh=refresh) for key in keys}
+
+    @cache
+    def rate_for(currency):
+        return current_rate(quotes, currency, reporting_currency, refresh=refresh)
+
     for index, position in holdings.iterrows():
         if position["shares"] == 0:
             result.at[index, "current_value_reporting"] = 0.
@@ -41,7 +46,7 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
         manual = position.get('manual_price', float('nan'))
         if pd.notna(manual) and manual != '':
             currency = position['manual_price_currency']
-            fx = current_rate(prices, currency, reporting_currency, refresh=refresh)
+            fx = rate_for(currency)
             result.at[index, 'current_price'] = float(manual)
             result.at[index, 'quote_currency'] = currency
             result.at[index, 'price_status'] = 'manual'
@@ -83,7 +88,7 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
         result.at[index, "quote_currency"] = quote.currency
         result.at[index, "price_observed_at"] = quote.observed_at.isoformat()
         result.at[index, "price_age_hours"] = max(0, (prices.now() - quote.observed_at).total_seconds() / 3600)
-        fx = fx_results[quote.currency]
+        fx = rate_for(quote.currency)
         result.at[index, "fx_status"] = fx.status
         notes = [f"Price refresh failed: {price.error}"] if price.error else []
         if position.get('price_source') == 'gold_spot':

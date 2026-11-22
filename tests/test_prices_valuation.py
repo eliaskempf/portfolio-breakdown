@@ -136,3 +136,27 @@ def test_yahoo_provider_unadjusted_close_and_currency_subunits(monkeypatch, now)
     assert provider.price("EXAMPLE").currency == "GBP"
     assert provider.fx("USD").currency == "EUR"
     assert calls[-1] == "USDEUR=X"
+
+
+def test_one_fx_observation_per_currency_for_manual_and_quoted_holdings(now):
+    from portfolio_app.portfolio.holdings import parse_holdings
+
+    holdings = parse_holdings(
+        'id,name,shares,ticker,quantity_unit,manual_price,manual_price_currency,manual_price_date\n'
+        'a,Invented USD snapshot,1,,shares,100,USD,2026-09-01\n'
+        'b,Invented EUR snapshot,1,,shares,100,EUR,2026-09-01\n'
+        'c,Invented live holding,1,SYNTHETIC,shares,,,\n'
+        'd,Invented empty position,0,,shares,30,CHF,2026-09-01\n')
+    class Provider(CountingProvider):
+        sterling_rate = 1.25
+        def fx(self, currency):
+            self.fx_calls.append(currency)
+            return Quote({'USD': .9, 'GBP': self.sterling_rate}[currency], 'EUR', now)
+    provider = Provider(now)
+    service = PriceService(provider, now=lambda: now)
+    for rate, expected in [(1.25, [72., 80., 72., 0.]), (1., [90., 100., 90., 0.])]:
+        provider.sterling_rate = rate
+        provider.fx_calls.clear()
+        valued = value_holdings(holdings, service, refresh=True, reporting_currency='GBP')
+        assert valued.current_value_reporting.tolist() == pytest.approx(expected)
+        assert sorted(provider.fx_calls) == ['GBP', 'USD']

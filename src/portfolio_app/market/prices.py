@@ -1,5 +1,6 @@
 """Injectable market data with a small persistent cache and stale fallback."""
 
+from functools import cache
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 import json
@@ -46,6 +47,14 @@ class PriceResult:
     quote: Quote | None
     status: str
     error: str = ""
+
+
+class QuoteSnapshot:
+    """Read each requested quote or FX leg once during a valuation or monitoring pass."""
+    def __init__(self, service):
+        self.now = service.now
+        self.price = cache(service.price)
+        self.fx = cache(service.fx)
 
 
 class MarketDataProvider(Protocol):
