@@ -16,7 +16,7 @@ def observe_server(trial):
         wait(lambda: (trial / 'release').exists(), timeout=100)
         if os.environ['PORTFOLIO_BENCHMARK_REFRESH'] == 'changed':
             last = next(o for o in store.observations if o.id == 'o-0-730')
-            corrected = replace(last, id='benchmark-correction', amount=last.amount + 1)
+            corrected = replace(last, id='benchmark-correction', replaces=last.id, amount=last.amount + 1)
             store = replace(store, observations=(*store.observations, corrected))
         (trial / 'completed').touch()
         return store, ()
@@ -28,6 +28,11 @@ def observe_server(trial):
         with (trial / 'server.jsonl').open('a', encoding='utf-8') as out:
             print(json.dumps({'event':event, 'epoch_ms':time.time_ns() / 1e6, **fields}), file=out)
     def calculate(*args, **kwargs):
+        from threading import current_thread
+        if current_thread().name.startswith('market-data') and not (trial / 'recalculating').exists():
+            from perf_benchmark.renderer import wait
+            (trial / 'recalculating').touch()
+            wait(lambda: (trial / 'finish-calc').exists(), timeout=30)
         start = time.perf_counter()
         result = original_view(*args, **kwargs)
         record('history_calculated', duration_ms=(time.perf_counter()-start)*1000)
@@ -40,6 +45,8 @@ def observe_server(trial):
     ScriptRunContext.enqueue = observe_enqueue
     from portfolio_app.performance import history_view_cache
     if os.environ['PORTFOLIO_BENCHMARK_VARIANT'] == 'baseline':
+        from portfolio_app.performance import history_update
+        history_update.start_update = lambda *args: None
         # The reference uses the same binary with only cross-session view reuse bypassed.
         history_view_cache.load_or_compute = lambda directory, signature, compute: compute()
     else:
@@ -51,7 +58,7 @@ def observe_server(trial):
                 missed = True
                 return compute()
             result = original_load(directory, signature, miss)
-            record('disk_miss' if missed else 'disk_hit')
+            record('disk_miss' if missed else 'disk_hit', chart=signature[-2])
             return result
         history_view_cache.load_or_compute = observe_cache
 
@@ -64,7 +71,8 @@ def observe_window(trial):
         window = create_window(*args, **kwargs)
         def inspect():
             try:
-                metrics = exercise(window.evaluate_js, trial, os.environ['PORTFOLIO_BENCHMARK_REFRESH'])
+                metrics = exercise(window.evaluate_js, trial, os.environ['PORTFOLIO_BENCHMARK_REFRESH'],
+                                   persistent=os.environ['PORTFOLIO_BENCHMARK_VARIANT']=='persistent')
             except Exception:
                 import traceback
                 metrics = {'error':traceback.format_exc()}

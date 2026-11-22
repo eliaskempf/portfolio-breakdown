@@ -11,7 +11,9 @@ from portfolio_app.performance.history_diagnostics import HistoryIssue
 from portfolio_app.performance.history_valuation import ValuationEvidence
 from portfolio_app.performance.history_view import HistoryView
 from portfolio_app.performance.personal_performance import PersonalPerformance
+from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.workspace.atomic_file import staged_text
+from portfolio_app.workspace.workspace_lock import workspace_lock
 
 _RECORDS = {cls.__name__: cls for cls in (HistoryView, PersonalPerformance, ValuationEvidence, GainSummary)}
 _LIMIT = 2 * 1024 * 1024
@@ -75,9 +77,10 @@ def load_or_compute(directory, signature, compute):
         checksum = sha256(payload.encode()).hexdigest()
         content = f'{key}\n{checksum}\n{payload}'
         if len(content) <= _LIMIT:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with staged_text(path, lambda handle: handle.write(content)) as staged:
-                staged.replace(path)
-    except (OSError, ValueError, TypeError, RecursionError):
+            with workspace_lock(directory):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with staged_text(path, lambda handle: handle.write(content)) as staged:
+                    staged.replace(path)
+    except (DataError, OSError, ValueError, TypeError, RecursionError):
         pass
     return view

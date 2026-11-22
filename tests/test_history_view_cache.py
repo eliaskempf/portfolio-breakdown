@@ -37,3 +37,32 @@ def test_cache_preserves_calculation_and_typed_missing_evidence(tmp_path):
     calls = []
     assert load_or_compute(tmp_path, signature, lambda: calls.append(1) or fresh) == fresh
     assert calls == [1]
+
+
+def test_background_view_uses_one_complete_revision_and_leaves_inputs_untouched(tmp_path, monkeypatch):
+    from threading import Event
+    from portfolio_app.performance import history_update
+    from portfolio_app.performance.history_observations import save_observations, load_observations
+    journal, scope = setup(tmp_path)
+    today = date(2024, 1, 8)
+    store = ObservationStore((Observation('one', 'price', 'position-0', '2024-01-08', Decimal(11), 'EUR'),))
+    save_observations(tmp_path, store, None)
+    started, release = Event(), Event()
+    def hold(directory):
+        snapshot = load_observations(directory)
+        started.set()
+        assert release.wait(5)
+        return snapshot
+    monkeypatch.setattr(history_update, 'load_observations', hold)
+    future = history_update.start_update(tmp_path, journal, 'prior', scope, '1Y', 'EUR', today)
+    try:
+        assert started.wait(3) and not future.done()
+        assert history_update.start_update(tmp_path, journal, 'prior', scope, '1Y', 'EUR', today) is None
+        _, revision = load_observations(tmp_path)
+        corrected = replace(store.observations[0], id='two', replaces='one', amount=Decimal(13))
+        save_observations(tmp_path, replace(store, observations=(*store.observations, corrected)), revision)
+    finally:
+        release.set()
+    update = future.result(5)
+    assert update.revision == revision and update.revision != load_observations(tmp_path)[1]
+    assert update.view == history_view(journal, scope, store, today=today, period_annualized=False)

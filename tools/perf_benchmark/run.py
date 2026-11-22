@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import platform
 import socket
+from math import ceil
 from statistics import median
 import subprocess
 import sys
@@ -49,7 +50,7 @@ def benchmark(executable, workspace, trial, variant, surface, scenario):
                         args=['--no-sandbox'])
                     page = browser.new_page(viewport={'width':1280,'height':900})
                     page.goto(url)
-                    report = exercise(page.evaluate, trial, scenario)
+                    report = exercise(page.evaluate, trial, scenario, persistent=variant=="persistent")
                     browser.close()
         finally:
             if proc.poll() is None:
@@ -62,7 +63,9 @@ def benchmark(executable, workspace, trial, variant, surface, scenario):
     report['launch_ms'] = (report.pop('ready_at') - started) * 1000
     events = [json.loads(line) for line in (trial / 'server.jsonl').read_text().splitlines()]
     report['history_calls'] = sum(e['event'] == 'history_calculated' for e in events)
-    report['disk_hits'] = sum(e['event'] == 'disk_hit' for e in events)
+    first = report['first']
+    report['first_chart_disk_hits'] = sum(e['event'] == 'disk_hit' and e['chart'] and
+        first['click_epoch_ms'] <= e['epoch_ms'] <= first['click_epoch_ms'] + first['settled_ms'] for e in events)
     for interaction in [report['first'], report['range_3m'], *report['warm']]:
         begin = interaction.pop('click_epoch_ms')
         specific = [e for e in events if begin <= e['epoch_ms'] <= begin + interaction['settled_ms']]
@@ -90,7 +93,7 @@ def run(executable, destination, surfaces, pairs):
                     for scenario, launch in [('unchanged','cold'), ('changed','reopen')]:
                         trial = Path(tmp) / launch
                         metrics = benchmark(executable, workspace, trial, variant, surface, scenario)
-                        if variant == 'persistent' and launch == 'reopen' and metrics['disk_hits'] == 0:
+                        if variant == 'persistent' and launch == 'reopen' and metrics['first_chart_disk_hits'] == 0:
                             raise AssertionError('Relaunch did not reuse persisted history')
                         if metrics['digest'] != expected.setdefault(scenario, metrics['digest']):
                             raise AssertionError('Rendered series or gain data differs across runs')
@@ -98,6 +101,21 @@ def run(executable, destination, surfaces, pairs):
                         (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
                         print(surface, pair, variant, launch, 'first chart ms', round(metrics['first']['chart_ms']),
                               'warm median ms', round(median(r['chart_ms'] for r in metrics['warm'])), flush=True)
+
+    rows = ['| Surface | Launch | Reuse | Launch to ready (ms) | First chart (ms) | Warm chart median / p95 (ms) |',
+            '|---|---|---|---:|---:|---:|']
+    for surface in surfaces:
+        for launch in ('cold','reopen'):
+            for variant in ('baseline','persistent'):
+                runs = [r for r in result['runs'] if (r['surface'],r['launch'],r['variant']) == (surface, launch, variant)]
+                warm = sorted(w['chart_ms'] for r in runs for w in r['warm'])
+                rows.append(f"| {surface} | {launch} | {variant} | {median(r['launch_ms'] for r in runs):.0f} | "
+                            f"{median(r['first']['chart_ms'] for r in runs):.0f} | {median(warm):.0f} / {warm[ceil(.95*len(warm))-1]:.0f} |")
+    summary = '\n'.join(rows) + '\n'
+    print(summary)
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
+            handle.write(summary)
 
 
 if __name__ == '__main__':

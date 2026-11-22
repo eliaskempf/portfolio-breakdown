@@ -723,6 +723,52 @@ initial-load performance. Use synthetic ledgers for repeatable regression checks
 read-only inspection of a running portfolio must emit only timing metadata.
 
 
+### Packaged performance benchmark
+
+The **Packaged performance benchmark** Actions workflow exercises WebView2 on
+Windows, Qt WebEngine on Ubuntu and WKWebView on macOS. It also drives Chromium
+against each packaged server. The benchmark builds a disposable binary from the
+release PyInstaller spec with an additional measurement hook. Only the benchmark
+build contains the synthetic provider and timing probes.
+
+Each runner compares two modes of the same binary. The reference bypasses
+persisted history and background chart calculation. The candidate uses both.
+Each pair starts with a new synthetic portfolio, then completely exits and
+reopens the same workspace. Each process measures the first Allocation to
+Performance switch, a range change with a download held open, and five repeat
+switches. The second pair reverses the mode order. A cold launch here means
+an empty application cache and a fresh process. The operating system can still
+have executable or filesystem pages in memory.
+
+The job summary shows median and nearest-rank p95 interaction times.
+The JSON artifact retains every sample, including the click-to-first-drawn-chart
+and settled-view measurements, server calculation time and first chart enqueue.
+Chart paint is sampled at an animation frame with a populated Plotly trace.
+Launch time includes readiness polling and browser startup in browser mode.
+Where the native shell exposes its animation completion, the artifact also
+records the interval to usable Allocation. Compare within a platform and run.
+Use more pairs before treating timing differences as a release threshold.
+The deterministic checks fail on a changed series digest, a miss on a primed
+chart, an unexpected fade on unchanged data, or loss of the last complete chart
+while a replacement is being calculated.
+
+For a local run, sync the locked window, release and browser dependencies and
+install Playwright Chromium. From the project root, build the disposable bundle
+and pass its native executable to the driver. On Linux, provide an X11 session
+or use Xvfb. The output directory must be new.
+
+```sh
+uv run python tools/perf_benchmark/build.py dist/performance
+uv run python tools/perf_benchmark/run.py dist/performance/portfolio-window/portfolio-window dist/performance-results
+```
+
+The chart and summary snapshots in a workspace's private `.cache/history-views`
+directory are disposable. Their identity includes the ledger fingerprint,
+observation revision, scope, period, currency, day, requested metrics and model
+version. Bump the model schema when a calculation or coverage convention changes.
+Only historical results belong here. Current quotes and today's gain fallback
+continue to use their own current evidence.
+
 ## History playground
 
 Create a separate, persistent example with invented holdings, buys, a sale, a

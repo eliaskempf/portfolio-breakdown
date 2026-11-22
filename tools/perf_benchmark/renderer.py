@@ -53,11 +53,17 @@ def interact(evaluate, command):
     return result
 
 
-def exercise(evaluate, control, scenario):
+def exercise(evaluate, control, scenario, *, persistent):
     ready = '(!document.querySelector("#portfolio-app") || window.PortfolioSplash?.state === "first-view-rendered")'
+    animation_done = None
     def is_ready():
+        nonlocal animation_done
         try:
-            return evaluate('(() => {' + CONTEXT + 'return ' + ready + ' && visible(allocation()) && !running();})()')
+            state = evaluate('(() => {' + CONTEXT + 'return {intro:!!window.BreakdownIntro?.completed, ready:' +
+                ready + ' && visible(allocation()) && !running()};})()')
+            if state['intro'] and animation_done is None:
+                animation_done = time.time()
+            return state['ready']
         except Exception:
             return False  # The native startup document is replaced on Qt and Cocoa.
     wait(is_ready, timeout=100)
@@ -86,11 +92,27 @@ def exercise(evaluate, control, scenario):
             if (!state.done) w.requestAnimationFrame(frame);
         }
         frame(); return true; })()""")
+    refresh_started = time.perf_counter()
     (control / 'release').touch()
     wait(lambda: (control / 'completed').exists())
+    held = 0
+    if persistent and scenario == 'changed':
+        wait(lambda: (control / 'recalculating').exists(), timeout=30)
+        before = time.perf_counter()
+        try:
+            time.sleep(.4)
+            stable = evaluate('(() => {' + CONTEXT + 'const s=w.benchmarkRefresh; return visible(history()) && !s.replaced && !s.fades && s.changes===0;})()')
+            if not stable:
+                raise AssertionError('Last complete chart disappeared during recalculation')
+        finally:
+            (control / 'finish-calc').touch()
+            held = time.perf_counter() - before
     wait(lambda: evaluate('(() => {' + CONTEXT + """
         return !exception() && !running() && !d.body.innerText.includes('Loading historical prices and FX');
     })()"""))
+    if scenario == 'changed':
+        wait(lambda: evaluate('(() => {' + CONTEXT + 'return w.benchmarkRefresh?.delta === 25 && !running();})()'))
+    refresh_ms = (time.perf_counter() - refresh_started - held) * 1000
     time.sleep(5)  # Observe more than two status-timer periods after completion.
     refresh = evaluate('(() => {' + CONTEXT + 'w.benchmarkRefresh.done=true; return w.benchmarkRefresh;})()')
     if not refresh['preserved'] or refresh['changes'] != int(scenario == 'changed') or refresh['delta'] != (25 if scenario == 'changed' else 0):
@@ -105,4 +127,5 @@ def exercise(evaluate, control, scenario):
         interact(evaluate, 'Allocation')
         warm.append(interact(evaluate, 'Performance'))
     interact(evaluate, 'Allocation')  # Restore saved view for the next real process.
-    return dict(digest=digest, ready_at=ready_at, first=first, range_3m=period, warm=warm, refresh=refresh)
+    return dict(digest=digest, ready_at=ready_at, post_intro_ms=(ready_at-animation_done)*1000 if animation_done else None,
+                refresh_ms=refresh_ms, first=first, range_3m=period, warm=warm, refresh=refresh)

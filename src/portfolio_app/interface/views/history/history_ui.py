@@ -68,6 +68,12 @@ def prepared_history_calculation(directory, journal, observations, revision, *, 
     return previous[1]
 
 
+def _view_cache_entry(directory, calculation, revision, scope, period, target, stamp, include_points, annualized):
+    signature = str(directory.resolve()), calculation.fingerprint, revision, scope, period, target, stamp, include_points, annualized
+    key = 'history_view_'+scope.key+'_'+period+('_chart' if include_points else '_summary')+('_annualized' if annualized else '_twr')
+    return key, signature
+
+
 def prepared_history_view(directory, journal, scope, observations, revision, period='1Y', *, target=None, include_points=True, calculation=None, annualized=True, persist=False):
     """Reuse a chart across dialog interactions until its actual inputs change."""
     from portfolio_app.interface.shared.currency_display import reporting_currency
@@ -76,8 +82,7 @@ def prepared_history_view(directory, journal, scope, observations, revision, per
     target = target or reporting_currency()
     calculation = calculation or prepared_history_calculation(directory, journal, observations, revision, target=target)
     stamp = date.today()
-    signature = str(directory.resolve()), calculation.fingerprint, revision, scope, period, target, stamp, include_points, annualized
-    key = 'history_view_'+scope.key+'_'+period+('_chart' if include_points else '_summary')+('_annualized' if annualized else '_twr')
+    key, signature = _view_cache_entry(directory, calculation, revision, scope, period, target, stamp, include_points, annualized)
     def compute():
         return history_view(journal, scope, observations, period, today=stamp, target=target,
             include_points=include_points, calculation=calculation, annualized=annualized, period_annualized=False)
@@ -957,16 +962,44 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
         # Poll only the status element. On a revision, Overview also owns the
         # category comparison, while position charts can update locally.
         from portfolio_app.interface.shared.background_ui import poll_while_mounted, refresh_allowed
+        pending_update = None
         @st.fragment
         @local_dialog_updates()
         def status():
-            nonlocal refresh, observation_stamp
+            nonlocal refresh, observation_stamp, pending_update
             if is_active is not None and not is_active():
                 return
             if refresh.pending and not refresher.pending(directory):
                 refresh = request_refresh()
             latest_stamp = file_stamp(directory/'history-observations.json')
             changed = latest_stamp != observation_stamp
+            if changed and prepared is not None and refresh_allowed():
+                from portfolio_app.performance.history_update import start_update
+                today = date.today()
+                if pending_update is None:
+                    future = start_update(directory, journal, revision, scope, period, target, today)
+                    if future is not None:
+                        pending_update = latest_stamp, today, future
+                if pending_update is not None:
+                    stamp, requested_day, future = pending_update
+                    if not future.done():
+                        poll_while_mounted(key+'refresh_tick', 150)
+                        return
+                    pending_update = None
+                    if (latest_stamp, today) == (stamp, requested_day) and future.exception() is None:
+                        update = future.result()
+                        if update is None:
+                            observation_stamp, changed = stamp, False
+                        else:
+                            # The next full render verifies these identities against its own
+                            # ledger, scope, dates, currency and observation revision.
+                            calc = update.calculation
+                            cache = st.session_state.setdefault('parsed_inputs', {})
+                            identity = str(directory.resolve()), calc.fingerprint, update.revision, target, today
+                            cache['history_calculation'] = identity, calc
+                            entry, inputs = _view_cache_entry(directory, calc, update.revision, scope, period, target, today, True, True)
+                            cache[entry] = inputs, update.view
+                            st.rerun()
             if changed and read_observations(directory)[1] == revision:
                 observation_stamp, changed = latest_stamp, False
             if changed and (prepared is None or refresh_allowed()):
