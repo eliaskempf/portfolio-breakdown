@@ -764,7 +764,10 @@ The Exposure experiment builds both the pre-change reference and the current
 application on each runner. With the ETF-heavy profile it times Overview to
 the first populated Exposure table and two return visits, then opens a source
 preview locally. It compares row counts and sampled row and preview contents
-between binaries. The JSON artifact includes first-table and settled-view
+between binaries. Pushes to the Exposure benchmark branch also run the Overview
+navigation experiment with the same installed candidate and portfolio profile.
+Each platform artifact includes the Exposure results at its root and the Overview
+results under `navigation/`. The Exposure results include first-table and settled-view
 times. To run locally, pass `--experiment exposure --profile etf-heavy` and
 `--reference` with the reference executable built with the same driver.
 
