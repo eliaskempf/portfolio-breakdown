@@ -59,10 +59,18 @@ def strategic_tree(valued: pd.DataFrame, config: Allocation, bucket: str = "", *
     names = {item.id: item.name for item in config.buckets} | {"unassigned": "Unassigned"}
     if flat:
         valued = bucket_positions(valued, config, bucket)
-    records = [dict(asset_id=row.position_id, asset_name=instrument_name(row),
-                    path=paths[bucket] if flat else paths[row.bucket_id or "unassigned"],
-                    value=0. if pd.isna(row.current_value_reporting) else row.current_value_reporting)
-               for row in valued.itertuples()]
+    missing_positions = set()
+    missing_by_category = Counter()
+    records = []
+    for row in valued.itertuples():
+        path = paths[bucket] if flat else paths[row.bucket_id or "unassigned"]
+        value = row.current_value_reporting
+        if pd.isna(value):
+            missing_positions.add(row.position_id)
+            missing_by_category.update(path)
+            missing_by_category[""] += 1
+            value = 0.
+        records.append(dict(asset_id=row.position_id, asset_name=instrument_name(row), path=path, value=value))
     # Materialize planned buckets even when they have no source positions.
     records.extend(dict(asset_id="", asset_name="", path=paths[key], value=0.)
                    for key in (() if flat else config.leaves() | ({"unassigned"} if valued.bucket_id.eq("").any() else set())))
@@ -70,19 +78,16 @@ def strategic_tree(valued: pd.DataFrame, config: Allocation, bucket: str = "", *
                        include_holdings=True, root_label="Portfolio")
     if nodes.empty:
         return nodes
-    nodes = nodes.loc[~nodes.node_id.map(lambda key: json.loads(key)[0] == "asset" and json.loads(key)[2] == "")].copy()
+    holding = nodes.kind.eq("holding")
+    position_ids = nodes.loc[holding, "node_id"].map(lambda key: json.loads(key)[2])
+    nodes = nodes.drop(index=position_ids.index[position_ids.eq("")])
     parents = set(nodes.parent_id)
     nodes["is_leaf"] = ~nodes.node_id.isin(parents)
     nodes.loc[nodes.kind.eq("category"), "label"] = nodes.loc[nodes.kind.eq("category"), "path"].map(
         lambda path: names[path[-1]] if path else "Portfolio")
-    by_position = valued.set_index("position_id")
-    missing = []
-    for row in nodes.itertuples():
-        if row.kind == "holding":
-            missing.append(int(pd.isna(by_position.loc[json.loads(row.node_id)[2], "current_value_reporting"])))
-        else:
-            missing.append(int(bucket_positions(valued, config, row.path[-1] if row.path else "").current_value_reporting.isna().sum()))
-    nodes["missing_prices"] = missing
+    nodes["missing_prices"] = [int(position_ids.at[index] in missing_positions) if kind == "holding"
+                               else missing_by_category[path[-1] if path else ""]
+                               for index, kind, path in zip(nodes.index, nodes.kind, nodes.path)]
     nodes["current_value"] = nodes.value.where(nodes.missing_prices.eq(0))
     return nodes.reset_index(drop=True)
 

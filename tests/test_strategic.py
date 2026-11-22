@@ -130,3 +130,25 @@ def test_flat_summary_maps_partial_exposure_once_and_preserves_source_rows(posit
     assert pd.isna(table.loc['p2', 'Known exposure']) and table.loc['p2', 'Status'] == 'Missing price'
     assert table.loc['p2', 'Account'] == 'B' and table.loc['p4', 'Status'] == 'Empty'
     assert table['Current (%)'].isna().all()
+
+
+def test_tree_propagates_missing_counts_without_rescanning_categories(positions, config, monkeypatch):
+    from portfolio_app.portfolio import strategic
+    scans = []
+    def select(frame, allocation, bucket):
+        scans.append(bucket)
+        return bucket_positions(frame, allocation, bucket)
+    monkeypatch.setattr(strategic, 'bucket_positions', select)
+    positions.loc[[0, 2, 3], 'current_value_reporting'] = float('nan')
+    tree = strategic_tree(positions, config)
+    categories = tree[tree.kind.eq('category')].set_index('label')
+    assert categories.missing_prices.to_dict() == {
+        'Portfolio': 3, 'Long term': 1, 'Funds': 1, 'Reserve': 0,
+        'Active': 1, 'Planned': 0, 'Unassigned': 1}
+    assert categories.loc['Planned', 'current_value'] == 0.
+    holdings = tree[tree.kind.eq('holding')]
+    assert holdings.loc[holdings.value.eq(30.), 'missing_prices'].item() == 0
+    assert scans == []
+    flat = strategic_tree(positions, config, 'long', flat=True)
+    assert flat.missing_prices.tolist() == [1, 1]
+    assert scans == ['long']
