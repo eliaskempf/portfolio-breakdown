@@ -95,3 +95,40 @@ render_refresh_status(root, [], refresh_revision(root), include_notices={include
     assert not app.exception
     assert any('Discovering and updating' in item.value for item in app.caption)
     assert any('1 ETF breakdown(s) unavailable' in item.value for item in app.caption) == include_notices
+
+
+def test_header_and_monitoring_share_reads_and_observe_external_acknowledgement(tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    from portfolio_app.monitoring import monitoring_store as store
+    from portfolio_app.monitoring.monitoring import Evaluation
+    from test_monitoring import rule, NOW
+
+    saved = rule()
+    store.save_rule(tmp_path, saved)
+    store.record_evaluations(tmp_path, saved, [Evaluation('2026-10-09', -5., condition='triggered')], now=NOW)
+    event_id = store.load_monitoring(tmp_path)[0]['events'][0]['id']
+    original = store.load_monitoring
+    reads = []
+    def counted(directory):
+        reads.append(directory)
+        return original(directory)
+    monkeypatch.setattr(store, 'load_monitoring', counted)
+    app = AppTest.from_string(f'''
+from pathlib import Path
+import streamlit as st
+from portfolio_app.interface.shared.notifications_ui import _monitoring_document
+from portfolio_app.interface.views.monitoring.monitoring_ui import watch_monitoring
+from portfolio_app.monitoring.monitoring_store import remember_notices
+root = Path({str(tmp_path)!r})
+watch_monitoring(root, demo=True, evaluate_rules=False)
+doc = _monitoring_document(root)
+remember_notices(root, set(), previously_seen=doc['notice_seen'])
+st.metric('Unread', sum(not e['read'] for e in doc['events']))
+''').run()
+    assert not app.exception and app.metric[0].value == '1'
+    app.run()
+    assert reads == [tmp_path]
+    store.mark_events(tmp_path, [event_id], acknowledge=True)
+    reads.clear()
+    app.run()
+    assert reads == [tmp_path] and app.metric[0].value == '0'

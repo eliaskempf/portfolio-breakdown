@@ -28,10 +28,10 @@ def unread_notifications(current, seen, *, opened=False):
 
 
 def _monitoring_document(directory):
-    from portfolio_app.monitoring.monitoring_store import load_monitoring
+    from portfolio_app.interface.shared.input_cache import monitoring_document
     from portfolio_app.portfolio.holdings import DataError
     try:
-        return load_monitoring(directory)[0]
+        return monitoring_document(directory)
     except DataError:
         return {'events': [], 'notice_seen': [], 'rules': []}
 
@@ -59,7 +59,7 @@ def notification_bell(slot, directory, funds, valued, status, *, demo=False, cac
             from portfolio_app.monitoring.monitoring_store import remember_notices, mark_events
             from portfolio_app.portfolio.holdings import DataError
             try:
-                remember_notices(directory, current, opened=panel.open)
+                remember_notices(directory, current, opened=panel.open, previously_seen=doc['notice_seen'])
                 if panel.open:
                     mark_events(directory, [e['id'] for e in doc['events'] if not e['read']])
             except (DataError, OSError):

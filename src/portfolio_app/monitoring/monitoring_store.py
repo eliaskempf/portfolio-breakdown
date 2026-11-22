@@ -183,10 +183,12 @@ def mark_events(directory, identities, *, acknowledge=False):
             _write(directory, doc, revision)
 
 
-def remember_notices(directory, current, *, opened=False):
-    initial, _ = load_monitoring(directory)
-    retained = set(current) if opened else set(initial['notice_seen']) & set(current)
-    if retained == set(initial['notice_seen']):
+def remember_notices(directory, current, *, opened=False, previously_seen=None):
+    if previously_seen is None:
+        previously_seen = load_monitoring(directory)[0]['notice_seen']
+    previous = set(previously_seen)
+    retained = set(current) if opened else previous & set(current)
+    if retained == previous:
         return retained
     with workspace_lock(directory):
         doc, revision = load_monitoring(directory)

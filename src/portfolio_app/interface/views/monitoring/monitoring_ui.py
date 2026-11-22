@@ -10,14 +10,14 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from portfolio_app.interface.shared.background_ui import refresh_allowed
-from portfolio_app.interface.shared.input_cache import cached_input
+from portfolio_app.interface.shared.input_cache import cached_input, monitoring_document
 
 from portfolio_app.interface.shared.charts import style_figure
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.monitoring.monitoring import Rule, SeriesSpec, evaluate_series, indicator_frame, condition, utc_now
 from portfolio_app.monitoring.monitoring_presentation import observation_time, alert_details
 from portfolio_app.monitoring.monitoring_service import monitoring_for
-from portfolio_app.monitoring.monitoring_store import (load_monitoring, rule_from_dict, save_rule, delete_rule, mark_events)
+from portfolio_app.monitoring.monitoring_store import (rule_from_dict, save_rule, delete_rule, mark_events)
 
 
 def request_monitoring(*, symbol='', account=''):
@@ -352,7 +352,7 @@ def _account_inputs(rule, values, holdings, journal):
 
 
 def _tracked(directory, holdings, journal, *, demo=False):
-    doc, _ = load_monitoring(directory)
+    doc = monitoring_document(directory)
     rules = {r['id']:rule_from_dict(r) for r in doc['rules']}
     if not rules:
         st.info('No tracked rules yet. Browse an indicator or create an account alert.')
@@ -465,7 +465,7 @@ def render_monitoring(directory, holdings, journal, *, demo=False):
                 service.schedule(refresh=True)
             if service.error:
                 st.warning(service.error)
-        _monitoring_banners(load_monitoring(directory)[0])
+        _monitoring_banners(monitoring_document(directory))
         if view == 'Browse':
             _browse(directory, holdings, demo=demo)
         elif view == 'Tracked rules':
@@ -473,7 +473,7 @@ def render_monitoring(directory, holdings, journal, *, demo=False):
         elif view == 'Account alerts':
             _account_editor(directory, holdings, journal, demo=demo)
         else:
-            _history(load_monitoring(directory)[0])
+            _history(monitoring_document(directory))
     except (DataError, OSError) as exc:
         st.error(str(exc))
 
@@ -485,7 +485,7 @@ def watch_monitoring(directory, *, demo=False, evaluate_rules=True, visible=True
     service = monitoring_for(directory, demo=demo)
     directory = service.directory
     try:
-        doc, _ = load_monitoring(directory)
+        doc = monitoring_document(directory)
     except DataError:
         return  # The Monitoring view reports the corrupt document.
     enabled = evaluate_rules and any(r['enabled'] for r in doc['rules'])
@@ -503,7 +503,7 @@ def watch_monitoring(directory, *, demo=False, evaluate_rules=True, visible=True
         if current != revision and refresh_allowed():
             # Background rule evaluations need a page update on other views
             # only when their visible notifications have changed.
-            if visible or load_monitoring(directory)[0]['events'] != doc['events']:
+            if visible or monitoring_document(directory)['events'] != doc['events']:
                 st.rerun()
             revision = current
         if pending:
@@ -539,7 +539,7 @@ def render_alert_dialog(directory):
         value for key,value in st.session_state.items() if key.endswith(('_dialog_open','_dialog_requested'))):
         return
     try:
-        doc, _ = load_monitoring(directory)
+        doc = monitoring_document(directory)
     except DataError:
         return
     rules = {r['id']:r for r in doc['rules'] if r['enabled'] and r['delivery'] == 'dialog'}

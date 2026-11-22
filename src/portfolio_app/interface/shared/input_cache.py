@@ -32,6 +32,13 @@ def cached_input(key, signature, loader, *, immutable=False):
     return previous[1] if immutable else deepcopy(previous[1])
 
 
+def monitoring_document(directory):
+    """Shared validated snapshot for read-only UI consumers of this workspace."""
+    from portfolio_app.monitoring.monitoring_store import FILE, load_monitoring
+    return cached_input('monitoring_document', file_stamp(directory / FILE),
+                        lambda: load_monitoring(directory)[0], immutable=True)
+
+
 def observation_snapshot(directory):
     from portfolio_app.performance.history_observations import FILE, load_observations
     return cached_input('history_observations', file_stamp(directory / FILE),
