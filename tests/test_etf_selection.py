@@ -272,6 +272,15 @@ def test_return_visits_reuse_expansion_and_invalidate_changed_evidence(multi_fun
             return _call(*args, **kwargs)
         monkeypatch.setattr(module, name, counted)
 
+    from portfolio_app.exposure.company_merges import MergePlan
+    prepared = []
+    for owner, method in ((exposure_ui, 'build_plan'), (MergePlan, 'apply')):
+        original = getattr(owner, method)
+        def counted_plan(*args, _name=method, _call=original, **kwargs):
+            prepared.append(_name)
+            return _call(*args, **kwargs)
+        monkeypatch.setattr(owner, method, counted_plan)
+
     app = launch(multi_fund_workspace)
     def company():
         assert not app.exception
@@ -296,11 +305,32 @@ def test_return_visits_reuse_expansion_and_invalidate_changed_evidence(multi_fun
     quotes.write_text(json.dumps(data))
     app.run()
     assert company()['Total'] == 175.
+    assert prepared == ['build_plan', 'apply'] * 2  # Initial and corrected fund.
+    # A quantity edit changes both holdings and exposures while retaining issuer identities.
+    path = multi_fund_workspace / 'holdings.csv'
+    original = path.read_text()
+    path.write_text(original.replace('ZZ1111111111,1,20', 'ZZ1111111111,2,20'))
+    app.run()
+    assert company()['Total'] == 295.
+    assert prepared == ['build_plan', 'apply'] * 2
+    path.write_text(original)
+    app.run()
 
     (multi_fund_workspace / 'classifications.yaml').write_text(yaml.safe_dump({
         'company': {'classifications': {'sector': [['Invented industry']]}}}))
     app.run()
     assert company()['Labels'] == ['Invented industry']
+    assert prepared == ['build_plan', 'apply'] * 3
+
+    app.session_state['exposure_merges_open'] = False
+    by_label(app.toggle, 'Break down ETFs').set_value(False).run()
+    path.write_text(original.replace('Invented Alpha', 'Revised Alpha'))
+    app.run()
+    assert not app.exception and prepared == ['build_plan', 'apply'] * 3
+    app.session_state['exposure_merges_open'] = True
+    app.run()
+    assert not app.exception and prepared == ['build_plan', 'apply'] * 3 + ['build_plan']
+
 
 
 def test_exposure_geography_is_resolved_only_on_demand(multi_fund_workspace, monkeypatch):

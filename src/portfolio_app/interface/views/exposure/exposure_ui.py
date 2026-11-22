@@ -115,14 +115,25 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             settings = load_settings(data_dir / 'company-merges.yaml')
             identities = load_company_identities(data_dir / 'company-identities.yaml')
             company_names = load_company_names(data_dir / 'company-names.yaml')
-            signature = analytical_signature(holdings, funds, str(data_dir.resolve()),
+            # Record just the listing identities consumed by the merge planner. A
+            # quote or quantity update must flow through the current valued rows.
+            fields = ('id', 'name', 'instrument_type', 'isin', 'wkn', 'ticker')
+            listings = holdings.loc[:, [field for field in fields if field in holdings]]
+            listings.attrs = {}
+            identity_key = analytical_signature(listings, funds, str(data_dir.resolve()),
                 settings, identities, company_names, classifications, fund_revision=fund_revision)
-            plan = cached_input('company_plan', signature,
-                lambda: build_plan(holdings, funds, identities, settings, classifications, company_names), immutable=True)
-            render_company_merges(plan, settings, data_dir / 'company-merges.yaml')
+            signature = analytical_signature(holdings, (), identity_key)
+
+            def load_plan():
+                return cached_input('company_plan', identity_key,
+                    lambda: build_plan(listings, funds, identities, settings, classifications, company_names), immutable=True)
+
+            render_company_merges(load_plan, settings, data_dir / 'company-merges.yaml')
             if lookthrough:
-                holdings, funds, classifications = cached_input('exposure_identities', signature,
-                    lambda: plan.apply(holdings, funds, classifications))
+                plan = load_plan()
+                direct, funds, classifications = cached_input('exposure_identities', identity_key,
+                    lambda: plan.apply(listings, funds, classifications))
+                holdings = holdings.assign(analysis_asset_id=direct.analysis_asset_id, analysis_asset_name=direct.analysis_asset_name)
                 active_isins = {fund.isin for fund in expanded_funds}
                 expanded_funds = [fund for fund in funds if fund.isin in active_isins]
         except DataError as exc:
