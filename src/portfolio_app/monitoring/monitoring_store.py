@@ -7,7 +7,7 @@ from uuid import uuid4
 from portfolio_app.workspace.atomic_file import staged_text
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.monitoring.monitoring import Rule, SeriesSpec, Evaluation, utc_now
-from portfolio_app.workspace.storage import revision as file_revision, save_document
+from portfolio_app.workspace.storage import load_finite_json, revision as file_revision, save_document
 from portfolio_app.workspace.workspace_lock import workspace_lock
 
 FILE = 'monitoring.json'
@@ -31,12 +31,11 @@ def load_monitoring(directory):
         return empty_document(), None
     try:
         content = path.read_bytes()
-        raw = json.loads(content, parse_constant=lambda x: (_ for _ in ()).throw(ValueError(x)))
+        raw = load_finite_json(content)
         if not isinstance(raw, dict) or raw.get('version') != 1:
             raise ValueError('Unsupported monitoring version')
         if any(not isinstance(raw.get(k), list) for k in ('rules', 'observations', 'events', 'notice_seen')) or any(not isinstance(raw.get(k), dict) for k in ('states', 'definitions')):
             raise ValueError('Invalid monitoring document')
-        json.dumps(raw, allow_nan=False)
         if any(not isinstance(x, str) for x in raw['notice_seen']):
             raise ValueError('Invalid notification identities')
         rules = [rule_from_dict(r) for r in raw['rules']]

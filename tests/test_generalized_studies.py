@@ -237,3 +237,13 @@ def test_transit_carries_destination_currency_fx_only():
     assert r.events.iloc[0].bank_USD == 400.
     assert r.attribution['fx_pnl'] == pytest.approx(200.)
     assert r.reconciliation_error == pytest.approx(0.)
+
+
+def test_study_settings_reject_overflow_in_nested_scenario_inputs(tmp_path):
+    from portfolio_app.interface.views.studies.generalized_studies_ui import SETTINGS_FILE
+    content = b'{"version":1,"scenarios":{"invented":{"rates":[1e1000]}}}'
+    path = tmp_path / SETTINGS_FILE
+    path.write_bytes(content)
+    with pytest.raises(DataError, match='Non-finite'):
+        load_study_settings(tmp_path)
+    assert path.read_bytes() == content

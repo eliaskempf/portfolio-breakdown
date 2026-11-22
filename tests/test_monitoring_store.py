@@ -176,3 +176,34 @@ def test_panel_persists_displayed_notices_and_events_in_one_transaction(tmp_path
     assert doc['notice_seen'] == ['manual']
     assert [(e['read'], e['acknowledged']) for e in doc['events']] == [(True, False), (False, False)]
     assert len(doc['observations']) == 2
+
+
+@pytest.mark.parametrize('token', ['NaN', 'Infinity', '-Infinity', '1e999', '-1e999'])
+def test_nonfinite_nested_monitoring_inputs_rejected_while_decoding(tmp_path, token):
+    r = rule()
+    save_rule(tmp_path, r)
+    record_evaluations(tmp_path, r, [Evaluation('2026-10-09', 1., inputs={'path': [12.375]})], now=NOW)
+    path = tmp_path / 'monitoring.json'
+    original = path.read_bytes()
+    invalid = original.replace(b'12.375', token.encode())
+    assert invalid != original
+    path.write_bytes(invalid)
+    with pytest.raises(DataError, match='Invalid monitoring.json'):
+        load_monitoring(tmp_path)
+    assert path.read_bytes() == invalid
+
+
+def test_monitoring_read_preserves_numeric_inputs_without_reserializing_the_archive(tmp_path, monkeypatch):
+    from hashlib import sha256
+    from portfolio_app.monitoring import monitoring_store as store
+
+    r = rule()
+    save_rule(tmp_path, r)
+    inputs = {'finite': [1e308, -1e-300], 'count': 2**60 + 1}
+    record_evaluations(tmp_path, r, [Evaluation('2026-10-09', 1., inputs=inputs)], now=NOW)
+    digest = sha256((tmp_path / 'monitoring.json').read_bytes()).hexdigest()
+    def unexpected_encode(*args, **kwargs):
+        pytest.fail('Reading an archive encoded the entire document again')
+    monkeypatch.setattr(store.json, 'dumps', unexpected_encode)
+    doc, revision = load_monitoring(tmp_path)
+    assert revision == digest and doc['observations'][0]['evaluation']['inputs'] == inputs

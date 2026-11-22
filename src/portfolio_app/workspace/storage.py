@@ -1,5 +1,7 @@
 """Revision-checked private document writes shared by allocation and balance editors."""
 from hashlib import sha256
+import json
+from math import isfinite
 from pathlib import Path
 from portfolio_app.workspace.workspace_lock import document_write
 from portfolio_app.workspace.atomic_file import staged_text
@@ -7,6 +9,18 @@ from uuid import uuid4
 
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.workspace.locking import write_lock as _write_lock
+
+
+def _finite_float(token):
+    value = float(token)
+    if not isfinite(value):
+        raise ValueError('Non-finite JSON number')
+    return value
+
+
+def load_finite_json(content: bytes):
+    """Reject non-finite constants and overflowing exponents at any depth while decoding."""
+    return json.loads(content, parse_float=_finite_float, parse_constant=_finite_float)
 
 
 def revision(path: Path) -> str | None:
