@@ -196,6 +196,16 @@ def run_exposure(candidate, reference, destination, surfaces, pairs, profile):
                         if digest != expected.setdefault((surface, 'detail'), digest):
                             raise AssertionError('Financial source details changed across calls or binaries')
                         visit['digest'] = digest
+                    for visit in report['companies']:
+                        sample = visit.pop('sample')
+                        if visit['companies'] != 8950 or len(sample) != 3 or any(len(row) != 6 for row in sample):
+                            raise AssertionError('Company grid omitted synthetic issuers or financial fields')
+                        # Different summation algorithms can differ below display precision.
+                        cells = [[name, *(round(float(value), 8) for value in values)] for name, *values in sample]
+                        digest = hashlib.sha256(json.dumps(cells).encode()).hexdigest()
+                        if digest != expected.setdefault((surface, 'companies'), digest):
+                            raise AssertionError('Company names, values or denominators changed across visits or binaries')
+                        visit['digest'] = digest
                     for visit in report['themes']:
                         labels, values = visit.pop('sample')
                         digest = hashlib.sha256(json.dumps([labels, values]).encode()).hexdigest()
@@ -207,7 +217,8 @@ def run_exposure(candidate, reference, destination, surfaces, pairs, profile):
                     result['runs'].append(dict(variant=name, surface=surface, pair=pair, **report))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
                     print(surface, name, 'Exposure table ms', [round(v['table_ms']) for v in report['visits']],
-                          'sector chart ms', [round(v['chart_ms']) for v in report['themes']], flush=True)
+                          'sector chart ms', [round(v['chart_ms']) for v in report['themes']],
+                          'company grid ms', [round(v['grid_ms']) for v in report['companies']], flush=True)
 
 
 if __name__ == '__main__':

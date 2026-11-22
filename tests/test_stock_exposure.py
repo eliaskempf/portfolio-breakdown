@@ -177,3 +177,25 @@ def test_reviewed_links_do_not_match_names_or_reclassify_other_instruments():
     mapping = {'security:TEST-STOCK-1': 'reviewed-company'}
     linked = link_fund_companies(funds(), rows, mapping)
     assert linked[0].constituents.company_asset_id.eq('').all()
+
+
+def test_company_totals_reduce_sources_together_and_preserve_first_name_and_signed_offsets(monkeypatch):
+    from portfolio_app.exposure.stock_exposure import _company_totals
+
+    rows = pd.DataFrame([
+        ('a', None, 4., 'Direct'), ('a', 'Later alias', -4., 'ETF-derived'),
+        ('b', 'Second issuer', -2., 'ETF-derived'), ('c', 'Third issuer', 2., 'Direct'),
+    ], columns=['Company ID', 'Company', 'Value', 'Origin'])
+
+    def per_company_frames(self):
+        pytest.fail('Materialized a separate DataFrame for each company')
+
+    monkeypatch.setattr(type(rows.groupby('Company ID')), '__iter__', per_company_frames)
+    totals = _company_totals(rows, None, 10.).set_index('Company ID')
+    assert totals.index.tolist() == ['c', 'a', 'b']
+    assert pd.isna(totals.loc['a', 'Company'])
+    assert totals[['Direct', 'ETF-derived', 'Total']].values.tolist() == [[2., 0., 2.], [4., -4., 0.], [0., -2., -2.]]
+    assert totals['Selected stock-universe %'].isna().all()
+    assert totals['Whole-portfolio %'].tolist() == [20., 0., -20.]
+    empty = _company_totals(rows.iloc[:0], 0., None)
+    assert empty.empty and empty.columns.tolist() == ['Company ID', *totals.columns]

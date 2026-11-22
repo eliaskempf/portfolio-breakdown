@@ -246,6 +246,40 @@ def exercise_exposure(evaluate, *, themes=False):
     def read(js):
         return evaluate('(() => {' + context + js + '})()')
 
+    def back_to_assets():
+        read("""[...d.querySelectorAll('[role=radio], button')].find(e =>
+            visible(e) && e.textContent.trim() === 'Assets').click(); return true;""")
+        wait(lambda: read("return !!table()?.querySelector('tr[data-position-id]') && !running();"))
+
+    def company_visit():
+        read("""
+            const button = [...d.querySelectorAll('[role=radio],button')].find(e =>
+                visible(e) && e.textContent.trim() === 'Companies');
+            w.companyVisit = null;
+            const start = w.performance.now();
+            button.click();
+            let drawn = null;
+            function frame() {
+                const elapsed = w.performance.now() - start;
+                const canvas = d.querySelector('.st-key-exposure_results [data-testid=stDataFrame] canvas');
+                const grid = canvas?.querySelector('table[role=grid]');
+                const rows = [...(grid?.querySelectorAll('tr') || [])].map(r =>
+                    [...r.querySelectorAll('[role=gridcell]')].map(c => c.textContent)).filter(r => r.length);
+                if (visible(canvas) && rows.length && drawn === null) drawn = elapsed;
+                if (drawn !== null && rows.length >= 3 && !running()) {
+                    w.companyVisit = {grid_ms:drawn, settled_ms:elapsed, companies:Number(grid.getAttribute('aria-rowcount'))-1,
+                        sample:rows.slice(0,3)};
+                } else if (elapsed > 60000 || exception()) w.companyVisit = {error:'Company holdings grid did not settle'};
+                else w.requestAnimationFrame(frame);
+            }
+            w.requestAnimationFrame(frame); return true;
+        """)
+        visit = wait(lambda: read('return w.companyVisit;'), timeout=65)
+        if 'error' in visit:
+            raise RuntimeError(visit['error'])
+        back_to_assets()
+        return visit
+
     def theme_visit():
         read("""
             const control = label => [...d.querySelectorAll('[role=radio], button')].find(e =>
@@ -271,9 +305,7 @@ def exercise_exposure(evaluate, *, themes=False):
         result = wait(lambda: read('return w.themeVisit;'), timeout=65)
         if 'error' in result:
             raise RuntimeError(result['error'])
-        read("""[...d.querySelectorAll('[role=radio], button')].find(e =>
-            visible(e) && e.textContent.trim() === 'Assets').click(); return true;""")
-        wait(lambda: read("return !!table()?.querySelector('tr[data-position-id]') && !running();"))
+        back_to_assets()
         return result
 
     def detail_visit():
@@ -319,7 +351,7 @@ def exercise_exposure(evaluate, *, themes=False):
 
     wait(ready, timeout=100)
     ready_at = time.time()
-    visits, theme_visits, details = [], [], []
+    visits, theme_visits, details, companies = [], [], [], []
     for _ in range(3):
         read("""
             w.exposureVisit = null;
@@ -350,6 +382,7 @@ def exercise_exposure(evaluate, *, themes=False):
         if themes and len(visits) == 3:
             theme_visits = [theme_visit() for _ in range(2)]
             details = [detail_visit() for _ in range(2)]
+            companies = [company_visit() for _ in range(2)]
         read("tab('Overview').click(); return true;")
         wait(lambda: ready() and read("return !table() && tab('Overview').getAttribute('aria-selected') === 'true';"))
-    return dict(ready_at=ready_at, visits=visits, themes=theme_visits, details=details)
+    return dict(ready_at=ready_at, visits=visits, themes=theme_visits, details=details, companies=companies)

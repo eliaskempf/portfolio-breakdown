@@ -132,13 +132,24 @@ def stock_exposure(valued: pd.DataFrame, funds, *, excluded_buckets=(), identiti
                 known.append({**common, 'Company ID': constituent.get('analysis_asset_id') or identity(constituent['constituent_id'], constituent['isin']),
                               'Company': constituent.get('analysis_asset_name') or constituent['name'], 'Value': amount, 'Origin': 'ETF-derived'})
     sources = pd.DataFrame(known, columns=['Source position', 'Source instrument', 'Bucket', 'Account', 'Company ID', 'Company', 'Value', 'Origin'])
-    records = []
-    for key, rows in sources.groupby('Company ID', sort=False):
-        value = float(rows['Value'].sum())
-        records.append({'Company ID': key, 'Company': rows.Company.iloc[0], 'Direct': rows.loc[rows.Origin == 'Direct', 'Value'].sum(),
-                        'ETF-derived': rows.loc[rows.Origin == 'ETF-derived', 'Value'].sum(), 'Total': value,
-                        'Selected stock-universe %': 100 * value / stock_total if complete and stock_total else float('nan'),
-                        'Whole-portfolio %': 100 * value / whole if whole else float('nan')})
-    companies = pd.DataFrame(records, columns=['Company ID', 'Company', 'Direct', 'ETF-derived', 'Total', 'Selected stock-universe %', 'Whole-portfolio %'])
-    return StockExposure(companies.sort_values('Total', ascending=False), sources,
+    companies = _company_totals(sources, stock_total if complete else None, whole)
+    return StockExposure(companies, sources,
                          pd.DataFrame(unknown), stock_total if complete else None, whole)
+
+
+def _company_totals(sources, stock_total, whole):
+    columns = ['Company ID', 'Company', 'Direct', 'ETF-derived', 'Total', 'Selected stock-universe %', 'Whole-portfolio %']
+    if sources.empty:
+        return pd.DataFrame(columns=columns)
+    value = sources['Value']
+    amounts = pd.DataFrame({'Direct': value.where(sources.Origin.eq('Direct'), 0),
+                            'ETF-derived': value.where(sources.Origin.eq('ETF-derived'), 0),
+                            'Total': value})
+    totals = amounts.groupby(sources['Company ID'], sort=False).sum()
+    # The first contributing source supplies the display name, including a missing label.
+    names = sources.drop_duplicates('Company ID').set_index('Company ID')['Company']
+    totals.insert(0, 'Company', names)
+    totals['Total'] = totals.Total.astype(float)
+    totals['Selected stock-universe %'] = 100 * totals.Total / stock_total if stock_total else float('nan')
+    totals['Whole-portfolio %'] = 100 * totals.Total / whole if whole else float('nan')
+    return totals.reset_index().sort_values('Total', ascending=False)
