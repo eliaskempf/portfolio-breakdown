@@ -7,7 +7,7 @@ from portfolio_app.analytics.fundamentals import (PUBLIC_FEES, DemoFundamentalsP
     FundamentalsService, FundFee, Metric, YahooFundamentalsProvider, apply_fund_metadata, fee_key,
     load_fee_overrides, finite)
 from portfolio_app.analytics.risk import risk_analytics, native_future_weekly_returns
-from portfolio_app.analytics.risk_data import DemoRiskHistoryProvider, RiskHistoryService, MarketRiskHistoryProvider, benchmark_risk_history, equity_risk_history
+from portfolio_app.analytics.risk_data import RiskHistoryService, benchmark_risk_history, equity_risk_history
 
 
 def load_metrics(holdings, data_dir, *, demo=False, fetch=True, refresh=False):
@@ -130,8 +130,7 @@ def _actual_future_risk(valued, data_dir, service, target, years, refresh, memo,
 
 def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future=None, portfolio_result=None,
               service=None, today=None, qualified_histories=None, scoped=False, portfolio_net_equity=None):
-    service = service or RiskHistoryService(DemoRiskHistoryProvider() if demo else MarketRiskHistoryProvider(),
-                                           None if demo else data_dir / '.cache' / 'risk-history')
+    service = service or RiskHistoryService.for_workspace(data_dir, demo)
     target = valued.reporting_currency.iloc[0] if len(valued) and 'reporting_currency' in valued else 'EUR'
     actual = bool(valued.attrs.get('actual_accounts'))
     if future is not None and target != 'EUR':

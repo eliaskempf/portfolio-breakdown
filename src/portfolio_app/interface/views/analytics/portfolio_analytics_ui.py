@@ -10,7 +10,7 @@ from portfolio_app.interface.shared.currency_display import money, reporting_cur
 from portfolio_app.interface.shared.detail_panels import render_detail_panel
 
 from portfolio_app.analytics.analytics import snapshot_analytics
-from portfolio_app.analytics.analytics_service import load_risk
+from portfolio_app.interface.views.analytics.risk_updates import view_risk
 from portfolio_app.interface.views.analytics.metric_updates import view_metrics
 from portfolio_app.interface.views.analytics.analytics_ui import benchmark_name, context_key, data_quality_caption, display_value, render_sources, risk_settings
 from portfolio_app.interface.shared.charts import correlation_chart
@@ -66,7 +66,7 @@ def render_portfolio_analytics(valued, data_dir, funds, *, demo=False, scope='Po
         benchmark_symbol = benchmark
         if loaded and benchmark:
             with st.spinner('Calculating historical risk…'):
-                risk, status = load_risk(selected, data_dir, demo, benchmark, years, refresh_risk and not demo,
+                risk, status = view_risk(selected, data_dir, demo, benchmark, years, refresh_risk and not demo,
                     future=risk_future, portfolio_result=portfolio_result, scoped=scope_active,
                     portfolio_net_equity=portfolio_net_equity)
             benchmark_symbol = status.attrs.get('benchmark_symbol', benchmark)

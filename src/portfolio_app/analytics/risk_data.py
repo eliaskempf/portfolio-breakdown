@@ -139,8 +139,24 @@ class DemoRiskHistoryProvider:
 
 
 class RiskHistoryService:
-    def __init__(self, provider: RiskHistoryProvider, directory=None, *, now=utc_now):
+    def __init__(self, provider: RiskHistoryProvider, directory=None, *, now=utc_now, track_inputs=False):
         self.provider, self.cache = provider, AnalyticsCache(directory, now=now)
+        self._inputs = {} if track_inputs else None
+
+    @classmethod
+    def for_workspace(cls, directory, demo, *, track_inputs=False):
+        return cls(DemoRiskHistoryProvider() if demo else MarketRiskHistoryProvider(),
+                   None if demo else directory / '.cache' / 'risk-history', track_inputs=track_inputs)
+
+    def inputs_current(self):
+        """Include FX, unsuccessful listings and benchmark fallbacks in the same freshness check."""
+        if self._inputs is None:
+            return False
+        for key, previous in self._inputs.items():
+            latest, due = self.cache.cached(key)
+            if due or latest != previous:
+                return False
+        return True
 
     def get(self, ticker, years=3, *, refresh=False):
         if years not in (1, 3, 5, 10) or not ticker:
@@ -152,7 +168,10 @@ class RiskHistoryService:
                 raise ValueError('No valid adjusted prices')
             return dict(dates=[stamp.date().isoformat() for stamp in prices.index], prices=prices.tolist(),
                         currency=result.currency, note=result.note)
-        result = self.cache.get(f'adjusted-daily-v1:{ticker}:{years}', fetch, refresh=refresh)
+        key = f'adjusted-daily-v1:{ticker}:{years}'
+        result = self.cache.get(key, fetch, refresh=refresh)
+        if self._inputs is not None:
+            self._inputs[key] = replace(result, status='cached') if result.status == 'fresh' else result
         if result.data is None:
             return AdjustedHistory(pd.Series(dtype=float), '', result.status, result.fetched_at, result.note)
         try:

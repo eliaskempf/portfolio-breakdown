@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from portfolio_app.analytics.analytics import metric_value
-from portfolio_app.analytics.analytics_service import load_risk
+from portfolio_app.interface.views.analytics.risk_updates import view_risk
 from portfolio_app.interface.views.analytics.metric_updates import view_metrics
 from portfolio_app.interface.views.analytics.analytics_ui import (benchmark_name, context_key, data_quality_caption, display_value,
     render_sources, risk_settings)
@@ -52,7 +52,7 @@ def position_metric_toolbar(holdings, data_dir, *, demo=False, account_valued=No
             with st.spinner('Calculating risk…'):
                 from portfolio_app.derivatives.investment_presentation import investment_risk_positions
                 risk_positions = investment_risk_positions(holdings, account_valued) if account_valued is not None else holdings
-                risk, status = load_risk(risk_positions, data_dir, demo, benchmark, years, refresh)
+                risk, status = view_risk(risk_positions, data_dir, demo, benchmark, years, refresh)
             if holdings.attrs.get('investment_members'):
                 st.caption('Grouped futures investment metrics are shown by their exact contract and cash components in Overview → Analytics.')
             benchmark_label = benchmark_name(status.attrs.get('benchmark_symbol', benchmark))
