@@ -81,13 +81,27 @@ def exercise(evaluate, control, scenario, *, persistent):
             const metric = d.querySelector('.st-key-overview_value [data-testid=stMetricValue]');
             return visible(metric) && metric.textContent.trim();
         })()"""
-        wait(lambda: (control / 'quote-pending').exists())
+        requests = quote['requests']
+        wait(lambda: all((control / f'quote-pending-{i}').exists() for i in range(len(requests))))
+        def release_quote(index):
+            request = requests[index]
+            (control / f'release-quote-{index}').touch()
+            path = control.parent / 'synthetic' / '.cache' / 'prices.json'
+            wait(lambda: json.loads(path.read_bytes())[request['key']]['quote']['price'] == request['corrected'])
         initial = format_money(quote['initial_total'], quote['currency'])
         if wait(lambda: evaluate(read_total)) != initial:
             raise AssertionError(f'Expected cached portfolio value {initial}')
         background['start_epoch_ms'] = time.time_ns() / 1e6
+        release_quote(0)
     first = interact(evaluate, 'Performance')
     wait(lambda: (control / 'pending').exists())
+    if scenario == 'quote-pending':
+        interact(evaluate, 'Allocation')
+        displayed = wait(lambda: evaluate(read_total))
+        if displayed != initial:
+            raise AssertionError(f'Navigation displayed {displayed} while the complete cached total was {initial}')
+        release_quote(2)
+        interact(evaluate, 'Performance')
     period = interact(evaluate, '3M')
     if (control / 'completed').exists():
         raise AssertionError('The date range must be usable during the blocked download')
@@ -193,9 +207,19 @@ def exercise(evaluate, control, scenario, *, persistent):
         if wait(lambda: evaluate(read_total)) != initial:
             raise AssertionError('Cached value changed during navigation')
         background['end_epoch_ms'] = time.time_ns() / 1e6
-        (control / 'release-quote').touch()
+        for label in ('Positions', 'Overview'):
+            tab = ('(() => {' + CONTEXT + 'const label = ' + json.dumps(label) +
+                   '; const tab = [...d.querySelectorAll("[role=tab]")].find(t => t.textContent.trim() === label);')
+            evaluate(tab + 'tab.click(); return true;})()')
+            target = "d.querySelector('.st-key-tour_position_list')" if label == 'Positions' else 'allocation()'
+            wait(lambda: evaluate(tab + "return tab?.getAttribute('aria-selected') === 'true' && visible(" +
+                                  target + ") && !running() && !exception();})()"))
+        if wait(lambda: evaluate(read_total)) != initial:
+            raise AssertionError('Switching tabs exposed a partially updated portfolio')
+        background['publication_start_ms'] = time.time_ns() / 1e6
+        release_quote(1)
         corrected = format_money(quote['corrected_total'], quote['currency'])
-        wait(lambda: evaluate(read_total) == corrected)
+        wait(lambda: evaluate(read_total) == corrected and evaluate('(() => {' + CONTEXT + 'return !running();})()'))
         background.update(initial_total=initial, corrected_total=corrected)
     return dict(digest=digest, ready_at=ready_at, post_intro_ms=(ready_at-animation_done)*1000 if animation_done else None,
                 refresh_ms=refresh_ms, first=first, range_3m=period, warm=warm, refresh=refresh, **background)

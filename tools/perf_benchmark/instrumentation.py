@@ -19,13 +19,19 @@ def observe_server(trial):
         from portfolio_app.market.market_data import services
         from portfolio_app.market.prices import Quote
         settings = json.loads((trial.parent / 'quote-check.json').read_bytes())
+        requests = {r['key']: (index, r) for index, r in enumerate(settings['requests'])}
         class Provider:
+            def get(self, key):
+                index, request = requests[key]
+                (trial / f'quote-pending-{index}').touch()
+                wait(lambda: (trial / f'release-quote-{index}').exists(), timeout=180)
+                return Quote(request['corrected'], request['currency'], datetime.now(timezone.utc))
+
             def price(self, ticker):
-                if ticker != settings['ticker']:
-                    raise ValueError(f'Unexpected benchmark ticker {ticker}')
-                (trial / 'quote-pending').touch()
-                wait(lambda: (trial / 'release-quote').exists(), timeout=180)
-                return Quote(settings['corrected'], settings['currency'], datetime.now(timezone.utc))
+                return self.get('price:' + ticker)
+
+            def fx(self, currency):
+                return self.get('fx:' + currency)
         services(trial.parent / 'synthetic')[0].provider = Provider()
     if scenario.startswith('etf-'):
         from portfolio_app.funds.etf_refresh import coordinator as funds, SOURCES

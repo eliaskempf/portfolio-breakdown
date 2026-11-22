@@ -113,26 +113,31 @@ def prepare_fund_check(directory):
 
 
 def prepare_quote_check(directory):
-    """Use a due cached price for one equity in the generated EUR portfolio."""
+    """Stage two due equity quotes and a shared reporting-currency conversion."""
     holdings = directory / 'holdings.csv'
     with holdings.open(newline='', encoding='utf-8') as handle:
         rows = list(csv.DictReader(handle))
-    row = next(r for r in rows if r['instrument_type'] == 'equity')
     total = sum(int(r['shares']) * int(r['manual_price']) for r in rows)
-    price = int(row['manual_price'])
-    currency = row['manual_price_currency']
-    scenario = dict(ticker=row['ticker'], currency=currency, corrected=price + 5,
-                    initial_total=total, corrected_total=total + 5 * int(row['shares']))
+    corrected_total = total
+    requests = []
+    for row, currency in zip((r for r in rows if r['instrument_type'] == 'equity'), ('EUR', 'USD'), strict=False):
+        price, quantity = int(row['manual_price']), int(row['shares'])
+        corrected = price + 5
+        final_rate = 1.25 if currency == 'USD' else 1.
+        requests.append(dict(key='price:' + row['ticker'], initial=price, corrected=corrected, currency=currency))
+        corrected_total += quantity * (corrected * final_rate - price)
+        for column in ('manual_price', 'manual_price_currency', 'manual_price_date'):
+            row[column] = ''
+    requests.append(dict(key='fx:USD', initial=1., corrected=1.25, currency='EUR'))
+    scenario = dict(requests=requests, currency='EUR', initial_total=total, corrected_total=corrected_total)
     (directory.parent / 'quote-check.json').write_text(json.dumps(scenario), encoding='utf-8')
-    for column in ('manual_price', 'manual_price_currency', 'manual_price_date'):
-        row[column] = ''
     with holdings.open('w', newline='', encoding='utf-8') as handle:
         writer = csv.DictWriter(handle, fieldnames=rows[0].keys())
         writer.writeheader()
         writer.writerows(rows)
     cached = (datetime.now(timezone.utc) - timedelta(minutes=16)).isoformat()
-    quote = dict(price=price, currency=currency, observed_at=cached)
+    entries = {r['key']: dict(quote=dict(price=r['initial'], currency=r['currency'], observed_at=cached),
+                              attempted_at=cached, error='') for r in requests}
     path = directory / '.cache' / 'prices.json'
     path.parent.mkdir(exist_ok=True)
-    path.write_text(json.dumps({'price:' + row['ticker']: dict(quote=quote, attempted_at=cached, error='')}),
-                    encoding='utf-8')
+    path.write_text(json.dumps(entries), encoding='utf-8')

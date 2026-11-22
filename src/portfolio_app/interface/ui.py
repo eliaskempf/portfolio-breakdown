@@ -2,6 +2,7 @@
 
 import argparse
 from hashlib import sha256
+from contextlib import nullcontext
 from pathlib import Path
 
 import streamlit as st
@@ -24,7 +25,7 @@ from portfolio_app.interface.views.portfolio.strategic_ui import render_strategi
 from portfolio_app.interface.views.portfolio.scoped_ui import render_scoped_rebalancing
 from portfolio_app.interface.shared.input_cache import load_inputs, cached_input, loaded_fund_sources
 from portfolio_app.exposure.exposure_workspace import analytical_signature
-from portfolio_app.market.market_data import coordinator as market_coordinator, prices_for
+from portfolio_app.market.market_data import BackgroundPrices, coordinator as market_coordinator, prices_for
 from portfolio_app.interface.shared.view_state import preserve_view_inputs, finish_view_inputs
 from portfolio_app.application import (historical_for, load_leverage_context, prepare_application,
     prepare_exposure, select_price_service)
@@ -214,24 +215,33 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     supplied_prices = price_service is not None
     background_prices = not supplied_prices and not offline_demo
     market_workspace = str(data_dir.resolve())
-    market_revision, _ = market_coordinator.channel_state(market_workspace, 'valuation')
     price_service = select_price_service(data_dir, offline_demo=offline_demo, supplied=price_service, live_prices=prices_for)
-    with st.spinner('Valuing portfolio…'):
-        prepared = prepare_application(inputs, price_service, refresh=refresh,
-            reporting_currency=reporting_currency, historical=historical)
-    valued, status = prepared.valued, prepared.status
-    ordinary_valued = valued
-    if actual_active:
-        from portfolio_app.portfolio.actual_portfolio import journal_positions
-        from portfolio_app.derivatives.futures_valuation import load_valuations
-        try:
-            valuations, manual_fx = load_valuations(data_dir, journal)
-            valued = journal_positions(valued, journal, price_service, reporting_currency=reporting_currency,
-                valuations=valuations, fx_rates=manual_fx)
-        except DataError as exc:
-            st.error(str(exc))
-            mark_view_ready()
-            return
+    background_reader = price_service if isinstance(price_service, BackgroundPrices) else None
+    market_revision = (background_reader.display_revision if background_reader else
+                       market_coordinator.channel_state(market_workspace, 'valuation')[0])
+
+    def current_market_prices():
+        if background_reader:
+            return background_reader.still_current()
+        return market_coordinator.channel_state(market_workspace, 'valuation')[0] == market_revision
+
+    with background_reader.collect_requests() if background_reader else nullcontext():
+        with st.spinner('Valuing portfolio…'):
+            prepared = prepare_application(inputs, price_service, refresh=refresh,
+                reporting_currency=reporting_currency, historical=historical)
+        valued, status = prepared.valued, prepared.status
+        ordinary_valued = valued
+        if actual_active:
+            from portfolio_app.portfolio.actual_portfolio import journal_positions
+            from portfolio_app.derivatives.futures_valuation import load_valuations
+            try:
+                valuations, manual_fx = load_valuations(data_dir, journal)
+                valued = journal_positions(valued, journal, price_service, reporting_currency=reporting_currency,
+                    valuations=valuations, fx_rates=manual_fx)
+            except DataError as exc:
+                st.error(str(exc))
+                mark_view_ready()
+                return
     if notice := st.session_state.pop('currency_notice', None):
         st.info(notice)
     if render_currency_dialog(data_dir, snapshot, currency_settings, price_service, historical):
@@ -239,7 +249,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         return
     if demo_pending:
         if background_prices:
-            render_market_status(market_workspace, market_revision, show_caption=False)
+            render_market_status(market_workspace, market_revision, reader=background_reader, show_caption=False)
         if initialize_live_demo(data_dir, valued):
             st.rerun()
         with st.container(key='demo_loading'):
@@ -371,8 +381,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                                 and st.session_state.get('strategic_view') != 'Analytics'
                                 and (st.session_state.get(unit_key) == '%') == percent
                                 and refresh_allowed() and (ignore_selection or selection(persistent_data_dir) == chosen)
-                                and market_coordinator.channel_state(market_workspace, 'valuation')[0] == market_revision
-                                and (not background_prices or price_service.still_current())
+                                and current_market_prices()
                                 and current_etf_notices()
                                 and overview_sources.current())
                     except (DataError, OSError):
@@ -437,7 +446,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                     except RebalanceError as exc:
                         st.error(str(exc))
     if background_prices or market_coordinator.channel_state(market_workspace, 'valuation') != (market_revision, False):
-        render_market_status(market_workspace, market_revision, show_caption=False)
+        render_market_status(market_workspace, market_revision, reader=background_reader, show_caption=False)
     if not tour_active():
         render_alert_dialog(data_dir)
     render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued, prices=price_service)
@@ -447,11 +456,13 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
 
 
 
-def render_market_status(market_workspace, market_revision, *, show_caption=True):
+def render_market_status(market_workspace, market_revision, *, reader=None, show_caption=True):
     from portfolio_app.interface.shared.background_ui import status_fragment
     @status_fragment()
     def market_status(poll):
+        waiting = reader is not None and reader.submit_waiting()
         revision, pending = market_coordinator.channel_state(market_workspace, 'valuation')
+        pending = pending or waiting
         if not pending and revision != market_revision and refresh_allowed():
             st.rerun()
         if pending or revision != market_revision:

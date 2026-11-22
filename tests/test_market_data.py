@@ -55,6 +55,97 @@ def test_slow_quotes_do_not_block_and_requests_are_deduplicated(tmp_path, now, j
     assert provider.calls == 1
 
 
+def test_prices_publish_a_complete_refresh_across_windows(tmp_path, now, jobs):
+    from unittest.mock import Mock
+    events = {kind: Event() for kind in ('price', 'fx')}
+    provider = Mock()
+    service = PriceService(provider, now=lambda: now)
+    provider.price.return_value = Quote(10, 'USD', now)
+    provider.fx.return_value = Quote(1, 'EUR', now)
+    service.price('SYNTH')
+    service.fx('USD')
+
+    def replacement(kind, value):
+        assert events[kind].wait(3)
+        return value
+
+    provider.price.side_effect = lambda ticker: replacement('price', Quote(12, 'USD', now))
+    # An unchanged last completion must still publish the earlier correction.
+    provider.fx.side_effect = lambda currency: replacement('fx', Quote(1, 'EUR', now))
+    original = BackgroundPrices(service, jobs, tmp_path)
+    try:
+        with original.collect_requests():
+            assert original.price('SYNTH', refresh=True).quote.price == 10
+            assert original.fx('USD', refresh=True).quote.price == 1
+            assert not jobs.pending(tmp_path)
+        events['price'].set()
+        deadline = monotonic() + 3
+        while jobs.pending(tmp_path, 'price:SYNTH'):
+            assert monotonic() < deadline
+            Event().wait(.005)
+        assert service.cached('price:SYNTH')[0].quote.price == 12
+        assert original.still_current()
+        second = BackgroundPrices(service, jobs, tmp_path)
+        assert second.display_revision == original.display_revision
+        assert second.fx('USD').quote.price == 1
+        assert second.price('SYNTH').quote.price == 10
+        assert second.still_current()
+        assert provider.price.call_count == 2
+    finally:
+        for event in events.values():
+            event.set()
+    finish(jobs, tmp_path)
+    assert not original.still_current() and not second.still_current()
+    latest = BackgroundPrices(service, jobs, tmp_path)
+    assert latest.display_revision == original.display_revision + 1
+    assert latest.price('SYNTH').quote.price == 12
+    assert latest.fx('USD').quote.price == 1
+    assert latest.still_current()
+
+
+def test_entire_valuation_retries_on_saturation_and_can_exceed_queue_capacity(tmp_path, now):
+    from unittest.mock import Mock
+    service = PriceService(Mock(), now=lambda: now)
+    service.provider.price.return_value = Quote(10, 'EUR', now)
+    tickers = ('SYNTH-A', 'SYNTH-B', 'SYNTH-C')
+    for ticker in tickers:
+        service.price(ticker)
+    unrelated, last, last_started = Event(), Event(), Event()
+    jobs = RequestCoordinator(workers=1, capacity=1)
+    def updated(ticker):
+        if ticker == tickers[-1]:
+            last_started.set()
+            assert last.wait(3)
+        return Quote(12, 'EUR', now)
+    service.provider.price.side_effect = updated
+    try:
+        assert jobs.request('other workspace', 'history', lambda: unrelated.wait(3))
+        reader = BackgroundPrices(service, jobs, tmp_path)
+        with reader.collect_requests():
+            for ticker in tickers:
+                assert reader.price(ticker, refresh=True).quote.price == 10
+        assert reader.submit_waiting()
+        assert not jobs.pending(tmp_path) and reader.still_current()
+        unrelated.set()
+        finish(jobs, 'other workspace')
+        assert not reader.submit_waiting()
+        assert last_started.wait(1)
+        assert service.cached('price:' + tickers[0])[0].quote.price == 12
+        second = BackgroundPrices(service, jobs, tmp_path)
+        assert [second.price(t).quote.price for t in tickers] == [10, 10, 10]
+        assert reader.still_current() and second.still_current()
+        last.set()
+        finish(jobs, tmp_path)
+        assert not reader.still_current()
+        latest = BackgroundPrices(service, jobs, tmp_path)
+        assert [latest.price(t).quote.price for t in tickers] == [12, 12, 12]
+        assert service.provider.price.call_count == 2 * len(tickers)
+    finally:
+        unrelated.set()
+        last.set()
+        jobs.close()
+
+
 def test_mounted_prices_invalidate_on_quote_change_and_expiry(tmp_path, now, jobs):
     from unittest.mock import Mock
     clock = [now]

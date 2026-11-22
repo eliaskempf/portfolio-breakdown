@@ -775,9 +775,10 @@ checks the unread badge, then releases unchanged historical prices. It samples
 the mounted chart for fades and replacements, counts portfolio valuations while
 idle, and compares the financial series with the ordinary navigation run. These
 results appear in the navigation artifact under `background_checks`. A third
-case holds one live equity quote pending while switching views and ranges. It
-checks that navigation uses the displayed cached value without revaluing the
-portfolio, then releases a corrected quote and verifies the new visible total.
+case refreshes two equity quotes and a portfolio FX rate in
+stages. It checks that Overview navigation and range changes reuse the complete
+cached valuation, that switching through Positions preserves the same visible
+total, and that releasing the last quote publishes the corrected total.
 Another case opens Notifications during a pending ETF check. It checks that the
 failure appears inside the panel, its unread count clears, and the chart and
 valuation stay in place while the panel opens, updates and closes.

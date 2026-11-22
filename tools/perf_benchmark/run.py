@@ -73,6 +73,11 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         report[field] = sum(e['event'] == 'portfolio_valued' and start <= e['epoch_ms'] <= end for e in events)
         if report[field]:
             raise AssertionError(f'{scenario} revalued the portfolio {report[field]} times before expected')
+    if 'publication_start_ms' in report:
+        start = report.pop('publication_start_ms')
+        report['publication_valuations'] = sum(e['event'] == 'portfolio_valued' and start <= e['epoch_ms'] for e in events)
+        if report['publication_valuations'] != 1:
+            raise AssertionError(f"Completed quote batch triggered {report['publication_valuations']} valuations")
     report['history_calls'] = sum(e['event'] == 'history_calculated' for e in events)
     first = report['first']
     report['first_chart_disk_hits'] = sum(e['event'] == 'disk_hit' and e['chart'] and

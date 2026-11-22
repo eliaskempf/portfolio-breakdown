@@ -149,6 +149,7 @@ class PriceService:
         self.ttl = ttl
         self.cache_warning = ""
         self._lock = RLock()
+        self._snapshot_reader = None
         self._entries: dict = {}
         if cache_path and cache_path.exists():
             try:
@@ -182,10 +183,26 @@ class PriceService:
 
     def cached(self, key: str) -> tuple[PriceResult, bool]:
         """Read without network access; the boolean indicates a refresh is due."""
+        with self._lock:
+            entry = self._entries.get(key)
+        return self._cached_entry(key, entry)
+
+    def cached_reader(self):
+        """Pin the complete in-memory evidence; quote age is still evaluated at read time."""
+        with self._lock:
+            if self._snapshot_reader is None:
+                # Writers replace entire entries. Readers can safely share their contents.
+                entries = self._entries.copy()
+                def read(key):
+                    return self._cached_entry(key, entries.get(key))
+                self._snapshot_reader = read
+            return self._snapshot_reader
+
+    def _cached_entry(self, key, entry):
         if key.startswith('price:') and (issue := quote_issue(key.removeprefix('price:'))):
             return PriceResult(None, 'missing', issue), False
-        with self._lock:
-            entry = self._entries.get(key, {})
+        if entry is None:
+            return PriceResult(None, 'missing'), True
         cached = None
         attempted_at = None
         error = ""
@@ -222,6 +239,7 @@ class PriceService:
             result = PriceResult(cached, "cached fallback" if cached else "missing", error)
         with self._lock:
             self._entries[key] = entry
+            self._snapshot_reader = None
         # Persistence may wait on another process's writer; cached UI reads
         # must stay available while that happens.
         self._save(key)
