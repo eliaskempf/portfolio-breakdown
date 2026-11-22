@@ -1,6 +1,6 @@
 """Injectable market data with a small persistent cache and stale fallback."""
 
-from functools import cache
+from functools import cache, cached_property
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 import json
@@ -52,9 +52,18 @@ class PriceResult:
 class QuoteSnapshot:
     """Read each requested quote or FX leg once during a valuation or monitoring pass."""
     def __init__(self, service):
-        self.now = service.now
-        self.price = cache(service.price)
-        self.fx = cache(service.fx)
+        self._service = service
+
+    def now(self):
+        return self._service.now()
+
+    @cached_property
+    def price(self):
+        return cache(self._service.price)
+
+    @cached_property
+    def fx(self):
+        return cache(self._service.fx)
 
 
 class MarketDataProvider(Protocol):
