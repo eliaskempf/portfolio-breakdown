@@ -55,8 +55,35 @@ def clear_import():
     st.session_state['positions_workflow_request'] = 'Positions'
 
 
+def _statement_position(directory, snapshot):
+    from portfolio_app.portfolio.rebalance_tables import position_labels
+    from portfolio_app.interface.views.history.history_ui import _key, _history_action
+    from portfolio_app.interface.views.positions.position_ui import request_position
+
+    positions = snapshot.holdings
+    if 'instrument_type' in positions:
+        positions = positions.loc[~positions.instrument_type.isin(['cash', 'future'])]
+    labels = position_labels(positions)
+    if not labels:
+        st.info('Add the holding first to import its Consorsbank buy or sale statements.')
+        return
+    select = st.selectbox('Holding on the statement', list(labels), format_func=labels.get,
+                          index=None, placeholder='Choose a holding', key='import_pdf_position')
+    def open_statements():
+        request_position(select, local=False)
+        st.session_state[f'position_edit_detail_view_{select}'] = 'Transactions'
+        _history_action(_key(directory, select), 'import_pdf')
+    st.button('Open statement import', disabled=select is None, on_click=open_statements)
+
+
 def render_import(path, snapshot, funds, *, demo=False):
-    kind = review_control(st.segmented_control, 'Import type', ['Transactions', 'Holdings snapshot'], default='Transactions', key='import_kind')
+    kinds = {'Transactions': 'Transaction CSV', 'Statement PDFs': 'Statement PDFs',
+             'Holdings snapshot': 'Holdings snapshot'}
+    kind = review_control(st.segmented_control, 'Import type', list(kinds),
+        format_func=kinds.get, required=True, default='Transactions', key='import_kind')
+    if kind == 'Statement PDFs':
+        _statement_position(path.parent, snapshot)
+        return
     if kind == 'Transactions':
         from portfolio_app.interface.views.ingestion.csv_transaction_import_ui import render_transaction_import
         render_transaction_import(path.parent, demo=demo)
@@ -64,7 +91,9 @@ def render_import(path, snapshot, funds, *, demo=False):
     st.subheader('Import holdings snapshot')
     st.caption('Current holdings only. Import first; add allocation, targets and classifications later.')
     if not snapshot.holdings.empty:
-        st.info('Holdings snapshots initialize an empty portfolio. To import trades into this portfolio, choose Transactions above; to replace current quantities, use Update balances.')
+        st.info('Holdings snapshots initialize an empty portfolio. Import trades using Transaction CSV above.')
+        st.button('Update balances', key='import_existing_balances', on_click=st.session_state.update,
+                  kwargs={'positions_workflow_request': 'Update balances'})
         return
     st.button('Cancel import', help='Discard the staged import without changing saved holdings.', on_click=clear_import)
     st.info('FinanzManager column recognition is provisional. Export a current holdings report, not a transaction ledger. '
@@ -82,6 +111,7 @@ def render_import(path, snapshot, funds, *, demo=False):
     st.session_state.setdefault('import_revision', snapshot.revision)
     drafts = []
     failed = False
+    awaiting_units = False
     for number, (filename, content) in enumerate(uploads):
         token = sha256(content).hexdigest()[:16]
         prefix = f'import_{number}_{token}_'
@@ -132,19 +162,23 @@ def render_import(path, snapshot, funds, *, demo=False):
                 editor.insert(0, include_column, True)
                 edited = persistent_editor(editor, key=prefix + 'rows', hide_index=True, width='stretch',
                                            column_config={include_column: st.column_config.CheckboxColumn(required=True)})
+                included = edited[include_column].fillna(False).tolist()
+                if any(included) and not units:
+                    awaiting_units = True
+                    st.caption(f'Confirm the quantity and price convention for {filename} to review these rows.')
+                    continue
                 draft = normalize_table(edited.drop(columns=[include_column]),
                                         ImportOptions(mapping, decimal, defaults, use_prices, 'units' if units else ''),
                                         source=f'File {number + 1}', first_row=int(header) + 1,
-                                        included=edited[include_column].fillna(False).tolist())
-                if not units and draft.included:
-                    draft.issues.append(f'File {number + 1}: confirm the quantity/price convention, or exclude unsupported nominal-value positions.')
+                                        included=included)
                 drafts.append(draft)
             except (DataError, UnicodeError, OSError) as exc:
                 st.error(str(exc))
                 failed = True
     draft = combine_drafts(drafts)
     st.subheader('Review import')
-    st.write(f'{draft.included} included rows · {draft.excluded} explicitly excluded rows')
+    if drafts:
+        st.write(f'{draft.included} reviewed rows · {draft.excluded} explicitly excluded rows')
     for issue in draft.issues:
         st.error(issue)
     if draft.warnings:
@@ -159,7 +193,7 @@ def render_import(path, snapshot, funds, *, demo=False):
         live = (draft.positions.manual_price.eq('') & draft.positions.ticker.ne('')).sum()
         st.caption(f'{priced} dated snapshot prices · {live} live-price tickers (availability not verified). '
                    'Missing prices remain unknown. Allocation and targets are not inferred.')
-    if st.button('Import reviewed positions', help='Save the reviewed holdings and optional dated prices to the active workspace.', type='primary', disabled=failed or bool(draft.issues) or draft.positions.empty):
+    if st.button('Import reviewed positions', help='Save the reviewed holdings and optional dated prices to the active workspace.', type='primary', disabled=failed or awaiting_units or bool(draft.issues) or draft.positions.empty):
         try:
             save_import(path, draft, expected_revision=st.session_state['import_revision'],
                         validate=lambda frame: validate_fund_listings(frame, funds))
@@ -170,28 +204,36 @@ def render_import(path, snapshot, funds, *, demo=False):
             st.rerun()
 
 
-def render_import_next_steps():
+def finish_import():
     if st.session_state.pop('import_tx_pending_complete', None):
         clear_import()
+        st.session_state['portfolio_save_notice'] = 'Reviewed transactions applied.'
     if st.session_state.pop('import_pending_complete', False):
         clear_import()
         st.session_state['import_complete'] = True
-        st.session_state['main_tabs'] = 'Overview'
-    if not st.session_state.get('import_complete'):
-        return
+        st.session_state['import_destination'] = 'Overview'
+
+
+def apply_import_destination():
+    # Consume the requested route immediately before the navigation widgets mount.
+    destination = st.session_state.pop('import_destination', None)
+    if destination:
+        st.session_state['main_tabs'] = destination
+        if destination == 'Rebalance':
+            st.session_state['rebalance_tabs'] = 'Targets'
+        elif destination == 'Positions':
+            st.session_state['positions_workflow_request'] = 'Connect live prices'
+
+
+def render_import_next_steps():
     st.success('Portfolio imported. Allocation, targets, buy-ins and classifications can be completed whenever you need them.')
     allocation, prices, done = st.columns(3)
-    if allocation.button('Set up allocation', help='Create categories and assign targets for the imported portfolio.'):
-        st.session_state['main_tabs'] = 'Rebalance'
-        st.session_state['rebalance_tabs'] = 'Targets'
-        st.rerun()
-    if prices.button('Connect live prices', help='Link imported instruments to verified exchange listings for live quotes.'):
-        st.session_state['main_tabs'] = 'Positions'
-        st.session_state['positions_workflow_request'] = 'Connect live prices'
-        st.rerun()
-    if done.button('Dismiss import tips', help='Hide these next-step suggestions for the current session.'):
-        st.session_state.pop('import_complete', None)
-        st.rerun()
+    allocation.button('Set up allocation', on_click=st.session_state.update, kwargs={'import_destination': 'Rebalance'},
+                      help='Create categories and assign targets for the imported portfolio.')
+    prices.button('Connect live prices', on_click=st.session_state.update, kwargs={'import_destination': 'Positions'},
+                  help='Link imported instruments to verified exchange listings for live quotes.')
+    done.button('Dismiss import tips', on_click=st.session_state.pop, args=('import_complete', None),
+                help='Hide these next-step suggestions for the current session.')
 
 
 def render_listing_link(path, snapshot, funds, *, demo=False):

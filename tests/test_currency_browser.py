@@ -70,12 +70,12 @@ def test_tour_returns_to_reporting_currency_and_plan(ux_page, currency, symbol):
     # The metric can arrive before the reload finishes. Acknowledge that render
     # and the navigation request before using the new tab's controls.
     page.streamlit_reruns.click(page, page.get_by_role('tab', name='Rebalance', exact=True))
-    amount = page.get_by_role('spinbutton', name='Contribution', exact=True)
+    amount = page.get_by_role('spinbutton', name=f'Contribution ({currency})', exact=True)
     amount.fill('750')
     amount.press('Enter')
     page.get_by_role('button', name='Calculate plan', exact=True).click()
     playwright.expect(page.get_by_role('table', name='Suggested trades', exact=True)).to_be_visible()
-    page.get_by_role('button', name='?', exact=True).click()
+    page.get_by_role('button', name='App help', exact=True).click()
     page.get_by_role('button', name='Take the tour', exact=True).click()
     playwright.expect(page.locator('.portfolio-tour-overlay')).to_have_attribute('data-ready', 'true')
     playwright.expect(value).to_contain_text('€93,184.35')

@@ -115,4 +115,5 @@ def render_member_editor(path, snapshot, config, stamp):
         except (DataError, OSError, ValueError) as exc:
             st.error(str(exc))
         else:
+            st.session_state['portfolio_save_notice'] = 'Allocation saved.'
             st.rerun()

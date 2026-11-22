@@ -75,7 +75,7 @@ or take the optional in-app tour.
 
 The [user guide](docs/user/index.md) covers imports, calculations, backups, troubleshooting,
 and other features. Installed versions also include offline documentation, accessible through
-**? → User guide**.
+**App help → User guide**.
 
 ## Version 0.2.1
 

@@ -78,6 +78,9 @@ def test_normal_lifecycle_settlement_partial_close_roll_and_manual_tax(tmp_path)
         assert not app.exception
         return replay(load_journal(tmp_path)[0])
 
+    assert not any('finite decimal' in message.value for message in app.info)
+    by_label(app.text_input, 'Settlement price').set_value('invalid').run()
+    assert any('finite decimal' in message.value for message in app.info)
     by_label(app.text_input, 'Settlement price').set_value('1010').run()
     state = post()
     assert state.cash['a', 'EUR'] == 20192
@@ -173,3 +176,45 @@ def test_cash_deposit_keeps_prior_settlements_eligible(tmp_path):
     assert replay(saved).cash['a', 'EUR'] == 20192
     assert all(day.status == 'Ready to retrieve'
                for day in settlement_days(saved, 'p', '2026-01-02', '2026-01-05'))
+
+
+
+def test_empty_account_setup_and_scoped_actions(tmp_path):
+    from portfolio_app.ledger import account_journal as ledger
+    _, journal, _ = invented(tmp_path)
+    app = launch_actual(tmp_path)
+    activate(app, 'Positions')
+    by_label(app.get('button_group'), 'Position tools').set_value('Accounts & futures').run()
+    assert not any(b.label == 'Create account alert' for b in app.button)
+    by_label(app.button, 'Create account').click().run()
+    assert by_label(app.text_input, 'Account name')
+    assert not (tmp_path/'account-journal.json').exists()
+    activate(app, 'Monitoring')
+    by_label(app.get('button_group'), 'Monitoring view').set_value('Account alerts').run()
+    by_label(app.button, 'Create account').click().run()
+    assert app.session_state['main_tabs'] == 'Positions'
+    assert by_label(app.text_input, 'Account name')
+    assert not (tmp_path/'account-journal.json').exists()
+
+    journal = ledger.add_account(journal, ledger.Account('second', 'Second invented account'))
+    save_journal(tmp_path, journal, None)
+    app = launch_actual(tmp_path)
+    activate(app, 'Futures')
+    by_label(app.get('button_group'), 'Account workspace').set_value('Cash & financing').run()
+    by_label(app.selectbox, 'Cash action').set_value('Create account').run()
+    assert not any(widget.label == 'Account' for widget in app.selectbox)
+    assert not any(b.label == 'Review changes' for b in app.button)
+    by_label(app.get('button_group'), 'Account workspace').set_value('Marks & FX').run()
+    assert by_label(app.button, 'Save mark only').disabled
+    assert by_label(app.button, 'Save FX observation').disabled
+    assert not any('finite decimal' in item.value for item in app.caption)
+    by_label(app.text_input, 'Manual mark price').set_value('invalid').run()
+    assert any('finite decimal' in item.value for item in app.caption)
+    mark = by_label(app.selectbox, 'Position to value')
+    assert mark.options == ['SYNTH 2027-03-19 · Invented account']
+    by_label(app.get('button_group'), 'Account workspace').set_value('Collateral').run()
+    by_label(app.selectbox, 'Collateral account').set_value('second').run()
+    assert len([b for b in app.button if b.label == 'Create account alert']) == 1
+    by_label(app.button, 'Create account alert').click().run()
+    assert by_label(app.selectbox, 'Monitored account').value == 'second'
+    assert load_journal(tmp_path)[0] == journal

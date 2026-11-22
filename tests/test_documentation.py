@@ -210,7 +210,8 @@ def test_public_site_contract():
     info = docs.check_site(ROOT / 'dist/docs-test')
     assert info['topics'] == docs.TOPICS
     pages = [name for name in info['files'] if name.endswith('.html')]
-    assert len(pages) == 20
+    assert len(pages) == 21
+    assert 'workflow-design/index.html' in pages
     assert 'taxes/index.html' in pages
     assert 'package-layout/index.html' in pages
     assert 'releases/index.html' in pages

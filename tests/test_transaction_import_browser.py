@@ -5,6 +5,7 @@ import pytest
 from portfolio_app.ledger.account_journal import load_journal
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.ledger.security_history import effective_holdings
+from test_ux_browser import ux_page  # noqa: F401
 from test_consors_pdf import statement
 from test_transaction_dialog_browser import transaction_page, watch_dialog  # noqa: F401
 from browser_support import settle, settle_layout
@@ -617,3 +618,24 @@ def test_closing_after_bulk_import_refreshes_parent_once(transaction_page):
     expect(dialog).to_have_count(0)
     expect(page.locator('#page-runs')).to_have_text('2')
     assert not page.get_by_test_id('stException').count()
+
+
+def test_portfolio_import_opens_statement_for_chosen_holding(ux_page):
+    from playwright.sync_api import expect
+    page, directory = ux_page
+    before = (directory / 'holdings.csv').read_bytes()
+    page.get_by_role('tab', name='Positions', exact=True).click()
+    page.get_by_role('radio', name='Import', exact=True).click()
+    page.get_by_role('radio', name='Statement PDFs', exact=True).click()
+    open_import = page.get_by_role('button', name='Open statement import', exact=True)
+    expect(open_import).to_be_disabled()
+    page.get_by_role('combobox', name='Holding on the statement').click()
+    page.get_by_role('option').filter(has_text='Second').click()
+    open_import.click()
+    dialog = page.get_by_role('dialog')
+    expect(dialog.get_by_text('Consorsbank buys and sales → Invented Regional UCITS ETF Acc')).to_be_visible()
+    expect(dialog.get_by_role('radio', name='Transactions', exact=True)).to_be_checked()
+    expect(dialog.get_by_text('Choose statements', exact=True)).to_be_visible()
+    dialog.get_by_role('button', name='Back to transactions').click()
+    expect(dialog.get_by_role('button', name='Import PDFs', exact=True)).to_be_visible()
+    assert (directory / 'holdings.csv').read_bytes() == before

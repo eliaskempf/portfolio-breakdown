@@ -30,7 +30,7 @@ def render_geography(exposures: pd.DataFrame, geography: Geography, *, complete:
     level_col, detail_col = st.columns([1, 2])
     level = level_col.segmented_control('Geography granularity', ['Regions', 'Countries'],
                                        help='Company country from local classifications and ETF metadata, not revenue by region. '
-                                            'Group by country or region; Europe includes the UK. Gold, crypto, cash and money market are shown separately.', default='Regions',
+                                            'Group by country or region; Europe includes the UK. Gold, crypto, cash and money market are shown separately.', required=True, default='Regions',
                                        key='geography_level') or 'Regions'
     paths = sorted({p[:i] for p in allocations.path for i in range(1, len(p) + 1)})
     if st.session_state.get('geography_detail', ()) not in [(), *paths]:

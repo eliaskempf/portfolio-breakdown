@@ -116,7 +116,7 @@ def test_overview_target_controls_unset_legacy_and_market(tmp_path):
     assert not app.exception
     assert not app.caption
     assert 'Capital targets are separate' in app.button[0].help
-    assert app.button[0].label == 'Edit'
+    assert app.button[0].label == 'Edit targets'
     app.button[0].click().run()
     assert app.session_state.opened
     assert not list(tmp_path.iterdir())
@@ -124,7 +124,7 @@ def test_overview_target_controls_unset_legacy_and_market(tmp_path):
     app.run()
     assert 'equity only' in app.button[0].help
     assert not app.dataframe
-    assert app.button[0].label == 'Edit'
+    assert app.button[0].label == 'Edit targets'
     from portfolio_app.exposure.exposure_targets import load_exposure_targets
     _, revision = load_exposure_targets(tmp_path, CONFIG)
     save_exposure_targets(tmp_path, TARGET, CONFIG, revision)
@@ -298,4 +298,4 @@ def test_flat_market_view_keeps_exposure_units_and_category_policy(tmp_path):
     table = list_frame(app, 'Market exposure')
     assert 'Exposure' in table and '% of exposure' in table
     assert table['Target (%)'].isna().all()
-    assert app.button(key='overview_flat_targets').label == 'Edit'
+    assert app.button(key='overview_flat_targets').label == 'Edit targets'

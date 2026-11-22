@@ -171,7 +171,7 @@ def test_named_liability_and_company_controls(workflow_page):
     page.reruns.click(page, page.get_by_text('Companies', exact=True))
     playwright.expect(page.get_by_role('checkbox', name='Show stock-only company exposure')).to_have_count(0)
     playwright.expect(page.get_by_text('Selected stock universe:', exact=False)).to_be_visible()
-    select(page, 'Exclude source buckets from stock exposure', 'active')
+    select(page, 'Exclude source categories', 'active')
     playwright.expect(page.get_by_text('Selected stock universe:', exact=False)).to_contain_text('200.00')
     page.set_viewport_size({'width': 390, 'height': 844}); settle(page)
     playwright.expect(page.get_by_test_id('stException')).to_have_count(0)

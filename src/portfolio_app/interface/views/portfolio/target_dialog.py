@@ -72,10 +72,13 @@ def render_target_dialog(directory, *, manage_capital=None, manage_exposure=None
                 except (DataError,OSError,ValueError) as exc:
                     st.error(str(exc))
                 else:
+                    st.session_state['portfolio_save_notice'] = 'Targets saved.'
                     dismiss()
                     st.rerun()
             if st.button('Cancel',key='overview_target_cancel'):
                 dismiss()
                 st.rerun()
-            st.button('Manage targets',type='tertiary',key='overview_target_manage',on_click=manage)
+            dirty = draft is not None and (not edited.equals(draft.rows) or
+                (draft.edits_multiple and multiple != draft.policy.multiple))
+            st.button('Discard edits & manage targets' if dirty else 'Manage targets',type='tertiary',key='overview_target_manage',on_click=manage)
     editor()

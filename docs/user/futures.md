@@ -419,6 +419,12 @@ The latter requires a **Funding date** no later than the balance date and a
 positive external **Initial contribution**; a snapshot alone does not prove zero
 before inception.
 
+Open a cash, loan or pending-cash row in Overview or Positions to see its account
+in **Futures → Cash & financing**. The account opens with its balances and no
+transaction selected. Use **Cash action** to record a change or **Back** to
+return to the originating view. **Positions → Accounts & futures** also opens
+this workspace once an account exists.
+
 **Cash & financing** records opening balances, reconciliations, deposits,
 withdrawals, transfers, actual currency-conversion legs, existing loans,
 borrowing, repayment and interest. A reconciliation records the difference needed

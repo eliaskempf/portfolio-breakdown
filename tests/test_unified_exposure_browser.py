@@ -104,7 +104,7 @@ def test_tour_restores_futures_exposure_controls(ux_page, measure):
     page.get_by_text('Look through funds & futures', exact=True).click()
     settle(page)
     before = {p: p.read_bytes() for p in directory.iterdir() if p.suffix in {'.json', '.yaml', '.csv'}}
-    page.get_by_role('button', name='?', exact=True).click()
+    page.get_by_role('button', name='App help', exact=True).click()
     page.get_by_role('button', name='Take the tour', exact=True).click()
     card = page.locator('.st-key-app_tour')
     playwright.expect(card).to_be_visible()

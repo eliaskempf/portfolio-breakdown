@@ -25,11 +25,29 @@ def test_broker_selection_and_allowance_reset(tmp_path):
     by_label(app.number_input, 'Available allowance · 2026 (€)').set_value(100.).run()
     assert by_label(app.metric, 'Estimated tax').value == '€55.36'
     by_label(app.multiselect, 'Broker / account').set_value(['Invented broker A']).run()
+    assert any('Allowance reset to €0' in c.value for c in app.caption)
+    assert any('2 of 3 fund holdings selected' in c.value for c in app.caption)
     assert by_label(app.number_input, 'Available allowance · 2026 (€)').value == 0
     assert by_label(app.metric, 'Vorabpauschale').value == '€354.20'
     by_label(app.multiselect, 'ETFs').set_value([by_label(app.multiselect, 'ETFs').value[0]]).run()
     assert by_label(app.metric, 'Vorabpauschale').value == '€177.10'
     assert not app.exception and not app.error
+
+
+def test_tax_header_reflects_effective_price_bases(tmp_path):
+    from portfolio_app.taxes.tax_evidence import save_inputs
+    app = launch(tmp_path)
+    by_label(app.selectbox, 'Calculation year').set_value(2025).run()
+    inputs, revision = load_inputs(tmp_path)
+    inputs['funds']['2025:SYNTHETIC001']['price_basis'] = 'Redemption prices'
+    save_inputs(tmp_path, inputs, revision)
+    app.run()
+    assert any('Mixed price bases' in item.value for item in app.caption)
+    inputs, revision = load_inputs(tmp_path)
+    inputs['funds']['2025:SYNTHETIC002']['price_basis'] = 'Redemption prices'
+    save_inputs(tmp_path, inputs, revision)
+    app.run()
+    assert any('Historical estimate · Redemption prices' in item.value for item in app.caption)
 
 
 def test_save_review_and_forecast(tmp_path):

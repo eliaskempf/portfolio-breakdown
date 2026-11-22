@@ -66,7 +66,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         navigation, back = st.columns([5, 1], vertical_alignment='bottom')
         bucket = navigation.selectbox('Category', options, help='Choose the category to inspect; figures use that category’s current holdings.', key=key,
             format_func=labels.get)
-        back.button('Back', help='Return to the preceding level of this view.', disabled=not bucket, width='stretch',
+        back.button('Up one level', help='Open the parent of the current selection.', disabled=not bucket, width='stretch',
                     on_click=lambda: st.session_state.update({key: paths[bucket][-2] if len(paths[bucket]) > 1 else ''}))
         scope = names.get(bucket, 'Portfolio')
         selected = bucket_positions(valued, config, bucket)
@@ -148,7 +148,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                     calculation=history['calculation'], current_values=history['current_values'])
             st.markdown('**Category comparison**', help='Total known gain includes retained closed holdings and recorded income. Return is full recorded-history time-weighted return (TWR), not gain divided by remaining cost. Current category membership does not reconstruct past assignments; unsupported account splits remain unavailable.')
             measure = st.segmented_control('Chart measure', ['Return (%)', 'Gain'], help='Cumulative TWR uses daily valuations and recorded cash flows. Gain shows supported monetary subtotals, with coverage.',
-                default='Gain', key='strategic_performance_measure') or 'Gain'
+                required=True, default='Gain', key='strategic_performance_measure') or 'Gain'
             chart_percent = measure == 'Return (%)'
             available = table.dropna(subset=[measure]).sort_values(measure)
             if not available.empty:
@@ -259,7 +259,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                         exposure_result=exposure_result, displayed_positions=valued)
                 if not market and open_capital_targets is not None:
                     with target_controls:
-                        st.button('Edit', icon=':material/edit:', key='overview_capital_targets',
+                        st.button('Edit targets', icon=':material/edit:', key='overview_capital_targets',
                                   on_click=edit_targets, type='tertiary', help='Edit targets for this category.')
                 table = strategic_summary(plotted, config, bucket,
                     flat=flat, hierarchy=not flat, identities=True,

@@ -106,7 +106,7 @@ def test_flat_category_navigation_and_planning(category_page):
     assert all(f'Invented investment {i}' in labels for i in range(3))
     choose(page,'Category','Example sleeve › Example chips')
     assert table.locator('tbody tr').count()==2
-    page.streamlit_reruns.click(page,page.get_by_role('button',name='Back',exact=True))
+    page.streamlit_reruns.click(page,page.get_by_role('button',name='Up one level',exact=True))
     assert table.locator('tbody tr').count()==3
     select_tab(page,'Rebalance')
     select_tab(page,'Targets')
@@ -235,18 +235,18 @@ def test_context_target_dialog_navigation_and_save(category_page):
     page, workspace = category_page
     choose(page,'Category','Example sleeve')
     before = (workspace/'exposure-targets.json').read_bytes()
-    page.get_by_role('button',name='Edit',exact=True).click()
+    page.get_by_role('button',name='Edit targets',exact=True).click()
     dialog = page.get_by_role('dialog')
     dialog.wait_for()
-    assert dialog.get_by_text('Example sleeve',exact=True).count() == 1
-    assert dialog.get_by_text('100% assigned',exact=True).count() == 1
+    playwright.expect(dialog.get_by_text('Example sleeve', exact=True)).to_have_count(1)
+    playwright.expect(dialog.get_by_text('100% assigned', exact=True)).to_have_count(1)
     assert dialog.get_by_role('combobox').count() == 0
     dialog.get_by_role('button',name='Cancel',exact=True).click()
     dialog.wait_for(state='hidden')
     settle(page)
     assert (workspace/'exposure-targets.json').read_bytes() == before
     choose(page,'Category','Portfolio')
-    page.get_by_role('button',name='Edit',exact=True).click()
+    page.get_by_role('button',name='Edit targets',exact=True).click()
     dialog.wait_for()
     multiple = dialog.get_by_role('spinbutton',name='Total exposure (× net equity)',exact=True)
     multiple.fill('1.25')
@@ -256,7 +256,7 @@ def test_context_target_dialog_navigation_and_save(category_page):
     dialog.wait_for(state='hidden')
     settle(page)
     assert load_exposure_targets(workspace,load_allocation(workspace/'allocation.yaml'))[0].multiple == 1.25
-    page.get_by_role('button',name='Edit',exact=True).click()
+    page.get_by_role('button',name='Edit targets',exact=True).click()
     dialog.wait_for()
     dialog.get_by_role('button',name='Manage targets',exact=True).click()
     dialog.wait_for(state='hidden')

@@ -5,6 +5,21 @@ from portfolio_app.portfolio.allocation import analysis_targets, ignore_empty_by
 from portfolio_app.portfolio.rebalancing import ignore_empty_positions
 
 
+def plan_preview(key, signature, requested, calculate):
+    """Retain a calculated preview while its evidence and inputs still match."""
+    saved = st.session_state.get(key)
+    if requested:
+        st.session_state.pop(key, None)
+        plan = calculate()
+        st.session_state[key] = (signature, plan)
+        return plan
+    if saved is not None:
+        if saved[0] == signature:
+            return saved[1]
+        del st.session_state[key]
+    return None
+
+
 def planning_positions(valued, allocation=None):
     redistribute = st.toggle('Exclude empty positions and redistribute targets', key='ignore_empty_positions',
                              help='Temporarily redistribute targets among held positions within each category. Saved targets stay unchanged.')

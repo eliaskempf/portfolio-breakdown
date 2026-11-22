@@ -145,6 +145,7 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
         with filter_slot.popover('Filter', width='stretch'):
             include_other = st.checkbox('Include unclassified funds', key='tax_include_other')
             items = [c for c in all_items if include_other or c.is_fund or raw['funds'].get(evidence_key(year, c.instrument), {}).get('is_fund')]
+            eligible_count = len(items)
             accounts = sorted({c.account for c in items})
             account_key = 'tax_accounts_'+str(year)
             if account_key in st.session_state:
@@ -158,6 +159,7 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
         selection = (str(directory), year, tuple(selected))
         st.session_state['tax_selection'] = selection
         if st.session_state.get('tax_allowance_scope') != selection:
+            st.session_state['tax_allowance_reset'] = bool(st.session_state.get('tax_allowance'))
             st.session_state['tax_allowance_scope'] = selection
             st.session_state['tax_allowance'] = 0.
         with settings_slot.popover('Tax settings', width='stretch'):
@@ -172,6 +174,10 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
             raw, revision = load_inputs(directory)
         retry = refresh_slot.button('Refresh', icon=':material/refresh:',
             disabled=demo, key='tax_refresh', help='Refresh prices and fund payouts')
+        if allowance:
+            st.session_state.pop('tax_allowance_reset', None)
+        elif st.session_state.get('tax_allowance_reset'):
+            st.caption('Allowance reset to €0 for this selection. Adjust it in Tax settings.')
         if not items:
             st.caption('No funds selected · adjust Filter')
             return
@@ -206,7 +212,10 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
             help='Capital gains tax, solidarity surcharge and selected church tax, after the available allowance. No loss offsets.')
         b.metric('Vorabpauschale', money(gross) if count else '—', help='Fund amount before Teilfreistellung.')
         c.metric('Taxable amount', money(tax.taxable) if count else '—', help='After each fund’s selected Teilfreistellung, before allowance.')
-        st.caption(f'{"Forecast" if forecast else "Historical estimate"} · market prices · {count}/{total} calculated · receipt {RULES[year].receipt_date}')
+        bases = {inputs.basis for _, _, _, inputs, _, _ in prepared}
+        basis = next(iter(bases)) if len(bases) == 1 else 'Mixed price bases'
+        scope = f' · {len(items)} of {eligible_count} fund holdings selected' if len(items) < eligible_count else ''
+        st.caption(f'{"Forecast" if forecast else "Historical estimate"} · {basis}{scope} · {count}/{total} calculated · receipt {RULES[year].receipt_date}')
         rows = []
         for item, manual, market, inputs, result, lots in prepared:
             rows.append({'Fund': item.name, 'Account': item.account,

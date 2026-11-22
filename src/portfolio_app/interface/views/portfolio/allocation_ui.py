@@ -25,8 +25,20 @@ def render_balances(path, snapshot):
     from portfolio_app.ledger.account_journal import load_journal
     journal, _ = load_journal(path.parent)
     managed = {b.position_id for b in journal.securities if b.active} | {link.position_id for link in journal.cash_links}
-    if managed:
-        st.caption('History-managed holdings use Transactions → Replace balance; linked cash uses Accounts → Cash & financing.')
+    managed_rows = rows.loc[rows.position_id.isin(managed)]
+    if not managed_rows.empty:
+        from portfolio_app.interface.views.positions.position_list import list_context
+        linked_cash = {link.position_id for link in journal.cash_links}
+        with st.popover('Manage history and linked balances'):
+            labels = {row.position_id: ' · '.join(filter(None, (row.name, row.account, row.portfolio)))
+                      for row in managed_rows.itertuples()}
+            identity = st.selectbox('Managed position', list(labels), format_func=labels.get)
+            cash = identity in linked_cash
+            route = dict(id=identity, context=list_context(path), revision=snapshot.revision,
+                         action='details', history_target='accounts' if cash else 'transactions')
+            st.button('Open cash & financing' if cash else 'Open transactions',
+                      help='Review linked cash movements.' if cash else 'Review the holding’s history and available balance corrections.',
+                      on_click=st.session_state.update, kwargs={'position_edit_open_request': route})
         rows = rows.loc[~rows.position_id.isin(managed)].copy()
         if rows.empty:
             return
@@ -58,7 +70,7 @@ def render_balances(path, snapshot):
         except (DataError, OSError) as exc:
             st.error(str(exc))
         else:
-            st.success('Replacement balances saved.')
+            st.session_state['portfolio_save_notice'] = 'Replacement balances saved.'
             st.rerun()
 
 
@@ -164,7 +176,7 @@ def category_position_editor(positions, config, *, key, extra=(), filtered=False
             options.append('')
         if st.session_state.get(key + '_filter', '*') not in options:
             st.session_state[key + '_filter'] = '*'
-        selected = st.selectbox('Position category', options, help='Choose the category that owns each selected position.',
+        selected = st.selectbox('Position category', options, help='Show positions in the selected category.',
             format_func=lambda v: 'All categories' if v == '*' else labels.get(v, 'Unassigned'), key=key + '_filter')
     if selected != draft['filter']:
         draft['generation'] += 1
@@ -234,6 +246,7 @@ def render_allocation_editor(path: Path, snapshot, config):
                 st.error(str(exc))
             else:
                 _discard_draft(category_key)
+                st.session_state['portfolio_save_notice'] = 'Categories saved.'
                 st.rerun()
     if config.version == 3:
         return
@@ -266,6 +279,7 @@ def render_allocation_editor(path: Path, snapshot, config):
                 st.error(str(exc))
             else:
                 _discard_draft(position_key)
+                st.session_state['portfolio_save_notice'] = 'Position targets saved.'
                 st.rerun()
 
 

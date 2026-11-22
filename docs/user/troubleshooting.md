@@ -10,7 +10,7 @@
 | Position value is blank | Inspect ticker, manual price, quote currency, FX and [price status](performance.md#valuation). Buy-in is not a market price. |
 | Refresh shows old data | Cached fallback preserves the last successful data. Check provider dates separately from retrieval time. |
 | Amundi overnight fund reports an unreliable listing | For ISIN LU1190417599, use **Positions → Connect live prices** to review CSH2.PA (Paris) or SMART.MI (Milan). The 0E2B.IL feed is excluded from live prices and history, including old cache entries. Existing quantities and manually supplied prices are retained. |
-| Demo cannot initialize | Normal demo needs public prices/FX. Retry, or choose **? → Take the tour** for an invented offline example. |
+| Demo cannot initialize | Normal demo needs public prices/FX. Retry, or choose **App help → Take the tour** for an invented offline example. |
 | Large Other / whole ETF | Inspect [coverage, source date and support](exposure.md#other). A partial or absent breakdown is not a zero holding. |
 | Holdings snapshot import is unavailable | Only holdings snapshots require an empty portfolio. Choose Transactions to import trades into existing holdings, or Update balances to replace current quantities. |
 | Wrong imported decimals or rows | Recheck number format, header, worksheet, delimiter and mappings before accepting. |

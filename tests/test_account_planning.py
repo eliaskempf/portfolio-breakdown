@@ -57,3 +57,27 @@ def test_unselected_open_contract_requires_explicit_margin(tmp_path):
     journal=append_events(journal,[Event('other-open','2026-01-02','trade',account_id='a',position_id='other',quantity=1,price=1000)])
     with pytest.raises(DataError,match='every unselected'):
         plan_account_futures(result,target,allocation,valued,journal,permitted=['p'],margins={'p':4000})
+
+
+def test_account_plan_visibility_tracks_its_inputs_and_portfolio_evidence(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    from portfolio_app.exposure.exposure_targets import save_exposure_targets
+    journal, valued, allocation, result, target = setup(tmp_path)
+    save_exposure_targets(tmp_path, target, allocation, None)
+    app = AppTest.from_string(
+        "import streamlit as st\n"
+        "from portfolio_app.derivatives.account_planning import render_account_plan\n"
+        "render_account_plan(*st.session_state['arguments'], exposure_signature=st.session_state['revision'])"
+    )
+    app.session_state['arguments'] = (tmp_path, result, allocation, valued, journal)
+    app.session_state['revision'] = 'invented-first-valuation'
+    app.run()
+    app.multiselect(key='planning_actual_permitted').set_value(['p']).run()
+    app.number_input(key='planning_actual_margin_p').set_value(4000.).run()
+    app.button(key='planning_actual_calculate').click().run()
+    assert not app.exception and not app.error and len(app.dataframe) == 2
+    app.run()
+    assert len(app.dataframe) == 2
+    app.session_state['revision'] = 'invented-second-valuation'
+    app.run()
+    assert not app.exception and not app.dataframe

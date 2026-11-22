@@ -148,6 +148,7 @@ def render_transaction_import(directory, *, demo=False):
         if valid:
             render_transactions(valid, active, retained, token)
         if errors:
+            st.markdown('**Transactions needing attention**')
             st.dataframe(pd.DataFrame(errors), hide_index=True, width='stretch')
         # Keep the ordinary path short; row selection and ordering are exceptional.
         selected = [r.identity for r, _ in valid]
@@ -167,20 +168,28 @@ def render_transaction_import(directory, *, demo=False):
             (p not in books or not any(e.kind in ('opening', 'checkpoint') for e in selected_events(books[p])))]
         zero = False
         if needs_start:
-            with advanced:
-                start = control(st.selectbox, 'Before the first transaction', ['Zero holdings', 'Earlier holdings'],
-                    key=token+'start', help='A history from the first acquisition starts at zero. A later export needs a recorded opening balance; current holdings are only the ending comparison.')
-                zero = start == 'Zero holdings'
-        if needs_start and not zero:
-            st.info('Starting balance required')
+            start = control(st.selectbox, 'Before the first transaction', ['Zero holdings', 'Earlier holdings'],
+                key=token+'start', help='Use zero only when the export starts at the first acquisition. An incomplete export needs a recorded starting balance.')
+            zero = start == 'Zero holdings'
         # Collapse multiple owned locations only for genuinely unmapped legacy
         # files; existing bindings and linked cash keep their reviewed semantics.
         aggregate = tuple(sorted({a for a, _ in mapping})) if len({a for a, _ in mapping}) > 1 and not any(b.custody_id for b in books.values() if b.position_id in positions) else ()
         options = dict(selected_ids=selected, starts_at_zero=zero, allow_incomplete=True,
                        correction_ids=corrections, aggregate_accounts=aggregate)
+        blockers = []
+        if errors:
+            blockers.append(f'Resolve the {len(errors)} transaction {"row" if len(errors) == 1 else "rows"} needing attention.')
+        if len(corrections) != len(conflicts):
+            blockers.append('Review each changed transaction before saving corrections.')
+        if not selected and not errors:
+            blockers.append('Select at least one transaction in Import options.')
+        if needs_start and not zero:
+            blockers.append('Record the earlier starting balance in the position’s Transactions view, or include it in the CSV.')
+        if blockers:
+            st.caption(' '.join(blockers))
         actions = st.container(horizontal=True)
         if actions.button('Review against portfolio', type='primary',
-                          disabled=bool(errors or not selected or len(corrections) != len(conflicts) or needs_start and not zero), key='import_tx_review_start'):
+                          disabled=bool(blockers), key='import_tx_review_start'):
             st.session_state['import_tx_review'] = dict(rows=rows, mapping=mapping, additions=additions,
                 listing_changes=listing_changes, options=options, token=token, baseline=baseline,
                 needs_start=needs_start, zero=zero)

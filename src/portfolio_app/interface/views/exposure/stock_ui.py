@@ -10,7 +10,7 @@ def render_stock_exposure(valued, funds, data_dir, *, query='', allocation=None)
     from portfolio_app.portfolio.strategic import category_labels
     labels = category_labels(allocation) if allocation else {}
     buckets = sorted(set(valued.get('bucket_id', [])) - {''})
-    excluded = st.multiselect('Exclude source buckets from stock exposure', buckets,
+    excluded = st.multiselect('Exclude source categories', buckets,
         format_func=lambda value: labels.get(value, value),
         help='Exclude source positions before fund look-through. Companies inside included funds remain included.', key='exposure_stock_excluded')
     st.caption('Company ownership · funded holdings', help='Direct shares and supported equity holdings inside funds. '

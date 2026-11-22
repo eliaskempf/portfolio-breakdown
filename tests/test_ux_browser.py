@@ -505,7 +505,7 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     playwright.expect(page.get_by_text('TWR unavailable · Choose Gain for supported monetary results.',exact=True)).to_be_visible()
     page.screenshot(path=str(directory / 'performance.png'))
     page.get_by_role('radio', name='Allocation', exact=True).click()
-    page.get_by_role('button', name='Back', exact=True).click()
+    page.get_by_role('button', name='Up one level', exact=True).click()
     page.wait_for_function("document.querySelector('.js-plotly-plot')?.data?.[0]?.labels?.[0] === 'Portfolio'")
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     page.screenshot(path=str(directory / 'overview.png'))

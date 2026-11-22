@@ -162,6 +162,11 @@ def test_mixed_overview_editor_and_plan_ui(exposure_workspace):
     by_label(app.multiselect,'Permitted instruments').set_value(['p1','p2','p3']).run()
     by_label(app.button,'Calculate exposure plan').click().run()
     assert not app.exception and not app.error
+    assert any(heading.value == 'Suggested exposure trades' for heading in app.subheader)
+    app.run()
+    assert any(heading.value == 'Suggested exposure trades' for heading in app.subheader)
+    by_label(app.number_input, 'External contribution (EUR)').set_value(25.).run()
+    assert not any(heading.value == 'Suggested exposure trades' for heading in app.subheader)
 
 
 def test_legacy_policy_invalidated_by_grouping_can_be_replaced_in_editor(exposure_workspace):

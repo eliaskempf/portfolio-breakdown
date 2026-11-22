@@ -63,7 +63,7 @@ def test_portfolio_results_are_trades_only_readable_and_display_changes_keep_pla
     activate(app, 'Rebalance', 'Targets')
     activate(app, 'Rebalance', 'Plan')
     assert any(item.label == 'Trades' for item in app.metric)
-    by_label(app.number_input, 'Contribution').set_value(600).run()
+    by_label(app.number_input, 'Contribution (EUR)').set_value(600).run()
     assert not any(item.label == 'Trades' for item in app.metric)
     assert all((workspace / name).read_bytes() == content for name, content in before.items())
 

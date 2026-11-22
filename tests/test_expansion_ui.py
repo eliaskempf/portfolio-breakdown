@@ -96,7 +96,7 @@ def test_strategic_drill_down_planned_bucket_and_bulk_assignment(tmp_path, sampl
     assert sum(row['allocation'] for row in strategic_positions) == 100
     by_label(app.selectbox, 'Category').set_value('planned').run()
     assert any('No current holdings' in item.value for item in app.info)
-    by_label(app.button, 'Back').click().run()
+    by_label(app.button, 'Up one level').click().run()
     assert by_label(app.selectbox, 'Category').value == ''
     position_action(app, 'Strategic allocation')
     by_label(app.button, 'Select all').click().run()

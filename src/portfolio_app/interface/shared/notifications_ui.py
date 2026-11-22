@@ -79,7 +79,7 @@ def navigate(destination, directory):
     if destination.kind == 'rule':
         open_rule(destination.identity)
     elif destination.kind in {'pricing', 'costs'}:
-        st.session_state.update(main_tabs='Positions', positions_workflow_request='Update balances')
+        st.session_state.update(main_tabs='Positions', positions_workflow_request='Connect live prices' if destination.kind == 'pricing' else 'Update balances')
         if destination.identity:
             request_position(destination.identity, editing=True, local=False)
     elif destination.kind in {'settlements', 'account'}:
@@ -153,7 +153,7 @@ def render_notifications(directory, funds, revision, valued, status, *, demo=Fal
     manual = int(valued.price_status.eq('manual').sum())
     if manual:
         _card(Notice('manual', 'Manually maintained prices', f'{manual} dated manual/snapshot prices · Update these manually or connect live prices.',
-                    'information', Destination('pricing'), 'Review manual prices'), directory)
+                    'information', Destination('pricing'), 'Connect live prices'), directory)
     if cache_warning:
         _card(Notice('cache', 'Price cache needs attention', cache_warning, 'warning', Destination('pricing'), 'Review pricing'), directory)
     if status.estimated_costs:

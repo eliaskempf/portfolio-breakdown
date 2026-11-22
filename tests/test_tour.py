@@ -123,7 +123,7 @@ def test_replay_restores_view_filters_drafts_and_closes_menu(tmp_path, view):
         expected = {'main_tabs':'Exposure', 'exposure_search':'Nvidia'}
     else:
         activate(app, 'Rebalance')
-        by_label(app.number_input, 'Contribution').set_value(750.).run()
+        by_label(app.number_input, 'Contribution (EUR)').set_value(750.).run()
         click(app, 'Calculate plan')
         expected = {'main_tabs':'Rebalance', 'planning_amount':750., 'rebalance_tabs':'Plan'}
     app.session_state['help_menu'] = True
@@ -166,7 +166,7 @@ def test_tour_restores_currency_and_saved_plan(tmp_path, currency, start_demo):
     before = tree_bytes(original)
     app = launch_workspaces(personal, demo, start_demo=start_demo)
     activate(app, 'Rebalance')
-    by_label(app.number_input, 'Contribution').set_value(750.).run()
+    by_label(app.number_input, f'Contribution ({currency})').set_value(750.).run()
     click(app, 'Calculate plan')
     plan = app.session_state['portfolio_contribution_result']
     context = app.session_state['currency_context']
@@ -176,7 +176,7 @@ def test_tour_restores_currency_and_saved_plan(tmp_path, currency, start_demo):
     assert app.session_state['reporting_currency'] == currency
     assert app.session_state['currency_context'] == context
     assert app.session_state['main_tabs'] == 'Rebalance'
-    assert by_label(app.number_input, 'Contribution').value == 750.
+    assert by_label(app.number_input, f'Contribution ({currency})').value == 750.
     assert app.session_state['portfolio_contribution_result'][0] == plan[0]
     assert load_settings(original).reporting_currency == currency
     assert tree_bytes(original) == before

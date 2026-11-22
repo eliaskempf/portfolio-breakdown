@@ -141,14 +141,15 @@ def plan_account_futures(result, targets, allocation, valued, journal, *, permit
     return AccountPlan(pd.DataFrame(trades),gaps,equity,total_fees,bool(gaps[f'Gap ({currency})'].abs().le(.01).all()))
 
 
-def render_account_plan(directory,result,allocation,valued,journal):
+def render_account_plan(directory,result,allocation,valued,journal, *, exposure_signature):
+    from portfolio_app.interface.shared.planning_ui import plan_preview
     import streamlit as st
     from portfolio_app.exposure.exposure_targets import load_exposure_targets
     from portfolio_app.ledger.account_journal import replay
     if allocation is None:
         st.info('Save categories and an exposure target before planning futures trades.')
         return
-    targets,_=load_exposure_targets(directory,allocation)
+    targets, target_revision = load_exposure_targets(directory,allocation)
     if targets is None:
         st.info('Save an exposure target first.')
         return
@@ -164,11 +165,15 @@ def render_account_plan(directory,result,allocation,valued,journal):
             limits[identity]=st.number_input('Maximum absolute contracts',min_value=0,max_value=10000,value=max(1,abs(p.quantity)),key=f'planning_actual_limit_{identity}')
     short=st.checkbox('Permit short positions',key='planning_actual_short')
     st.caption('Futures exposure plan using recorded cash separately for each account and currency. Enter initial-margin assumptions. Unsettled losses and pending debits reserve cash; unposted gains are unavailable. Recorded account-total requirements remain a fixed collateral floor. Funded holdings use the capital planner; this preview makes no transfers, conversions or loans.')
-    if st.button('Calculate actual futures plan',key='planning_actual_calculate'):
-        try:
-            plan=plan_account_futures(result,targets,allocation,valued,journal,permitted=permitted,margins=margins,fees=fees,limits=limits,allow_short=short)
-            st.dataframe(plan.trades,hide_index=True);st.dataframe(plan.gaps,hide_index=True)
-            st.caption(f'Planned equity {plan.equity:,.2f} {result.reporting_currency} · Fees {plan.fees:,.2f}')
-            st.success('Targets reached within 0.01 reporting-currency units.') if plan.complete else st.warning('Remaining target gaps are shown; whole-contract and funding limits constrain this plan.')
-        except DataError as exc:
-            st.error(str(exc))
+    options = dict(permitted=permitted, margins=margins, fees=fees, limits=limits, allow_short=short)
+    try:
+        plan = plan_preview('planning_actual_preview', (exposure_signature, target_revision, options),
+                            st.button('Calculate actual futures plan', key='planning_actual_calculate'),
+                            lambda: plan_account_futures(result, targets, allocation, valued, journal, **options))
+    except DataError as exc:
+        st.error(str(exc))
+        return
+    if plan is not None:
+        st.dataframe(plan.trades,hide_index=True);st.dataframe(plan.gaps,hide_index=True)
+        st.caption(f'Planned equity {plan.equity:,.2f} {result.reporting_currency} · Fees {plan.fees:,.2f}')
+        st.success('Targets reached within 0.01 reporting-currency units.') if plan.complete else st.warning('Remaining target gaps are shown; whole-contract and funding limits constrain this plan.')

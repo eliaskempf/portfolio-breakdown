@@ -1,5 +1,7 @@
 # Exposure and ETFs {#look-through}
 
+Use **Search exposure** in Assets to find a name, ticker or ISIN. Search keeps the selected portfolio denominator. A fund with a saved breakdown also shows its constituents under **Position details → Details → ETF breakdown**.
+
 ## Read direct and indirect exposure {#filters}
 
 In **Exposure**, Assets combines direct holdings and fund-derived exposure.
@@ -196,7 +198,7 @@ method requires review rather than silently changing the economic interpretation
 Choose **Exposure → Companies** for direct shares and supported equity holdings
 inside funds. No extra Show checkbox is required. Source scope, individual fund
 choices and company identity rules still apply. Additional category exclusions
-remove source positions before look-through. Searching the displayed companies
+remove source positions before look-through. Search is available in Assets, Companies and Geography. In Themes & sectors, use source filters and hierarchy controls. Searching the displayed companies
 does not change percentage denominators.
 
 This is a funded-ownership view: stock-universe percentages include unresolved

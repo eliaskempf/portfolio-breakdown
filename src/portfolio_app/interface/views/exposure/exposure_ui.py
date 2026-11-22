@@ -81,7 +81,10 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                 st.session_state['exposure_scope'] = ''
             scope = st.selectbox('Source scope', list(scope_labels), help='Choose the portfolio positions contributing to this exposure calculation.', format_func=scope_labels.get, key='exposure_scope')
         with search_col:
-            query = st.text_input('Search exposure', help='Filter the displayed exposures by name or identifier.', placeholder='Investment or ticker…', key='exposure_search')
+            themes = st.session_state.get('exposure_view') == 'Themes & sectors'
+            query = st.text_input('Search exposure', disabled=themes, key='exposure_search',
+                help='Search Assets, Companies or Geography. Source filters apply to every view.',
+                placeholder='Asset, ticker or ISIN…' if st.session_state.get('exposure_view', 'Assets') == 'Assets' else 'Search…')
         with breakdown_col, st.container(key='tour_etf_breakdown'):
             lookthrough = render_etf_toggle(data_dir, futures=unified and holdings.instrument_type.eq('future').any())
         with filter_col:
@@ -98,7 +101,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                 st.session_state['exposure_measure'] = 'Funded value'
             measure = st.selectbox('Analysis measure', ['Market exposure', 'Funded value'], key='exposure_measure',
                 help='Market exposure includes signed futures notional. Funded value shows capital, cash and claims.')
-            basis = st.segmented_control('Exposure basis', ['Total market', 'Equity only'], default='Total market',
+            basis = st.segmented_control('Exposure basis', ['Total market', 'Equity only'], required=True, default='Total market',
                 key='exposure_market_basis') if measure == 'Market exposure' else 'Total market'
             field = 'exposure_reporting' if basis == 'Equity only' else 'market_exposure_reporting'
         show_tickers = st.checkbox('Show tickers', help='Display quote tickers alongside investment names.', value=False, key='display_tickers')
@@ -273,7 +276,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         lambda asset: f'{source_names.get(asset, "ETF")} / Other')
     effective_exposures = exposures
     saved_classifications = classifications
-    mode = results_area.segmented_control('Exposure view', ['Assets', 'Companies', 'Themes & sectors', 'Geography'], help='Choose the exposure analysis to display.', default='Assets', key='exposure_view')
+    mode = results_area.segmented_control('Exposure view', ['Assets', 'Companies', 'Themes & sectors', 'Geography'], help='Choose the exposure analysis to display.', required=True, default='Assets', key='exposure_view')
     targets, performance = None, None
     if mode == 'Themes & sectors':
         if display_group is not None:
@@ -320,7 +323,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                               measure=measure if unified else None, equity=equity)
         else:
             render_theme_view(exposures, selected, holdings, classifications, names, dimensions, targets, performance,
-                              total, all_missing, selected_total, show_tickers, performance_percent, query,
+                              total, all_missing, selected_total, show_tickers, performance_percent,
                               measure=measure if unified else None, equity=equity, complete=complete)
             if match_note:
                 st.caption(match_note)
@@ -361,7 +364,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
 
 
 def render_theme_view(exposures, selected, holdings, classifications, names, dimensions, targets, performance,
-                      total, all_missing, selected_total, show_tickers, performance_percent, query, *, measure=None, equity=None, complete=True):
+                      total, all_missing, selected_total, show_tickers, performance_percent, *, measure=None, equity=None, complete=True):
     market = measure == 'Market exposure'
     options = [('selected_labels', 'Selected labels'),
                *[(f'taxonomy:{name}', name.replace('_', ' ').title()) for name in names],
@@ -383,7 +386,7 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
         navigation, back = root_col.columns([5, 1], vertical_alignment='bottom')
         root = navigation.selectbox('Hierarchy root', roots, help='Start the chart at this taxonomy node and show its descendants.', format_func=lambda path: ' › '.join(path) if path else 'Entire taxonomy', key=root_key)
         if root:
-            back.button('Back', help='Return to the preceding level of this view.', on_click=lambda: st.session_state.update({root_key: root[:-1]}))
+            back.button('Up one level', help='Open the parent of the current selection.', on_click=lambda: st.session_state.update({root_key: root[:-1]}))
         with chart_settings:
             max_depth = max((len(path) - len(root) for path in roots if path[:len(root)] == root), default=0)
             depth = st.selectbox('View depth', [None, *range(1, max_depth + 1)], help='Number of hierarchy levels displayed beneath the current root.', format_func=lambda value: 'Full tree' if value is None else f'{value} level(s) below root', key=f'depth_{taxonomy}_{root}')
@@ -392,8 +395,6 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
     if view != 'selected_labels':
         with chart_settings:
             chart_type = st.selectbox('Chart', ['Sunburst', 'Treemap', 'Bar', 'Pie'], help='Choose how the selected analysis is visualized.', key='exposure_control_chart')
-    if query:
-        st.caption('Search applies in Assets. Theme percentages cover the selected source scope.')
     chart_exposures = exposures.copy()
     if show_tickers:
         # Prefer the direct listing's ticker for every row of the same asset,
@@ -532,8 +533,8 @@ def render_source_positions(selected, valued, names, classifications, show_ticke
         columns += ["price_status", "price_observed_at", "price_age_hours", "fx_status", "fx_observed_at", "fx_age_hours", "valuation_note"]
     st.dataframe(change_columns(table[columns], percent=["Performance"] if performance_percent else [], points=["Gap (pp)"]), hide_index=True, width="stretch", height="content", column_config={
         "id": None, "name": "Investment", "ticker": "Ticker" if show_tickers else None, "shares": st.column_config.NumberColumn('Quantity', help='Number of held units, including fractional quantities.', format='%.10f'),
-        'Current bucket %': st.column_config.NumberColumn('Current (% of bucket)', help='Current position value divided by the current value of its category.', format='%.2f %%'),
-        'Target bucket %': st.column_config.NumberColumn('Target (% of bucket)', help='Desired share of this position’s assigned category.', format='%.2f %%'),
+        'Current bucket %': st.column_config.NumberColumn('Current (% of category)', help='Current position value divided by the current value of its category.', format='%.2f %%'),
+        'Target bucket %': st.column_config.NumberColumn('Target (% of category)', help='Desired share of this position’s assigned category.', format='%.2f %%'),
         'holdings_confirmed_on': 'Holdings last confirmed', 'quantity_unit': 'Quantity unit',
         "quote_currency": "Currency", "fx_to_reporting": None,
         "current_value_reporting": st.column_config.NumberColumn("Current value", help='Current quantity multiplied by its price and converted to the portfolio currency where available.', format=money_format()),

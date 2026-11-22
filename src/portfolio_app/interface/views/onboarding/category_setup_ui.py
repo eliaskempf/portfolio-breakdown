@@ -174,6 +174,9 @@ def render_category_setup(directory, snapshot, first_position):
             st.rerun()
         st.html('<style>.st-key-onboarding_new_category:focus-within {outline:2px solid '
                 'var(--st-primary-color, #6366f1);outline-offset:2px;border-radius:0.5rem;}</style>')
+        with st.expander('Category and target help'):
+            st.write(CATEGORY_HELP)
+            st.write(TARGET_HELP)
         _focus_new(index)
         _, targets = _values()
         total = sum(value for value in targets if value is not None)

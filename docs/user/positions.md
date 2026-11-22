@@ -92,6 +92,8 @@ FIFO carrying costs and realized gains; it is not a tax-lot reporting service.
 
 ## Replace balances {#balances}
 
+In **Update balances**, **Manage history and linked balances** opens the transaction history or cash account that owns a managed balance.
+
 Use **Positions → Update balances** for several current summaries at once.
 Review quantities and optional buy-ins, select average or total cost entry, then
 confirm and save the snapshot. Repeating a balance snapshot replaces quantities;
@@ -111,7 +113,7 @@ keep the resulting cost unknown. Invalid rows must be corrected before saving.
 
 Disabling purchase entry restores the manual quantity and cost draft; purchase
 rows remain available for this session. Closing and resuming the dialog retains
-the draft. Cancel discards it. **Save position** saves the holding, metadata and
+the draft. **Resume unsaved edit** reopens it in this session. You can inspect another position while the draft is parked. Starting a different edit offers a discard choice. **Discard draft & add position** starts a fresh entry. Cancel discards it. **Save position** saves the holding, metadata and
 purchase records together once. These must be purchases making up the current
 holding without intervening sales or splits; sales accounting is not supported.
 For additional purchases into an existing position, use **Bulk add purchases**.

@@ -55,7 +55,11 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
     table = asset_exposure_table(exposures, classifications=classifications, taxonomy=taxonomy, complete=complete, equity=equity)
     if query.strip():
         terms = table[['Asset', 'Ticker']].fillna('').agg(' '.join, axis=1).str.casefold()
-        table = table.loc[terms.str.contains(query.strip().casefold(), regex=False)].reset_index(drop=True)
+        matches = terms.str.contains(query.strip().casefold(), regex=False)
+        if 'isin' in exposures:
+            identifiers = exposures['isin'].fillna('').str.contains(query.strip(), case=False, regex=False)
+            matches |= table.asset_id.isin(exposures.loc[identifiers, 'asset_id'])
+        table = table.loc[matches].reset_index(drop=True)
         st.caption(f'{len(table)} matching assets · Search keeps percentages relative to the selected portfolio')
     if table.empty:
         st.info('No assets match this search.')

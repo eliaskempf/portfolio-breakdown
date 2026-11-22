@@ -66,5 +66,6 @@ nav:
       - Troubleshooting: troubleshooting.md
   - Reference:
       - Data formats: reference.md
+      - Designing portfolio workflows: workflow-design.md
       - Source development: development.md
       - Package layout and feature transfers: package-layout.md

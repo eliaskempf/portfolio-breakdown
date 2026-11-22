@@ -89,7 +89,7 @@ def render_market_target_summary(result, allocation, data_dir, bucket, *, open_t
         help_text = f'Total exposure target: {targets.multiple:g}× portfolio net equity. Targets follow the saved exposure policy; flexible groups share one target.'
     if callback is not None:
         with controls if controls is not None else nullcontext():
-            st.button('Edit', icon=':material/edit:', key='overview_flat_targets' if flat else 'overview_exposure_targets',
+            st.button('Edit targets', icon=':material/edit:', key='overview_flat_targets' if flat else 'overview_exposure_targets',
                       on_click=callback, type='tertiary', help=help_text)
     return table
 

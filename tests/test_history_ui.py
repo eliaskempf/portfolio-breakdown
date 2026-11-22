@@ -24,6 +24,19 @@ def fixture(tmp_path):
     save_observations(tmp_path,store,None)
 
 
+def test_managed_balance_reaches_its_transactions(tmp_path):
+    from test_ui import launch as open_app, by_label, position_action
+    fixture(tmp_path)
+    (tmp_path / 'demo_prices.json').write_text('{"prices": {}, "fx": {}}')
+    app = open_app(tmp_path, tab='Positions')
+    position_action(app, 'Update balances')
+    by_label(app.button, 'Open transactions').click().run()
+    assert not app.exception
+    assert app.session_state['position_edit_selected'] == 'position-0'
+    assert app.session_state['position_edit_detail_view_position-0'] == 'Transactions'
+    assert by_label(app.button, 'Replace balance')
+
+
 def launch(tmp_path):
     return AppTest.from_string(f'''from pathlib import Path
 from portfolio_app.interface.views.history.history_ui import render_position_history

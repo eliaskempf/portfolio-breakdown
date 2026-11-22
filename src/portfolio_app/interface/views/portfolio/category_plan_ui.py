@@ -3,6 +3,7 @@ from hashlib import sha256
 
 import pandas as pd
 import streamlit as st
+from portfolio_app.interface.shared.currency_display import money_label
 
 from portfolio_app.portfolio.category_rebalancing import category_plan
 from portfolio_app.portfolio.rebalancing import RebalanceError
@@ -23,7 +24,7 @@ def render_category_plan(valued, config, scope):
     mode_col, amount_col, options_col = st.columns([3, 2, 1], vertical_alignment='bottom')
     mode = mode_col.selectbox('Rebalancing mode', MODES, key='rebalance_category_rebalance_mode')
     kind = {MODES[0]: 'fewest', MODES[1]: 'minimum', MODES[2]: 'contribution'}[mode]
-    amount = amount_col.number_input('New money', min_value=0., value=500., step=100., key='rebalance_category_rebalance_amount') if kind == 'contribution' else 0.
+    amount = amount_col.number_input(money_label('New money'), min_value=0., value=500., step=100., key='rebalance_category_rebalance_amount') if kind == 'contribution' else 0.
     with options_col.popover('Options', width='stretch'):
         positions = planning_positions(positions, config)
         if positions.empty:
@@ -38,7 +39,7 @@ def render_category_plan(valued, config, scope):
         minimum = .01
         if kind == 'contribution':
             buy_all = st.selectbox('Selection intent', ['Allow skipping positions', 'Buy every selected position'], key='rebalance_category_intent') == 'Buy every selected position'
-            minimum = st.number_input('Minimum purchase', min_value=.01, value=25., key='rebalance_category_minimum')
+            minimum = st.number_input(money_label('Minimum purchase'), min_value=.01, value=25., key='rebalance_category_minimum')
         relative = st.selectbox('Tolerance type', ['Percentage points', 'Relative to target'], key='rebalance_category_tolerance_type') == 'Relative to target'
         unit = '% of target' if relative else 'pp of parent'
         category_tolerance = st.number_input(f'Category tolerance ({unit})', min_value=0., max_value=100., value=5. if relative else .5, key=f'rebalance_category_tolerance_{relative}')

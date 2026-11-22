@@ -27,7 +27,7 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                 if st.session_state.get('active_portfolio') is None:
                     st.session_state['active_portfolio'] = 'Demo portfolio' if demo else 'My portfolio'
                 workspace = st.selectbox('Portfolio workspace', ['My portfolio', 'Demo portfolio'], help='Switch between your local portfolio and the separate demonstration workspace.',
-                    index=None, key='active_portfolio', label_visibility='collapsed', width=200, disabled=touring)
+                    index=0, key='active_portfolio', label_visibility='collapsed', width=200, disabled=touring)
                 demo = workspace == 'Demo portfolio'
                 if demo and not touring:
                     data_dir = demo_dir
@@ -42,13 +42,13 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
             notifications = st.container(key='header_notifications', width=44)
             if touring:
                 st.button('Portfolio settings', icon=':material/tune:', disabled=True)
-                st.button('?', disabled=True)
+                st.button('App help', disabled=True)
                 settings = None
             else:
                 settings = st.popover('Portfolio settings', help='Portfolio display preferences and local workspace controls.', icon=':material/tune:', key='workspace_settings', on_change='rerun')
                 with settings:
                     st.caption('Appearance: choose Light, Dark or System from the top-right app menu.')
-                with st.popover('?', help='Help and demo guide', key='help_menu', on_change='rerun'):
+                with st.popover('App help', help='Help and demo guide', key='help_menu', on_change='rerun'):
                     from portfolio_app.runtime.documentation import guide_url
                     from portfolio_app.interface.views.onboarding.tour import request_tour
                     st.button('Take the tour', on_click=request_tour, args=('demo' if demo else 'manual',),

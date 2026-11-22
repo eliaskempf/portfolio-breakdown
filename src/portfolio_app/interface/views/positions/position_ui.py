@@ -36,15 +36,19 @@ def _clear_editor() -> None:
             if key.startswith('position_edit_fields_'):
                 del drafts[key]
     st.session_state.pop('position_draft', None)
+    st.session_state.pop('position_draft_origin', None)
     st.session_state.pop('strategic_last_position', None)
 
 
 def request_position(position_id, *, editing=False, local=True):
-    if st.session_state.get('position_edit_selected') != position_id:
+    origin = st.session_state.get('position_draft_origin')
+    if origin is None and st.session_state.get('position_edit_selected') != position_id:
         _clear_editor()
-    st.session_state['position_edit_detail_requested'] = True
-    st.session_state.update(position_edit_selected=position_id,
-        position_edit_action='Edit position' if editing else 'Details', position_edit_dialog=True)
+    action = 'Edit position' if editing else 'Details'
+    if editing and origin is not None and origin != ('Edit position', position_id):
+        action = 'Unsaved position draft'
+    st.session_state.update(position_edit_detail_requested=True, position_edit_selected=position_id,
+                            position_edit_action=action, position_edit_dialog=True)
     from portfolio_app.interface.shared.dialog_runtime import route_position_callback
     if local:
         route_position_callback()
@@ -58,17 +62,15 @@ def _consume_position_event(path, snapshot):
         actual = identity in {p.id for p in journal.positions} | {investment.id for investment in journal.investments} | {link.position_id for link in journal.cash_links} or (journal.accounts and str(identity).startswith('account-'))
         current = event.get('context') == list_context(path) and event.get('revision') == snapshot.revision
         future_position = identity in {p.id for p in journal.positions} | {investment.id for investment in journal.investments}
-        if current and event.get('history_target') == 'accounts':
+        if current and event.get('history_target') == 'accounts' and not journal.accounts:
             st.session_state['positions_workflow_request'] = 'Accounts & futures'
-            if actual:
-                st.session_state['accounts_requested_position'] = identity
             st.session_state['position_edit_dialog'] = False
         elif current and future_position:
             request_position(identity, editing=event.get('action', 'edit') == 'edit')
-        elif current and actual:
-            st.session_state['positions_workflow_request'] = 'Accounts & futures'
-            st.session_state['accounts_requested_position'] = identity
-            st.session_state['position_edit_dialog'] = False
+        elif current and (actual or event.get('history_target') == 'accounts'):
+            st.session_state.update(accounts_open_requested=True, accounts_return_tab='Positions',
+                                    accounts_requested_position=identity, position_edit_dialog=False)
+            st.rerun()
         elif current and identity in set(snapshot.holdings.position_id):
             request_position(identity, editing=event.get('action', 'edit') == 'edit')
             if event.get('history_target') == 'transactions':
@@ -90,7 +92,7 @@ def _has_position_draft():
 
 
 def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False, allocation=None,
-                           valued=None, account_valued=None, percent=False, defer_dialog=False):
+                           valued=None, account_valued=None, percent=False, defer_dialog=False, has_accounts=False):
     account_valued = account_valued if account_valued is not None else valued
     _consume_position_event(path, snapshot)
     if warning := st.session_state.pop('position_stale_notice', None):
@@ -98,7 +100,12 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
     if message := st.session_state.pop('position_saved_notice', None):
         st.success(message)
     action, secondary = st.columns([1, 3])
-    if action.button('Add position', help='Record a new purchase or add an existing holding.', type='primary', icon=':material/add:', key='tour_add_position'):
+    draft_waiting = _has_position_draft() and not st.session_state.get('position_edit_dialog')
+    add_label = 'Discard draft & add position' if draft_waiting else 'Add position'
+    overview_request = st.session_state.pop('empty_overview_add_requested', False)
+    if overview_request and draft_waiting:
+        st.info('An unsaved position draft is available. Resume it or discard it to start another.')
+    if action.button(add_label, help='Record a new purchase or add an existing holding.', type='primary', icon=':material/add:', key='tour_add_position') or (overview_request and not draft_waiting):
         _clear_editor()
         st.session_state.update(position_edit_action='Add position', position_edit_dialog=True)
     if _has_position_draft():
@@ -106,15 +113,21 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
             # Reattach detached widget values even when their state keys remain.
             for key, value in st.session_state.get('position_draft', {}).items():
                 st.session_state[key] = value
+            if origin := st.session_state.get('position_draft_origin'):
+                st.session_state['position_edit_action'], st.session_state['position_edit_selected'] = origin
             st.session_state['position_edit_dialog'] = True
     # Apply navigation after remount: an old browser widget value can otherwise
     # restore the import form after a successful save switches to Overview.
     if requested := st.session_state.pop('positions_workflow_request', None):
         st.session_state['positions_workflow'] = requested
     workflow = st.segmented_control('Position tools', ['Positions', 'Bulk add purchases', 'Update balances', 'Import', 'Connect live prices', 'Accounts & futures'], help='Choose between individual holdings, purchase batches, balance replacement and imports.',
-                                    default=st.session_state.get('positions_workflow', 'Positions'),
+                                    required=True, default=st.session_state.get('positions_workflow', 'Positions'),
                                     key='positions_workflow', on_change=_dismiss)
     if workflow == 'Accounts & futures':
+        if has_accounts:
+            st.session_state.update(accounts_open_requested=True, accounts_return_tab='Positions',
+                                    accounts_requested_position='', positions_workflow_request='Positions')
+            st.rerun()
         from portfolio_app.interface.views.derivatives.accounts_ui import render_accounts
         render_accounts(path.parent, snapshot, account_valued if account_valued is not None else snapshot.holdings, allocation=allocation)
     elif workflow == 'Import':
@@ -163,6 +176,8 @@ def _remember_draft():
         # widget state. Don't replace its last complete draft with an empty one.
         if fields:
             st.session_state['position_draft'] = fields
+            st.session_state['position_draft_origin'] = (st.session_state['position_edit_action'],
+                                                         st.session_state.get('position_edit_selected'))
 
 
 def _dismiss():
@@ -172,7 +187,8 @@ def _dismiss():
 
 def _dismiss_dialog():
     _dismiss()
-    if st.session_state.get('position_draft'):
+    editing = st.session_state.get('position_edit_action') in {'Add position', 'Edit position'}
+    if editing and st.session_state.get('position_draft'):
         # The resume action lives on the parent page. A saved session draft
         # needs that page refreshed; read-only dismissal still stays local.
         st.rerun()
@@ -268,7 +284,8 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
     future_ids = {p.id for p in dialog_journal.positions} | {item.id for item in dialog_journal.investments}
     actual_future = st.session_state.get('position_edit_selected') in future_ids
     title = st.session_state.get('position_edit_action', 'Details')
-    title = 'Position details' if title == 'Details' or actual_future else title
+    if title == 'Details' or (actual_future and title == 'Edit position'):
+        title = 'Position details'
     if title == 'Position details' and not actual_future:
         selected_title = snapshot.holdings.loc[snapshot.holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
         if not selected_title.empty:
@@ -286,6 +303,17 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
                 if key not in st.session_state:
                     st.session_state[key] = value
             action = st.session_state.get('position_edit_action', 'Details')
+            if action == 'Unsaved position draft':
+                st.write('Editing another position would discard your unsaved draft.')
+                identity = st.session_state['position_edit_selected']
+                if st.button('Keep draft and view details'):
+                    request_position(identity, local=False)
+                    st.rerun()
+                if st.button('Discard draft and edit position'):
+                    _clear_editor()
+                    request_position(identity, editing=True, local=False)
+                    st.rerun()
+                return
             if actual_future:
                 journal, revision = load_journal(path.parent)
                 from portfolio_app.interface.views.derivatives.investment_detail_ui import render_investment_detail
@@ -310,9 +338,9 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
                         if not matches.empty:
                             row = matches.iloc[0]
                     def edit_position():
-                        st.session_state['position_edit_action'] = 'Edit position'
+                        request_position(row.position_id, editing=True, local=False)
                     from portfolio_app.interface.views.positions.position_detail import render_position_detail
-                    render_position_detail(row, path.parent, demo=demo, allocation=allocation, on_edit=edit_position)
+                    render_position_detail(row, path.parent, demo=demo, allocation=allocation, on_edit=edit_position, funds=funds)
                 close_position_button()
             else:
                 rendered = render_position_form(path, current, funds, demo=demo, allocation=allocation, action=action, valued=valued)
@@ -330,7 +358,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
     purchase = False
     if not editing:
         purchase = st.segmented_control('Entry method', ['New purchase', 'Existing holding'],
-            default='Existing holding' if st.session_state.get('onboarding_step') == 'position' else 'New purchase',
+            required=True, default='Existing holding' if st.session_state.get('onboarding_step') == 'position' else 'New purchase',
             key='position_edit_fields_entry_mode') != 'Existing holding'
     if editing:
         if holdings.empty:
@@ -393,7 +421,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
             return True
     physical = row.get('instrument_type') == 'physical' and not row.get('ticker') and bool(row.get('quantity_unit'))
     if not editing and not identity:
-        entry = kind_column.segmented_control('Position type', ['Listed investment', 'Physical asset', 'Future'], help='Choose a listed security or a physical holding measured in units or weight.', default='Listed investment',
+        entry = kind_column.segmented_control('Position type', ['Listed investment', 'Physical asset', 'Future'], help='Choose a listed security or a physical holding measured in units or weight.', required=True, default='Listed investment',
                                      key='position_edit_fields_entry_kind') or 'Listed investment'
         if entry == 'Future':
             from portfolio_app.interface.views.derivatives.accounts_ui import render_future_entry
@@ -613,8 +641,13 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
     with sections['actions']:
         save, cancel = st.columns(2)
         submitted = save.button('Save purchase' if purchase else 'Save position', help='Save this holding and its optional purchase records together in the active workspace.', type='primary', width='stretch')
-        if cancel.button('Finish later' if st.session_state.get('onboarding_step') == 'position' else 'Cancel', help='Discard this draft and leave setup without saving.', width='stretch'):
-            _clear_editor()
+        in_setup = st.session_state.get('onboarding_step') == 'position'
+        if cancel.button('Finish later' if in_setup else 'Cancel',
+                         help='Keep this draft for this session.' if in_setup else 'Discard this draft without saving.', width='stretch'):
+            if in_setup:
+                _dismiss()
+            else:
+                _clear_editor()
             st.session_state['onboarding_step'] = 'done'
             st.rerun()
     if submitted:

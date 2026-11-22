@@ -10,7 +10,7 @@ from portfolio_app.market.market_data import history_for
 from portfolio_app.interface.shared.presentation import return_percent
 
 
-def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edit=None):
+def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edit=None, funds=()):
     # Keep the native accessible dialog name; put visible actions alongside the
     # same asset heading, rather than in a separate, widely spaced metadata row.
     st.html('''<style>\n    [role="dialog"]:has(.st-key-position_detail_header) > h2[slot="title"] {display:none;}\n    [role="dialog"] .st-key-position_detail_header {padding-right:40px;}\n    /* Keep the window fixed while loading or switching differently sized views.
@@ -68,7 +68,7 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
         body = st.empty()
         with body.container():
             with st.container(key=active_class):
-                _render_position_view(view, row, data_dir, journal, has_history, demo=demo, allocation=allocation)
+                _render_position_view(view, row, data_dir, journal, has_history, demo=demo, allocation=allocation, funds=funds)
                 st.html(f'<span hidden data-position-view-ready="{view}"></span>')
 
 
@@ -81,7 +81,7 @@ def _position_view_guard(position_id):
                     and all(st.session_state.get(key) == value for key, value in expected.items()))
 
 
-def _render_position_view(view, row, data_dir, journal, has_history, *, demo, allocation):
+def _render_position_view(view, row, data_dir, journal, has_history, *, demo, allocation, funds=()):
     if view == 'History':
         _render_history_view(row, data_dir, journal, has_history, demo=demo, allocation=allocation)
         return
@@ -148,6 +148,11 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
         st.dataframe(pd.DataFrame(details.items(), columns=['Position', 'Details']), hide_index=True, width='stretch')
         if has_history and components.reasons:
             st.caption('Some gain components need evidence', help=' '.join(components.reasons))
+    from portfolio_app.funds.etf import matching_fund
+    if fund := matching_fund(row, funds):
+        from portfolio_app.interface.views.funds.etf_ui import render_fund_details
+        render_fund_details([fund], row.to_frame().T, key_prefix='position_detail_',
+                            percentages_only=True)
     from portfolio_app.performance.cost_basis import active_components
     with st.expander('Original costs and conversions'):
         parts = active_components(row)

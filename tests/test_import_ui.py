@@ -47,7 +47,8 @@ def confirm_units(app):
 def test_import_snapshots_then_allocation_and_live_linking(tmp_path, monkeypatch):
     app, path = launch(tmp_path, monkeypatch)
     assert not app.exception
-    assert not path.exists()
+    assert not path.exists() and not app.error
+    assert any('Confirm the quantity and price convention for invented-holdings.csv' in item.value for item in app.caption)
     assert by_label(app.button, 'Import reviewed positions').disabled
     confirm_units(app)
     assert not app.exception
@@ -62,7 +63,9 @@ def test_import_snapshots_then_allocation_and_live_linking(tmp_path, monkeypatch
     assert not app.exception
     assert app.session_state['main_tabs'] == 'Rebalance'
     assert app.session_state['rebalance_tabs'] == 'Targets'
-    by_label(app.button, 'Connect live prices').click().run()
+    assert 'Dismiss import tips' not in {button.label for button in app.button}
+    activate(app, 'Positions')
+    by_label(app.get('button_group'), 'Position tools').set_value('Connect live prices').run()
     assert not app.exception
     by_label(app.text_input, 'Search by ISIN, WKN, ticker or name').set_value('NVDA').run()
     by_label(app.button, 'Search listings').click().run()
@@ -110,6 +113,8 @@ def test_optional_prices_and_costs_do_not_block_minimal_import(tmp_path, monkeyp
     assert not app.exception
     by_label(app.get('button_group'), 'Import type').set_value('Holdings snapshot').run()
     assert any('Holdings snapshots initialize an empty portfolio' in item.value for item in app.info)
+    by_label(app.button, 'Update balances').click().run()
+    assert by_label(app.get('button_group'), 'Position tools').value == 'Update balances'
     assert original == path.read_bytes()
 
 

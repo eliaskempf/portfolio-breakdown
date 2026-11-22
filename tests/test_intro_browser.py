@@ -186,6 +186,9 @@ def test_window_splash_reveals_actual_input_error(intro_page):
     playwright.expect(frame.get_by_test_id('stAlert').first).to_be_visible(timeout=20000)
     playwright.expect(page.locator('main')).to_have_count(0)
     playwright.expect(frame.locator('[data-portfolio-view-ready="true"]')).to_have_count(1)
+    frame.get_by_role('button', name='Open portfolio settings').click()
+    playwright.expect(frame.get_by_role('button', name='Restore backup')).to_be_visible()
+    assert (workspace / 'holdings.csv').read_text() == 'synthetic,invalid,columns\nexample,only,here\n'
 
 
 def test_window_controls_and_skip_intro(intro_page):
@@ -228,7 +231,7 @@ def test_intro_welcome_navigation_and_help(intro_page):
     playwright.expect(dialog).to_have_count(0)
     playwright.expect(page.locator('.js-plotly-plot').first).to_be_visible()
     playwright.expect(frame).to_have_count(0)
-    page.get_by_role('button', name='?', exact=True).click()
+    page.get_by_role('button', name='App help', exact=True).click()
     playwright.expect(page.get_by_role('link', name='User guide', exact=False)).to_be_visible()
     playwright.expect(page.get_by_role('link', name='ETF breakdowns', exact=True)).to_have_attribute('href', re.compile(r'/exposure/$'))
     page.keyboard.press('Escape')
@@ -522,6 +525,7 @@ def test_gold_spot_weight_save_reload_and_details(intro_page):
     page.get_by_role('tab', name='Positions', exact=True).click()
     page.get_by_role('button', name='Add position', exact=False).click()
     dialog = page.get_by_role('dialog')
+    dialog.get_by_role('radio', name='Existing holding', exact=True).click()
     dialog.get_by_role('radio', name='Physical asset', exact=True).click()
     playwright.expect(dialog.get_by_role('radio', name='Gold spot price', exact=True)).to_be_checked()
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")

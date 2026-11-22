@@ -1,18 +1,19 @@
 """Hypothetical exposure trades with explicitly permitted instruments."""
 import streamlit as st
 from portfolio_app.interface.shared.money import format_money
+from portfolio_app.interface.shared.planning_ui import plan_preview
 
 from portfolio_app.exposure.exposure_planning import plan_exposure
 from portfolio_app.exposure.exposure_targets import load_exposure_targets
 from portfolio_app.portfolio.holdings import DataError
 
 
-def render_exposure_plan(directory, result, allocation, valued, *, future=None):
+def render_exposure_plan(directory, result, allocation, valued, *, future=None, exposure_signature):
     if allocation is None:
         st.info('Save strategic categories and an exposure policy first.')
         return
     try:
-        targets, _ = load_exposure_targets(directory, allocation)
+        targets, target_revision = load_exposure_targets(directory, allocation)
         if targets is None:
             raise DataError('The active exposure policy is missing. Save targets or activate capital planning.')
     except DataError as exc:
@@ -38,15 +39,17 @@ def render_exposure_plan(directory, result, allocation, valued, *, future=None):
             shorts = st.checkbox('Permit short futures', value=False, key='planning_exposure_shorts')
         st.caption('Purchases use only the contribution and permitted sale proceeds. Future funding is part of that contribution; notional never consumes a cash purchase budget. '
                    'Declare eligible collateral and initial margin; no automatic transfers or broker eligibility are assumed. Funded units may be fractional; contracts are whole. Fees reduce equity.')
-    if st.button('Calculate exposure plan', type='primary'):
-        try:
-            plan = plan_exposure(result, targets, allocation, valued, permitted=permitted, future=future,
-                contribution=contribution, allow_sales=sales, fee_per_unit=fee,
-                future_fee=future_fee, collateral_limit=collateral, future_funding=funding,
-                margin_per_contract=margin, max_contracts=int(limit), allow_short=shorts)
-        except DataError as exc:
-            st.error(str(exc))
-            return
+    options = dict(permitted=permitted, future=future, contribution=contribution, allow_sales=sales,
+                   fee_per_unit=fee, future_fee=future_fee, collateral_limit=collateral,
+                   future_funding=funding, margin_per_contract=margin, max_contracts=int(limit), allow_short=shorts)
+    try:
+        plan = plan_preview('planning_exposure_preview', (exposure_signature, target_revision, options),
+                            st.button('Calculate exposure plan', type='primary'),
+                            lambda: plan_exposure(result, targets, allocation, valued, **options))
+    except DataError as exc:
+        st.error(str(exc))
+        return
+    if plan is not None:
         st.subheader('Suggested exposure trades')
         if plan.trades.empty:
             st.info('No improving trades within the permitted instruments and constraints.')

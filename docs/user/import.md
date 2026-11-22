@@ -1,5 +1,7 @@
 # Import holdings and transactions {#import}
 
+Open **Positions → Import** and choose the file you have. **Transaction CSV** reviews dated transactions. **Statement PDFs** asks for the existing holding and opens its Consorsbank buy/sale statement review. **Holdings snapshot** initializes an empty portfolio from a current holdings report. The same PDF review is available in the holding's **Transactions** view.
+
 **Positions → Import** opens transaction import. Transactions can be imported into
 an existing or empty portfolio; review their mappings and reconstructed balances
 before applying. See [Import transactions](#transactions).

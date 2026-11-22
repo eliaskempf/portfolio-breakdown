@@ -22,11 +22,11 @@ available quotes and FX; subsequent refreshes preserve quantities and edits.
 The first load shows **Preparing your demo…** while prices arrive, then opens
 the overview automatically.
 If initialization cannot obtain prices, use **Refresh prices** or choose
-**? → Take the tour** for the offline example. Missing fund downloads leave that fund whole.
+**App help → Take the tour** for the offline example. Missing fund downloads leave that fund whole.
 
 ### Take the tour {#tour}
 
-Choose **Take the tour** at the optional welcome prompt, or **? → Take the tour**
+Choose **Take the tour** at the optional welcome prompt, or **App help → Take the tour**
 anytime. **Not now** dismisses the prompt. The app remembers dismissal for this
 computer's user account.
 
@@ -143,9 +143,9 @@ and choose **Continue to first position**. Unfinished targets can instead be
 saved with **Save categories & continue** and completed later.
 
 **Skip setup** saves the selected currency without creating categories and opens
-Overview after the optional tour prompt. Choose **Positions** to add or import.
+Overview after the optional tour prompt. Choose **Add position** on Overview for the first holding, or use **Positions → Import** for files.
 If you save categories, the first-position form opens; **Finish later** leaves
-the categories saved without creating a holding. After saving or finishing that
+the categories saved and keeps the unfinished position in this session. Choose **Resume unsaved edit** in Positions to continue. After saving or finishing that
 form, you return to Overview and the optional tour prompt.
 
 ### Save a first holding, or import
@@ -194,6 +194,6 @@ Keep backups private: they are unencrypted. [Storage and recovery](storage.md#ba
 explains verified restore into a new folder, review/cancel behavior and switching
 workspaces. A backup should exist before you change files outside the app.
 
-Use **? → User guide** for version-matched help. **Portfolio settings** holds
+Use **App help → User guide** for version-matched help. **Portfolio settings** holds
 portfolio and workspace controls; the top-right app menu offers Light, Dark and
 System appearance. Hover or keyboard-focus help controls for units and scope.

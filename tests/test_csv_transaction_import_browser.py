@@ -326,6 +326,25 @@ def test_estimated_checkpoint_requires_explicit_reconciliation(import_page):
     assert not page.get_by_test_id('stException').count()
 
 
+def test_multi_holding_review_explains_replacement_balance_blocker(import_page):
+    from test_inventory_imports import row, estimate
+    from portfolio_app.ingestion.transaction_csv import FIELDS_V2
+    page, path = import_page
+    stream = StringIO()
+    writer = csv.DictWriter(stream, fieldnames=FIELDS_V2)
+    writer.writeheader()
+    for asset in ('AUR', 'BTC'):
+        writer.writerow(row('opening-'+asset, asset_id=asset, **estimate()).facts)
+    upload(page, stream.getvalue().encode())
+    page.get_by_role('button', name='Review against portfolio', exact=True).click()
+    accept = page.get_by_role('button', name='Accept this holding', exact=True)
+    playwright.expect(accept).to_be_disabled()
+    playwright.expect(page.get_by_text('Confirm replacement balances', exact=True)).to_be_visible()
+    page.get_by_text('Accept the displayed replacement balances', exact=True).click()
+    playwright.expect(accept).to_be_enabled()
+    assert not path.exists()
+
+
 @pytest.mark.parametrize('width', [1440, 390])
 def test_listing_popup_search_selection_dismissal_and_navigation(import_page, width):
     from portfolio_app.portfolio.positions import read_snapshot
@@ -435,7 +454,7 @@ def test_existing_portfolio_opens_transaction_import_directly(import_page):
                     'invented-btc,Bitcoin,BTC-EUR,crypto,2,Invented wallet,units,100,EUR,2024-01-01\n')
     before = path.read_bytes()
     open_existing_import(page)
-    playwright.expect(page.get_by_role('radio', name='Transactions', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('radio', name='Transaction CSV', exact=True)).to_be_checked()
     playwright.expect(page.get_by_role('button', name='Download CSV template', exact=True)).to_be_visible()
     assert not page.get_by_text('empty portfolio', exact=False).count()
     assert not page.get_by_text('experimental', exact=False).count()
@@ -473,7 +492,7 @@ def test_existing_portfolio_opens_transaction_import_directly(import_page):
 
     page.get_by_role('radio', name='Holdings snapshot', exact=True).click(); settle(page)
     playwright.expect(page.get_by_text('Holdings snapshots initialize an empty portfolio.', exact=False)).to_be_visible()
-    page.get_by_role('radio', name='Transactions', exact=True).click(); settle(page)
+    page.get_by_role('radio', name='Transaction CSV', exact=True).click(); settle(page)
     playwright.expect(page.get_by_role('combobox', name='Holding · BTC', exact=True)).to_have_value('Bitcoin · Invented wallet')
     holding = page.get_by_role('combobox', name='Holding · BTC', exact=True)
     playwright.expect(holding).to_have_attribute('inputmode', 'none')
@@ -493,7 +512,7 @@ def test_discard_exists_only_for_a_review_and_stays_in_import(import_page):
     settle(page)
     page.get_by_role('button', name='Discard review', exact=True).click(); settle(page)
     playwright.expect(page.get_by_role('radio', name='Import', exact=True)).to_be_checked()
-    playwright.expect(page.get_by_role('radio', name='Transactions', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('radio', name='Transaction CSV', exact=True)).to_be_checked()
     playwright.expect(page.get_by_role('button', name='Download CSV template', exact=True)).to_be_visible()
     assert not page.get_by_role('button', name='Discard review', exact=True).count()
     assert not path.exists()

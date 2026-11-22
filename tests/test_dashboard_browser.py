@@ -81,7 +81,7 @@ def test_chart_click_updates_category_positions_and_back(page):
     positions = page.get_by_role('table', name='Positions', exact=True)
     playwright.expect(positions.get_by_text('Invented Alpha', exact=True)).to_have_count(1)
     playwright.expect(positions.get_by_text('Invented Beta', exact=True)).to_have_count(0)
-    page.get_by_role("button", name="Back", exact=True).click()
+    page.get_by_role("button", name="Up one level", exact=True).click()
     page.wait_for_function("document.querySelector('.js-plotly-plot')?.data[0].labels[0] === 'Portfolio'")
     page.get_by_role("combobox", name="Category", exact=True).click()
     page.get_by_role("option", name="Empty category", exact=True).click()

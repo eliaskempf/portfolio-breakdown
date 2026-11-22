@@ -1,11 +1,12 @@
 # Rebalance {#planning}
 
 Configure [targets](allocation.md#targets), then open **Rebalance → Plan**.
-The default **Portfolio contribution** scope offers **Contribution** and
+The default **Portfolio contribution** scope offers **Contribution** in the reporting currency and
 **Options**, then **Calculate plan**. To use **Rebalancing mode**, select
 **Within a category** and choose a **Planning category**. Legacy portfolios
 without categories show the mode selector directly. Source instrument/account rows are the tradable units;
 Overview/Exposure filters and ETF display groups do not alter this scope.
+A calculated exposure plan stays visible across reruns while its prices, policy and planning inputs still match.
 
 ## Choose scope and mode {#modes}
 

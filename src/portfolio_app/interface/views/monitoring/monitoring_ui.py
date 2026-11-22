@@ -30,6 +30,8 @@ def open_rule(identity):
 
 
 def apply_monitoring_route():
+    if st.session_state.get('main_tabs', 'Monitoring') != 'Monitoring' or st.session_state.get('monitoring_route'):
+        st.session_state.pop('monitoring_delete_requested', None)
     identity = st.session_state.pop('monitoring_route', None)
     if identity:
         st.session_state.update(main_tabs='Monitoring', monitoring_view='Tracked rules', monitoring_selected=identity,
@@ -173,7 +175,7 @@ def _browse(directory, holdings, *, demo=False, existing=None):
             else:
                 st.session_state[key+'symbol'] = seed
         source = st.segmented_control('Instrument source', ['Market indices','Portfolio assets','Provider ticker'],
-            default=None if key+'source' in st.session_state else 'Market indices', key=key+'source',
+            default=None if key+'source' in st.session_state else 'Market indices', required=True, key=key+'source',
             help='Market indices are a fixed set of broad equity benchmarks. Portfolio assets are the unique market tickers of your current nonzero holdings. Provider ticker accepts other instruments.') or 'Market indices'
         if source == 'Market indices':
             from portfolio_app.market.msci_history import INDEX_NAMES
@@ -262,7 +264,12 @@ def _browse(directory, holdings, *, demo=False, existing=None):
 def _account_editor(directory, holdings, journal, *, demo=False, existing=None):
     from portfolio_app.ledger.account_journal import replay
     if not journal or not journal.accounts:
-        st.info('Create an account under Positions → Position tools → Accounts & futures before adding an account alert.')
+        from portfolio_app.interface.views.derivatives.accounts_ui import _key as account_key
+        key = account_key(directory)
+        st.caption('An account is required for an account alert.')
+        st.button('Create account', key='monitoring_create_first_account', on_click=st.session_state.update,
+                  kwargs={'main_tabs': 'Positions', 'positions_workflow_request': 'Accounts & futures',
+                          key+'view': 'Cash & financing', key+'cash_action': 'Create account'})
         return
     key = 'monitoring_account_'+existing.id+'_'+str(existing.revision)+'_' if existing else 'monitoring_account_'
     names = {a.id:a.name for a in journal.accounts}
@@ -372,19 +379,28 @@ def _tracked(directory, holdings, journal, *, demo=False):
         st.session_state['monitoring_selected'] = next(iter(rules))
     identity = st.selectbox('Rule details', list(rules), format_func=lambda x:rules[x].name, key='monitoring_selected')
     rule = rules[identity]
+    if st.session_state.get('monitoring_delete_requested') != identity:
+        st.session_state.pop('monitoring_delete_requested', None)
     st.caption(describe(rule))
     a,b,c = st.columns(3)
     if a.button('Resume rule' if not rule.enabled else 'Pause rule', key='monitoring_pause'):
+        st.session_state.pop('monitoring_delete_requested', None)
         save_rule(directory, replace(rule, revision=rule.revision+1, enabled=not rule.enabled, created_at=utc_now().isoformat()), expected_rule_revision=rule.revision)
         monitoring_for(directory,demo=demo).schedule(refresh=True)
         st.rerun()
     if b.button('Edit rule', key='monitoring_edit'):
+        st.session_state.pop('monitoring_delete_requested', None)
         st.session_state['monitoring_editing'] = identity
     if c.button('Delete rule', key='monitoring_delete'):
+        st.session_state.pop('monitoring_editing', None)
         st.session_state['monitoring_delete_requested'] = identity
     if st.session_state.get('monitoring_delete_requested') == identity:
         st.warning('Delete this saved rule? Recorded observations and alerts will remain in History.')
-        if st.button('Confirm deletion', key='monitoring_delete_confirm'):
+        with st.container(horizontal=True):
+            confirm = st.button('Confirm deletion', key='monitoring_delete_confirm')
+            st.button('Cancel deletion', key='monitoring_delete_cancel',
+                      on_click=st.session_state.pop, args=('monitoring_delete_requested', None))
+        if confirm:
             delete_rule(directory, identity, rule.revision)
             st.session_state.pop('monitoring_delete_requested', None)
             st.rerun()
@@ -449,7 +465,9 @@ def _history(doc, identity=None):
 def render_monitoring(directory, holdings, journal, *, demo=False):
     apply_monitoring_route()
     view = st.segmented_control('Monitoring view', ['Browse','Tracked rules','Account alerts','History'],
-                                default='Browse', key='monitoring_view') or 'Browse'
+                                default='Browse', required=True, key='monitoring_view') or 'Browse'
+    if view != 'Tracked rules':
+        st.session_state.pop('monitoring_delete_requested', None)
     try:
         if view == 'Tracked rules':
             service = monitoring_for(directory, demo=demo)

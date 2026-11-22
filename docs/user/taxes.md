@@ -86,6 +86,10 @@ capital gains tax base rate through the statutory formula. Solidarity surcharge
 is included. Loss offsets, foreign-tax credits and personal income-tax assessment
 are not modelled.
 
+The estimate identifies the price basis used by the selected holdings. When
+the summary shows **Mixed price bases**, open fund details to see each basis.
+Narrowing the filter shows the number of eligible holdings selected.
+
 **Available allowance** is the amount still available for the selected scope in
 the *receipt year*, which follows the calculation year. It defaults to €0 and is
 applied once to the combined taxable amount. Changing the selection or year resets

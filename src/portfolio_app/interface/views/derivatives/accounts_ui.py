@@ -33,9 +33,18 @@ def _money_input(label, key, value='0', *, help=None):
     return decimal(st.text_input(label, value=value, key=key, help=help), label)
 
 
+def _decimal_entry(label, key, placeholder):
+    from portfolio_app.derivatives.derivative_types import decimal
+    text = st.text_input(label, key=key, placeholder=placeholder).strip()
+    return decimal(text, label) if text else None
+
+
 def _save_review(directory, journal, revision, candidate, key, *, holdings_revision=None,
                  review_label='Review changes', save_label='Save reviewed changes', compare_balances=False):
     """Require explicit review; preserve the exact reviewed candidate on reruns."""
+    if candidate == journal:
+        st.session_state.pop(key+'pending', None)
+        return
     ledger = _imports()
     import json
     raw = asdict(candidate)
@@ -101,14 +110,16 @@ def _save_review(directory, journal, revision, candidate, key, *, holdings_revis
             st.rerun()
 
 
-def _account_choice(directory, journal, snapshot, valued, *, key, day, allow_funding=True):
+def _account_choice(directory, journal, snapshot, valued, *, key, day, allow_funding=True, creating=False):
     """Return journal candidate and account ID; explicitly adopt or add cash."""
     ledger = _imports()
-    names = {a.id: a.name for a in journal.accounts}
-    selected = st.selectbox('Account', ['', *names], format_func=lambda x: names.get(x, 'Create account'), key=key+'account', help=field_help('Account'))
     candidate = journal
-    if selected:
-        return candidate, selected
+    if not creating:
+        names = {a.id: a.name for a in journal.accounts}
+        selected = st.selectbox('Account', ['', *names], format_func=lambda x: names.get(x, 'Create account'),
+                                key=key+'account', help=field_help('Account'))
+        if selected:
+            return candidate, selected
     name = st.text_input('Account name', key=key+'account_name', help=field_help('Account name'))
     currency = st.selectbox('Opening cash currency', ['EUR','USD','GBP'], key=key+'cash_currency', help=field_help('Opening cash currency'))
     linked = {x.position_id for x in journal.cash_links}
@@ -234,10 +245,6 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
     names = {a.id: a.name for a in journal.accounts}
     requested = st.session_state.pop('accounts_requested_position', None)
     if requested is not None:
-        owners = {p.id: p.account_id for p in (*journal.positions, *journal.investments)}
-        owners.update({link.position_id: link.account_id for link in journal.cash_links})
-        if requested in owners:
-            st.session_state[key+'coverage_account'] = owners[requested]
         from portfolio_app.interface.views.derivatives.investment_ui import route_investment_request
         if route_investment_request(journal, requested, key):
             st.session_state[key+'view'] = 'Positions & transactions'
@@ -248,9 +255,20 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
             sync_contract_investment(journal, key)
         else:
             st.session_state[key+'view'] = 'Cash & financing'
+            st.session_state[key+'cash_action'] = None
+            # The valuation pipeline already resolves cash links, loans and pending claims.
+            # Use its account/currency fields, including for opaque generated row IDs.
+            if requested and 'account_id' in valued:
+                match = valued.loc[valued.position_id.eq(requested)]
+                if not match.empty and match.iloc[0].account_id in names:
+                    st.session_state[key+'cash_account'] = match.iloc[0].account_id
+                    st.session_state[key+'cash_currency'] = match.iloc[0].quote_currency
+    if origin := st.session_state.get('accounts_return_tab'):
+        st.button(f'Back to {origin}', key=key+'return', icon=':material/arrow_back:',
+                  on_click=st.session_state.update, kwargs={'main_tabs': origin})
     st.session_state.setdefault(key+'view', 'Positions & transactions')
     view = st.segmented_control('Account workspace', ['Positions & transactions', 'Cash & financing', 'Collateral', 'Marks & FX', 'Settlement history', 'Studies'],
-        key=key+'view')
+        required=True, key=key+'view')
     if view == 'Studies':
         from portfolio_app.interface.views.studies.generalized_studies_ui import render_generalized_studies
         from portfolio_app.derivatives.futures_valuation import load_valuations
@@ -268,12 +286,15 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
     if view == 'Marks & FX':
         render_marks(directory, journal)
         return
-    if not journal.accounts:
-        st.info('Add a futures position from Positions → Add position → Future, or create an account below.')
-    from portfolio_app.interface.views.monitoring.monitoring_ui import request_monitoring
-    st.button('Create account alert', key=key+'monitoring', on_click=request_monitoring)
+    if not journal.accounts and view != 'Cash & financing':
+        st.button('Create account', key=key+'start_account', on_click=st.session_state.update,
+                  kwargs={key+'view': 'Cash & financing', key+'cash_action': 'Create account'})
+        return
+    if journal.accounts and view not in ('Collateral', 'Cash & financing'):
+        from portfolio_app.interface.views.monitoring.monitoring_ui import request_monitoring
+        st.button('Create account alert', key=key+'monitoring', on_click=request_monitoring)
     if view == 'Cash & financing':
-        render_cash(directory, journal, revision, snapshot, valued)
+        render_cash(directory, journal, revision, snapshot, valued, state=state)
         return
     if view == 'Collateral':
         from portfolio_app.interface.views.derivatives.account_margin_ui import render_account_margin
@@ -291,6 +312,14 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
     render_activity(directory, journal, revision, key=key+'journal_')
 
 
+def _contract_label(balance, accounts):
+    return f'{balance.contract.product} {balance.contract.expiry} · {accounts[balance.spec.account_id]}'
+
+
+def _claim_label(claim):
+    return f'{claim.kind} · {claim.due_date} · {claim.amount} {claim.currency}'
+
+
 def render_transaction(directory, journal, revision, *, position_ids=None, key_prefix=None):
     ledger = _imports()
     from portfolio_app.derivatives.derivative_types import ContractSpec
@@ -304,7 +333,7 @@ def render_transaction(directory, journal, revision, *, position_ids=None, key_p
     if key_prefix is not None and key+'position' not in st.session_state:
         st.session_state[key+'position'] = next((p for p in reversed(choices) if state.positions[p].quantity), choices[-1])
     identity = st.selectbox('Contract position', choices,
-        format_func=lambda p: f'{state.positions[p].contract.product} {state.positions[p].contract.expiry} · {names[state.positions[p].spec.account_id]}',
+        format_func=lambda p: _contract_label(state.positions[p], names),
         key=key+'position', on_change=sync_contract_investment if key_prefix is None else None, args=(journal, _key(directory)) if key_prefix is None else None)
     balance = state.positions[identity]
     if journal.investments and not balance.spec.investment_id:
@@ -326,7 +355,7 @@ def render_transaction(directory, journal, revision, *, position_ids=None, key_p
                 st.info('No pending cash for this account.')
                 return
             pending = st.selectbox('Cash claim', choices,
-                format_func=lambda p: f'{state.pending[p].kind} · {state.pending[p].due_date} · {state.pending[p].amount} {state.pending[p].currency}',
+                format_func=lambda p: _claim_label(state.pending[p]),
                 key=key+'pending_id')
             candidate = ledger.append_event(candidate, _event(candidate, 'receive', day, account_id=account, reference=pending))
         elif action in {'Fee', 'Tax payment / withholding'}:
@@ -335,7 +364,10 @@ def render_transaction(directory, journal, revision, *, position_ids=None, key_p
             if action != 'Fee':
                 st.caption('Optional payment entered by you; no tax calculation or liability estimate.')
         else:
-            price = _money_input('Settlement price' if action in {'Record settlement', 'Final settlement / expiry'} else 'Execution price', key+'price', '')
+            price_label = 'Settlement price' if action in {'Record settlement', 'Final settlement / expiry'} else 'Execution price'
+            price = _decimal_entry(price_label, key+'price', 'Enter price in points')
+            if price is None:
+                return
             if action in {'Record settlement', 'Final settlement / expiry'}:
                 candidate = ledger.append_event(candidate, _event(candidate, 'settlement' if action == 'Record settlement' else 'final_settlement', day, price=price, **base))
             else:
@@ -351,7 +383,9 @@ def render_transaction(directory, journal, revision, *, position_ids=None, key_p
                         return
                     if expiry.isoformat() <= contract.expiry:
                         raise DataError('Choose a new maturity later than the current contract.')
-                    new_price = _money_input('New contract execution price', key+'next_price', '')
+                    new_price = _decimal_entry('New contract execution price', key+'next_price', 'Enter price in points')
+                    if new_price is None:
+                        return
                     new_quantity = int(st.number_input('New signed contracts', value=balance.quantity, step=1, key=key+'next_quantity'))
                     next_contract = replace(contract, expiry=expiry.isoformat(), last_trade_date='', final_settlement_date='')
                     next_id = st.session_state.setdefault(key+'next_position_id_' + identity + '_' + expiry.isoformat(), uuid4().hex)
@@ -369,31 +403,51 @@ def render_transaction(directory, journal, revision, *, position_ids=None, key_p
         st.info(str(exc))
 
 
-def render_cash(directory, journal, revision, snapshot, valued):
+def render_cash(directory, journal, revision, snapshot, valued, *, state=None):
     ledger = _imports()
     key = _key(directory)+'cash_'
-    state = ledger.replay(journal)
+    state = state if state is not None else ledger.replay(journal)
     names = {a.id: a.name for a in journal.accounts}
-    st.dataframe(pd.DataFrame([{'Account': names[a], 'Currency':c, 'Cash':'Unknown' if (a,c) in state.unknown_cash else str(v)} for (a,c),v in state.cash.items()]), hide_index=True)
-    if state.loans:
-        st.dataframe(pd.DataFrame([{'Account': names[a], 'Currency':c, 'Loan':l, 'Debt':str(v)} for (a,c,l),v in state.loans.items()]), hide_index=True)
+    account = st.selectbox('Cash account', list(names), format_func=names.get, key=key+'account') if names else None
+    if account:
+        cash = [{'Currency': c, 'Cash': 'Unknown' if (a, c) in state.unknown_cash else str(v)}
+                for (a, c), v in state.cash.items() if a == account]
+        if cash:
+            st.dataframe(pd.DataFrame(cash), hide_index=True)
+        else:
+            st.caption('No cash balances recorded.')
+        loans = [{'Currency': c, 'Loan': loan, 'Debt': str(v)}
+                 for (a, c, loan), v in state.loans.items() if a == account]
+        if loans:
+            st.dataframe(pd.DataFrame(loans), hide_index=True)
+        claims = [{'Currency': claim.currency, 'Pending': str(claim.amount), 'Due': claim.due_date}
+                  for claim in state.pending.values() if claim.account_id == account]
+        if claims:
+            st.dataframe(pd.DataFrame(claims), hide_index=True)
+        from portfolio_app.interface.views.monitoring.monitoring_ui import request_monitoring
+        st.button('Create account alert', key=key+'monitoring', on_click=request_monitoring, kwargs={'account': account})
+    actions = ['Create account', 'Opening currency balance', 'Reconcile cash balance', 'Deposit / withdrawal',
+               'Transfer', 'Receive pending cash', 'Currency conversion', 'Record existing debt',
+               'Borrow', 'Repay', 'Interest', 'Fee', 'Tax payment']
+    action = st.selectbox('Cash action', actions, index=None, placeholder='Choose an action',
+                          key=key+'action') if account else 'Create account'
+    if not action:
+        return
     day = st.date_input('Balance / financing date', max_value=date.today(), key=key+'date')
-    action = st.selectbox('Cash action', ['Create account', 'Opening currency balance', 'Reconcile cash balance', 'Deposit / withdrawal', 'Transfer', 'Receive pending cash', 'Currency conversion', 'Record existing debt', 'Borrow', 'Repay', 'Interest', 'Fee', 'Tax payment'], key=key+'action')
     try:
         if action == 'Create account':
-            candidate, _ = _account_choice(directory, journal, snapshot, valued, key=key+'create_', day=day)
+            candidate, _ = _account_choice(directory, journal, snapshot, valued, key=key+'create_', day=day, creating=True)
             _save_review(directory, journal, revision, candidate, key, holdings_revision=snapshot.revision)
             return
-        if not names:
+        if not account:
             return
-        account = st.selectbox('Cash account', list(names), format_func=names.get, key=key+'account')
         currency = st.selectbox('Currency', ['EUR','USD','GBP'], key=key+'currency')
         if action == 'Receive pending cash':
             choices = [p.id for p in state.pending.values() if p.account_id == account]
             if not choices:
                 st.info('No pending cash for this account.')
                 return
-            pending = st.selectbox('Pending transfer or claim', choices, key=key+'pending')
+            pending = st.selectbox('Pending transfer or claim', choices, format_func=lambda p: _claim_label(state.pending[p]), key=key+'pending')
             candidate = ledger.append_event(journal, _event(journal, 'receive', day, account_id=account, reference=pending))
             _save_review(directory,journal,revision,candidate,key)
             return
@@ -436,10 +490,12 @@ def render_marks(directory, journal):
     marks, rates, revision = load_observations(directory)
     key = _key(directory)+'marks_'
     if state.positions:
-        identity = st.selectbox('Position to value', list(state.positions), key=key+'position')
+        names = {account.id: account.name for account in journal.accounts}
+        identity = st.selectbox('Position to value', list(state.positions),
+            format_func=lambda p: _contract_label(state.positions[p], names), key=key+'position')
         contract = state.positions[identity].contract
         day = st.date_input('Observation business date', max_value=date.today(), key=key+'date')
-        if st.button('Fetch exact-contract settlement', key=key+'fetch'):
+        if st.button('Fetch and save settlement mark', key=key+'fetch', help='Updates the valuation mark for this contract. Cash postings are recorded separately.'):
             try:
                 observation = fetch_settlement(contract, day.isoformat())
                 marks[identity] = bind_mark(journal, identity, observation)
@@ -450,10 +506,10 @@ def render_marks(directory, journal):
         if identity in marks:
             st.caption(f'{marks[identity].price} points · {marks[identity].date} · {marks[identity].source}')
         try:
-            price = _money_input('Manual mark price',key+'price','')
-            kind = st.selectbox('Mark kind',['manual','daily_settlement','final_settlement'],key=key+'kind')
+            price = _decimal_entry('Manual mark price', key+'price', 'Enter price in points')
+            kind = st.selectbox('Mark kind', ['manual','daily_settlement','final_settlement'], format_func=lambda kind: kind.replace('_', ' ').title(), key=key+'kind')
             source = st.text_input('Mark source', value='Manual observation', key=key+'source')
-            if st.button('Save mark only', key=key+'save'):
+            if st.button('Save mark only', disabled=price is None, key=key+'save'):
                 marks[identity] = bind_mark(journal, identity, PriceObservation(contract.id,day.isoformat(),price,kind=kind,source=source))
                 save_observations(directory,marks,rates,revision)
                 st.rerun()
@@ -465,8 +521,8 @@ def render_marks(directory, journal):
         target = st.selectbox('To currency',[c for c in ['EUR','USD','GBP'] if c != source],key=key+'fx_to')
         day = st.date_input('FX observation date',max_value=date.today(),key=key+'fx_date')
         try:
-            rate = _money_input('To-currency units per one from-currency unit',key+'fx_rate','')
-            if st.button('Save FX observation',key=key+'fx_save'):
+            rate = _decimal_entry('To-currency units per one from-currency unit', key+'fx_rate', 'Enter exchange rate')
+            if st.button('Save FX observation', disabled=rate is None, key=key+'fx_save'):
                 if rate <= 0:
                     raise DataError('FX rate must be positive.')
                 rates[source,target] = dict(source_currency=source,target_currency=target,rate=str(rate),date=day.isoformat(),source='Manual FX observation')

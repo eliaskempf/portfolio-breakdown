@@ -40,7 +40,7 @@ rejects quarantined copies, and interactive installation approval on a personal
 Mac remains unverified. This limitation must accompany the release download.
 Do not substitute an older DMG for a fresh same-source candidate.
 
-The app's **? → User guide** opens the exact bundled public documentation, even
+The app's **App help → User guide** opens the exact bundled public documentation, even
 without internet or Pages publication. Source guides are under `docs/user/`;
 the static published archive belongs on `gh-pages`. See [user installation guide](user/install.md)
 for detailed installation, upgrades and removal.

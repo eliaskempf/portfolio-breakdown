@@ -1,6 +1,6 @@
 """Explicit portfolio and category planning scopes."""
 
-from portfolio_app.interface.shared.currency_display import money
+from portfolio_app.interface.shared.currency_display import money, money_label
 from hashlib import sha256
 
 import pandas as pd
@@ -20,7 +20,7 @@ def render_scoped_rebalancing(valued, config):
     if st.session_state.get('planning_scope') == 'Within a bucket':
         st.session_state['planning_scope'] = 'Within a category'
     workflow = st.segmented_control('Planning scope', help='Choose the part of the portfolio whose targets the plan should address.', key='planning_scope',
-        options=['Portfolio contribution', 'Within a category'], default='Portfolio contribution') or 'Portfolio contribution'
+        options=['Portfolio contribution', 'Within a category'], required=True, default='Portfolio contribution') or 'Portfolio contribution'
     if valued is None or valued.empty:
         st.info('Load positions before planning.')
         return
@@ -29,7 +29,9 @@ def render_scoped_rebalancing(valued, config):
         names = category_labels(config)
         leaves = sorted(config.descendants(), key=names.get)
         if not leaves:
-            st.info('Configure a category in Targets first.')
+            st.info('This portfolio has no planning categories.')
+            st.button('Set up categories', on_click=st.session_state.update,
+                      kwargs={'rebalance_tabs': 'Targets', 'exposure_target_mode': 'Category targets'})
             return
         if st.session_state.get('planning_bucket') not in leaves:
             st.session_state['planning_bucket'] = leaves[0]
@@ -55,7 +57,7 @@ def render_scoped_rebalancing(valued, config):
         return
     st.caption('Allocate across category targets, then balance positions within each category.')
     amount_col, options_col = st.columns([3, 1], vertical_alignment='bottom')
-    amount = amount_col.number_input('Contribution', help='Additional money available for purchases within the chosen planning scope.', key='planning_amount', min_value=.01, value=500., step=50.)
+    amount = amount_col.number_input(money_label('Contribution'), help='Additional money available for purchases within the chosen planning scope.', key='planning_amount', min_value=.01, value=500., step=50.)
     original = valued
     with options_col.popover('Options', help='Configure eligible positions, purchase limits and contribution constraints.', width='stretch'):
         st.markdown('**Positions**')
@@ -69,7 +71,7 @@ def render_scoped_rebalancing(valued, config):
         st.markdown('**Purchase rules**')
         buy_all = st.selectbox('Selection intent', help='Choose how the selected positions participate in the contribution plan.', key='planning_intent',
                                options=['Allow skipping positions', 'Buy every selected position']) == 'Buy every selected position'
-        minimum = st.number_input('Minimum purchase', help='Minimum size of each suggested purchase; this affects which plans are feasible.', key='planning_minimum', min_value=.01, value=25.)
+        minimum = st.number_input(money_label('Minimum purchase'), help='Minimum size of each suggested purchase; this affects which plans are feasible.', key='planning_minimum', min_value=.01, value=25.)
         max_trades = int(st.number_input('Maximum trades', help='Upper limit on the number of suggested purchases.', key=f'planning_max_trades_{len(valued)}',
                          min_value=1, max_value=max(1, len(valued)), value=max(1, len(valued))))
         fewer = st.toggle('Compare fewer trades', key='planning_fewer')

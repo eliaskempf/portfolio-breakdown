@@ -189,7 +189,7 @@ def render_investment_detail(directory, journal, revision, valued, identity, *, 
                     help='Signed contract notional, separate from allocated capital.')
             render_freshness(matches, render_metrics)
     view = st.segmented_control('Futures position view', views, key=key+'view',
-        default=st.session_state[key+'view'], label_visibility='collapsed') or 'Chart'
+        default=st.session_state[key+'view'], required=True, label_visibility='collapsed') or 'Chart'
     st.session_state[key+'selected_view'] = view
     if view == 'Chart':
         from portfolio_app.interface.views.derivatives.futures_chart_ui import render_futures_chart

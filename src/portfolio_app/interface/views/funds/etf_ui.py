@@ -72,7 +72,7 @@ def render_fund_details(funds: list[FundSnapshot], selected: pd.DataFrame, *, ho
             if fund.notes:
                 st.caption(fund.notes)
             view = st.segmented_control('Breakdown view', ['Holdings', 'Summary'], help='Choose between fund composition summaries and individual underlying holdings.',
-                default='Summary' if fund.asset_class in {'fixed_income', 'money_market'} else 'Holdings',
+                required=True, default='Summary' if fund.asset_class in {'fixed_income', 'money_market'} else 'Holdings',
                 key=f'{key_prefix}fund_view_{fund.fund_id}')
             if view == 'Summary':
                 render_fund_summary(fund, key_prefix=key_prefix)

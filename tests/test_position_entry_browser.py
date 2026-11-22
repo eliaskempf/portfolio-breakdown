@@ -27,6 +27,29 @@ def enter(dialog, label, value):
     field.press('Tab')
 
 
+def test_recording_method_and_draft_survive_inspecting_another_position(ux_page):
+    page, _ = ux_page
+    dialog = add_manually(page)
+    method = dialog.get_by_role('radio', name='Existing holding', exact=True)
+    method.click()
+    playwright.expect(method).to_be_checked()
+    name = dialog.get_by_role('textbox', name='Instrument name', exact=True)
+    page.streamlit_reruns.commit_text(page, name, 'Invented unfinished holding')
+    page.keyboard.press('Escape')
+    playwright.expect(dialog).to_have_count(0)
+    playwright.expect(page.get_by_role('button', name='Discard draft & add position', exact=True)).to_be_visible()
+    table = page.get_by_role('table', name='Positions', exact=True)
+    edit = table.get_by_role('button', name='Edit Invented Global · First', exact=True)
+    page.streamlit_reruns.click(page, edit)
+    dialog.get_by_role('button', name='Keep draft and view details').click()
+    playwright.expect(dialog.get_by_role('radio', name='History', exact=True)).to_be_visible()
+    page.keyboard.press('Escape')
+    playwright.expect(dialog).to_have_count(0)
+    page.streamlit_reruns.click(page, page.get_by_role('button', name='Resume unsaved edit'))
+    playwright.expect(name).to_have_value('Invented unfinished holding')
+    playwright.expect(method).to_be_checked()
+
+
 def test_linked_entry_layout_tooltips_and_save(ux_page):
     page, directory = ux_page
     dialog = add_manually(page)

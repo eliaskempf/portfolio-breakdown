@@ -87,6 +87,7 @@ unknown/stale states and limitations against the implementation and tests.
 A green build, matching timestamp, presence of a topic or a written declaration
 **does not prove semantic accuracy**. Before a candidate, a reviewer walks through
 the affected tasks with invented data and records source SHA plus evidence.
+For interface changes, walk the affected task using the [portfolio workflow review checklist](user/workflow-design.md#reviewing-a-change). Update the guideline when a reusable convention changes.
 Revisit this mapping when features move; do not treat it as exhaustive coverage.
 
 | Feature / source | User guide and stable anchor | Useful existing tests |

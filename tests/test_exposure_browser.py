@@ -23,6 +23,20 @@ def exposure_page(ux_page):
     return page, directory
 
 
+def test_exposure_view_remains_selected_and_search_matches_its_scope(exposure_page):
+    page, _ = exposure_page
+    companies = page.get_by_role('radio', name='Companies', exact=True)
+    companies.click()
+    playwright.expect(companies).to_be_checked()
+    companies.click()
+    playwright.expect(companies).to_be_checked()
+    page.get_by_role('radio', name='Themes & sectors', exact=True).click()
+    search = page.get_by_role('textbox', name='Search exposure', exact=True)
+    playwright.expect(search).to_be_disabled()
+    page.get_by_role('radio', name='Assets', exact=True).click()
+    playwright.expect(search).to_be_enabled()
+
+
 def test_assets_first_filters_breakdown_and_source_dialog(exposure_page):
     page, directory = exposure_page
     results = page.locator('.st-key-exposure_results')

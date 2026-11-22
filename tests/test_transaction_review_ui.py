@@ -112,7 +112,8 @@ def test_earlier_holdings_require_explicit_starting_inventory(tmp_path):
     next(s for s in app.selectbox if s.label == 'Before the first transaction').set_value('Earlier holdings').run()
     assert not app.exception
     assert not any(b.label.startswith('Apply') for b in app.button)
-    assert any(i.value == 'Starting balance required' for i in app.info)
+    assert any('Record the earlier starting balance' in message.value for message in app.caption)
+    assert button(app, 'Review against portfolio').disabled
     assert not (tmp_path/'holdings.csv').exists()
 
 

@@ -179,7 +179,7 @@ def render_futures(valued, data_dir, position, revision, *, allocation=None, fun
             st.warning('The collateral budget exceeds the base portfolio value. It is not added as new capital.')
     with results_area:
         view = st.segmented_control('Futures analysis', ['Funding policies', 'Stress & history', 'Investment outcomes'],
-                                     default='Funding policies', key=f'futures_input_{context}_view_v3', label_visibility='collapsed')
+                                     default='Funding policies', required=True, key=f'futures_input_{context}_view_v3', label_visibility='collapsed')
         from portfolio_app.interface.views.studies.futures_assumptions_ui import render_shared_assumptions
         # Standalone cash belongs above outcome charts; it is not the funding-study reserve.
         with (results_area if view == 'Investment outcomes' else settings_area):

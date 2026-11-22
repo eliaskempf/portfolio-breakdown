@@ -101,6 +101,14 @@ def test_browse_save_edit_pause_delete_and_recorded_history(tmp_path):
     assert not load_monitoring(tmp_path)[0]['rules'][0]['enabled']
     by_label(app.button,'Resume rule').click().run()
     by_label(app.button,'Delete rule').click().run()
+    by_label(app.button,'Cancel deletion').click().run()
+    assert len(load_monitoring(tmp_path)[0]['rules']) == 1
+    assert 'Confirm deletion' not in [b.label for b in app.button]
+    by_label(app.button,'Delete rule').click().run()
+    by_label(app.get('button_group'), 'Monitoring view').set_value('History').run()
+    by_label(app.get('button_group'), 'Monitoring view').set_value('Tracked rules').run()
+    assert 'Confirm deletion' not in [b.label for b in app.button]
+    by_label(app.button,'Delete rule').click().run()
     by_label(app.button,'Confirm deletion').click().run()
     assert not app.exception and not load_monitoring(tmp_path)[0]['rules']
 

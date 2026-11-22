@@ -109,7 +109,7 @@ def test_upload_review_chart_allocation_and_listing(import_page):
     if page.delayed_navigation:
         gate.touch()
     page.get_by_role('tab', name='Overview', exact=True).click()
-    playwright.expect(page.get_by_text('Open Positions and choose Add position to get started.', exact=True)).to_be_visible()
+    playwright.expect(page.get_by_text('No positions yet.', exact=True)).to_be_visible()
     if page.delayed_navigation:
         page.evaluate('window.holdNavigation = true')
     page.get_by_role('tab', name='Positions', exact=True).click()
@@ -140,7 +140,9 @@ def test_upload_review_chart_allocation_and_listing(import_page):
     page.get_by_role('button', name='Enable reviewed allocation', exact=True).click()
     page.get_by_role('button', name='Save categories', exact=True).wait_for()
     assert path.with_name('allocation.yaml').exists()
-    page.get_by_role('button', name='Connect live prices', exact=True).first.click()
+    playwright.expect(page.get_by_role('button', name='Dismiss import tips')).to_have_count(0)
+    page.get_by_role('tab', name='Positions', exact=True).click()
+    page.get_by_role('radio', name='Connect live prices', exact=True).click()
     page.get_by_role('button', name='Search listings', exact=True).click()
     page.get_by_role('combobox', name='Price listing', exact=True).click()
     page.get_by_role('combobox', name='Price listing', exact=True).fill('NVDA')
@@ -163,6 +165,23 @@ def test_upload_review_chart_allocation_and_listing(import_page):
     playwright.expect(exposure).to_have_attribute('aria-selected', 'true')
     page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
     playwright.expect(page.locator('[data-testid="stException"]')).to_have_count(0)
+
+
+def test_post_import_shortcut_opens_listing_setup_and_clears_tips(import_page):
+    page, _ = import_page
+    page.get_by_role('button', name='Import holdings', exact=True).click()
+    page.locator('input[type=file]').set_input_files({
+        'name': 'invented.csv', 'mimeType': 'text/csv', 'buffer': b'Name;Quantity\nInvented fund;2\n',
+    })
+    page.get_by_text('Quantities are shares/units and prices are amounts per unit (not nominal values or percent quotes)', exact=True).click()
+    page.get_by_role('button', name='Import reviewed positions', exact=True).click()
+    page.get_by_role('button', name='Connect live prices', exact=True).click()
+    playwright.expect(page.get_by_role('tab', name='Positions', exact=True)).to_have_attribute('aria-selected', 'true')
+    playwright.expect(page.get_by_role('radio', name='Connect live prices', exact=True)).to_be_checked()
+    playwright.expect(page.get_by_role('button', name='Search listings', exact=True)).to_be_visible()
+    page.get_by_role('tab', name='Overview', exact=True).click()
+    playwright.expect(page.get_by_role('table', name='Positions', exact=True)).to_contain_text('Invented fund')
+    playwright.expect(page.get_by_role('button', name='Dismiss import tips', exact=True)).to_have_count(0)
 
 
 def test_cancel_upload_writes_nothing(import_page):

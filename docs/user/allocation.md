@@ -58,7 +58,7 @@ Categories containing subcategories use Member targets.
 ## Read the Overview {#overview}
 
 Select a category to focus its chart, allocation table and positions. Current
-and target percentages use the selected category as their denominator. Back,
+and target percentages use the selected category as their denominator. **Up one level**,
 the category selector, or the chart center returns to a parent. Parent rows
 include descendants: adding parent and child values double-counts them.
 Missing prices suppress complete percentages; the chart represents known value.
@@ -94,12 +94,12 @@ exposure against a 40% target gives a −5 pp gap. This composition comparison
 requires no target leverage multiple and does not create target currency amounts
 or change saved percentages. A separately saved market-exposure policy takes
 precedence; an equity-only or invalid policy is not replaced by this fallback.
-Use **Edit** beside either table heading for a compact editor of the selected
+Use **Edit targets** beside either table heading for a compact editor of the selected
 category’s target percentages. The split must total 100%; **Save** applies it and
 **Cancel** discards it. A group with one shared target opens its parent’s split.
 At Portfolio scope, a saved exposure policy also offers its total exposure
 multiple. **Manage targets** opens the full configuration for policy settings,
-category structure and member priorities.
+category structure and member priorities. With unsaved edits, **Discard edits & manage targets** opens the saved configuration.
 Hover over the heading for its measure definition. Exposure targets are a separate policy under
 **Rebalance → Targets → Exposure targets**: choose a desired total multiple of
 portfolio net equity and category composition. Capital targets stay unchanged.

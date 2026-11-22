@@ -31,8 +31,9 @@ def test_welcome_demo_and_manual_save_are_isolated(tmp_path):
     by_label(app.button, 'Start my portfolio').click().run()
     by_label(app.button, 'Skip setup').click().run()
     assert app.session_state['main_tabs'] == 'Overview'
-    activate(app, 'Positions')
+    assert not any('planning inputs' in item.value for item in app.info)
     by_label(app.button, 'Add position').click().run()
+    assert app.session_state['main_tabs'] == 'Positions'
     by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     assert not app.exception
     by_label(app.button, 'Enter manually').click().run()
@@ -218,8 +219,17 @@ def test_guided_optional_targets_and_finish_later(tmp_path):
     by_label(app.button, 'Save categories & continue').click().run()
     assert not app.exception
     assert all(b.target is None for b in load_allocation(personal / 'allocation.yaml').buckets)
+    by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
+    by_label(app.text_input, 'Instrument name').set_value('Invented unfinished holding').run()
     by_label(app.button, 'Finish later').click().run()
     assert not app.exception and not (personal / 'holdings.csv').exists()
+    from test_ui import activate
+    if any(button.label == 'Not now' for button in app.button):
+        by_label(app.button, 'Not now').click().run()
+    activate(app, 'Positions')
+    assert by_label(app.button, 'Discard draft & add position')
+    by_label(app.button, 'Resume unsaved edit').click().run()
+    assert by_label(app.text_input, 'Instrument name').value == 'Invented unfinished holding'
     # Saved categories survive restarting an empty workspace; they are not overwritten.
     before = (personal / 'allocation.yaml').read_bytes()
     app = launch_workspaces(personal, create_demo_data(tmp_path / 'second-demo'))

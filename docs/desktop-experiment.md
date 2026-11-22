@@ -6,7 +6,7 @@ build and automated packaged checks. Official publication still requires explici
 approval.
 
 For installation, recovery and removal, see the [user installation guide](user/install.md).
-The app's **? → User guide** opens its matching bundled documentation offline.
+The app's **App help → User guide** opens its matching bundled documentation offline.
 
 ## Targets and build
 

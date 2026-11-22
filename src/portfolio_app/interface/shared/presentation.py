@@ -109,7 +109,12 @@ def workspace_header(demo: bool) -> None:
 
 
 def empty_overview() -> None:
-    st.info("Open Positions and choose Add position to get started.")
+    def add_position():
+        st.session_state.update(main_tabs='Positions', positions_workflow_request='Positions',
+                                empty_overview_add_requested=True)
+    st.info('No positions yet.')
+    st.button('Add position', key='empty_overview_add', icon=':material/add:',
+              type='primary', on_click=add_position)
 
 
 def allocation_total(label: str, value: float) -> None:

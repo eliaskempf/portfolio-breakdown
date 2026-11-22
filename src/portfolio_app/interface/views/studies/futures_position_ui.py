@@ -28,7 +28,7 @@ def render_index_chart(future, directory):
         return
     prices, _ = history
     period = st.segmented_control('Chart period', ['1M', '3M', '1Y', 'All'], default='1Y',
-                                  key='future_position_chart_period', label_visibility='collapsed') or '1Y'
+                                  required=True, key='future_position_chart_period', label_visibility='collapsed') or '1Y'
     end = prices.index[-1]
     start = end - pd.DateOffset(months={'1M': 1, '3M': 3, '1Y': 12}[period]) if period != 'All' else prices.index[0]
     selected = prices.loc[prices.index >= start]

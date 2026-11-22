@@ -200,6 +200,8 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
             for warning in preview.warnings:
                 st.caption(warning)
     blocked = not checkpoints or any(c['after'] is None for c in preview.cash)
+    if blocked:
+        st.caption('Confirm replacement balances' if not checkpoints else 'Cash amounts missing')
     if multiple:
         identities = [c['position_id'] for c in preview.comparisons]
         complete = all(p in choices for p in identities)
@@ -233,8 +235,6 @@ def render_history_review(build_preview, *, key, apply, keep, action_label=None,
                      help='Apply the displayed balances and retain selected similar entries.'):
             apply(excluded)
         st.button(keep_label, key=key+'keep', on_click=keep)
-    if blocked:
-        st.caption('Confirm replacement balances' if not checkpoints else 'Cash amounts missing')
     return preview
 
 

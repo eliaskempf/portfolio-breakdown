@@ -95,7 +95,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         mark_view_ready()
         return
     currency_context = (str(data_dir.resolve()), currency_settings.revision)
-    initial_setup = st.session_state.get('onboarding_step') == 'position' and st.session_state.get('currency_context', (None, None))[1] is None
+    initial_setup = st.session_state.get('onboarding_step') in {'position', 'done'} and st.session_state.get('onboarding_started') and st.session_state.get('currency_context', (None, None))[1] is None
     if st.session_state.get('currency_context', currency_context) != currency_context:
         # Setup can save a currency after Settings already mounted its selector.
         # Recreate that widget from the saved preference on the next render.
@@ -124,8 +124,11 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             workspace_info(data_dir, persistent_data_dir, demo=demo)
     offline_demo = demo and not (data_dir / '.live-demo').exists()
     demo_pending = demo and live_demo_pending(data_dir)
-    from portfolio_app.interface.views.ingestion.import_ui import render_import_next_steps
-    render_import_next_steps()
+    from portfolio_app.interface.views.ingestion.import_ui import finish_import, apply_import_destination, render_import_next_steps
+    finish_import()
+    for notice_key in ('portfolio_save_notice', 'position_saved_notice'):
+        if notice := st.session_state.pop(notice_key, None):
+            st.success(notice)
     if demo and (data_dir / '.market-history-demo').exists():
         st.caption('History demo · Invented holdings and transactions · Downloaded market prices')
     elif demo and (data_dir / '.history-demo').exists():
@@ -166,7 +169,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         validate_fund_listings(holdings, funds)
     except DataError as exc:
         st.error(str(exc))
-        st.info("Edit holdings.csv and classifications.yaml in the data directory, then rerun the app.")
+        if settings_panel is not None:
+            st.button('Open portfolio settings', on_click=st.session_state.update,
+                      kwargs={'workspace_settings': True},
+                      help='Find the data folder and available backup and restore actions.')
         mark_view_ready()
         return
     coordinator.schedule(data_dir, holdings, funds, demo=offline_demo)
@@ -184,7 +190,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         with display_settings:
             st.markdown('**Display**')
             percent = st.segmented_control('Performance display', [currency_symbol(), '%'], help='Show unrealized performance as a currency amount or a percentage of known cost.',
-                default='%' if st.session_state.get('performance_preferences', {}).get(context_key) == '%' else currency_symbol(),
+                required=True, default='%' if st.session_state.get('performance_preferences', {}).get(context_key) == '%' else currency_symbol(),
                 key=unit_key, on_change=remember_unit) == '%'
             hide_empty = not st.checkbox('Show sold positions', key='show_sold_positions',
                 help='Include zero-unit positions in Overview groups, Positions and Exposure. History, targets and planning weights are retained.')
@@ -239,11 +245,12 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             else:
                 st.warning('Some prices could not be loaded. Choose Refresh prices to try again.')
                 st.dataframe(valued.loc[valued.current_value_reporting.isna(), ['name', 'valuation_note']], hide_index=True)
-                st.caption('You can also explore an offline example with ? → Take the tour, or return to My portfolio using the workspace menu.')
+                st.caption('You can also explore an offline example with App help → Take the tour, or return to My portfolio using the workspace menu.')
                 mark_view_ready()
         return
+    exposure_signature = analytical_signature(valued, funds, str(data_dir.resolve()), reporting_currency, allocation, leverage_context)
     exposure_result = cached_input(
-        'portfolio_exposure', analytical_signature(valued, funds, str(data_dir.resolve()), allocation, leverage_context),
+        'portfolio_exposure', exposure_signature,
         lambda: prepare_exposure(valued, funds, allocation, leverage_context))
     display_valued, display_exposure = valued, exposure_result
     if actual_active:
@@ -253,16 +260,23 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         display_exposure = investment_exposure(exposure_result, display_valued)
     from portfolio_app.interface.views.monitoring.monitoring_ui import apply_monitoring_route
     apply_monitoring_route()
+    if actual_active and st.session_state.pop('accounts_open_requested', False):
+        st.session_state['main_tabs'] = 'Futures'
+    if st.session_state.get('main_tabs') != 'Futures':
+        st.session_state.pop('accounts_return_tab', None)
     if 'main_tabs' not in st.session_state:
         st.session_state['main_tabs'] = 'Positions' if holdings.empty and not feature_active and not security_active else 'Overview'
     from portfolio_app.interface.views.onboarding.tour import prepare_tour, render_tour
     prepare_tour()
+    apply_import_destination()
     tab_names = ['Overview', 'Exposure', 'Positions', 'Rebalance'] + (['Futures'] if sandbox or actual_active else []) + ['Monitoring', 'Taxes']
     if st.session_state['main_tabs'] not in tab_names:
         st.session_state['main_tabs'] = 'Overview'
     tabs = st.tabs(tab_names,
         default='Overview', key='main_tabs', on_change='rerun')
     overview, exposure, positions, rebalance = tabs[:4]
+    if not overview.open:
+        st.session_state.pop('import_complete', None)
     from portfolio_app.interface.views.monitoring.monitoring_ui import watch_monitoring, render_monitoring, render_alert_dialog
     watch_monitoring(data_dir, demo=offline_demo, disabled=tour_active())
     if tabs[-2].open:
@@ -298,14 +312,13 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         with positions:
             render_position_editor(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, embedded=True,
                                    allocation=allocation, valued=display_valued.loc[display_valued.shares.ne(0)].copy() if hide_empty else display_valued,
-                                   account_valued=valued, percent=percent, defer_dialog=True)
+                                   account_valued=valued, percent=percent, defer_dialog=True, has_accounts=actual_active)
     def open_valued_position(position_id, *, editing=False):
         if actual_active and position_id in {p.id for p in journal.positions} | {investment.id for investment in journal.investments}:
             request_position(position_id, editing=editing)
             return
         if actual_active and (position_id in {p.id for p in journal.positions} | {investment.id for investment in journal.investments} | {link.position_id for link in journal.cash_links} or str(position_id).startswith('account-')):
-            st.session_state['main_tabs'] = 'Futures'
-            st.session_state['accounts_requested_position'] = position_id
+            st.session_state.update(main_tabs='Futures', accounts_return_tab='Overview', accounts_requested_position=position_id)
             return
         if read_snapshot(data_dir / 'holdings.csv').revision != snapshot.revision:
             st.session_state['position_stale_notice'] = 'The portfolio changed. Select the position again from the refreshed view.'
@@ -313,6 +326,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         request_position(position_id, editing=editing)
     if overview.open and not unsupported_records:
         with overview:
+            # Mount the tab and its contents before offering shortcuts. A fast click
+            # must submit the new tab's widget state after an import navigates here.
+            import_tips = st.empty() if st.session_state.get('import_complete') else None
             if valued.empty and not feature_active and not security_active:
                 empty_overview()
             else:
@@ -353,6 +369,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                                               portfolio_result=overview_exposure if actual_active or sandbox or leverage.liabilities else None,
                                               portfolio_net_equity=(overview_exposure.net_equity if overview_exposure is not None else
                                                   valued.loc[valued.shares.gt(0), 'current_value_reporting'].sum(skipna=False)), scoped=scoped))
+            if import_tips is not None:
+                with import_tips.container():
+                    render_import_next_steps()
     if exposure.open and not unsupported_records:
         with exposure:
             if visible.empty and exposure_result is None:
@@ -375,7 +394,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                         st.caption('Leverage settings currently require EUR reporting.')
                     if st.session_state.get('exposure_target_mode') == 'Capital targets':
                         st.session_state['exposure_target_mode'] = 'Category targets'
-                    target_mode = st.segmented_control('Target measure', ['Category targets', 'Exposure targets'], default='Exposure targets' if leverage.active_basis == 'exposure' else 'Category targets', key='exposure_target_mode') if (leverage.enabled or actual_active) and leverage_supported else 'Category targets'
+                    target_mode = st.segmented_control('Target measure', ['Category targets', 'Exposure targets'], required=True, default='Exposure targets' if leverage.active_basis == 'exposure' else 'Category targets', key='exposure_target_mode') if (leverage.enabled or actual_active) and leverage_supported else 'Category targets'
                     if target_mode == 'Exposure targets':
                         render_exposure_targets(data_dir, allocation, exposure_result)
                     else:
@@ -396,9 +415,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                             from portfolio_app.interface.views.exposure.exposure_plan_ui import render_exposure_plan
                             if actual_active:
                                 from portfolio_app.derivatives.account_planning import render_account_plan
-                                render_account_plan(data_dir, exposure_result, allocation, valued, journal)
+                                render_account_plan(data_dir, exposure_result, allocation, valued, journal, exposure_signature=exposure_signature)
                             else:
-                                render_exposure_plan(data_dir, exposure_result, allocation, valued, future=actual_future)
+                                render_exposure_plan(data_dir, exposure_result, allocation, valued, future=actual_future, exposure_signature=exposure_signature)
                         elif allocation:
                             if (leverage.enabled or actual_active) and leverage_supported:
                                 st.caption('Capital plan · Recorded holdings only; excludes dedicated futures strategy cash. Notional is not spendable cash.')

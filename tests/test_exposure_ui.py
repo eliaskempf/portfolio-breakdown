@@ -15,6 +15,11 @@ def test_default_exposure_is_all_assets_without_chart_or_label_requirement(multi
     assert table['Total'].sum() == 300
     assert table['Allocation %'].sum() == pytest.approx(100)
     assert table.loc[table.Asset.eq('Invented Alpha'), 'Total'].tolist() == [175]
+    by_label(app.text_input, 'Search exposure').set_value('zz1111111111').run()
+    match = effective(app)
+    assert match.Asset.tolist() == ['Invented Alpha']
+    assert match['Allocation %'].tolist() == pytest.approx([100 * 175 / 300])
+    by_label(app.text_input, 'Search exposure').set_value('').run()
     assert len(app.tabs[1].get('plotly_chart')) == 0
     assert by_label(app.tabs[1].metric, 'Current value').value == '€300.00'
     assert by_label(app.tabs[1].metric, 'Portfolio share').value == '100.0%'
