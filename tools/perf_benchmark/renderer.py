@@ -183,8 +183,10 @@ def exercise(evaluate, control, scenario, *, persistent):
     digest = hashlib.sha256(series.encode()).hexdigest()
     interact(evaluate, '1Y')
     warm = []
-    for _ in range(5):
-        interact(evaluate, 'Allocation')
+    for index in range(5):
+        allocation = interact(evaluate, 'Allocation')
+        if index == 0 and scenario.endswith('-failed'):
+            background['post_notice_navigation'] = allocation
         warm.append(interact(evaluate, 'Performance'))
     interact(evaluate, 'Allocation')  # Restore saved view for the next real process.
     if scenario == 'quote-pending':

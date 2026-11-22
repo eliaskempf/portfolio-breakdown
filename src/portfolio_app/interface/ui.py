@@ -289,7 +289,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             from portfolio_app.interface.views.taxes.tax_ui import render_taxes
             render_taxes(data_dir, holdings, journal, funds, valued, demo=offline_demo)
     from portfolio_app.interface.shared.notifications_ui import notification_bell
-    notification_bell(notifications_slot, data_dir, funds, valued, status, etf_revision=etf_revision,
+    current_etf_notices = notification_bell(notifications_slot, data_dir, funds, valued, status, etf_revision=etf_revision,
         demo=offline_demo, cache_warning=price_service.cache_warning,
         exposure_issues=exposure_result.issues if exposure_result else (), disabled=tour_active(), journal=journal,
         background_prices=background_prices,
@@ -373,7 +373,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                                 and refresh_allowed() and (ignore_selection or selection(persistent_data_dir) == chosen)
                                 and market_coordinator.channel_state(market_workspace, 'valuation')[0] == market_revision
                                 and (not background_prices or price_service.still_current())
-                                and (offline_demo or refresh_revision(data_dir).issues == etf_revision.issues)
+                                and current_etf_notices()
                                 and overview_sources.current())
                     except (DataError, OSError):
                         return False

@@ -3,7 +3,7 @@ import streamlit as st
 from hashlib import sha256
 import json
 
-from portfolio_app.interface.views.funds.etf_refresh_ui import REFRESH_PROGRESS, refresh_notices, render_refresh_status
+from portfolio_app.interface.views.funds.etf_refresh_ui import REFRESH_PROGRESS, refresh_notices, refresh_revision, render_refresh_status
 from portfolio_app.funds.etf_refresh import coordinator
 
 
@@ -40,6 +40,7 @@ def _monitoring_document(directory):
 def notification_bell(slot, directory, funds, valued, status, *, etf_revision=None, demo=False, cache_warning='',
                       exposure_issues=(), disabled=False, journal=None, background_prices=False, on_notices_recorded=None):
     navigated = False
+    displayed_issues = None
 
     def follow_notice(destination):
         nonlocal navigated
@@ -48,7 +49,7 @@ def notification_bell(slot, directory, funds, valued, status, *, etf_revision=No
 
     with slot:
         def indicator(revision):
-            nonlocal navigated
+            nonlocal navigated, displayed_issues
             if navigated:
                 navigated = False
                 st.rerun(scope='app')
@@ -86,9 +87,16 @@ def notification_bell(slot, directory, funds, valued, status, *, etf_revision=No
                         etfs_pending=not demo and coordinator.running(directory),
                         prices_pending=background_prices and market.pending(workspace), cache_warning=cache_warning,
                         exposure_issues=exposure_issues, on_navigate=follow_notice)
+            if revision is not None:
+                displayed_issues = revision.issues
 
         render_refresh_status(directory, funds, etf_revision, demo=demo, show_messages=False,
                               render_indicator=indicator, periodic=bool(journal and journal.positions and not demo))
+
+    def current_etf_notices():
+        return demo or refresh_revision(directory).issues == displayed_issues
+
+    return current_etf_notices
 
 
 def navigate(destination, directory):

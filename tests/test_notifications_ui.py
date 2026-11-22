@@ -154,3 +154,24 @@ def test_overview_reuses_its_own_notification_receipts_and_observes_other_edits(
     assert sources.current() == (external_edit == 'none')
     assert not other_window.current()
     assert store.load_monitoring(tmp_path)[0]['notice_seen'] == ['manual']
+
+
+def test_overview_detects_etf_failure_until_the_bell_has_displayed_it(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    app = AppTest.from_string(f"""
+from pathlib import Path
+from types import SimpleNamespace
+import pandas as pd
+import streamlit as st
+from portfolio_app.funds.etf_refresh import write_json
+from portfolio_app.interface.shared.notifications_ui import notification_bell
+root = Path({str(tmp_path)!r})
+status = SimpleNamespace(estimated_costs=0, problems=pd.DataFrame())
+current = notification_bell(st.container(), root, [], pd.DataFrame(columns=['price_status']), status)
+st.metric('Shown status is current', str(current()))
+write_json(root/'.cache'/'etf-refresh'/'status.json', {{'synthetic': {{'status': 'failed', 'error': 'Invented failure'}}}})
+st.metric('After external update', str(current()))
+""").run()
+    assert not app.exception and [m.value for m in app.metric] == ['True', 'False']
+    app.run()
+    assert not app.exception and [m.value for m in app.metric] == ['True', 'True']

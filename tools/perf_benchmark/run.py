@@ -77,7 +77,10 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
     first = report['first']
     report['first_chart_disk_hits'] = sum(e['event'] == 'disk_hit' and e['chart'] and
         first['click_epoch_ms'] <= e['epoch_ms'] <= first['click_epoch_ms'] + first['settled_ms'] for e in events)
-    for interaction in [report['first'], report['range_3m'], *report['warm']]:
+    interactions = [report['first'], report['range_3m'], *report['warm']]
+    if 'post_notice_navigation' in report:
+        interactions.append(report['post_notice_navigation'])
+    for interaction in interactions:
         begin = interaction.pop('click_epoch_ms')
         specific = [e for e in events if begin <= e['epoch_ms'] <= begin + interaction['settled_ms']]
         interaction['history_compute_ms'] = sum(e['duration_ms'] for e in specific if e['event']=='history_calculated')
@@ -86,6 +89,9 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         sends = [e for e in specific if e['event']=='chart_enqueued']
         if sends:
             interaction['first_chart_enqueue_ms'] = sends[0]['epoch_ms'] - begin
+    post_notice = report.get('post_notice_navigation')
+    if post_notice and post_notice['valuations']:
+        raise AssertionError(f'Navigating after the ETF notice repeated valuation: {post_notice}')
     return report
 
 
