@@ -14,6 +14,7 @@ import unicodedata
 import pandas as pd
 import yaml
 
+from portfolio_app.exposure.taxonomy import copy_classifications
 from portfolio_app.interface.shared.display_names import display_name
 from portfolio_app.funds.etf import FundSnapshot, matching_fund
 from portfolio_app.portfolio.holdings import DataError
@@ -120,7 +121,7 @@ class MergePlan:
     def apply(self, holdings: pd.DataFrame, funds: list[FundSnapshot], classifications: dict):
         """Annotate analysis copies; original identities and positions stay intact."""
         links = {}
-        labels = {asset: dict(paths) for asset, paths in classifications.items()}
+        labels = copy_classifications(classifications)
         for group in self.groups:
             name = group.name + (' *' if group.basis == 'Estimated name match' and group.enabled else '')
             if group.enabled:

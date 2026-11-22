@@ -12,7 +12,7 @@ from portfolio_app.application import PortfolioInputs
 from portfolio_app.portfolio.allocation import load_allocation
 from portfolio_app.funds.etf import FundCatalog
 from portfolio_app.portfolio.positions import read_snapshot
-from portfolio_app.exposure.taxonomy import load_classifications
+from portfolio_app.exposure.taxonomy import copy_classifications, load_classifications
 
 
 def file_stamp(path):
@@ -30,6 +30,10 @@ def cached_input(key, signature, loader, *, immutable=False):
         previous = (signature, loader())
         cache[key] = previous
     return previous[1] if immutable else deepcopy(previous[1])
+
+
+def cached_classifications(key, signature, loader):
+    return copy_classifications(cached_input(key, signature, loader, immutable=True))
 
 
 def monitoring_snapshot(directory):
@@ -71,7 +75,7 @@ def load_inputs(directory):
     path = directory / 'allocation.yaml'
     allocation = cached_input('allocation', (file_stamp(path), snapshot.revision, journal_stamp), lambda: load_allocation(path, snapshot.holdings))
     path = directory / 'classifications.yaml'
-    classifications = cached_input('classifications', file_stamp(path), lambda: load_classifications(path) if path.exists() else {})
+    classifications = cached_classifications('classifications', file_stamp(path), lambda: load_classifications(path) if path.exists() else {})
     signature = fund_sources(directory)
     catalog = st.session_state.setdefault('fund_catalog', FundCatalog())
     funds = cached_input('funds', signature, lambda: catalog.load(directory / 'etfs'))

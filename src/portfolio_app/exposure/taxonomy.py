@@ -45,6 +45,11 @@ def load_classifications(path: Path) -> Classifications:
     return result
 
 
+def copy_classifications(classifications: Classifications) -> Classifications:
+    """Isolate editable asset and taxonomy mappings. Validated paths are tuples of strings."""
+    return {asset: entry.copy() for asset, entry in classifications.items()}
+
+
 def taxonomy_names(classifications: Classifications) -> list[str]:
     return sorted({name for entry in classifications.values() for name in entry})
 

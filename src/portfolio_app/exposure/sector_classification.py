@@ -1,6 +1,7 @@
 """Distinguish assets without a business sector from missing sector metadata."""
 from collections import defaultdict
 
+from portfolio_app.exposure.taxonomy import copy_classifications
 from portfolio_app.funds.etf import add_provider_classifications, matching_fund, resolved_constituents
 
 NO_SECTOR = 'No business sector'
@@ -13,7 +14,7 @@ def sector_classifications(classifications, holdings, funds, *, include_provider
     and uncovered fund weights remain unclassified unless they have sector data.
     Substitute baskets never supply economic sector exposure.
     """
-    result = {asset: dict(entry) for asset, entry in classifications.items()}
+    result = copy_classifications(classifications)
     candidates = defaultdict(set)
 
     def observe(asset, row):

@@ -17,7 +17,7 @@ from portfolio_app.interface.views.funds.etf_ui import render_fund_details
 from portfolio_app.exposure.exposure_tables import asset_exposure_table, asset_search_mask, asset_source_amounts, exposure_sources
 from portfolio_app.exposure.label_presentation import taxonomy_colors
 from portfolio_app.interface.shared.list_ui import BOUNDED_LIST_HEIGHT, ListColumn, frame_rows, packed_frame_rows, render_list
-from portfolio_app.exposure.taxonomy import describe, taxonomy_names
+from portfolio_app.exposure.taxonomy import copy_classifications, describe, taxonomy_names
 
 
 def preview_facts(exposures, selected):
@@ -48,7 +48,7 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
     taxonomy = st.selectbox('Asset classifications', list(titles), help='Inspect the classifications used to aggregate this asset’s exposure.', index=list(titles).index(default),
                             format_func=titles.get, key='exposure_asset_classifications')
     def geographic_labels(geography):
-        labels = {asset: dict(entry) for asset, entry in classifications.items()}
+        labels = copy_classifications(classifications)
         for asset, entry in geography.classifications(exposures.asset_id).items():
             labels.setdefault(asset, {}).update(entry)
         return labels

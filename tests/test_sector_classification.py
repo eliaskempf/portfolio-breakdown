@@ -92,3 +92,26 @@ def test_conflicting_special_classifications_remain_unknown():
     holdings = pd.DataFrame([dict(id='asset', instrument_type='crypto')])
     saved = {'asset': {'asset_class': (('Commodities', 'Gold'),)}}
     assert paths_for(sector_classifications(saved, holdings, []), 'asset', 'sector') == (UNCLASSIFIED,)
+
+
+def test_cached_classifications_isolate_mutations_without_traversing_validated_paths(monkeypatch):
+    from portfolio_app.interface.shared import input_cache
+
+    monkeypatch.setattr(input_cache.st, 'session_state', {})
+    def unexpected_copy(value):
+        pytest.fail('Recursively copied validated paths')
+    monkeypatch.setattr(input_cache, 'deepcopy', unexpected_copy)
+    loads = []
+    def read(label):
+        loads.append(label)
+        return {'asset': {'sector': ((label,),), 'themes': (('Theme', 'First'), ('Theme', 'Second'))}}
+
+    result = input_cache.cached_classifications('classes', 1, lambda: read('Initial'))
+    result['asset']['sector'] = (('Edited',),)
+    del result['asset']['themes']
+    result['another'] = {'sector': (('Only here',),)}
+    again = input_cache.cached_classifications('classes', 1, lambda: read('Unexpected'))
+    assert again == {'asset': {'sector': (('Initial',),), 'themes': (('Theme', 'First'), ('Theme', 'Second'))}}
+    changed = input_cache.cached_classifications('classes', 2, lambda: read('Corrected'))
+    assert changed['asset']['sector'] == (('Corrected',),)
+    assert loads == ['Initial', 'Corrected']

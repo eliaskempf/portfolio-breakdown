@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from portfolio_app.exposure.taxonomy import copy_classifications
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.portfolio.valuation import portfolio_weights
 from portfolio_app.funds.constituents import fund_kind, interpret_constituent
@@ -289,7 +290,7 @@ def add_provider_classifications(result, asset_id, row):
 
 def fund_classifications(classifications, funds, holdings):
     """Provider sector/country paths are fallbacks; local taxonomies always win."""
-    result = {asset: dict(taxonomies) for asset, taxonomies in classifications.items()}
+    result = copy_classifications(classifications)
     for asset_id, row in resolved_constituents(funds, holdings):
         add_provider_classifications(result, asset_id, row)
     return result

@@ -42,7 +42,7 @@ from portfolio_app.interface.views.exposure.stock_ui import render_stock_exposur
 from portfolio_app.exposure.stock_exposure import load_company_identities
 from portfolio_app.exposure.company_merges import build_plan, load_company_names, load_settings
 from portfolio_app.interface.views.exposure.company_merge_ui import render_company_merges
-from portfolio_app.interface.shared.input_cache import cached_input
+from portfolio_app.interface.shared.input_cache import cached_classifications, cached_input
 from portfolio_app.exposure.exposure_workspace import analytical_signature
 from portfolio_app.exposure.geography import resolve_geography
 from portfolio_app.interface.views.exposure.geography_ui import render_geography
@@ -137,7 +137,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                             lambda: resolve_geography(holdings, funds, manual_classifications), immutable=True)
     def classify():
         return sector_classifications(classifications, holdings, funds, include_provider=True)
-    classifications = cached_input('exposure_classifications', (signature, lookthrough), classify)
+    classifications = cached_classifications('exposure_classifications', (signature, lookthrough), classify)
     names = taxonomy_names(classifications)
     with filters:
         with st.container():
