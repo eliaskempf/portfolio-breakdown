@@ -568,3 +568,14 @@ def test_new_buy_in_requires_currency_but_legacy_amount_is_not_guessed(tmp_path,
     assert not app.exception
     assert load_holdings(path)["shares"].iloc[0] == 11
     assert load_holdings(path)["acquisition_currency"].iloc[0] == ""
+
+
+def test_inactive_leverage_skips_portfolio_exposure_cache_key(sample_data_dir, monkeypatch):
+    from portfolio_app.interface import ui
+    def unexpected_signature(*args):
+        pytest.fail('An inactive leverage calculation must not serialize the ledger and fund universe')
+    monkeypatch.setattr(ui, 'analytical_signature', unexpected_signature)
+    app = launch(sample_data_dir, tab='Overview')
+    assert not app.exception
+    activate(app, 'Positions')
+    assert not app.exception

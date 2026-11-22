@@ -253,9 +253,11 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                 st.caption('You can also explore an offline example with ? → Take the tour, or return to My portfolio using the workspace menu.')
                 mark_view_ready()
         return
-    exposure_result = cached_input(
-        'portfolio_exposure', analytical_signature(valued, funds, str(data_dir.resolve()), allocation, leverage_context),
-        lambda: prepare_exposure(valued, funds, allocation, leverage_context))
+    exposure_result = None
+    if feature_active:
+        exposure_result = cached_input(
+            'portfolio_exposure', analytical_signature(valued, funds, str(data_dir.resolve()), allocation, leverage_context),
+            lambda: prepare_exposure(valued, funds, allocation, leverage_context))
     display_valued, display_exposure = valued, exposure_result
     if actual_active:
         from portfolio_app.derivatives.futures_investments import investment_positions
