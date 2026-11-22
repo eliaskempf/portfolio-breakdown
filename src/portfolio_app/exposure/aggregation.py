@@ -13,12 +13,14 @@ ALLOCATION_COLUMNS = ["asset_id", "asset_name", "path", "value"]
 
 
 def classify_exposures(exposures: pd.DataFrame, classifications: Classifications, taxonomy: str) -> pd.DataFrame:
+    if exposures.empty:
+        return pd.DataFrame(columns=ALLOCATION_COLUMNS)
     records = []
-    for row in exposures.itertuples(index=False):
-        paths = paths_for(classifications, row.asset_id, taxonomy)
-        for path in paths:
-            records.append({"asset_id": row.asset_id, "asset_name": row.asset_name, "path": path, "value": row.value / len(paths)})
-    return pd.DataFrame(records, columns=ALLOCATION_COLUMNS)
+    for asset, name, value in zip(exposures.asset_id, exposures.asset_name, exposures.value):
+        paths = paths_for(classifications, asset, taxonomy)
+        share = value / len(paths)
+        records.extend((asset, name, path, share) for path in paths)
+    return pd.DataFrame.from_records(records, columns=ALLOCATION_COLUMNS)
 
 
 def _node_id(kind: str, path: TaxonomyPath, asset_id: str = "") -> str:

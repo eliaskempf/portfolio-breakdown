@@ -79,6 +79,20 @@ def test_multi_path_allocation_and_root_selection(exposures, taxonomy):
     assert aggregate(exposures, taxonomy, taxonomy="ai", root=("Absent",)).empty
 
 
+def test_classification_reads_only_identity_name_and_amount(monkeypatch):
+    exposures = pd.DataFrame({
+        'asset_id': ['a', 'a', 'b'], 'asset_name': ['Invented A', 'Invented A', 'Invented B'],
+        'value': [-8., float('nan'), 6.], 'unused': pd.Categorical(['x', 'y', 'z'])}, index=[2, 2, 1])
+    def unexpected(*args):
+        pytest.fail('Source metadata was scanned while assigning taxonomy paths')
+    monkeypatch.setattr(pd.Categorical, '__iter__', unexpected)
+    resolved = classify_exposures(exposures, {'a': {'labels': (('One',), ('Two',))}}, 'labels')
+    assert resolved.path.tolist() == [('One',), ('Two',), ('One',), ('Two',), ('Unclassified',)]
+    assert resolved.value.dropna().tolist() == [-4., -4., 6.]
+    assert resolved.value.isna().tolist() == [False, False, True, True, False]
+    assert list(classify_exposures(pd.DataFrame(), {}, 'labels')) == list(resolved)
+
+
 def test_same_labels_under_different_parents_are_distinct(exposures, taxonomy):
     nodes = aggregate(exposures, taxonomy, taxonomy="ai")
     shared = nodes.loc[nodes["label"] == "Shared"]
