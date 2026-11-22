@@ -86,11 +86,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
     comparison = selection.compare(exposures, overlap=policy)
     if comparison.unmatched_value:
         st.caption(f'Outside selected labels: {money(comparison.unmatched_value)} · These assets remain in the Assets view.')
-    performance_comparisons = [selection.compare(measure, overlap=policy) for measure in performance.measures()] if performance else None
-    target_comparisons = None
     if targets is not None:
-        target_comparisons = [selection.compare(measure, overlap=policy)
-                              for measure in (targets.known, targets.missing)]
         target_caption(valuation_complete=valuation_complete)
     if comparison.allocations.empty:
         st.info("No positive valued assets match these labels in the current portfolio selection.")
@@ -154,9 +150,9 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             allocation_total(" › ".join((by_key[root[0]].title, *root[1:])), float(tree.iloc[0]["value"]))
             st.caption("Asset percentages use this detail’s assigned value. Assets with several paths within a label share its value equally across those paths.")
             assets = comparison_assets(comparison, root, include_ids=True)
-            if target_comparisons is not None:
-                target_details = [item.allocations.loc[item.allocations["path"].map(lambda path: path[:len(root)] == root)]
-                                  for item in target_comparisons]
+            if targets is not None:
+                target_details = [selection.measure_values(measure, overlap=policy, root=root)
+                                  for measure in (targets.known, targets.missing)]
                 # Include targets for assets awaiting a quote in this branch.
                 identities = target_details[0][["asset_id", "asset_name"]].drop_duplicates("asset_id").rename(columns={"asset_name": "Investment"})
                 assets = assets.merge(identities, on="asset_id", how="outer", suffixes=("", "_target"))
@@ -165,9 +161,9 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                                             portfolio_value=portfolio_value, valuation_complete=valuation_complete)
                 assets = assets.sort_values(["Value", "Investment"], ascending=[False, True],
                                              na_position="last", kind="stable", ignore_index=True)
-            if performance_comparisons is not None:
-                performance_details = [item.allocations.loc[item.allocations["path"].map(lambda path: path[:len(root)] == root)]
-                                       for item in performance_comparisons]
+            if performance is not None:
+                performance_details = [selection.measure_values(measure, overlap=policy, root=root)
+                                       for measure in performance.measures()]
                 assets = add_performance_column(assets, assets.asset_id.tolist(), performance_details, key="asset_id", percent=performance_percent)
             if not complete:
                 assets['Allocation %'] = float('nan')
@@ -184,12 +180,13 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             return
         allocation_total("Assets matching the selected labels — counted once", comparison.matched_value)
     table = comparison.table.copy()
-    if target_comparisons is not None:
-        table = add_target_columns(table, table["Label"].tolist(),
-                                   target_totals(*(item.table for item in target_comparisons), key="Label", value="Value"),
+    if targets is not None:
+        target_tables = [selection.measure_values(measure, overlap=policy) for measure in (targets.known, targets.missing)]
+        table = add_target_columns(table, table["Label"].tolist(), target_totals(*target_tables, key="Label", value="Value"),
                                    portfolio_value=portfolio_value, valuation_complete=valuation_complete)
-    if performance_comparisons is not None:
-        table = add_performance_column(table, table.Label.tolist(), [item.table for item in performance_comparisons],
+    if performance is not None:
+        performance_tables = [selection.measure_values(measure, overlap=policy) for measure in performance.measures()]
+        table = add_performance_column(table, table.Label.tolist(), performance_tables,
                                        key="Label", value="Value", percent=performance_percent)
     if not complete:
         table[['Portfolio %', 'Selected labels %']] = float('nan')

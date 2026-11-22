@@ -200,3 +200,22 @@ def test_selection_shares_classification_evidence_across_measures(monkeypatch):
         assert compared.matched_value == compared.overlapping_value == amount
         assert compared.allocations.value.sum() == pytest.approx(amount)
     assert calls == [('a', 'theme'), ('a', 'sector')]
+
+
+@pytest.mark.parametrize('policy', ['split', 'overlap'])
+def test_secondary_measures_match_full_comparison_without_building_a_chart(comparison_data, monkeypatch, policy):
+    from portfolio_app.exposure import label_comparison
+    rows, classes = comparison_data
+    rows.loc[1, ['asset_name', 'value']] = ['Second source name', -20.]
+    labels = [Label('labels', (name,)) for name in ('Group B', 'Group A', 'Empty')]
+    selection = label_comparison.LabelSelection(classes, labels)
+    full = selection.compare(rows, overlap=policy)
+    def unused(*args, **kwargs):
+        pytest.fail('A secondary measure constructed a chart tree')
+    monkeypatch.setattr(label_comparison, 'build_tree', unused)
+    pd.testing.assert_frame_equal(selection.measure_values(rows, overlap=policy), full.table[['Label', 'Value']])
+    for branch in [(labels[0].key,), (labels[1].key, 'First'), (labels[2].key,), ('removed',)]:
+        expected = full.allocations.loc[full.allocations.path.map(lambda p: p[:len(branch)] == branch),
+                                        ['asset_id', 'asset_name', 'value']].reset_index(drop=True)
+        actual = selection.measure_values(rows, overlap=policy, root=branch)
+        pd.testing.assert_frame_equal(actual, expected, check_dtype=not expected.empty)

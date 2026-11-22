@@ -87,13 +87,49 @@ class LabelSelection:
             self._assets[asset_id] = {label: tuple(found[label]) for label in sorted(found, key=self._order.__getitem__)}
         return self._assets[asset_id]
 
-    def compare(self, exposures: pd.DataFrame, *, overlap: Literal["split", "overlap"]) -> LabelComparison:
+    @staticmethod
+    def _valued(exposures, overlap):
         if overlap not in {"split", "overlap"}:
             raise ValueError("Choose how to allocate assets matching multiple labels.")
-        labels = self.labels
         valued = exposures.loc[exposures["value"].notna()]
         if any(not math.isfinite(value) for value in valued["value"]):
             raise ValueError("Label comparison requires finite exposure values.")
+        return valued
+
+    def _assignments(self, valued, overlap):
+        for row in valued.itertuples(index=False):
+            matches = self.matches(row.asset_id)
+            if matches:
+                yield row, matches, row.value / len(matches) if overlap == "split" else row.value
+
+    def measure_values(self, exposures, *, overlap, root=()):
+        """Target and performance amounts at the label or drilled asset level."""
+        rows = self._assignments(self._valued(exposures, overlap), overlap)
+        if not root:
+            totals = dict.fromkeys(self.labels, 0.)
+            for _, matches, assigned in rows:
+                for label in matches:
+                    totals[label] += assigned
+            return pd.DataFrame([(label.title, amount) for label, amount in totals.items()],
+                                columns=["Label", "Value"]).sort_values(
+                ["Value", "Label"], ascending=[False, True], kind="stable", ignore_index=True)
+        columns = ["asset_id", "asset_name", "value"]
+        label = next((label for label in self.labels if self._keys[label] == root[0]), None)
+        if label is None:
+            return pd.DataFrame(columns=columns)
+        branch = (*label.path, *root[1:])
+        details, names = [], {}
+        for row, matches, assigned in rows:
+            paths = matches.get(label, ())
+            for path in paths:
+                if is_descendant(path, branch):
+                    name = names.setdefault(row.asset_id, row.asset_name)
+                    details.append((row.asset_id, name, assigned / len(paths)))
+        return pd.DataFrame(details, columns=columns)
+
+    def compare(self, exposures: pd.DataFrame, *, overlap: Literal["split", "overlap"]) -> LabelComparison:
+        labels = self.labels
+        valued = self._valued(exposures, overlap)
         totals = dict.fromkeys(labels, 0.0)
         assets = {label: set() for label in labels}
         portfolio_value = math.fsum(valued["value"])
@@ -101,16 +137,12 @@ class LabelSelection:
         # ETF providers can name the same asset differently. A holding leaf must
         # still merge by asset identity, including when it has several source rows.
         asset_names = valued.drop_duplicates("asset_id").set_index("asset_id")["asset_name"].to_dict()
-        for row in valued.itertuples(index=False):
-            matches = self.matches(row.asset_id)
-            if not matches:
-                continue
+        for row, matches, assigned in self._assignments(valued, overlap):
             matched.append(row.value)
             if len(matches) > 1:
                 overlapping.append(row.value)
             for label, paths in matches.items():
                 key = self._keys[label]
-                assigned = row.value / len(matches) if overlap == "split" else row.value
                 totals[label] += assigned
                 assets[label].add(row.asset_id)
                 allocations.append({"asset_id": row.asset_id, "asset_name": row.asset_name,
