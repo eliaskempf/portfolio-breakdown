@@ -127,3 +127,15 @@ def test_documented_holiday_weekend_chain_and_unsupported_dates():
         assert valuation_fx(ObservationStore((replace(close, date=previous),)), 'USD', 'EUR', requested)[0] is None
     unsupported = replace(close, date='2024-12-31', currency='TRY', subject='TRY/EUR')
     assert valuation_fx(ObservationStore((unsupported,)), 'TRY', 'EUR', '2025-01-01')[0] is None
+
+
+def test_exchange_calendar_is_only_consulted_for_a_missing_rate(monkeypatch):
+    from portfolio_app.performance import history_valuation
+    def calendar_was_used(*args):
+        pytest.fail('Closed-session lookup ran for a known rate')
+    monkeypatch.setattr(history_valuation, 'fx_closed_day', calendar_was_used)
+    exact = O('invented-sunday', 'fx', 'USD/EUR', SUNDAY, D('.85'), 'USD', target='EUR')
+    store = ObservationStore((exact,))
+    assert valuation_fx(store, 'EUR', 'EUR', SUNDAY) == (D(1), ())
+    amount, evidence = valuation_fx(store, 'USD', 'EUR', SUNDAY)
+    assert amount == D('.85') and [item.as_of for item in evidence] == [SUNDAY]

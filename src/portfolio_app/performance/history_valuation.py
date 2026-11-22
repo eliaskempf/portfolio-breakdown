@@ -119,22 +119,24 @@ def valuation_fx(observations, source, target, stamp):
     """
     observations = index_observations(observations)
     requested = date.fromisoformat(stamp)
-    dates = [stamp]
-    if fx_closed_day(requested, source, target):
-        previous = requested-timedelta(days=1)
+    as_of = stamp
+    value = rate(observations, source, target, stamp, side='close')
+    if source == target:
+        return value, ()
+    if value is None and fx_closed_day(requested, source, target):
+        previous = requested - timedelta(days=1)
         for _ in range(7):
             if not fx_closed_day(previous, source, target):
-                dates.append(previous.isoformat())
+                as_of = previous.isoformat()
+                value = rate(observations, source, target, as_of, side='close')
                 break
             previous -= timedelta(days=1)
-    for as_of in dates:
-        value = rate(observations, source, target, as_of, side='close')
-        if value is not None:
-            evidence = tuple(provenance(o, stamp) for o in observations.fx.get(as_of, ())
-                if o.side == 'close' and ((o.currency, o.target) == (source, target)
-                                         or (o.currency, o.target) == (target, source)))
-            return value, evidence
-    return None, ()
+    if value is None:
+        return None, ()
+    evidence = tuple(provenance(o, stamp) for o in observations.fx.get(as_of, ())
+        if o.side == 'close' and ((o.currency, o.target) == (source, target)
+                                 or (o.currency, o.target) == (target, source)))
+    return value, evidence
 
 
 def price_at(observations, subjects, stamp, *, events=(), contract=None):
