@@ -61,8 +61,9 @@ def asset_source_amounts(exposures, selected):
     values['% of asset exposure'] = 100 * values['Value'] / total.where(total > 0)
     positions = selected.set_index('position_id')
     source = values.source_position_id
-    values['Source'] = source.map({position: instrument_name(row) for position, row in positions.iterrows()})
-    values['Account'] = source.map(positions['account']) if 'account' in positions else ''
+    names = {position: instrument_name(row) for position, row in positions.iterrows()}
+    values['Source'] = pd.Series(names, dtype=str).reindex(source).array
+    values['Account'] = positions['account'].reindex(source).array if 'account' in positions else ''
     values['Exposure'] = values.direct_or_indirect.map({'direct': 'Direct', 'indirect': 'ETF', 'future': 'Futures proxy'})
     if 'source_channel' in exposures:
         channels = exposures.drop_duplicates(['asset_id', 'source_position_id', 'direct_or_indirect'])[
@@ -72,21 +73,25 @@ def asset_source_amounts(exposures, selected):
     return values
 
 
-def source_contributions(exposures, selected, *, measure=None):
+def source_contributions(exposures, selected, *, measure=None, portfolio_exposures=None):
     values = asset_source_amounts(exposures, selected)
-    positions = selected.set_index('position_id')
     source = values.source_position_id
-    values['Position value'] = source.map(positions['current_value_reporting']) if 'current_value_reporting' in positions else float('nan')
     if measure == 'Market exposure':
-        totals = exposures.groupby('source_position_id').value
-        source_totals = totals.sum().mask(totals.count() < totals.size())
-        values['Position value'] = source.map(source_totals)
+        # Weight within a source includes its other assets, including any unresolved legs.
+        held = (exposures if portfolio_exposures is None else
+                portfolio_exposures.loc[portfolio_exposures.source_position_id.isin(source)])
+        totals = held.groupby('source_position_id').value
+        values['Position value'] = source.map(totals.sum().mask(totals.count() < totals.size()))
+    else:
+        positions = selected.set_index('position_id')
+        values['Position value'] = source.map(positions['current_value_reporting']) if 'current_value_reporting' in positions else float('nan')
     values['Asset weight (%)'] = 100 * values['Value'] / values['Position value'].where(values['Position value'].ne(0))
     return values
 
 
 def exposure_sources(exposures, selected, asset_id, *, measure=None):
-    values = source_contributions(exposures, selected, measure=measure)
-    values = values.loc[values.asset_id.eq(asset_id)]
+    rows = exposures.loc[exposures.asset_id.eq(asset_id)]
+    positions = selected.loc[selected.position_id.isin(rows.source_position_id)]
+    values = source_contributions(rows, positions, measure=measure, portfolio_exposures=exposures)
     return values[['Source', 'Account', 'Exposure', 'Position value',
                    'Asset weight (%)', 'Value', '% of asset exposure']]

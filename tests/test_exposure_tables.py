@@ -90,6 +90,35 @@ def test_source_position_value_and_asset_weight_keep_both_denominators_distinct(
     assert missing['% of asset exposure'].isna().all()
 
 
+def test_single_asset_sources_group_only_its_rows_and_keep_full_market_denominators(monkeypatch):
+    from portfolio_app.exposure import exposure_tables as tables
+    selected = pd.DataFrame([dict(position_id=key, name=key, account='Invented', current_value_reporting=100.)
+                             for key in ('short', 'partial', 'unrelated')])
+    exposures = pd.DataFrame([
+        ('wanted', 'short', 'future', -6., 'Future'),
+        ('other', 'short', 'future', -18., 'Future'),
+        ('wanted', 'short', 'future', -2., 'Future'),
+        ('wanted', 'partial', 'indirect', 12., 'ETF'),
+        ('unknown', 'partial', 'indirect', float('nan'), 'ETF'),
+        ('unrelated', 'unrelated', 'direct', 100., 'Direct'),
+    ], columns=['asset_id', 'source_position_id', 'direct_or_indirect', 'value', 'source_channel'])
+    for measure in (None, 'Market exposure'):
+        full = tables.source_contributions(exposures, selected, measure=measure)
+        for asset in (*exposures.asset_id.unique(), 'no-match'):
+            shown = tables.exposure_sources(exposures, selected, asset, measure=measure)
+            expected = full.loc[full.asset_id.eq(asset), shown.columns]
+            pd.testing.assert_frame_equal(shown.reset_index(drop=True), expected.reset_index(drop=True))
+    group = tables.asset_source_amounts
+    def only_requested(rows, positions):
+        assert rows.asset_id.tolist() == ['wanted'] * 3
+        assert positions.position_id.tolist() == ['short', 'partial']
+        return group(rows, positions)
+    monkeypatch.setattr(tables, 'asset_source_amounts', only_requested)
+    shown = tables.exposure_sources(exposures, selected, 'wanted', measure='Market exposure')
+    assert shown.iloc[0]['Position value'] == -26.
+    assert pd.isna(shown.iloc[1]['Position value'])
+
+
 def test_grouped_totals_keep_residuals_zero_and_unknown_sources_distinct():
     rows = [('a', 'direct', 20.), ('a', 'indirect', 30.), ('a', 'indirect', 40.),
             ('b', 'direct', 10.), ('b', 'indirect', float('nan')),

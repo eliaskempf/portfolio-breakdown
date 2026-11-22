@@ -134,12 +134,12 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
                     ListColumn('Value', 'Contribution', help=column_help('Value'), numeric=True),
                     ListColumn('% of asset exposure', '% of asset exposure', help=column_help('% of asset exposure'), numeric=True)],
                     key=f'{key}_sources', context=f'{key}_{asset}_sources', title='Exposure sources', default_sort='Value')
-        if 'method' in exposures:
-            provenance = exposures.loc[exposures.asset_id.eq(asset) & exposures.source_type.eq('future'), ['method', 'as_of', 'status']].drop_duplicates()
+        asset_rows = exposures.loc[exposures.asset_id.eq(asset)]
+        if 'method' in asset_rows:
+            provenance = asset_rows.loc[asset_rows.source_type.eq('future'), ['method', 'as_of', 'status']].drop_duplicates()
             for row in provenance.fillna('').itertuples():
                 st.caption(' · '.join(str(x) for x in (row.method, row.as_of, row.status) if x))
-        source_ids = exposures.loc[exposures.asset_id.eq(asset), 'source_position_id']
-        source_positions = selected.loc[selected.position_id.isin(source_ids)]
+        source_positions = selected.loc[selected.position_id.isin(asset_rows.source_position_id)]
         relevant = {f.isin for position in source_positions.to_dict('records') if (f := matching_fund(position, funds)) is not None}
         render_fund_details([f for f in funds if f.isin in relevant], source_positions, holdings=holdings,
                             classifications=labels, show_tickers=show_tickers)
