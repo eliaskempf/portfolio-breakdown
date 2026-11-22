@@ -150,7 +150,7 @@ def run_exposure(candidate, reference, destination, surfaces, pairs, profile):
                     report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, 'exposure')
                     for visit in report['visits']:
                         sample = visit.pop('sample')
-                        if sample != expected.setdefault(surface, sample) or visit['rows'] != (100 if profile == 'etf-heavy' else 12):
+                        if sample != expected.setdefault(surface, sample) or visit['rows'] != (12 if profile == 'small' else 100):
                             raise AssertionError('Rendered Exposure rows or expanded preview changed')
                     result['runs'].append(dict(variant=name, surface=surface, pair=pair, **report))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
@@ -164,7 +164,7 @@ if __name__ == '__main__':
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
     parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure'], default='history')
-    parser.add_argument('--profile', choices=['small', 'etf-heavy'], default='small')
+    parser.add_argument('--profile', choices=['small', 'etf-heavy', 'mixed-history'], default='small')
     parser.add_argument('--reference', type=Path, help='Reference bundle for the Exposure comparison')
     options = parser.parse_args()
     surfaces = ['native','browser'] if options.surface == 'both' else [options.surface]

@@ -751,14 +751,16 @@ an empty application cache and a fresh process. The operating system can still
 have executable or filesystem pages in memory.
 
 Select the input portfolio with the workflow's profile input or the driver's
-`--profile` option. Both profiles use two years of invented EUR prices and 25
+`--profile` option. All profiles use two years of invented EUR prices and 25
 monthly buys per position. The small control has 12 positions and no ETFs.
 The ETF-heavy profile has 24 direct equities and 24 held ETFs, with eight
 snapshots each of 50, 500 and 1,500 constituents. The 16,400 constituent rows
 include shared companies, direct/indirect overlap and eight partial snapshots.
-This measures Overview navigation with fund data present. Timing interaction
-with the Exposure view, longer ledgers and multi-currency histories requires
-separate workloads.
+The mixed-history profile uses the same holdings and prices. Some overlapping
+constituents have only fund-local identifiers and company names. It also includes
+4,000 archived monitoring observations. This exercises company matching and
+navigation in a workspace with an alert history. The Exposure benchmark branch
+uses mixed-history on push.
 
 The Exposure experiment builds both the pre-change reference and the current
 application on each runner. With the ETF-heavy profile it times Overview to

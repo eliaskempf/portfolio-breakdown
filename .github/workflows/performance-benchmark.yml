@@ -10,7 +10,7 @@ name: Packaged performance benchmark
       profile:
         description: 'Synthetic portfolio size'
         type: choice
-        options: [etf-heavy, small]
+        options: [etf-heavy, mixed-history, small]
         default: etf-heavy
       pairs:
         description: 'Alternating pairs per surface (1 to 10)'
@@ -65,7 +65,7 @@ jobs:
       - name: Alternate reference and cached runs in the packaged renderer and Chromium
         env:
           EXECUTABLE: ${{ matrix.executable }}
-          PROFILE: ${{ inputs.profile || ((github.ref_name == 'perf/benchmark-scale' || github.ref_name == 'perf/exposure-navigation') && 'etf-heavy' || 'small') }}
+          PROFILE: ${{ inputs.profile || (github.ref_name == 'perf/exposure-navigation' && 'mixed-history' || github.ref_name == 'perf/benchmark-scale' && 'etf-heavy' || 'small') }}
           PAIRS: ${{ inputs.pairs || 2 }}
           CHECK_OVERVIEW: ${{ github.event_name == 'push' && github.ref_name == 'perf/exposure-navigation' }}
         run: |

@@ -9,7 +9,8 @@ from portfolio_app.performance.history_observations import load_observations
 from portfolio_app.portfolio.positions import read_snapshot
 
 
-@pytest.mark.parametrize('profile,positions,etfs,components', [('small', 12, 0, 0), ('etf-heavy', 48, 24, 16400)])
+@pytest.mark.parametrize('profile,positions,etfs,components', [('small', 12, 0, 0), ('etf-heavy', 48, 24, 16400),
+    ('mixed-history', 48, 24, 16400)])
 def test_navigation_benchmark_portfolio(tmp_path, profile, positions, etfs, components):
     path = Path(__file__).resolve().parents[1] / 'tools/perf_benchmark/fixture.py'
     spec = spec_from_file_location('benchmark_fixture', path)
@@ -29,6 +30,13 @@ def test_navigation_benchmark_portfolio(tmp_path, profile, positions, etfs, comp
         stocks = set(holdings.loc[holdings.instrument_type.eq('equity'), 'isin'])
         assert len(stocks) == 24 and stocks <= shared
         assert sum(f.constituents.weight.sum() < .99 for f in funds) == 8
+    if profile == 'mixed-history':
+        from portfolio_app.exposure.company_merges import build_plan, MergeSettings
+        from portfolio_app.monitoring.monitoring_store import load_monitoring
+        plan = build_plan(holdings, funds, {}, MergeSettings(frozenset()))
+        assert any(g.enabled and g.basis == 'Estimated name match' for g in plan.groups)
+        doc, _ = load_monitoring(workspace)
+        assert len(doc['observations']) == 4000 and not doc['rules']
     journal, _ = load_journal(workspace)
     observations, _ = load_observations(workspace)
     assert all(sum(event.kind == 'buy' for event in book.records) == 25 for book in journal.securities)

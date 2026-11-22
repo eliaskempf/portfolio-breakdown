@@ -1,7 +1,7 @@
 """Repeatable two-year portfolio. All identities and prices are invented."""
 import csv
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -28,7 +28,7 @@ def holdings_and_funds(directory, profile, today):
         for index in range(12):
             yield f'invented-{index}', f'Invented holding {index}', '', '', 'other', 'non_equity'
         return
-    if profile != 'etf-heavy':
+    if profile not in {'etf-heavy', 'mixed-history'}:
         raise ValueError(f'Unknown portfolio profile {profile!r}')
     directory.mkdir()
     for index in range(DIRECT_EQUITIES):
@@ -48,7 +48,10 @@ def holdings_and_funds(directory, profile, today):
             for row in range(size):
                 identity = row if row < size // 2 else (index + 1) * max(FUND_SIZES) + row
                 weight = coverage * (size - row) / (size * (size + 1) / 2)
-                writer.writerow([*company(identity), weight, 'equity'])
+                constituent = company(identity)
+                if profile == 'mixed-history' and DIRECT_EQUITIES <= row < size // 2 and row % 4 == 0 and index % 3 != 0:
+                    constituent = (f'local-{index}-{row}', constituent[1], '', '')
+                writer.writerow([*constituent, weight, 'equity'])
         yield fund_id, name, ticker, isin, 'etf', 'equity'
 
 
@@ -84,3 +87,12 @@ def create_workspace(directory: Path, profile='small', *, today=None):
     save_journal(directory, replace(journal, securities=tuple(books)), None)
     save_observations(directory, ObservationStore(tuple(observations)), None)
     save_overview_view(directory, 'Allocation')
+
+    if profile == 'mixed-history':
+        from portfolio_app.monitoring.monitoring import Evaluation, Rule, SeriesSpec
+        from portfolio_app.monitoring.monitoring_store import save_rule, record_evaluations, delete_rule
+        rule = Rule('invented-archived', 'Invented historical monitor', series=SeriesSpec('ZZ-ARCHIVED'))
+        save_rule(directory, rule)
+        checks = (Evaluation((today - timedelta(days=days)).isoformat(), 1.) for days in range(4000, 0, -1))
+        record_evaluations(directory, rule, checks, now=datetime.combine(today, time.min, timezone.utc))
+        delete_rule(directory, rule.id, rule.revision)
