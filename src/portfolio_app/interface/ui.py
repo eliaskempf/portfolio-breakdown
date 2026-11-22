@@ -35,6 +35,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     from portfolio_app.settings import ensure_app_theme
     ensure_app_theme()
     st.session_state['position_dialog_host_ready'] = False
+    st.session_state['exposure_asset_dialog_host_ready'] = False
     from portfolio_app.settings import icon_path
     from portfolio_app.interface.views.workspace.workspace_ui import app_header, workspace_info
     persistent_data_dir = data_dir
@@ -67,12 +68,12 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return
     preserve_view_inputs()
     data_dir, demo, refresh, settings_panel, notifications_slot = app_header(data_dir, demo_dir, demo=demo)
-    from portfolio_app.interface.shared.overview_navigation import render_panel, OverviewSources
+    from portfolio_app.interface.shared.overview_navigation import render_panel, ViewSources
     from portfolio_app.interface.views.onboarding.tour import active as tour_active
-    overview_sources = None
-    if st.session_state.get('main_tabs', 'Overview') == 'Overview' and not tour_active():
+    view_sources = None
+    if st.session_state.get('main_tabs', 'Overview') in ('Overview', 'Exposure') and not tour_active():
         try:
-            overview_sources = OverviewSources(data_dir)
+            view_sources = ViewSources(data_dir)
         except (DataError, OSError):
             pass  # Normal workspace loading owns recovery and validation messages.
     from portfolio_app.interface.shared.calendar_ui import configure_calendar
@@ -303,7 +304,16 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         demo=offline_demo, cache_warning=price_service.cache_warning,
         exposure_issues=exposure_result.issues if exposure_result else (), disabled=tour_active(), journal=journal,
         background_prices=background_prices,
-        on_notices_recorded=overview_sources.notices_recorded if overview_sources else None)
+        on_notices_recorded=view_sources.notices_recorded if view_sources else None)
+    def current_view(tab):
+        try:
+            return (st.session_state.get('main_tabs', 'Overview') == tab
+                    and (st.session_state.get(unit_key) == '%') == percent
+                    and refresh_allowed() and (ignore_selection or selection(persistent_data_dir) == chosen)
+                    and current_market_prices() and current_etf_notices() and view_sources.current())
+        except (DataError, OSError):
+            return False
+
     if (sandbox or actual_active) and tabs[4].open:
         with tabs[4]:
             if actual_active:
@@ -376,18 +386,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                                                       valued.loc[valued.shares.gt(0), 'current_value_reporting'].sum(skipna=False)), scoped=scoped))
 
                 def current_overview():
-                    try:
-                        return (st.session_state.get('main_tabs', 'Overview') == 'Overview'
-                                and st.session_state.get('strategic_view') != 'Analytics'
-                                and (st.session_state.get(unit_key) == '%') == percent
-                                and refresh_allowed() and (ignore_selection or selection(persistent_data_dir) == chosen)
-                                and current_market_prices()
-                                and current_etf_notices()
-                                and overview_sources.current())
-                    except (DataError, OSError):
-                        return False
+                    return st.session_state.get('strategic_view') != 'Analytics' and current_view('Overview')
 
-                if overview_sources is None or supplied_prices or st.session_state.get('strategic_view') == 'Analytics':
+                if view_sources is None or supplied_prices or st.session_state.get('strategic_view') == 'Analytics':
                     draw_overview()
                 else:
                     render_panel(draw_overview, current_overview)
@@ -399,7 +400,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                 render_analysis(data_dir, holdings, classifications, funds, demo=offline_demo,
                     price_service=price_service, source_valued=visible, performance_percent=percent,
                     allocation=allocation, fund_revision=fund_revision, on_toggle_gain=toggle_unit,
-                    exposure_result=exposure_result, leverage_context=leverage_context)
+                    exposure_result=exposure_result, leverage_context=leverage_context,
+                    current_view=(lambda: current_view('Exposure')) if view_sources and not supplied_prices else None)
     if rebalance.open and not unsupported_records:
         with rebalance:
             plan_tab, targets_tab = st.tabs(['Plan', 'Targets'], key='rebalance_tabs', on_change='rerun')

@@ -1,11 +1,26 @@
 """Fixed synthetic provider and timing probes. Never bundled by release builds."""
 from dataclasses import replace
+from functools import wraps
 import json
 import os
 import time
 
 
 def observe_server(trial):
+    from portfolio_app import application
+
+    def record(event, **fields):
+        with (trial / 'server.jsonl').open('a', encoding='utf-8') as out:
+            print(json.dumps({'event':event, 'epoch_ms':time.time_ns() / 1e6, **fields}), file=out)
+
+    def counted(function, event):
+        @wraps(function)
+        def call(*args, **kwargs):
+            record(event)
+            return function(*args, **kwargs)
+        return call
+
+    application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
     if os.environ['PORTFOLIO_BENCHMARK_REFRESH'] == 'exposure':
         return
     from portfolio_app.performance.personal_history_refresh import refresher
@@ -75,9 +90,6 @@ def observe_server(trial):
     refresher.download = download
     original_view = views.history_view
     enqueue = ScriptRunContext.enqueue
-    def record(event, **fields):
-        with (trial / 'server.jsonl').open('a', encoding='utf-8') as out:
-            print(json.dumps({'event':event, 'epoch_ms':time.time_ns() / 1e6, **fields}), file=out)
     def calculate(*args, **kwargs):
         from threading import current_thread
         if current_thread().name.startswith('market-data') and not (trial / 'recalculating').exists():
@@ -92,18 +104,7 @@ def observe_server(trial):
         if msg.HasField('delta') and msg.delta.new_element.HasField('plotly_chart'):
             record('chart_enqueued', bytes=msg.ByteSize())
         return enqueue(ctx, msg)
-    from portfolio_app import application
     from portfolio_app.ledger import security_history
-    from functools import wraps
-
-    def counted(function, event):
-        @wraps(function)
-        def call(*args, **kwargs):
-            record(event)
-            return function(*args, **kwargs)
-        return call
-
-    application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
     security_history.history_fingerprint = counted(security_history.history_fingerprint, 'journal_fingerprinted')
     variant = os.environ['PORTFOLIO_BENCHMARK_VARIANT']
     if variant == 'navigation-reference':

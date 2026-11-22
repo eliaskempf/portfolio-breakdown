@@ -63,9 +63,14 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
                     proc.terminate()
                 proc.wait(timeout=20)
     report['launch_ms'] = (report.pop('ready_at') - started) * 1000
-    if scenario == 'exposure':
-        return report
     events = [json.loads(line) for line in (trial / 'server.jsonl').read_text().splitlines()]
+    if scenario == 'exposure':
+        for visit in report['details']:
+            begin, end = visit.pop('start_epoch_ms'), visit.pop('end_epoch_ms')
+            visit['valuations'] = sum(e['event'] == 'portfolio_valued' and begin <= e['epoch_ms'] <= end for e in events)
+            if variant == 'candidate' and visit['valuations']:
+                raise AssertionError(f"Read-only Exposure detail revalued the portfolio {visit['valuations']} times")
+        return report
     if 'start_epoch_ms' in report:
         start, end = report.pop('start_epoch_ms'), report.pop('end_epoch_ms')
         field = {'quote-pending': 'pending_quote_valuations', 'etf-open-failed': 'open_panel_valuations'}.get(
@@ -186,6 +191,11 @@ def run_exposure(candidate, reference, destination, surfaces, pairs, profile):
                         sample = visit.pop('sample')
                         if sample != expected.setdefault(surface, sample) or visit['rows'] != (12 if profile == 'small' else 100):
                             raise AssertionError('Rendered Exposure rows or expanded preview changed')
+                    for visit in report['details']:
+                        digest = hashlib.sha256(visit.pop('sample').encode()).hexdigest()
+                        if digest != expected.setdefault((surface, 'detail'), digest):
+                            raise AssertionError('Financial source details changed across calls or binaries')
+                        visit['digest'] = digest
                     for visit in report['themes']:
                         labels, values = visit.pop('sample')
                         digest = hashlib.sha256(json.dumps([labels, values]).encode()).hexdigest()

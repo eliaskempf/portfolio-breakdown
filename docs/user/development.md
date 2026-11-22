@@ -764,8 +764,9 @@ constituents have only fund-local identifiers and company names. It also include
 4,000 archived monitoring observations and 24 invented provider sectors. After
 the timed asset visits, the benchmark opens Themes & sectors twice, records the
 first painted chart and settled frame, and compares every label and value.
-This exercises company matching and
-navigation in a workspace with an alert history. The Exposure benchmark branch
+It also measures the first and repeat opens of asset source details. It compares
+the displayed sources across binaries and checks that opening and closing the
+read-only dialog causes zero additional candidate portfolio valuations. The Exposure benchmark branch
 uses mixed-history on push.
 
 Mixed-history navigation also exercises two background providers together on each

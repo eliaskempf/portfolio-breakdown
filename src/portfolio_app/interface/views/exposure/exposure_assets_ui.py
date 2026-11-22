@@ -5,6 +5,7 @@ from portfolio_app.interface.shared.currency_display import currency_symbol, mon
 from portfolio_app.interface.shared.input_cache import cached_input
 from portfolio_app.interface.shared.ui_help import column_help
 from hashlib import sha256
+from portfolio_app.interface.shared.dialog_runtime import close_dialog_button, route_dialog_callback
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -41,7 +42,7 @@ def preview_facts(exposures, selected):
     return {'labels': names.tolist(), 'assets': by_asset}
 
 
-def render_assets(exposures, selected, holdings, funds, classifications, *, query='', show_tickers=False, show_chart=False, complete=True, breakdown=False, context='exposure', footer='', load_geography, measure=None, equity=None, contribution_key):
+def render_assets(exposures, selected, holdings, funds, classifications, *, query='', show_tickers=False, show_chart=False, complete=True, breakdown=False, context='exposure', footer='', load_geography, measure=None, equity=None, contribution_key, current_view=None):
     default = 'labels' if any('labels' in item for item in classifications.values()) else 'sector'
     titles = {'labels': 'Themes', 'sector': 'Sector', 'geography': 'Geography'}
     taxonomy = st.selectbox('Asset classifications', list(titles), help='Inspect the classifications used to aggregate this asset’s exposure.', index=list(titles).index(default),
@@ -66,8 +67,12 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
         return
     signature = sha256(repr((context, list(selected.position_id), breakdown)).encode()).hexdigest()[:16]
     key = f'exposure_assets_{signature}'
+    host_key = 'exposure_asset_dialog_host'
     def select(event):
         st.session_state['exposure_asset_detail'] = event['id']
+        st.session_state['exposure_asset_dialog_generation'] = st.session_state.get('exposure_asset_dialog_generation', 0) + 1
+        if current_view and st.session_state.get('exposure_asset_dialog_host_ready'):
+            route_dialog_callback(host_key)
     columns = [ListColumn('Asset', 'Asset', help=column_help('Asset'), width=260)]
     if show_tickers:
         columns.append(ListColumn('Ticker', 'Ticker', help=column_help('Ticker'), width=110))
@@ -108,42 +113,66 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
         figure = style_figure(go.Figure(go.Bar(x=largest[chart_amount], y=largest.Asset, orientation='h')))
         figure.update_layout(height=max(260, 30 * len(largest)), xaxis_title='Exposure', margin=dict(t=12, b=20, l=12, r=12))
         st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
-    asset = st.session_state.get('exposure_asset_detail')
-    if asset not in rows.ids:
-        st.session_state.pop('exposure_asset_detail', None)
-        return
-    def dismiss():
-        st.session_state.pop('exposure_asset_detail', None)
-    @st.dialog('Exposure details', width='large', on_dismiss=dismiss)
-    def details():
-        row = table.loc[table.asset_id.eq(asset)].iloc[0]
-        st.subheader(row.Asset)
-        st.caption('Unknown values remain unavailable; they are not treated as zero.') if pd.isna(row['Total']) else st.metric('Total exposure', money(row["Total"]), help='Combined direct and indirect exposure to this asset in the portfolio currency.')
-        geography = load_geography()
-        labels = geographic_labels(geography)
-        for name in taxonomy_names(labels):
-            st.write(f'{titles.get(name, name.replace("_", " ").title())}: {describe(labels, asset, name)}')
-        st.caption('Geography source: ' + geography.sources.get(asset, 'No local metadata'))
-        if reason := geography.reasons.get(asset):
-            st.caption(reason)
-        sources = exposure_sources(exposures, selected, asset, measure=measure)
-        st.caption('Asset weight uses each source’s selected measure, including signed notional for futures in market exposure. The final percentage is that source’s share of this asset’s total.')
-        render_list(frame_rows(sources), [ListColumn('Source', 'Source', help=column_help('Source')), ListColumn('Account', 'Account', help=column_help('Account')),
-                    ListColumn('Exposure', 'Source type', help=column_help('Exposure')), ListColumn('Position value', 'Source exposure' if measure == 'Market exposure' else 'Position', help=column_help('Position value'), numeric=True),
-                    ListColumn('Asset weight (%)', 'Asset weight (%)', help=column_help('Asset weight (%)'), numeric=True),
-                    ListColumn('Value', 'Contribution', help=column_help('Value'), numeric=True),
-                    ListColumn('% of asset exposure', '% of asset exposure', help=column_help('% of asset exposure'), numeric=True)],
-                    key=f'{key}_sources', context=f'{key}_{asset}_sources', title='Exposure sources', default_sort='Value')
-        asset_rows = exposures.loc[exposures.asset_id.eq(asset)]
-        if 'method' in asset_rows:
-            provenance = asset_rows.loc[asset_rows.source_type.eq('future'), ['method', 'as_of', 'status']].drop_duplicates()
-            for row in provenance.fillna('').itertuples():
-                st.caption(' · '.join(str(x) for x in (row.method, row.as_of, row.status) if x))
-        source_positions = selected.loc[selected.position_id.isin(asset_rows.source_position_id)]
-        relevant = {f.isin for position in source_positions.to_dict('records') if (f := matching_fund(position, funds)) is not None}
-        render_fund_details([f for f in funds if f.isin in relevant], source_positions, holdings=holdings,
-                            classifications=labels, show_tickers=show_tickers)
-        if st.button('Close exposure details', help='Return to the exposure overview.'):
-            dismiss()
+    def current():
+        return st.session_state.get('exposure_view', 'Assets') == 'Assets' and current_view()
+
+    def show_details(asset):
+        generation = st.session_state.get('exposure_asset_dialog_generation')
+        drawn = False
+
+        def dismiss():
+            if st.session_state.get('exposure_asset_dialog_generation') == generation:
+                st.session_state.pop('exposure_asset_detail', None)
+            if current_view and st.session_state.get('exposure_asset_dialog_host_ready'):
+                route_dialog_callback(host_key)
+
+        @st.dialog('Exposure details', width='large', on_dismiss=dismiss)
+        def details():
+            nonlocal drawn
+            if drawn and current_view and not current():
+                st.rerun()
+            drawn = True
+            row = table.loc[table.asset_id.eq(asset)].iloc[0]
+            st.subheader(row.Asset)
+            st.caption('Unknown values remain unavailable; they are not treated as zero.') if pd.isna(row['Total']) else st.metric('Total exposure', money(row["Total"]), help='Combined direct and indirect exposure to this asset in the portfolio currency.')
+            geography = load_geography()
+            labels = geographic_labels(geography)
+            for name in taxonomy_names(labels):
+                st.write(f'{titles.get(name, name.replace("_", " ").title())}: {describe(labels, asset, name)}')
+            st.caption('Geography source: ' + geography.sources.get(asset, 'No local metadata'))
+            if reason := geography.reasons.get(asset):
+                st.caption(reason)
+            sources = exposure_sources(exposures, selected, asset, measure=measure)
+            st.caption('Asset weight uses each source’s selected measure, including signed notional for futures in market exposure. The final percentage is that source’s share of this asset’s total.')
+            render_list(frame_rows(sources), [ListColumn('Source', 'Source', help=column_help('Source')), ListColumn('Account', 'Account', help=column_help('Account')),
+                        ListColumn('Exposure', 'Source type', help=column_help('Exposure')), ListColumn('Position value', 'Source exposure' if measure == 'Market exposure' else 'Position', help=column_help('Position value'), numeric=True),
+                        ListColumn('Asset weight (%)', 'Asset weight (%)', help=column_help('Asset weight (%)'), numeric=True),
+                        ListColumn('Value', 'Contribution', help=column_help('Value'), numeric=True),
+                        ListColumn('% of asset exposure', '% of asset exposure', help=column_help('% of asset exposure'), numeric=True)],
+                        key=f'{key}_sources', context=f'{key}_{asset}_sources', title='Exposure sources', default_sort='Value')
+            asset_rows = exposures.loc[exposures.asset_id.eq(asset)]
+            if 'method' in asset_rows:
+                provenance = asset_rows.loc[asset_rows.source_type.eq('future'), ['method', 'as_of', 'status']].drop_duplicates()
+                for row in provenance.fillna('').itertuples():
+                    st.caption(' · '.join(str(x) for x in (row.method, row.as_of, row.status) if x))
+            source_positions = selected.loc[selected.position_id.isin(asset_rows.source_position_id)]
+            relevant = {f.isin for position in source_positions.to_dict('records') if (f := matching_fund(position, funds)) is not None}
+            render_fund_details([f for f in funds if f.isin in relevant], source_positions, holdings=holdings,
+                                classifications=labels, show_tickers=show_tickers)
+            close_dialog_button('Close exposure details', key='exposure_asset_detail_close')
+        details()
+
+    mounted = False
+    @st.fragment(key=host_key)
+    def host():
+        nonlocal mounted
+        st.session_state['exposure_asset_dialog_host_ready'] = True
+        asset = st.session_state.get('exposure_asset_detail')
+        if mounted and current_view and not current():
             st.rerun()
-    details()
+        mounted = True
+        if asset in rows.ids:
+            show_details(asset)
+        else:
+            st.session_state.pop('exposure_asset_detail', None)
+    host()

@@ -256,7 +256,7 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
 
 
 def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, values):
-    from portfolio_app.interface.shared.dialog_runtime import local_dialog_updates, close_position_button
+    from portfolio_app.interface.shared.dialog_runtime import local_dialog_updates, close_dialog_button
     _consume_position_event(path, snapshot)
     if not st.session_state.get('position_edit_dialog'):
         if st.session_state.get('positions_workflow_request'):
@@ -291,7 +291,7 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
                 from portfolio_app.interface.views.derivatives.investment_detail_ui import render_investment_detail
                 render_investment_detail(path.parent, journal, revision, valued,
                     st.session_state.get('position_edit_selected'), allocation=allocation, editing=action == 'Edit position')
-                close_position_button()
+                close_dialog_button('Close', key='position_dialog_close')
             elif action == 'Details':
                 from portfolio_app.ledger.security_history import effective_holdings
                 current_holdings = effective_holdings(current.holdings, load_journal(path.parent)[0].securities)
@@ -313,7 +313,7 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
                         st.session_state['position_edit_action'] = 'Edit position'
                     from portfolio_app.interface.views.positions.position_detail import render_position_detail
                     render_position_detail(row, path.parent, demo=demo, allocation=allocation, on_edit=edit_position)
-                close_position_button()
+                close_dialog_button('Close', key='position_dialog_close')
             else:
                 rendered = render_position_form(path, current, funds, demo=demo, allocation=allocation, action=action, valued=valued)
                 _remember_draft()

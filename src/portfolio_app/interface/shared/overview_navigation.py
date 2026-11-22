@@ -21,10 +21,11 @@ def source_stamp(directory):
             file_stamp(directory / '.cache' / 'purchase-fx'))
 
 
-class OverviewSources:
-    """Keep the mounted Overview through read receipts it wrote against its own snapshot."""
+class ViewSources:
+    """Check the source documents behind a mounted portfolio view, including external edits."""
 
     def __init__(self, directory):
+        self.prepared_at = monotonic()
         self.directory = directory
         self.inputs = source_stamp(directory)
         self.monitoring_revision = monitoring_snapshot(directory)[1]
@@ -34,20 +35,19 @@ class OverviewSources:
             self.monitoring_revision = published
 
     def current(self):
-        return (source_stamp(self.directory) == self.inputs
+        return (monotonic() - self.prepared_at < 60 and source_stamp(self.directory) == self.inputs
                 and monitoring_snapshot(self.directory)[1] == self.monitoring_revision)
 
 
 def render_panel(draw, is_current):
     """Redraw the mounted Overview. The application owns changes to its inputs."""
     mounted = False
-    prepared_at = monotonic()
 
     @st.fragment
     def panel():
         nonlocal mounted
         if mounted:
-            if monotonic() - prepared_at >= 60 or not is_current():
+            if not is_current():
                 st.rerun()
             preserve_view_inputs()
         draw()

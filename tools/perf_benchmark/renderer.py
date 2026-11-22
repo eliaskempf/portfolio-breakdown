@@ -276,6 +276,41 @@ def exercise_exposure(evaluate, *, themes=False):
         wait(lambda: read("return !!table()?.querySelector('tr[data-position-id]') && !running();"))
         return result
 
+    def detail_visit():
+        read("""
+            const row = table().querySelector('tbody tr[data-position-id]');
+            const toggle = row.querySelector('[data-preview-toggle]');
+            if (toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+            w.detailVisit = null;
+            const start = w.performance.now(), epoch = w.performance.timeOrigin + start;
+            row.querySelector('.source-details').click();
+            let drawn = null;
+            function frame() {
+                const elapsed = w.performance.now() - start;
+                const dialog = d.querySelector('[role="dialog"]');
+                const hosts = dialog ? [...dialog.querySelectorAll('.stBidiComponent')] : [];
+                const selector = 'table[aria-label="Exposure sources"]';
+                const sources = hosts.map(h => h.querySelector(selector) || [h,...h.querySelectorAll('*')]
+                    .map(e => e.shadowRoot?.querySelector(selector)).find(Boolean)).find(Boolean);
+                const populated = visible(sources) && sources.tBodies[0]?.rows.length;
+                if (populated && drawn === null) drawn = elapsed;
+                if (populated && !running()) {
+                    w.detailVisit = {sources_ms:drawn, start_epoch_ms:epoch, sample:sources.tBodies[0].innerText};
+                } else if (elapsed > 60000 || exception()) w.detailVisit = {error:'Asset sources did not settle'};
+                else w.requestAnimationFrame(frame);
+            }
+            w.requestAnimationFrame(frame); return true;
+        """)
+        visit = wait(lambda: read('return w.detailVisit;'), timeout=65)
+        if 'error' in visit:
+            raise RuntimeError(visit['error'])
+        read("""d.querySelector('[role="dialog"] button[aria-label="Close"]').click(); return true;""")
+        wait(lambda: read("""return !visible(d.querySelector('[role="dialog"]')) && !!table() && !running();"""))
+        time.sleep(.35)
+        wait(lambda: read('return !!table() && !running() && !exception();'))
+        visit['end_epoch_ms'] = time.time_ns() / 1e6
+        return visit
+
     def ready():
         try:
             return read('return visible(allocation()) && !running() && !!tab("Exposure");')
@@ -284,7 +319,7 @@ def exercise_exposure(evaluate, *, themes=False):
 
     wait(ready, timeout=100)
     ready_at = time.time()
-    visits, theme_visits = [], []
+    visits, theme_visits, details = [], [], []
     for _ in range(3):
         read("""
             w.exposureVisit = null;
@@ -314,6 +349,7 @@ def exercise_exposure(evaluate, *, themes=False):
         visits.append(visit)
         if themes and len(visits) == 3:
             theme_visits = [theme_visit() for _ in range(2)]
+            details = [detail_visit() for _ in range(2)]
         read("tab('Overview').click(); return true;")
         wait(lambda: ready() and read("return !table() && tab('Overview').getAttribute('aria-selected') === 'true';"))
-    return dict(ready_at=ready_at, visits=visits, themes=theme_visits)
+    return dict(ready_at=ready_at, visits=visits, themes=theme_visits, details=details)

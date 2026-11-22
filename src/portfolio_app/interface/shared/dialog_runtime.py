@@ -17,8 +17,13 @@ HOST = 'position_dialog_host'
 
 def route_position_callback():
     """Replace an opener/dismiss callback's default whole-application rerun."""
-    if st.session_state.get('position_dialog_host_ready') and ThreadState.get().run_location == RunLocation.CALLBACK:
-        st.rerun(HOST)
+    if st.session_state.get('position_dialog_host_ready'):
+        route_dialog_callback(HOST)
+
+
+def route_dialog_callback(host):
+    if ThreadState.get().run_location == RunLocation.CALLBACK:
+        st.rerun(host)
 
 
 def local_dialog_updates():
@@ -43,15 +48,23 @@ def _local_dialog_updates(fragment):
         raise
 
 
-def close_position_button():
+def close_dialog_button(label, *, key):
     """Use native dismissal for both X and Close, without a second server roundtrip."""
-    component = st.components.v2.component('position_dialog_close',
-        html='<button type="button">Close</button>',
+    component = st.components.v2.component('portfolio_dialog_close',
+        html='<button type="button"></button>',
         css='button {font:inherit;color:inherit;background:transparent;border:1px solid color-mix(in srgb,currentColor 25%,transparent);border-radius:6px;padding:.4rem .8rem;cursor:pointer;} button:focus-visible {outline:2px solid #5470c6;outline-offset:2px;}',
         js='''export default function(component) {
             const button=component.parentElement.querySelector('button');
-            const close=()=>document.querySelector('[role="dialog"] button[aria-label="Close"]')?.click();
+            button.textContent=component.data;
+            const close=()=>{
+                let element=button;
+                while(element){
+                    const dialog=element.closest('[role="dialog"]');
+                    if(dialog){dialog.querySelector('button[aria-label="Close"]')?.click();return;}
+                    element=element.getRootNode().host;
+                }
+            };
             button.addEventListener('click',close);
             return ()=>button.removeEventListener('click',close);
         }''')
-    component(key='position_dialog_close')
+    component(key=key, data=label)

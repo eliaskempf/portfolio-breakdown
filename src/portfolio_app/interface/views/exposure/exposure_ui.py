@@ -49,7 +49,7 @@ from portfolio_app.interface.views.exposure.geography_ui import render_geography
 from portfolio_app.exposure.sector_classification import sector_classifications
 
 
-def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False, source_valued=None, performance_percent=False, allocation=None, fund_revision=None, on_toggle_gain=None, exposure_result=None, leverage_context=None):
+def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False, source_valued=None, performance_percent=False, allocation=None, fund_revision=None, on_toggle_gain=None, exposure_result=None, leverage_context=None, current_view=None):
     dimensions = metadata_dimensions(holdings)
     unified = exposure_result is not None
     if unified:
@@ -326,7 +326,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                 render_assets(display_exposures, selected, holdings, funds, saved_classifications,
                               query=query, show_tickers=show_tickers, show_chart=show_chart, complete=missing == 0,
                               breakdown=lookthrough, context=str(data_dir.resolve()) + measure, footer=match_note, load_geography=load_geography,
-                              measure=measure if unified else None, equity=equity, contribution_key=contribution_key)
+                              measure=measure if unified else None, equity=equity, contribution_key=contribution_key, current_view=current_view)
         else:
             render_theme_view(exposures, selected, holdings, classifications, names, dimensions, targets, performance,
                               total, all_missing, selected_total, show_tickers, performance_percent, query,

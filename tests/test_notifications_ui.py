@@ -137,12 +137,12 @@ st.metric('Unread', sum(not e['read'] for e in doc['events']))
 @pytest.mark.parametrize('external_edit', ['none', 'before', 'after'])
 def test_overview_reuses_its_own_notification_receipts_and_observes_other_edits(tmp_path, external_edit):
     from dataclasses import replace
-    from portfolio_app.interface.shared.overview_navigation import OverviewSources
+    from portfolio_app.interface.shared.overview_navigation import ViewSources
     from portfolio_app.monitoring import monitoring_store as store
     from test_monitoring import rule
 
-    sources = OverviewSources(tmp_path)
-    other_window = OverviewSources(tmp_path)
+    sources = ViewSources(tmp_path)
+    other_window = ViewSources(tmp_path)
 
     def edit():
         store.save_rule(tmp_path, replace(rule(), enabled=False))
@@ -175,3 +175,14 @@ st.metric('After external update', str(current()))
     assert not app.exception and [m.value for m in app.metric] == ['True', 'False']
     app.run()
     assert not app.exception and [m.value for m in app.metric] == ['True', 'True']
+
+
+def test_mounted_portfolio_inputs_expire_from_the_original_capture(tmp_path, monkeypatch):
+    from portfolio_app.interface.shared import overview_navigation
+    now = [0.]
+    monkeypatch.setattr(overview_navigation, 'monotonic', lambda: now[0])
+    sources = overview_navigation.ViewSources(tmp_path)
+    now[0] = 59.9
+    assert sources.current()
+    now[0] = 60.
+    assert not sources.current()
