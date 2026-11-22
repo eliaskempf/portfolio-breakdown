@@ -463,6 +463,25 @@ def test_repeated_fund_positions_share_only_snapshot_facts(fund, positions, monk
         expand_etfs(exposures, [fund], positions)
 
 
+def test_expansion_preserves_source_metadata_and_clears_fund_only_fields(fund, positions):
+    key = object()
+    exposures = normalize_exposures(positions)
+    exposures['desk'] = pd.array([1, 2, None], dtype='Int64')
+    exposures['shares'] = [20, 100, 5]
+    exposures['wkn'] = ['direct-wkn', 'fund-wkn', 'other-wkn']
+    exposures[key] = [0., -10., float('nan')]
+
+    rows = expand_etfs(exposures, [fund], positions, additional_measures=(key,))
+    assert rows.columns.tolist() == [*exposures.columns, 'instrument_type', 'exposure_kind']
+    assert rows.desk.iloc[:4].tolist() == [1, 2, 2, 2]
+    assert pd.isna(rows.desk.iloc[-1])
+    assert rows.wkn.tolist() == ['direct-wkn', '', '', '', 'other-wkn']
+    assert rows.shares.dropna().tolist() == [20, 5]
+    assert rows[key].iloc[:4].tolist() == pytest.approx([0., -.8, -.7, -8.5])
+    assert pd.isna(rows[key].iloc[-1])
+    assert rows.exposure_kind.isna().tolist() == [True, False, False, False, True]
+
+
 def test_related_measures_share_expansion_and_keep_separate_coverage(fund, positions, monkeypatch):
     from portfolio_app.exposure.exposure_analysis import project_measures
     from portfolio_app.exposure.exposures import project_contributions

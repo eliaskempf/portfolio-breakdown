@@ -296,43 +296,58 @@ def fund_classifications(classifications, funds, holdings):
     return result
 
 
+def _component_columns(fund, resolve):
+    components = {column: [] for column in ('asset_id', 'asset_name', 'ticker', 'isin',
+                                             'instrument_type', 'exposure_kind', 'source_type')}
+    weights = []
+    fallback = fund_kind(fund)
+    for constituent in constituent_records(fund_breakdown(fund)):
+        asset, name = resolve(constituent)
+        interpreted = interpret_constituent(constituent, fallback_kind=fallback)
+        components['asset_id'].append(asset)
+        components['asset_name'].append(name)
+        components['ticker'].append(interpreted.ticker)
+        components['isin'].append(interpreted.isin)
+        components['instrument_type'].append(interpreted.kind)
+        components['exposure_kind'].append(interpreted.exposure_kind)
+        components['source_type'].append('etf_other' if interpreted.residual else 'etf_constituent')
+        weights.append(interpreted.weight)
+    return components, weights
+
+
 def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd.DataFrame, *, additional_measures=()) -> pd.DataFrame:
-    # Retain source order while resolving each matched snapshot once across accounts.
-    expanded = []
+    columns = list(dict.fromkeys([*exposures.columns, "instrument_type", "exposure_kind"]))
+    resolve = constituent_resolver(holdings)
+    if exposures.empty:
+        return pd.DataFrame(columns=columns)
     by_fund = {}
+    result = {column: [] for column in columns}
+    measures = ("value", *additional_measures)
+    missing = float("nan")
     for source in exposures.to_dict("records"):
         fund = matching_fund(source, funds)
         if fund is None:
-            expanded.append([source])
+            for column, values in result.items():
+                values.append(source.get(column, missing))
             continue
-        rows = []
-        expanded.append(rows)
+        if id(fund) not in by_fund:
+            by_fund[id(fund)] = _component_columns(fund, resolve)
+        components, weights = by_fund[id(fund)]
         source["direct_or_indirect"] = "indirect"
-        if "wkn" in source:
-            source["wkn"] = ""
+        source["wkn"] = ""
         # Fund quantities, quotes and targets do not describe its constituents.
-        for field in ("shares", "acquisition_price", "current_price", "fx_to_reporting", "target_allocation", "portfolio_weight"):
-            if field in source:
-                source[field] = float("nan")
-        _, members = by_fund.setdefault(id(fund), (fund, []))
-        members.append((source, rows))
-
-    resolve = constituent_resolver(holdings)
-    for fund, source_rows in by_fund.values():
-        fallback = fund_kind(fund)
-        for constituent in constituent_records(fund_breakdown(fund)):
-            asset, name = resolve(constituent)
-            interpreted = interpret_constituent(constituent, fallback_kind=fallback)
-            component = dict(asset_id=asset, asset_name=name, ticker=interpreted.ticker, isin=interpreted.isin,
-                             instrument_type=interpreted.kind, exposure_kind=interpreted.exposure_kind,
-                             source_type="etf_other" if interpreted.residual else "etf_constituent")
-            for source, rows in source_rows:
-                row = {**source, **component, "value": source["value"] * interpreted.weight}
-                for key in additional_measures:
-                    row[key] = source[key] * interpreted.weight
-                rows.append(row)
-    columns = list(dict.fromkeys([*exposures.columns, "instrument_type", "exposure_kind"]))
-    return pd.DataFrame((row for group in expanded for row in group), columns=columns)
+        for column in ("shares", "acquisition_price", "current_price", "fx_to_reporting", "target_allocation", "portfolio_weight"):
+            source[column] = missing
+        amounts = {key: source[key] for key in measures}
+        for column, values in result.items():
+            if column in amounts:
+                amount = amounts[column]
+                values.extend(amount * weight for weight in weights)
+            elif column in components:
+                values.extend(components[column])
+            else:
+                values.extend([source.get(column, missing)] * len(weights))
+    return pd.DataFrame(result)
 
 
 def effective_exposure_table(exposures: pd.DataFrame) -> pd.DataFrame:
