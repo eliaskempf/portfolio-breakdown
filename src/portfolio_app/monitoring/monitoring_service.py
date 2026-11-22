@@ -1,6 +1,7 @@
 """Background evaluation; workers never read or write Streamlit session state."""
 from dataclasses import replace
 from datetime import timedelta
+from functools import cache
 import json
 from threading import RLock
 
@@ -52,14 +53,19 @@ class MonitoringService:
         try:
             doc, _ = load_monitoring(self.directory)
             rules = [rule_from_dict(r) for r in doc['rules'] if r['enabled']]
+            @cache
+            def fetch_series(spec):
+                series = self.market.get(spec, refresh=refresh)
+                key = json.dumps(vars(spec), sort_keys=True)
+                with self.lock:
+                    self.series[key] = series
+                    self.browse_attempts[key] = self.now()
+                return series
+
             for rule in rules:
                 try:
                     if rule.kind == 'sma':
-                        series = self.market.get(rule.series, refresh=refresh)
-                        with self.lock:
-                            series_key = json.dumps(vars(rule.series), sort_keys=True)
-                            self.series[series_key] = series
-                            self.browse_attempts[series_key] = self.now()
+                        series = fetch_series(rule.series)
                         latest, frame = evaluate_with_history(rule, series, now=self.now())
                         previous = doc['states'].get(rule.id, {}).get('last_valid', {}).get('observed_at')
                         if rule.cadence != 'intraday' and latest.quality == 'valid' and previous:

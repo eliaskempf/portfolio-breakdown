@@ -156,3 +156,23 @@ def test_account_cached_fallback_cannot_clear_trigger_and_manual_refresh_retries
     assert calls==[False,True]
     assert state['quality']=='stale' and state['condition']=='triggered'
     assert state['last_valid']['value']==60
+
+
+def test_refresh_reuses_a_source_across_thresholds_only_within_one_pass(tmp_path):
+    first = rule(threshold=5.)
+    second = replace(first, id='second', threshold=15.)
+    adjusted = replace(first, id='adjusted', series=replace(first.series, basis='adjusted'))
+    for item in (first, second, adjusted):
+        save_rule(tmp_path, item)
+    service = MonitoringService(tmp_path, demo=True, now=lambda: NOW)
+    calls = []
+    def fetch(spec, *, refresh):
+        calls.append((spec.basis, refresh))
+        return history() if spec == first.series else replace(history(), quality='stale')
+    service.market.get = fetch
+    for refresh in (False, True):
+        service.evaluate(refresh=refresh)
+        states = load_monitoring(tmp_path)[0]['states']
+        assert states[first.id]['condition'] == 'normal' and states[second.id]['condition'] == 'triggered'
+        assert states[adjusted.id]['quality'] == 'stale'
+        assert calls.count(('close', refresh)) == calls.count(('adjusted', refresh)) == 1
