@@ -88,6 +88,8 @@ def exercise(evaluate, control, scenario, *, persistent):
                 if (value !== last) { state.changes++; last = value; }
                 state.delta = value - closing;
                 if (chart.data[0].x[0] !== firstDay) state.preserved = false;
+            } else {
+                state.replaced = true;
             }
             if (!state.done) w.requestAnimationFrame(frame);
         }
@@ -98,6 +100,8 @@ def exercise(evaluate, control, scenario, *, persistent):
     held = 0
     if persistent and scenario == 'changed':
         wait(lambda: (control / 'recalculating').exists(), timeout=30)
+        if not (control / 'contended').exists():
+            raise AssertionError('Background preparation did not retry the busy queue')
         before = time.perf_counter()
         try:
             time.sleep(.4)

@@ -747,10 +747,16 @@ Chart paint is sampled at an animation frame with a populated Plotly trace.
 Launch time includes readiness polling and browser startup in browser mode.
 Where the native shell exposes its animation completion, the artifact also
 records the interval to usable Allocation. Compare within a platform and run.
-Use more pairs before treating timing differences as a release threshold.
+Use the manual workflow’s pair count for longer runs before treating timing
+differences as a release threshold.
 The deterministic checks fail on a changed series digest, a miss on a primed
 chart, an unexpected fade on unchanged data, or loss of the last complete chart
-while a replacement is being calculated.
+while background work waits for a slot or calculates a replacement.
+The download stays blocked until the first chart and range change have been
+measured. Refresh completion timings include status polling. The changed-data
+trial deliberately delays the worker to verify interaction behavior, so use
+this trial for correctness and compare first-click and repeat-click times for
+latency.
 
 For a local run, sync the locked window, release and browser dependencies and
 install Playwright Chromium. From the project root, build the disposable bundle

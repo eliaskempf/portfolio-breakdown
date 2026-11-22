@@ -978,28 +978,33 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
                 today = date.today()
                 if pending_update is None:
                     future = start_update(directory, journal, revision, scope, period, target, today)
-                    if future is not None:
-                        pending_update = latest_stamp, today, future
-                if pending_update is not None:
-                    stamp, requested_day, future = pending_update
-                    if not future.done():
-                        poll_while_mounted(key+'refresh_tick', 150)
+                    if future is None:
+                        # Another chart or workspace currently occupies the bounded queue.
+                        poll_while_mounted(key+'refresh_tick', 250)
                         return
-                    pending_update = None
-                    if (latest_stamp, today) == (stamp, requested_day) and future.exception() is None:
-                        update = future.result()
-                        if update is None:
-                            observation_stamp, changed = stamp, False
-                        else:
-                            # The next full render verifies these identities against its own
-                            # ledger, scope, dates, currency and observation revision.
-                            calc = update.calculation
-                            cache = st.session_state.setdefault('parsed_inputs', {})
-                            identity = str(directory.resolve()), calc.fingerprint, update.revision, target, today
-                            cache['history_calculation'] = identity, calc
-                            entry, inputs = _view_cache_entry(directory, calc, update.revision, scope, period, target, today, True, True)
-                            cache[entry] = inputs, update.view
-                            st.rerun()
+                    pending_update = latest_stamp, today, future
+                stamp, requested_day, future = pending_update
+                if not future.done():
+                    poll_while_mounted(key+'refresh_tick', 150)
+                    return
+                pending_update = None
+                if (latest_stamp, today) != (stamp, requested_day):
+                    poll_while_mounted(key+'refresh_tick', 150)
+                    return
+                if future.exception() is None:
+                    update = future.result()
+                    if update is None:
+                        observation_stamp, changed = stamp, False
+                    else:
+                        # The next full render verifies these identities against its own
+                        # ledger, scope, dates, currency and observation revision.
+                        calc = update.calculation
+                        cache = st.session_state.setdefault('parsed_inputs', {})
+                        identity = str(directory.resolve()), calc.fingerprint, update.revision, target, today
+                        cache['history_calculation'] = identity, calc
+                        entry, inputs = _view_cache_entry(directory, calc, update.revision, scope, period, target, today, True, True)
+                        cache[entry] = inputs, update.view
+                        st.rerun()
             if changed and read_observations(directory)[1] == revision:
                 observation_stamp, changed = latest_stamp, False
             if changed and (prepared is None or refresh_allowed()):

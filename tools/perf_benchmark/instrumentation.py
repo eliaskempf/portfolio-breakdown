@@ -43,13 +43,22 @@ def observe_server(trial):
         return enqueue(ctx, msg)
     views.history_view = calculate
     ScriptRunContext.enqueue = observe_enqueue
-    from portfolio_app.performance import history_view_cache
+    from portfolio_app.performance import history_update, history_view_cache
     if os.environ['PORTFOLIO_BENCHMARK_VARIANT'] == 'baseline':
-        from portfolio_app.performance import history_update
-        history_update.start_update = lambda *args: None
-        # The reference uses the same binary with only cross-session view reuse bypassed.
+        from concurrent.futures import Future
+        # Use the existing synchronous fallback, with persistence bypassed as well.
+        reference = Future()
+        reference.set_exception(RuntimeError('Synchronous benchmark reference'))
+        history_update.start_update = lambda *args: reference
         history_view_cache.load_or_compute = lambda directory, signature, compute: compute()
     else:
+        start_update = history_update.start_update
+        def contend_once(*args):
+            if not (trial / 'contended').exists():
+                (trial / 'contended').touch()
+                return None
+            return start_update(*args)
+        history_update.start_update = contend_once
         original_load = history_view_cache.load_or_compute
         def observe_cache(directory, signature, compute):
             missed = False
