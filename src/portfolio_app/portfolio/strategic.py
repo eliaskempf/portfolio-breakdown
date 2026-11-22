@@ -108,44 +108,51 @@ def strategic_summary(valued: pd.DataFrame, config: Allocation, bucket: str = ""
         categories = [item for item in config.buckets if item.id != bucket and
                       (not bucket or bucket in paths[item.id])] if hierarchy else config.children(bucket)
         choices.extend((item.id, item.name, config.relative_target(item.id, bucket),
-                        selected.iloc[members.get(item.id, [])] if hierarchy else bucket_positions(selected, config, item.id), '')
+                        selected.iloc[members.get(item.id, [])] if hierarchy else bucket_positions(selected, config, item.id))
                        for item in categories if bucket != 'unassigned')
         if not bucket and valued.loc[valued.bucket_id.eq(''), 'current_value_reporting'].ne(0).any():
-            choices.append(('unassigned', 'Unassigned', None, bucket_positions(selected, config, 'unassigned'), ''))
+            choices.append(('unassigned', 'Unassigned', None, bucket_positions(selected, config, 'unassigned')))
+    records = []
+    def add_row(key, name, target, value, empty, parent, *, owner='', account='', exposure=None):
+        known = pd.notna(value)
+        current = 100 * value / total if complete and known and total > 0 else float('nan')
+        target = float(target) * 100 if pd.notna(target) else float('nan')
+        record = {'Category': name, 'Value': value, 'Current (%)': current, 'Target (%)': target,
+                  'Gap (pp)': current - target, 'Status': 'Missing price' if not known else 'Empty' if empty else ''}
+        if flat:
+            record['Assigned category'] = owner
+        if flat or hierarchy:
+            record['Account'] = account
+        if hierarchy or identities:
+            record.update(row_id=('position:' if owner else 'category:') + key,
+                          parent_id='' if flat or parent in {'', bucket} else 'category:' + parent,
+                          position_id=key if owner else '', category_id='' if owner else key)
+        if known_exposure is not None:
+            record['Known exposure'] = exposure
+        records.append(record)
+
+    parents = {item.id: item.parent for item in config.buckets}
+    for key, name, target, rows in choices:
+        value = float(rows.current_value_reporting.sum()) if rows.current_value_reporting.notna().all() else float('nan')
+        exposure = None
+        if known_exposure is not None:
+            exposure = rows.position_id.map(known_exposure).sum(min_count=1) if len(rows) else 0.
+        add_row(key, name, target, value, rows.shares.eq(0).all(), parents.get(key, ''), exposure=exposure)
+
     direct = selected if flat or hierarchy or bucket == 'unassigned' else selected.loc[selected.bucket_id.eq(bucket)] if bucket else selected.iloc[:0]
     labels = category_labels(config)
-    for index, row in enumerate(direct.itertuples()):
+    exposures = direct.position_id.map(known_exposure).tolist() if known_exposure is not None else [None] * len(direct)
+    empty = direct.shares.eq(0).fillna(True)
+    for row, exposure, is_empty in zip(direct.itertuples(), exposures, empty):
         target = row.within_bucket_target if row.bucket_id and not config.flexible(row.bucket_id) else float('nan')
         if (flat or hierarchy) and row.bucket_id:
             target *= config.relative_target(row.bucket_id, bucket)
         owner = labels.get(row.bucket_id, 'Unassigned')
         if bucket and row.bucket_id != bucket:
             owner = owner.removeprefix(labels.get(bucket, '') + ' › ')
-        choices.append((row.position_id, instrument_name(row), target, direct.iloc[[index]], owner))
-    records = []
-    for key, name, target, rows, owner in choices:
-        known = rows.current_value_reporting.notna().all()
-        subtotal = float(rows.current_value_reporting.sum())
-        current = 100 * subtotal / total if complete and known and total > 0 else float('nan')
-        target = float(target) * 100 if pd.notna(target) else float('nan')
-        records.append({'Category': name, 'Value': subtotal if known else float('nan'),
-                        'Current (%)': current, 'Target (%)': target,
-                        'Gap (pp)': current - target,
-                        'Status': 'Missing price' if not known else 'Empty' if not len(rows) or rows.shares.eq(0).all() else ''})
-        if flat:
-            records[-1]['Assigned category'] = owner
-            records[-1]['Account'] = rows.account.iloc[0] if 'account' in rows and len(rows) == 1 else ''
-        if hierarchy or identities:
-            position = bool(owner)
-            parent = (rows.bucket_id.iloc[0] or 'unassigned') if position else next(
-                (item.parent for item in config.buckets if item.id == key), '')
-            records[-1].update(row_id=('position:' if position else 'category:') + key,
-                               parent_id='' if flat or parent in {'', bucket} else 'category:' + parent,
-                               position_id=key if position else '', category_id='' if position else key)
-            if hierarchy and not flat:
-                records[-1]['Account'] = rows.account.iloc[0] if position and 'account' in rows else ''
-        if known_exposure is not None:
-            records[-1]['Known exposure'] = rows.position_id.map(known_exposure).sum(min_count=1) if len(rows) else 0.
+        value = float(row.current_value_reporting) if pd.notna(row.current_value_reporting) else float('nan')
+        add_row(row.position_id, instrument_name(row), target, value, is_empty, row.bucket_id or 'unassigned',
+                owner=owner, account=getattr(row, 'account', ''), exposure=exposure)
     return pd.DataFrame(records, columns=["Category", *(["Assigned category", "Account"] if flat else ['Account'] if hierarchy else []), "Value", *(['Known exposure'] if known_exposure is not None else []), "Current (%)", "Target (%)", "Gap (pp)", "Status", *(['row_id', 'parent_id', 'position_id', 'category_id'] if hierarchy or identities else [])]).sort_values(
         ["Value", "Category"], ascending=[False, True], na_position="last", ignore_index=True)
 

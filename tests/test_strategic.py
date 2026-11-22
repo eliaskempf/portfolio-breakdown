@@ -110,3 +110,23 @@ def test_icon_palette_follows_actual_allocation_not_category_ids(positions, conf
     colors = dict(zip(changed.label, strategic_colors(changed, config)))
     assert colors['Active'] == '#5470c6'
     assert colors['Long term'] == '#4aa9b3'
+
+
+def test_flat_summary_maps_partial_exposure_once_and_preserves_source_rows(positions, config, monkeypatch):
+    positions['account'] = ['A', 'B', 'A', 'C']
+    positions.loc[1, 'current_value_reporting'] = float('nan')
+    exposure = {'p1': -2., 'p3': 0.}
+    batches = []
+    original_map = pd.Series.map
+    def counted_map(series, arg, *args, **kwargs):
+        if arg is exposure:
+            batches.append(len(series))
+        return original_map(series, arg, *args, **kwargs)
+    monkeypatch.setattr(pd.Series, 'map', counted_map)
+    table = strategic_summary(positions, config, flat=True, identities=True, known_exposure=exposure).set_index('position_id')
+    assert batches == [len(positions)]
+    assert table.loc['p1', 'Known exposure'] == -2.
+    assert table.loc['p3', 'Known exposure'] == 0.
+    assert pd.isna(table.loc['p2', 'Known exposure']) and table.loc['p2', 'Status'] == 'Missing price'
+    assert table.loc['p2', 'Account'] == 'B' and table.loc['p4', 'Status'] == 'Empty'
+    assert table['Current (%)'].isna().all()
