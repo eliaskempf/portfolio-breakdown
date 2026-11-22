@@ -135,3 +135,15 @@ def test_asset_search_matches_literal_text_across_name_and_ticker_preserving_ind
                          'ticker': ['ZZ.1', 'Z[2]', None, None]}, index=[8, 4, 8, 3])
     for query, indices in [(' STRASSE zz. ', [8]), ('[2]', [4]), ('other', [8]), ('ZZx1', [])]:
         assert rows.index[asset_search_mask(rows.name, rows.ticker, query)].tolist() == indices
+
+
+def test_packed_asset_rows_preserve_nulls_labels_numbers_and_source_identity():
+    import json
+    from portfolio_app.interface.shared.list_ui import frame_rows, packed_frame_rows
+    table = pd.DataFrame({'asset_id': ['a', 'b'], 'Total': [-0.125, None],
+                          'Labels': [['Invented sector', 'A / B'], []]})
+    rows = packed_frame_rows(table, id_column='asset_id')
+    payload = rows.payload
+    decoded = [dict(zip(payload['fields'], row)) for row in json.loads(payload['values'])]
+    assert [dict(row, id=row[payload['idColumn']]) for row in decoded] == frame_rows(table, id_column='asset_id')
+    assert rows.ids == {'a', 'b'}

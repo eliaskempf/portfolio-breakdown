@@ -10,4 +10,8 @@ def list_data(app, title):
 
 
 def list_frame(app, title):
-    return pd.DataFrame(list_data(app, title)['rows'])
+    rows = list_data(app, title)['rows']
+    if isinstance(rows, dict):
+        frame = pd.DataFrame(json.loads(rows['values']), columns=rows['fields'])
+        return frame.assign(id=frame[rows['idColumn']].astype(str))
+    return pd.DataFrame(rows)

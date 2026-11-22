@@ -15,7 +15,7 @@ from portfolio_app.funds.etf import matching_fund
 from portfolio_app.interface.views.funds.etf_ui import render_fund_details
 from portfolio_app.exposure.exposure_tables import asset_exposure_table, asset_search_mask, asset_source_amounts, exposure_sources
 from portfolio_app.exposure.label_presentation import taxonomy_colors
-from portfolio_app.interface.shared.list_ui import BOUNDED_LIST_HEIGHT, ListColumn, frame_rows, render_list
+from portfolio_app.interface.shared.list_ui import BOUNDED_LIST_HEIGHT, ListColumn, frame_rows, packed_frame_rows, render_list
 from portfolio_app.exposure.taxonomy import describe, taxonomy_names
 
 
@@ -84,7 +84,7 @@ def render_assets(exposures, selected, holdings, funds, classifications, *, quer
         columns.insert(3 if show_tickers else 2, ListColumn('Known exposure', 'Known exposure', numeric=True, width=150,
             help='Sum of resolved contributions only. An unavailable total can still have known contributions; the remainder is not zero.'))
     list_key = (contribution_key, taxonomy, complete, equity, query.strip().casefold())
-    rows = cached_input('exposure_asset_rows', list_key, lambda: frame_rows(table, id_column='asset_id'), immutable=True)
+    rows = cached_input('exposure_asset_rows', list_key, lambda: packed_frame_rows(table, id_column='asset_id'), immutable=True)
     revision = sha256(repr(list_key).encode()).hexdigest()
     facts = cached_input('exposure_preview_facts', contribution_key,
                         lambda: preview_facts(exposures, selected), immutable=True)

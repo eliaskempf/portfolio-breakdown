@@ -85,6 +85,16 @@ button[data-preview-toggle]{border:0;background:transparent;padding:0;font-weigh
 
 JS = """
 export default function({parentElement:root,data,setTriggerValue}) {
+  if (!Array.isArray(data.rows)) {
+    const {fields,values,idColumn}=data.rows;
+    const rows=JSON.parse(values).map(cells=>{
+      const row={};
+      fields.forEach((name,index)=>{row[name]=cells[index];});
+      row.id=String(row[idColumn]);
+      return row;
+    });
+    data={...data,rows};
+  }
   root.previewResizeObserver?.disconnect();
   root.tooltipEvents?.abort();
   const tooltipEvents=new AbortController();root.tooltipEvents=tooltipEvents;
@@ -426,17 +436,38 @@ def frame_rows(table, *, id_column=None):
     return rows
 
 
+@dataclass(frozen=True)
+class PackedFrameRows:
+    payload: dict
+    ids: frozenset[str]
+
+
+def packed_frame_rows(table, *, id_column):
+    """Pack a homogeneous table with string row IDs for client-side sorting and paging."""
+    payload = {'fields': list(table.columns), 'idColumn': id_column,
+               'values': table.to_json(orient='values', double_precision=15)}
+    return PackedFrameRows(payload, frozenset(table[id_column]))
+
+
 def render_list(rows, columns, *, key, context, title, on_open=None, editable=False,
                 revision=None, max_height=None, search_label=None, search_fields=(), default_sort=None,
                 preview_column=None, preview_value_column=None, preview_share_column=None, previews=None, details_column=None, page_size=None, children=None):
-    revision = revision or sha256(repr((rows, children)).encode()).hexdigest()
-    all_rows = [*rows, *(row for siblings in (children or {}).values() for row in siblings)]
+    packed = isinstance(rows, PackedFrameRows)
+    client_rows = rows.payload if packed else rows
+    revision = revision or sha256(repr((client_rows, children)).encode()).hexdigest()
+
+    def contains_row(identity):
+        if not isinstance(identity, str):
+            return False
+        found = identity in rows.ids if packed else any(row['id'] == identity for row in rows)
+        return found or any(row['id'] == identity for siblings in (children or {}).values() for row in siblings)
+
     def handle_open():
         event = st.session_state.get(key, {}).get('open')
         if not event or not on_open:
             return
         if (event.get('context') != context or event.get('revision') != revision
-                or event.get('id') not in {row['id'] for row in all_rows}):
+                or not contains_row(event.get('id'))):
             st.warning('The list changed. Select the row again from the refreshed list.')
             return
         if event.get('action') == 'details' or (editable and event.get('action') == 'edit'):
@@ -450,7 +481,7 @@ def render_list(rows, columns, *, key, context, title, on_open=None, editable=Fa
         if spec['numeric'] and spec['label'] in monetary:
             spec['label'] = money_label(spec['label'])
     component = st.components.v2.component('portfolio_data_list', html=HTML, css=CSS, js=JS)
-    component(key=key, data={'rows': rows, 'columns': specs,
+    component(key=key, data={'rows': client_rows, 'columns': specs,
         'revision': revision, 'context': context, 'title': title, 'interactive': bool(on_open),
         'editable': editable, 'maxHeight': max_height, 'pageSize': page_size, 'searchLabel': search_label, 'children': children,
         'searchFields': search_fields, 'defaultSort': default_sort, 'detailsColumn': details_column,
