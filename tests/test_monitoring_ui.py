@@ -11,7 +11,7 @@ from test_ui import by_label
 
 def test_heartbeat_observes_aliased_workspace_completion(tmp_path, monkeypatch):
     from threading import Event
-    from types import SimpleNamespace
+    from portfolio_app.interface.shared import background_ui
     from portfolio_app.market import market_data; from portfolio_app.monitoring import monitoring_service; from portfolio_app.interface.views.monitoring import monitoring_ui
     from portfolio_app.market.market_data import RequestCoordinator
     from portfolio_app.monitoring.monitoring_store import save_rule
@@ -34,15 +34,15 @@ def test_heartbeat_observes_aliased_workspace_completion(tmp_path, monkeypatch):
         assert release.wait(5), 'Synthetic evaluation was not released'
         return original_get(*args, **kwargs)
     monkeypatch.setattr(service.market, 'get', get)
-    callbacks, reruns = [], []
-    def fragment(*, run_every):
-        assert run_every == 60
+    callbacks, reruns, intervals = [], [], []
+    def fragment():
         def capture(callback):
             callbacks.append(callback)
             return callback
         return capture
-    monkeypatch.setattr(monitoring_ui, 'st', SimpleNamespace(
-        fragment=fragment, rerun=lambda: reruns.append(True)))
+    monkeypatch.setattr(background_ui.st, 'fragment', fragment)
+    monkeypatch.setattr(background_ui, '_set_poll_interval', intervals.append)
+    monkeypatch.setattr(monitoring_ui.st, 'rerun', lambda: reruns.append(True))
     monkeypatch.setattr(monitoring_ui, 'refresh_allowed', lambda: True)
     try:
         monitoring_ui.watch_monitoring(alias, demo=True)
@@ -54,6 +54,7 @@ def test_heartbeat_observes_aliased_workspace_completion(tmp_path, monkeypatch):
     assert coordinator.revision(directory.resolve()) == 1
     callbacks[0]()
     assert reruns == [True]
+    assert intervals == [.5, 60]
 
 
 def launch(tmp_path, *, seed='INVENTED'):
