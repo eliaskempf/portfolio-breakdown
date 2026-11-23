@@ -3,6 +3,7 @@ import streamlit as st
 from hashlib import sha256
 import json
 
+from portfolio_app.interface.shared.update_ui import release_notification
 from portfolio_app.interface.views.funds.etf_refresh_ui import refresh_notices, render_refresh_status
 
 
@@ -55,6 +56,8 @@ def notification_bell(slot, directory, funds, valued, status, *, demo=False, cac
             workspace = str(directory.resolve())
             saved_seen = set(doc['notice_seen']) | set(seen.get(workspace, ()))
             count = len(current-saved_seen) + sum(not e['read'] for e in doc['events'])
+            if not demo and not disabled and not panel.open:
+                count += int(release_notification())
             _, seen[workspace] = unread_notifications(current, saved_seen, opened=panel.open)
             from portfolio_app.monitoring.monitoring_store import remember_notices, mark_events
             from portfolio_app.portfolio.holdings import DataError
@@ -108,6 +111,8 @@ def render_notifications(directory, funds, revision, valued, status, *, demo=Fal
     from portfolio_app.monitoring.monitoring_store import mark_events
     from portfolio_app.interface.views.derivatives.settlement_archive_ui import settlement_notices
     st.subheader('Notifications')
+    if not demo:
+        release_notification(opened=True)
     doc = _monitoring_document(directory)
     events = [e for e in doc['events'] if not e.get('resolved') and not e['acknowledged']]
     st.caption(f"{len(events)} active rule alert(s) · Opening this panel marks entries read; acknowledgment is separate.")

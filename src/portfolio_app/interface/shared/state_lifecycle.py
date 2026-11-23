@@ -106,6 +106,7 @@ FEATURES = (
         mounted=tab('Monitoring'),
         tour=MONITORING_INPUTS,
         tour_objects=Keys(names=('monitoring_presented', 'monitoring_editing'))),
+    FeatureState('updates', Keys(prefixes=('updates_',)), workspace=False),
     FeatureState('notifications', Keys(names=('notification_seen',)), workspace=False),
     FeatureState('overview', Keys(prefixes=('strategic_',)),
         inputs=Keys(names=('strategic_category', 'strategic_view', 'strategic_performance_measure', 'strategic_allocation_measure')),

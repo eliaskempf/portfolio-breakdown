@@ -116,6 +116,19 @@ its command-line demo/live launch mode.
 
 ## Update or remove {#update}
 
+Versions 0.2.0 and 0.2.1 require a manual visit to the
+[GitHub releases page](https://github.com/eliaskempf/portfolio-breakdown/releases).
+In builds with the update checker, **App menu → Help → Check for updates**
+checks for a compatible stable release. **GitHub releases** opens the downloads
+even when the check fails.
+
+Installed builds check daily while open. When a newer version is available, an
+**Update available** popup links to the release. Close it to acknowledge that
+version. Its download link stays in **Notifications** until you install the update
+or choose **Clear notification**. A later version gets its own popup and entry.
+**Check automatically** in Help controls background checks across workspaces.
+Source checkouts default to manual checks. The offline demo and tour pause checks.
+
 Read the [version 0.2.1 release and upgrade notes](releases.md#upgrade-021)
 before updating an existing workspace. When upgrading from 0.1.0, also review
 the [transaction-history and account upgrade notes](releases.md#upgrade-020).

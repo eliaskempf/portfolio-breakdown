@@ -427,6 +427,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         render_alert_dialog(data_dir)
     render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued, prices=price_service)
     render_tour(empty=holdings.empty)
+    if not offline_demo and not tour_active() and not notifications_panel.open:
+        from portfolio_app.interface.shared.update_ui import render_update_dialog
+        render_update_dialog()
     finish_view_inputs()
     mark_view_ready()
 

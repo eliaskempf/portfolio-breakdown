@@ -176,6 +176,11 @@ The source is retained. Check the copy before removing anything. See
 
 ## Privacy and network access {#privacy}
 
+The update checker requests public release metadata from GitHub. Its request
+contains no portfolio data. The app stores the check result, automatic-check
+preference and the last read and cleared release versions in `updates.json`
+in the per-user application state directory. See [Update or remove](install.md#update) for the controls.
+
 The application server runs on loopback with Streamlit usage telemetry disabled.
 Local storage is not encryption. Protect your workspace, backups and exported
 reports using your operating system's access controls and backup policy.

@@ -53,8 +53,16 @@ def app_header(data_dir: Path, demo_dir: Path | None, *, demo: bool):
                 with menu:
                     preferences = _menu_section('Preferences')
                     workspace_panel = _menu_section('Workspace')
-                    with _menu_section('Help'):
+                    help_section = _menu_section('Help')
+                    with help_section:
                         _help(demo)
+    if not touring:
+        from portfolio_app.interface.shared.update_ui import watch_updates, render_update_settings
+        if not offline:
+            watch_updates()
+        if menu.open and help_section.open:
+            with help_section:
+                render_update_settings(offline=offline)
     return data_dir, demo, refresh, preferences, workspace_panel, notifications
 
 
