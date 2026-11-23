@@ -150,6 +150,18 @@ def test_drill_preserves_assigned_label_value_and_conserves_every_branch(compari
     assert subdetail.loc[subdetail.is_leaf, "percentage"].sum() == 1
 
 
+def test_allocations_share_the_path_of_a_common_sector_across_sources(comparison_data):
+    exposures, classified = comparison_data
+    label = Label("labels", ("Group B",))
+    classified["b"] = classified["a"]
+    comparison = compare_labels(exposures, classified, [label], overlap="split")
+    details = comparison.allocations
+    assert details.asset_id.tolist() == ["a", "a", "b"]
+    assert details.value.tolist() == [100., 20., 80.]
+    assert details.path.iloc[0] == (label.key,)
+    assert all(path is details.path.iloc[0] for path in details.path)
+
+
 def test_assets_only_merges_multiple_paths_and_direct_indirect_rows(comparison_data):
     exposures, classified = comparison_data
     labels = [Label("labels", ("Group A",))]

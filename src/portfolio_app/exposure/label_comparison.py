@@ -1,6 +1,7 @@
 """Compare chosen hierarchy labels against normalized asset exposures."""
 
 from dataclasses import dataclass
+from functools import cache
 import json
 import math
 from typing import Literal, Mapping
@@ -144,18 +145,23 @@ class LabelSelection:
         # ETF providers can name the same asset differently. A holding leaf must
         # still merge by asset identity, including when it has several source rows.
         asset_names = valued.drop_duplicates("asset_id").set_index("asset_id")["asset_name"].to_dict()
+
+        @cache
+        def detail_path(label: Label, path: TaxonomyPath) -> TaxonomyPath:
+            return (self._keys[label], *path[len(label.path):])
+
         for row, matches, assigned in self._assignments(valued, overlap):
             matched.append(row.value)
             if len(matches) > 1:
                 overlapping.append(row.value)
+            name = asset_names[row.asset_id]
             for label, paths in matches.items():
-                key = self._keys[label]
                 totals[label] += assigned
                 assets[label].add(row.asset_id)
                 assigned_total += assigned
+                share = assigned / len(paths)
                 for path in paths:
-                    details.append({"asset_id": row.asset_id, "asset_name": asset_names[row.asset_id],
-                                    "path": (key, *path[len(label.path):]), "value": assigned / len(paths)})
+                    details.append((row.asset_id, name, detail_path(label, path), share))
         matched_value = math.fsum(matched)
         # Include explicitly chosen zero-value labels in the comparison table.
         table = pd.DataFrame([{
