@@ -734,10 +734,14 @@ against each packaged server. The benchmark builds a disposable binary from the
 release PyInstaller spec with an additional measurement hook. Only the benchmark
 build contains the synthetic provider and timing probes.
 
-The collection experiment compares the same binary with and without Streamlit's
-forced full Python collection after each rerun. Automatic garbage collection
-stays active in both trials. Each process makes five visits to the Companies
-grid and 80 Overview switches. Results include click-to-paint and settled times,
+The app leaves garbage collection to Python by default. Set Streamlit's
+`runner.postScriptGC` to `true` to force a full collection after each rerun.
+Explicit configuration files, environment options and command-line flags take
+precedence over the app default.
+
+The collection experiment compares the shipped default with forced collection
+in the same binary. Automatic garbage collection stays active in both trials.
+Each process makes five visits to the Companies grid and 80 Overview switches. Results include click-to-paint and settled times,
 chart digests, collection counts and five samples of server resident memory.
 Memory samples come from the Streamlit server PID after cleanup. Compare resident
 memory within each OS because working-set accounting differs by platform.

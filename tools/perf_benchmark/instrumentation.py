@@ -201,6 +201,7 @@ def observe_collections(trial, record):
     import gc
     from threading import local
     from streamlit import config
+    from portfolio_app.performance.history_observations import _observations_from_bytes
     from streamlit.runtime.scriptrunner.script_runner import ScriptRunner
     from streamlit.runtime.scriptrunner_utils.script_run_context import ScriptRunContext
 
@@ -230,6 +231,7 @@ def observe_collections(trial, record):
             state.in_cleanup = False
             record('script_finished', chart_ms=getattr(state, 'chart_ms', 0), forced=state.forced,
                    policy=config.get_option('runner.postScriptGC'), automatic=gc.isenabled(),
+                   observation_parses=_observations_from_bytes.cache_info().misses,
                    cleanup_collections=gc.get_stats()[2]['collections'] - before)
             state.chart_ms = 0
 

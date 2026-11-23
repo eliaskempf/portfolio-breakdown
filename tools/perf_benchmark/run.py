@@ -33,7 +33,10 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         PORTFOLIO_BENCHMARK_REFRESH=scenario, PORTFOLIO_BENCHMARK_THEMES=str(int(themes)),
         PORTFOLIO_BENCHMARK_COMPANY_ACCOUNTS=str(int(company_accounts)))
     if scenario == 'collection':
-        env['STREAMLIT_RUNNER_POST_SCRIPT_GC'] = 'true' if variant == 'reference' else 'false'
+        if variant == 'reference':
+            env['STREAMLIT_RUNNER_POST_SCRIPT_GC'] = 'true'
+        else:
+            env.pop('STREAMLIT_RUNNER_POST_SCRIPT_GC', None)  # Exercise the shipped default.
     args = [str(executable), '--data-dir', str(workspace), '--offline-demo', '--ignore-workspace-selection']
     if surface == 'browser':
         with socket.socket() as reserve:
@@ -89,6 +92,8 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
             if (cleanup['event'] != 'script_finished' or not cleanup['automatic'] or
                     cleanup['policy'] != reference or cleanup['forced'] != int(reference)):
                 raise AssertionError(f'Unexpected server cleanup after switching views: {cleanup}')
+            if cleanup['observation_parses'] != 1:
+                raise AssertionError('Collector comparison requires a single shared parse of the history fixture')
             action['forced_collections'] = cleanup['forced']
             action['cleanup_collections'] = cleanup['cleanup_collections']
             if any(e['event'] == 'portfolio_valued' for e in during):

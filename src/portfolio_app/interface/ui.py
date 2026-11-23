@@ -479,6 +479,11 @@ def render_market_status(market_workspace, market_revision, *, reader=None, show
 
 
 def main():
+    from streamlit import config
+    # Streamlit otherwise scans the complete heap after every fragment, even a
+    # display-only switch. Let Python schedule collections unless overridden.
+    if not config.is_manually_set('runner.postScriptGC'):
+        config.set_option('runner.postScriptGC', False)
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, default=Path.cwd() / "data" / "portfolio")
     parser.add_argument("--demo-dir", type=Path)
