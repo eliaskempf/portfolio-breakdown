@@ -10,13 +10,14 @@ from functools import lru_cache
 
 import pandas as pd
 
+from portfolio_app.portfolio.physical_assets import METALS
 from portfolio_app.exposure.aggregation import classify_exposures
 from portfolio_app.exposure.countries import COUNTRIES
 from portfolio_app.funds.etf import FundSnapshot, constituent_resolver, matching_fund
 from portfolio_app.exposure.taxonomy import Classifications, TaxonomyPath
 
 UNKNOWN = 'Unknown geography'
-SPECIAL = {'Gold', 'Crypto', 'Cash', 'Money market'}
+SPECIAL = {'Crypto', 'Cash', 'Money market'} | {metal.name for metal in METALS.values()}
 REGIONS = {'United States', 'Other North America', 'Latin America & Caribbean',
            'Europe', 'Asia', 'Africa', 'Oceania'}
 COUNTRY_UNSPECIFIED = 'Country unspecified'
@@ -125,6 +126,9 @@ def resolve_geography(holdings: pd.DataFrame, funds: list[FundSnapshot],
             kind = _text(row.get('instrument_type')).casefold()
             if kind in {'crypto', 'cash'}:
                 candidates.add((kind.title(),))
+                evidence.add(source)
+            if kind == 'physical' and (metal := METALS.get(row.get('price_source'))):
+                candidates.add((metal.name,))
                 evidence.add(source)
             if kind == 'overnight_rate':
                 candidates.add(('Money market',))

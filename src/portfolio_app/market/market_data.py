@@ -6,7 +6,7 @@ from threading import RLock
 
 from portfolio_app.market.history import HistoryService
 from portfolio_app.market.msci_history import MarketHistoryProvider
-from portfolio_app.market.gold_prices import SpotGoldProvider
+from portfolio_app.market.metal_prices import SpotMetalProvider
 from portfolio_app.market.prices import PriceService, YahooProvider
 
 
@@ -116,7 +116,7 @@ def services(data_dir):
         if workspace not in _services:
             cache = Path(workspace) / '.cache'
             _services[workspace] = (
-                PriceService(SpotGoldProvider(YahooProvider(provider_cache())), cache / 'prices.json'),
+                PriceService(SpotMetalProvider(YahooProvider(provider_cache())), cache / 'prices.json'),
                 HistoryService(MarketHistoryProvider(), cache / 'history'),
             )
         return _services[workspace]

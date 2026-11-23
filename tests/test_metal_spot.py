@@ -1,13 +1,13 @@
-"""Synthetic spot quotes and fine-gold weights; unit tests never use the network."""
+"""Synthetic spot quotes and fine-metal weights; unit tests never use the network."""
 from datetime import datetime, timezone
 import json
 
 import pandas as pd
 import pytest
 
-from portfolio_app.market.gold_prices import SpotGoldProvider, fetch_gold_quote, parse_gold_quote
+from portfolio_app.market.metal_prices import SpotMetalProvider, fetch_spot_quote, parse_spot_quote
 from portfolio_app.portfolio.holdings import DataError, metadata_dimensions, parse_holdings
-from portfolio_app.portfolio.physical_assets import GOLD_SPOT_KEY, GRAMS_PER_TROY_OUNCE
+from portfolio_app.portfolio.physical_assets import GRAMS_PER_TROY_OUNCE
 from portfolio_app.market.prices import PriceService, Quote
 from portfolio_app.portfolio.valuation import value_holdings
 
@@ -50,7 +50,7 @@ def test_equivalent_weights_value_identically_and_preserve_unit_cost(unit, quant
     assert result.shares == pytest.approx(quantity) and result.quantity_unit == unit and result.ticker == ''
     assert result.price_observed_at == NOW.isoformat()
     assert 'Gold spot' in result.valuation_note
-    assert provider.requests == [GOLD_SPOT_KEY]
+    assert provider.requests == ['spot:gold:USD:troy_oz']
     assert 'price_source' not in metadata_dimensions(rows)
 
 
@@ -59,7 +59,7 @@ def test_one_request_across_weight_units_zero_positions_and_cached_failure(tmp_p
     rows = pd.concat([holdings('troy oz', 2.), holdings('kg', .1), holdings('grams', 0.)], ignore_index=True)
     prices = PriceService(provider, tmp_path / 'invented-cache.json', now=lambda: NOW)
     initial = value_holdings(rows, prices)
-    assert provider.requests == [GOLD_SPOT_KEY]
+    assert provider.requests == ['spot:gold:USD:troy_oz']
     assert initial.current_value_reporting.iloc[2] == 0.
     provider.fail = True
     fallback = value_holdings(rows, prices, refresh=True)
@@ -73,7 +73,7 @@ def test_one_request_across_weight_units_zero_positions_and_cached_failure(tmp_p
 
 @pytest.mark.parametrize('fields', [dict(quantity_unit='units'), dict(quantity_unit='oz'),
     dict(ticker='GC=F'), dict(isin='DE000EWG2LD7'), dict(instrument_type='equity'),
-    dict(price_source='silver_spot'), dict(manual_price=10, manual_price_currency='EUR', manual_price_date='2026-01-01')])
+    dict(price_source='unknown_spot'), dict(manual_price=10, manual_price_currency='EUR', manual_price_date='2026-01-01')])
 def test_incompatible_gold_inputs_rejected(fields):
     with pytest.raises(DataError):
         holdings(**({'unit': fields.pop('quantity_unit')} if 'quantity_unit' in fields else {}), **fields)
@@ -87,30 +87,49 @@ def test_manual_physical_assets_are_not_automatically_repriced():
     assert provider.requests == []
 
 
-def test_spot_adapter_preserves_metadata_and_delegates_other_requests(monkeypatch):
-    payload = dict(symbol='XAU', currency='USD', price=2000., updatedAt=NOW.isoformat())
+@pytest.mark.parametrize('metal,symbol', [('gold', 'XAU'), ('silver', 'XAG'), ('platinum', 'XPT'), ('palladium', 'XPD')])
+def test_spot_adapter_preserves_metadata_and_delegates_other_requests(monkeypatch, metal, symbol):
+    payload = dict(symbol=symbol, currency='USD', price=2000., updatedAt=NOW.isoformat())
     class Response:
         def __enter__(self): return self
         def __exit__(self, *args): pass
         def read(self, size): return json.dumps(payload).encode()
     def fetch(request, timeout):
-        assert request.full_url == 'https://api.gold-api.com/price/XAU'
+        assert request.full_url == f'https://api.gold-api.com/price/{symbol}'
         assert timeout == 10
         return Response()
-    monkeypatch.setattr('portfolio_app.market.gold_prices.urlopen', fetch)
+    monkeypatch.setattr('portfolio_app.market.metal_prices.urlopen', fetch)
     market = SyntheticProvider()
-    provider = SpotGoldProvider(market)
-    assert provider.price(GOLD_SPOT_KEY) == Quote(2000., 'USD', NOW)
+    provider = SpotMetalProvider(market)
+    assert provider.price(f'spot:{metal}:USD:troy_oz') == Quote(2000., 'USD', NOW)
     assert provider.price('INVENTED').currency == 'USD'
     assert market.requests == ['INVENTED']
     assert provider.fx('USD').price == .8
     payload['currency'] = 'EUR'
     with pytest.raises(ValueError):
-        fetch_gold_quote()
+        fetch_spot_quote(symbol)
 
 
 @pytest.mark.parametrize('change', [dict(symbol='XAG'), dict(currency='EUR'), dict(price=-1),
     dict(price=True), dict(price=float('nan')), dict(updatedAt='2026-01-05')])
 def test_invalid_provider_quotes_are_rejected(change):
     with pytest.raises(ValueError):
-        parse_gold_quote(dict(symbol='XAU', currency='USD', price=2000., updatedAt=NOW.isoformat()) | change)
+        parse_spot_quote(dict(symbol='XAU', currency='USD', price=2000., updatedAt=NOW.isoformat()) | change, 'XAU')
+
+
+def test_distinct_metals_share_only_their_own_quote():
+    provider = SyntheticProvider()
+    rows = pd.concat([holdings('grams', GRAMS_PER_TROY_OUNCE, price_source=source)
+                      for source in ('silver_spot', 'gold_spot', 'silver_spot')], ignore_index=True)
+    result = value_holdings(rows, PriceService(provider, now=lambda: NOW))
+    assert sorted(provider.requests) == ['spot:gold:USD:troy_oz', 'spot:silver:USD:troy_oz']
+    assert result.current_value_reporting.tolist() == pytest.approx([1600.] * 3)
+    assert 'Silver spot' in result.valuation_note.iloc[0]
+
+
+def test_unpriced_physical_item_retains_unknown_value():
+    provider = SyntheticProvider()
+    row = value_holdings(holdings('bottles', 3, price_source=''), PriceService(provider)).iloc[0]
+    assert pd.isna(row.current_value_reporting)
+    assert row.valuation_note == 'Missing manual unit price'
+    assert not provider.requests

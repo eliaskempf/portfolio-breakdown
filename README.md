@@ -18,7 +18,7 @@ allocated as planned. All portfolio data is stored locally on your computer.
 This app is designed to help you understand your current holdings, analyze
 the underlying exposure of your ETFs, and inform rebalancing decisions. Its
 key features are:
-- Track stocks, ETFs, crypto, and physical gold in EUR, USD, or GBP using public market quotes or manually entered prices.
+- Track stocks, ETFs, crypto, and physical assets in EUR, USD, or GBP using public market quotes or manually entered prices.
 - Group assets into categories and optionally define target allocations (e.g., 60% equities / 40% bonds).
 - Set targets for individual assets within categories (e.g., 70% MSCI World / 30% MSCI EM within equities).
 - Break down supported ETFs into their underlying holdings, combining direct and indirect exposure (e.g., NVIDIA shares held directly and through an MSCI World ETF).

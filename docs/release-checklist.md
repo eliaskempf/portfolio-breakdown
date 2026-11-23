@@ -121,7 +121,7 @@ not a pending manual task.
 - [ ] Mixed-currency purchase batches, per-row dates/rates and supplied converted
       totals survive save/reopen. Balance replacements invalidate incompatible costs.
       Monetary planning inputs reset on currency change; navigation and targets remain.
-- [ ] Physical gold spot valuation gives equal values for equivalent troy-ounce,
+- [ ] Precious-metal spot valuation gives equal values for equivalent troy-ounce,
       gram and kilogram weights; USD quotes convert to the selected reporting currency. Quote timestamps,
       missing prices/FX and cached fallback stay visible. Manual pricing remains
       available and existing manual holdings stay unchanged until explicitly switched.

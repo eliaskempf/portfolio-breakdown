@@ -59,7 +59,7 @@ def render_equity_exposure_metric(result, *, market=False, bucket_ids=None, fres
                            'Exposure / selected capital, including allocated futures cash and cumulative P&L. '
                            'Futures contribute contract notional to exposure; their allocated cash is counted only in capital. '
                            'Portfolio debt is included only at portfolio scope; category leverage is unavailable with unassigned debt. '
-                           'Gold and crypto count; cash contributes zero exposure.')
+                           'Physical assets and crypto count; cash contributes zero exposure.')
             if current_freshness and current_freshness[0]:
                 st.caption(current_freshness[0], help=current_freshness[1])
     render_freshness(freshness_rows, render)
@@ -185,7 +185,7 @@ def render_exposure_targets(directory, config, result, *, active_basis):
     with st.expander('Policy settings', expanded=not saved or not valid):
         labels = category_labels(config)
         universe = st.selectbox('Target exposure universe', ['equity', 'market'], index=['equity', 'market'].index(saved.universe) if saved else 1,
-            format_func=lambda value: {'equity': 'Equity only', 'market': 'Total market (including gold and crypto)'}[value], key='exposure_control_universe_' + str(revision))
+            format_func=lambda value: {'equity': 'Equity only', 'market': 'Total market (including physical assets and crypto)'}[value], key='exposure_control_universe_' + str(revision))
         conventions = ['leaves', 'parent_relative', 'mixed']
         mixed_owners = {b.parent for b in config.buckets if b.parent}
         mixed = result.capital.bucket_id.isin(mixed_owners).any() if 'bucket_id' in result.capital else False

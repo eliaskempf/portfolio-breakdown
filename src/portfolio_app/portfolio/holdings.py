@@ -90,15 +90,15 @@ def parse_holdings(content: str) -> pd.DataFrame:
             if not row.get("quantity_unit") or not row.get("manual_price_date") or not re.fullmatch(r"[A-Z]{3}", row.get("manual_price_currency", "")):
                 raise DataError("Manual prices require a quantity unit, date, and three-letter currency.")
     if 'price_source' in frame:
-        from portfolio_app.portfolio.physical_assets import GOLD_WEIGHT_UNITS
-        if not frame.price_source.isin(['', 'gold_spot']).all():
-            raise DataError('price_source must be blank or gold_spot.')
-        for _, row in frame.loc[frame.price_source.eq('gold_spot')].iterrows():
-            if (row.get('instrument_type') != 'physical' or row.get('quantity_unit') not in GOLD_WEIGHT_UNITS
+        from portfolio_app.portfolio.physical_assets import METALS, WEIGHT_UNITS
+        if not frame.price_source.isin(['', *METALS]).all():
+            raise DataError(f'price_source must be blank or one of {", ".join(METALS)}.')
+        for _, row in frame.loc[frame.price_source.isin(METALS)].iterrows():
+            if (row.get('instrument_type') != 'physical' or row.get('quantity_unit') not in WEIGHT_UNITS
                     or row.ticker or row['isin']):
-                raise DataError('Gold spot pricing requires physical fine gold in troy oz, grams or kg, with no ticker or ISIN.')
+                raise DataError('Metal spot pricing requires physical fine-metal weight in troy oz, grams or kg, with no ticker or ISIN.')
             if pd.notna(row.get('manual_price', float('nan'))):
-                raise DataError('Choose gold spot pricing or a manual price, not both.')
+                raise DataError('Choose one valuation method for this holding.')
     for column in ("id", "name"):
         if frame[column].eq("").any():
             raise DataError(f"Every holding needs a nonempty {column}.")

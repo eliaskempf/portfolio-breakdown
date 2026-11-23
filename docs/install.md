@@ -177,10 +177,9 @@ Analytical label hierarchies are maintained in `classifications.yaml`; see the
 and partial coverage remains visible. Missing prices and buy-ins are unknown,
 not zero. The app is for local analysis and planning; it does not execute trades.
 
-Physical gold is available under **Add position → Physical asset → Gold spot price**.
-Enter fine-gold weight in troy ounces, grams or kilograms. The spot quote is
-converted to the reporting currency and follows the normal refresh/cache behavior. Manual prices
-remain available; existing manually valued holdings are not switched automatically.
+Add tangible holdings under **Add position → Physical asset**. Enter a dated
+price per unit or choose a spot price for fine gold, silver, platinum or
+palladium. [Physical assets](user/positions.md#physical-assets)
 
 ## Building and testing packages
 

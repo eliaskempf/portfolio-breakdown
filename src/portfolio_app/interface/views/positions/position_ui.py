@@ -4,26 +4,23 @@ from portfolio_app.interface.shared.currency_display import reporting_currency
 
 from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
 from portfolio_app.interface.shared.render_sections import render_sections
 
-from portfolio_app.interface.views.positions.position_entry_ui import holding_amounts, purchase_rows
+from portfolio_app.interface.views.positions.position_entry_ui import (holding_amounts, optional_number, physical_pricing,
+    purchase_rows, render_manual_price)
 from portfolio_app.portfolio.purchases import save_purchase_batch, read_opening
 from portfolio_app.portfolio.position_entry import compact_decimal, decimal_input
 from portfolio_app.interface.shared.display_names import display_name, instrument_name
 from portfolio_app.funds.etf import FundSnapshot, validate_fund_listings
+from portfolio_app.portfolio.physical_assets import is_unit_based_physical
 from portfolio_app.portfolio.holdings import DataError, metadata_dimensions
 from portfolio_app.interface.shared.instrument_ui import render_instrument_search
 from portfolio_app.interface.views.positions.position_list import list_context, render_position_list
 from portfolio_app.portfolio.strategic import category_labels
 from portfolio_app.portfolio.positions import HoldingsSnapshot, save_position, read_snapshot
 from portfolio_app.interface.views.positions.purchase_ui import render_bulk_purchases, render_purchase_history
-
-
-def _optional_number(value) -> float | None:
-    return None if value is None or pd.isna(value) or value == "" else float(value)
 
 
 def _clear_editor() -> None:
@@ -360,6 +357,37 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
     dialog()
 
 
+def _reload_stale_position(action):
+    st.warning("Holdings changed while this form was open. Reload the form to edit the latest data.")
+    if st.button("Reload position form", help='Discard this stale draft and load the latest saved holding.'):
+        selected = st.session_state.get('position_edit_selected')
+        _clear_editor()
+        st.session_state.update(position_edit_selected=selected, position_edit_action=action, position_edit_dialog=True)
+        st.rerun()
+
+
+def _edit_physical_valuation(path, snapshot, row):
+    prefix = f"position_edit_fields_valuation_{row.position_id}_"
+    expected = st.session_state.setdefault(prefix + 'revision', snapshot.revision)
+    if expected != snapshot.revision:
+        _reload_stale_position('Edit position')
+        return
+    source, unit = physical_pricing(prefix, row, unit_locked=True)
+    price, currency, observed = (None, '', '') if source else render_manual_price(
+        prefix, row, physical=True, quantity_unit=unit)
+    if st.button('Save valuation', type='primary'):
+        try:
+            save_position(path, dict(price_source=source, manual_price='' if price is None else str(price),
+                          manual_price_currency=currency.upper(), manual_price_date=observed),
+                          position_id=row.position_id, expected_revision=expected)
+        except (DataError, OSError) as exc:
+            st.error(str(exc))
+        else:
+            _clear_editor()
+            st.session_state['position_saved_notice'] = 'Valuation saved.'
+            st.rerun()
+
+
 def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, action='Add position', valued=None):
     holdings = snapshot.holdings
     editing = action == "Edit position"
@@ -377,16 +405,23 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         if position_id not in set(holdings.position_id):
             st.warning('This position no longer exists. Close and reopen the list.')
             return
+        row = holdings.loc[holdings.position_id.eq(position_id)].iloc[0]
         from portfolio_app.ledger.account_journal import load_journal
         from portfolio_app.ledger.security_history import effective_holdings
         history_journal, _ = load_journal(path.parent)
         if any(b.position_id == position_id and b.active for b in history_journal.securities):
+            if is_unit_based_physical(row):
+                view = st.segmented_control('Edit position', ['Valuation', 'Transactions'], default='Valuation',
+                    required=True, key=f'position_edit_fields_active_view_{position_id}')
+                if view == 'Valuation':
+                    _edit_physical_valuation(path, snapshot, row)
+                    return True
             from portfolio_app.interface.views.history.history_ui import render_position_history
             current = effective_holdings(holdings, history_journal.securities)
             st.caption('Quantity and cost come from history. Use Replace balance for a new snapshot; categories and targets remain editable in Rebalance.')
             render_position_history(path.parent, current.loc[current.position_id == position_id].iloc[0])
             return
-        row = holdings.loc[holdings["position_id"] == position_id].iloc[0].to_dict()
+        row = row.to_dict()
         identity = row["id"]
         raw = read_opening(path, snapshot.revision, position_id)
         row.update({key: raw.get(key, "") for key in ("shares", "acquisition_price")})
@@ -428,7 +463,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
                 _clear_editor()
                 st.rerun()
             return True
-    physical = row.get('instrument_type') == 'physical' and not row.get('ticker') and bool(row.get('quantity_unit'))
+    physical = is_unit_based_physical(row)
     if not editing and not identity:
         entry = kind_column.segmented_control('Position type', ['Listed investment', 'Physical asset', 'Future'], help='Choose a listed security or a physical holding measured in units or weight.', required=True, default='Listed investment',
                                      key='position_edit_fields_entry_kind') or 'Listed investment'
@@ -442,12 +477,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         st.session_state["position_edit_context"] = context
         st.session_state["position_edit_revision"] = snapshot.revision
     if st.session_state["position_edit_revision"] != snapshot.revision:
-        st.warning("Holdings changed while this form was open. Reload the form to edit the latest data.")
-        if st.button("Reload position form", help='Discard this stale draft and load the latest saved holding.'):
-            selected = st.session_state.get('position_edit_selected')
-            _clear_editor()
-            st.session_state.update(position_edit_selected=selected, position_edit_action=action, position_edit_dialog=True)
-            st.rerun()
+        _reload_stale_position(action)
         return
     # Separate keys keep values tied to the selected position, not another row.
     prefix = f"position_edit_fields_{action}_{position_id}_{identity}_{physical}_"
@@ -482,35 +512,14 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         if st.session_state.get('onboarding_step') == 'position':
             st.caption('2 of 2 · Add your first position')
             st.write('Choose what you own, enter the quantity, and select its category. Buy-in and target details can wait.')
-        def clear_unit_amounts():
-            for field in ('shares', 'buy_in', 'total_buy_in', 'manual_price', 'from_purchases', 'trade_quantity', 'trade_price', 'trade_fees'):
-                st.session_state.pop(prefix + field, None)
-                st.session_state.get('position_draft', {}).pop(prefix + field, None)
-            for name in ('view_editor_drafts', 'view_editor_bases'):
-                st.session_state.get(name, {}).pop(prefix + 'purchase_editor', None)
-            st.session_state.pop(prefix + 'purchase_editor', None)
-            st.session_state[prefix + 'unit_changed'] = True
         price_source = row.get('price_source', '')
-        if physical:
-            def change_valuation_method():
-                from portfolio_app.portfolio.physical_assets import GOLD_WEIGHT_UNITS
-                # A queued browser event can arrive after saving cleared the dialog.
-                if (not editing and not identity and st.session_state.get(prefix + 'valuation_method') == 'Gold spot price'
-                        and st.session_state.get(prefix + 'quantity_unit') not in GOLD_WEIGHT_UNITS):
-                    st.session_state.pop(prefix + 'quantity_unit', None)
-                    st.session_state.get('position_draft', {}).pop(prefix + 'quantity_unit', None)
-                    clear_unit_amounts()
-            live_gold = st.radio('Valuation method', ['Gold spot price', 'Manual price'], help='Use live gold spot pricing or an optional dated manual price per unit.', horizontal=True,
-                index=0 if price_source == 'gold_spot' or not (editing or identity) else 1,
-                key=prefix + 'valuation_method', on_change=change_valuation_method) == 'Gold spot price'
-            price_source = 'gold_spot' if live_gold else ''
         manual_entry = st.session_state.get(prefix + 'manual_entry', False)
         name = st.session_state.get(prefix + 'name', row.get('name', ''))
         ticker = st.session_state.get(prefix + 'ticker', row.get('ticker', ''))
         identity_ready = bool(name) or manual_entry or physical or editing or bool(identity)
         if identity_ready:
             name_column, ticker_column = st.columns([3, 2]) if not physical else (st, st)
-            name = name_column.text_input('Instrument name', value=row.get('name') or ('Physical gold' if physical else ''),
+            name = name_column.text_input('Instrument name', value=row.get('name', ''),
                 disabled=bool(identity) and not editing, key=prefix + 'name',
                 help='Edit the name shown in your portfolio. Renaming a saved instrument applies to all its account positions.')
             if not physical:
@@ -521,18 +530,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         if physical:
             ticker, isin = '', ''
 
-        if physical:
-            from portfolio_app.portfolio.physical_assets import GOLD_WEIGHT_UNITS
-            units = list(GOLD_WEIGHT_UNITS) if live_gold else list(dict.fromkeys([*GOLD_WEIGHT_UNITS, 'units', row.get('quantity_unit') or 'troy oz']))
-            if row.get('quantity_unit') and row['quantity_unit'] not in units:
-                st.info('This holding has no supported gold weight unit. Keep manual pricing or create a gold holding with a known weight.')
-                return
-            quantity_unit = st.selectbox('Quantity unit', units, help='Unit used consistently for quantity, purchase cost and current price.', index=units.index(row.get('quantity_unit') or 'troy oz'),
-                                        disabled=editing or bool(identity), key=prefix + 'quantity_unit', on_change=clear_unit_amounts)
-            if st.session_state.get(prefix + 'unit_changed'):
-                st.caption('Unit changed. Re-enter the quantity and prices; amounts are not converted.')
-            st.caption('Enter the fine-gold weight in troy ounces, grams or kilograms. Buy-in amounts must use the selected unit.'
-                       if live_gold else 'Quantity, manual price and buy-in must use the same unit.')
+            price_source, quantity_unit = physical_pricing(prefix, row, unit_locked=editing or bool(identity))
 
         amounts_slot = st.container()
         category_column, target_column = st.columns(2)
@@ -548,32 +546,14 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
                 st.caption('Add categories in Rebalance → Targets.')
         with target_column:
             target_field = 'within_bucket_target' if allocation else 'target_allocation'
-            initial_target = _optional_number(row.get(target_field))
+            initial_target = optional_number(row.get(target_field))
             target = st.number_input('Target within category % (optional)' if allocation else 'Target allocation % (optional)',
                 min_value=0.0, max_value=100.0, value=None if initial_target is None else initial_target * 100,
                 key=prefix + 'target', help='Share of the selected category, not the whole portfolio. Blank means undecided.' if allocation else
                 'Share of the whole portfolio. Blank means undecided.')
 
-        def render_manual_price():
-            manual_price, manual_currency, manual_date = None, '', ''
-            if not physical or not live_gold:
-                with st.expander('Current valuation' if physical else 'Manual pricing', expanded=physical):
-                    manual_price = st.number_input(f'Current price per {quantity_unit} (optional)' if physical else 'Manual unit price (optional)',
-                        min_value=0., value=_optional_number(row.get('manual_price')), key=prefix + 'manual_price',
-                        help='Leave blank to track quantity with an unknown value.' if physical else 'Overrides market quotes. Clear to return to provider pricing.')
-                    manual_currency = st.text_input('Price currency' if physical else 'Manual price currency', help='Currency of the manually entered current unit price.',
-                                                    value=row.get('manual_price_currency') or (reporting_currency() if physical else ''), key=prefix + 'manual_currency')
-                    if physical:
-                        from datetime import date
-                        initial_date = date.fromisoformat(row['manual_price_date']) if row.get('manual_price_date') else date.today()
-                        manual_date = st.date_input('Price date', value=initial_date, max_value=date.today(), key=prefix + 'manual_date').isoformat()
-                    else:
-                        manual_date = st.text_input('Manual price date (YYYY-MM-DD)', help='Date the manual price was observed, in year-month-day format.', value=row.get('manual_price_date', ''), key=prefix + 'manual_date')
-
-            return manual_price, manual_currency, manual_date
-
-        if physical and not live_gold:
-            manual_price, manual_currency, manual_date = render_manual_price()
+        if physical and not price_source:
+            manual_price, manual_currency, manual_date = render_manual_price(prefix, row, physical=True, quantity_unit=quantity_unit)
         else:
             manual_price, manual_currency, manual_date = None, '', ''
         snapshot_date = None
@@ -590,7 +570,7 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
             account = st.text_input('Storage location (optional)' if physical else 'Account / broker', value=row.get('account', ''), key=prefix + 'account',
                 help='Optional location or account label. Use separate positions for holdings in different accounts.')
             if not physical:
-                manual_price, manual_currency, manual_date = render_manual_price()
+                manual_price, manual_currency, manual_date = render_manual_price(prefix, row)
             if not editing and not purchase:
                 from_purchases, purchases = purchase_rows(prefix)
             short_name = st.text_input('Short display name (optional)', help='Optional shorter label for charts and lists; the full instrument name is retained.', value=row.get('short_name', ''), key=prefix + 'short_name')
@@ -675,6 +655,8 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
             **({'bucket_id': bucket} if allocation else {}), **extras,
         }
         try:
+            if physical and not quantity_unit:
+                raise DataError('Enter a quantity unit for this physical asset.')
             if amount_errors:
                 raise DataError(amount_errors[0])
             new_buy_in = not editing or buy_in != decimal_input(compact_decimal(row.get("acquisition_price")), "Buy-in", optional=True)

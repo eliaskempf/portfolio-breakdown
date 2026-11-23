@@ -1,5 +1,6 @@
 """Read-only position details and instrument market-price history."""
 
+from portfolio_app.portfolio.physical_assets import METALS
 from portfolio_app.interface.shared.currency_display import reporting_currency, money
 import pandas as pd
 import streamlit as st
@@ -109,8 +110,8 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
         render_instrument_metrics(row, data_dir, demo=demo)
         return
     if view == 'Price':
-        if row.get('price_source') == 'gold_spot':
-            st.caption('Gold spot price history is not available yet.')
+        if metal := METALS.get(row.get('price_source')):
+            st.caption(f'{metal.name} spot price history is not available yet.')
             return
         from portfolio_app.interface.views.history.market_history_ui import render_market_history
         synthetic_prices = demo and not (data_dir / '.market-history-demo').exists()

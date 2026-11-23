@@ -151,14 +151,28 @@ After a balance replacement, additional purchase dates must be after the balance
 confirmation date. Retained batches are context, not a complete transaction
 ledger; do not sum old and recalculated batches to reconstruct the holding.
 
-## Physical gold {#physical-gold}
+## Physical assets {#physical-assets}
 
-In **Add position → Physical asset → Gold spot price**, enter fine-gold weight
-in troy ounces, grams or kilograms. One troy ounce is 31.1034768 grams. The app
-retrieves gold spot in USD per troy ounce, converts the quantity and values it in
-the selected portfolio currency. Prices represent fine-gold spot value, without coin/bar premiums or dealing
-costs. Gold spot history is not yet supported. Manual pricing remains available;
-existing manual holdings only switch when you explicitly choose live spot pricing.
+In **Add position → Physical asset**, enter a name and choose a quantity unit.
+You can type your own unit, such as bottles. For a single appraised item, enter
+a quantity of one and use its appraisal as the **Manual price**. For a collection
+valued by the bottle, enter the count and the price of one bottle. Record the
+price currency and observation date. Leaving the price blank keeps the quantity
+and marks the valuation as unknown. Use **Edit position** to update an appraisal.
+For a holding with recorded purchases, **Valuation** updates its current price
+and **Transactions** opens its purchase and sale history.
+
+### Precious-metal spot prices {#physical-gold}
+
+For gold, silver, platinum or palladium, select the metal's **spot price** under
+**Valuation method**. Enter the fine-metal content in troy ounces, grams or
+kilograms. The app converts the USD quote per troy ounce to the saved weight
+unit and reporting currency. For coins valued with a collectible premium, use
+a dated manual price. Spot pricing covers current valuation only.
+[Gold API quote specification](https://gold-api.com/llms.txt)
+
+The saved unit also applies to purchases and buy-in amounts. Changing units on
+a new draft clears its amounts. Saved holdings retain their unit when edited.
 
 ## Calendar layout
 

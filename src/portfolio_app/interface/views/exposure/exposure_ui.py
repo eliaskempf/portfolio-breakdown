@@ -27,7 +27,7 @@ from portfolio_app.interface.views.portfolio.group_ui import render_group_member
 from portfolio_app.portfolio.grouping import group_classifications, group_exposures
 from portfolio_app.interface.views.exposure.label_ui import render_label_comparison
 from portfolio_app.exposure.label_presentation import asset_badges, badge_column, taxonomy_colors
-from portfolio_app.market.gold_prices import SpotGoldProvider
+from portfolio_app.market.metal_prices import SpotMetalProvider
 from portfolio_app.portfolio.holdings import DataError, metadata_dimensions
 from portfolio_app.portfolio.portfolio import prepare_portfolio
 from portfolio_app.interface.views.portfolio.performance_ui import performance_column_config
@@ -200,7 +200,7 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
     if price_service is None:
         try:
             from portfolio_app.market.market_data import provider_cache
-            provider = StaticProvider(data_dir / "demo_prices.json") if demo else SpotGoldProvider(YahooProvider(provider_cache()))
+            provider = StaticProvider(data_dir / "demo_prices.json") if demo else SpotMetalProvider(YahooProvider(provider_cache()))
             price_service = PriceService(provider, None if demo else data_dir / ".cache" / "prices.json")
         except (OSError, ValueError) as exc:
             st.error(f"Cannot load demo prices: {exc}")
