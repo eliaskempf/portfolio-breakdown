@@ -186,6 +186,38 @@ def test_risk_provider_keeps_external_correction_written_during_fetch(tmp_path):
     assert service.inputs_current()
 
 
+@pytest.mark.parametrize('force', [False, True])
+def test_overlapping_history_acquisitions_share_only_the_same_listing(tmp_path, force):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from portfolio_app.analytics.analytics_cache import AnalyticsCache
+
+    cache = AnalyticsCache(tmp_path)
+    entered, waiting, release = Event(), Event(), Event()
+    calls = []
+    def fetch():
+        calls.append(1)
+        entered.set()
+        assert release.wait(5)
+        return {'prices': [11.]}
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        first = pool.submit(cache.get, 'A', fetch, refresh=force, preserve_updates=True)
+        try:
+            assert entered.wait(3)
+            second = pool.submit(cache.get, 'A', fetch, refresh=force, preserve_updates=True,
+                                 before_fetch=lambda *args: waiting.set())
+            assert waiting.wait(3)
+            other = pool.submit(cache.get, 'B', lambda: {'prices': [22.]}, preserve_updates=True)
+            assert other.result(timeout=3).data == {'prices': [22.]}
+        finally:
+            release.set()
+        assert first.result().data == second.result().data == {'prices': [11.]}
+    assert calls == [1]
+    if force:
+        cache.get('A', fetch, refresh=True, preserve_updates=True)
+        assert calls == [1, 1]
+
+
 def test_repeated_risk_validation_decodes_only_changed_evidence(tmp_path, monkeypatch):
     import os
     from portfolio_app.analytics.risk_data import RiskHistoryService

@@ -1,10 +1,12 @@
 """Small atomic, per-request cache for optional analytics providers."""
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 from pathlib import Path
-from threading import RLock
+from threading import Lock, RLock
+from weakref import WeakValueDictionary
 from portfolio_app.workspace.workspace_lock import document_write
 from portfolio_app.workspace.atomic_file import staged_text
 
@@ -64,6 +66,7 @@ class AnalyticsCache:
         self.memory = {}
         self._unsaved = {}
         self._save_lock = RLock()
+        self._acquisitions = WeakValueDictionary()
 
     @staticmethod
     def _version(path):
@@ -109,6 +112,20 @@ class AnalyticsCache:
             return previous
         if before_fetch is not None:
             before_fetch(key, previous, due)
+        guard = nullcontext()
+        if version is not None:
+            with self._save_lock:
+                guard = self._acquisitions.get(key)
+                if guard is None:
+                    guard = self._acquisitions[key] = Lock()
+        with guard:
+            # Another reader may have acquired this same missing revision while
+            # we waited. Explicit refreshes made after publication still fetch.
+            if version is not None and (self._unsaved.get(key) is not pending or self._version(path) != version):
+                return self.cached(key, ttl=ttl)[0]
+            return self._fetch_and_store(key, path, fetch, previous, version, pending, ttl)
+
+    def _fetch_and_store(self, key, path, fetch, previous, version, pending, ttl):
         stamp = self.now().isoformat()
         try:
             data = fetch()
@@ -128,13 +145,13 @@ class AnalyticsCache:
             return result
         with self._save_lock:
             try:
-                if preserve_updates:
+                if version is not None:
                     if self._unsaved.get(key) is not pending or not _save_if_unchanged(path, version, entry):
                         return self.cached(key, ttl=ttl)[0]
                 else:
                     atomic_json(path, entry)
                 self._unsaved.pop(key, None)
             except OSError:
-                self._unsaved[key] = (version if preserve_updates else self._version(path), entry)
+                self._unsaved[key] = (version if version is not None else self._version(path), entry)
                 result = CachedResult(result.data, result.status, result.fetched_at, 'Analytics cache could not be saved.')
         return result
