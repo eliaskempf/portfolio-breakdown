@@ -9,7 +9,7 @@ from typing import Literal, Mapping
 import pandas as pd
 
 from portfolio_app.exposure.taxonomy import Classifications, TaxonomyPath, UNCLASSIFIED, branches, is_descendant, paths_for
-from portfolio_app.exposure.aggregation import ALLOCATION_COLUMNS, build_tree
+from portfolio_app.exposure.aggregation import ALLOCATION_COLUMNS, build_tree, flat_category_tree
 
 
 @dataclass(frozen=True)
@@ -170,17 +170,13 @@ class LabelSelection:
             "Portfolio %": 100 * totals[label] / portfolio_value if portfolio_value > 0 else float("nan"),
         } for label in labels], columns=["Label", "Value", "Assets", "Selected labels %", "Portfolio %"])
         table = table.sort_values(["Value", "Label"], ascending=[False, True], kind="stable", ignore_index=True)
-        categories = [((self._keys[label],), totals[label]) for label in labels if assets[label]]
-        nodes = build_tree(pd.DataFrame(categories, columns=["path", "value"]), root_label="Selected labels")
+        categories = {self._keys[label]: totals[label] for label in labels if assets[label]}
+        # In overlap mode the sum assigned to labels can exceed the distinct matched value.
+        nodes = flat_category_tree(categories, root_label="Selected labels", total=assigned_total,
+                                   denominator=matched_value if matched_value > 0 else assigned_total)
         titles = {label.key: label.title for label in labels}
         nodes.loc[nodes["depth"] == 1, "label"] = nodes.loc[nodes["depth"] == 1, "label"].map(titles)
         nodes["path"] = nodes["path"].map(lambda path: (titles[path[0]],) if path else ())
-        if not nodes.empty:
-            # Preserve source-order addition at the root. In overlap mode the
-            # sum assigned to labels can exceed the distinct matched value.
-            nodes.at[0, "value"] = assigned_total
-            denominator = matched_value if matched_value > 0 else assigned_total
-            nodes["percentage"] = nodes["value"] / denominator if denominator > 0 else float("nan")
         return LabelComparison(table, nodes, pd.DataFrame(details, columns=ALLOCATION_COLUMNS),
                                portfolio_value, matched_value, math.fsum(overlapping))
 

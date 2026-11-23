@@ -158,6 +158,39 @@ def test_exposure_boundary_and_flat_dimensions(valued):
     assert holdings.loc[holdings["label"] == "Nvidia (NVDA)", "value"].iloc[0] == 240
 
 
+def test_flat_dimensions_build_one_leaf_per_category_in_source_order(monkeypatch):
+    from portfolio_app.exposure import aggregation
+
+    rows = pd.DataFrame({
+        "asset_id": ["a", "b", "a", "c"], "asset_name": ["First", "Two", "Alternate", "Three"],
+        "value": [1e16, -1e16, 1., 0.], "account": ["A", "B", "A", ""],
+        "unused": ["Extra field"] * 4,
+    })
+    original = aggregation.build_tree
+    def checked(allocations, **kwargs):
+        assert len(allocations) == 3
+        return original(allocations, **kwargs)
+    monkeypatch.setattr(aggregation, "build_tree", checked)
+    nodes = aggregate_dimension(rows, "account")
+    assert nodes.label.tolist() == ["account", "A", "B", "Unspecified"]
+    assert nodes.value.tolist() == [1., 1e16, -1e16, 0.]
+    assert nodes.percentage.tolist() == nodes.value.tolist()
+    holdings = aggregate_dimension(rows, "holding", show_tickers=True)
+    assert holdings.label.tolist() == ["holding", "Alternate (A)", "Two (B)", "Three (C)"]
+    assert holdings.value.tolist() == nodes.value.tolist()
+
+
+@pytest.mark.parametrize("dtype", ["Float32", "Float64", "object"])
+def test_flat_dimensions_keep_unknown_amounts_in_their_category(dtype):
+    rows = pd.DataFrame({"asset_id": ["a", "b", "a"], "asset_name": ["One", "Two", "One"],
+                         "value": pd.Series([1., pd.NA, 2.], dtype=dtype)})
+    nodes = aggregate_dimension(rows, "holding")
+    assert nodes.label.tolist() == ["holding", "One", "Two"]
+    assert nodes.value.isna().tolist() == [True, False, True]
+    assert nodes.value.iloc[1] == 3.
+    assert nodes.percentage.isna().all()
+
+
 def test_empty_and_zero_allocations(exposures, taxonomy):
     assert aggregate(exposures.iloc[:0], taxonomy, taxonomy="ai").empty
     exposures["value"] = 0.0

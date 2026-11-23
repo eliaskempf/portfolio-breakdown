@@ -126,17 +126,41 @@ def aggregate(
     )
 
 
+def flat_category_tree(totals, *, root_label, total, denominator):
+    """Build one leaf per total while retaining the root's source-order sum."""
+    categories = [((key,), value) for key, value in totals.items()]
+    nodes = build_tree(pd.DataFrame(categories, columns=["path", "value"]), root_label=root_label)
+    if not nodes.empty:
+        nodes.at[0, "value"] = total
+        nodes["percentage"] = nodes["value"] / denominator if denominator > 0 else float("nan")
+    return nodes
+
+
 def aggregate_dimension(exposures: pd.DataFrame, dimension: str, *, show_tickers: bool = False) -> pd.DataFrame:
-    records = []
-    labels = {}
-    for row in exposures.to_dict("records"):
-        key = row["asset_id"] if dimension == "holding" else str(row[dimension] or "Unspecified")
-        symbol = str(row.get("ticker") or row["asset_id"]).upper()
-        labels[key] = (f"{row['asset_name']} ({symbol})" if show_tickers and row.get("source_type") != "instrument_group" else row['asset_name']) if dimension == "holding" else key
-        records.append({"asset_id": row["asset_id"], "asset_name": row["asset_name"], "path": (key,), "value": row["value"]})
-    nodes = build_tree(pd.DataFrame(records, columns=ALLOCATION_COLUMNS), root_label=dimension)
-    # Keep node identities based on stable IDs, independently of display tickers.
-    leaves = nodes["depth"] == 1
-    nodes.loc[leaves, "label"] = nodes.loc[leaves, "label"].map(labels)
-    nodes["path"] = nodes["path"].map(lambda path: (labels[path[0]],) if path else ())
+    if exposures.empty:
+        return pd.DataFrame(columns=NODE_COLUMNS)
+    if dimension == "holding":
+        keys = exposures["asset_id"]
+    else:
+        keys = (str(value) if value is not pd.NA and value else "Unspecified" for value in exposures[dimension])
+    totals = defaultdict(float)
+    total = 0.0
+    amounts = exposures["value"].to_numpy(dtype="float64", na_value=float("nan"))
+    for key, value in zip(keys, amounts):
+        totals[key] += value
+        total += value
+    nodes = flat_category_tree(totals, root_label=dimension, total=total, denominator=total)
+    if dimension == "holding":
+        # The last source supplies the display name, independently of the stable node ID.
+        columns = [name for name in ("asset_id", "asset_name", "ticker", "source_type") if name in exposures]
+        last = exposures.loc[:, columns].drop_duplicates("asset_id", keep="last")
+        labels = last.set_index("asset_id")["asset_name"].to_dict()
+        if show_tickers:
+            for row in last.to_dict("records"):
+                if row.get("source_type") != "instrument_group":
+                    symbol = str(row.get("ticker") or row["asset_id"]).upper()
+                    labels[row["asset_id"]] = f"{row['asset_name']} ({symbol})"
+        leaves = nodes["depth"] == 1
+        nodes.loc[leaves, "label"] = nodes.loc[leaves, "label"].map(labels)
+        nodes["path"] = nodes["path"].map(lambda path: (labels[path[0]],) if path else ())
     return nodes

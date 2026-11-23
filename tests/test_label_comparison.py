@@ -253,17 +253,17 @@ def test_zero_measure_needs_membership_only_in_a_drilled_asset_table(monkeypatch
 
 
 def test_flat_label_chart_uses_one_total_per_matched_label(monkeypatch):
-    from portfolio_app.exposure import label_comparison
+    from portfolio_app.exposure import aggregation
 
     labels = [Label('sector', (name,)) for name in ('A', 'B', 'Unused')]
     classes = {name: {'sector': ((name,),)} for name in ('A', 'B')}
     rows = pd.DataFrame({'asset_id': ['A', 'B', 'A'], 'asset_name': ['One', 'Two', 'One'],
                          'value': [100.01, 100.01, -12.99]})
-    original = label_comparison.build_tree
+    original = aggregation.build_tree
     def checked(allocations, **kwargs):
         assert len(allocations) == 2
         return original(allocations, **kwargs)
-    monkeypatch.setattr(label_comparison, 'build_tree', checked)
+    monkeypatch.setattr(aggregation, 'build_tree', checked)
     result = compare_labels(rows, classes, labels, overlap='split')
     assert len(result.allocations) == 3
     assert result.table.set_index('Label').Value.to_dict() == {'A': 100.01 - 12.99, 'B': 100.01, 'Unused': 0.}
