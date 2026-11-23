@@ -493,20 +493,30 @@ def exercise_risk(evaluate, trial, *, await_refresh=False):
             return False  # The native startup document is replaced.
     wait(ready, timeout=100)
     ready_at = time.time()
-    read("button('Analytics').click(); return true;")
-    wait(lambda: read("return !!button('Calculate risk') && !running();"))
+    wait(lambda: read("""const analytics = button('Analytics');
+        if (!analytics || running()) return false;
+        analytics.click(); return true;"""))
     actions = []
     steps = ['calculate', 'expand', 'collapse']
     if await_refresh:
         steps.insert(1, 'complete')
     for action in steps:
-        start_event = actions[-1]['event_range'][1] if action == 'complete' else event_count(trial)
-        read("""
+        start_event = actions[-1]['event_range'][1] if action == 'complete' else None
+        def try_dispatch(js):
+            nonlocal start_event
+            if action != 'complete':
+                start_event = event_count(trial)
+            return read(js)
+        wait(lambda: try_dispatch("""
             const action = """ + json.dumps(action) + """;
-            const previous = matrix()?.layout?.height;
-            const previousMatrix = action === 'complete' ? JSON.stringify(matrix().data[0].z) : null;
+            if (exception()) throw Error('Risk view failed before ' + action);
+            const current = matrix();
             const control = action === 'calculate' ? button('Calculate risk') :
                 d.querySelector('.st-key-risk_correlations [role=switch]');
+            if (running() || (action !== 'calculate' && !(visible(current) && current.data?.[0]?.z)) ||
+                (action !== 'complete' && (!visible(control) || control.disabled))) return false;
+            const previous = current?.layout?.height;
+            const previousMatrix = action === 'complete' ? JSON.stringify(current.data[0].z) : null;
             w.riskVisit = null;
             const start = w.performance.now();
             if (action !== 'complete') {
@@ -531,7 +541,7 @@ def exercise_risk(evaluate, trial, *, await_refresh=False):
                 else w.requestAnimationFrame(frame);
             }
             w.requestAnimationFrame(frame); return true;
-        """)
+        """))
         if action == 'complete':
             (trial / 'release-risk').touch()
         result = wait(lambda: read('return w.riskVisit;'), timeout=65)
