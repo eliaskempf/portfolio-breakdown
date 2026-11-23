@@ -133,7 +133,8 @@ class LabelSelection:
         totals = dict.fromkeys(labels, 0.0)
         assets = {label: set() for label in labels}
         portfolio_value = math.fsum(valued["value"])
-        matched, overlapping, allocations, details = [], [], [], []
+        matched, overlapping, details = [], [], []
+        assigned_total = 0.0
         # ETF providers can name the same asset differently. A holding leaf must
         # still merge by asset identity, including when it has several source rows.
         asset_names = valued.drop_duplicates("asset_id").set_index("asset_id")["asset_name"].to_dict()
@@ -145,8 +146,7 @@ class LabelSelection:
                 key = self._keys[label]
                 totals[label] += assigned
                 assets[label].add(row.asset_id)
-                allocations.append({"asset_id": row.asset_id, "asset_name": row.asset_name,
-                                    "path": (key,), "value": assigned})
+                assigned_total += assigned
                 for path in paths:
                     details.append({"asset_id": row.asset_id, "asset_name": asset_names[row.asset_id],
                                     "path": (key, *path[len(label.path):]), "value": assigned / len(paths)})
@@ -158,12 +158,17 @@ class LabelSelection:
             "Portfolio %": 100 * totals[label] / portfolio_value if portfolio_value > 0 else float("nan"),
         } for label in labels], columns=["Label", "Value", "Assets", "Selected labels %", "Portfolio %"])
         table = table.sort_values(["Value", "Label"], ascending=[False, True], kind="stable", ignore_index=True)
-        nodes = build_tree(pd.DataFrame(allocations, columns=ALLOCATION_COLUMNS), root_label="Selected labels")
+        categories = [((self._keys[label],), totals[label]) for label in labels if assets[label]]
+        nodes = build_tree(pd.DataFrame(categories, columns=["path", "value"]), root_label="Selected labels")
         titles = {label.key: label.title for label in labels}
         nodes.loc[nodes["depth"] == 1, "label"] = nodes.loc[nodes["depth"] == 1, "label"].map(titles)
         nodes["path"] = nodes["path"].map(lambda path: (titles[path[0]],) if path else ())
-        if matched_value > 0:
-            nodes["percentage"] = nodes["value"] / matched_value
+        if not nodes.empty:
+            # Preserve source-order addition at the root. In overlap mode the
+            # sum assigned to labels can exceed the distinct matched value.
+            nodes.at[0, "value"] = assigned_total
+            denominator = matched_value if matched_value > 0 else assigned_total
+            nodes["percentage"] = nodes["value"] / denominator if denominator > 0 else float("nan")
         return LabelComparison(table, nodes, pd.DataFrame(details, columns=ALLOCATION_COLUMNS),
                                portfolio_value, matched_value, math.fsum(overlapping))
 

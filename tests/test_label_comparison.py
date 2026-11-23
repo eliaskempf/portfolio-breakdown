@@ -221,6 +221,27 @@ def test_secondary_measures_match_full_comparison_without_building_a_chart(compa
         pd.testing.assert_frame_equal(actual, expected, check_dtype=not expected.empty)
 
 
+def test_flat_label_chart_uses_one_total_per_matched_label(monkeypatch):
+    from portfolio_app.exposure import label_comparison
+
+    labels = [Label('sector', (name,)) for name in ('A', 'B', 'Unused')]
+    classes = {name: {'sector': ((name,),)} for name in ('A', 'B')}
+    rows = pd.DataFrame({'asset_id': ['A', 'B', 'A'], 'asset_name': ['One', 'Two', 'One'],
+                         'value': [100.01, 100.01, -12.99]})
+    original = label_comparison.build_tree
+    def checked(allocations, **kwargs):
+        assert len(allocations) == 2
+        return original(allocations, **kwargs)
+    monkeypatch.setattr(label_comparison, 'build_tree', checked)
+    result = compare_labels(rows, classes, labels, overlap='split')
+    assert len(result.allocations) == 3
+    assert result.table.set_index('Label').Value.to_dict() == {'A': 100.01 - 12.99, 'B': 100.01, 'Unused': 0.}
+    # Root accumulation follows the source contributions. The union denominator
+    # uses fsum independently of how the contributions are grouped.
+    assert result.nodes.value.tolist() == [187.03, 100.01 - 12.99, 100.01]
+    assert result.matched_value == 187.03
+
+
 def test_comparison_does_not_iterate_unrelated_source_metadata(comparison_data, monkeypatch):
     from portfolio_app.exposure.label_comparison import LabelSelection
     rows, classes = comparison_data
