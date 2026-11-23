@@ -25,6 +25,16 @@ def observe_server(trial):
 
     application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
     scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
+    if scenario == 'collection':
+        import yfinance
+        from portfolio_app.performance.personal_history_refresh import refresher
+        def unexpected_listing(ticker, *args, **kwargs):
+            record('unexpected_listing', ticker=ticker)
+            raise AssertionError(f'Collection benchmark requested a live listing: {ticker}')
+        yfinance.Ticker = unexpected_listing
+        refresher.download = lambda directory, journal, scope, store, start, end, target: (store, ())
+        observe_collections(trial, record)
+        return
     if scenario in {'risk', 'risk-stale'}:
         from portfolio_app.analytics import analytics_service
         from portfolio_app.analytics.risk_data import DemoRiskHistoryProvider, MarketRiskHistoryProvider
@@ -185,6 +195,47 @@ def observe_server(trial):
             record('disk_miss' if missed else 'disk_hit', chart=signature[-2])
             return result
         history_view_cache.load_or_compute = observe_cache
+
+
+def observe_collections(trial, record):
+    import gc
+    from threading import local
+    from streamlit import config
+    from streamlit.runtime.scriptrunner.script_runner import ScriptRunner
+    from streamlit.runtime.scriptrunner_utils.script_run_context import ScriptRunContext
+
+    (trial / 'server-pid').write_text(str(os.getpid()), encoding='ascii')
+    state = local()
+    enqueue = ScriptRunContext.enqueue
+    collect = gc.collect
+    finish = ScriptRunner._on_script_finished
+
+    def chart(ctx, msg):
+        if msg.HasField('delta') and msg.delta.new_element.HasField('plotly_chart'):
+            state.chart_ms = time.monotonic_ns() / 1e6
+        return enqueue(ctx, msg)
+
+    def count_collect(generation=2):
+        if generation == 2 and getattr(state, 'in_cleanup', False):
+            state.forced += 1
+        return collect(generation)
+
+    def finished(runner, *args, **kwargs):
+        before = gc.get_stats()[2]['collections']
+        state.forced = 0
+        state.in_cleanup = True
+        try:
+            return finish(runner, *args, **kwargs)
+        finally:
+            state.in_cleanup = False
+            record('script_finished', chart_ms=getattr(state, 'chart_ms', 0), forced=state.forced,
+                   policy=config.get_option('runner.postScriptGC'), automatic=gc.isenabled(),
+                   cleanup_collections=gc.get_stats()[2]['collections'] - before)
+            state.chart_ms = 0
+
+    ScriptRunContext.enqueue = chart
+    gc.collect = count_collect
+    ScriptRunner._on_script_finished = finished
 
 
 def observe_window(trial):

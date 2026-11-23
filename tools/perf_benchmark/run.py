@@ -24,12 +24,16 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
     trial.mkdir()
     if scenario == 'exposure' and themes:
         prepare_fundamental_check(workspace)
+    if scenario == 'collection':
+        prepare_fundamental_check(workspace, expired=False)
     if scenario in {'risk', 'risk-stale'}:
         risk_listings = prepare_risk_check(workspace, stale=scenario == 'risk-stale')
     env = dict(os.environ, PORTFOLIO_STATE_DIR=str(workspace.parent / 'state'),
         PORTFOLIO_BENCHMARK_TRIAL=str(trial), PORTFOLIO_BENCHMARK_VARIANT=variant,
         PORTFOLIO_BENCHMARK_REFRESH=scenario, PORTFOLIO_BENCHMARK_THEMES=str(int(themes)),
         PORTFOLIO_BENCHMARK_COMPANY_ACCOUNTS=str(int(company_accounts)))
+    if scenario == 'collection':
+        env['STREAMLIT_RUNNER_POST_SCRIPT_GC'] = 'true' if variant == 'reference' else 'false'
     args = [str(executable), '--data-dir', str(workspace), '--offline-demo', '--ignore-workspace-selection']
     if surface == 'browser':
         with socket.socket() as reserve:
@@ -74,6 +78,22 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         start, end = measurement.pop('event_range')
         return events[start:end]
 
+    if scenario == 'collection':
+        if attempted := [e['ticker'] for e in events if e['event'] == 'unexpected_listing']:
+            raise AssertionError(f'Unexpected live listing requests: {attempted}')
+        reference = variant == 'reference'
+        for action in report['actions']:
+            action.pop('dispatch_ms')
+            during = interval(action)
+            cleanup = during[-1]
+            if (cleanup['event'] != 'script_finished' or not cleanup['automatic'] or
+                    cleanup['policy'] != reference or cleanup['forced'] != int(reference)):
+                raise AssertionError(f'Unexpected server cleanup after switching views: {cleanup}')
+            action['forced_collections'] = cleanup['forced']
+            action['cleanup_collections'] = cleanup['cleanup_collections']
+            if any(e['event'] == 'portfolio_valued' for e in during):
+                raise AssertionError('Overview switch unexpectedly revalued the portfolio')
+        return report
     if scenario in {'risk', 'risk-stale'}:
         staged = scenario == 'risk-stale' and variant == 'candidate'
         data_actions = 2 if staged else 1
@@ -268,7 +288,12 @@ def run_comparison(candidate, reference, destination, surfaces, pairs, profile, 
                     create_workspace(workspace, profile, today=as_of)
                     report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, experiment,
                                        themes=profile == 'mixed-history', company_accounts=profile == 'multi-account')
-                    if experiment in {'risk', 'risk-stale'}:
+                    if experiment == 'collection':
+                        if report['digest'] != expected.setdefault(surface, report['digest']):
+                            raise AssertionError('Collection policy changed displayed financial data')
+                        print(surface, name, 'median settled ms', round(median(a['settled_ms'] for a in report['actions'])),
+                              'server MiB', [round(b / 2**20) for b in report['server_resident_bytes']], flush=True)
+                    elif experiment in {'risk', 'risk-stale'}:
                         actions = report['actions']
                         if experiment == 'risk-stale' and name == 'candidate':
                             if actions[0]['digest'] == actions[1]['digest']:
@@ -294,12 +319,17 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path)
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
-    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-stale'], default='history')
+    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-stale', 'collection'], default='history')
     parser.add_argument('--profile', choices=['small', 'etf-heavy', 'mixed-history', 'multi-account'], default='small')
     parser.add_argument('--reference', type=Path, help='Reference bundle for a paired comparison')
     options = parser.parse_args()
     surfaces = ['native','browser'] if options.surface == 'both' else [options.surface]
-    if options.experiment in {'exposure', 'risk', 'risk-stale'}:
+    if options.experiment == 'collection':
+        if options.profile == 'small':
+            parser.error('The collection benchmark exercises the ETF look-through company grid')
+        run_comparison(options.executable.resolve(), options.executable.resolve(), options.output.resolve(), surfaces,
+                       options.pairs, options.profile, options.experiment)
+    elif options.experiment in {'exposure', 'risk', 'risk-stale'}:
         if not options.reference:
             parser.error('A paired binary comparison requires --reference')
         if options.experiment in {'risk', 'risk-stale'} and options.profile == 'small':

@@ -1,6 +1,8 @@
 """Identical frame sampling in WebView2, Qt, WKWebView and the browser."""
 import hashlib
 import json
+import subprocess
+import sys
 import time
 
 CONTEXT = """const w = document.querySelector('iframe#portfolio-app')?.contentWindow || window;
@@ -541,7 +543,74 @@ def exercise_risk(evaluate, trial, *, await_refresh=False):
     return dict(ready_at=ready_at, actions=actions)
 
 
+def resident_bytes(pid):
+    if sys.platform == 'win32':
+        return int(subprocess.check_output(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
+            f'(Get-Process -Id {int(pid)}).WorkingSet64'], text=True))
+    return int(subprocess.check_output(['ps', '-o', 'rss=', '-p', str(pid)], text=True)) * 1024
+
+
+def exercise_collection(evaluate, trial):
+    def read(js):
+        return evaluate('(() => {' + CONTEXT + """
+            const named = (selector, name) => [...d.querySelectorAll(selector)].find(e =>
+                visible(e) && e.textContent.trim() === name);
+            const active = name => named('[role=tab]', name)?.getAttribute('aria-selected') === 'true';
+            const companyGrid = () => d.querySelector('.st-key-exposure_results canvas table[role=grid]');
+        """ + js + '})()')
+
+    def ready():
+        try:
+            return read("return active('Overview') && visible(allocation()) && !running();")
+        except Exception:
+            return False  # Native startup document is replaced as the application opens.
+
+    def switch(view):
+        action = interact(evaluate, view, trial)
+        # A finished web frame can precede server cleanup. Match the run that
+        # actually enqueued this click's chart before taking a memory sample.
+        def complete():
+            lines = (trial / 'server.jsonl').read_bytes().split(b'\n')[action['event_range'][0]:-1]
+            for index, line in enumerate(lines, start=action['event_range'][0]):
+                event = json.loads(line)
+                if event['event'] == 'script_finished' and event['chart_ms'] >= action['dispatch_ms']:
+                    return index + 1
+            return None
+        action['event_range'][1] = wait(complete)
+        return dict(view=view, **action)
+
+    wait(ready, timeout=100)
+    ready_at = time.time()
+    pid = int((trial / 'server-pid').read_text())
+    memory, actions = [], []
+    series_digest = None
+    for _batch in range(5):
+        read("named('[role=tab]', 'Exposure').click(); return true;")
+        wait(lambda: read("return active('Exposure') && !!named('[role=radio],button', 'Companies') && !running();"))
+        read("""const button = named('[role=radio],button', 'Companies');
+            if (button.getAttribute('aria-checked') !== 'true' && !companyGrid()) button.click();
+            return true;""")
+        wait(lambda: read("""
+            const grid = companyGrid();
+            return visible(grid?.closest('canvas')) && grid.getAttribute('aria-rowcount') === '8951' && !!grid.querySelector('[role=gridcell]') && !running();
+        """))
+        read("named('[role=tab]', 'Overview').click(); return true;")
+        wait(ready)
+        for _ in range(8):
+            performance = switch('Performance')
+            series = read("return JSON.stringify(history().data.map(t => [t.name,t.x,Array.from(t.y),t.customdata]));")
+            digest = hashlib.sha256(series.encode()).hexdigest()
+            if series_digest is not None and series_digest != digest:
+                raise AssertionError('Performance series changed across switches')
+            series_digest = digest
+            actions.extend([performance, switch('Allocation')])
+        memory.append(resident_bytes(pid))
+    return dict(ready_at=ready_at, actions=actions, server_resident_bytes=memory, digest=series_digest)
+
+
 def measure_view(evaluate, trial, variant, scenario, *, themes=False, company_accounts=False):
+    if scenario == 'collection':
+        return exercise_collection(evaluate, trial)
     if scenario in {'risk', 'risk-stale'}:
         return exercise_risk(evaluate, trial, await_refresh=scenario == 'risk-stale' and variant == 'candidate')
     if scenario == 'exposure':

@@ -734,6 +734,14 @@ against each packaged server. The benchmark builds a disposable binary from the
 release PyInstaller spec with an additional measurement hook. Only the benchmark
 build contains the synthetic provider and timing probes.
 
+The collection experiment compares the same binary with and without Streamlit's
+forced full Python collection after each rerun. Automatic garbage collection
+stays active in both trials. Each process makes five visits to the Companies
+grid and 80 Overview switches. Results include click-to-paint and settled times,
+chart digests, collection counts and five samples of server resident memory.
+Memory samples come from the Streamlit server PID after cleanup. Compare resident
+memory within each OS because working-set accounting differs by platform.
+
 Each runner compares two modes of the same binary. The navigation experiment
 keeps persistent history and background refresh active in both modes. Its
 reference runs the whole application when switching views. The candidate

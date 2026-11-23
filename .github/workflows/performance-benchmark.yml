@@ -5,7 +5,7 @@ name: Packaged performance benchmark
       experiment:
         description: 'Comparison to measure'
         type: choice
-        options: [navigation, history, exposure, risk, risk-stale]
+        options: [navigation, history, exposure, risk, risk-stale, collection]
         default: navigation
       profile:
         description: 'Synthetic portfolio size'
@@ -75,6 +75,7 @@ jobs:
           if [[ "$EXPERIMENT" == exposure || "$EXPERIMENT" == risk* ]]; then reference=(--reference "dist/reference/${EXECUTABLE#dist/performance/}"); fi
           "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results --pairs "$PAIRS" --experiment "$EXPERIMENT" --profile "$PROFILE" "${reference[@]}"
           if [[ "$CHECK_OVERVIEW" == true ]]; then
+            "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/collection --pairs 2 --experiment collection --surface native --profile multi-account
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/navigation --pairs "$PAIRS" --experiment navigation --profile "$PROFILE"
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/multi-account --pairs 1 --experiment exposure --surface native --profile multi-account "${reference[@]}"
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/risk --pairs 1 --experiment risk --surface native --profile mixed-history "${reference[@]}"
