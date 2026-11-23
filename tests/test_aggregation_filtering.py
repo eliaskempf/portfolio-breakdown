@@ -1,11 +1,19 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension, classify_exposures
+from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension, build_tree, classify_exposures
 from portfolio_app.interface.shared.charts import bar_chart, hierarchy_chart, pie_chart, sort_allocation_nodes
 from portfolio_app.exposure.exposures import normalize_exposures
 from portfolio_app.portfolio.filtering import filter_holdings
 from portfolio_app.portfolio.valuation import portfolio_weights
+
+
+def test_category_tree_uses_only_paths_and_values():
+    category_rows = pd.DataFrame({'path': [('A',), ('A', 'B'), ('A', 'B')], 'value': [4., 2., -1.]})
+    position_rows = category_rows.assign(asset_id=['x', 'y', 'z'], asset_name=['X', 'Y', 'Z'])
+    expected = build_tree(position_rows, root=('A',))
+    assert expected.loc[expected.kind == 'assigned', 'value'].tolist() == [4.]
+    pd.testing.assert_frame_equal(build_tree(category_rows, root=('A',)), expected)
 
 
 def test_shared_bond_leaf_conserves_both_funds_despite_provider_names():

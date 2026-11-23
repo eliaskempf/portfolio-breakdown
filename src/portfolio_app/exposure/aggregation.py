@@ -55,9 +55,11 @@ def build_tree(
         if not is_descendant(row.path, root):
             continue
         path = row.path if depth is None else row.path[: len(root) + depth]
-        terminal_values[path] += row.value
-        asset_values[(path, row.asset_id)] += row.value
-        asset_names[row.asset_id] = min(asset_names.get(row.asset_id, row.asset_name), row.asset_name)
+        if include_holdings:
+            asset_values[(path, row.asset_id)] += row.value
+            asset_names[row.asset_id] = min(asset_names.get(row.asset_id, row.asset_name), row.asset_name)
+        else:
+            terminal_values[path] += row.value
         for length in range(len(root), len(path) + 1):
             prefix = path[:length]
             node_id = category_id(prefix)
