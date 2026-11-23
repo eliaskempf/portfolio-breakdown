@@ -5,6 +5,8 @@ from hashlib import sha256
 from functools import cached_property, lru_cache
 import json
 from pathlib import Path
+from threading import Lock
+from weakref import WeakValueDictionary
 
 from portfolio_app.derivatives.derivative_types import decimal, identifier
 from portfolio_app.portfolio.holdings import DataError
@@ -12,6 +14,16 @@ from portfolio_app.ledger.security_history import day, denomination
 from portfolio_app.workspace.storage import save_document
 
 FILE = 'history-observations.json'
+
+# Readers keep a strong reference while building or waiting. The registry
+# does not retain a file revision or store after the last reader leaves.
+_build_locks = WeakValueDictionary()
+_build_locks_guard = Lock()
+
+
+def _build_lock(key):
+    with _build_locks_guard:
+        return _build_locks.setdefault(key, Lock())
 
 
 @dataclass(frozen=True)
@@ -116,7 +128,13 @@ class ObservationStore:
 
     @cached_property
     def index(self):
-        return _ObservationIndex(self)
+        # cached_property can enter concurrently on its first access. Publish
+        # inside the lock so both callers receive the very same derived tables.
+        with _build_lock(id(self)):
+            fields = vars(self)
+            if 'index' not in fields:
+                fields['index'] = _ObservationIndex(self)
+            return fields['index']
 
 
 def active_observations(store):
@@ -177,7 +195,9 @@ def load_observations(directory):
         return ObservationStore(), None
     try:
         content = path.read_bytes()
-        return _observations_from_bytes(content), sha256(content).hexdigest()
+        revision = sha256(content).hexdigest()
+        with _build_lock(revision):
+            return _observations_from_bytes(content), revision
     except (ValueError, TypeError, KeyError, OSError) as exc:
         raise DataError(f'Invalid historical observations; file retained: {exc}') from exc
 
