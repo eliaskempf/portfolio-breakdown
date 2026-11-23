@@ -180,6 +180,25 @@ def test_flat_dimensions_build_one_leaf_per_category_in_source_order(monkeypatch
     assert holdings.value.tolist() == nodes.value.tolist()
 
 
+@pytest.mark.parametrize("dimension", ["account", "holding"])
+def test_secondary_flat_measure_matches_chart_without_building_nodes(monkeypatch, dimension):
+    from portfolio_app.exposure import aggregation
+
+    rows = pd.DataFrame({
+        "asset_id": ["a", "b", "a", "c", "d"], "asset_name": ["One", "Two", "One", "Three", "Four"],
+        "account": ["First", "Second", "First", "", "Zero only"],
+        "value": pd.Series([3., -2., -1., pd.NA, 0.], dtype="Float64"),
+    })
+    nodes = aggregate_dimension(rows, dimension)
+    expected = nodes.loc[nodes.depth == 1].set_index("node_id").value
+
+    def unused(*args, **kwargs):
+        pytest.fail("A secondary amount requested a chart hierarchy")
+    monkeypatch.setattr(aggregation, "build_tree", unused)
+    amounts = aggregation.dimension_measure(rows, dimension).set_index("node_id").value
+    pd.testing.assert_series_equal(amounts.reindex(expected.index, fill_value=0.), expected)
+
+
 @pytest.mark.parametrize("dtype", ["Float32", "Float64", "object"])
 def test_flat_dimensions_keep_unknown_amounts_in_their_category(dtype):
     rows = pd.DataFrame({"asset_id": ["a", "b", "a"], "asset_name": ["One", "Two", "One"],

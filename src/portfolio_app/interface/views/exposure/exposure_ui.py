@@ -12,7 +12,7 @@ import pandas as pd
 import streamlit as st
 from portfolio_app.interface.shared.charts import chart_config
 
-from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension
+from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension, dimension_measure
 from portfolio_app.interface.shared.charts import bar_chart, hierarchy_chart, hierarchy_table, pie_chart, sort_allocation_nodes
 from portfolio_app.interface.shared.display_names import display_name, instrument_name, named_holdings
 from portfolio_app.funds.etf import matching_fund
@@ -480,26 +480,19 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                     allocation['Allocation %'] = float('nan')
                 if market:
                     allocation['% of portfolio equity'] = allocation.Value * 100 / equity if complete and equity and equity > 0 else float('nan')
+                def measure_totals(measure):
+                    if view.startswith("taxonomy:"):
+                        return aggregate(measure, classifications, taxonomy=taxonomy, root=root, depth=depth,
+                                         include_holdings=include_holdings and chart_type not in {"Bar", "Pie"})
+                    return dimension_measure(measure, "holding" if view == "holding" else view.removeprefix("metadata:"))
+
                 if targets is not None:
-                    measures = []
-                    for measure in (targets.known, targets.missing):
-                        if view.startswith("taxonomy:"):
-                            measures.append(aggregate(measure, classifications, taxonomy=taxonomy, root=root, depth=depth,
-                                                      include_holdings=include_holdings and chart_type not in {"Bar", "Pie"}))
-                        else:
-                            measures.append(aggregate_dimension(measure, "holding" if view == "holding" else view.removeprefix("metadata:")))
-                    totals = target_totals(*measures, key="node_id")
+                    totals = target_totals(measure_totals(targets.known), measure_totals(targets.missing), key="node_id")
                     allocation = add_target_columns(allocation, nodes.loc[nodes["parent_id"] != "", "node_id"].tolist(), totals,
                                                     portfolio_value=total, valuation_complete=all_missing == 0)
                     target_caption(valuation_complete=all_missing == 0)
-                performance_measures = []
-                for measure in performance.measures() if performance else ():
-                    if view.startswith("taxonomy:"):
-                        performance_measures.append(aggregate(measure, classifications, taxonomy=taxonomy, root=root, depth=depth,
-                                                              include_holdings=include_holdings and chart_type not in {"Bar", "Pie"}))
-                    else:
-                        performance_measures.append(aggregate_dimension(measure, "holding" if view == "holding" else view.removeprefix("metadata:")))
                 if performance is not None:
+                    performance_measures = [measure_totals(measure) for measure in performance.measures()]
                     allocation = add_performance_column(allocation, nodes.loc[nodes["parent_id"] != "", "node_id"].tolist(),
                                                     performance_measures, key="node_id", percent=performance_percent)
                 label_config = {}

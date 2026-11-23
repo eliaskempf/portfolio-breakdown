@@ -136,9 +136,7 @@ def flat_category_tree(totals, *, root_label, total, denominator):
     return nodes
 
 
-def aggregate_dimension(exposures: pd.DataFrame, dimension: str, *, show_tickers: bool = False) -> pd.DataFrame:
-    if exposures.empty:
-        return pd.DataFrame(columns=NODE_COLUMNS)
+def _dimension_totals(exposures, dimension):
     if dimension == "holding":
         keys = exposures["asset_id"]
     else:
@@ -149,6 +147,26 @@ def aggregate_dimension(exposures: pd.DataFrame, dimension: str, *, show_tickers
     for key, value in zip(keys, amounts):
         totals[key] += value
         total += value
+    return totals, total
+
+
+def dimension_measure(exposures: pd.DataFrame, dimension: str) -> pd.DataFrame:
+    """Secondary amounts keyed to existing chart leaves. Absent amounts align to zero."""
+    columns = ["node_id", "value"]
+    if exposures.empty:
+        return pd.DataFrame(columns=columns)
+    key = "asset_id" if dimension == "holding" else dimension
+    # Unknown amounts still propagate to their category. Zero is additive and
+    # cannot introduce a new row in the primary allocation table.
+    rows = exposures.loc[exposures.value.ne(0).fillna(True), list(dict.fromkeys([key, "value"]))]
+    totals, _ = _dimension_totals(rows, dimension)
+    return pd.DataFrame([(_node_id("category", (key,)), amount) for key, amount in totals.items()], columns=columns)
+
+
+def aggregate_dimension(exposures: pd.DataFrame, dimension: str, *, show_tickers: bool = False) -> pd.DataFrame:
+    if exposures.empty:
+        return pd.DataFrame(columns=NODE_COLUMNS)
+    totals, total = _dimension_totals(exposures, dimension)
     nodes = flat_category_tree(totals, root_label=dimension, total=total, denominator=total)
     if dimension == "holding":
         # The last source supplies the display name, independently of the stable node ID.
