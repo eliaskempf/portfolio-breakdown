@@ -221,6 +221,25 @@ def test_secondary_measures_match_full_comparison_without_building_a_chart(compa
         pd.testing.assert_frame_equal(actual, expected, check_dtype=not expected.empty)
 
 
+def test_zero_measure_needs_membership_only_in_a_drilled_asset_table(monkeypatch):
+    from portfolio_app.exposure.label_comparison import LabelSelection
+
+    label = Label('sector', ('A',))
+    rows = pd.DataFrame({'asset_id': ['zero', 'signed'], 'asset_name': ['One', 'Two'], 'value': [0., -2.]})
+    selection = LabelSelection({asset: {'sector': (label.path,)} for asset in rows.asset_id}, [label])
+    lookup, seen = selection.matches, []
+    def observed(asset):
+        seen.append(asset)
+        return lookup(asset)
+    monkeypatch.setattr(selection, 'matches', observed)
+    assert selection.measure_values(rows, overlap='split').Value.tolist() == [-2.]
+    assert seen == ['signed']
+    seen.clear()
+    detail = selection.measure_values(rows, overlap='split', root=(label.key,))
+    assert detail.asset_id.tolist() == ['zero', 'signed']
+    assert seen == ['zero', 'signed']
+
+
 def test_flat_label_chart_uses_one_total_per_matched_label(monkeypatch):
     from portfolio_app.exposure import label_comparison
 

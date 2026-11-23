@@ -88,10 +88,14 @@ class LabelSelection:
         return self._assets[asset_id]
 
     @staticmethod
-    def _valued(exposures, overlap):
+    def _valued(exposures, overlap, *, include_zero=True):
         if overlap not in {"split", "overlap"}:
             raise ValueError("Choose how to allocate assets matching multiple labels.")
-        valued = exposures.loc[exposures["value"].notna(), ["asset_id", "asset_name", "value"]]
+        values = exposures["value"]
+        selected = values.notna()
+        if not include_zero:
+            selected &= values.ne(0)
+        valued = exposures.loc[selected, ["asset_id", "asset_name", "value"]]
         if any(not math.isfinite(value) for value in valued["value"]):
             raise ValueError("Label comparison requires finite exposure values.")
         return valued
@@ -104,7 +108,9 @@ class LabelSelection:
 
     def measure_values(self, exposures, *, overlap, root=()):
         """Target and performance amounts at the label or drilled asset level."""
-        rows = self._assignments(self._valued(exposures, overlap), overlap)
+        # Every selected label already has a zero total. At a drilled level,
+        # individual zero-valued rows still identify assets for the table.
+        rows = self._assignments(self._valued(exposures, overlap, include_zero=bool(root)), overlap)
         if not root:
             totals = dict.fromkeys(self.labels, 0.)
             for _, matches, assigned in rows:
