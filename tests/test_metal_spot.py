@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from portfolio_app.market.metal_prices import SpotMetalProvider, fetch_spot_quote, parse_spot_quote
+from portfolio_app.performance.performance import position_performance
 from portfolio_app.portfolio.holdings import DataError, metadata_dimensions, parse_holdings
 from portfolio_app.portfolio.physical_assets import GRAMS_PER_TROY_OUNCE
 from portfolio_app.market.prices import PriceService, Quote
@@ -38,19 +39,23 @@ class SyntheticProvider:
         return Quote(.8, 'EUR', NOW)
 
 
+@pytest.mark.parametrize('metal', ['gold', 'silver', 'platinum', 'palladium'])
 @pytest.mark.parametrize('unit,quantity', [('troy oz', 1.), ('grams', GRAMS_PER_TROY_OUNCE),
                                           ('kg', GRAMS_PER_TROY_OUNCE / 1000.)])
-def test_equivalent_weights_value_identically_and_preserve_unit_cost(unit, quantity):
+def test_equivalent_weights_value_identically_and_preserve_unit_cost(unit, quantity, metal):
     provider = SyntheticProvider()
-    rows = holdings(unit, quantity, acquisition_price=1200. / quantity, acquisition_currency='EUR')
-    result = value_holdings(rows, PriceService(provider, now=lambda: NOW)).iloc[0]
+    rows = holdings(unit, quantity, price_source=f'{metal}_spot', acquisition_price=1200. / quantity, acquisition_currency='EUR')
+    valued = value_holdings(rows, PriceService(provider, now=lambda: NOW))
+    result = position_performance(valued).iloc[0]
     assert result.current_value_reporting == pytest.approx(1600.)
     assert result.current_price * quantity == pytest.approx(2000.)
     assert result.acquisition_price * quantity == pytest.approx(1200.)
     assert result.shares == pytest.approx(quantity) and result.quantity_unit == unit and result.ticker == ''
     assert result.price_observed_at == NOW.isoformat()
-    assert 'Gold spot' in result.valuation_note
-    assert provider.requests == ['spot:gold:USD:troy_oz']
+    assert result.unrealized_gain_reporting == pytest.approx(400.)
+    assert result.return_pct == pytest.approx(100 / 3)
+    assert f'{metal.title()} spot' in result.valuation_note
+    assert provider.requests == [f'spot:{metal}:USD:troy_oz']
     assert 'price_source' not in metadata_dimensions(rows)
 
 

@@ -193,8 +193,9 @@ def test_guided_categories_targets_and_first_physical_position(tmp_path):
     config = load_allocation(personal / 'allocation.yaml')
     assert [b.target for b in config.buckets] == [.8, .2]
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
-    assert by_label(app.selectbox, 'Valuation method').value == 'Manual price'
-    assert by_label(app.selectbox, 'Quantity unit').value == 'units'
+    assert by_label(app.selectbox, 'Valuation method').value == 'Gold spot price'
+    by_label(app.selectbox, 'Valuation method').set_value('Manual price').run()
+    by_label(app.selectbox, 'Quantity unit').set_value('units').run()
     by_label(app.text_input, 'Instrument name').set_value('Invented gold coins')
     by_label(app.text_input, 'Quantity held (total)').set_value(str(2.5)).run()
     by_label(app.number_input, 'Current unit price (optional)').set_value(2000.)
@@ -336,9 +337,9 @@ def test_physical_gold_spot_save_edit_and_explicit_manual_switch(tmp_path):
     by_label(app.button, 'Add position').click().run()
     by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
-    assert by_label(app.selectbox, 'Valuation method').value == 'Manual price'
+    assert by_label(app.selectbox, 'Valuation method').value == 'Gold spot price'
+    assert by_label(app.selectbox, 'Quantity unit').value == 'troy oz'
     assert by_label(app.text_input, 'Instrument name').value == ''
-    by_label(app.selectbox, 'Valuation method').set_value('Gold spot price').run()
     assert set(by_label(app.selectbox, 'Quantity unit').options) == {'troy oz', 'grams', 'kg'}
     by_label(app.selectbox, 'Quantity unit').set_value('kg').run()
     by_label(app.text_input, 'Quantity held (total)').set_value(str(.1)).run()

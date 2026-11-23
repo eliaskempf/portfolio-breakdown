@@ -22,9 +22,11 @@ def physical_pricing(prefix, row, *, unit_locked):
         st.session_state.pop(prefix + 'purchase_editor', None)
         st.session_state[prefix + 'unit_changed'] = True
 
-    methods = {'Manual price': ''}
+    methods = {}
     if not unit_locked or row.get('quantity_unit') in WEIGHT_UNITS:
-        methods.update({f'{metal.name} spot price': source for source, metal in METALS.items()})
+        methods = {f'{metal.name} spot price': source for source, metal in METALS.items()}
+    methods['Manual price'] = ''
+    initial_source = row.get('price_source', '') if unit_locked else 'gold_spot'
 
     def change_valuation_method():
         method = st.session_state.get(prefix + 'valuation_method')
@@ -37,8 +39,8 @@ def physical_pricing(prefix, row, *, unit_locked):
             st.session_state.get('position_draft', {})[prefix + 'quantity_unit'] = unit
 
     method = st.selectbox('Valuation method', list(methods),
-        index=list(methods.values()).index(row.get('price_source', '')), disabled=len(methods) == 1,
-        help='Enter a dated price per unit, or use a metal spot quote for fine-metal weight.',
+        index=list(methods.values()).index(initial_source), disabled=len(methods) == 1,
+        help='Choose the spot quote for the metal you hold, or enter a dated manual price per unit.',
         key=prefix + 'valuation_method', on_change=change_valuation_method)
     price_source = methods[method]
 

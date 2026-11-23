@@ -153,23 +153,32 @@ ledger; do not sum old and recalculated batches to reconstruct the holding.
 
 ## Physical assets {#physical-assets}
 
-In **Add position → Physical asset**, enter a name and choose a quantity unit.
-You can type your own unit, such as bottles. For a single appraised item, enter
-a quantity of one and use its appraisal as the **Manual price**. For a collection
-valued by the bottle, enter the count and the price of one bottle. Record the
-price currency and observation date. Leaving the price blank keeps the quantity
-and marks the valuation as unknown. Use **Edit position** to update an appraisal.
-For a holding with recorded purchases, **Valuation** updates its current price
-and **Transactions** opens its purchase and sale history.
+**Add position → Physical asset** starts with **Gold spot price** and troy ounces.
+Select **Silver spot price**, **Platinum spot price** or **Palladium spot price**
+under **Valuation method** for another metal. Editing or reusing an existing
+holding opens its saved valuation method.
 
 ### Precious-metal spot prices {#physical-gold}
 
-For gold, silver, platinum or palladium, select the metal's **spot price** under
-**Valuation method**. Enter the fine-metal content in troy ounces, grams or
-kilograms. The app converts the USD quote per troy ounce to the saved weight
-unit and reporting currency. For coins valued with a collectible premium, use
-a dated manual price. Spot pricing covers current valuation only.
-[Gold API quote specification](https://gold-api.com/llms.txt)
+Enter the fine-metal content in troy ounces, grams or kilograms. The app
+converts the USD quote per troy ounce to the saved weight unit and reporting
+currency. [Gold API quote specification](https://gold-api.com/llms.txt)
+
+With a recorded buy-in and any required FX, **Details** shows
+unrealized gain and return on cost. Spot quotes supply current prices only.
+For personal period and annualized returns, record purchases or a starting
+balance and supply the required dated prices per saved unit and FX under
+**Correct market data**. [Performance and return requirements](performance.md)
+
+### Manual valuation
+
+Select **Manual price** for a collectible premium or an appraised item. Choose
+a unit or type your own, such as bottles. Enter a quantity of one for a single
+item or a count for a collection, then record the price of one unit, its currency
+and observation date. A blank price keeps the quantity and marks the value as
+unknown. Use **Edit position** to update an appraisal. For a holding with
+recorded purchases, **Valuation** updates the current price and **Transactions**
+opens its purchase and sale history.
 
 The saved unit also applies to purchases and buy-in amounts. Changing units on
 a new draft clears its amounts. Saved holdings retain their unit when edited.

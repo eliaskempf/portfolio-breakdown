@@ -218,6 +218,9 @@ def test_update_physical_appraisal_after_purchase(tmp_path):
     from test_ui import position_action
     app = editor(tmp_path)
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
+    assert by_label(app.selectbox, 'Valuation method').value == 'Gold spot price'
+    by_label(app.selectbox, 'Valuation method').set_value('Manual price').run()
+    by_label(app.selectbox, 'Quantity unit').set_value('units').run()
     by_label(app.text_input, 'Instrument name').set_value('Invented sculpture')
     by_label(app.text_input, 'Quantity bought').set_value('1')
     by_label(app.text_input, 'Unit price').set_value('100')

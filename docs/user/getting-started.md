@@ -160,8 +160,8 @@ Enter the quantity you currently hold and its **Holding as of** date. Buy-in cos
 and allocation targets are optional. **Save position** writes to My portfolio; check the saved row and its
 valuation status. A blank price is unknown, not zero. For an asset without a
 quote, provide a dated manual price under **More details**. For a physical holding,
-choose **Physical asset**, enter its quantity and unit, and select manual or
-precious-metal spot pricing. [Physical assets](positions.md#physical-assets)
+choose **Physical asset**. Gold spot is preselected. Choose the metal you own
+and enter its fine weight, or choose **Manual price** for an appraisal. [Physical assets](positions.md#physical-assets)
 
 For a holdings report, keep the portfolio empty and choose **Import →
 Holdings snapshot**. Upload, map and review the report before
