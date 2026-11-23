@@ -5,7 +5,7 @@ name: Packaged performance benchmark
       experiment:
         description: 'Comparison to measure'
         type: choice
-        options: [navigation, history, exposure, risk]
+        options: [navigation, history, exposure, risk, risk-stale]
         default: navigation
       profile:
         description: 'Synthetic portfolio size'
@@ -56,7 +56,7 @@ jobs:
       - run: uv sync --locked --extra window --group release --group browser
       - run: uv run --no-sync playwright install chromium
       - name: Build the reference with the same measurement driver
-        if: env.EXPERIMENT == 'exposure' || env.EXPERIMENT == 'risk'
+        if: env.EXPERIMENT == 'exposure' || startsWith(env.EXPERIMENT, 'risk')
         run: |
           git restore --source=66d429fdc71db2b8dacf8d965d193f5b5c57abfa -- src/portfolio_app
           uv run --no-sync python tools/perf_benchmark/build.py dist/reference
@@ -72,12 +72,13 @@ jobs:
           prefix=()
           if [[ "$RUNNER_OS" == Linux ]]; then prefix=(xvfb-run -a); fi
           reference=()
-          if [[ "$EXPERIMENT" == exposure || "$EXPERIMENT" == risk ]]; then reference=(--reference "dist/reference/${EXECUTABLE#dist/performance/}"); fi
+          if [[ "$EXPERIMENT" == exposure || "$EXPERIMENT" == risk* ]]; then reference=(--reference "dist/reference/${EXECUTABLE#dist/performance/}"); fi
           "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results --pairs "$PAIRS" --experiment "$EXPERIMENT" --profile "$PROFILE" "${reference[@]}"
           if [[ "$CHECK_OVERVIEW" == true ]]; then
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/navigation --pairs "$PAIRS" --experiment navigation --profile "$PROFILE"
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/multi-account --pairs 1 --experiment exposure --surface native --profile multi-account "${reference[@]}"
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/risk --pairs 1 --experiment risk --surface native --profile mixed-history "${reference[@]}"
+            "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/risk-stale --pairs 1 --experiment risk-stale --surface native --profile mixed-history "${reference[@]}"
           fi
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

@@ -24,17 +24,25 @@ def observe_server(trial):
         return call
 
     application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
-    if os.environ['PORTFOLIO_BENCHMARK_REFRESH'] == 'risk':
+    scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
+    if scenario in {'risk', 'risk-stale'}:
         from portfolio_app.analytics import analytics_service
         from portfolio_app.analytics.risk_data import DemoRiskHistoryProvider, MarketRiskHistoryProvider
         def adjusted(self, ticker, years):
             time.sleep(.03)
             record('adjusted_fetched', ticker=ticker)
-            return DemoRiskHistoryProvider.fetch(self, ticker, years)
+            history = DemoRiskHistoryProvider.fetch(self, ticker, years)
+            if scenario == 'risk-stale' and ticker == 'ZZC-0':
+                if os.environ['PORTFOLIO_BENCHMARK_VARIANT'] == 'candidate':
+                    from perf_benchmark.renderer import wait
+                    wait(lambda: (trial / 'release-risk').exists())
+                friday = history.prices.index[history.prices.index.dayofweek == 4][-1]
+                history.prices.loc[friday] *= 1.35
+            return history
         MarketRiskHistoryProvider.fetch = adjusted
         analytics_service.risk_analytics = counted(analytics_service.risk_analytics, 'risk_calculated')
         return
-    if os.environ['PORTFOLIO_BENCHMARK_REFRESH'] == 'exposure':
+    if scenario == 'exposure':
         if os.environ.get('PORTFOLIO_BENCHMARK_THEMES') == '1':
             from perf_benchmark.fixture import benchmark_fundamentals
             from portfolio_app.analytics.fundamentals import YahooFundamentalsProvider
@@ -55,7 +63,6 @@ def observe_server(trial):
     from portfolio_app.performance import history_view as views
     from streamlit.runtime.scriptrunner_utils.script_run_context import ScriptRunContext
 
-    scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
     if scenario == 'quote-pending':
         from datetime import datetime, timezone
         from perf_benchmark.renderer import wait

@@ -132,8 +132,8 @@ def prepare_fundamental_check(directory, *, expired=True):
         cache.get('fundamentals-v1:' + ticker, lambda: asdict(benchmark_fundamentals(ticker, 10.)))
 
 
-def prepare_risk_check(directory):
-    """Use market-valued positions and leave one adjusted listing history missing."""
+def prepare_risk_check(directory, *, stale=False):
+    """Use market-valued positions with either dated histories or one missing listing."""
     from portfolio_app.analytics.risk_data import DEFAULT_BENCHMARK, DemoRiskHistoryProvider, RiskHistoryService
 
     prepare_fundamental_check(directory, expired=False)
@@ -153,9 +153,10 @@ def prepare_risk_check(directory):
         writer.writerows(rows)
     (directory / '.cache' / 'prices.json').write_text(json.dumps(quotes), encoding='utf-8')
     listings = list(dict.fromkeys(row['ticker'] for row in rows))
-    service = RiskHistoryService(DemoRiskHistoryProvider(), directory / '.cache' / 'risk-history')
+    fetched = datetime.now(timezone.utc) - (timedelta(hours=25) if stale else timedelta())
+    service = RiskHistoryService(DemoRiskHistoryProvider(), directory / '.cache' / 'risk-history', now=lambda: fetched)
     requests = [DEFAULT_BENCHMARK + ':EUR', *listings]
-    for ticker in requests[:-1]:
+    for ticker in (requests if stale else requests[:-1]):
         service.get(ticker)
     return requests
 

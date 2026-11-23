@@ -24,8 +24,8 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
     trial.mkdir()
     if scenario == 'exposure' and themes:
         prepare_fundamental_check(workspace)
-    if scenario == 'risk':
-        risk_listings = prepare_risk_check(workspace)
+    if scenario in {'risk', 'risk-stale'}:
+        risk_listings = prepare_risk_check(workspace, stale=scenario == 'risk-stale')
     env = dict(os.environ, PORTFOLIO_STATE_DIR=str(workspace.parent / 'state'),
         PORTFOLIO_BENCHMARK_TRIAL=str(trial), PORTFOLIO_BENCHMARK_VARIANT=variant,
         PORTFOLIO_BENCHMARK_REFRESH=scenario, PORTFOLIO_BENCHMARK_THEMES=str(int(themes)),
@@ -74,24 +74,28 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         start, end = measurement.pop('event_range')
         return events[start:end]
 
-    if scenario == 'risk':
+    if scenario in {'risk', 'risk-stale'}:
+        staged = scenario == 'risk-stale' and variant == 'candidate'
+        data_actions = 2 if staged else 1
+        fetched = Counter()
         for index, action in enumerate(report['actions']):
             during = interval(action)
             requests = Counter(e['ticker'] for e in during if e['event'] == 'adjusted_fetched')
-            expected = []
-            if index == 0:
-                expected = risk_listings[-1:] if variant == 'candidate' else risk_listings
-            if requests != Counter(expected):
-                raise AssertionError(f'Risk action {index} expected {expected}, received {requests}')
+            if index >= data_actions and requests:
+                raise AssertionError('Resizing the risk matrix fetched adjusted histories')
+            fetched.update(requests)
             action['requests'] = requests.total()
             action['valuations'] = sum(e['event'] == 'portfolio_valued' for e in during)
-            if index and variant == 'candidate' and action['valuations']:
+            if index >= data_actions and variant == 'candidate' and action['valuations']:
                 raise AssertionError('Resizing a current risk matrix revalued the portfolio')
             action['calculations'] = sum(e['event'] == 'risk_calculated' for e in during)
-            if action['calculations'] != (1 if index == 0 or variant == 'reference' else 0):
+            if action['calculations'] != (1 if index < data_actions or variant == 'reference' else 0):
                 raise AssertionError(f'Unexpected risk calculation count on action {index}: {action}')
             if action['holdings'] != len(risk_listings) - 1 or any(value in ('', '—') for value in action['metrics']):
                 raise AssertionError('Incomplete risk estimates or correlation matrix')
+        expected = risk_listings[-1:] if scenario == 'risk' and variant == 'candidate' else risk_listings
+        if fetched != Counter(expected):
+            raise AssertionError(f'Unexpected adjusted history requests: {fetched}')
         return report
     if scenario == 'exposure':
         if visit := report['fundamentals']:
@@ -264,8 +268,13 @@ def run_comparison(candidate, reference, destination, surfaces, pairs, profile, 
                     create_workspace(workspace, profile, today=as_of)
                     report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, experiment,
                                        themes=profile == 'mixed-history', company_accounts=profile == 'multi-account')
-                    if experiment == 'risk':
-                        for action in report['actions']:
+                    if experiment in {'risk', 'risk-stale'}:
+                        actions = report['actions']
+                        if experiment == 'risk-stale' and name == 'candidate':
+                            if actions[0]['digest'] == actions[1]['digest']:
+                                raise AssertionError('Corrected history did not change the displayed risk matrix')
+                            actions = actions[1:]
+                        for action in actions:
                             sample = (action['metrics'], action['digest'])
                             if sample != expected.setdefault(surface, sample):
                                 raise AssertionError('Risk metrics or correlations changed across actions or binaries')
@@ -285,15 +294,15 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path)
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
-    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk'], default='history')
+    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-stale'], default='history')
     parser.add_argument('--profile', choices=['small', 'etf-heavy', 'mixed-history', 'multi-account'], default='small')
     parser.add_argument('--reference', type=Path, help='Reference bundle for a paired comparison')
     options = parser.parse_args()
     surfaces = ['native','browser'] if options.surface == 'both' else [options.surface]
-    if options.experiment in {'exposure', 'risk'}:
+    if options.experiment in {'exposure', 'risk', 'risk-stale'}:
         if not options.reference:
             parser.error('A paired binary comparison requires --reference')
-        if options.experiment == 'risk' and options.profile == 'small':
+        if options.experiment in {'risk', 'risk-stale'} and options.profile == 'small':
             parser.error('The risk benchmark requires a profile with listed equities and ETFs')
         run_comparison(options.executable.resolve(), options.reference.resolve(), options.output.resolve(), surfaces,
                        options.pairs, options.profile, options.experiment)

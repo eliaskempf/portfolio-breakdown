@@ -476,7 +476,7 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False, company_account
     return dict(ready_at=ready_at, visits=visits, themes=theme_visits, details=details, companies=companies, fundamentals=fundamentals)
 
 
-def exercise_risk(evaluate, trial):
+def exercise_risk(evaluate, trial, *, await_refresh=False):
     context = CONTEXT + """
         const button = name => [...d.querySelectorAll('button,[role=radio]')].find(e => visible(e) &&
             (e.querySelector('p')?.textContent.trim() === name || e.textContent.trim() === name));
@@ -494,23 +494,31 @@ def exercise_risk(evaluate, trial):
     read("button('Analytics').click(); return true;")
     wait(lambda: read("return !!button('Calculate risk') && !running();"))
     actions = []
-    for action in ('calculate', 'expand', 'collapse'):
-        start_event = event_count(trial)
+    steps = ['calculate', 'expand', 'collapse']
+    if await_refresh:
+        steps.insert(1, 'complete')
+    for action in steps:
+        start_event = actions[-1]['event_range'][1] if action == 'complete' else event_count(trial)
         read("""
             const action = """ + json.dumps(action) + """;
             const previous = matrix()?.layout?.height;
+            const previousMatrix = action === 'complete' ? JSON.stringify(matrix().data[0].z) : null;
             const control = action === 'calculate' ? button('Calculate risk') :
                 d.querySelector('.st-key-risk_correlations [role=switch]');
-            control.scrollIntoView({block:'center'});
             w.riskVisit = null;
             const start = w.performance.now();
-            control.click();
+            if (action !== 'complete') {
+                control.scrollIntoView({block:'center'});
+                control.click();
+            }
             let drawn = null;
             function frame() {
                 const chart = matrix(), elapsed = w.performance.now() - start;
                 const metrics = [...d.querySelectorAll('.st-key-tour_risk_metrics [data-testid=stMetricValue]')]
                     .map(e => e.textContent.trim());
-                const painted = visible(chart) && chart?.layout?.height !== previous &&
+                const changed = action === 'complete' ? chart?.data?.[0]?.z &&
+                    JSON.stringify(chart.data[0].z) !== previousMatrix : chart?.layout?.height !== previous;
+                const painted = visible(chart) && changed &&
                     !!chart.querySelector('.heatmaplayer image') && metrics.length === 3;
                 if (painted && drawn === null) drawn = elapsed;
                 if (painted && !running()) {
@@ -522,6 +530,8 @@ def exercise_risk(evaluate, trial):
             }
             w.requestAnimationFrame(frame); return true;
         """)
+        if action == 'complete':
+            (trial / 'release-risk').touch()
         result = wait(lambda: read('return w.riskVisit;'), timeout=65)
         if 'error' in result:
             raise RuntimeError(result['error'])
@@ -532,8 +542,8 @@ def exercise_risk(evaluate, trial):
 
 
 def measure_view(evaluate, trial, variant, scenario, *, themes=False, company_accounts=False):
-    if scenario == 'risk':
-        return exercise_risk(evaluate, trial)
+    if scenario in {'risk', 'risk-stale'}:
+        return exercise_risk(evaluate, trial, await_refresh=scenario == 'risk-stale' and variant == 'candidate')
     if scenario == 'exposure':
         return exercise_exposure(evaluate, trial, variant, themes=themes, company_accounts=company_accounts)
     return exercise(evaluate, trial, scenario, persistent=variant != 'baseline')
