@@ -300,6 +300,46 @@ def exercise_fundamentals(evaluate, trial, variant):
     return result
 
 
+def exposure_dimension_visit(read, name):
+    """Measure selection to painted chart and populated financial table."""
+    wait(lambda: read("""
+        const input = d.querySelector('.st-key-exposure_group [role=combobox]');
+        if (!visible(input)) return false;
+        input.focus();
+        input.dispatchEvent(new w.KeyboardEvent('keydown', {key:'ArrowDown', code:'ArrowDown', bubbles:true}));
+        return true;"""))
+    wait(lambda: read("const name = " + json.dumps(name) + """;
+        const option = [...d.querySelectorAll('[role=option]')].find(e => visible(e) && e.textContent.trim() === name);
+        if (!option) return false;
+        const start = w.performance.now();
+        w.dimensionVisit = null;
+        option.click();
+        let drawn = null;
+        function frame() {
+            const area = d.querySelector('.st-key-exposure_theme_results');
+            const plot = area?.querySelector('.js-plotly-plot');
+            const trace = plot?._fullData?.[0], accounts = name === 'Account';
+            const painted = visible(plot) && (accounts ?
+                trace?.labels?.includes('Invented account 1') && plot.querySelector('path.surface') :
+                trace?.type === 'bar' && plot.querySelector('.barlayer .point path'));
+            const elapsed = w.performance.now() - start;
+            if (painted && drawn === null) drawn = elapsed;
+            const grid = area?.querySelector('canvas table[role=grid]');
+            const rows = Number(grid?.getAttribute('aria-rowcount')) - 1;
+            if (painted && !running() && (accounts ? rows === 4 : rows > 300) && grid.querySelector('[role=gridcell]')) {
+                w.dimensionVisit = {name, chart_ms:drawn, settled_ms:elapsed, rows,
+                    sample:accounts ? [Array.from(trace.labels), Array.from(trace.values)] :
+                        [Array.from(trace.customdata), Array.from(trace.x)]};
+            } else if (exception() || elapsed > 60000) w.dimensionVisit = {error:name + ' results did not settle'};
+            else w.requestAnimationFrame(frame);
+        }
+        w.requestAnimationFrame(frame); return true;"""))
+    result = wait(lambda: read("return w.dimensionVisit;"), timeout=65)
+    if 'error' in result:
+        raise RuntimeError(result['error'])
+    return result
+
+
 def exercise_exposure(evaluate, trial, variant, *, themes=False, company_accounts=False):
     """Time the first populated table frame and verify local source disclosure."""
     context = CONTEXT + """
@@ -366,7 +406,7 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False, company_account
             back_to_assets()
         return visit
 
-    def theme_visit():
+    def theme_visit(*, dimensions=False):
         read("""
             const control = label => [...d.querySelectorAll('[role=radio], button')].find(e =>
                 visible(e) && e.textContent.trim() === label);
@@ -391,6 +431,8 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False, company_account
         result = wait(lambda: read('return w.themeVisit;'), timeout=65)
         if 'error' in result:
             raise RuntimeError(result['error'])
+        if dimensions:
+            result['dimensions'] = [exposure_dimension_visit(read, name) for name in ('Account', 'Investment')]
         back_to_assets()
         return result
 
@@ -474,7 +516,7 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False, company_account
             companies = [company_visit(check_sources=False), company_visit(check_sources=True)]
             if company_accounts:
                 back_to_assets()
-                theme_visits = [theme_visit() for _ in range(2)]
+                theme_visits = [theme_visit(), theme_visit(dimensions=True)]
         read("tab('Overview').click(); return true;")
         wait(lambda: ready() and read("return !table() && tab('Overview').getAttribute('aria-selected') === 'true';"))
     fundamentals = exercise_fundamentals(evaluate, trial, variant) if themes else None

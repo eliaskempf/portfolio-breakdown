@@ -48,7 +48,8 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         proc = subprocess.Popen(args, env=env, stdout=log, stderr=log)
         try:
             if surface == 'native':
-                code = proc.wait(timeout=240)
+                # The four-account trial has two extra chart and table waits of up to 60 seconds each.
+                code = proc.wait(timeout=360 if scenario == 'exposure' and company_accounts else 240)
                 path = trial / 'window.json'
                 if not path.exists():
                     raise RuntimeError(f'No native results. Exit {code}. ' + (trial/'app.log').read_text(errors='replace')[-2000:])
@@ -267,6 +268,9 @@ def check_exposure(report, expected, surface, profile):
         if digest != expected.setdefault((surface, 'companies'), digest):
             raise AssertionError('Company names, values or denominators changed across visits or binaries')
         visit['digest'] = digest
+    dimensions = [item for visit in report['themes'] for item in visit.get('dimensions', [])]
+    if profile == 'multi-account' and [item['name'] for item in dimensions] != ['Account', 'Investment']:
+        raise AssertionError('Four-account comparison missed a grouping')
     for visit in report['themes']:
         labels, values = visit.pop('sample')
         digest = hashlib.sha256(json.dumps([labels, values]).encode()).hexdigest()
@@ -275,6 +279,21 @@ def check_exposure(report, expected, surface, profile):
         if digest != expected.setdefault((surface, 'themes'), digest):
             raise AssertionError('Rendered sector chart changed across visits or binaries')
         visit['digest'] = digest
+
+    for dimension in dimensions:
+        name = dimension['name']
+        labels, values = dimension.pop('sample')
+        if name == 'Account':
+            valid = dimension['rows'] == 4 and set(labels) == {
+                'Selected holdings', *(f'Invented account {i}' for i in range(1, 5))}
+        else:
+            valid = name == 'Investment' and dimension['rows'] == 8958 and len(labels) == 30
+        if not valid or len(labels) != len(values):
+            raise AssertionError(f'{name} chart or financial table is incomplete')
+        digest = hashlib.sha256(json.dumps([labels, values]).encode()).hexdigest()
+        if digest != expected.setdefault((surface, name), digest):
+            raise AssertionError(f'{name} chart labels or amounts changed across binaries')
+        dimension['digest'] = digest
 
 
 def run_comparison(candidate, reference, destination, surfaces, pairs, profile, experiment):
@@ -314,6 +333,10 @@ def run_comparison(candidate, reference, destination, surfaces, pairs, profile, 
                         print(surface, name, 'Exposure table ms', [round(v['table_ms']) for v in report['visits']],
                               'sector chart ms', [round(v['chart_ms']) for v in report['themes']],
                               'company grid ms', [round(v['grid_ms']) for v in report['companies']], flush=True)
+                        for visit in report['themes']:
+                            for dimension in visit.get('dimensions', []):
+                                print(surface, name, dimension['name'], 'paint / settled ms',
+                                      round(dimension['chart_ms']), round(dimension['settled_ms']), flush=True)
                     result['runs'].append(dict(variant=name, surface=surface, pair=pair, **report))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
 
