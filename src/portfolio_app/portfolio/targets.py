@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from portfolio_app.funds.etf import FundSnapshot
-from portfolio_app.exposure.exposure_analysis import project_measures
+from portfolio_app.exposure.exposure_analysis import align_measure, project_measures
 from portfolio_app.portfolio.grouping import InstrumentGroup
 
 
@@ -48,8 +48,9 @@ def add_target_columns(table: pd.DataFrame, keys: list, totals: TargetTotals, *,
     coverage produce an accurate whole-portfolio current percentage.
     """
     result = table.copy()
-    known = pd.Series([totals.known.get(key, 0.) for key in keys], index=result.index)
-    missing = pd.Series([totals.missing.get(key, 0.) > 0 for key in keys], index=result.index)
+    identities = pd.Index(keys, tupleize_cols=False)
+    known = align_measure(totals.known, identities, result.index)
+    missing = align_measure(totals.missing, identities, result.index).gt(0)
     result["Current portfolio %"] = (100 * result["Value"] / portfolio_value
                                       if valuation_complete and portfolio_value > 0 else float("nan"))
     result["Target portfolio %"] = (100 * known).mask(missing)

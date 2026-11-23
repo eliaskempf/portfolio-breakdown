@@ -86,3 +86,8 @@ def project_measures(positions: pd.DataFrame, measures: Sequence[pd.Series], fun
         for key, (index, _) in zip(keys, batch):
             frames[index] = common.assign(value=expanded[key])
     return frames
+
+
+def align_measure(totals: pd.Series, keys: pd.Index, index: pd.Index) -> pd.Series:
+    """Align grouped amounts by identity, then restore the display row index."""
+    return totals.reindex(keys, fill_value=0.).set_axis(index).infer_objects()

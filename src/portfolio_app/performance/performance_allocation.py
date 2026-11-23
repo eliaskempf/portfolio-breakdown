@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from portfolio_app.funds.etf import FundSnapshot, matching_fund
-from portfolio_app.exposure.exposure_analysis import project_measures
+from portfolio_app.exposure.exposure_analysis import align_measure, project_measures
 from portfolio_app.portfolio.grouping import InstrumentGroup
 from portfolio_app.performance.performance import cash_balance_only
 
@@ -46,7 +46,8 @@ def add_performance_column(table: pd.DataFrame, keys: list, measures: list[pd.Da
     """Align grouped costs and matching current values, never average returns."""
     totals = [frame.groupby(key)[value].sum() for frame in measures]
     result = table.copy()
-    cost, current, missing, estimated = [pd.Series([total.get(identity, 0.) for identity in keys], index=result.index) for total in totals]
+    identities = pd.Index(keys, tupleize_cols=False)
+    cost, current, missing, estimated = [align_measure(total, identities, result.index) for total in totals]
     covered = (cost > 0) | (current > 0)
     gain = (current - cost).where(covered)
     result["Performance"] = (100 * gain / cost.where(cost > 0)) if percent else gain
