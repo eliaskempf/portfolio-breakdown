@@ -139,22 +139,30 @@ class DemoRiskHistoryProvider:
 
 
 class RiskHistoryService:
-    def __init__(self, provider: RiskHistoryProvider, directory=None, *, now=utc_now, track_inputs=False):
+    def __init__(self, provider: RiskHistoryProvider, directory=None, *, now=utc_now, track_inputs=False, cached_read=None, before_fetch=None):
+        self.cached_read, self.before_fetch = cached_read, before_fetch
+        self.due = False
+        self.acquired = set()
         self.provider, self.cache = provider, AnalyticsCache(directory, now=now)
         self._inputs = {} if track_inputs else None
 
     @classmethod
-    def for_workspace(cls, directory, demo, *, track_inputs=False):
+    def for_workspace(cls, directory, demo, *, track_inputs=False, cached_read=None, before_fetch=None):
         return cls(DemoRiskHistoryProvider() if demo else MarketRiskHistoryProvider(),
-                   None if demo else directory / '.cache' / 'risk-history', track_inputs=track_inputs)
+                   None if demo else directory / '.cache' / 'risk-history', track_inputs=track_inputs,
+                   cached_read=cached_read, before_fetch=before_fetch)
 
-    def inputs_current(self):
+    def pending_inputs(self):
+        """Previously read observations that another selection may need during an explicit refresh."""
+        return {key: (value, True) for key, value in self._inputs.items()}
+
+    def inputs_current(self, *, allow_due=False):
         """Include FX, unsuccessful listings and benchmark fallbacks in the same freshness check."""
         if self._inputs is None:
             return False
         for key, previous in self._inputs.items():
             latest, due = self.cache.cached(key)
-            if due or latest != previous:
+            if (due and not allow_due) or latest != previous:
                 return False
         return True
 
@@ -169,7 +177,18 @@ class RiskHistoryService:
             return dict(dates=[stamp.date().isoformat() for stamp in prices.index], prices=prices.tolist(),
                         currency=result.currency, note=result.note)
         key = f'adjusted-daily-v1:{ticker}:{years}'
-        result = self.cache.get(key, fetch, refresh=refresh)
+        if self.cached_read is not None:
+            result, expired = self.cached_read(self.cache, key)
+            if result.data is None and expired and not result.note:
+                # There is no prior history to display. Acquire just this dependency
+                # in the original calculation, without traversing the portfolio twice.
+                result = self.cache.get(key, fetch, preserve_updates=True)
+                self.acquired.add(key)
+            else:
+                self.due |= expired or refresh
+        else:
+            result = self.cache.get(key, fetch, refresh=refresh and key not in self.acquired,
+                                    preserve_updates=True, before_fetch=self.before_fetch)
         if self._inputs is not None:
             self._inputs[key] = replace(result, status='cached') if result.status == 'fresh' else result
         if result.data is None:

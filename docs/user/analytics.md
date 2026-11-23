@@ -110,6 +110,11 @@ fundamentals as soon as the view opens. Missing values appear as a dash. The app
 refreshes due listings in the background and updates the displayed metrics once
 the requests finish.
 
+Historical risk uses the saved adjusted histories for the selected holdings,
+benchmark and exchange rates. When those histories are due for refresh, the
+dated estimate stays visible until the full replacement is ready. The first
+calculation can take longer if a required history has never been retrieved.
+
 Dated issuer fees match the exact share class; an ETF exposure proxy cannot supply
 another fund's fee. Provider expense ratios are labeled fallbacks. **Maintain fund
 fee** stores a private override with share-class identity, annual rate, source,

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 from pathlib import Path
+from threading import RLock
 from portfolio_app.workspace.workspace_lock import document_write
 from portfolio_app.workspace.atomic_file import staged_text
 
@@ -19,6 +20,15 @@ def atomic_json(path: Path, value):
         temporary.replace(path)
 
 
+@document_write
+def _save_if_unchanged(path, version, entry):
+    # A slow provider must not overwrite a correction published while it ran.
+    if AnalyticsCache._version(path) != version:
+        return False
+    atomic_json(path, entry)
+    return True
+
+
 @dataclass(frozen=True)
 class CachedResult:
     data: dict | None
@@ -32,6 +42,7 @@ class AnalyticsCache:
         self.directory, self.now = directory, now
         self.memory = {}
         self._unsaved = {}
+        self._save_lock = RLock()
 
     @staticmethod
     def _version(path):
@@ -49,9 +60,11 @@ class AnalyticsCache:
         path = self._path(key)
         entry = self.memory.get(key, {})
         try:
-            version = self._unsaved.get(key)
-            unsaved = version is not None and version == self._version(path)
-            if path and not unsaved:
+            pending = self._unsaved.get(key)
+            unsaved = pending is not None and pending[0] == self._version(path)
+            if unsaved:
+                entry = pending[1]
+            elif path:
                 entry = json.loads(path.read_text())
             now = self.now()
             age = now - datetime.fromisoformat(entry['attempted_at'])
@@ -66,10 +79,15 @@ class AnalyticsCache:
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             return CachedResult(None, 'unavailable'), True
 
-    def get(self, key, fetch, *, refresh=False, ttl=timedelta(hours=24)):
+    def get(self, key, fetch, *, refresh=False, ttl=timedelta(hours=24), preserve_updates=False, before_fetch=None):
+        path = self._path(key)
+        version = self._version(path) if path and preserve_updates else None
+        pending = self._unsaved.get(key)
         previous, due = self.cached(key, ttl=ttl)
         if not refresh and not due:
             return previous
+        if before_fetch is not None:
+            before_fetch(key, previous, due)
         stamp = self.now().isoformat()
         try:
             data = fetch()
@@ -84,12 +102,18 @@ class AnalyticsCache:
                          attempted_at=stamp, error='Provider unavailable; cached data may be shown.')
             result = CachedResult(entry['data'], 'stale' if entry['data'] is not None else 'unavailable',
                                   entry['fetched_at'], entry['error'])
-        self.memory[key] = entry
-        if path := self._path(key):
+        if not path:
+            self.memory[key] = entry
+            return result
+        with self._save_lock:
             try:
-                atomic_json(path, entry)
+                if preserve_updates:
+                    if self._unsaved.get(key) is not pending or not _save_if_unchanged(path, version, entry):
+                        return self.cached(key, ttl=ttl)[0]
+                else:
+                    atomic_json(path, entry)
                 self._unsaved.pop(key, None)
             except OSError:
-                self._unsaved[key] = self._version(path)
+                self._unsaved[key] = (version if preserve_updates else self._version(path), entry)
                 result = CachedResult(result.data, result.status, result.fetched_at, 'Analytics cache could not be saved.')
         return result

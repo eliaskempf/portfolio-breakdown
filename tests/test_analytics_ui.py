@@ -247,7 +247,13 @@ render_portfolio_analytics(holdings, Path({str(tmp_path)!r}), [])
 """).run()
     assert not app.exception and calls == []
     by_label(app.button, 'Calculate risk').click().run()
+    if 'analytics_risk_refresh' in app.session_state:
+        app.session_state['analytics_risk_refresh'].result.result(timeout=8)
+        app.run()
     assert not app.exception and calls == ['SYNTH']
     assert by_label(app.metric, 'Beta').value != '—'
     by_label(app.button, 'Refresh risk').click().run()
+    if 'analytics_risk_refresh' in app.session_state:
+        app.session_state['analytics_risk_refresh'].result.result(timeout=8)
+        app.run()
     assert not app.exception and calls == ['SYNTH', benchmark, 'SYNTH']

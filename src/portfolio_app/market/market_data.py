@@ -134,7 +134,10 @@ class RequestCoordinator:
         if not self._batch_sizes[batch]:
             del self._batch_sizes[batch]
         self._pending.remove(identity)
-        self._errors[identity] = error
+        if error:
+            self._errors[identity] = error
+        else:
+            self._errors.pop(identity, None)
         self._revisions[identity[0]] = self._revisions.get(identity[0], 0) + 1
         self._running -= 1
         self._dispatch()
@@ -266,8 +269,8 @@ class BackgroundHistory:
         return self.coordinator.pending(self.workspace, ('history', ticker, period))
 
 
-# Slow optional fundamentals must leave workers available for valuation and FX.
-coordinator = RequestCoordinator(channel_limits={'fundamentals': 2})
+# Optional analytics leave a worker available for valuation and FX even when both queues are full.
+coordinator = RequestCoordinator(channel_limits={'fundamentals': 2, 'risk': 1})
 _services = {}
 _services_lock = RLock()
 
