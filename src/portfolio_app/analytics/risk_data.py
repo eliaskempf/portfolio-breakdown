@@ -9,7 +9,7 @@ import pandas as pd
 
 from portfolio_app.market.currencies import quote_unit
 
-from portfolio_app.analytics.analytics_cache import AnalyticsCache, utc_now
+from portfolio_app.analytics.analytics_cache import AnalyticsCache, ObservedCacheInput, utc_now
 from portfolio_app.analytics.risk import DEFAULT_BENCHMARK, MIN_OBSERVATIONS, daily_prices, eur_prices, weekly_returns
 
 
@@ -154,15 +154,15 @@ class RiskHistoryService:
 
     def pending_inputs(self):
         """Previously read observations that another selection may need during an explicit refresh."""
-        return {key: (value, True) for key, value in self._inputs.items()}
+        return {key: (value.result, True) for key, value in self._inputs.items()}
 
     def inputs_current(self, *, allow_due=False):
         """Include FX, unsuccessful listings and benchmark fallbacks in the same freshness check."""
         if self._inputs is None:
             return False
         for key, previous in self._inputs.items():
-            latest, due = self.cache.cached(key)
-            if (due and not allow_due) or latest != previous:
+            latest, due = self.cache.cached(key, observed=previous)
+            if (due and not allow_due) or latest != previous.result:
                 return False
         return True
 
@@ -190,7 +190,8 @@ class RiskHistoryService:
             result = self.cache.get(key, fetch, refresh=refresh and key not in self.acquired,
                                     preserve_updates=True, before_fetch=self.before_fetch)
         if self._inputs is not None:
-            self._inputs[key] = replace(result, status='cached') if result.status == 'fresh' else result
+            cached = replace(result, status='cached') if result.status == 'fresh' else result
+            self._inputs[key] = ObservedCacheInput(cached)
         if result.data is None:
             return AdjustedHistory(pd.Series(dtype=float), '', result.status, result.fetched_at, result.note)
         try:

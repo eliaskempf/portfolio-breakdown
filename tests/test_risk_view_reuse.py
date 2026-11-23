@@ -186,6 +186,36 @@ def test_risk_provider_keeps_external_correction_written_during_fetch(tmp_path):
     assert service.inputs_current()
 
 
+def test_repeated_risk_validation_decodes_only_changed_evidence(tmp_path, monkeypatch):
+    import os
+    from portfolio_app.analytics.risk_data import RiskHistoryService
+
+    now = datetime.now(timezone.utc)
+    service = RiskHistoryService(DemoRiskHistoryProvider(), tmp_path, now=lambda: now, track_inputs=True)
+    service.get('SYNTH-A', 1)
+    service.get('SYNTH-B', 1)
+    assert service.inputs_current()
+    decode, calls = json.loads, []
+    def counted(raw):
+        calls.append(1)
+        return decode(raw)
+    monkeypatch.setattr(json, 'loads', counted)
+    assert service.inputs_current()
+    assert not calls
+    now += timedelta(days=2)
+    assert not service.inputs_current()
+    assert not calls
+    now -= timedelta(days=2)
+    path = service.cache._path('adjusted-daily-v1:SYNTH-B:1')
+    stamp = path.stat()
+    raw = path.read_text()
+    price = str(decode(raw)['data']['prices'][0])
+    path.write_text(raw.replace(price, ('2' if price[0] == '1' else '1') + price[1:], 1))
+    os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    assert not service.inputs_current()
+    assert calls == [1]
+
+
 def test_risk_refresh_worker_failure_keeps_dated_result_and_allows_manual_retry(tmp_path, monkeypatch):
     from threading import current_thread
     from portfolio_app.analytics.risk_data import RiskHistoryService

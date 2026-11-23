@@ -37,6 +37,27 @@ class CachedResult:
     note: str = ''
 
 
+class ObservedCacheInput:
+    """Keep a read-only snapshot's disk evidence for later freshness checks."""
+    def __init__(self, result):
+        self.result = result
+        self._document = None
+
+    def read_document(self, path):
+        content = path.read_bytes()
+        digest = sha256(content).digest()
+        saved = self._document
+        if saved is not None and saved[0] == digest:
+            return saved[1]
+        entry = json.loads(content)
+        if isinstance(entry, dict) and entry.get('data') == self.result.data:
+            # Share the already held observations. Only the envelope and digest
+            # need to outlive this check. Expiry is evaluated on every read.
+            entry['data'] = self.result.data
+            self._document = digest, entry
+        return entry
+
+
 class AnalyticsCache:
     def __init__(self, directory: Path | None = None, *, now=utc_now):
         self.directory, self.now = directory, now
@@ -55,7 +76,7 @@ class AnalyticsCache:
     def _path(self, key):
         return self.directory / (sha256(key.encode()).hexdigest() + '.json') if self.directory else None
 
-    def cached(self, key, *, ttl=timedelta(hours=24)):
+    def cached(self, key, *, ttl=timedelta(hours=24), observed=None):
         """Read dated evidence without contacting a provider. Return the result and whether it is due."""
         path = self._path(key)
         entry = self.memory.get(key, {})
@@ -65,7 +86,7 @@ class AnalyticsCache:
             if unsaved:
                 entry = pending[1]
             elif path:
-                entry = json.loads(path.read_text())
+                entry = observed.read_document(path) if observed is not None else json.loads(path.read_text())
             now = self.now()
             age = now - datetime.fromisoformat(entry['attempted_at'])
             data = entry.get('data')
