@@ -472,6 +472,9 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False, company_account
             details = [detail_visit() for _ in range(2)]
         if (themes or company_accounts) and len(visits) == visits_to_measure:
             companies = [company_visit(check_sources=False), company_visit(check_sources=True)]
+            if company_accounts:
+                back_to_assets()
+                theme_visits = [theme_visit() for _ in range(2)]
         read("tab('Overview').click(); return true;")
         wait(lambda: ready() and read("return !table() && tab('Overview').getAttribute('aria-selected') === 'true';"))
     fundamentals = exercise_fundamentals(evaluate, trial, variant) if themes else None

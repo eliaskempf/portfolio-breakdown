@@ -783,8 +783,10 @@ uses mixed-history on push. It also runs a separate native pair with the
 multi-account profile. That profile holds each of the 24 ETFs in four invented
 accounts alongside 24 direct shares. Its 120 positions have 3,000 purchases and
 87,720 price observations. Each listing has the same price history across its
-accounts. This additional pair opens Assets once and Companies twice. It checks
-the source disclosure for all 65,624 ownership contributions.
+accounts. This additional pair opens Assets once and Companies twice, then
+repeats the Themes & sectors comparison with the same four-account scope. It
+checks the source disclosure for all 65,624 ownership contributions and compares
+every displayed sector label and value across binaries.
 
 The native historical-risk comparison uses 48 market-valued listings. It starts
 with the benchmark and 47 adjusted histories already cached. The first Calculate

@@ -22,8 +22,8 @@ from renderer import measure_view, wait
 
 def benchmark(executable, workspace, trial, variant, surface, scenario, *, themes=False, company_accounts=False):
     trial.mkdir()
-    if scenario == 'exposure' and themes:
-        prepare_fundamental_check(workspace)
+    if scenario == 'exposure' and (themes or company_accounts):
+        prepare_fundamental_check(workspace, expired=themes)
     if scenario == 'collection':
         prepare_fundamental_check(workspace, expired=False)
     if scenario in {'risk', 'risk-stale'}:
