@@ -227,12 +227,12 @@ def test_closed_first_position_ignores_delayed_valuation_callback(tmp_path, monk
     add_category(app, 'Invented reserve')
     click(app, 'Save categories & continue')
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
-    radio = by_label(app.radio, 'Valuation method')
+    valuation = by_label(app.selectbox, 'Valuation method')
     # AppTest exposes a mapping facade around SafeSessionState in Streamlit 1.65.
-    callback = app.session_state._state._state._new_widget_state.widget_metadata[radio.proto.id].callback
+    callback = app.session_state._state._state._new_widget_state.widget_metadata[valuation.proto.id].callback
     click(app, 'Finish later')
     closed_state = {}
-    monkeypatch.setattr('portfolio_app.interface.views.positions.position_ui.st.session_state', closed_state)
+    monkeypatch.setattr('portfolio_app.interface.views.positions.position_entry_ui.st.session_state', closed_state)
     callback()
     assert closed_state == {}
 
