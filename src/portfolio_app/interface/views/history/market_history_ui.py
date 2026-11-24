@@ -44,19 +44,21 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
         if result.prices and expected_currency and result.currency != expected_currency:
             result = replace(result, dates=(), prices=(), status='unavailable',
                              note='History returned an unexpected currency; the reference chart is withheld.')
-        requested = [ticker]
+        # Keep each input's retry state before conversion combines their statuses.
+        retry_needed = {ticker: result.status in {'stale', 'unavailable'}}
         if result.prices and not index_points and result.currency != history_currency:
             from portfolio_app.market.history import convert_price_history
             legs = {}
             for units in {result.currency, history_currency} - {'EUR'}:
                 symbol = f'{units}EUR=X'
-                requested.append(symbol)
                 legs[units], checking = quote(symbol, period)
+                fx = legs[units]
+                retry_needed[symbol] = not fx.prices or fx.currency != 'EUR' or fx.status in {'stale', 'unavailable'}
                 pending = pending or checking
             result = convert_price_history(result, history_currency, legs)
-        return result, requested, pending
+        return result, retry_needed, pending
 
-    result, requested, pending = read(use_initial=period == saved_period)
+    result, retry_needed, pending = read(use_initial=period == saved_period)
     from portfolio_app.interface.shared.dialog_runtime import local_fragment_updates
 
     @st.fragment
@@ -74,11 +76,11 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
         @status_fragment()
         @local_fragment_updates()
         def progress(poll):
-            nonlocal result, requested, pending
+            nonlocal result, retry_needed, pending
             if is_active is not None and not is_active():
                 return
-            if mounted and pending and not any(service.pending(symbol, period) for symbol in requested):
-                updated, requested, pending = read()
+            if mounted and pending and not any(service.pending(symbol, period) for symbol in retry_needed):
+                updated, retry_needed, pending = read()
                 if not pending:
                     previous, result = result, updated
                     if (result.dates, result.prices, result.currency) != (previous.dates, previous.prices, previous.currency):
@@ -94,10 +96,12 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
                     st.caption('Updating market-price history in the background…')
                     # A fast job can finish during the enclosing page render.
                     # Publish on a local tick so the rest of that page still mounts.
-                    poll(.1 if not mounted and not any(service.pending(symbol, period) for symbol in requested) else 2)
+                    poll(.1 if not mounted and not any(service.pending(symbol, period) for symbol in retry_needed) else 2)
                 elif not demo and result.status in {'stale', 'unavailable'} and ticker and not manual:
                     if st.button('Retry history', key=key+'retry'):
-                        service.get(ticker, period, refresh=True)
+                        for symbol, needs_retry in retry_needed.items():
+                            if needs_retry:
+                                service.get(symbol, period, refresh=True)
                         pending = True
                         st.rerun(scope='fragment')
 

@@ -18,7 +18,7 @@ from test_history_download import setup
 playwright = pytest.importorskip('playwright.sync_api')
 
 
-@pytest.mark.parametrize('kind', ['market', 'market-cached', 'personal'])
+@pytest.mark.parametrize('kind', ['market', 'market-cached', 'market-fx', 'personal'])
 def test_delayed_retry_rebuilds_owner_and_updates_chart_without_app_rerun(tmp_path, kind):
     journal, _ = setup(tmp_path)
     save_journal(tmp_path, journal, None)
@@ -69,6 +69,18 @@ class FakePersonal:
     def pending(self,*args): return self.busy
 if not hasattr(market,'_retry_fixture'):
     market._retry_fixture=FakeMarket()
+    if KIND == 'market-fx':
+        from portfolio_app.market.history import HistoryService
+        from portfolio_app.market.market_data import BackgroundHistory, RequestCoordinator
+        class Rates:
+            def history(self,ticker,period):
+                count(ticker)
+                if ticker == 'USDEUR=X' and (root/ticker).read_text() == '1':
+                    raise OSError('Invented first FX request failed')
+                prices, currency = {'SYNTH': ((100.,110.),'USD'),
+                    'USDEUR=X': ((.9,.8),'EUR'), 'GBPEUR=X': ((.5,.5),'EUR')}[ticker]
+                return HistoryResult(('2024-01-01','2024-01-02'), prices, currency, 'fresh')
+        market._retry_fixture=BackgroundHistory(HistoryService(Rates()),RequestCoordinator(),root)
     style = market.style_figure
     def counted_style(*args, **kwargs):
         count('figures.txt')
@@ -80,6 +92,8 @@ if not hasattr(market,'_retry_fixture'):
         return load_observations(root)
     personal.load_observations=counted_load
 st.session_state['position_edit_dialog']=True
+if KIND == 'market-fx':
+    st.session_state.reporting_currency='GBP'
 @st.dialog('Invented history')
 def dialog():
     count('dialog-renders.txt')
@@ -135,6 +149,9 @@ dialog()
                 assert plot.evaluate('el => el === window.cachedPricePlot && !window.pricePlotFaded')
                 assert plot.evaluate('el => Array.from(el.data[0].y)') == [100, 110]
             playwright.expect(page.locator('.js-plotly-plot')).to_have_count(1, timeout=15000)
+            if kind == 'market-fx':
+                assert page.locator('.js-plotly-plot').evaluate('el => Array.from(el.data[0].y)') == [180, 176]
+                assert [(tmp_path/symbol).read_text() for symbol in ('SYNTH', 'USDEUR=X', 'GBPEUR=X')] == ['1','2','1']
             settle(page)
             playwright.expect(page.get_by_role('dialog')).to_be_visible()
             playwright.expect(button).to_have_count(0)
