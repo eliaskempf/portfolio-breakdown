@@ -146,13 +146,11 @@ class _GainMember:
 
 def _gain_members(calculation, scope):
     # Scope membership and the selected ledger are fixed for this calculation.
-    books = {b.position_id: b for b in calculation.journal.securities}
-
     def member(identity, boundary):
         events = calculation._events.get(identity, ())
         opening = next((e for e in events if e.kind == 'opening'), None)
         dates = calculation.event_dates(boundary)
-        return _GainMember(identity, boundary, books.get(identity), dates[0] if dates else None,
+        return _GainMember(identity, boundary, calculation._books.get(identity), dates[0] if dates else None,
             bool(opening and opening.quantity),
             next((e.date for e in events if e.kind in ('sell', 'swap')), None),
             next((e.date for e in events if e.kind in ('distribution', 'reward')), None))

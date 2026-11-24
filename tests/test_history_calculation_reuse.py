@@ -438,3 +438,32 @@ def test_rotating_position_flows_visit_only_new_postings_in_the_selected_book(mo
     restored, missing = calculation.flows(first_scope, start.isoformat(), end, 'EUR')
     assert not missing and sum(flow.amount for flow in restored) == 10
     assert len(calculation._position_flows) == len(books)
+
+
+def test_dated_valuations_reuse_corrected_account_opening_dates(monkeypatch):
+    from portfolio_app.ledger.account_journal import Account, Event
+    import portfolio_app.performance.personal_performance as module
+    journal = Journal(accounts=(Account('a', 'Invented cash'), Account('b', 'Invented empty account')),
+        events=(Event('eu', START, 'cash_open', 'a', 'EUR', D(25)),
+                Event('us', '2024-01-04', 'cash_open', 'a', 'USD', D(0)),
+                Event('corrected', '2024-01-06', 'cash_open', 'a', 'USD', D(0), replaces='us')))
+    store = ObservationStore()
+    scopes = [HistoryScope(accounts=('a',)), HistoryScope(accounts=('b',))]
+    days = ('2024-01-07', '2024-01-05', '2024-01-06')
+    expected = {(scope, day): module.value_at(journal, scope, store, day, 'EUR') for scope in scopes for day in days}
+    visits = []
+    class CountedEvents(tuple):
+        def __iter__(self):
+            visits.append(True)
+            return super().__iter__()
+    selected = CountedEvents(module.effective_events(journal))
+    monkeypatch.setattr(module, 'effective_events', lambda _: selected)
+    calculation = HistoryCalculation(journal, store)
+    calculation.accounts(days[0])
+    visits.clear()
+    for (scope, day), result in expected.items():
+        assert calculation.value(scope, day, 'EUR') == result
+    assert expected[scopes[0], days[1]].amount is None
+    assert expected[scopes[0], days[2]].amount == 25
+    assert all(expected[scopes[1], day].amount is None for day in days)
+    assert not visits

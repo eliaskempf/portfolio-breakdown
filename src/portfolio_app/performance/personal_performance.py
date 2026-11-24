@@ -101,6 +101,8 @@ class HistoryCalculation:
     def __init__(self, journal, observations):
         self.journal, self.observations = journal, index_observations(observations)
         self._account_events = effective_events(journal)
+        self._last_cash_openings = last_cash_openings(self._account_events)
+        self._books = {book.position_id: book for book in journal.securities}
         self._position_starts = account_position_starts(self._account_events)
         self._account_starts = account_start_dates(journal, self._account_events)
         from portfolio_app.ledger.account_inception import account_inceptions
@@ -155,7 +157,7 @@ class HistoryCalculation:
         from portfolio_app.performance.gain_components import recorded_security_gains
         interval = bisect_right(self._security_dates, stamp)
         def load():
-            book = next(b for b in self.journal.securities if b.position_id == identity)
+            book = self._books[identity]
             return recorded_security_gains(book, self.securities(stamp), self.observations, stamp, target, self._events[identity])
         return self._get(('security_gains', identity, interval, target), load)
 
@@ -250,6 +252,11 @@ def confirmed_empty_before(book, stamp, *, events=None):
                 and events[0].source == 'confirmed_zero_start' and stamp < events[0].date)
 
 
+def last_cash_openings(events):
+    # Effective events are ordered by economic date after corrections and voids.
+    return {event.account_id: event.date for event in events if event.kind == 'cash_open'}
+
+
 def account_start_dates(journal, events=None):
     owners = {p.id: p.account_id for p in journal.positions}
     first, openings = {}, {}
@@ -334,7 +341,7 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
     from portfolio_app.performance.history_observations import ObservationFX
     total, reasons = ZERO, list(scope.unresolved)
     states = (calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)).positions
-    books = {b.position_id: b for b in journal.securities}
+    books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
     initial_positions = initial_security_positions(journal, scope, stamp, calculation=calculation)
     for identity in scope.positions:
         if identity in initial_positions:
@@ -379,7 +386,7 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
         return AmountResult(supplied.amount, evidence=(provenance(supplied, stamp),))
     securities = calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)
     accounts = (calculation.accounts(stamp) if calculation else replay(journal, as_of=stamp)) if scope.accounts else None
-    books = {b.position_id: b for b in journal.securities}
+    books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
     total, reasons, evidence = ZERO, [], []
 
     def add(amount, denomination, identity):
@@ -418,11 +425,11 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
     from portfolio_app.ledger.account_inception import account_inceptions
     inceptions = calculation._account_inceptions if calculation else account_inceptions(journal, events)
     position_starts = calculation._position_starts if calculation else account_position_starts(events)
+    openings = calculation._last_cash_openings if calculation else last_cash_openings(events)
     for account in scope.accounts:
         if account in inceptions and stamp < inceptions[account]:
             continue
-        openings = [e for e in events if e.account_id == account and e.kind == 'cash_open']
-        if not openings or any(e.date > stamp for e in openings):
+        if account not in openings or stamp < openings[account]:
             reasons.append(Issue(f'{account}: missing opening cash coverage on {stamp}', 'transaction'))
         for (owner, currency), amount in accounts.cash.items():
             if owner == account:
@@ -483,7 +490,7 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
     def events_for(book):
         return events_by_position[book.position_id] if events_by_position is not None else selected_events(book)
     reasons = list(scope.unresolved)
-    books = {b.position_id: b for b in journal.securities}
+    books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
     initial_positions = initial_security_positions(journal, scope, start, calculation=calculation)
     for identity in scope.positions:
         book = books.get(identity)
