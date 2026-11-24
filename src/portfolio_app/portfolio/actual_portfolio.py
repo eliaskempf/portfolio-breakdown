@@ -86,6 +86,7 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
             if balance and observation.contract_id == balance.contract.id:
                 valuations[identity] = freshness(observation, now=now, contract=balance.contract, closed=not balance.quantity)
     accounts = {a.id: a.name for a in journal.accounts}
+    banks = {a.id: a for a in journal.accounts if a.cash_type}
     linked = {(x.account_id, x.currency): x.position_id for x in journal.cash_links}
     original = valued.set_index('position_id')
     result = valued.loc[~valued.position_id.isin(linked.values())].copy()
@@ -136,14 +137,24 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
             from portfolio_app.performance.performance import cash_performance_note
             base['performance_note'] = cash_performance_note(currency, reporting_currency)
         rows.append(base)
-    for (account, currency), amount in state.cash.items():
+    balances = dict(state.cash)
+    for bank in banks.values():
+        balances.setdefault((bank.id, bank.denomination), None)
+    for (account, currency), amount in balances.items():
         identity = linked.get((account, currency), f'account-cash:{account}:{currency}')
         extra = {}
         if identity in original.index:
             prior = original.loc[identity]
             extra = {key: prior.get(key, '') for key in ('bucket_id', 'portfolio')}
-        row(identity, account, currency, None if (account, currency) in state.unknown_cash else amount, f'{accounts[account]} · {currency} cash',
-            'cash' if amount >= 0 else 'liability', **extra)
+        name = f'{accounts[account]} · {currency} cash'
+        if account in banks:
+            extra['fixed_cash'] = True
+            name = banks[account].name
+            extra.setdefault('bucket_id', banks[account].bucket_id)
+            if identity in original.index:
+                extra.update({key: prior.get(key, float('nan')) for key in ('within_bucket_target', 'target_allocation')})
+        row(identity, account, currency, None if (account, currency) in state.unknown_cash else amount, name,
+            'liability' if amount is not None and amount < 0 else 'cash', **extra)
     for (account, currency, loan), amount in state.loans.items():
         if amount:
             row(f'account-loan:{account}:{currency}:{loan}', account, currency, -amount,
@@ -167,10 +178,12 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
             **valuation_fields(valuation),
             valuation_note='Unsettled P&L and outstanding cash claims only; settled P&L is in account cash.')
     # Delayed internal transfers are wealth in transit, counted at neither endpoint.
+    bank_categories = {r['account_id']: r['bucket_id'] for r in rows if r['account_id'] in banks}
     for identity, pending in state.pending.items():
         if not pending.position_id or pending.currency != state.positions[pending.position_id].contract.currency:
             row(f'account-pending:{identity}', pending.account_id, pending.currency, pending.amount,
-                f'{accounts[pending.account_id]} · cash in transit', 'cash')
+                f'{accounts[pending.account_id]} · cash in transit', 'cash',
+                bucket_id=bank_categories.get(pending.account_id, ''), fixed_cash=pending.account_id in banks)
     if rows:
         result = pd.concat([result, pd.DataFrame(rows)], ignore_index=True)
     result.attrs = dict(valued.attrs, reporting_currency=reporting_currency, actual_accounts=True, account_fx_rates=rates)
@@ -178,3 +191,11 @@ def journal_positions(valued, journal, prices, *, reporting_currency='EUR', mark
                                       if value.context is not None}
     result.attrs['futures_freshness_names'] = result.set_index('position_id')['name'].to_dict()
     return result
+
+
+def capital_plan_positions(valued):
+    """Keep ordinary holdings and named cash, including outstanding bank claims."""
+    if 'journal_managed' not in valued:
+        return valued
+    from portfolio_app.portfolio.rebalancing import fixed_cash
+    return valued.loc[~valued.journal_managed.eq(True) | fixed_cash(valued)]

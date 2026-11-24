@@ -118,7 +118,7 @@ def save_leverage_settings(directory, settings, expected_revision):
         from portfolio_app.ledger.account_journal import load_journal
         journal, _ = load_journal(directory)
         remaining = replace(settings, liabilities=tuple(x for x in settings.liabilities if x.id not in journal.adopted_liability_ids))
-        legacy_future = sandbox[0] if sandbox and not journal.accounts else None
+        legacy_future = sandbox[0] if sandbox and not journal.has_broker_workspace else None
         if requires_legacy_eur(remaining, legacy_future) and load_settings(directory).reporting_currency != 'EUR':
             raise DataError('Legacy EUR debt and sandbox futures require EUR reporting.')
         if not settings.enabled and requires_leverage(settings, sandbox[0] if sandbox else None):

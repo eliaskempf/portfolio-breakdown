@@ -4,6 +4,42 @@ Positions opens on the holdings list. **Add position** and **Import** sit beside
 **More actions** contains bulk purchases, balance updates, price connections and
 accounts. **Back to positions** restores the list view, search and sort.
 
+## Cash accounts
+
+Choose **Positions → Add position → Cash account** for a checking account, savings
+account (including high-yield savings), or term deposit. Enter a custom name,
+currency, opening date and balance. A term deposit can also have a maturity
+date. If the cash is already in a holding, choose it under **Opening balance
+source** to count it once.
+
+A single category named **Cash** is preselected. When several branches have
+that name, choose the full category path. You can leave the account unassigned,
+choose any other category, or create **Cash** when it is missing. The new
+category is saved together with the account.
+
+Overview shows the account balance in the selected category. Open the account
+from Overview or Positions for its native balance and dated transactions with
+running balances. Use **Record transaction** for a deposit, withdrawal, transfer,
+interest, fee or tax. Select a statement row to review a correction or reversal.
+Use **Edit cash account** to change its name, type or category, or to correct
+the opening balance or its date. An adopted
+cash holding supplies its own opening amount. Moving the opening date earlier
+includes the account in portfolio performance from that date.
+
+An opening balance establishes the starting value on its date. Deposits and
+withdrawals change contributions. Posted interest changes gain. For example,
+an invented opening balance of €1,000, a €200 deposit and €5 of interest
+result in a €1,205 balance and €5 gain. Use **Transfer** for money moving
+between two tracked accounts in the same currency. The payment appears in both
+accounts and leaves whole-portfolio gain unchanged.
+
+Savings contributes to portfolio net equity and to its category’s share in
+capital rebalancing. A plan holds account balances and pending cash claims
+fixed. Enter additional money in **Contribution** to budget for purchases.
+Broker margin uses the cash and
+collateral in the relevant brokerage account. A maturity date is informational;
+enter the actual interest and transfers when they occur.
+
 ## Record a purchase {#purchases-single}
 
 In **Positions → Add position**, **New purchase** is selected by default.

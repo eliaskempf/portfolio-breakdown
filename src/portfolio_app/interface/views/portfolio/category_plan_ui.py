@@ -6,18 +6,20 @@ import streamlit as st
 from portfolio_app.interface.shared.currency_display import money_label
 
 from portfolio_app.portfolio.category_rebalancing import category_plan
-from portfolio_app.portfolio.rebalancing import RebalanceError
+from portfolio_app.portfolio.rebalancing import fixed_cash, RebalanceError
 from portfolio_app.portfolio.rebalance_tables import position_labels
 from portfolio_app.portfolio.strategic import bucket_positions, category_labels
 from portfolio_app.interface.views.portfolio.rebalance_results_ui import render_summary, render_trades, render_impact, show_table
 from portfolio_app.interface.views.portfolio.rebalance_ui import MODES
-from portfolio_app.interface.shared.planning_ui import planning_positions
+from portfolio_app.interface.shared.planning_ui import cash_plan_summary, planning_positions
 from portfolio_app.interface.shared.view_state import persistent_editor
 
 
 def render_category_plan(valued, config, scope):
     names = category_labels(config)
     positions = bucket_positions(valued, config, scope)
+    if cash_plan_summary(positions, portfolio_value=valued.current_value_reporting.sum(skipna=False)):
+        return
     if positions.empty:
         st.info('Add positions to this category before planning.')
         return
@@ -30,7 +32,7 @@ def render_category_plan(valued, config, scope):
         if positions.empty:
             st.info('All positions are excluded. Disable empty-position exclusion to plan purchases.')
             return
-        labels = position_labels(positions, config)
+        labels = position_labels(positions.loc[~fixed_cash(positions)], config)
         eligible = st.multiselect('Positions eligible for buying', list(labels), default=list(labels), format_func=labels.get,
                                  key=f'rebalance_category_buy_{scope}_{tuple(labels)}')
         no_new = st.toggle('Only buy existing positions', key='rebalance_category_no_new')

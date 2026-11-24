@@ -20,17 +20,27 @@ class RebalanceError(DataError):
     pass
 
 
+def fixed_cash(positions):
+    """Named account balances stay fixed in capital plans, including cash in transit."""
+    if 'fixed_cash' in positions:
+        return positions.fixed_cash.eq(True)
+    return pd.Series(False, index=positions.index)
+
+
 def ignore_empty_positions(holdings: pd.DataFrame) -> pd.DataFrame:
     """Redistribute removed targets equally per remaining asset, then account row."""
     kept = holdings.loc[holdings["shares"] > 0].copy()
     removed = holdings.loc[holdings["shares"] == 0]
     if removed.empty or kept.empty or "target_allocation" not in holdings or holdings.target_allocation.isna().all():
         return kept
-    if holdings.target_allocation.isna().any():
+    if (holdings.target_allocation.isna() & ~fixed_cash(holdings)).any():
         raise RebalanceError("Set targets for every position before redistributing empty-position targets; missing targets are unknown.")
-    increment = float(removed.target_allocation.sum()) / kept.id.nunique()
-    counts = kept.groupby("id")["id"].transform("size")
-    kept["target_allocation"] += increment / counts
+    tradable = kept.loc[~fixed_cash(kept)]
+    if tradable.empty:
+        return kept
+    increment = float(removed.target_allocation.sum()) / tradable.id.nunique()
+    counts = tradable.groupby("id")["id"].transform("size")
+    kept.loc[tradable.index, "target_allocation"] += increment / counts
     return kept
 
 
@@ -54,10 +64,11 @@ def prepare_rebalance(valued: pd.DataFrame, *, tolerance: float = .5,
         raise RebalanceError("Add at least one position before calculating a rebalance.")
     if len(valued) > 100:
         raise RebalanceError("The interactive calculator supports up to 100 position rows.")
-    if "target_allocation" not in valued or valued.target_allocation.isna().any():
+    if "target_allocation" not in valued or (valued.target_allocation.isna() & ~fixed_cash(valued)).any():
         raise RebalanceError("Set a target for every position, including explicit zero targets, before calculating.")
     values = valued.current_value_reporting.to_numpy(dtype=float)
-    targets = valued.target_allocation.to_numpy(dtype=float)
+    untargeted = valued.target_allocation.isna().to_numpy()
+    targets = valued.target_allocation.fillna(0.).to_numpy(dtype=float)
     shares = valued.shares.to_numpy(dtype=float)
     if not np.isfinite(values).all() or (values < 0).any():
         raise RebalanceError("Every held position needs a finite, nonnegative reporting-currency valuation.")
@@ -65,13 +76,13 @@ def prepare_rebalance(valued: pd.DataFrame, *, tolerance: float = .5,
         raise RebalanceError("Share quantities must be finite and nonnegative.")
     if not np.isfinite(targets).all() or ((targets < 0) | (targets > 1)).any():
         raise RebalanceError("Targets must be finite fractions between zero and one.")
-    if not math.isclose(math.fsum(targets), 1., abs_tol=1e-9, rel_tol=0):
+    if not math.isclose(math.fsum(targets), 1., abs_tol=1e-9, rel_tol=0) and not (untargeted.any() and sum(targets) < 1):
         raise RebalanceError(f"Position targets must total 100% (currently {100 * math.fsum(targets):.2f}%). Targets are not automatically normalized.")
     if tolerance_type not in {"pp", "relative"} or not math.isfinite(tolerance) or not 0 <= tolerance <= 100:
         raise RebalanceError("Choose a finite tolerance between 0 and 100, in percentage points or relative percent.")
     margin = tolerance / 100 * (targets if tolerance_type == "relative" else np.ones(len(targets)))
     return RebalanceInput(valued.reset_index(drop=True).copy(), values, targets,
-                          np.maximum(0, targets - margin), np.minimum(1, targets + margin), shares > 0)
+                          np.maximum(0, targets - margin), np.where(untargeted, 1., np.minimum(1, targets + margin)), shares > 0)
 
 
 def deviation(weights: np.ndarray, lower: np.ndarray, upper: np.ndarray) -> float:
@@ -94,7 +105,7 @@ class RebalancePlan:
     @property
     def target_rms(self) -> float:
         """Root mean squared target gap across all position rows, in pp."""
-        return float(np.sqrt(np.mean(self.table["Gap (pp)"].to_numpy() ** 2)))
+        return float(np.sqrt(self.table["Gap (pp)"].pow(2).mean()))
 
 
 def _result(problem: RebalanceInput, weights: np.ndarray, new_money: float, *, buys_only: bool,
@@ -127,6 +138,7 @@ def _result(problem: RebalanceInput, weights: np.ndarray, new_money: float, *, b
     table["Target %"] = 100 * problem.targets
     table["Lower %"], table["Upper %"] = 100 * problem.lower, 100 * problem.upper
     table["Gap (pp)"] = 100 * (weights - problem.targets)
+    table.loc[problem.positions.target_allocation.isna(), ["Target %", "Lower %", "Upper %", "Gap (pp)"]] = np.nan
     return RebalancePlan(table, new_money, int(np.count_nonzero(delta)), int(np.count_nonzero(delta > 0)),
                          int(np.count_nonzero(delta < 0)),
                          deviation(problem.values / problem.total, problem.lower, problem.upper) if problem.total else float("nan"),
@@ -156,6 +168,9 @@ class _AllocationModel:
             self.lower[:n][~sell_allowed] = np.maximum(self.lower[:n][~sell_allowed], current[~sell_allowed])
         if buy_allowed is not None:
             self.upper[:n][~buy_allowed] = current[~buy_allowed]
+        fixed = fixed_cash(problem.positions).to_numpy()
+        self.lower[:n][fixed] = np.maximum(self.lower[:n][fixed], current[fixed])
+        self.upper[:n][fixed] = np.minimum(self.upper[:n][fixed], current[fixed])
         if no_new:
             self.upper[:n][~problem.held] = np.minimum(self.upper[:n][~problem.held], current[~problem.held])
         if (self.lower > self.upper + 1e-12).any():
@@ -225,8 +240,8 @@ def minimum_new_money(problem: RebalanceInput, *, no_new_positions: bool = False
     # x is final value in units of the original total; T is the final total.
     a = np.vstack([np.column_stack([-np.eye(n), problem.lower]),
                    np.column_stack([np.eye(n), -problem.upper])])
-    bounds = [(value, value if no_new_positions and not held else None)
-              for value, held in zip(current, problem.held)] + [(1., None)]
+    bounds = [(value, value if fixed or (no_new_positions and not held) else None)
+              for value, held, fixed in zip(current, problem.held, fixed_cash(problem.positions))] + [(1., None)]
     result = linprog(np.r_[np.zeros(n), 1.], A_ub=a, b_ub=np.zeros(2*n),
                      A_eq=np.array([np.r_[np.ones(n), -1.]]), b_eq=[0.], bounds=bounds,
                      method="highs", options={"time_limit": 10.})
@@ -249,6 +264,7 @@ def _buy_eligibility(problem: RebalanceInput, eligible_position_ids: Collection[
         if set(eligible_position_ids) - set(problem.positions.position_id):
             raise RebalanceError("An eligible position is no longer in this portfolio. Select the positions again.")
         allowed = problem.positions.position_id.isin(eligible_position_ids).to_numpy()
+    allowed = allowed & ~fixed_cash(problem.positions).to_numpy()
     return allowed & problem.held if no_new_positions else allowed
 
 

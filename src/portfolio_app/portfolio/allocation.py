@@ -11,6 +11,7 @@ import yaml
 from portfolio_app.portfolio.holdings import DataError, parse_holdings
 from portfolio_app.portfolio.positions import EMPTY_CSV
 from portfolio_app.workspace.storage import revision, save_document
+from portfolio_app.workspace.workspace_lock import document_write
 
 
 @dataclass(frozen=True)
@@ -112,7 +113,7 @@ def validate_allocation(config: Allocation, holdings: pd.DataFrame | None = None
 
 
 def load_allocation(path: Path, holdings: pd.DataFrame | None = None) -> Allocation | None:
-    if path.with_name('.allocation-publication.json').exists():
+    if path.with_name('.allocation-publication.json').exists() or path.with_name('.history-publication.json').exists():
         from portfolio_app.workspace.workspace_lock import workspace_lock
         with workspace_lock(path.parent):
             pass
@@ -127,7 +128,13 @@ def load_allocation(path: Path, holdings: pd.DataFrame | None = None) -> Allocat
         raise DataError(f'Invalid allocation configuration: {exc}') from exc
 
 
+@document_write
 def save_allocation(path: Path, config: Allocation, holdings: pd.DataFrame, expected_revision: str | None) -> None:
+    from portfolio_app.ledger.account_journal import load_journal
+    journal, _ = load_journal(path.parent)
+    categories = config.descendants()
+    if any(a.bucket_id and a.bucket_id not in categories for a in journal.accounts if a.cash_type):
+        raise DataError('Move cash accounts before removing their category.')
     validate_allocation(config, holdings)
     owners = holdings.get('bucket_id', pd.Series(dtype=str))
     if any(config.children(b.id) and owners.eq(b.id).any() for b in config.buckets):
@@ -197,7 +204,7 @@ def analysis_targets(holdings: pd.DataFrame, config: Allocation) -> pd.DataFrame
 
 
 def ignore_empty_by_bucket(holdings: pd.DataFrame, config: Allocation | None = None) -> pd.DataFrame:
-    from portfolio_app.portfolio.rebalancing import ignore_empty_positions
+    from portfolio_app.portfolio.rebalancing import fixed_cash, ignore_empty_positions
     groups = []
     for owner, rows in holdings.groupby('bucket_id', dropna=False, sort=False):
         if config is not None and config.flexible(owner):
@@ -206,7 +213,7 @@ def ignore_empty_by_bucket(holdings: pd.DataFrame, config: Allocation | None = N
         temp = rows.copy()
         temp['target_allocation'] = temp.within_bucket_target
         # Unknown targets do not block the overview or calculations in other buckets.
-        if temp.target_allocation.isna().any():
+        if (temp.target_allocation.isna() & ~fixed_cash(temp)).any():
             kept = temp.loc[temp.shares > 0].copy()
             if (temp.shares == 0).any():
                 kept['target_allocation'] = float('nan')

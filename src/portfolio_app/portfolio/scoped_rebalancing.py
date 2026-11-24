@@ -8,7 +8,7 @@ from scipy.optimize import linprog
 
 from portfolio_app.portfolio.allocation import Allocation
 from portfolio_app.portfolio.capped_contributions import bounded_projection
-from portfolio_app.portfolio.rebalancing import (RebalanceError, prepare_rebalance,
+from portfolio_app.portfolio.rebalancing import (fixed_cash, RebalanceError, prepare_rebalance,
                                        balanced_cash_tradeoffs, _positive_cents)
 
 
@@ -95,7 +95,7 @@ def portfolio_contribution(valued: pd.DataFrame, config: Allocation, amount: flo
     max_trades = len(eligible_ids) if max_trades is None else max_trades
     if not isinstance(max_trades, int) or max_trades < 1:
         raise RebalanceError('Maximum trades must be positive.')
-    allowed = valued.position_id.isin(eligible_ids)
+    allowed = valued.position_id.isin(eligible_ids) & ~fixed_cash(valued)
     if no_new_positions:
         if buy_all and (allowed & valued.shares.eq(0)).any():
             raise RebalanceError('Buy every selected position conflicts with No new positions.')

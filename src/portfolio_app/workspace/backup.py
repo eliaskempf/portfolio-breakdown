@@ -257,7 +257,11 @@ def inspect_backup(content: bytes) -> RestoreDraft:
         from portfolio_app.funds.etf import load_funds
         holdings = read_snapshot(workspace / 'holdings.csv').holdings
         allocation = load_allocation(workspace / 'allocation.yaml', holdings)
-        summary = dict(positions=len(holdings), categories=len(allocation.buckets) if allocation else 0,
+        from portfolio_app.ledger.account_journal import load_journal
+        from portfolio_app.ledger.bank_accounts import bank_position_ids
+        journal, _ = load_journal(workspace)
+        position_count = len(set(holdings.position_id).union(bank_position_ids(journal)))
+        summary = dict(positions=position_count, categories=len(allocation.buckets) if allocation else 0,
                        classifications=len(load_classifications(workspace / 'classifications.yaml')) if (workspace / 'classifications.yaml').exists() else 0,
                        etf_snapshots=len(load_funds(workspace / 'etfs')),
                        reporting_currency=load_settings(workspace).reporting_currency,

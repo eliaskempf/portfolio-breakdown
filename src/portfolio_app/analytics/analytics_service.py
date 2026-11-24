@@ -129,7 +129,8 @@ def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
     service = service or RiskHistoryService(DemoRiskHistoryProvider() if demo else MarketRiskHistoryProvider(),
                                            None if demo else data_dir / '.cache' / 'risk-history')
     target = valued.reporting_currency.iloc[0] if len(valued) and 'reporting_currency' in valued else 'EUR'
-    actual = bool(valued.attrs.get('actual_accounts'))
+    actual = (future is None and bool(valued.attrs.get('actual_accounts'))
+              and 'instrument_type' in valued and valued.instrument_type.eq('future').any())
     if future is not None and target != 'EUR':
         from portfolio_app.portfolio.holdings import DataError
         raise DataError('Integrated leverage risk currently requires EUR reporting.')

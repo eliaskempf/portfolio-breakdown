@@ -39,11 +39,26 @@ class Account:
     id: str
     name: str
     kind: str = 'broker'
+    cash_type: str = ''
+    denomination: str = ''
+    bucket_id: str = ''
+    maturity: str = ''
 
     def __post_init__(self):
         identifier(self.id); identifier(self.name, 'Account name')
         if self.kind not in ('broker', 'bank', 'other'):
             raise DataError('Account kind must be broker, bank or other.')
+        if self.cash_type:
+            if self.kind != 'bank' or self.cash_type not in ('Checking', 'Savings', 'Term deposit'):
+                raise DataError('Choose a supported cash account type.')
+            currency(self.denomination)
+            iso_date(self.maturity, 'Maturity date', optional=True)
+            if self.maturity and self.cash_type != 'Term deposit':
+                raise DataError('A maturity date applies only to a term deposit.')
+            if self.bucket_id:
+                identifier(self.bucket_id, 'Category')
+        elif self.denomination or self.bucket_id or self.maturity:
+            raise DataError('Cash account details require an account type.')
 
 
 @dataclass(frozen=True)
@@ -208,8 +223,13 @@ class Journal:
     # Source variants explicitly declined at review, with their comparison receipt.
     kept_imports: tuple[ImportReceipt, ...] = ()
 
+    @property
+    def has_broker_workspace(self):
+        # Legacy accounts retain their existing financing and futures workflow.
+        return any(not account.cash_type for account in self.accounts)
+
     def __post_init__(self):
-        if type(self.version) is not int or self.version not in (1, 2, 3, 4, 5, 6):
+        if type(self.version) is not int or self.version not in (1, 2, 3, 4, 5, 6, 7):
             raise DataError('Unsupported account journal version.')
         object.__setattr__(self, 'transaction_imports', tuple(self.transaction_imports))
         if self.transaction_imports and self.version < 3:
@@ -300,6 +320,11 @@ class Journal:
             if len(set(ids)) != len(ids):
                 raise DataError(f'Duplicate {name} IDs.')
         accounts = {item.id for item in self.accounts}
+        banks = {a.id for a in self.accounts if a.cash_type}
+        if banks and self.version < 7:
+            raise DataError('Named cash accounts require journal version 7.')
+        if any(p.account_id in banks for p in (*self.positions, *self.margin_requirements)):
+            raise DataError('Choose a brokerage account for futures or margin.')
         validate_books(self.securities, accounts)
         contracts = {item.id for item in self.contracts}
         positions = {item.id: item for item in self.positions}
@@ -464,6 +489,7 @@ def _replay_states(journal, *, as_of=None, _security_postings=None, snapshots=Fa
     accounts = {item.id for item in journal.accounts}
     contracts = {item.id: item for item in journal.contracts}
     positions = {spec.id: PositionBalance(spec, contracts[spec.contract_id]) for spec in journal.positions}
+    bank_units = {a.id: a.denomination for a in journal.accounts if a.cash_type}
     cash, loans, pending, reservations, movements = {}, {}, {}, {}, []
     opened_cash, started_positions, settled_dates = set(), set(), set()
     from portfolio_app.ledger.security_history import cash_postings
@@ -492,6 +518,8 @@ def _replay_states(journal, *, as_of=None, _security_postings=None, snapshots=Fa
         if account not in accounts:
             raise DataError('Cash posting refers to an unknown account.')
         currency(denomination)
+        if account in bank_units and denomination != bank_units[account]:
+            raise DataError('The transaction currency must match the cash account.')
         amount = money(amount)
         key = (account, denomination)
         cash[key] = cash.get(key, ZERO) + amount
@@ -502,6 +530,8 @@ def _replay_states(journal, *, as_of=None, _security_postings=None, snapshots=Fa
         if account not in accounts:
             raise DataError('Cash posting refers to an unknown account.')
         currency(denomination)
+        if account in bank_units and denomination != bank_units[account]:
+            raise DataError('The transaction currency must match the cash account.')
         amount = money(amount)
         if event.value_date and event.value_date > event.date:
             root = roots[event.id]
@@ -525,6 +555,10 @@ def _replay_states(journal, *, as_of=None, _security_postings=None, snapshots=Fa
             raise DataError('Event refers to an unknown contract position.')
         if p and event.account_id and event.account_id != p.spec.account_id:
             raise DataError('Event account differs from its position account.')
+        if event.account_id in bank_units and event.kind in ('reserve', 'debt_open', 'borrow', 'repay'):
+            raise DataError('Choose a brokerage account for collateral or financing.')
+        if event.other_account_id in bank_units and (event.other_currency or event.currency) != bank_units[event.other_account_id]:
+            raise DataError('The destination cash account uses a different currency.')
         if event.kind in ('snapshot', 'trade', 'settlement', 'final_settlement'):
             if p is None or event.price is None:
                 raise DataError('Contract event requires a position and price.')
@@ -585,6 +619,8 @@ def _replay_states(journal, *, as_of=None, _security_postings=None, snapshots=Fa
                     last_price=event.price, realized_pnl=p.realized_pnl+pnl)
             continue
         if event.kind == 'security_unknown':
+            if event.account_id in bank_units and event.currency != bank_units[event.account_id]:
+                raise DataError('The transaction currency must match the cash account.')
             unknown_cash.add((event.account_id, event.currency))
             cash.setdefault((event.account_id, event.currency), ZERO)
             continue
@@ -694,6 +730,9 @@ def _replay_states(journal, *, as_of=None, _security_postings=None, snapshots=Fa
         # the same whole-journal validation as replay(as_of=None).
         yield stamp, snapshot()
     if as_of is None:
+        # Old workspaces could reverse a named account's sole opening entry.
+        unknown_cash.update((account, unit) for account, unit in bank_units.items()
+                            if (account, unit) not in opened_cash)
         for link in journal.cash_links:
             if (link.account_id, link.currency) not in opened_cash:
                 raise DataError('Adopted cash needs an explicit opening balance, including zero.')
@@ -768,6 +807,10 @@ def roll(journal, *, close: Event, opening: Event, charges: Iterable[Event] = ()
 
 def journal_to_dict(journal):
     result = asdict(journal)
+    for account in result['accounts']:
+        if not account['cash_type']:
+            for field in ('cash_type', 'denomination', 'bucket_id', 'maturity'):
+                account.pop(field)
     if journal.version < 6:
         result.pop('kept_imports')
     for book in result['securities']:

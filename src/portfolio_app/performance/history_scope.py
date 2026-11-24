@@ -32,6 +32,9 @@ def category_history_scope(journal, holdings, config, bucket='', *, displayed=No
         positions.update(b.position_id for b in journal.securities if b.position_id not in assignments)
     cash = {(link.account_id, link.currency): assignments.get(link.position_id, '') for link in journal.cash_links}
     components = {a.id: set() for a in journal.accounts}
+    for account in journal.accounts:
+        if account.cash_type:
+            cash.setdefault((account.id, account.denomination), account.bucket_id)
     for event in effective_events(journal):
         if event.kind == 'cash_open':
             components[event.account_id].add(cash.get((event.account_id, event.currency), ''))

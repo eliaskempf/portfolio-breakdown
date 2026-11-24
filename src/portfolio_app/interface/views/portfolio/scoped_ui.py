@@ -8,11 +8,11 @@ import streamlit as st
 
 from portfolio_app.interface.shared.view_state import persistent_editor
 from portfolio_app.portfolio.strategic import category_labels
-from portfolio_app.interface.shared.planning_ui import PLANNING_HELP, planning_positions, restriction_summary
+from portfolio_app.interface.shared.planning_ui import cash_plan_summary, PLANNING_HELP, planning_positions, restriction_summary
 from portfolio_app.interface.views.portfolio.rebalance_ui import render_rebalancing
 from portfolio_app.portfolio.rebalance_tables import allocation_table, category_budgets, position_labels
 from portfolio_app.interface.views.portfolio.rebalance_results_ui import render_impact, render_summary, render_trades, show_table
-from portfolio_app.portfolio.rebalancing import RebalanceError
+from portfolio_app.portfolio.rebalancing import fixed_cash, RebalanceError
 from portfolio_app.portfolio.scoped_rebalancing import portfolio_contribution, sleeve_positions
 
 
@@ -55,6 +55,8 @@ def render_scoped_rebalancing(valued, config):
         except RebalanceError as exc:
             st.info(str(exc))
         return
+    if cash_plan_summary(valued, portfolio_value=total):
+        return
     st.caption('Allocate across category targets, then balance positions within each category.')
     amount_col, options_col = st.columns([3, 1], vertical_alignment='bottom')
     amount = amount_col.number_input(money_label('Contribution'), help='Additional money available for purchases within the chosen planning scope.', key='planning_amount', min_value=.01, value=500., step=50.)
@@ -62,7 +64,7 @@ def render_scoped_rebalancing(valued, config):
     with options_col.popover('Options', help='Configure eligible positions, purchase limits and contribution constraints.', width='stretch'):
         st.markdown('**Positions**')
         valued = planning_positions(valued, config)
-        labels = position_labels(valued, config)
+        labels = position_labels(valued.loc[~fixed_cash(valued)], config)
         identity = sha256(repr(tuple(labels)).encode()).hexdigest()[:12]
         ids = st.multiselect('Positions eligible for buying', help='Limit purchase suggestions to these positions.', key=f'planning_eligible_{identity}',
                             options=list(labels), default=list(labels), format_func=labels.get)
@@ -94,7 +96,7 @@ def render_scoped_rebalancing(valued, config):
     if valued.empty:
         st.info('All positions have zero shares. Disable target redistribution to allocate new money to them.')
         return
-    fields = [c for c in ('position_id', 'id', 'name', 'ticker', 'account', 'portfolio', 'shares', 'current_value_reporting', 'target_allocation', 'bucket_id', 'within_bucket_target') if c in valued]
+    fields = [c for c in ('position_id', 'id', 'name', 'ticker', 'account', 'portfolio', 'shares', 'fixed_cash', 'current_value_reporting', 'target_allocation', 'bucket_id', 'within_bucket_target') if c in valued]
     fingerprint = sha256((valued[fields].to_json() + repr((config, amount, ids, buy_all, minimum, no_new, max_trades, macro_tolerance, position_tolerance, caps, cap_scope, fewer,
                                                          st.session_state.get('ignore_empty_positions')))).encode()).hexdigest()
     from portfolio_app.interface.views.onboarding.tour import demo_plan_requested

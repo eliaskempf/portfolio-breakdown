@@ -36,8 +36,8 @@ def _context(event, events, positions, contracts, investments):
     if event.kind == 'receive' and event.reference in events:
         linked = events[event.reference]
         position = positions.get(linked.position_id)
-        account = event.account_id or linked.account_id or (position.account_id if position else '')
-        denomination = event.currency or linked.currency
+        account = event.account_id or linked.other_account_id or linked.account_id or (position.account_id if position else '')
+        denomination = event.currency or linked.other_currency or linked.currency
     else:
         position = positions.get(event.position_id)
         account = event.account_id or (position.account_id if position else '')
@@ -100,8 +100,13 @@ def activity_rows(journal):
                 amount = str(sum(m.amount for m in receipts))
         if event.kind == 'reserve' and not event.holding_id:
             amount = str(event.amount)
-        rows.append({'entry_id': event.id, 'account_id': account, 'position_id': position,
-            'Date': event.date, 'Account': names.get(account, ''), 'Investment / contract': name,
+        subject = events[event.replaces] if event.kind == 'void' else event
+        destination = subject.other_account_id
+        account_label = names.get(account, '')
+        if destination and destination != account:
+            account_label += ' → ' + names[destination]
+        rows.append({'entry_id': event.id, 'account_id': account, 'destination_id': destination, 'position_id': position,
+            'Date': event.date, 'Account': account_label, 'Investment / contract': name,
             'Action': ACTIONS.get(event.kind, event.kind), 'Amount': amount, 'Currency': denomination,
             'Quantity': str(event.amount) if event.kind == 'reserve' and event.holding_id else (
                 str(event.quantity) if event.kind in {'snapshot', 'trade'} else None),
@@ -113,6 +118,8 @@ def activity_rows(journal):
 def correction_route(journal, event):
     if event.id not in {e.id for e in ledger.effective_events(journal)}:
         return 'This entry is already reversed or corrected. Select its replacement to make another correction.'
+    if event.kind == 'cash_open' and any(a.id == event.account_id and a.cash_type for a in journal.accounts):
+        return 'Use Edit cash account in the account’s position details to correct its opening balance.'
     if event.group_id:
         return 'This entry belongs to a linked transaction. Review both legs under Position details → Contract history and Roll contracts.'
     if event.kind in {'reserve', 'release'}:

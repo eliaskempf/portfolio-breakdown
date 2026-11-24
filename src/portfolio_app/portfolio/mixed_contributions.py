@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 
 from portfolio_app.portfolio.category_rebalancing import category_plan
-from portfolio_app.portfolio.rebalancing import RebalanceError, prepare_rebalance, balanced_cash_tradeoffs, _positive_cents
+from portfolio_app.portfolio.rebalancing import fixed_cash, RebalanceError, prepare_rebalance, balanced_cash_tradeoffs, _positive_cents
 from portfolio_app.portfolio.scoped_rebalancing import ScopedPlan, _route
 
 
@@ -30,7 +30,7 @@ def mixed_contribution(valued, config, amount, *, eligible_ids, minimum_purchase
     maximum = len(eligible_ids) if max_trades is None else max_trades
     if not isinstance(maximum, int) or maximum < 1:
         raise RebalanceError('Maximum trades must be positive.')
-    allowed = valued.position_id.isin(eligible_ids)
+    allowed = valued.position_id.isin(eligible_ids) & ~fixed_cash(valued)
     if no_new_positions:
         if buy_all and (allowed & valued.shares.eq(0)).any():
             raise RebalanceError('Buy every selected position conflicts with Only buy existing positions.')
@@ -74,8 +74,11 @@ def mixed_contribution(valued, config, amount, *, eligible_ids, minimum_purchase
         direct = valued.loc[valued.bucket_id.eq(parent)] if parent else valued.iloc[:0]
         entries = [(b.id, b.target, subtree_values[b.id], [key for key, (owner, _, _) in units.items() if owner in config.descendants(b.id)]) for b in children]
         entries += [(('position', r.position_id), r.within_bucket_target, r.current_value_reporting, [('position', r.position_id)]) for r in direct.itertuples()]
-        targets = [entry[1] for entry in entries]
-        if any(t is None or not math.isfinite(t) or not 0 <= t <= 1 for t in targets) or not math.isclose(sum(targets), 1., abs_tol=1e-9):
+        untargeted = set(direct.loc[fixed_cash(direct) & direct.within_bucket_target.isna(), 'position_id'])
+        # A fixed row has zero routing capacity, so its objective term is constant.
+        targets = [0. if isinstance(key, tuple) and key[1] in untargeted else target
+                   for key, target, _, _ in entries]
+        if any(t is None or not math.isfinite(t) or not 0 <= t <= 1 for t in targets) or not (math.isclose(sum(targets), 1., abs_tol=1e-9) or (untargeted and sum(targets) < 1)):
             raise RebalanceError('Complete sibling targets, including direct investments, must total 100% for contribution routing.')
         values = np.array([entry[2]*100 for entry in entries])
         lower = [sum(floors[key] for key in entry[3]) for entry in entries]

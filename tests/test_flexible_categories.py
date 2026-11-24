@@ -57,6 +57,15 @@ def test_buy_and_sell_priorities_are_independent():
     assert plan.table.set_index('position_id').Trade.to_dict() == pytest.approx({'p1':0., 'p2':-20., 'p3':20.}, abs=1e-5)
 
 
+def test_category_plans_keep_bank_balance_fixed_even_when_first_in_trade_priority():
+    for values, cash_index, expected in [((20., 20., 60.), 0, [0, 10, -10]),
+                                          ((40., 30., 30.), 1, [-20, 0, 20])]:
+        config, positions = example(values)
+        positions['fixed_cash'] = positions.index == cash_index
+        plan = category_plan(positions, config, 'sleeve', mode='fewest', category_tolerance=0, position_tolerance=0)
+        assert plan.table.Trade.tolist() == pytest.approx(expected)
+
+
 def test_minimum_cash_and_contribution_use_combined_target():
     config, positions = example()
     plan = category_plan(positions, config, 'sleeve', mode='minimum', category_tolerance=0, position_tolerance=0)

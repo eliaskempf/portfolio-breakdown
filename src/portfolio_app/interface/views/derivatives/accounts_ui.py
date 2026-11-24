@@ -41,7 +41,7 @@ def _decimal_entry(label, key, placeholder):
 
 def _save_review(directory, journal, revision, candidate, key, *, holdings_revision=None,
                  review_label='Review changes', save_label='Save reviewed changes', compare_balances=False,
-                 cancel_button=None, destructive=False):
+                 cancel_button=None, destructive=False, on_saved=None):
     """Require explicit review; preserve the exact reviewed candidate on reruns."""
     if candidate == journal:
         st.session_state.pop(key+'pending', None)
@@ -111,12 +111,17 @@ def _save_review(directory, journal, revision, candidate, key, *, holdings_revis
         else:
             st.session_state.pop(key + 'pending', None)
             st.session_state.pop(key + 'revision', None)
+            if key.endswith('cash_'):
+                st.session_state.pop(key+'create_new_account_id', None)
             if key.endswith('entry_'):
                 for field in list(st.session_state):
                     if field.startswith(key):
                         del st.session_state[field]
-            st.session_state['accounts_notice'] = 'Account changes saved.'
-            st.session_state['position_edit_dialog'] = False
+            if on_saved:
+                on_saved()
+            else:
+                st.session_state['accounts_notice'] = 'Account changes saved.'
+                st.session_state['position_edit_dialog'] = False
             st.rerun()
 
 
@@ -125,7 +130,7 @@ def _account_choice(directory, journal, snapshot, valued, *, key, day, allow_fun
     ledger = _imports()
     candidate = journal
     if not creating:
-        names = {a.id: a.name for a in journal.accounts}
+        names = {a.id: a.name for a in journal.accounts if not a.cash_type}
         selected = st.selectbox('Account', ['', *names], format_func=lambda x: names.get(x, 'Create account'),
                                 key=key+'account', help=field_help('Account'))
         if selected:
@@ -133,7 +138,7 @@ def _account_choice(directory, journal, snapshot, valued, *, key, day, allow_fun
     name = st.text_input('Account name', key=key+'account_name', help=field_help('Account name'))
     currency = st.selectbox('Opening cash currency', ['EUR','USD','GBP'], key=key+'cash_currency', help=field_help('Opening cash currency'))
     linked = {x.position_id for x in journal.cash_links}
-    cash_rows = valued.loc[valued.get('instrument_type', pd.Series('', index=valued.index)).eq('cash') & ~valued.position_id.isin(linked)]
+    cash_rows = valued.loc[valued.get('instrument_type', pd.Series('', index=valued.index)).eq('cash') & valued.position_id.isin(set(snapshot.holdings.position_id) - linked)]
     cash_rows = cash_rows.loc[cash_rows.quote_currency.eq(currency)] if 'quote_currency' in cash_rows else cash_rows.iloc[:0]
     options = {'': 'Enter cash not already included in holdings', **{r.position_id: f'Adopt existing cash: {r["name"]}' for _,r in cash_rows.iterrows()}}
     source = st.selectbox('Cash source', list(options), format_func=options.get, key=key+'cash_source', help=field_help('Cash source'))
@@ -296,7 +301,7 @@ def render_accounts(directory, snapshot, valued, *, allocation=None):
     if view == 'Marks & FX':
         render_marks(directory, journal)
         return
-    if not journal.accounts and view != 'Cash & financing':
+    if not journal.has_broker_workspace and view != 'Cash & financing':
         st.button('Create account', key=key+'start_account', on_click=st.session_state.update,
                   kwargs={key+'view': 'Cash & financing', key+'cash_action': 'Create account'})
         return
@@ -428,7 +433,8 @@ def render_cash(directory, journal, revision, snapshot, valued, *, state=None):
     key = _key(directory)+'cash_'
     state = state if state is not None else ledger.replay(journal)
     names = {a.id: a.name for a in journal.accounts}
-    account = st.selectbox('Cash account', list(names), format_func=names.get, key=key+'account') if names else None
+    brokers = [a.id for a in journal.accounts if not a.cash_type]
+    account = st.selectbox('Cash account', brokers, format_func=names.get, key=key+'account') if brokers else None
     if account:
         cash = [{'Currency': c, 'Cash': 'Unknown' if (a, c) in state.unknown_cash else str(v)}
                 for (a, c), v in state.cash.items() if a == account]
@@ -487,7 +493,10 @@ def render_cash(directory, journal, revision, snapshot, valued, *, state=None):
         if kind in {'borrow','repay','debt_open'}:
             base['reference'] = st.text_input('Loan identifier', key=key+'loan')
         if kind == 'transfer':
-            others = [a for a in names if a != account]
+            others = [a.id for a in journal.accounts if a.id != account and (not a.cash_type or a.denomination == currency)]
+            if not others:
+                st.info('Add a destination account in this currency.')
+                return
             base['other_account_id'] = st.selectbox('Destination account', others, format_func=names.get, key=key+'destination')
             base['value_date'] = st.date_input('Transfer receipt date', value=day, key=key+'receipt').isoformat()
         if kind == 'fx':

@@ -208,7 +208,9 @@ Opening a legacy workspace does not convert its purchase batches or rewrite the
 journal. Securities history uses version 5 of the account journal. Saving **Keep
 current** for a changed CSV transaction upgrades the journal to version 6 to
 retain those source facts and the comparison receipt. Dated allocations require
-at least version 2. Saves retain a private backup. Versions 1–6 remain readable,
+at least version 2. Creating a named checking, savings or term-deposit account
+saves journal version 7. It stores the account currency, type, category and
+optional maturity alongside its dated cash entries. Saves retain a private backup. Versions 1–7 remain readable,
 and existing native futures events preserve their meaning. Older
 application versions may not read the current journal;
 use a compatible application or restore the complete pre-upgrade backup into a

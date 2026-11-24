@@ -861,7 +861,7 @@ def prepare_portfolio_history(directory, holdings, *, config, bucket='', display
         settings, _ = load_leverage_settings(directory, future=sandbox[0] if sandbox else None)
         if any(item.id not in journal.adopted_liability_ids for item in settings.liabilities):
             unresolved.append('Adopt legacy liabilities into dated account records before calculating whole-portfolio history')
-        if sandbox and not journal.accounts:
+        if sandbox and not journal.has_broker_workspace:
             unresolved.append('Legacy futures simulations are not actual transaction history')
     scope = replace(scope, unresolved=tuple(unresolved))
     if not scope.positions and not scope.accounts and not scope.unresolved:

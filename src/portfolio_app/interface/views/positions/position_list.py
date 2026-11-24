@@ -69,7 +69,7 @@ def render_position_list(path, snapshot, allocation=None, *, valued=None, accoun
         row.update(metrics.get(instruments[row['id']], {}))
     context = list_context(path)
     def open_position(event):
-        st.session_state['position_edit_open_request'] = event
+        st.session_state['position_edit_open_request'] = dict(event, revision=snapshot.revision)
 
     columns = [('name', 'Investment'), ('bucket', 'Category') if allocation else ('portfolio', 'Portfolio / sleeve'),
                ('quantity', 'Quantity'), ('value', 'Value'), ('allocation', 'Allocation (%)'),

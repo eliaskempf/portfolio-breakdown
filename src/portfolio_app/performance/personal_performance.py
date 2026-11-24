@@ -134,14 +134,13 @@ class HistoryCalculation:
             return recorded_security_gains(book, self.securities(stamp), self.observations, stamp, target)
         return self._get(('security_gains', identity, interval, target), load)
 
+    def account_postings(self):
+        return self._get(('account_postings',), lambda: cash_postings(
+            self.journal, security_cash=self.securities().cash))
+
     def accounts(self, stamp):
         from portfolio_app.ledger.account_timeline import AccountTimeline
-        # Cash postings are derived once from the same immutable journal snapshot.
-        # Pending receipts still require explicit receive events: value_date alone
-        # does not change account balances and must not advance this timeline.
-        postings = self._get(('account_postings',), lambda: cash_postings(
-            self.journal, security_cash=self.securities().cash))
-        timeline = self._get(('account_timeline',), lambda: AccountTimeline(self.journal, postings))
+        timeline = self._get(('account_timeline',), lambda: AccountTimeline(self.journal, self.account_postings()))
         return timeline.at(stamp)
 
     def value(self, scope, stamp, target):
@@ -210,6 +209,26 @@ def account_starts_on(journal, account, stamp):
     return account_start_dates(journal).get(account) == stamp
 
 
+def _portfolio_bank_starts(journal, scope, calculation):
+    """A bank account enters a combined scope on its first recorded opening.
+
+    The account's own statement has no valuation before that date.
+    """
+    if not scope.accounts or len(scope.accounts) + len(scope.positions) < 2:
+        return {}
+    def load():
+        starts = calculation._account_starts if calculation else account_start_dates(journal)
+        banks = {a.id: starts[a.id] for a in journal.accounts if a.cash_type and a.id in starts}
+        if any(book.active and book.account_id in banks for book in journal.securities):
+            # An earlier outstanding securities payment is evidence of account
+            # activity before the opening. Keep the ordinary coverage checks.
+            for posting in calculation.account_postings() if calculation else cash_postings(journal):
+                if posting.date < banks.get(posting.account_id, ''):
+                    del banks[posting.account_id]
+        return banks
+    return calculation._get(('portfolio_bank_starts',), load) if calculation else load()
+
+
 def account_position_starts(events):
     starts = {}
     for event in events:
@@ -250,7 +269,10 @@ def opening_value_at(journal, scope, observations, stamp, target, *, calculation
         reasons.extend(value.reasons)
         if value.amount is not None:
             total += value.amount
+    bank_starts = _portfolio_bank_starts(journal, scope, calculation)
     for account in scope.accounts:
+        if stamp < bank_starts.get(account, ''):
+            continue
         if starts.get(account) == stamp:
             for event in events:
                 if event.account_id != account or event.date != stamp or event.kind not in ('cash_open', 'debt_open'):
@@ -305,8 +327,10 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
             reasons.extend(value.reasons)
             if value.amount is not None:
                 total += value.amount
-    if scope.accounts:
-        members = HistoryScope(accounts=scope.accounts)
+    bank_starts = _portfolio_bank_starts(journal, scope, calculation)
+    tracked = tuple(a for a in scope.accounts if stamp >= bank_starts.get(a, ''))
+    if tracked:
+        members = HistoryScope(accounts=tracked)
         value = (calculation.opening(members, stamp, target) if calculation else
                  opening_value_at(journal, members, observations, stamp, target))
         reasons.extend(value.reasons)
@@ -363,8 +387,9 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
     from portfolio_app.ledger.account_inception import account_inceptions
     inceptions = calculation._account_inceptions if calculation else account_inceptions(journal, events)
     position_starts = calculation._position_starts if calculation else account_position_starts(events)
+    bank_starts = _portfolio_bank_starts(journal, scope, calculation)
     for account in scope.accounts:
-        if account in inceptions and stamp < inceptions[account]:
+        if stamp < bank_starts.get(account, '') or (account in inceptions and stamp < inceptions[account]):
             continue
         openings = [e for e in events if e.account_id == account and e.kind == 'cash_open']
         if not openings or any(e.date > stamp for e in openings):
@@ -466,6 +491,7 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
     from portfolio_app.ledger.account_inception import account_inceptions
     inceptions = calculation._account_inceptions if calculation else account_inceptions(journal, account_events)
     boundary_reason = 'linked movement crosses different opening boundaries; choose a period starting before or after this day'
+    bank_starts = _portfolio_bank_starts(journal, scope, calculation)
     for book in journal.securities if initial_positions else ():
         for event in events_for(book):
             linked = {fee.position_id for fee in event.asset_charges}
@@ -483,6 +509,7 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
             reasons.append(Issue(f'{e.id}: {boundary_reason}', 'boundary'))
         if start < e.date <= end or (e.date == start and starts.get(e.account_id) == start):
             if (e.kind in ('cash_open', 'debt_open', 'snapshot') and e.date > start
+                    and not (e.kind == 'cash_open' and bank_starts.get(e.account_id) == e.date)
                     and not (e.kind == 'cash_open' and not e.amount and inceptions.get(e.account_id) == e.date)):
                 reasons.append(Issue(f'{e.id}: account opening boundary inside interval', 'transaction'))
             if e.kind == 'cash_adjust' and classes.get(e.id, 'boundary') == 'boundary':
@@ -497,6 +524,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
     from portfolio_app.ledger.account_inception import account_inceptions
     inceptions = calculation._account_inceptions if calculation else account_inceptions(journal)
     initial_positions = initial_security_positions(journal, scope, start, calculation=calculation) & members if include_account_start else set()
+    bank_starts = _portfolio_bank_starts(journal, scope, calculation)
 
     def issue(reason, stamp):
         reasons.append(reason)
@@ -524,6 +552,13 @@ def external_flows(journal, scope, observations, start, end, target, *, security
     for c in replay_securities(journal.securities).cash if security_cash is None else security_cash:
         asset_inside = c.position_id in members
         cash_inside = c.account_id in accounts and not c.external
+        bank_start = bank_starts.get(c.account_id)
+        if bank_start and (c.date < bank_start or
+                (c.date == bank_start and inceptions.get(c.account_id) != bank_start
+                 and (not c.value_date or c.value_date == c.date))):
+            # Settled security payments already in the opening balance crossed
+            # the tracked security boundary before the cash account joined.
+            cash_inside = False
         if asset_inside == cash_inside:
             continue
         # Asset-only purchases are contributions; account-only payments out are withdrawals.
@@ -574,7 +609,11 @@ def external_flows(journal, scope, observations, start, end, target, *, security
         inside, other = e.account_id in accounts, e.other_account_id in accounts
         initial = include_account_start and (inside and starts.get(e.account_id) == start
                    or other and starts.get(e.other_account_id) == start)
-        if e.kind == 'cash_flow' and inside:
+        if e.kind == 'cash_open' and inside and bank_starts.get(e.account_id) == e.date:
+            # An opening on the range's first day is already in opening equity.
+            if e.amount:
+                add(e.id, e.date, e.sequence, e.amount, e.currency)
+        elif e.kind == 'cash_flow' and inside:
             add(e.id, e.date, e.sequence, e.amount, e.currency, include_start=initial)
         elif e.kind == 'cash_adjust' and inside:
             classification = classes.get(e.id, 'boundary')

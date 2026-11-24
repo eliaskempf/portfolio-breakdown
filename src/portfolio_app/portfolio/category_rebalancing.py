@@ -7,7 +7,7 @@ import pandas as pd
 from scipy.optimize import Bounds, LinearConstraint, linprog, milp
 
 from portfolio_app.portfolio.allocation import analysis_targets, validate_allocation
-from portfolio_app.portfolio.rebalancing import RebalanceError, RebalancePlan, _positive_cents
+from portfolio_app.portfolio.rebalancing import fixed_cash, RebalanceError, RebalancePlan, _positive_cents
 from portfolio_app.portfolio.strategic import bucket_positions, category_labels
 
 
@@ -38,11 +38,13 @@ def target_constraints(positions, config, scope='', *, category_tolerance=.5, po
         children = config.children(key)
         direct = positions.loc[positions.bucket_id.eq(key)] if key else positions.iloc[:0]
         entries = [(labels[b.id], positions.bucket_id.isin(config.descendants(b.id)).to_numpy(dtype=float), b.target, category_tolerance) for b in children]
+        untargeted = fixed_cash(direct) & direct.within_bucket_target.isna()
+        direct = direct.loc[~untargeted]
         entries += [(row['name'], positions.position_id.eq(row.position_id).to_numpy(dtype=float), row.within_bucket_target, position_tolerance) for _, row in direct.iterrows()]
         # An empty targeted category retains capacity at its parent.
         if entries:
             targets = [entry[2] for entry in entries]
-            if any(t is None or not math.isfinite(t) or not 0 <= t <= 1 for t in targets) or not math.isclose(sum(targets), 1., abs_tol=1e-9):
+            if any(t is None or not math.isfinite(t) or not 0 <= t <= 1 for t in targets) or not (math.isclose(sum(targets), 1., abs_tol=1e-9) or (untargeted.any() and sum(targets) < 1)):
                 raise RebalanceError(f'Targets for {labels.get(key, "Portfolio")} must be complete and total 100%, including direct investments and subcategories.')
             for name, mask, target, tolerance in entries:
                 specs.append(TargetConstraint(name, mask, parent_mask, target, tolerance / 100 * (target if relative else 1)))
@@ -110,7 +112,8 @@ def category_plan(valued, config, scope='', *, mode='contribution', amount=0.,
     eligible = set(ids if eligible_ids is None else eligible_ids)
     if not eligible <= set(ids):
         raise RebalanceError('Selected purchase positions changed. Review the selection.')
-    allowed = np.array([key in eligible for key in ids])
+    tradable = ~fixed_cash(positions).to_numpy()
+    allowed = np.array([key in eligible for key in ids]) & tradable
     held = positions.shares.to_numpy(dtype=float) > 0
     if no_new_positions:
         if buy_all and (allowed & ~held).any():
@@ -122,7 +125,7 @@ def category_plan(valued, config, scope='', *, mode='contribution', amount=0.,
     if buy_all and allowed.sum() > maximum:
         raise RebalanceError('Maximum trades is smaller than the required purchase count.')
     protected = set().union(*(config.descendants(b.id) for b in config.buckets if b.sell_protected)) if config.buckets else set()
-    sell_allowed = ~positions.bucket_id.isin(protected).to_numpy() if mode == 'fewest' else np.zeros(n, dtype=bool)
+    sell_allowed = tradable & ~positions.bucket_id.isin(protected).to_numpy() if mode == 'fewest' else np.zeros(n, dtype=bool)
     caps = max_allocations or {}
     if set(caps) - eligible or any(not math.isfinite(v) or not 0 <= v <= 1 for v in caps.values()):
         raise RebalanceError('Caps must be fractions between zero and one for selected positions.')
@@ -262,7 +265,7 @@ def category_plan(valued, config, scope='', *, mode='contribution', amount=0.,
     for b in config.buckets:
         if b.allocation_mode != 'flexible':
             continue
-        member_indexes = np.flatnonzero(positions.bucket_id.eq(b.id))
+        member_indexes = np.flatnonzero(positions.bucket_id.eq(b.id) & tradable)
         members = set(positions.iloc[member_indexes].position_id)
         for direction, priority, sign in (('buy', b.buy_priority, 1), ('sell', b.sell_priority, -1)):
             changed = [i for i in member_indexes if sign*delta[i] > 0]

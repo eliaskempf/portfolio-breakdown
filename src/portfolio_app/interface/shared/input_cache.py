@@ -34,7 +34,7 @@ def cached_input(key, signature, loader):
 
 def load_inputs(directory):
     directory = Path(directory)
-    if (directory / '.allocation-publication.json').exists():
+    if (directory / '.allocation-publication.json').exists() or (directory / '.history-publication.json').exists():
         from portfolio_app.workspace.workspace_lock import workspace_lock
         with workspace_lock(directory):
             pass

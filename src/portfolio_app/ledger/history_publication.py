@@ -31,10 +31,14 @@ def recover_publication(directory):
         return
     payload = json.loads(intent.read_text(encoding='utf-8'))
     legacy = 'version' not in payload
-    if not legacy and payload.get('version') != 2:
+    if not legacy and payload.get('version') not in (2, 3):
         raise DataError('Invalid pending history publication; preserve the recovery file.')
     document = payload if legacy else payload['documents']
-    if set(document) != {'holdings.csv', 'account-journal.json'}:
+    allowed = [{'holdings.csv', 'account-journal.json'}]
+    if not legacy and payload['version'] == 3:
+        allowed.extend([{'allocation.yaml', 'account-journal.json'},
+                        {'holdings.csv', 'allocation.yaml', 'account-journal.json'}])
+    if set(document) not in allowed:
         raise DataError('Invalid pending history publication; preserve the recovery file.')
     originals = {}
     for name, versions in document.items():
@@ -65,20 +69,31 @@ def recover_publication(directory):
 
 
 def publish_positions_and_history(directory, content, journal, holdings_revision, journal_revision):
+    publish_account_documents(directory, journal, journal_revision, {'holdings.csv': (content, holdings_revision)})
+
+
+def publish_account_documents(directory, journal, journal_revision, changes):
+    """Save the reviewed account journal and its associated holdings/category edits together."""
     from portfolio_app.ledger.account_journal import journal_to_dict, save_journal
     from portfolio_app.workspace.storage import save_document, revision
     from portfolio_app.workspace.workspace_lock import workspace_lock
+    if set(changes) - {'holdings.csv', 'allocation.yaml'}:
+        raise DataError('Unsupported account publication document.')
     directory = Path(directory)
     with workspace_lock(directory):
-        if revision(directory/'holdings.csv') != holdings_revision or revision(directory/'account-journal.json') != journal_revision:
+        if revision(directory/'account-journal.json') != journal_revision or any(
+                revision(directory/name) != expected for name, (_, expected) in changes.items()):
             raise DataError('Portfolio changed. Review the proposed history again.')
-        documents = {'holdings.csv': content,
-                     'account-journal.json': json.dumps(journal_to_dict(journal), default=str, indent=2, sort_keys=True)+'\n'}
-        intent = {name: {'before': _read(directory/name),
-                         'after': value} for name, value in documents.items()}
-        _write(directory/INTENT, json.dumps({'version': 2, 'documents': intent}))
+        if not changes:
+            save_journal(directory, journal, journal_revision)
+            return
+        documents = {name: content for name, (content, _) in changes.items()}
+        documents['account-journal.json'] = json.dumps(journal_to_dict(journal), default=str, indent=2, sort_keys=True)+'\n'
+        intent = {name: {'before': _read(directory/name), 'after': value} for name, value in documents.items()}
+        _write(directory/INTENT, json.dumps({'version': 3 if 'allocation.yaml' in changes else 2, 'documents': intent}))
         try:
-            save_document(directory/'holdings.csv', content, holdings_revision)
+            for name, (content, expected) in changes.items():
+                save_document(directory/name, content, expected)
             save_journal(directory, journal, journal_revision)
             (directory/INTENT).unlink()
         except BaseException:

@@ -455,3 +455,16 @@ def test_minimum_buy_input_restrictions_and_no_new_conflict():
         balanced_cash_tradeoffs(p, 20, eligible_position_ids=ids, minimum_purchase=25)
     plan = balanced_cash_tradeoffs(p, 100, eligible_position_ids=ids, minimum_purchase=25, no_new_positions=True)[-1]
     assert plan.table["Trade"].tolist() == [25, 75, 0]
+
+
+def test_fixed_bank_balance_in_mixed_scope_is_never_traded():
+    frame = portfolio([60., 20., 20.], [.4, .4, .2]).positions
+    frame['fixed_cash'] = [False, False, True]
+    frame.loc[2, 'target_allocation'] = np.nan
+    problem = prepare_rebalance(frame, tolerance=0)
+    assert minimum_trades(problem).table.Trade.tolist() == pytest.approx([-20, 20, 0])
+    contribution = allocate_new_money(problem, 20, max_trades=3)
+    assert contribution.table.iloc[2].Trade == 0 and pd.isna(contribution.table.iloc[2]['Target %'])
+    frame.loc[:1, 'target_allocation'] = [.5, 1 / 3]
+    minimum = minimum_new_money(prepare_rebalance(frame, tolerance=0))
+    assert minimum.table.After.tolist() == pytest.approx([60, 40, 20])

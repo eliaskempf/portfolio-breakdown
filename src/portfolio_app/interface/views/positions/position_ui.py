@@ -17,6 +17,7 @@ from portfolio_app.funds.etf import FundSnapshot, validate_fund_listings
 from portfolio_app.portfolio.holdings import DataError, metadata_dimensions
 from portfolio_app.interface.shared.instrument_ui import render_instrument_search
 from portfolio_app.interface.views.positions.position_list import list_context, render_position_list
+from portfolio_app.ledger.bank_accounts import bank_detail_position, bank_position_ids
 from portfolio_app.portfolio.strategic import category_labels
 from portfolio_app.portfolio.positions import HoldingsSnapshot, save_position, read_snapshot
 from portfolio_app.interface.views.positions.purchase_ui import render_bulk_purchases, render_purchase_history
@@ -65,6 +66,8 @@ def _consume_position_event(path, snapshot):
         if current and event.get('history_target') == 'accounts' and not journal.accounts:
             st.session_state['positions_workflow_request'] = 'Accounts & futures'
             st.session_state['position_edit_dialog'] = False
+        elif current and (bank_position := bank_detail_position(journal, identity)):
+            request_position(bank_position, editing=event.get('action') == 'edit')
         elif current and future_position:
             request_position(identity, editing=event.get('action', 'edit') == 'edit')
         elif current and (actual or event.get('history_target') == 'accounts'):
@@ -291,7 +294,9 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
     from portfolio_app.ledger.account_journal import load_journal
     dialog_journal, _ = load_journal(path.parent)
     future_ids = {p.id for p in dialog_journal.positions} | {item.id for item in dialog_journal.investments}
-    actual_future = st.session_state.get('position_edit_selected') in future_ids
+    selected_id = st.session_state.get('position_edit_selected')
+    actual_future = selected_id in future_ids
+    bank = bank_position_ids(dialog_journal).get(selected_id)
     title = st.session_state.get('position_edit_action', 'Details')
     if title == 'Details' or (actual_future and title == 'Edit position'):
         title = 'Position details'
@@ -299,6 +304,8 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
         selected_title = snapshot.holdings.loc[snapshot.holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
         if not selected_title.empty:
             title = instrument_name(selected_title.iloc[0])
+    if bank:
+        title = bank.name
     @st.dialog(title, width='large', on_dismiss=_dismiss_dialog)
     def dialog():
         # Button callbacks run before the dialog body. Never execute its data
@@ -323,7 +330,16 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
                     request_position(identity, editing=True, local=False)
                     st.rerun()
                 return
-            if actual_future:
+            if bank:
+                from portfolio_app.interface.views.positions.bank_account_ui import render_bank_detail
+                latest = bank_position_ids(load_journal(path.parent)[0]).get(selected_id)
+                if latest:
+                    render_bank_detail(path.parent, current, allocation, valued, latest, editing=action == 'Edit position')
+                else:
+                    st.warning('This cash account no longer exists.')
+                if action != 'Edit position':
+                    close_position_button()
+            elif actual_future:
                 journal, revision = load_journal(path.parent)
                 from portfolio_app.interface.views.derivatives.investment_detail_ui import render_investment_detail
                 render_investment_detail(path.parent, journal, revision, valued,
@@ -365,10 +381,6 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
     editing = action == "Edit position"
     position_id = None
     purchase = False
-    if not editing:
-        purchase = st.segmented_control('Entry method', ['New purchase', 'Existing holding'],
-            required=True, default='Existing holding' if st.session_state.get('onboarding_step') == 'position' else 'New purchase',
-            key='position_edit_fields_entry_mode') != 'Existing holding'
     if editing:
         if holdings.empty:
             st.info("Create your first position before editing.")
@@ -402,6 +414,23 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
         identity = instrument_column.selectbox("Existing instrument", ["", *labels], help='Reuse a saved instrument identity when adding a position in another account or category.', format_func=lambda value: labels[value] if value else "New instrument", key="position_edit_instrument") if labels else ""
         row = holdings.loc[holdings["id"] == identity].iloc[0].to_dict() if identity else {}
         row = {column: row.get(column, "") for column in ("id", "name", "ticker", "isin", "instrument_type", "exposure_kind", "quantity_unit", "short_name", "price_source")}
+    physical = row.get('instrument_type') == 'physical' and not row.get('ticker') and bool(row.get('quantity_unit'))
+    if not editing and not identity:
+        entry = kind_column.segmented_control('Position type', ['Listed investment', 'Cash account', 'Physical asset', 'Future'], help='Choose the kind of position to add.', required=True, default='Listed investment',
+                                     key='position_edit_fields_entry_kind') or 'Listed investment'
+        if entry == 'Cash account':
+            from portfolio_app.interface.views.positions.bank_account_ui import render_bank_form
+            render_bank_form(path.parent, snapshot, allocation, valued)
+            return True
+        if entry == 'Future':
+            from portfolio_app.interface.views.derivatives.accounts_ui import render_future_entry
+            render_future_entry(path.parent, snapshot, valued=valued, allocation=allocation)
+            return True
+        physical = entry == 'Physical asset'
+    if not editing:
+        purchase = st.segmented_control('Entry method', ['New purchase', 'Existing holding'],
+            required=True, default='Existing holding' if st.session_state.get('onboarding_step') == 'position' else 'New purchase',
+            key='position_edit_fields_entry_mode') != 'Existing holding'
     if purchase and identity:
         destinations = holdings.loc[holdings.id.eq(identity)]
         bucket_names = category_labels(allocation) if allocation else {}
@@ -428,15 +457,6 @@ def render_position_form(path, snapshot, funds, *, demo=False, allocation=None, 
                 _clear_editor()
                 st.rerun()
             return True
-    physical = row.get('instrument_type') == 'physical' and not row.get('ticker') and bool(row.get('quantity_unit'))
-    if not editing and not identity:
-        entry = kind_column.segmented_control('Position type', ['Listed investment', 'Physical asset', 'Future'], help='Choose a listed security or a physical holding measured in units or weight.', required=True, default='Listed investment',
-                                     key='position_edit_fields_entry_kind') or 'Listed investment'
-        if entry == 'Future':
-            from portfolio_app.interface.views.derivatives.accounts_ui import render_future_entry
-            render_future_entry(path.parent, snapshot, valued=valued, allocation=allocation)
-            return True
-        physical = entry == 'Physical asset'
     context = (str(path.resolve()), action, position_id, identity, physical)
     if st.session_state.get("position_edit_context") != context:
         st.session_state["position_edit_context"] = context

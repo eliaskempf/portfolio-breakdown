@@ -3,6 +3,7 @@ from datetime import date
 
 import pandas as pd
 
+from portfolio_app.ledger.bank_accounts import bank_position_ids
 from portfolio_app.performance.gain_accounting import current_component_values, summarize_known_gain
 from portfolio_app.performance.history_observations import HistoryScope
 from portfolio_app.performance.history_scope import category_history_scope
@@ -19,6 +20,12 @@ def known_category_performance(displayed, holdings, config, journal, observation
               current_component_values(current_valued, journal, calculation=calculation))
     linked_cash = {link.position_id: link.account_id for link in journal.cash_links}
     accounts = {a.id for a in journal.accounts}
+    banks = bank_position_ids(journal)
+    if banks and 'journal_managed' in current_valued:
+        # A separate in-transit or debt row cannot share the same account gain.
+        managed = current_valued.loc[current_valued.journal_managed.eq(True)]
+        split_accounts = set(managed.loc[managed.account_id.duplicated(keep=False), 'account_id'])
+        banks = {p: a for p, a in banks.items() if a.id not in split_accounts}
     # Removed closed holdings have no present value, but retain realized gain.
     # Include them in comparison membership without restoring an allocation row
     # or inferring a past category. A retained current assignment still applies.
@@ -43,7 +50,9 @@ def known_category_performance(displayed, holdings, config, journal, observation
             account_rows = set(rows.loc[managed].get('account_id', rows.position_id.map(lambda _: ''))) & accounts
             securities = {b.position_id for b in journal.securities}
             investments = set(displayed.attrs.get('investment_members', {})) | {'future:overlay'}
-            if any(identity in linked_cash or identity.startswith('account-') or identity in investments for identity in identities) or (account_rows and not set(identities) <= securities):
+            if len(identities) == 1 and identities[0] in banks:
+                scope = HistoryScope(accounts=(banks[identities[0]].id,))
+            elif any(identity in linked_cash or identity.startswith('account-') or identity in investments for identity in identities) or (account_rows and not set(identities) <= securities):
                 # A single cash/funded display row is not its whole account.
                 scope = HistoryScope(unresolved=('Account display components need an explicit dated scope allocation',))
             else:

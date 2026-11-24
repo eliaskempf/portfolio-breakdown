@@ -60,6 +60,16 @@ reporting value with current FX; calculating its FX gain needs a recorded openin
 or conversion basis. Explicit cash costs, including incomplete conversions, retain
 the existing cost-based calculation and coverage checks.
 
+In **Overview → Performance**, a named savings or checking account uses its dated
+transactions. Portfolio performance includes the account from its opening date.
+Earlier dates retain the performance of the holdings tracked at the time.
+The opening balance and deposits count toward invested capital. Interest contributes
+to gain. To start tracking the account earlier, change **Opening balance date**
+under **Edit cash account** and record the transactions for that period.
+Select the Cash category to compare individual
+accounts. If an account also has a separate pending payment, the category includes
+it and performance is available at the combined account level.
+
 Each purchase, including fees, is converted separately. A supplied converted cost
 takes precedence over a supplied rate, which takes precedence over historical
 market FX. Historical lookup uses the purchase date or the most recent available

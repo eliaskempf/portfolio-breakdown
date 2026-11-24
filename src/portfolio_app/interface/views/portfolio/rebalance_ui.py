@@ -7,11 +7,11 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 from portfolio_app.interface.shared.view_state import persistent_editor
-from portfolio_app.interface.shared.planning_ui import PLANNING_HELP, planning_positions, restriction_summary
+from portfolio_app.interface.shared.planning_ui import cash_plan_summary, PLANNING_HELP, planning_positions, restriction_summary
 from portfolio_app.portfolio.rebalance_tables import allocation_table, position_labels
 from portfolio_app.interface.views.portfolio.rebalance_results_ui import render_impact, render_summary, render_trades, show_table
 from portfolio_app.portfolio.rebalancing import (
-    RebalanceError, balanced_cash_tradeoffs, cash_tradeoffs, minimum_new_money, minimum_trades, prepare_rebalance, spread_new_money,
+    fixed_cash, RebalanceError, balanced_cash_tradeoffs, cash_tradeoffs, minimum_new_money, minimum_trades, prepare_rebalance, spread_new_money,
 )
 
 MODES = ["Fewest trades (buys and sells)", "Minimum new money (no sells)", "Allocate new money"]
@@ -21,6 +21,8 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
                        sell_protected: bool = False, portfolio_positions=None, allocation=None):
     if valued is None:
         st.info("A portfolio valuation is required before calculating.")
+        return
+    if cash_plan_summary(valued, portfolio_value=portfolio_value):
         return
     original = valued
     st.caption(f'Targets relative to {scope or "portfolio"}.' + (' Selling is protected for this category.' if sell_protected else ''))
@@ -37,7 +39,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
         buy_all, prefer_fewer, minimum_purchase, extra_error = False, False, .01, 0.
         max_allocations = {}
         cap_scope = 'portfolio'
-        labels = position_labels(valued)
+        labels = position_labels(valued.loc[~fixed_cash(valued)])
         identity = sha256(valued[[c for c in ('position_id', 'name', 'account', 'portfolio') if c in valued]].to_json().encode()).hexdigest()[:16]
         limited = mode == MODES[2] and st.toggle("Limit buys to selected positions", help='Allow purchase suggestions only for selected holdings; other targets remain in the plan.', key="rebalance_limit_buys")
         if limited:
@@ -101,7 +103,7 @@ def render_rebalancing(valued: pd.DataFrame | None, *, scope: str = '', portfoli
     except RebalanceError as exc:
         st.info(str(exc))
         return
-    fields = [column for column in ("position_id", "id", "name", "ticker", "account", "portfolio", "shares", "current_value_reporting", "target_allocation") if column in valued]
+    fields = [column for column in ("position_id", "id", "name", "ticker", "account", "portfolio", "shares", "fixed_cash", "current_value_reporting", "target_allocation") if column in valued]
     fingerprint = sha256((valued[fields].to_json() + repr((st.session_state.get("ignore_empty_positions"), scope, portfolio_value, sell_protected, cap_scope, mode, tolerance_type, tolerance, no_new, new_money, max_trades, distribution, buy_all, minimum_purchase, prefer_fewer, extra_error, tuple(sorted(max_allocations.items())), None if eligible_ids is None else tuple(sorted(eligible_ids))))).encode()).hexdigest()
     entered_caps = max_allocations.copy()
     if scope and cap_scope == 'portfolio' and max_allocations:

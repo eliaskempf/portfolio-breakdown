@@ -38,7 +38,7 @@ class LeverageContext:
 
     @property
     def future(self):
-        return self.sandbox[0] if self.sandbox and not (self.journal and self.journal.accounts) else None
+        return self.sandbox[0] if self.sandbox and not (self.journal and self.journal.has_broker_workspace) else None
 
 
 def load_leverage_context(directory, reporting_currency):
@@ -49,7 +49,7 @@ def load_leverage_context(directory, reporting_currency):
     journal, journal_revision = load_journal(directory)
     actual = bool(journal.accounts)
     legacy_debt = tuple(x for x in settings.liabilities if x.id not in journal.adopted_liability_ids)
-    legacy_required = bool(legacy_debt or (sandbox is not None and not actual))
+    legacy_required = bool(legacy_debt or (sandbox is not None and not journal.has_broker_workspace))
     supported = reporting_currency == 'EUR' or not legacy_required
     return LeverageContext(sandbox, settings, supported,
         supported and (settings.enabled or sandbox is not None or actual),

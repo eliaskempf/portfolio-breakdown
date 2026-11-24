@@ -38,7 +38,7 @@ def _render_transactions(directory, journal, revision, key):
         since = start.date_input('From date', value=None, key=key+'since')
         until = end.date_input('Through date', value=None, key=key+'until')
     if account:
-        frame = frame.loc[frame.account_id.isin(account)]
+        frame = frame.loc[frame.account_id.isin(account) | frame.destination_id.isin(account)]
     if positions:
         frame = frame.loc[frame.position_id.isin(positions)]
     if actions:
@@ -50,7 +50,7 @@ def _render_transactions(directory, journal, revision, key):
     if frame.empty:
         st.caption('No matching transactions')
         return
-    frame = frame.drop(columns=['account_id', 'position_id'])
+    frame = frame.drop(columns=['account_id', 'destination_id', 'position_id'])
     columns = [ListColumn(name, name, numeric=name in {'Quantity', 'Price', 'Amount'}, display=name,
                           secondary='Note' if name == 'Action' else '')
                for name in frame if name not in {'entry_id', 'Note'}]
@@ -80,76 +80,82 @@ def render_activity(directory, journal, revision, *, key):
         for field in ('accounts', 'positions', 'actions', 'since', 'until'):
             if key+field in st.session_state:
                 st.session_state[key+field] = st.session_state[key+field]
-        accounts = {a.id: a.name for a in journal.accounts}
-        prefix = key+'edit_'+selected+'_'
-        st.button('Back to transactions', key=key+'back', type='tertiary', icon=':material/arrow_back:',
-                  on_click=_return_to_list, args=(key, prefix))
-        st.markdown('**Transaction details**')
-        st.text(entry_label(journal, event))
-        links = [e for e in journal.events if e.id == event.replaces or e.replaces == event.id]
-        for linked in links:
-            st.caption(('Original: ' if linked.id == event.replaces else 'Reversal: ' if linked.kind == 'void' else 'Replacement: ')
-                       + entry_label(journal, linked))
-        if event.kind == 'fx':
-            st.caption(f'Received amount: {event.other_amount} {event.other_currency}')
-        if event.other_account_id:
-            st.caption('Destination: ' + accounts[event.other_account_id])
-        with st.expander('Entry provenance'):
-            st.json({k: str(v) if v is not None else None for k, v in asdict(event).items()})
-        if route := correction_route(journal, event):
-            with st.popover('Correction unavailable'):
-                st.write(route)
-            return
-        action = st.session_state.get(prefix+'action', 'View entry')
-        if action == 'View entry':
-            with st.container(horizontal=True):
-                st.button('Correct entry', key=prefix+'correct', on_click=st.session_state.update,
-                          args=({prefix+'action': 'Correct entry'},))
-                st.button('Reverse only', key=prefix+'reverse', help='Review removal of this entry’s accounting effect.',
-                          on_click=st.session_state.update, args=({prefix+'action': 'Reverse only'},))
-            return
-        def cancel_button():
-            st.button('Cancel reversal' if action == 'Reverse only' else 'Cancel correction',
-                      key=prefix+'cancel', on_click=_cancel, args=(prefix,))
+        render_transaction_detail(directory, journal, revision, event, key=key)
 
-        try:
-            changes = {} if action == 'Reverse only' else _correction_fields(journal, event, prefix)
-            candidate = correct_entry(journal, selected, changes, reverse=action == 'Reverse only')
-            if action == 'Correct entry':
-                replacement = candidate.events[-1]
-                before, after = asdict(event), asdict(replacement)
-                labels = {'date': 'Date', 'value_date': 'Cash value date', 'amount': 'Amount', 'price': 'Price',
-                          'quantity': 'Quantity', 'note': 'Note', 'currency': 'Currency',
-                          'other_currency': 'Received currency', 'other_amount': 'Received amount'}
-                rows = [{'Field': label, 'Original': str(before[field]), 'Replacement': str(after[field])}
-                        for field, label in labels.items() if before[field] != after[field]]
-                for field, label in [('account_id', 'Account'), ('other_account_id', 'Destination account')]:
-                    if before[field] != after[field]:
-                        rows.append({'Field': label, 'Original': accounts.get(before[field], ''), 'Replacement': accounts.get(after[field], '')})
-                if before['position_id'] != after['position_id']:
-                    rows.append({'Field': 'Contract', 'Original': entry_context(journal, event)[3],
-                                 'Replacement': entry_context(journal, replacement)[3]})
-                if not rows:
-                    st.session_state.pop(prefix+'pending', None)
-                    with st.container(horizontal=True):
-                        st.button('Review correction', disabled=True, key=prefix+'unchanged', help='Change a recorded fact first.')
-                        cancel_button()
-                    return
-                st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch')
-            from portfolio_app.interface.views.derivatives.accounts_ui import _save_review
-            _save_review(directory, journal, revision, candidate, prefix,
-                         review_label='Review reversal' if action == 'Reverse only' else 'Review correction',
-                         save_label='Save reversal' if action == 'Reverse only' else 'Save correction',
-                         compare_balances=True, cancel_button=cancel_button, destructive=action == 'Reverse only')
-        except (DataError, ValueError) as exc:
-            st.session_state.pop(prefix+'pending', None)
-            st.info(str(exc))
-            cancel_button()
-            related = related_entries(journal, event)
-            if related:
-                with st.expander('Later entries to review'):
-                    for item in related:
-                        st.write(entry_label(journal, item))
+
+def render_transaction_detail(directory, journal, revision, event, *, key, return_on_save=False):
+    accounts = {a.id: a.name for a in journal.accounts}
+    selected = event.id
+    prefix = key+'edit_'+selected+'_'
+    st.button('Back to transactions', key=key+'back', type='tertiary', icon=':material/arrow_back:',
+              on_click=_return_to_list, args=(key, prefix))
+    st.markdown('**Transaction details**')
+    st.text(entry_label(journal, event))
+    links = [e for e in journal.events if e.id == event.replaces or e.replaces == event.id]
+    for linked in links:
+        st.caption(('Original: ' if linked.id == event.replaces else 'Reversal: ' if linked.kind == 'void' else 'Replacement: ')
+                   + entry_label(journal, linked))
+    if event.kind == 'fx':
+        st.caption(f'Received amount: {event.other_amount} {event.other_currency}')
+    if event.other_account_id:
+        st.caption('Destination: ' + accounts[event.other_account_id])
+    with st.expander('Entry provenance'):
+        st.json({k: str(v) if v is not None else None for k, v in asdict(event).items()})
+    if route := correction_route(journal, event):
+        with st.popover('Correction unavailable'):
+            st.write(route)
+        return
+    action = st.session_state.get(prefix+'action', 'View entry')
+    if action == 'View entry':
+        with st.container(horizontal=True):
+            st.button('Correct entry', key=prefix+'correct', on_click=st.session_state.update,
+                      args=({prefix+'action': 'Correct entry'},))
+            st.button('Reverse only', key=prefix+'reverse', help='Review removal of this entry’s accounting effect.',
+                      on_click=st.session_state.update, args=({prefix+'action': 'Reverse only'},))
+        return
+    def cancel_button():
+        st.button('Cancel reversal' if action == 'Reverse only' else 'Cancel correction',
+                  key=prefix+'cancel', on_click=_cancel, args=(prefix,))
+
+    try:
+        changes = {} if action == 'Reverse only' else _correction_fields(journal, event, prefix)
+        candidate = correct_entry(journal, selected, changes, reverse=action == 'Reverse only')
+        if action == 'Correct entry':
+            replacement = candidate.events[-1]
+            before, after = asdict(event), asdict(replacement)
+            labels = {'date': 'Date', 'value_date': 'Cash value date', 'amount': 'Amount', 'price': 'Price',
+                      'quantity': 'Quantity', 'note': 'Note', 'currency': 'Currency',
+                      'other_currency': 'Received currency', 'other_amount': 'Received amount'}
+            rows = [{'Field': label, 'Original': str(before[field]), 'Replacement': str(after[field])}
+                    for field, label in labels.items() if before[field] != after[field]]
+            for field, label in [('account_id', 'Account'), ('other_account_id', 'Destination account')]:
+                if before[field] != after[field]:
+                    rows.append({'Field': label, 'Original': accounts.get(before[field], ''), 'Replacement': accounts.get(after[field], '')})
+            if before['position_id'] != after['position_id']:
+                rows.append({'Field': 'Contract', 'Original': entry_context(journal, event)[3],
+                             'Replacement': entry_context(journal, replacement)[3]})
+            if not rows:
+                st.session_state.pop(prefix+'pending', None)
+                with st.container(horizontal=True):
+                    st.button('Review correction', disabled=True, key=prefix+'unchanged', help='Change a recorded fact first.')
+                    cancel_button()
+                return
+            st.dataframe(pd.DataFrame(rows), hide_index=True, width='stretch')
+        from portfolio_app.interface.views.derivatives.accounts_ui import _save_review
+        _save_review(directory, journal, revision, candidate, prefix,
+                     review_label='Review reversal' if action == 'Reverse only' else 'Review correction',
+                     save_label='Save reversal' if action == 'Reverse only' else 'Save correction',
+                     on_saved=(lambda: _return_to_list(key, prefix)) if return_on_save else None,
+                     compare_balances=True, cancel_button=cancel_button, destructive=action == 'Reverse only')
+    except (DataError, ValueError) as exc:
+        st.session_state.pop(prefix+'pending', None)
+        st.info(str(exc))
+        cancel_button()
+        related = related_entries(journal, event)
+        if related:
+            with st.expander('Later entries to review'):
+                for item in related:
+                    st.write(entry_label(journal, item))
 
 
 def _correction_fields(journal, event, key):

@@ -144,6 +144,12 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             from portfolio_app.interface.views.history.history_ui import render_portfolio_history
             render_portfolio_history(data_dir,history,label='Category value' if bucket else 'Portfolio value',
                                      percent=percent,on_toggle_gain=on_toggle_gain,automatic=automatic_history)
+        elif history is not None:
+            from portfolio_app.interface.views.history.history_data_ui import brief_reasons, readable_reasons
+            reasons = history['view'].all_result.value_reasons
+            detail = brief_reasons(readable_reasons(data_dir, history['journal'], history['scope'], reasons))
+            st.caption('History chart needs two dated valuations.', help=detail or
+                       'Review the selected holdings in Positions → History for missing transactions or valuations.')
         with st.container(key='tour_performance'):
             table = strategic_performance(valued, config, bucket)
             if history is not None:
@@ -342,7 +348,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
     if exposure_result is not None and not bucket:
         from portfolio_app.interface.views.exposure.portfolio_exposure_ui import render_capital_reconciliation
         with st.expander('Portfolio value reconciliation'):
-            render_capital_reconciliation(exposure_result, actual=bool(valued.attrs.get('actual_accounts')))
+            render_capital_reconciliation(exposure_result, actual=bool(valued.attrs.get('actual_accounts')) and future is None)
 
     from portfolio_app.interface.views.portfolio.target_dialog import render_target_dialog
     render_target_dialog(data_dir, manage_capital=open_capital_targets, manage_exposure=open_exposure_targets)

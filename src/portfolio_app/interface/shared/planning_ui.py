@@ -2,7 +2,7 @@
 import streamlit as st
 
 from portfolio_app.portfolio.allocation import analysis_targets, ignore_empty_by_bucket
-from portfolio_app.portfolio.rebalancing import ignore_empty_positions
+from portfolio_app.portfolio.rebalancing import fixed_cash, ignore_empty_positions
 
 
 def plan_preview(key, signature, requested, calculate):
@@ -26,6 +26,20 @@ def planning_positions(valued, allocation=None):
     if not redistribute:
         return valued
     return analysis_targets(ignore_empty_by_bucket(valued, allocation), allocation) if allocation else ignore_empty_positions(valued)
+
+
+def cash_plan_summary(positions, *, portfolio_value=None):
+    fixed = fixed_cash(positions)
+    if not fixed.any():
+        return False
+    from portfolio_app.interface.shared.currency_display import money
+    values = positions.loc[fixed, 'current_value_reporting']
+    balance = values.sum(skipna=False)
+    amount = money(balance, missing='Unknown')
+    share = f' · {balance / portfolio_value:.1%} of portfolio' if values.notna().all() and portfolio_value is not None and portfolio_value > 0 else ''
+    st.metric('Cash held in accounts', amount)
+    st.caption('Held at current balances in this plan' + share)
+    return fixed.all()
 
 
 def restriction_summary(*, no_new, caps, selected=None, maximum=None):

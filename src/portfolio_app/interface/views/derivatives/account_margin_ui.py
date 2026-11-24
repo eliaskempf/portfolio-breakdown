@@ -95,7 +95,7 @@ def render_account_margin(directory, journal, revision, holdings, valued, report
             if stored.startswith(key) and stored.endswith('pending'):
                 st.session_state.pop(stored, None)
         st.session_state[key+'revision'] = revision
-    if not journal.accounts:
+    if not journal.has_broker_workspace:
         st.info('Create an account in Cash & financing before recording collateral.')
         return
     snapshot = read_snapshot(directory/'holdings.csv')
@@ -110,7 +110,7 @@ def render_account_margin(directory, journal, revision, holdings, valued, report
     if fx_rates is None:
         from portfolio_app.ledger.account_observations import load_observations
         _, fx_rates, _ = load_observations(directory)
-    names = {account.id: account.name for account in journal.accounts}
+    names = {account.id: account.name for account in journal.accounts if not account.cash_type}
     holding_names = dict(zip(holdings.position_id, holdings.name))
     account = st.selectbox('Collateral account', list(names), format_func=names.get, key=key+'account')
     from portfolio_app.interface.views.monitoring.monitoring_ui import request_monitoring
