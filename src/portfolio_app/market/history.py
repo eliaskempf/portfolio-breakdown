@@ -124,10 +124,18 @@ class HistoryService:
             if 'dates' not in raw or 'prices' not in raw:
                 raise ValueError('Incomplete market-price history')
             result = _validated_history(HistoryResult(**raw))
+            if opened != version:
+                # On Windows the path and handle can report different ctimes.
+                # A replacement before open can also make the first stat stale.
+                # Pin the current pathname revision only if it names the same
+                # open file with the same size and modification timestamp.
+                version = _history_version(path)
+                if not isinstance(version, tuple) or version[:-1] != opened[:-1]:
+                    return result
             stable = opened == _file_version(os.fstat(handle.fileno()))
         if stable:
             with self._saved_lock:
-                self._saved[key] = opened, result
+                self._saved[key] = version, result
                 self._saved.move_to_end(key)
                 if len(self._saved) > 32:
                     self._saved.popitem(last=False)

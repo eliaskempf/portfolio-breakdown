@@ -380,3 +380,32 @@ def test_converted_history_preserves_the_supported_date_range(days):
     assert converted.dates == tuple(day.isoformat() for day in original_index)
     assert all(type(day) is str for day in converted.dates)
     assert converted.prices == (8., 18., 30.)
+
+
+def test_history_reuses_path_revision_when_handle_reports_different_ctime(tmp_path, monkeypatch):
+    from portfolio_app.market import history
+    clock = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    reader = HistoryService(None, tmp_path, now=lambda: clock)
+    path = reader._path('INVENTED', 'Max')
+    version = history._history_version
+    def path_version(file):
+        fields = version(file)
+        # Freshly published files on NTFS can have different creation and change times.
+        return (*fields[:-1], fields[-1] - 1)
+    monkeypatch.setattr(history, '_history_version', path_version)
+    loads = 0
+    original_load = json.load
+    def counted(*args, **kwargs):
+        nonlocal loads
+        loads += 1
+        return original_load(*args, **kwargs)
+    monkeypatch.setattr(json, 'load', counted)
+    for price in (7., 8.):
+        entry = history.HistoryResult(('2026-01-01',), (price,), 'EUR', 'fresh', clock.isoformat())
+        stage = path.with_suffix('.new')
+        stage.write_text(json.dumps(vars(entry)))
+        stage.replace(path)
+        for _ in range(2):
+            result, due = reader.cached('INVENTED', 'Max')
+            assert not due and result.prices == (price,)
+    assert loads == 2
