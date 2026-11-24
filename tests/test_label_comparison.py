@@ -287,3 +287,27 @@ def test_comparison_does_not_iterate_unrelated_source_metadata(comparison_data, 
     actual = selection.compare(wide, overlap='split')
     pd.testing.assert_frame_equal(actual.allocations, expected.allocations)
     pd.testing.assert_frame_equal(selection.measure_values(wide, overlap='split'), expected.table[['Label', 'Value']])
+
+
+@pytest.mark.parametrize('policy', ['split', 'overlap'])
+def test_overview_measures_resolve_each_asset_once_and_keep_source_addition_order(monkeypatch, policy):
+    from portfolio_app.exposure.label_comparison import LabelSelection
+
+    labels = [Label('sector', ('Shared',)), Label('sector', ('Shared', 'Child')),
+              Label('sector', ('Unclassified',))]
+    classes = {'a': {'sector': (('Shared', 'Child'),)}, 'b': {'sector': (('Shared',),)}}
+    rows = pd.DataFrame({'asset_id': ['a', 'b', 'a', 'b', None, 'zero', 'unpriced'],
+                         'asset_name': ['Invented'] * 7,
+                         'value': [1e16, 1., -1e16, 2., -3., 0., float('nan')]})
+    expected = LabelSelection(classes, labels).compare(rows, overlap=policy).table[['Label', 'Value']]
+    selection = LabelSelection(classes, labels)
+    resolved = []
+    original = selection.matches
+    def tracked(asset):
+        resolved.append(asset)
+        return original(asset)
+    monkeypatch.setattr(selection, 'matches', tracked)
+    actual = selection.measure_values(rows.drop(columns='asset_name'), overlap=policy)
+    pd.testing.assert_frame_equal(actual, expected, check_exact=True)
+    assert resolved[:2] == ['a', 'b']
+    assert len(resolved) == 3 and pd.isna(resolved[2])

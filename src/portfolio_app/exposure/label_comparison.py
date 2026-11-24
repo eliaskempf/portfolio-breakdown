@@ -89,14 +89,15 @@ class LabelSelection:
         return self._assets[asset_id]
 
     @staticmethod
-    def _valued(exposures, overlap, *, include_zero=True):
+    def _valued(exposures, overlap, *, include_zero=True, include_names=True):
         if overlap not in {"split", "overlap"}:
             raise ValueError("Choose how to allocate assets matching multiple labels.")
         values = exposures["value"]
         selected = values.notna()
         if not include_zero:
             selected &= values.ne(0)
-        valued = exposures.loc[selected, ["asset_id", "asset_name", "value"]]
+        columns = ["asset_id", "asset_name", "value"] if include_names else ["asset_id", "value"]
+        valued = exposures.loc[selected, columns]
         if any(not math.isfinite(value) for value in valued["value"]):
             raise ValueError("Label comparison requires finite exposure values.")
         return valued
@@ -111,15 +112,24 @@ class LabelSelection:
         """Target and performance amounts at the label or drilled asset level."""
         # Every selected label already has a zero total. At a drilled level,
         # individual zero-valued rows still identify assets for the table.
-        rows = self._assignments(self._valued(exposures, overlap, include_zero=bool(root)), overlap)
+        valued = self._valued(exposures, overlap, include_zero=bool(root), include_names=bool(root))
         if not root:
-            totals = dict.fromkeys(self.labels, 0.)
-            for _, matches, assigned in rows:
-                for label in matches:
-                    totals[label] += assigned
-            return pd.DataFrame([(label.title, amount) for label, amount in totals.items()],
+            # Membership depends on the asset, even when many accounts or ETFs
+            # supply its value. Accumulate in source order for signed portfolios.
+            codes, assets = pd.factorize(valued.asset_id, sort=False, use_na_sentinel=False)
+            destinations = [tuple(self._order[label] for label in self.matches(asset)) for asset in assets]
+            totals = [0.] * len(self.labels)
+            split = overlap == 'split'
+            for code, value in zip(codes.tolist(), valued.value.to_numpy(dtype=object)):
+                indices = destinations[code]
+                if indices:
+                    amount = value / len(indices) if split else value
+                    for index in indices:
+                        totals[index] += amount
+            return pd.DataFrame([(label.title, amount) for label, amount in zip(self.labels, totals)],
                                 columns=["Label", "Value"]).sort_values(
                 ["Value", "Label"], ascending=[False, True], kind="stable", ignore_index=True)
+        rows = self._assignments(valued, overlap)
         columns = ["asset_id", "asset_name", "value"]
         label = next((label for label in self.labels if self._keys[label] == root[0]), None)
         if label is None:
