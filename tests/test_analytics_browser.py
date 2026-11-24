@@ -7,6 +7,11 @@ from browser_support import settle
 @pytest.mark.parametrize('ux_page', ['count_app_runs'], indirect=True)
 def test_analytics_views_dialog_and_mobile_layout(ux_page):
     page, directory = ux_page
+    full_name = 'Invented Global International Investment'
+    holdings = directory / 'holdings.csv'
+    holdings.write_text(holdings.read_text().replace('Invented Global', full_name))
+    page.reload()
+    page.get_by_role('tab', name='Overview', exact=True).wait_for()
     assert page.get_by_role('tab').all_text_contents()[:4] == ['Overview', 'Exposure', 'Positions', 'Rebalance']
     page.get_by_role('radio', name='Analytics', exact=True).click()
     playwright.expect(page.get_by_text('Direct-stock P/E', exact=True)).to_be_visible()
@@ -21,7 +26,19 @@ def test_analytics_views_dialog_and_mobile_layout(ux_page):
     page.screenshot(path=str(directory / 'analytics-risk.png'), full_page=True)
     chart = page.locator('.js-plotly-plot').filter(has=page.locator('.heatmaplayer'))
     playwright.expect(chart).to_be_visible()
-    assert chart.evaluate('el => el.layout.xaxis.ticktext') == ['Invented Global', 'Invented Regional', 'Invented Satellite']
+    assert chart.evaluate('el => el.layout.xaxis.ticktext') == [full_name[:27] + '…', 'Invented Regional', 'Invented Satellite']
+    settle(page)
+    chart.scroll_into_view_if_needed()
+    cell = chart.evaluate("""el => {
+        const layout = el._fullLayout;
+        return {x: layout._size.l + layout.xaxis.c2p(1), y: layout._size.t + layout.yaxis.c2p(0)};
+    }""")
+    chart.hover(position=cell)
+    lines = chart.locator('.hoverlayer .hovertext tspan.line')
+    playwright.expect(lines).to_have_count(3)
+    assert lines.all_text_contents()[:2] == [full_name, 'Invented Regional']
+    assert lines.nth(2).text_content().startswith('Correlation: ')
+    page.mouse.move(0, 0)
     assert chart.bounding_box()['height'] >= 420
     assert chart.bounding_box()['y'] < page.get_by_text('Holdings risk', exact=True).bounding_box()['y']
     settle(page)
