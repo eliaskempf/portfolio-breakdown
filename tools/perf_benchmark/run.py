@@ -113,6 +113,12 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
                 if i > 0 and closes > len(points) + 2:
                     raise AssertionError(f'{action["period"]} recalculated {closes} portfolio closes for {len(points)} dates')
                 action['portfolio_closes_calculated'] = closes
+                member_closes = sum(e['member_closes'] for e in charts)
+                # Allow individual opening and endpoint checks. A daily replay of
+                # each member grows with both chart length and portfolio size.
+                if member_closes > 4 * (settings['positions'] + settings['accounts']):
+                    raise AssertionError(f'{action["period"]} calculated {member_closes} individual member closes')
+                action['member_closes_calculated'] = member_closes
             for offset, (stamp, actual) in enumerate(points):
                 day = first + timedelta(days=offset)
                 if stamp[:10] != day.isoformat():
@@ -376,7 +382,10 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
                     f"3M {quarter['chart_ms']:.0f} ms, repeat 1Y {repeat['chart_ms']:.0f} ms.\n")
     for check in result.get('long_history', []):
         actions = ', '.join(f"{a['period']} {a['chart_ms']:.0f}/{a['settled_ms']:.0f} ms" for a in check['actions'])
-        summary += f"\n{check['surface']} ten-year history paint/settle: {actions}.\n"
+        all_days = next(action for action in check['actions'] if action['period'] == 'All')
+        summary += (f"\n{check['surface']} ten-year history paint/settle: {actions}. "
+                    f"The All chart used {all_days['portfolio_closes_calculated']} whole-portfolio and "
+                    f"{all_days['member_closes_calculated']} single-member valuations for {all_days['closes']} dates.\n")
     print(summary)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
