@@ -256,3 +256,24 @@ _market_form(path,journal,scope,store,revision,scope_names(path,journal,scope),'
     app.date_input[0].set_value(date(2024, 1, 3)).run()
     assert next(t for t in app.text_input if t.label == 'Quote listing').value == ''
     assert next(t for t in app.text_input if t.label == 'Source').value == 'manual'
+
+
+def test_visible_history_reasons_share_names_and_limit_after_formatting(tmp_path):
+    from portfolio_app.interface.views.history.history_data_ui import HistoryReasonFormatter
+
+    journal, scope, _, _ = fixture(tmp_path)
+    reads = []
+    def load_names():
+        reads.append(True)
+        return scope_names(tmp_path, journal, scope)
+    formatter = HistoryReasonFormatter(journal, load_names)
+    assert formatter.format(()) == () and not reads
+    first = 'position-0: missing price'
+    reasons = (first, first, 'unknown-a: missing FX', 'unknown-b: missing FX', scope.key+': missing value')
+    expected = readable_reasons(tmp_path, journal, scope, reasons)
+    def bounded_input():
+        yield from reasons
+        raise AssertionError('The visible explanations were already complete')
+    assert formatter.format(bounded_input(), limit=3) == expected[:3]
+    assert formatter.format((first,)) == expected[:1]
+    assert len(reads) == 1

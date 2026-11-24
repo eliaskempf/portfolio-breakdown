@@ -9,7 +9,7 @@ from portfolio_app.interface.shared.render_sections import render_sections
 from portfolio_app.ledger.account_journal import load_journal
 from portfolio_app.interface.shared.currency_display import reporting_currency
 from portfolio_app.interface.shared.display_names import instrument_name
-from portfolio_app.interface.views.history.history_data_ui import readable_reasons
+from portfolio_app.interface.views.history.history_data_ui import HistoryReasonFormatter
 from portfolio_app.performance.history_observations import HistoryScope, load_observations
 from portfolio_app.performance.history_status import position_history_statuses
 from portfolio_app.interface.shared.input_cache import cached_input
@@ -62,14 +62,15 @@ def _render_history_status_list(path, snapshot, holdings):
         help='Checks use saved evidence and the recorded interval. Matching balances cannot prove that no transactions are missing.')
     st.caption('Select a position to review its history.')
     names = {row.position_id: instrument_name(row) for row in holdings.itertuples()}
+    formatter = HistoryReasonFormatter(journal, lambda: names)
     details = {item.position_id: item for item in statuses}
     rows = []
     for item in statuses:
         if only_issues and not item.needs_attention:
             continue
-        explanations = readable_reasons(path.parent, journal, item.scope, item.reasons, names=names)
+        explanations = formatter.format(item.reasons, limit=4)
         rows.append(dict(id=item.position_id, name=names[item.position_id], transactions=item.transactions,
-                         market=item.market, money_weighted=item.money_weighted, time_weighted=item.time_weighted, freshness=item.freshness, action=item.action, explanation=((f'Checked {item.start} – {item.end}. ' if item.start else '')+' '.join(explanations[:4]))))
+                         market=item.market, money_weighted=item.money_weighted, time_weighted=item.time_weighted, freshness=item.freshness, action=item.action, explanation=((f'Checked {item.start} – {item.end}. ' if item.start else '')+' '.join(explanations))))
     if not rows:
         st.info('No missing history inputs detected for these positions.' if statuses else 'No positions to check.')
         return

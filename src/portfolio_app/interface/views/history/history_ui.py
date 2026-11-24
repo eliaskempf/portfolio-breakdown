@@ -1052,10 +1052,11 @@ def _render_history_results(directory, journal, scope, *, key, label='Historical
     start,end,result = view.start,view.end,view.result
     full = view.all_result
     known = (prepared.get('current_gain') if prepared else None) or view.all_known
-    from portfolio_app.interface.views.history.history_data_ui import readable_reasons, scope_names
-    names = scope_names(directory, journal, scope, holdings=prepared.get('history_holdings') if prepared else None)
+    from portfolio_app.interface.views.history.history_data_ui import HistoryReasonFormatter, scope_names
+    formatter = HistoryReasonFormatter(journal, lambda: scope_names(
+        directory, journal, scope, holdings=prepared.get('history_holdings') if prepared else None))
     def explanation(reasons):
-        messages = readable_reasons(directory, journal, scope, reasons, names=names)
+        messages = formatter.format(reasons, limit=4)
         return ' '.join(messages[:3]) + (' More missing dates are listed in Correct market data.' if len(messages) > 3 else '')
     total_value, capital = known.value, known.capital
     gain = known.amount if view.covers_full_history else result.gain

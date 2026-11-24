@@ -3,6 +3,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
+from functools import cached_property
 import re
 from uuid import uuid4
 
@@ -36,8 +37,9 @@ def scope_names(directory, journal, scope, *, holdings=None):
     try:
         if holdings is None:
             holdings = read_snapshot(directory / 'holdings.csv').holdings
-        names.update({row.position_id: str(row['name']) for _, row in holdings.iterrows()
-                      if row.position_id in names and pd.notna(row.get('name')) and row['name']})
+        if 'name' in holdings:
+            names.update({identity: str(name) for identity, name in zip(holdings.position_id, holdings['name'])
+                          if identity in names and pd.notna(name) and name})
     except (DataError, OSError):
         pass
     for book in journal.securities:
@@ -57,31 +59,51 @@ def scope_names(directory, journal, scope, *, holdings=None):
     return names
 
 
+class HistoryReasonFormatter:
+    """Share display identities only across explanations from one journal and view."""
+
+    def __init__(self, journal, get_names):
+        self.journal = journal
+        self.get_names = get_names
+
+    @cached_property
+    def _labels(self):
+        names = dict(self.get_names())
+        for book in self.journal.securities:
+            for event in book.records:
+                names[event.id] = f'{event.date or "Undated"} transaction'
+        for event in self.journal.events:
+            names[event.id] = f'{event.date} account entry'
+        embedded = ((key, value) for key, value in names.items() if len(key) >= 16 or '-' in key or ':' in key)
+        replacements = sorted(embedded, key=lambda pair: -len(pair[0]))
+        return names, replacements
+
+    def format(self, reasons, *, limit=None):
+        if limit is not None and limit <= 0:
+            return ()
+        results = []
+        for reason in reasons:
+            names, replacements = self._labels
+            identity, separator, detail = reason.partition(': ')
+            message = f'{names.get(identity, "History")}: {detail}' if separator else reason
+            message = message.replace('charges have not been confirmed', 'confirm transaction fees')
+            for stored, label in replacements:
+                if stored not in message:
+                    continue
+                message = re.sub(r'(?<![\w-])'+re.escape(stored)+r'(?![\w-])', lambda _: label, message)
+            message = re.sub(r'\bsecurity:[^\s,;]+', 'payment', message)
+            message = re.sub(r'\b[a-f0-9]{24,64}\b', 'record', message)
+            if message not in results:
+                results.append(message)
+                if len(results) == limit:
+                    break
+        return tuple(results)
+
+
 def readable_reasons(directory, journal, scope, reasons, *, names=None):
     """Remove storage identities from explanations; preserve the actual limitation."""
-    names = dict(names) if names is not None else scope_names(directory, journal, scope)
-    for book in journal.securities:
-        for event in book.records:
-            names[event.id] = f'{event.date or "Undated"} transaction'
-    for event in journal.events:
-        names[event.id] = f'{event.date} account entry'
-    replacements = sorted(names.items(), key=lambda pair: -len(pair[0]))
-    results = []
-    for reason in reasons:
-        identity, separator, detail = reason.partition(': ')
-        message = f'{names.get(identity, "History")}: {detail}' if separator else reason
-        message = message.replace('charges have not been confirmed', 'confirm transaction fees')
-        for stored, label in replacements:
-            if stored not in message:
-                continue
-            if len(stored) < 16 and not any(marker in stored for marker in ('-', ':')):
-                continue
-            message = re.sub(r'(?<![\w-])'+re.escape(stored)+r'(?![\w-])', lambda _: label, message)
-        message = re.sub(r'\bsecurity:[^\s,;]+', 'payment', message)
-        message = re.sub(r'\b[a-f0-9]{24,64}\b', 'record', message)
-        if message not in results:
-            results.append(message)
-    return tuple(results)
+    formatter = HistoryReasonFormatter(journal, lambda: names if names is not None else scope_names(directory, journal, scope))
+    return formatter.format(reasons)
 
 
 def _subjects(journal, scope):
