@@ -167,15 +167,14 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
         dates = calculation.event_dates(scope)
         if dates and dates[0] <= end:
             result = calculate_history(journal, scope, observations, dates[0], end, target, returns=False, calculation=calculation)
-            flows, missing = calculation.flows(scope, dates[0], end, target)
-            if result.opening_capital is not None and not missing and not result.flow_reasons:
+            if result.opening_capital is not None and result.net_contributions is not None:
                 value = result.ending_value
                 if current_values is not None:
                     values = [current_values.get(i) for i in scope.positions]
                     values += [current_values.get('account:'+a) for a in scope.accounts]
                     value = sum(values, ZERO) if all(v is not None for v in values) else None
                 if value is not None:
-                    capital = result.opening_capital + sum((f.amount for f in flows), ZERO)
+                    capital = result.opening_capital + result.net_contributions
                     count = len(scope.positions)+len(scope.accounts)
                     reasons = [*result.flow_reasons, *estimate_notes]
                     if any(e.kind == 'opening' and e.quantity for b in journal.securities

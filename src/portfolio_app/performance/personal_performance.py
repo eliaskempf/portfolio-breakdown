@@ -179,6 +179,18 @@ class HistoryCalculation:
             self._flows.popitem(last=False)
         return self._flows[key].interval(start, end)
 
+    def net_flows(self, scope, start, end, target):
+        # Daily marks change equity. Only a ledger date can change the converted
+        # cash flows and their missing-evidence reasons for this fixed opening.
+        latest = self._get(('net_flows', scope, start, target), dict)
+        boundary = bisect_right(self._flow_dates, end)
+        if boundary not in latest:
+            flows, missing = self.flows(scope, start, end, target)
+            net = None if missing else sum((f.amount for f in flows), ZERO)
+            latest.clear()
+            latest[boundary] = net, missing
+        return latest[boundary]
+
     def flow_inputs(self):
         def load():
             cash, securities, accounts = defaultdict(list), defaultdict(list), defaultdict(list)
@@ -721,9 +733,10 @@ def _calculate_history(journal, scope, observations, start, end, target='EUR', *
     observations = calculation.observations
     opening, ending = calculation.opening(scope, start, target), calculation.value(scope, end, target)
     coverage = coverage_reasons(journal, scope, observations, start, end, events_by_position=calculation._events, calculation=calculation)
-    flows, missing_flows = calculation.flows(scope, start, end, target)
+    net, missing_flows = calculation.net_flows(scope, start, end, target)
     flow_reasons = tuple(dict.fromkeys((*coverage, *missing_flows)))
-    net = sum((f.amount for f in flows), ZERO) if not flow_reasons else None
+    if flow_reasons:
+        net = None
     capital = calculation.capital(scope, start, target)
     # A remaining-cost correction changes neither inventory nor cash. It cannot
     # invalidate market-value returns, but the old opening cost no longer proves
@@ -750,6 +763,7 @@ def _calculate_history(journal, scope, observations, start, end, target='EUR', *
         if negative or opening.amount < 0 or ending.amount < 0:
             mwr_reasons = twr_reasons = (Issue('Percentage return is unavailable across negative equity', 'negative_equity'),)
         else:
+            flows, _ = calculation.flows(scope, start, end, target)
             if annualized:
                 mwr, reason = xirr(opening.amount, ending.amount, flows, start, end)
                 mwr_reasons = (reason,) if reason else ()
