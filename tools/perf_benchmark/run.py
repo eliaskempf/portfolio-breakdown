@@ -16,12 +16,15 @@ import sys
 from tempfile import TemporaryDirectory
 import time
 
-from fixture import create_workspace, prepare_fund_check, prepare_fundamental_check, prepare_quote_check, prepare_risk_check
+from fixture import create_workspace, prepare_fund_check, prepare_fundamental_check, prepare_market_chart, prepare_quote_check, prepare_risk_check
 from renderer import measure_view, wait
 
 
 def benchmark(executable, workspace, trial, variant, surface, scenario, *, themes=False, company_accounts=False):
     trial.mkdir()
+    if scenario == 'market-chart':
+        markets = prepare_market_chart(workspace)
+        (trial / 'market-chart.json').write_text(json.dumps(markets), encoding='utf-8')
     if scenario == 'checklist':
         with (workspace / 'holdings.csv').open(newline='', encoding='utf-8') as handle:
             positions = [row['position_key'] for row in csv.DictReader(handle)]
@@ -86,6 +89,19 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         start, end = measurement.pop('event_range')
         return events[start:end]
 
+    if scenario == 'market-chart':
+        if any(e['event'] in {'unexpected_market_fetch', 'unexpected_market_network'} for e in events):
+            raise AssertionError('Fresh saved market data triggered a provider or network request')
+        seen = set()
+        for action in report['actions']:
+            during = interval(action)
+            action['file_opens'] = sum(e['event'] == 'history_file_opened' for e in during)
+            action['conversion_ms'] = [e['elapsed_ms'] for e in during if e['event'] == 'converted']
+            period = action['period']
+            if variant == 'candidate' and action['file_opens'] != (0 if period in seen else 2):
+                raise AssertionError(f'Unexpected saved price or FX file reads: {action}')
+            seen.add(period)
+        return report
     if scenario == 'checklist':
         for index, action in enumerate(report['actions']):
             action['calculations'] = sum(e['event'] == 'checklist_calculated' for e in interval(action))
@@ -344,7 +360,10 @@ def run_comparison(candidate, reference, destination, surfaces, pairs, profile, 
                     create_workspace(workspace, profile, today=as_of, checklist=experiment == 'checklist')
                     report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, experiment,
                                        themes=profile == 'mixed-history', company_accounts=profile == 'multi-account')
-                    if experiment == 'checklist':
+                    if experiment == 'market-chart':
+                        print(surface, name, 'market chart first and repeat paint ms',
+                              [round(a['paint_ms']) for a in report['actions']], flush=True)
+                    elif experiment == 'checklist':
                         for action in report['actions']:
                             if action['digest'] != expected.setdefault(surface, action['digest']):
                                 raise AssertionError('Checklist cells or diagnostic tooltips differ across visits or binaries')
@@ -385,7 +404,7 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path)
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
-    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-cold', 'risk-stale', 'collection', 'checklist'], default='history')
+    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-cold', 'risk-stale', 'collection', 'checklist', 'market-chart'], default='history')
     parser.add_argument('--profile', choices=['small', 'etf-heavy', 'mixed-history', 'multi-account'], default='small')
     parser.add_argument('--reference', type=Path, help='Reference bundle for a paired comparison')
     options = parser.parse_args()
@@ -395,11 +414,11 @@ if __name__ == '__main__':
             parser.error('The collection benchmark exercises the ETF look-through company grid')
         run_comparison(options.executable.resolve(), options.executable.resolve(), options.output.resolve(), surfaces,
                        options.pairs, options.profile, options.experiment)
-    elif options.experiment in {'exposure', 'risk', 'risk-cold', 'risk-stale', 'checklist'}:
+    elif options.experiment in {'exposure', 'risk', 'risk-cold', 'risk-stale', 'checklist', 'market-chart'}:
         if not options.reference:
             parser.error('A paired binary comparison requires --reference')
-        if options.experiment.startswith('risk') and options.profile == 'small':
-            parser.error('The risk benchmark requires a profile with listed equities and ETFs')
+        if (options.experiment.startswith('risk') or options.experiment == 'market-chart') and options.profile == 'small':
+            parser.error('This benchmark requires a profile with listed equities and ETFs')
         run_comparison(options.executable.resolve(), options.reference.resolve(), options.output.resolve(), surfaces,
                        options.pairs, options.profile, options.experiment)
     else:

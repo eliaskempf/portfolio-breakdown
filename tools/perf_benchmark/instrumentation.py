@@ -25,6 +25,44 @@ def observe_server(trial):
 
     application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
     scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
+    if scenario == 'market-chart':
+        from ipaddress import ip_address
+        from pathlib import Path
+        import socket
+        import sys
+        from portfolio_app.market import history
+        from portfolio_app.market.msci_history import MarketHistoryProvider
+        directory = (trial.parent / 'synthetic' / '.cache' / 'history').resolve()
+        names = {path.name for path in directory.glob('*.json')}
+        def observe(event, args):
+            if event == 'open' and isinstance(args[0], str) and args[0].endswith('.json'):
+                path = Path(args[0])
+                if path.name in names and path.parent.resolve() == directory:
+                    record('history_file_opened')
+            if event == 'socket.connect' and args[0].family in (socket.AF_INET, socket.AF_INET6):
+                host = args[1][0]
+                if host == 'localhost':
+                    return
+                try:
+                    local = ip_address(host).is_loopback
+                except ValueError:
+                    local = False
+                if not local:
+                    record('unexpected_market_network')
+                    raise OSError('Offline market chart benchmark')
+        sys.addaudithook(observe)
+        def unexpected_fetch(self, ticker, period):
+            record('unexpected_market_fetch')
+            raise AssertionError('The benchmark should use saved prices and FX')
+        MarketHistoryProvider.history = unexpected_fetch
+        convert = history.convert_price_history
+        def measured_conversion(*args, **kwargs):
+            start = time.perf_counter_ns()
+            result = convert(*args, **kwargs)
+            record('converted', elapsed_ms=(time.perf_counter_ns() - start) / 1e6)
+            return result
+        history.convert_price_history = measured_conversion
+        return
     if scenario == 'checklist':
         from portfolio_app.interface.views.history import history_status_ui
         history_status_ui.position_history_statuses = counted(history_status_ui.position_history_statuses, 'checklist_calculated')

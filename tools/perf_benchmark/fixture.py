@@ -133,11 +133,7 @@ def prepare_fundamental_check(directory, *, expired=True):
         cache.get('fundamentals-v1:' + ticker, lambda: asdict(benchmark_fundamentals(ticker, 10.)))
 
 
-def prepare_risk_check(directory, *, scenario='risk'):
-    """Use market-valued positions with fresh, stale or entirely missing risk histories."""
-    from portfolio_app.analytics.risk_data import DEFAULT_BENCHMARK, DemoRiskHistoryProvider, RiskHistoryService
-
-    prepare_fundamental_check(directory, expired=False)
+def _prepare_listed_quotes(directory):
     path = directory / 'holdings.csv'
     with path.open(newline='', encoding='utf-8') as handle:
         rows = list(csv.DictReader(handle))
@@ -152,7 +148,47 @@ def prepare_risk_check(directory, *, scenario='risk'):
         writer = csv.DictWriter(handle, fieldnames=rows[0])
         writer.writeheader()
         writer.writerows(rows)
+    (directory / '.cache').mkdir(exist_ok=True)
     (directory / '.cache' / 'prices.json').write_text(json.dumps(quotes), encoding='utf-8')
+    return rows
+
+
+def prepare_market_chart(directory):
+    """Seed durable foreign closes and rates before an independent app process starts."""
+    import pandas as pd
+    from portfolio_app.market.history import HistoryResult, HistoryService, PERIODS
+
+    rows = _prepare_listed_quotes(directory)
+    row = next(row for row in rows if row['instrument_type'] == 'equity')
+    ranges = {'1Y': 252, '5Y': 1260, 'Max': 7560}
+    end = '2025-12-31'
+    dates = pd.bdate_range(end=end, periods=max(ranges.values()))
+    sizes = {PERIODS[label]: size for label, size in ranges.items()}
+    missing_fx = {len(dates) - offset for offset in (3, 637, 3800)}
+
+    class InventedDaily:
+        def history(self, symbol, period):
+            fx = symbol == 'USDEUR=X'
+            indices = [i for i in range(len(dates)-sizes[period], len(dates)) if not fx or i not in missing_fx]
+            days = dates[indices].tz_localize('UTC' if fx else 'Europe/Berlin')
+            values = tuple((.8 if fx else 100.) + i * .0001 for i in indices)
+            return HistoryResult(tuple(day.isoformat() for day in days), values, 'EUR' if fx else 'USD', 'fresh')
+
+    service = HistoryService(InventedDaily(), directory / '.cache' / 'history')
+    for period in ranges:
+        for symbol in (row['ticker'], 'USDEUR=X'):
+            if service.get(symbol, period).status != 'fresh':
+                raise AssertionError('Failed to seed the invented market history')
+    (directory / '.market-history-demo').touch()
+    return dict(position=row['position_key'], end=end, ranges=ranges, missing_fx=sorted(missing_fx))
+
+
+def prepare_risk_check(directory, *, scenario='risk'):
+    """Use market-valued positions with fresh, stale or entirely missing risk histories."""
+    from portfolio_app.analytics.risk_data import DEFAULT_BENCHMARK, DemoRiskHistoryProvider, RiskHistoryService
+
+    prepare_fundamental_check(directory, expired=False)
+    rows = _prepare_listed_quotes(directory)
     listings = list(dict.fromkeys(row['ticker'] for row in rows))
     requests = [DEFAULT_BENCHMARK + ':EUR', *listings]
     if scenario == 'risk-cold':

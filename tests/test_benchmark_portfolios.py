@@ -71,3 +71,32 @@ def test_navigation_benchmark_portfolio(tmp_path, profile, positions, etfs, comp
         cache = AnalyticsCache(workspace / '.cache' / 'risk-history')
         missing = [ticker for ticker in listings if cache.cached(f'adjusted-daily-v1:{ticker}:3')[1]]
         assert missing == (listings if cold else [listings[-1]])
+
+
+def test_market_chart_benchmark_starts_with_durable_price_and_fx_ranges(tmp_path):
+    import csv
+    from portfolio_app.market.history import HistoryService, convert_price_history
+    path = Path(__file__).resolve().parents[1] / 'tools/perf_benchmark/fixture.py'
+    spec = spec_from_file_location('benchmark_fixture', path)
+    fixture = module_from_spec(spec)
+    spec.loader.exec_module(fixture)
+    workspace = tmp_path / 'synthetic'
+    workspace.mkdir()
+    columns = ['position_key', 'instrument_type', 'ticker', 'manual_price', 'manual_price_currency', 'manual_price_date']
+    with (workspace / 'holdings.csv').open('w', newline='') as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        writer.writerow(dict(position_key='invented', instrument_type='equity', ticker='INVENTED', manual_price=100))
+    settings = fixture.prepare_market_chart(workspace)
+    assert settings['position'] == 'invented' and settings['ranges'] == {'1Y': 252, '5Y': 1260, 'Max': 7560}
+    reader = HistoryService(None, workspace / '.cache' / 'history')
+    for period, size in settings['ranges'].items():
+        stock, due = reader.cached('INVENTED', period)
+        fx, fx_due = reader.cached('USDEUR=X', period)
+        assert not due and not fx_due
+        chart = convert_price_history(stock, 'EUR', {'USD': fx})
+        total = settings['ranges']['Max']
+        indices = [i for i in range(total-size, total) if i not in settings['missing_fx']]
+        assert len(chart.prices) == len(indices) < size and chart.dates[-1] == settings['end'] + 'T00:00:00'
+        assert chart.prices == tuple((100 + i * .0001) * (.8 + i * .0001) for i in indices)
+    assert {stamp[-6:] for stamp in stock.dates} == {'+01:00', '+02:00'}

@@ -5,7 +5,7 @@ name: Packaged performance benchmark
       experiment:
         description: 'Comparison to measure'
         type: choice
-        options: [navigation, history, exposure, risk, risk-cold, risk-stale, collection, checklist]
+        options: [navigation, history, exposure, risk, risk-cold, risk-stale, collection, checklist, market-chart]
         default: navigation
       profile:
         description: 'Synthetic portfolio size'
@@ -56,7 +56,7 @@ jobs:
       - run: uv sync --locked --extra window --group release --group browser
       - run: uv run --no-sync playwright install chromium
       - name: Build the reference with the same measurement driver
-        if: env.EXPERIMENT == 'exposure' || env.EXPERIMENT == 'checklist' || startsWith(env.EXPERIMENT, 'risk')
+        if: env.EXPERIMENT == 'exposure' || env.EXPERIMENT == 'checklist' || env.EXPERIMENT == 'market-chart' || startsWith(env.EXPERIMENT, 'risk')
         run: |
           git restore --source=66d429fdc71db2b8dacf8d965d193f5b5c57abfa -- src/portfolio_app
           uv run --no-sync python tools/perf_benchmark/build.py dist/reference
@@ -72,10 +72,11 @@ jobs:
           prefix=()
           if [[ "$RUNNER_OS" == Linux ]]; then prefix=(xvfb-run -a); fi
           reference=()
-          if [[ "$EXPERIMENT" == exposure || "$EXPERIMENT" == checklist || "$EXPERIMENT" == risk* ]]; then reference=(--reference "dist/reference/${EXECUTABLE#dist/performance/}"); fi
+          if [[ "$EXPERIMENT" == exposure || "$EXPERIMENT" == checklist || "$EXPERIMENT" == market-chart || "$EXPERIMENT" == risk* ]]; then reference=(--reference "dist/reference/${EXECUTABLE#dist/performance/}"); fi
           "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results --pairs "$PAIRS" --experiment "$EXPERIMENT" --profile "$PROFILE" "${reference[@]}"
           if [[ "$CHECK_OVERVIEW" == true ]]; then
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/checklist --pairs "$PAIRS" --experiment checklist --surface native --profile mixed-history "${reference[@]}"
+            "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/market-chart --pairs "$PAIRS" --experiment market-chart --surface native --profile mixed-history "${reference[@]}"
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/collection --pairs 2 --experiment collection --surface native --profile multi-account
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/navigation --pairs "$PAIRS" --experiment navigation --profile "$PROFILE"
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/multi-account --pairs 1 --experiment exposure --surface native --profile multi-account "${reference[@]}"

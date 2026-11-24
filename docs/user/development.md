@@ -805,6 +805,18 @@ to the exposure benchmark branch include a paired installed run on the
 mixed-history portfolio. Select `checklist` in the workflow to run additional
 pairs in both the installed renderer and Chromium.
 
+The `market-chart` experiment opens a position's USD closing-price chart in
+EUR after starting the app with saved prices and FX rates. It visits 1Y, 5Y
+and Max ranges and repeats both longer ranges. Max contains 7,560 trading
+days. Three dates lack FX observations. The renderer checks each omission,
+every displayed date and converted close, and periods with different UTC
+offsets. Each action times the first animation frame with a visible EUR chart
+for the selected range and the frame where the app settles. It also counts
+price and FX file opens and times conversions. Fresh saved prices must work
+offline, and revisiting an unchanged range reuses both saved series.
+Exposure benchmark branch pushes run the installed comparison. The workflow
+also accepts `market-chart` with a listed-equity profile for both surfaces.
+
 The native historical-risk comparison uses 48 market-valued listings. It starts
 with the benchmark and 47 adjusted histories already cached. The first Calculate
 action should request the missing listing once. Expanding and collapsing the

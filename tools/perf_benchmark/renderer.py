@@ -390,6 +390,86 @@ TABLE_CONTEXT = CONTEXT + """
 """
 
 
+def exercise_market_chart(evaluate, trial):
+    """Click through saved price ranges and verify every plotted trading date and close."""
+    fixture = json.loads((trial / 'market-chart.json').read_text())
+    context = TABLE_CONTEXT + """
+        const dialog = () => d.querySelector('[role=dialog]');
+        const option = (group, label) => [...(dialog()?.querySelectorAll('[aria-label="'+group+'"] [role=radio]') ?? [])]
+            .find(e => visible(e) && e.textContent.trim() === label);
+        const chart = () => dialog()?.querySelector('.st-key-position_history_Price .js-plotly-plot');
+    """
+    def read(js):
+        return evaluate('(() => {' + context + js + '})()')
+    def ready():
+        try:
+            return read("return visible(allocation()) && visible(tab('Positions')) && !running();")
+        except Exception:
+            return False  # The desktop startup document can be replaced.
+    wait(ready, timeout=100)
+    ready_at = time.time()
+    read("tab('Positions').click(); return true;")
+    wait(lambda: read("const position = " + json.dumps(fixture['position']) + """;
+        const row = findTable('.st-key-tour_position_list','Positions')?.querySelector('tr[data-position-id="'+CSS.escape(position)+'"]');
+        if (!row || running()) return false;
+        row.cells[0].click(); return true;"""))
+    wait(lambda: read("return !!option('History type','Price') && !running();"))
+    actions = []
+    for index, label in enumerate(('1Y', 'Max', '5Y', 'Max', '5Y', 'Max')):
+        total = fixture['ranges']['Max']
+        start = total - fixture['ranges'][label]
+        omissions = [i for i in fixture['missing_fx'] if i >= start]
+        config = dict(label=label, points=total-start-len(omissions), first=index == 0,
+                      end=fixture['end'], total=total, start=start, omissions=omissions)
+        start_event = event_count(trial)
+        read("const c = " + json.dumps(config) + """;
+            const button = c.first ? option('History type','Price') : option('Period',c.label);
+            if (!button || button.getAttribute('aria-checked') === 'true') throw Error('Expected a new chart selection');
+            w.marketChartVisit = null;
+            const start = w.performance.now();
+            button.click();
+            let paint = null, quiet = 0;
+            function frame() {
+                const plot = chart();
+                const trace = plot?.data?.[0];
+                const line = plot?.querySelector('.scatterlayer path.js-line');
+                const elapsed = w.performance.now() - start;
+                const firstStep = c.start * .0001;
+                const displayed = visible(plot) && plot.data.length === 1 && trace?.x?.length === c.points && trace.y?.length === c.points &&
+                    plot.calcdata?.[0]?.length === c.points && line?.getAttribute('d') &&
+                    plot.layout?.yaxis?.tickprefix === '€' && trace.x[c.points-1] === c.end+'T00:00:00' &&
+                    Math.abs(trace.y[0] - (100+firstStep)*(.8+firstStep)) <= 1e-9;
+                if (displayed && paint === null) paint = elapsed;
+                quiet = displayed && !running() ? quiet+1 : 0;
+                if (quiet >= 2) {
+                    const last = new Date(c.end+'T00:00:00Z');
+                    let point = c.points-1;
+                    for (let i = c.total-1; i >= c.start; i--) {
+                        if (!c.omissions.includes(i)) {
+                            const day = last.toISOString().slice(0,10) + 'T00:00:00', step = i*.0001;
+                            if (trace.x[point] !== day || !Number.isFinite(trace.y[point]) ||
+                                Math.abs(trace.y[point] - (100+step)*(.8+step)) > 1e-9) {
+                                w.marketChartVisit = {error:'Incorrect converted close or trading date at point '+point}; return;
+                            }
+                            point--;
+                        }
+                        do { last.setUTCDate(last.getUTCDate()-1); } while ([0,6].includes(last.getUTCDay()));
+                    }
+                    w.marketChartVisit = {action:c.first ? 'open-price' : 'select-period', period:c.label,
+                        points:c.points, paint_ms:paint, settled_ms:elapsed}; return;
+                }
+                if (exception() || elapsed > 45000) w.marketChartVisit = {error:'Saved market chart did not settle for '+c.label};
+                else w.requestAnimationFrame(frame);
+            }
+            w.requestAnimationFrame(frame); return true;""")
+        action = wait(lambda: read("return w.marketChartVisit;"), timeout=50)
+        if 'error' in action:
+            raise RuntimeError(action['error'])
+        action['event_range'] = [start_event, event_count(trial)]
+        actions.append(action)
+    return dict(ready_at=ready_at, actions=actions)
+
+
 def exercise_checklist(evaluate, trial):
     """Measure the user's History click from a settled, populated Positions view."""
     context = TABLE_CONTEXT + """
@@ -768,6 +848,8 @@ def exercise_collection(evaluate, trial):
 
 
 def measure_view(evaluate, trial, variant, scenario, *, themes=False, company_accounts=False):
+    if scenario == 'market-chart':
+        return exercise_market_chart(evaluate, trial)
     if scenario == 'checklist':
         return exercise_checklist(evaluate, trial)
     if scenario == 'collection':
