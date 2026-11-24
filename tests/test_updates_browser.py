@@ -57,6 +57,9 @@ if managed:
             deadline = time.monotonic() + 30
             while not (root/'download-ready').exists() and time.monotonic() < deadline:
                 time.sleep(.05)
+            if not (root/'download-ready').exists():
+                self._set(windows_update.DownloadStatus(tag, 'failed', error='Synthetic download timed out.'))
+                return
             self._set(windows_update.DownloadStatus(tag, 'ready', 1))
     @st.cache_resource
     def downloads():
@@ -195,11 +198,20 @@ def test_windows_update_download_resume_cancel_and_handoff(update_page):
     assert not (state / 'handoff').exists()
 
     help_section = open_app_menu(page, 'Help')
-    help_section.get_by_role('button', name='Exit and update', exact=True).click()
+    install = help_section.get_by_role('button', name='Exit and update', exact=True)
+    install.click()
     playwright.expect(help_section.get_by_text('Invented verification failure.')).to_be_visible()
     assert (state / 'handoff').read_text() == 'verification failed'
+    (state / 'download-ready').unlink()
+    settle(page)
     help_section.get_by_role('button', name='Download update', exact=True).click()
-    help_section.get_by_role('button', name='Exit and update', exact=True).click()
+    progress = help_section.get_by_role('progressbar')
+    playwright.expect(progress).to_be_visible()
+    (state / 'download-ready').touch()
+    playwright.expect(progress).to_have_count(0)
+    playwright.expect(install).to_be_visible()
+    settle(page)
+    install.click()
     playwright.expect(help_section.get_by_text('Closing the app. Continue in Windows Setup.')).to_be_visible()
     assert (state / 'handoff').read_text() == 'installer requested'
     assert (root / 'holdings.csv').read_bytes() == before
