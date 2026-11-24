@@ -28,6 +28,15 @@ class AmountResult:
 
 
 @dataclass(frozen=True)
+class PeriodCapital:
+    opening_value: AmountResult
+    opening_capital: AmountResult
+    net_contributions: Decimal | None
+    invested_capital: Decimal | None
+    flow_reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ExternalFlow:
     id: str
     date: str
@@ -109,6 +118,7 @@ class HistoryCalculation:
         self._security_dates = sorted({event.date for event in events} |
             {charge.date for event in events for charge in event.charges if charge.date})
         self._flow_dates = sorted(set(self._security_dates) | {e.date for e in self._account_events})
+        self._capital_dates = sorted(set(self._flow_dates) | {stamp for stamp, _ in self._unresolved_receipts if stamp})
         self.fingerprint = history_fingerprint(journal)
         self._facts = OrderedDict()
         self._flows = OrderedDict()
@@ -185,16 +195,14 @@ class HistoryCalculation:
             self._flows.popitem(last=False)
         return self._flows[key].interval(start, end)
 
-    def net_flows(self, scope, start, end, target):
-        # Daily marks change equity. Only a ledger date can change the converted
-        # cash flows and their missing-evidence reasons for this fixed opening.
-        latest = self._get(('net_flows', scope, start, target), dict)
-        boundary = bisect_right(self._flow_dates, end)
+    def period_capital(self, scope, start, end, target):
+        """Opening value, cash and cost evidence are independent of the closing mark."""
+        latest = self._get(('period_capital', scope, start, target), dict)
+        boundary = bisect_right(self._capital_dates, end)
         if boundary not in latest:
-            flows, missing = self.flows(scope, start, end, target)
-            net = None if missing else sum((f.amount for f in flows), ZERO)
+            result = _period_capital(self, scope, start, end, target)
             latest.clear()
-            latest[boundary] = net, missing
+            latest[boundary] = result
         return latest[boundary]
 
     def flow_inputs(self):
@@ -728,21 +736,13 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
         returns=returns, annualized=annualized, negative_dates=negative_dates, calculation=calculation, method=method))
 
 
-def _calculate_history(journal, scope, observations, start, end, target='EUR', *, returns=True, annualized=True, negative_dates=None, calculation=None, method='daily'):
-    if method not in ('daily', 'exact'):
-        raise ValueError('Unknown time-weighted return method')
-    days = (date.fromisoformat(end)-date.fromisoformat(start)).days
-    if days < 0:
-        from portfolio_app.portfolio.holdings import DataError
-        raise DataError('History end must not precede its start.')
-    calculation = calculation or HistoryCalculation(journal, observations)
-    observations = calculation.observations
-    opening, ending = calculation.opening(scope, start, target), calculation.value(scope, end, target)
-    coverage = coverage_reasons(journal, scope, observations, start, end, events_by_position=calculation._events, calculation=calculation)
-    net, missing_flows = calculation.net_flows(scope, start, end, target)
+def _period_capital(calculation, scope, start, end, target):
+    opening = calculation.opening(scope, start, target)
+    coverage = coverage_reasons(calculation.journal, scope, calculation.observations, start, end,
+                                events_by_position=calculation._events, calculation=calculation)
+    flows, missing_flows = calculation.flows(scope, start, end, target)
     flow_reasons = tuple(dict.fromkeys((*coverage, *missing_flows)))
-    if flow_reasons:
-        net = None
+    net = None if flow_reasons else sum((flow.amount for flow in flows), ZERO)
     capital = calculation.capital(scope, start, target)
     # A remaining-cost correction changes neither inventory nor cash. It cannot
     # invalidate market-value returns, but the old opening cost no longer proves
@@ -754,6 +754,22 @@ def _calculate_history(journal, scope, observations, start, end, target='EUR', *
     if cost_boundaries:
         capital = AmountResult(None, (*capital.reasons, *cost_boundaries))
     invested = capital.amount + net if capital.amount is not None and net is not None else None
+    return PeriodCapital(opening, capital, net, invested, flow_reasons)
+
+
+def _calculate_history(journal, scope, observations, start, end, target='EUR', *, returns=True, annualized=True, negative_dates=None, calculation=None, method='daily'):
+    if method not in ('daily', 'exact'):
+        raise ValueError('Unknown time-weighted return method')
+    days = (date.fromisoformat(end)-date.fromisoformat(start)).days
+    if days < 0:
+        from portfolio_app.portfolio.holdings import DataError
+        raise DataError('History end must not precede its start.')
+    calculation = calculation or HistoryCalculation(journal, observations)
+    observations = calculation.observations
+    basis = calculation.period_capital(scope, start, end, target)
+    opening, capital = basis.opening_value, basis.opening_capital
+    net, invested, flow_reasons = basis.net_contributions, basis.invested_capital, basis.flow_reasons
+    ending = calculation.value(scope, end, target)
     gain = ending.amount - opening.amount - net if ending.amount is not None and opening.amount is not None and net is not None else None
     total_gain = ending.amount - invested if ending.amount is not None and invested is not None else None
     opening_gain = opening.amount - capital.amount if opening.amount is not None and capital.amount is not None else None

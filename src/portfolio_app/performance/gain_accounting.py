@@ -13,7 +13,7 @@ import math
 
 from portfolio_app.ledger.account_journal import effective_events
 from portfolio_app.performance.history_observations import HistoryScope
-from portfolio_app.performance.personal_performance import HistoryCalculation, calculate_history
+from portfolio_app.performance.personal_performance import HistoryCalculation
 from portfolio_app.ledger.security_history import replay_securities, selected_events, affected_positions
 
 ZERO = Decimal(0)
@@ -166,17 +166,17 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     if len(scope.positions) + len(scope.accounts) > 1 and not scope.unresolved:
         dates = calculation.event_dates(scope)
         if dates and dates[0] <= end:
-            result = calculate_history(journal, scope, observations, dates[0], end, target, returns=False, calculation=calculation)
-            if result.opening_capital is not None and result.net_contributions is not None:
-                value = result.ending_value
+            basis = calculation.period_capital(scope, dates[0], end, target)
+            value = calculation.value(scope, end, target).amount
+            if basis.invested_capital is not None:
                 if current_values is not None:
                     values = [current_values.get(i) for i in scope.positions]
                     values += [current_values.get('account:'+a) for a in scope.accounts]
                     value = sum(values, ZERO) if all(v is not None for v in values) else None
                 if value is not None:
-                    capital = result.opening_capital + result.net_contributions
+                    capital = basis.invested_capital
                     count = len(scope.positions)+len(scope.accounts)
-                    reasons = [*result.flow_reasons, *estimate_notes]
+                    reasons = list(estimate_notes)
                     if any(e.kind == 'opening' and e.quantity for b in journal.securities
                            if b.position_id in scope.positions for e in selected_events(b)):
                         reasons.append('Earlier realized gains and income before opening snapshots are unknown')
@@ -189,21 +189,23 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     gains, values, capitals, reasons = [], [], [], [*scope.unresolved, *estimate_notes]
     for identity, member in parts:
         dates = calculation.event_dates(member)
-        value = (current_values.get(identity) if current_values is not None else
-                 calculation.value(member, end, target).amount)
+        has_history = bool(dates and dates[0] <= end)
+        # Historical valuations also validate dated FX when a current quote overrides them.
+        historical_value = calculation.value(member, end, target).amount if has_history or current_values is None else None
+        value = historical_value if current_values is None else current_values.get(identity)
         values.append(value)
         gain = capital = None
         book = books.get(identity)
-        if dates and dates[0] <= end:
-            result = calculate_history(journal, member, observations, dates[0], end, target, returns=False, calculation=calculation)
-            capital = result.invested_capital
+        if has_history:
+            basis = calculation.period_capital(member, dates[0], end, target)
+            capital = basis.invested_capital
             if value is not None and capital is not None:
                 gain = value-capital
             else:
-                reasons.extend(f'{identity}: {r}' for r in (*result.flow_reasons, *result.capital_reasons))
-                if (value is not None and result.opening_value is not None and result.net_contributions is not None
-                        and not any(getattr(r, 'kind', '') == 'cost_basis' for r in result.capital_reasons)):
-                    gain = value-result.opening_value-result.net_contributions
+                reasons.extend(f'{identity}: {r}' for r in (*basis.flow_reasons, *basis.opening_capital.reasons))
+                if (value is not None and basis.opening_value.amount is not None and basis.net_contributions is not None
+                        and not any(getattr(r, 'kind', '') == 'cost_basis' for r in basis.opening_capital.reasons)):
+                    gain = value-basis.opening_value.amount-basis.net_contributions
                     reasons.append(f'{identity}: only post-snapshot gain is known; opening acquisition cost is unavailable')
             if book:
                 openings = [e for e in selected_events(book) if e.kind == 'opening']
