@@ -339,4 +339,4 @@ def test_review_repairs_and_apply_share_dialog_refresh_boundary(transaction_page
     page.evaluate('cancelAnimationFrame(window.dialogFrame)')
     dialog.get_by_role('button', name='Close', exact=True).first.click(); settle(page)
     playwright.expect(dialog).to_have_count(0)
-    assert page.locator('#page-runs').inner_text() == '2'
+    playwright.expect(page.locator('#page-runs')).to_have_text('2')

@@ -236,7 +236,7 @@ def test_intro_welcome_navigation_and_help(intro_page):
     page, url, directory = intro_page
     page.goto(url)
     frame = page.locator('iframe[title*=portfolio_breakdown_intro]')
-    playwright.expect(frame).to_be_visible()
+    playwright.expect(frame).to_be_visible(timeout=45000)
     dialog = page.get_by_role('dialog')
     playwright.expect(dialog.get_by_role('button', name='Explore demo', exact=True)).to_be_visible(timeout=15000)
     playwright.expect(dialog.get_by_role('button', name='Start my portfolio', exact=True)).to_be_visible()

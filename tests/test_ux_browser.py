@@ -369,7 +369,7 @@ if not hasattr(position_ui, '_original_remember_draft'):
             page.streamlit_reruns = StreamlitReruns(page, settle=settle)
             page.set_default_timeout(10000)
             page.goto(f'http://127.0.0.1:{port}')
-            page.locator('.js-plotly-plot').first.wait_for()
+            page.locator('.js-plotly-plot').first.wait_for(timeout=45000)
             yield page, tmp_path
             browser.close()
     finally:

@@ -17,7 +17,7 @@ def test_analytics_views_dialog_and_mobile_layout(ux_page):
     assert page.get_by_test_id('stException').count() == 0, page.get_by_test_id('stException').all_text_contents()
     playwright.expect(page.get_by_role('checkbox', name='Show portfolio analytics')).to_have_count(0)
     playwright.expect(page.get_by_role('button', name='Calculate risk')).to_be_visible()
-    page.get_by_role('button', name='Calculate risk').click()
+    page.streamlit_reruns.click(page, page.get_by_role('button', name='Calculate risk'))
     playwright.expect(page.get_by_text('Annualized volatility', exact=True)).to_be_visible()
     assert page.get_by_text('Beta', exact=True).bounding_box()['y'] < page.get_by_text('Direct-stock P/E', exact=True).bounding_box()['y']
     page.get_by_text('Annualized volatility', exact=True).scroll_into_view_if_needed()

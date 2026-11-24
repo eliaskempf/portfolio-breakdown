@@ -135,6 +135,7 @@ def test_return_repairs_preserve_category_period_and_position(ux_page, width):
     gaps = page.get_by_role('button', name='Missing inputs (2)', exact=True)
     playwright.expect(page.locator('.st-key-overview_value').get_by_test_id('stMetricDelta')).to_have_text('Unavailable')
     playwright.expect(gaps).to_be_visible()
+    settle(page)
     gaps.click()
     popup = page.get_by_test_id('stPopoverBody')
     picker = popup.get_by_role('radiogroup', name='Missing input', exact=True)
