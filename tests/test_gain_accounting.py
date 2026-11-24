@@ -527,6 +527,34 @@ def test_reused_gain_members_follow_current_summary_only_rows():
         assert (result.count, result.amount) == expected
 
 
+@pytest.mark.parametrize('estimated_units,recorded_units,expected', [(2, 0, None), (1, 1, D(25)), (0, 2, None)])
+def test_partial_historical_lots_apply_the_same_fx_evidence_rule_as_complete_cost(estimated_units, recorded_units, expected):
+    from portfolio_app.performance.cost_basis import component
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    conversion = {'EUR': {'amount': '60', 'method': 'estimate'}}
+    parts = [component(estimated_units, 80, 'USD', conversions=conversion)]
+    if recorded_units:
+        parts.append(component(recorded_units, 20, 'EUR'))
+    event = E('opening', 'opening', START, quantity=2, costs=tuple(parts))
+    journal = Journal(version=5, securities=(book(event),))
+    store = ObservationStore()
+    for calculation in (None, HistoryCalculation(journal, store)):
+        result = security_gain_components(journal, 'stock', store, END, 'EUR', current_value=D(90), calculation=calculation)
+        assert result.remaining_cost is None and result.unrealized == expected
+        assert 'Estimated cost conversion is not historical evidence' in result.reasons
+    summary = summarize_known_gain(journal, HistoryScope(('stock',)), store, END, current_values={'stock': D(90)})
+    assert summary.value == 90 and summary.amount == expected and summary.capital is None
+    scope = HistoryScope(('stock',))
+    marked = observations(journal, scope, [('stock', '2024-12-31', 40), ('stock', END, 45)])
+    chart = history_view(journal, scope, marked, '1M', today=date.fromisoformat(END))
+    assert chart.points[-1]['Value'] == 90 and chart.points[-1]['Total gain'] == expected
+    # A saved conversion into EUR has no bearing on acquisition cost measured in USD.
+    if not recorded_units:
+        original = security_gain_components(journal, 'stock', store, END, 'USD', current_value=D(90))
+        assert original.remaining_cost == 80 and original.unrealized == 10
+
+
 def test_partial_lot_basis_reuses_only_costs_across_daily_marks(monkeypatch):
     from portfolio_app.performance import gain_components
     from portfolio_app.performance.personal_performance import HistoryCalculation

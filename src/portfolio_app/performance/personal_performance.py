@@ -421,7 +421,7 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
     explicit opening is on this date replace market value with recorded cost.
     Saved cost conversions are evidence; latest-FX estimates are not history.
     """
-    from portfolio_app.performance.cost_basis import resolve_cost
+    from portfolio_app.performance.cost_basis import resolve_cost, uses_latest_fx_estimate
     from portfolio_app.performance.history_observations import ObservationFX
     total, reasons = ZERO, list(scope.unresolved)
     states = _security_positions_at(journal, scope, stamp, calculation)
@@ -440,7 +440,7 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
             if inventory is None:
                 inventory = calculation.securities(stamp).positions
             costs = inventory[identity].costs
-            if any(c.get('conversions', {}).get(target, {}).get('method') == 'estimate' for c in costs):
+            if any(uses_latest_fx_estimate(part, target) for part in costs):
                 reasons.append(Issue(f'{identity}: estimated FX is not historical acquisition evidence', 'fx'))
                 continue
             cost = resolve_cost(list(costs), target, ObservationFX(observations))

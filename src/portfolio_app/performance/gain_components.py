@@ -8,7 +8,7 @@ not inferred from this acquisition-cost breakdown.
 from dataclasses import dataclass, replace
 from decimal import Decimal, localcontext
 
-from portfolio_app.performance.cost_basis import resolve_cost
+from portfolio_app.performance.cost_basis import resolve_cost, uses_latest_fx_estimate
 from portfolio_app.performance.history_observations import HistoryScope, ObservationFX
 from portfolio_app.performance.personal_performance import convert, value_at
 from portfolio_app.ledger.security_history import replay_securities, selected_events
@@ -69,10 +69,17 @@ def partial_lot_costs(balance, observations, target):
     with localcontext() as context:
         context.prec = 60
         for lot in balance.lots:
-            if any(Decimal(p['shares']) == 0 and p['amount'] == '' for p in lot.costs):
-                continue
-            known = [p for p in lot.costs if p['amount'] != '']
-            units = sum((Decimal(p['shares']) for p in known), ZERO)
+            known = []
+            units = ZERO
+            for part in lot.costs:
+                quantity = Decimal(part['shares'])
+                if part['amount'] != '' and not uses_latest_fx_estimate(part, target):
+                    known.append(part)
+                    units += quantity
+                elif not quantity:
+                    # An unsupported fee belongs to the whole lot.
+                    units = ZERO
+                    break
             resolved = resolve_cost(known, target, historical) if units else None
             if resolved is not None and resolved.exact_amount is not None:
                 costs.append((units, resolved.exact_amount))
@@ -90,10 +97,10 @@ def recorded_security_gains(book, state, observations, end, target, selected=Non
     def cost(parts):
         if not parts:
             return ZERO
-        resolved = resolve_cost(list(parts), target, ObservationFX(observations))
-        if any(p.get('conversions',{}).get(target,{}).get('method') == 'estimate' for p in parts):
+        if any(uses_latest_fx_estimate(part, target) for part in parts):
             reasons.append('Estimated cost conversion is not historical evidence')
             return None
+        resolved = resolve_cost(list(parts), target, ObservationFX(observations))
         if resolved.estimated:
             reasons.append('Estimated acquisition cost retained from supplied evidence')
         if resolved.exact_amount is None:

@@ -178,6 +178,10 @@ class ResolvedCost:
     reason_kind: str = 'transaction'
 
 
+def uses_latest_fx_estimate(part, target):
+    return part.get('conversions', {}).get(target, {}).get('method') == 'estimate'
+
+
 def resolve_cost(parts, target, historical=None):
     total, estimated, notes = Decimal(0), False, []
     first_pending = None
