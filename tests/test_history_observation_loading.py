@@ -135,3 +135,22 @@ def test_overlapping_first_use_builds_the_shared_index_once(tmp_path, monkeypatc
     assert independent is other.index and independent is not store.index
     assert builds.count(store) == builds.count(other) == 1
     assert store.index.active == store.observations
+
+
+def test_validated_active_rows_are_shared_and_rebuilt_for_corrections():
+    from portfolio_app.performance.history_observations import active_observations
+    first = Observation('first', 'price', 'A', '2024-01-01', 10, 'EUR')
+    other = replace(first, id='other', subject='B')
+    original = ObservationStore((first, other))
+    assert active_observations(original) is original.observations
+    corrected = replace(first, id='corrected', replaces=first.id, amount=12)
+    current = replace(original, observations=(*original.observations, corrected))
+    active = active_observations(current)
+    assert active == (other, corrected)
+    assert active is active_observations(current) is current.index.active
+    assert active_observations(original) == (first, other)
+    assert tuple(asdict(current)) == ('observations', 'reviews', 'classifications', 'version')
+    with pytest.raises(DataError, match='one active observation'):
+        replace(current, observations=(*current.observations, replace(corrected, id='fork')))
+    with pytest.raises(DataError, match='competing valuation'):
+        replace(current, observations=(*current.observations, replace(first, id='competing')))

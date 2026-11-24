@@ -127,6 +127,21 @@ class ObservationStore:
         active_observations(self)
 
     @cached_property
+    def active(self):
+        """Validate the correction chain once and retain its surviving rows in saved order."""
+        seen, replaced = set(), set()
+        for observation in self.observations:
+            if observation.replaces:
+                if observation.replaces not in seen or observation.replaces in replaced:
+                    raise DataError('Observation correction must replace one active observation.')
+                replaced.add(observation.replaces)
+            seen.add(observation.id)
+        values = tuple(o for o in self.observations if o.id not in replaced) if replaced else self.observations
+        if len({o.key for o in values}) != len(values):
+            raise DataError('Correct the existing observation instead of adding a competing valuation.')
+        return values
+
+    @cached_property
     def index(self):
         # cached_property can enter concurrently on its first access. Publish
         # inside the lock so both callers receive the very same derived tables.
@@ -138,19 +153,7 @@ class ObservationStore:
 
 
 def active_observations(store):
-    if isinstance(store, _ObservationIndex):
-        return store.active
-    seen, replaced = {}, set()
-    for observation in store.observations:
-        if observation.replaces:
-            if observation.replaces not in seen or observation.replaces in replaced:
-                raise DataError('Observation correction must replace one active observation.')
-            replaced.add(observation.replaces)
-        seen[observation.id] = observation
-    values = [o for o in store.observations if o.id not in replaced]
-    if len({o.key for o in values}) != len(values):
-        raise DataError('Correct the existing observation instead of adding a competing valuation.')
-    return tuple(values)
+    return store.active
 
 
 class _ObservationIndex:
