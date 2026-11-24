@@ -155,10 +155,13 @@ class HistoryCalculation:
         return self._get(('observation_dates', scope, target),
                          lambda: scope_observation_dates(self.journal, scope, self.observations, target))
 
-    def securities(self, stamp=None):
+    @cached_property
+    def _security_timeline(self):
         from portfolio_app.ledger.security_history import SecurityTimeline
-        timeline = self._get(('security_timeline',), lambda: SecurityTimeline(self.journal.securities))
-        return timeline.at(stamp)
+        return SecurityTimeline(self.journal.securities)
+
+    def securities(self, stamp=None):
+        return self._security_timeline.at(stamp)
 
     def security_gains(self, identity, stamp, target):
         from portfolio_app.performance.gain_components import recorded_security_gains
@@ -406,8 +409,9 @@ def opening_value_at(journal, scope, observations, stamp, target, *, calculation
 def _security_positions_at(journal, scope, stamp, calculation):
     if not scope.positions:
         return {}
-    state = calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)
-    return state.positions
+    if calculation:
+        return calculation._security_timeline.closing_positions(scope.positions, stamp)
+    return replay_securities(journal.securities, as_of=stamp).positions
 
 
 def capital_at_start(journal, scope, observations, stamp, target, *, calculation=None):
@@ -421,6 +425,7 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
     from portfolio_app.performance.history_observations import ObservationFX
     total, reasons = ZERO, list(scope.unresolved)
     states = _security_positions_at(journal, scope, stamp, calculation)
+    inventory = None if calculation else states
     books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
     initial_positions = initial_security_positions(journal, scope, stamp, calculation=calculation)
     for identity in scope.positions:
@@ -432,10 +437,13 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
         if state and state.boundary == stamp:
             if not state.quantity:
                 continue
-            if any(c.get('conversions', {}).get(target, {}).get('method') == 'estimate' for c in state.costs):
+            if inventory is None:
+                inventory = calculation.securities(stamp).positions
+            costs = inventory[identity].costs
+            if any(c.get('conversions', {}).get(target, {}).get('method') == 'estimate' for c in costs):
                 reasons.append(Issue(f'{identity}: estimated FX is not historical acquisition evidence', 'fx'))
                 continue
-            cost = resolve_cost(list(state.costs), target, ObservationFX(observations))
+            cost = resolve_cost(list(costs), target, ObservationFX(observations))
             if cost.amount is None:
                 reasons.append(Issue(f'{identity}: {cost.note}', cost.reason_kind))
             else:
@@ -493,7 +501,7 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None, m
         if book is None or state is None or not state.boundary:
             reasons.append(Issue(f'{identity}: no opening quantity on {stamp}', 'transaction'))
             continue
-        if state.issues:
+        if state.has_issues:
             reasons.append(Issue(f'{identity}: resolve historical events before valuing the reconstructed holding', 'transaction'))
             continue
         if not state.quantity:

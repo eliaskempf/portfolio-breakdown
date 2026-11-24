@@ -567,3 +567,29 @@ def test_daily_net_contributions_consume_each_posting_once_in_decimal_order(monk
             # two payments first would round up a full unit on every date.
             assert total == 1000
     assert len(visited) == len(set(visited)) == 1 + 2 * len(days)
+
+
+def test_sibling_returns_and_range_capital_use_validated_security_closes(monkeypatch):
+    from datetime import timedelta
+    from portfolio_app.ledger.security_history import _SecurityReplay, SecurityTimeline
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from test_daily_twr import example, trade
+
+    first = date(2024, 1, 1)
+    dates = [(first + timedelta(days=i)).isoformat() for i in range(SecurityTimeline.MAX_SNAPSHOTS + 14)]
+    events = tuple(trade('buy-'+day, 'buy', day, 10) for day in dates[1:])
+    journal, scope, store = example(events, prices=[(day, 10) for day in dates])
+    original = journal.securities[0]
+    sibling_events = tuple(replace(e, id='sibling-'+e.id) for e in original.records)
+    sibling = replace(original, position_id='sibling', records=sibling_events,
+                      active_ids=tuple(e.id for e in sibling_events))
+    journal = replace(journal, securities=(original, sibling))
+    store = ObservationStore(tuple(replace(o, subject='SYNTH') for o in store.observations))
+    calculation = HistoryCalculation(journal, store)
+    calculation.securities()  # The overview already requested the canonical complete inventory.
+    def unexpected_replay(*args, **kwargs):
+        pytest.fail('a closing valuation reconstructed previously validated FIFO lots')
+    monkeypatch.setattr(_SecurityReplay, 'advance', unexpected_replay)
+    for members in (scope, HistoryScope(('sibling',)), HistoryScope(('invented', 'sibling'))):
+        assert full_history_time_weighted(calculation, members, date.fromisoformat(dates[-1]), 'EUR') == 0
+        assert calculation.capital(members, dates[21], 'EUR').amount == 210 * len(members.positions)

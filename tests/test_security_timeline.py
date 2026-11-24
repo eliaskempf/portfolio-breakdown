@@ -184,3 +184,75 @@ def test_backwards_seek_resumes_inventory_with_its_pending_cash(monkeypatch):
     assert timeline.at(day(95)) == expected[95]
     assert lots == [f'buy-{n}' for n in range(91, 96)]
     assert earlier == expected[80]
+
+
+def test_closing_quantities_match_fifo_after_eviction_without_replaying_for_each_scope(monkeypatch):
+    start = date(2024, 1, 1)
+    dates = [(start + timedelta(days=n)).isoformat() for n in range(SecurityTimeline.MAX_SNAPSHOTS + 12)]
+    purchases = tuple(E(f'buy-{i}', 'buy', stamp, quantity=D('1.00'), price=10,
+                        currency='EUR', charges_known=True) for i, stamp in enumerate(dates[1:]))
+    source = book(opening('0', '0'), *purchases,
+                  E('move', 'transfer', dates[-2], sequence=2, quantity=1, other_position_id='destination'),
+                  E('unresolved', 'note', dates[-2], sequence=3),
+                  E('replacement', 'checkpoint', dates[-1], sequence=3, quantity=2, currency='EUR'))
+    destination = replace(book(E('dest-open', 'opening', dates[0])), position_id='destination')
+    books = source, destination
+    timeline = SecurityTimeline(books)
+    expected = {day: replay_securities(books, as_of=day).positions for day in dates}
+    timeline.at(dates[11])
+    timeline.at(None)
+    # Category queries and a backwards search for the last supported price both
+    # consume only closing facts. Rebuilding even a single lot here is unnecessary.
+    def unexpected_replay(*args, **kwargs):
+        pytest.fail('a validated closing quantity replayed the FIFO inventory')
+    monkeypatch.setattr(timeline, 'at', unexpected_replay)
+    for members in [(source.position_id,), (destination.position_id,), (source.position_id, destination.position_id)]:
+        for day in reversed(dates):
+            result = timeline.closing_positions(members, day)
+            for identity in members:
+                state = expected[day][identity]
+                assert result[identity].quantity.as_tuple() == state.quantity.as_tuple()
+                assert result[identity].boundary == state.boundary
+                assert result[identity].has_issues == bool(state.issues)
+    assert len(timeline._closings.by_position[destination.position_id]) == 2
+    assert len(timeline._closings.by_position[source.position_id]) == len(dates)
+
+
+def test_closing_quantities_validate_unrelated_books_and_discard_failed_batches():
+    valid = book(opening(), E('buy', 'buy', '2024-01-04', quantity=1, price=10, currency='EUR'))
+    invalid = replace(book(E('empty', 'opening', '2024-01-01'),
+                           E('oversale', 'sell', '2024-01-05', quantity=1, price=10, currency='EUR')),
+                      position_id='unrelated')
+    timeline = SecurityTimeline((valid, invalid))
+    members = (valid.position_id,)
+    assert timeline.closing_positions(members, '2024-01-02')[valid.position_id].quantity == 10
+    for _ in range(2):
+        with pytest.raises(DataError, match='exceeds'):
+            timeline.closing_positions(members, '2024-01-06')
+        assert [stamp for stamp, _ in timeline._closings.by_position[valid.position_id]] == ['2024-01-01']
+    assert timeline.closing_positions(members, '2024-01-04')[valid.position_id].quantity == 11
+
+
+def test_closes_include_fees_on_another_position_even_at_an_opening():
+    from portfolio_app.ledger.security_history import AssetCharge
+    payer = replace(book(E('payer-open', 'opening', '2024-01-01', quantity=D('5.000'))),
+                    position_id='fee-payer')
+    source = book(E('open', 'opening', '2024-01-02', quantity=D('1.00'),
+                    asset_charges=(AssetCharge(payer.position_id, D('.125')),)),
+                  E('swap', 'swap', '2024-01-03', quantity=D('.5'), other_position_id='destination',
+                    received_quantity=D('2.500'), valuation_amount=10, valuation_currency='EUR',
+                    asset_charges=(AssetCharge(payer.position_id, D('.25')),)))
+    destination = replace(book(E('other-open', 'opening', '2024-01-01')),
+                          position_id='destination', instrument_id='other-invented')
+    books = source, payer, destination
+    timeline = SecurityTimeline(books)
+    timeline.at(None)
+    for day in ('2024-01-03', '2024-01-01', '2024-01-02'):
+        full = replay_securities(books, as_of=day)
+        closes = timeline.closing_positions(tuple(full.positions), day)
+        for identity, state in full.positions.items():
+            if state.boundary:
+                assert closes[identity].quantity.as_tuple() == state.quantity.as_tuple()
+                assert closes[identity].boundary == state.boundary
+            else:
+                assert identity not in closes

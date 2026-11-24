@@ -3,11 +3,13 @@
 Records are retained once. Only explicitly selected records affect balances;
 review receipts retain previous selections. An opening is a boundary, not a buy.
 """
+from bisect import bisect_right
 from copy import copy, deepcopy
 from dataclasses import asdict, dataclass, field, replace
 from datetime import date
 from decimal import Decimal, localcontext
 from hashlib import sha256
+from operator import itemgetter
 import json
 
 from portfolio_app.derivatives.derivative_types import decimal, identifier, iso_date
@@ -335,6 +337,10 @@ class SecurityBalance:
     issues: tuple[str, ...] = ()
 
     @property
+    def has_issues(self):
+        return bool(self.issues)
+
+    @property
     def costs(self):
         return tuple(p for lot in self.lots for p in lot.costs)
 
@@ -428,6 +434,42 @@ def _consume(lots, quantity):
     return tuple(remaining), tuple(moved)
 
 
+@dataclass(frozen=True, slots=True)
+class _SecurityClose:
+    quantity: Decimal
+    boundary: str
+    has_issues: bool
+
+
+class _ClosingHistory:
+    """Dated valuation inputs from successful batches of the canonical FIFO replay."""
+
+    def __init__(self):
+        self.by_position = {}
+        self.offset = 0
+
+    def collect(self, changes, book, event, states):
+        for identity in affected_positions(book, event):
+            state = states[identity]
+            changes[identity, event.date] = _SecurityClose(state.quantity, state.boundary, state.has_issues)
+
+    def commit(self, changes, offset):
+        # A timeline advances by whole dates. Same-day changes in this batch
+        # already contain the final state, including changes made by other books.
+        for (identity, stamp), close in changes.items():
+            self.by_position.setdefault(identity, []).append((stamp, close))
+        self.offset = offset
+
+    def positions(self, identities, stamp):
+        result = {}
+        for identity in identities:
+            rows = self.by_position.get(identity, ())
+            index = bisect_right(rows, stamp, key=itemgetter(0))
+            if index:
+                result[identity] = rows[index-1][1]
+        return result
+
+
 class _SecurityReplay:
     """Advance the canonical FIFO replay, committing only a successful batch."""
 
@@ -440,11 +482,12 @@ class _SecurityReplay:
         self.offset = 0
         self._latest_cash_date = ''
 
-    def advance(self, as_of=None, sequence=None):
+    def advance(self, as_of=None, sequence=None, *, closings=None):
         from portfolio_app.performance.cost_basis import component
         owners = self.owners
         states = dict(self.state.positions)
         new_cash, new_disposals = [], []
+        changes = {}
         offset = self.offset
         with localcontext() as context:
             context.prec = 60
@@ -483,6 +526,8 @@ class _SecurityReplay:
                         estimated = any(p.get('quality') == 'estimated' for p in costs)
                         lots = (SecurityLot(e.id, e.quantity, costs, estimated),) if e.quantity else ()
                     states[book.position_id] = SecurityBalance(e.quantity, lots, e.date)
+                    if closings is not None and index >= closings.offset:
+                        closings.collect(changes, book, e, states)
                     continue
                 if e.kind in ('buy', 'sell', 'split', 'transfer', 'transfer_in', 'transfer_out', 'inventory_in', 'inventory_out', 'swap', 'reward', 'asset_fee') and not e.quantity:
                     raise DataError('Trade, split and transfer quantities must be positive.')
@@ -558,6 +603,8 @@ class _SecurityReplay:
                 if e.kind in ('buy', 'sell', 'distribution') and not e.charges_known:
                     new_cash.append(SecurityCash(f'{e.id}:unknown-charges', book.position_id, book.account_id,
                         e.date, e.sequence, e.currency, None, 'fee', event_id=e.id))
+                if closings is not None and index >= closings.offset:
+                    closings.collect(changes, book, e, states)
         cash = self.state.cash + tuple(new_cash)
         disposals = self.state.disposals + tuple(new_disposals)
         latest = max((posting.date for posting in new_cash), default='')
@@ -568,6 +615,8 @@ class _SecurityReplay:
         self.state = SecuritiesState(states, cash, disposals)
         self.offset = offset
         self._latest_cash_date = latest
+        if changes:
+            closings.commit(changes, offset)
         return snapshot
 
 
@@ -589,6 +638,8 @@ class SecurityTimeline:
 
     def __init__(self, books):
         from collections import OrderedDict
+        self._closings = _ClosingHistory()
+        self._validated_index = 0
         self.books = tuple(books)
         self.replay = _SecurityReplay(self.books)
         self.dates = sorted({e.date for _, e in self.replay.events} |
@@ -600,7 +651,6 @@ class SecurityTimeline:
         self._complete = None
 
     def at(self, stamp=None):
-        from bisect import bisect_right
         index = len(self.dates) if stamp is None else bisect_right(self.dates, stamp)
         if index == len(self.dates) and self._complete is not None:
             return self._complete
@@ -614,8 +664,9 @@ class SecurityTimeline:
             prior = max((i for i in self._cursors if i < index), default=0)
             if index < self._cursor_index or prior > self._cursor_index:
                 cursor = copy(self._cursors.get(prior, self._initial))
-        snapshot = (cursor.advance(self.dates[index-1]) if index else
+        snapshot = (cursor.advance(self.dates[index-1], closings=self._closings) if index else
                     replace(cursor.state, positions=dict(cursor.state.positions)))
+        self._validated_index = max(self._validated_index, index)
         self.replay, self._cursor_index = cursor, index
         if index == len(self.dates):
             self._complete = snapshot
@@ -626,6 +677,12 @@ class SecurityTimeline:
             evicted, _ = self.snapshots.popitem(last=False)
             self._cursors.pop(evicted, None)
         return snapshot
+
+    def closing_positions(self, identities, stamp):
+        """Use only the globally validated prefix, including for a single security."""
+        if bisect_right(self.dates, stamp) > self._validated_index:
+            self.at(stamp)
+        return self._closings.positions(identities, stamp)
 
 
 @dataclass(frozen=True)
