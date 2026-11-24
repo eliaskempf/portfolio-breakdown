@@ -22,6 +22,10 @@ from renderer import measure_view, wait
 
 def benchmark(executable, workspace, trial, variant, surface, scenario, *, themes=False, company_accounts=False):
     trial.mkdir()
+    if scenario == 'checklist':
+        with (workspace / 'holdings.csv').open(newline='', encoding='utf-8') as handle:
+            positions = [row['position_key'] for row in csv.DictReader(handle)]
+        (trial / 'checklist-ids.json').write_text(json.dumps(positions[::4]), encoding='utf-8')
     if scenario == 'exposure' and (themes or company_accounts):
         prepare_fundamental_check(workspace, expired=themes)
     if scenario == 'collection':
@@ -82,6 +86,12 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         start, end = measurement.pop('event_range')
         return events[start:end]
 
+    if scenario == 'checklist':
+        for index, action in enumerate(report['actions']):
+            action['calculations'] = sum(e['event'] == 'checklist_calculated' for e in interval(action))
+            if variant == 'candidate' and action['calculations'] != int(index == 0):
+                raise AssertionError('A fresh checklist should calculate once and reuse the result on return visits')
+        return report
     if scenario == 'collection':
         if attempted := [e['ticker'] for e in events if e['event'] == 'unexpected_listing']:
             raise AssertionError(f'Unexpected live listing requests: {attempted}')
@@ -331,10 +341,16 @@ def run_comparison(candidate, reference, destination, surfaces, pairs, profile, 
             for name, exe in (reversed(order) if pair % 2 else order):
                 with TemporaryDirectory(prefix=experiment + '-benchmark-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
-                    create_workspace(workspace, profile, today=as_of)
+                    create_workspace(workspace, profile, today=as_of, checklist=experiment == 'checklist')
                     report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, experiment,
                                        themes=profile == 'mixed-history', company_accounts=profile == 'multi-account')
-                    if experiment == 'collection':
+                    if experiment == 'checklist':
+                        for action in report['actions']:
+                            if action['digest'] != expected.setdefault(surface, action['digest']):
+                                raise AssertionError('Checklist cells or diagnostic tooltips differ across visits or binaries')
+                        print(surface, name, 'first and repeat checklist paint ms',
+                              [round(a['paint_ms']) for a in report['actions']], flush=True)
+                    elif experiment == 'collection':
                         if report['digest'] != expected.setdefault(surface, report['digest']):
                             raise AssertionError('Collection policy changed displayed financial data')
                         print(surface, name, 'median settled ms', round(median(a['settled_ms'] for a in report['actions'])),
@@ -369,7 +385,7 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path)
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
-    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-cold', 'risk-stale', 'collection'], default='history')
+    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-cold', 'risk-stale', 'collection', 'checklist'], default='history')
     parser.add_argument('--profile', choices=['small', 'etf-heavy', 'mixed-history', 'multi-account'], default='small')
     parser.add_argument('--reference', type=Path, help='Reference bundle for a paired comparison')
     options = parser.parse_args()
@@ -379,7 +395,7 @@ if __name__ == '__main__':
             parser.error('The collection benchmark exercises the ETF look-through company grid')
         run_comparison(options.executable.resolve(), options.executable.resolve(), options.output.resolve(), surfaces,
                        options.pairs, options.profile, options.experiment)
-    elif options.experiment in {'exposure', 'risk', 'risk-cold', 'risk-stale'}:
+    elif options.experiment in {'exposure', 'risk', 'risk-cold', 'risk-stale', 'checklist'}:
         if not options.reference:
             parser.error('A paired binary comparison requires --reference')
         if options.experiment.startswith('risk') and options.profile == 'small':

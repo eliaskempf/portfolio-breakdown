@@ -25,6 +25,10 @@ def observe_server(trial):
 
     application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
     scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
+    if scenario == 'checklist':
+        from portfolio_app.interface.views.history import history_status_ui
+        history_status_ui.position_history_statuses = counted(history_status_ui.position_history_statuses, 'checklist_calculated')
+        return
     if scenario == 'collection':
         import yfinance
         from portfolio_app.performance.personal_history_refresh import refresher

@@ -17,7 +17,8 @@ def test_navigation_benchmark_portfolio(tmp_path, profile, positions, etfs, comp
     fixture = module_from_spec(spec)
     spec.loader.exec_module(fixture)
     workspace = tmp_path / 'synthetic'
-    fixture.create_workspace(workspace, profile)
+    checklist = profile == 'mixed-history'
+    fixture.create_workspace(workspace, profile, checklist=checklist)
     holdings = read_snapshot(workspace / 'holdings.csv').holdings
     funds = load_funds(workspace / 'etfs')
     assert len(holdings) == positions
@@ -46,6 +47,9 @@ def test_navigation_benchmark_portfolio(tmp_path, profile, positions, etfs, comp
     journal, _ = load_journal(workspace)
     observations, _ = load_observations(workspace)
     assert all(sum(event.kind == 'buy' for event in book.records) == 25 for book in journal.securities)
+    unchecked = [book.position_id for book in journal.securities for event in book.records
+                 if event.kind == 'buy' and not event.charges_known]
+    assert unchecked == (holdings.position_id.tolist()[::4] if checklist else [])
     assert len(journal.securities) == positions
     assert len(observations.observations) == 731 * positions
     if profile == 'multi-account':

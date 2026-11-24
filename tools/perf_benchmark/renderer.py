@@ -378,9 +378,7 @@ def measure_main_tabs(read, trial):
     return visits
 
 
-def exercise_exposure(evaluate, trial, variant, *, themes=False, company_accounts=False):
-    """Time the first populated table frame and verify local source disclosure."""
-    context = CONTEXT + """
+TABLE_CONTEXT = CONTEXT + """
         const tab = name => [...d.querySelectorAll('[role=tab]')].find(t => t.textContent.trim() === name);
         const findTable = (container, name) => {
             const host = d.querySelector(container + ' .stBidiComponent');
@@ -389,6 +387,71 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False, company_account
             return host.querySelector(selector) || [host,...host.querySelectorAll('*')]
                 .map(e=>e.shadowRoot?.querySelector(selector)).find(Boolean);
         };
+"""
+
+
+def exercise_checklist(evaluate, trial):
+    """Measure the user's History click from a settled, populated Positions view."""
+    context = TABLE_CONTEXT + """
+        const table = name => findTable('.st-key-tour_position_list', name);
+        const option = name => [...d.querySelectorAll('[aria-label="Position view"] [role=radio]')]
+            .find(e => visible(e) && e.textContent.trim() === name);
+    """
+    def read(js):
+        return evaluate('(() => {' + context + js + '})()')
+
+    def ready():
+        try:
+            return read("return visible(allocation()) && visible(tab('Positions')) && !running();")
+        except Exception:
+            return False  # The packaged startup document can be replaced during this wait.
+
+    wait(ready, timeout=100)
+    ready_at = time.time()
+    read("tab('Positions').click(); return true;")
+    expected = json.loads((trial / 'checklist-ids.json').read_text())
+    actions = []
+    for visit in range(3):
+        if visit:
+            read("option('Holdings').click(); return true;")
+        wait(lambda: read("return !!table('Positions')?.querySelector('tbody tr[data-position-id]') && !!option('History') && !running();"))
+        first_event = event_count(trial)
+        read("const count = " + str(len(expected)) + """; w.checklistVisit = null;
+            const start = w.performance.now();
+            option('History').click();
+            let paint = null;
+            function frame() {
+                const elapsed = w.performance.now() - start;
+                const rows = table('History status')?.querySelectorAll('tbody tr[data-position-id]');
+                if (rows?.length === count && option('History')?.getAttribute('aria-checked') === 'true') {
+                    if (paint === null) paint = elapsed;
+                    if (!running()) {
+                        const sample = Array.from(rows, row => [row.dataset.positionId,
+                            Array.from(row.cells, cell => [cell.textContent, cell.title])]);
+                        w.checklistVisit = {paint_ms:paint, settled_ms:elapsed, sample};
+                        return;
+                    }
+                }
+                if (exception() || elapsed > 60000) w.checklistVisit = {error:'History checklist did not populate'};
+                else w.requestAnimationFrame(frame);
+            }
+            w.requestAnimationFrame(frame); return true;""")
+        action = wait(lambda: read('return w.checklistVisit;'), timeout=65)
+        if 'error' in action:
+            raise RuntimeError(action['error'])
+        sample = action.pop('sample')
+        if sorted(row[0] for row in sample) != sorted(expected):
+            raise AssertionError('Checklist omitted or added positions needing attention')
+        action['digest'] = hashlib.sha256(json.dumps(sample).encode()).hexdigest()
+        action['rows'] = len(sample)
+        action['event_range'] = [first_event, event_count(trial)]
+        actions.append(action)
+    return dict(ready_at=ready_at, actions=actions)
+
+
+def exercise_exposure(evaluate, trial, variant, *, themes=False, company_accounts=False):
+    """Time the first populated table frame and verify local source disclosure."""
+    context = TABLE_CONTEXT + """
         const table = () => findTable('.st-key-tour_exposure_assets', 'Exposure assets');
     """
     def read(js):
@@ -705,6 +768,8 @@ def exercise_collection(evaluate, trial):
 
 
 def measure_view(evaluate, trial, variant, scenario, *, themes=False, company_accounts=False):
+    if scenario == 'checklist':
+        return exercise_checklist(evaluate, trial)
     if scenario == 'collection':
         return exercise_collection(evaluate, trial)
     if scenario.startswith('risk'):

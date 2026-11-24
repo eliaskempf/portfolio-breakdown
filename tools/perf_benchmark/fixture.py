@@ -58,7 +58,7 @@ def holdings_and_funds(directory, profile, today):
         yield fund_id, name, ticker, isin, 'etf', 'equity'
 
 
-def create_workspace(directory: Path, profile='small', *, today=None):
+def create_workspace(directory: Path, profile='small', *, today=None, checklist=False):
     directory.mkdir()
     today = today or date.today()
     start = today - timedelta(days=730)
@@ -91,7 +91,8 @@ def create_workspace(directory: Path, profile='small', *, today=None):
     for index, (_, row) in enumerate(rows.iterrows()):
         book = book_for(journal, row)
         buys = tuple(SecurityEvent(f'b-{index}-{t}', 'buy', day(t * 30), quantity=Decimal(1),
-            price=Decimal(100), currency='EUR', charges_known=True) for t in range(25))
+            price=Decimal(100), currency='EUR', charges_known=not (checklist and index % 4 == 0 and t == 1))
+            for t in range(25))
         books.append(reconstruction_candidate(replace(book, records=buys),
             tuple(event.id for event in buys), starts_at_zero=True))
         price_change = 10 + instrument_order[row.id]

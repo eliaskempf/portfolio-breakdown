@@ -794,6 +794,17 @@ Positions, Rebalance and Overview twice. Each visit records the first populated
 frame, settled frame and journal read count. The comparison checks all 120
 displayed position rows, the planning controls and the allocation chart data.
 
+The `checklist` experiment measures Positions → History once after launch and
+twice after returning to Holdings. One purchase in every fourth position has
+unconfirmed fees. The other positions exercise complete return calculations.
+Timing starts when the History control is clicked in the settled Positions view.
+The renderer records the first frame containing all expected rows and the
+settled frame. The comparison checks row identities, every cell and diagnostic
+tooltip across visits and binaries, and counts checklist calculations. Pushes
+to the exposure benchmark branch include a paired installed run on the
+mixed-history portfolio. Select `checklist` in the workflow to run additional
+pairs in both the installed renderer and Chromium.
+
 The native historical-risk comparison uses 48 market-valued listings. It starts
 with the benchmark and 47 adjusted histories already cached. The first Calculate
 action should request the missing listing once. Expanding and collapsing the
