@@ -458,8 +458,15 @@ def exercise_market_chart(evaluate, trial):
                     w.marketChartVisit = {action:c.first ? 'open-price' : 'select-period', period:c.label,
                         points:c.points, paint_ms:paint, settled_ms:elapsed}; return;
                 }
-                if (exception() || elapsed > 45000) w.marketChartVisit = {error:'Saved market chart did not settle for '+c.label};
-                else w.requestAnimationFrame(frame);
+                if (exception() || elapsed > 45000) {
+                    const selected = dialog()?.querySelector('[aria-label="Period"] [aria-checked="true"]');
+                    w.marketChartVisit = {error:'Saved market chart did not settle: '+JSON.stringify({
+                        requested:c.label, selected:selected?.textContent?.trim(), running:running(), exception:exception(),
+                        expectedPoints:c.points, tracePoints:trace?.x?.length, renderedPoints:plot?.calcdata?.[0]?.length,
+                        line:!!line?.getAttribute('d'), currency:plot?.layout?.yaxis?.tickprefix,
+                        lastDate:trace?.x?.at(-1), stale:!!plot?.closest('[data-stale=true]'), paint
+                    })};
+                } else w.requestAnimationFrame(frame);
             }
             w.requestAnimationFrame(frame); return true;""")
         action = wait(lambda: read("return w.marketChartVisit;"), timeout=50)
