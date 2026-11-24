@@ -357,3 +357,32 @@ def test_unrecorded_range_boundary_can_extend_only_its_own_supported_history():
         assert view == history_view(journal, scope, store, period, today=today)
         assert (view.all_end, view.useful) == (end, useful)
     assert full_history_summary(calculation, scope, today, 'EUR').all_end == '2024-03-15'
+
+
+@pytest.mark.parametrize(('trade', 'opening_units', 'boundary'), [
+    ('buy', '1.000000000000001', '2024-03-09'),
+    ('sell', '2.000000000000001', '2024-03-10'),
+])
+def test_twr_boundary_valuations_agree_across_range_order_and_eviction(trade, opening_units, boundary):
+    from decimal import localcontext
+    from portfolio_app.performance.personal_performance import HistoryCalculation, value_at
+    from test_gain_accounting import E, END, START, book, observations
+
+    close = D('1.000000000000001')
+    journal = Journal(version=2, securities=(book(
+        E('opening', 'opening', START, quantity=D(opening_units)),
+        E('trade', trade, '2024-03-10', quantity=1, price=close, currency='EUR', charges_known=True)),))
+    scope = HistoryScope(('stock',))
+    store = observations(journal, scope, [('stock', day, close) for day in
+                         [START, '2024-03-09', '2024-03-10', '2024-12-01', END]])
+    today = date.fromisoformat(END)
+    with localcontext() as context:
+        context.prec = 28
+        calculation = HistoryCalculation(journal, store)
+        direct = value_at(journal, scope, store, boundary, 'EUR').amount
+        history_view(journal, scope, store, '1M', today=today, calculation=calculation)
+        assert calculation.value(scope, boundary, 'EUR').amount == direct
+        warm = history_view(journal, scope, store, 'All', today=today, calculation=calculation)
+        calculation._facts.clear()
+        fresh = history_view(journal, scope, store, 'All', today=today, calculation=calculation)
+    assert warm == fresh
