@@ -1,4 +1,4 @@
-"""Repeatable two-year portfolio. All identities and prices are invented."""
+"""Repeatable synthetic portfolios. All identities and prices are invented."""
 import csv
 import json
 from dataclasses import replace
@@ -64,10 +64,12 @@ def holdings_and_funds(directory, profile, today, *, large_risk_matrix=False):
 
 
 def create_workspace(directory: Path, profile='small', *, today=None, checklist=False, purchase_fx=False, cash_history=False,
-                     large_risk_matrix=False):
+                     long_history=False, large_risk_matrix=False):
     directory.mkdir()
     today = today or date.today()
-    start = today - timedelta(days=730)
+    duration = 3650 if long_history else 730
+    purchases = duration // 30 + 1
+    start = today - timedelta(days=duration)
     def day(offset):
         return (start + timedelta(days=offset)).isoformat()
 
@@ -83,7 +85,7 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
                 holdings_and_funds(directory / 'etfs', profile, today, large_risk_matrix=large_risk_matrix)):
             for account in range(4 if multi_account and kind == 'etf' else 1):
                 position = f'{identity}-account-{account}' if multi_account else identity
-                row = [position, identity, name, ticker, isin, 25, 100, 'EUR', f'group{index % 3}',
+                row = [position, identity, name, ticker, isin, purchases, 100, 'EUR', f'group{index % 3}',
                        kind, exposure, 'units', 110 + index, 'EUR', today.isoformat()]
                 if multi_account:
                     row.append(f'Invented account {account + 1}')
@@ -92,29 +94,31 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
         f'- id: group{i}\n  name: Invented group {i}\n  target: {target}\n'
         for i, target in enumerate((.4, .3, .3))), encoding='utf-8')
     rows = read_snapshot(directory / 'holdings.csv').holdings
-    gap_offsets = {730 - offset for offset in range(15, 345, 15)} if purchase_fx else set()
+    gap_offsets = {duration - offset for offset in range(15, 345, 15)} if purchase_fx else set()
     journal, books, observations = Journal(version=2), [], []
     instrument_order = {asset: i for i, asset in enumerate(rows.id.unique())}
     for index, (_, row) in enumerate(rows.iterrows()):
         book = book_for(journal, row)
-        buys = tuple(SecurityEvent(f'b-{index}-{t}', 'buy', day(t * 30), quantity=Decimal(1),
+        stagger = index % 12 if long_history else 0
+        buys = tuple(SecurityEvent(f'b-{index}-{t}', 'buy', day(t * 30 + (stagger if t else 0)), quantity=Decimal(1),
             price=Decimal(100), currency='USD' if purchase_fx else 'EUR', charges_known=not (checklist and index % 4 == 0 and t == 1))
-            for t in range(25))
+            for t in range(purchases))
         books.append(reconstruction_candidate(replace(book, records=buys),
             tuple(event.id for event in buys), starts_at_zero=True))
         price_change = 10 + instrument_order[row.id]
         observations.extend(Observation(f'o-{index}-{t}', 'price', book.position_id, day(t),
-            100 + Decimal(price_change * t) / 730, 'EUR', source='invented') for t in range(731)
+            100 + Decimal(price_change * t) / duration, 'EUR', source='invented') for t in range(duration + 1)
             if index >= 6 or t not in gap_offsets)
-    if cash_history:
+    if cash_history or long_history:
         accounts = tuple(Account(f'cash-{i}', f'Invented cash {i}') for i in range(4))
         events = [Event(f'opening-{i}', day(0), 'cash_open', account.id, 'EUR', 100)
                   for i, account in enumerate(accounts)]
+        deposit_interval = 30 if long_history else 1
         events.extend(Event(f'move-{t}-{i}', day(t), 'cash_flow', account.id, 'EUR', 1)
-                      for t in range(1, 731) for i, account in enumerate(accounts))
+                      for t in range(deposit_interval, duration + 1, deposit_interval) for i, account in enumerate(accounts))
         journal = replace(journal, accounts=accounts, events=tuple(events))
-        expected = dict(start=day(0), end=day(730), accounts=len(accounts), positions=len(books),
-                        closing_sum=float(rows.manual_price.sum()), purchases=25)
+        expected = dict(start=day(0), end=day(duration), accounts=len(accounts), positions=len(books),
+                        closing_prices=rows.manual_price.tolist(), purchases=purchases)
         (directory.parent / 'cash-history.json').write_text(json.dumps(expected), encoding='utf-8')
     save_journal(directory, replace(journal, securities=tuple(books)), None)
     save_observations(directory, ObservationStore(tuple(observations)), None)
@@ -125,8 +129,8 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
         cache = directory / '.cache'
         cache.mkdir(exist_ok=True)
         (cache / 'prices.json').write_text(json.dumps({'fx:USD': entry}), encoding='utf-8')
-        expected = dict(days=[day(t * 30) for t in range(25)], end=day(730), positions=len(books),
-                        basis=25 * 90 * len(books), closing=float((rows.shares * rows.manual_price).sum()))
+        expected = dict(days=[day(t * 30) for t in range(purchases)], end=day(duration), positions=len(books),
+                        basis=purchases * 90 * len(books), closing=float((rows.shares * rows.manual_price).sum()))
         (directory.parent / 'purchase-fx.json').write_text(json.dumps(expected), encoding='utf-8')
 
     if profile in {'mixed-history', 'multi-account'}:

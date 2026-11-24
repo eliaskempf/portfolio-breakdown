@@ -111,27 +111,34 @@ def test_purchase_fx_benchmark_needs_dated_rates_and_has_partial_closes(tmp_path
     assert json.loads((workspace / '.cache/prices.json').read_bytes())['fx:USD']['quote']['price'] == .9
 
 
-def test_cash_history_fixture_posts_daily_funding_to_each_account(tmp_path):
+@pytest.mark.parametrize('long_history, purchases, deposit_count, cadence', [(False, 25, 730, 1), (True, 122, 121, 30)])
+def test_cash_history_fixture_funds_each_account(tmp_path, long_history, purchases, deposit_count, cadence):
     import json
     from collections import Counter
-    from datetime import date
+    from datetime import date, timedelta
     path = Path(__file__).resolve().parents[1] / 'tools/perf_benchmark/fixture.py'
     spec = spec_from_file_location('benchmark_fixture', path)
     fixture = module_from_spec(spec)
     spec.loader.exec_module(fixture)
     workspace = tmp_path / 'synthetic'
-    fixture.create_workspace(workspace, today=date(2026, 5, 31), cash_history=True)
+    fixture.create_workspace(workspace, today=date(2026, 5, 31), cash_history=True, long_history=long_history)
     expected = json.loads((tmp_path / 'cash-history.json').read_bytes())
     journal, _ = load_journal(workspace)
-    assert (expected['accounts'], expected['positions'], expected['purchases']) == (4, 12, 25)
+    assert (expected['accounts'], expected['positions'], expected['purchases']) == (4, 12, purchases)
     openings = [e for e in journal.events if e.kind == 'cash_open']
     assert {e.account_id for e in openings} == {a.id for a in journal.accounts}
     assert all(e.date == expected['start'] and e.amount == 100 for e in openings)
     moves = [e for e in journal.events if e.kind == 'cash_flow']
-    assert len(moves) == len({(e.account_id, e.date) for e in moves}) == 2920
+    assert len(moves) == len({(e.account_id, e.date) for e in moves}) == 4 * deposit_count
     assert all(e.currency == 'EUR' and e.amount == 1 for e in moves)
     assert set(Counter(e.date for e in moves).values()) == {4}
-    assert min(e.date for e in moves) > expected['start'] and max(e.date for e in moves) == expected['end']
+    start = date.fromisoformat(expected['start'])
+    assert {e.date for e in moves} == {(start + timedelta(days=cadence*i)).isoformat() for i in range(1, deposit_count+1)}
+    for index, book in enumerate(journal.securities):
+        buys = [e for e in book.records if e.kind == 'buy']
+        assert len(buys) == purchases and buys[0].date == expected['start']
+        stagger = index % 12 if long_history else 0
+        assert buys[-1].date == (start + timedelta(days=(purchases-1)*30 + stagger)).isoformat()
 
 
 def test_market_chart_benchmark_starts_with_durable_price_and_fx_ranges(tmp_path):

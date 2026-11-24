@@ -25,7 +25,7 @@ def observe_server(trial):
 
     application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
     scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
-    if scenario == 'cash-history':
+    if scenario in {'cash-history', 'long-history'}:
         from threading import local
         from portfolio_app.performance import history_view as views, personal_performance as performance
         from portfolio_app.performance.personal_history_refresh import refresher
@@ -38,15 +38,24 @@ def observe_server(trial):
                 work.positions += 1
             return original_capital(calculation, scope, *args)
 
+        if scenario == 'long-history':
+            original_value = performance.value_at
+            def measured_value(journal, scope, *args, **kwargs):
+                if scope == getattr(work, 'scope', None):
+                    work.closes += 1
+                return original_value(journal, scope, *args, **kwargs)
+            performance.value_at = measured_value
+
         original_chart = views.history_view
         def measured_chart(*args, **kwargs):
-            work.positions = 0
+            work.positions = work.closes = 0
+            work.scope = args[1] if len(args) > 1 else kwargs['scope']
             try:
                 result = original_chart(*args, **kwargs)
-                record('cash_history_calculated', points=len(result.points), positions=work.positions)
+                record('cash_history_calculated', points=len(result.points), positions=work.positions, closes=work.closes)
                 return result
             finally:
-                del work.positions
+                del work.positions, work.scope
 
         performance._period_capital = measured_capital
         views.history_view = measured_chart

@@ -785,6 +785,13 @@ against the fixture's prices, shares and cash balance, then changes the range
 to three months and back. The benchmark also counts how often a holding's
 capital is recalculated between its purchases.
 
+The ten-year navigation trial uses 24 equities, 24 ETFs, 5,856 purchases
+staggered across each month, and four cash accounts with monthly deposits. It
+opens Performance from Allocation, selects 3M, then All, and returns to 1Y.
+The report records chart paint and settled times, checks every daily balance
+including the unknown balance before the first cash opening, and counts
+portfolio valuations during each range change.
+
 The mixed-history profile uses the same holdings and prices. Some overlapping
 constituents have only fund-local identifiers and company names. It also includes
 4,000 archived monitoring observations and 24 invented provider sectors. After
