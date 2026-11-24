@@ -92,7 +92,8 @@ def _has_position_draft():
 
 
 def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False, allocation=None,
-                           valued=None, account_valued=None, percent=False, defer_dialog=False, has_accounts=False):
+                           valued=None, account_valued=None, percent=False, defer_dialog=False, has_accounts=False, journal=None):
+    dialog_baseline = position_dialog_sources(path.parent) if not defer_dialog else None
     account_valued = account_valued if account_valued is not None else valued
     _consume_position_event(path, snapshot)
     if warning := st.session_state.pop('position_stale_notice', None):
@@ -167,9 +168,12 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
     if workflow == 'Positions':
         from portfolio_app.ledger.account_journal import load_journal
         from portfolio_app.interface.views.derivatives.accounts_ui import render_actual_positions
-        render_actual_positions(path.parent, load_journal(path.parent)[0], valued=account_valued)
+        if journal is None:
+            journal, _ = load_journal(path.parent)
+        render_actual_positions(path.parent, journal, valued=account_valued)
     if not defer_dialog:
-        render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=account_valued)
+        render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=account_valued,
+                               journal=journal, baseline=dialog_baseline)
 
 
 def _remember_draft():
@@ -205,7 +209,7 @@ def _dismiss_dialog():
     route_position_callback()
 
 
-def _dialog_sources(directory):
+def position_dialog_sources(directory):
     from portfolio_app.interface.shared.input_cache import file_stamp
     return tuple(file_stamp(directory/name) for name in
         ('holdings.csv', 'account-journal.json', 'history-observations.json', 'allocation.yaml', 'portfolio.yaml'))
@@ -231,9 +235,11 @@ def _reload_dialog_values(directory, *, demo, prices=None, inputs=None):
     return inputs.snapshot, inputs.allocation, valued
 
 
-def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None, valued=None, prices=None):
+def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None, valued=None, prices=None,
+                           journal=None, baseline=None):
     from portfolio_app.interface.shared.dialog_runtime import HOST
-    baseline = _dialog_sources(path.parent)
+    if baseline is None:
+        baseline = position_dialog_sources(path.parent)
     draft_visible = _has_position_draft()
     current_values = [baseline, snapshot, allocation, valued]
     from portfolio_app.ledger.account_journal import load_journal
@@ -246,34 +252,42 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
                        for b in journal.securities if b.active)
         return replace(journal, securities=()), active
 
-    last_facts = valuation_facts(load_journal(path.parent)[0])
+    if journal is None:
+        journal, _ = load_journal(path.parent)
 
     def values():
-        nonlocal last_facts
-        signature = _dialog_sources(path.parent)
+        nonlocal journal
+        signature = position_dialog_sources(path.parent)
         if signature != current_values[0]:
             from portfolio_app.interface.shared.input_cache import load_inputs
             inputs = load_inputs(path.parent)
-            facts = valuation_facts(load_journal(path.parent)[0])
+            current_journal, _ = load_journal(path.parent)
             before = current_values[1].holdings.drop(columns=['position_key'], errors='ignore')
             after = inputs.snapshot.holdings.drop(columns=['position_key'], errors='ignore')
-            same_valuation = (before.equals(after) and facts == last_facts
-                              and signature[2:] == current_values[0][2:])
+            same_valuation = (signature[2:] == current_values[0][2:] and before.equals(after)
+                              and valuation_facts(current_journal) == valuation_facts(journal))
             refreshed = ((inputs.snapshot, inputs.allocation, current_values[3]) if same_valuation else
                          _reload_dialog_values(path.parent, demo=demo, prices=prices, inputs=inputs))
             current_values[:] = [signature, *refreshed]
-            last_facts = facts
+            journal = current_journal
         return current_values[1:]
+
+    mounted = False
 
     @st.fragment(key=HOST)
     def host():
+        nonlocal mounted
+        revisiting = mounted
+        mounted = True
         st.session_state['position_dialog_host_ready'] = True
         if not st.session_state.get('position_edit_dialog') and not st.session_state.get('position_edit_open_request'):
             # Read-only open/close never rebuilds the portfolio. Persisted changes
             # get one parent refresh once the dialog has actually closed.
             # Refresh the parent toolbar when a draft is created or discarded,
             # while keeping ordinary read-only dismissal local.
-            if _dialog_sources(path.parent) != baseline or _has_position_draft() != draft_visible:
+            # On initial mount the parent may already be showing a save conflict.
+            # A later fragment dismissal owns the refresh after a dialog edit.
+            if revisiting and (position_dialog_sources(path.parent) != baseline or _has_position_draft() != draft_visible):
                 st.rerun()
             return
         _render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=valued, values=values)
@@ -281,7 +295,7 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
 
 
 def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, values):
-    from portfolio_app.interface.shared.dialog_runtime import local_dialog_updates, close_position_button
+    from portfolio_app.interface.shared.dialog_runtime import local_dialog_updates, close_dialog_button
     _consume_position_event(path, snapshot)
     if not st.session_state.get('position_edit_dialog'):
         if st.session_state.get('positions_workflow_request'):
@@ -335,13 +349,13 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
                 else:
                     st.warning('This cash account no longer exists.')
                 if action != 'Edit position':
-                    close_position_button()
+                    close_dialog_button('Close', key='position_dialog_close')
             elif actual_future:
                 journal, revision = load_journal(path.parent)
                 from portfolio_app.interface.views.derivatives.investment_detail_ui import render_investment_detail
                 render_investment_detail(path.parent, journal, revision, valued,
                     st.session_state.get('position_edit_selected'), allocation=allocation, editing=action == 'Edit position')
-                close_position_button()
+                close_dialog_button('Close', key='position_dialog_close')
             elif action == 'Details':
                 from portfolio_app.ledger.security_history import effective_holdings
                 current_holdings = effective_holdings(current.holdings, load_journal(path.parent)[0].securities)
@@ -363,7 +377,7 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
                         request_position(row.position_id, editing=True, local=False)
                     from portfolio_app.interface.views.positions.position_detail import render_position_detail
                     render_position_detail(row, path.parent, demo=demo, allocation=allocation, on_edit=edit_position, funds=funds)
-                close_position_button()
+                close_dialog_button('Close', key='position_dialog_close')
             else:
                 rendered = render_position_form(path, current, funds, demo=demo, allocation=allocation, action=action, valued=valued)
                 _remember_draft()

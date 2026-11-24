@@ -110,24 +110,30 @@ def publish_snapshot(fund: FundSnapshot, frame: pd.DataFrame, stamp: date, *, so
         if table is None:
             raw.pop(key, None)
             continue
-        csv = validate_constituents(table, allow_signed=key == 'basket_file').to_csv(index=False)
-        filename = f'{manifest.stem}-{key}-{stamp}-{sha256(csv.encode()).hexdigest()[:12]}.csv'
+        csv = validate_constituents(table, allow_signed=key == 'basket_file').to_csv(
+            index=False, lineterminator='\n').encode('utf-8')
+        filename = f'{manifest.stem}-{key}-{stamp}-{sha256(csv).hexdigest()[:12]}.csv'
         raw[key] = filename
         payloads.append((manifest.parent / filename, csv))
     raw.update(as_of=stamp.isoformat(), tickers=list(updated.tickers))
     for key in ('source', 'equity_fund', 'proxy_source', 'notes', 'provider', 'product_url', 'asset_class',
                 'replication', 'breakdown_basis', 'wkn', 'summaries'):
         raw[key] = getattr(updated, key)
-    payloads.append((manifest, yaml.safe_dump(raw, sort_keys=False)))
+    payloads.append((manifest, yaml.safe_dump(raw, sort_keys=False).encode('utf-8')))
     from portfolio_app.workspace.workspace_lock import workspace_lock
     with workspace_lock(manifest.parent.parent):
         manifest.parent.mkdir(parents=True, exist_ok=True)
         staged = []
         try:
-            for destination, text in payloads:
-                with NamedTemporaryFile(mode='w', encoding='utf-8', dir=manifest.parent, suffix='.tmp', delete=False) as handle:
+            for destination, payload in payloads:
+                # Preserve the file revision used by mounted views. A changed
+                # manifest must still pass the optimistic write check below.
+                if destination != manifest or prior == payload:
+                    if destination.exists() and destination.stat().st_size == len(payload) and destination.read_bytes() == payload:
+                        continue
+                with NamedTemporaryFile(mode='wb', dir=manifest.parent, suffix='.tmp', delete=False) as handle:
                     staged.append(Path(handle.name))
-                    handle.write(text)
+                    handle.write(payload)
                 if destination == manifest and (manifest.read_bytes() if manifest.exists() else None) != prior:
                     raise DataError('ETF configuration changed during download; reload before updating')
                 staged[-1].replace(destination)

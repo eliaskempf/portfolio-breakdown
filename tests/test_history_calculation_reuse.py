@@ -65,6 +65,39 @@ def test_fx_dates_include_foreign_account_cash_and_inverse_rates():
     assert [o.id for o in scope_observations(journal, scope, obs, 'EUR')] == ['direct', 'inverse']
 
 
+def test_scoped_evidence_reads_only_selected_rows_after_indexing():
+    from portfolio_app.performance.history_valuation import scope_observations, scope_observation_dates
+    from test_daily_twr import example
+    journal, scope, _ = example((), quantity=1)
+    observations = (
+        Observation('old', 'price', 'invented', START, 1, 'JPY'),
+        Observation('inverse', 'fx', 'EUR/USD', START, 1, 'EUR', target='USD'),
+        Observation('ignored', 'price', 'unrelated', START, 1, 'JPY'),
+        Observation('boundary', 'value', scope.key, START, -1, 'EUR', side='after', boundary='flow'),
+        Observation('price', 'price', 'SYNTH', END, 2, 'USD'),
+        Observation('corrected', 'price', 'invented', START, 2, 'EUR', replaces='old'),
+        Observation('obsolete-currency', 'fx', 'JPY/EUR', START, 1, 'JPY', target='EUR'))
+    index = ObservationStore(observations).index
+    traversals, reads = [], []
+
+    class TrackedRows(tuple):
+        def __iter__(self):
+            traversals.append(True)
+            return super().__iter__()
+
+        def __getitem__(self, offset):
+            result = super().__getitem__(offset)
+            reads.append(result.id)
+            return result
+
+    index.active = TrackedRows(index.active)
+    expected = ['inverse', 'boundary', 'price', 'corrected']
+    assert [o.id for o in scope_observations(journal, scope, index, 'EUR')] == expected
+    dates = scope_observation_dates(journal, scope, index, 'EUR')
+    assert dates.chart_dates == {START, END} and dates.negative_equity_dates == dates.boundary_dates == {START}
+    assert len(traversals) == 1 and set(reads) == set(expected)
+
+
 def test_chart_current_gain_and_categories_share_ledgers_but_not_valuation_basis(monkeypatch):
     import portfolio_app.performance.personal_performance as performance
     journal = Journal(version=2, securities=(
@@ -155,8 +188,12 @@ def test_flow_reuse_matches_fresh_intervals_with_opening_day_and_unknown_fx(targ
     for start in ('2025-12-31', '2026-01-01', '2026-01-03', '2026-01-04'):
         for day in (12, 6, 9, 5, 7, 4, 11, 8, 10):
             end = f'2026-01-{day:02}'
-            assert calculation.flows(scope, start, end, target) == external_flows(
-                journal, scope, observations, start, end, target)
+            expected, issues = external_flows(journal, scope, observations, start, end, target)
+            assert calculation.flows(scope, start, end, target) == (expected, issues)
+            amount, reasons = calculation.dated_flows(scope, target).total(start, end, amount_needed=True)
+            assert amount == (None if issues else sum((flow.amount for flow in expected), D(0)))
+            assert [(str(r), type(r), getattr(r, 'kind', '')) for r in reasons] == [
+                (str(r), type(r), getattr(r, 'kind', '')) for r in issues]
 
 
 def test_daily_price_changes_do_not_rebuild_unchanged_flows(monkeypatch):
@@ -195,7 +232,7 @@ def test_dense_flow_conversion_and_retention_are_linear(monkeypatch):
         flows, reasons = calculation.flows(scope,start.isoformat(),(start+timedelta(days=i)).isoformat(),'EUR')
         assert not reasons and sum(f.amount for f in flows) == 10*i
     assert len(materialized) == 150
-    cached = calculation._flows[scope,'EUR']
+    cached = calculation._position_flows['stock']
     assert sum(len(flows) for flows,_ in cached.buckets.values()) == 150
     for i in range(40):
         calculation.flows(HistoryScope((f'other-{i}',)),start.isoformat(),'2024-01-02','EUR')
@@ -219,6 +256,14 @@ def test_future_flow_fx_conflicts_and_nonflow_issues_do_not_leak_into_early_inte
     with pytest.raises(DataError):
         calculation.flows(scope,'2024-01-01','2024-01-04','EUR')
     assert not calculation.flows(scope,'2024-01-01','2024-01-02','EUR')[1]
+    totals = calculation.dated_flows(scope, 'EUR')
+    for needed in (True, False):
+        amount, issues = totals.total('2024-01-01', '2024-01-03', amount_needed=needed)
+        assert amount is None and issues
+        for _ in range(2):
+            with pytest.raises(DataError):
+                totals.total('2024-01-01', '2024-01-04', amount_needed=needed)
+        assert totals.total('2024-01-01', '2024-01-02', amount_needed=needed) == (10 if needed else None, ())
 
 
 def test_category_comparison_does_not_calculate_unused_annualized_returns(monkeypatch):
@@ -236,3 +281,289 @@ def test_category_comparison_does_not_calculate_unused_annualized_returns(monkey
                                         rows, today=date(2025, 1, 1))
     assert result.Gain.tolist() == [20]
     assert result['Return (%)'].tolist() == pytest.approx([20])
+
+
+@pytest.mark.parametrize('summary', [False, True], ids=['category-return', 'history-status'])
+def test_full_history_scalars_visit_only_required_closes(monkeypatch, summary):
+    from datetime import timedelta
+    from portfolio_app.performance.history_view import full_history_summary, full_history_time_weighted
+    from test_daily_twr import example, trade
+
+    start = date(2024, 1, 1)
+    prices = [((start + timedelta(days=i)).isoformat(), 100+i) for i in range(100)]
+    journal, scope, store = example((trade('buy', 'buy', '2024-02-01', 131),), quantity=1, prices=prices)
+    today = start + timedelta(days=101)
+    view = history_view(journal, scope, store, 'All', today=today)
+    assert view.all_result.time_weighted is not None
+    calculation = HistoryCalculation(journal, store)
+    value = calculation.value
+    dates = set()
+    def observe(scope, stamp, target):
+        dates.add(stamp)
+        return value(scope, stamp, target)
+    monkeypatch.setattr(calculation, 'value', observe)
+    needed = {today.isoformat(), prices[-1][0], '2024-01-31', start.isoformat()}
+    if summary:
+        result = full_history_summary(calculation, scope, today, 'EUR')
+        assert result.all_result == view.all_result and result.useful
+        needed.add(prices[-2][0])
+    else:
+        assert full_history_time_weighted(calculation, scope, today, 'EUR') == view.all_result.time_weighted
+    assert dates <= needed
+
+
+@pytest.mark.parametrize('case', ['negative close', 'negative boundary', 'corrected boundary',
+                                  'negative other currency', 'unvalued purchase', 'fully sold', 'no prices', 'single close'])
+def test_full_history_scalars_preserve_eligibility(case):
+    from portfolio_app.performance.history_view import full_history_summary, full_history_time_weighted
+    from test_daily_twr import example, trade
+    today = date(2024, 1, 10)
+    events = ()
+    if case == 'fully sold':
+        events = (trade('sale', 'sell', '2024-01-07', 110),)
+    elif case == 'unvalued purchase':
+        events = (trade('buy', 'buy', '2024-01-09', 110),)
+    prices = () if case == 'no prices' else (('2024-01-01', 100), ('2024-01-06', 110))
+    if case == 'single close':
+        prices = prices[:1]
+    journal, scope, store = example(events, quantity=1, prices=prices)
+    if 'negative' in case or case == 'corrected boundary':
+        boundary = {} if case == 'negative close' else dict(side='after', boundary='invented-flow')
+        negative = Observation('negative', 'value', scope.key, '2024-01-04', -1,
+                               'USD' if case == 'negative other currency' else 'EUR', **boundary)
+        extra = [negative]
+        if case == 'corrected boundary':
+            extra.append(replace(negative, id='correction', replaces='negative', amount=1))
+        store = replace(store, observations=(*store.observations, *extra))
+    view = history_view(journal, scope, store, 'All', today=today)
+    summary = full_history_summary(HistoryCalculation(journal, store), scope, today, 'EUR')
+    assert (summary.all_start, summary.all_end, summary.useful, summary.all_result) == (
+        view.all_start, view.all_end, view.useful, view.all_result)
+    if case in {'no prices', 'single close'}:
+        assert not summary.useful
+    expected = view.all_result.time_weighted
+    assert (expected is not None) == (case in {'fully sold', 'corrected boundary', 'negative other currency', 'single close'})
+    assert full_history_time_weighted(HistoryCalculation(journal, store), scope, today, 'EUR') == expected
+
+
+def test_scalar_twr_still_detects_interior_conflicting_closing_fx():
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from portfolio_app.portfolio.holdings import DataError
+    from test_daily_twr import example
+    days = ('2024-01-01', '2024-01-04', '2024-01-10')
+    journal, scope, store = example((), quantity=1, prices=[(day, 100) for day in days])
+    store = replace(store, observations=tuple(replace(p, currency='USD') for p in store.observations) +
+                    tuple(Observation('fx-'+day, 'fx', 'USD/EUR', day, 1, 'USD', target='EUR') for day in days) +
+                    (Observation('inverse', 'fx', 'EUR/USD', days[1], 2, 'EUR', target='USD'),))
+    with pytest.raises(DataError, match='Conflicting direct and inverse'):
+        full_history_time_weighted(HistoryCalculation(journal, store), scope, date.fromisoformat(days[-1]), 'EUR')
+
+
+def test_one_way_fx_closes_do_not_require_daily_scope_valuations(monkeypatch):
+    from datetime import timedelta
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from test_daily_twr import example
+
+    first = date(2024, 1, 1)
+    days = [(first + timedelta(days=i)).isoformat() for i in range(90)]
+    journal, scope, store = example((), quantity=2, prices=[(day, 100+i) for i, day in enumerate(days)])
+    prices = tuple(replace(p, currency='USD') for p in store.observations)
+    # Quotes change direction on alternate days. An unrelated reciprocal pair
+    # and a before-flow USD quote cannot conflict with a USD closing rate.
+    rates = tuple(
+        Observation('fx-'+day, 'fx', 'USD/EUR', day, '.5', 'USD', target='EUR') if i % 2
+        else Observation('fx-'+day, 'fx', 'EUR/USD', day, '2', 'EUR', target='USD')
+        for i, day in enumerate(days))
+    other = (Observation('gbp', 'fx', 'GBP/EUR', days[3], 1, 'GBP', target='EUR'),
+             Observation('gbp-back', 'fx', 'EUR/GBP', days[3], 3, 'EUR', target='GBP'),
+             Observation('before', 'fx', 'EUR/USD', days[3], 3, 'EUR', target='USD',
+                         side='before', boundary='invented'))
+    store = replace(store, observations=(*prices, *rates, *other))
+    calculation = HistoryCalculation(journal, store)
+    today = date.fromisoformat(days[-1])
+    expected = history_view(journal, scope, store, 'All', today=today).all_result.time_weighted
+    assert expected == pytest.approx(.89)
+    value, calls = calculation.value, set()
+    def observe(scope, stamp, target):
+        calls.add(stamp)
+        return value(scope, stamp, target)
+    monkeypatch.setattr(calculation, 'value', observe)
+    assert full_history_time_weighted(calculation, scope, today, 'EUR') == expected
+    assert calls <= {days[0], days[-1]}
+
+
+def test_scalar_twr_checks_reciprocal_fx_carried_into_the_valuation_interval():
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from portfolio_app.portfolio.holdings import DataError
+    from test_daily_twr import example
+    friday, saturday, monday = '2024-01-05', '2024-01-06', '2024-01-08'
+    journal, scope, _ = example((), quantity=1)
+    book = journal.securities[0]
+    journal = replace(journal, securities=(replace(book, records=(replace(book.records[0], date=saturday),)),))
+    store = ObservationStore((
+        Observation('saturday-price', 'price', 'invented', saturday, 100, 'USD'),
+        Observation('monday-price', 'price', 'invented', monday, 110, 'USD'),
+        Observation('friday-rate', 'fx', 'USD/EUR', friday, 1, 'USD', target='EUR'),
+        Observation('inverse', 'fx', 'EUR/USD', friday, 2, 'EUR', target='USD'),
+        Observation('monday-rate', 'fx', 'USD/EUR', monday, 1, 'USD', target='EUR')))
+    with pytest.raises(DataError, match='Conflicting direct and inverse'):
+        full_history_time_weighted(HistoryCalculation(journal, store), scope, date.fromisoformat(monday), 'EUR')
+    corrected = replace(store, observations=(*store.observations,
+        Observation('correction', 'fx', 'EUR/USD', friday, 1, 'EUR', target='USD', replaces='inverse')))
+    assert full_history_time_weighted(HistoryCalculation(journal, corrected), scope,
+                                      date.fromisoformat(monday), 'EUR') == pytest.approx(.1)
+
+
+def test_rotating_position_flows_visit_only_new_postings_in_the_selected_book(monkeypatch):
+    from collections import Counter
+    from datetime import timedelta
+    import portfolio_app.performance.personal_performance as module
+    start = date(2024, 1, 1)
+    books = []
+    for i in range(48):
+        identity = f'invented-{i}'
+        events = [E('zero-'+identity, 'opening', start.isoformat())]
+        for offset in (1, 61):
+            day = (start + timedelta(days=offset+i)).isoformat()
+            events.append(E(f'buy-{identity}-{offset}', 'buy', day, quantity=1, amount=10,
+                            currency='EUR', charges_known=True))
+        books.append(book(*events, identity=identity))
+    calculation = HistoryCalculation(Journal(version=2, securities=tuple(books)), ObservationStore())
+    read = Counter()
+    original = module.external_flows
+    def counted(journal, scope, *args, **kwargs):
+        for posting in kwargs['security_cash']:
+            read[scope.positions[0], posting.position_id] += 1
+        return original(journal, scope, *args, **kwargs)
+    monkeypatch.setattr(module, 'external_flows', counted)
+    for offset, expected in ((50, 10), (110, 20), (50, 10)):
+        end = (start + timedelta(days=offset)).isoformat()
+        for item in books:
+            flows, reasons = calculation.flows(HistoryScope((item.position_id,)), start.isoformat(), end, 'EUR')
+            assert not reasons and sum(flow.amount for flow in flows) == expected
+    assert read == Counter({(b.position_id, b.position_id): 2 for b in books})
+    assert sum(len(item.buckets) for item in calculation._position_flows.values()) == 96
+    # An alternate reporting currency replaces the converted facts for that security.
+    first_scope = HistoryScope((books[0].position_id,))
+    foreign, missing = calculation.flows(first_scope, start.isoformat(), end, 'USD')
+    assert missing and all(flow.amount is None for flow in foreign)
+    restored, missing = calculation.flows(first_scope, start.isoformat(), end, 'EUR')
+    assert not missing and sum(flow.amount for flow in restored) == 10
+    assert len(calculation._position_flows) == len(books)
+
+
+def test_dated_valuations_reuse_corrected_account_opening_dates(monkeypatch):
+    from portfolio_app.ledger.account_journal import Account, Event
+    import portfolio_app.performance.personal_performance as module
+    journal = Journal(accounts=(Account('a', 'Invented cash'), Account('b', 'Invented empty account')),
+        events=(Event('eu', START, 'cash_open', 'a', 'EUR', D(25)),
+                Event('us', '2024-01-04', 'cash_open', 'a', 'USD', D(0)),
+                Event('corrected', '2024-01-06', 'cash_open', 'a', 'USD', D(0), replaces='us')))
+    store = ObservationStore()
+    scopes = [HistoryScope(accounts=('a',)), HistoryScope(accounts=('b',))]
+    days = ('2024-01-07', '2024-01-05', '2024-01-06')
+    expected = {(scope, day): module.value_at(journal, scope, store, day, 'EUR') for scope in scopes for day in days}
+    visits = []
+    class CountedEvents(tuple):
+        def __iter__(self):
+            visits.append(True)
+            return super().__iter__()
+    selected = CountedEvents(module.effective_events(journal))
+    monkeypatch.setattr(module, 'effective_events', lambda _: selected)
+    calculation = HistoryCalculation(journal, store)
+    calculation.accounts(days[0])
+    visits.clear()
+    for (scope, day), result in expected.items():
+        assert calculation.value(scope, day, 'EUR') == result
+    assert expected[scopes[0], days[1]].amount is None
+    assert expected[scopes[0], days[2]].amount == 25
+    assert all(expected[scopes[1], day].amount is None for day in days)
+    assert not visits
+
+
+def test_position_capital_tracks_its_payments_and_delayed_charges(monkeypatch):
+    from portfolio_app.ledger.account_journal import Account, Event
+    from portfolio_app.ledger.security_history import Charge
+    import portfolio_app.performance.personal_performance as module
+    own = book(E('open', 'opening', START),
+               E('buy', 'buy', '2024-01-03', quantity=1, price=10, currency='EUR', charges_known=True,
+                 charges=(Charge(D(2), 'EUR', date='2024-01-05'),)))
+    other = book(E('other-open', 'opening', START),
+                 E('other-buy', 'buy', '2024-01-04', quantity=1, price=20, currency='EUR', charges_known=True),
+                 identity='other')
+    journal = Journal(version=2, securities=(own, other), accounts=(Account('cash', 'Invented'),),
+                      events=(Event('cash-open', START, 'cash_open', 'cash', 'EUR', D(0)),
+                              Event('deposit', '2024-01-06', 'cash_flow', 'cash', 'EUR', D(30))))
+    scope = HistoryScope(('stock',))
+    store = ObservationStore()
+    days = [f'2024-01-{day:02}' for day in range(2, 8)]
+    expected = [module._period_capital(HistoryCalculation(journal, store), scope, START, day, 'EUR') for day in days]
+    rebuilt = []
+    capital = module._period_capital
+    def counted(calc, scope, start, end, target):
+        rebuilt.append(end)
+        return capital(calc, scope, start, end, target)
+    monkeypatch.setattr(module, '_period_capital', counted)
+    calculation = HistoryCalculation(journal, store)
+    actual = [calculation.period_capital(scope, START, day, 'EUR') for day in days]
+    assert actual == expected
+    assert [item.net_contributions for item in actual] == [0, 10, 10, 12, 12, 12]
+    assert rebuilt == [days[0], days[1], days[3]]
+
+
+def test_cashflows_change_capital_without_rechecking_unchanged_ledger_coverage(monkeypatch):
+    from portfolio_app.ledger.account_journal import Account, Event
+    import portfolio_app.performance.personal_performance as module
+    days = [f'2024-01-{day:02}' for day in range(2, 8)]
+    journal = Journal(accounts=(Account('cash', 'Invented account'),), events=(
+        Event('open', START, 'cash_open', 'cash', 'EUR', D(10)),
+        *(Event('flow-'+day, day, 'cash_flow', 'cash', 'EUR', D(1)) for day in days),
+        Event('unclassified', days[3], 'cash_adjust', 'cash', 'EUR', D(2))))
+    scope, store = HistoryScope(accounts=('cash',)), ObservationStore()
+    expected = [module._period_capital(HistoryCalculation(journal, store), scope, START, day, 'EUR') for day in days]
+    checks = []
+    original = module.coverage_reasons
+    def counted(journal, scope, observations, start, end, **kwargs):
+        checks.append(end)
+        return original(journal, scope, observations, start, end, **kwargs)
+    monkeypatch.setattr(module, 'coverage_reasons', counted)
+    calculation = HistoryCalculation(journal, store)
+    actual = [calculation.period_capital(scope, START, day, 'EUR') for day in days]
+    assert actual == expected
+    assert [item.net_contributions for item in actual] == [1, 2, 3, None, None, None]
+    assert checks == [days[0], days[3]]
+    # Navigation can revisit earlier dates and a reclassification creates new evidence.
+    for day in reversed(days):
+        assert calculation.coverage(scope, START, day) == original(journal, scope, store, START, day)
+    classified = replace(store, classifications=(('unclassified', 'income'),))
+    assert not HistoryCalculation(journal, classified).coverage(scope, START, days[-1])
+    assert calculation.coverage(scope, START, days[-1])
+
+
+def test_daily_net_contributions_consume_each_posting_once_in_decimal_order(monkeypatch):
+    from decimal import localcontext
+    from portfolio_app.ledger.account_journal import Account, Event
+    from portfolio_app.performance.history_flows import DatedFlows
+    days = [f'2024-01-{day:02}' for day in range(2, 24)]
+    scope = HistoryScope(accounts=('cash',))
+    journal = Journal(accounts=(Account('cash', 'Invented account'),), events=(
+        Event('open', START, 'cash_open', 'cash', 'EUR', D(0)),
+        Event('fund', START, 'cash_flow', 'cash', 'EUR', D(1000)),
+        *(Event(f'{day}-{seq}', day, 'cash_flow', 'cash', 'EUR', D('.4'), sequence=seq)
+          for day in days for seq in (1, 2))))
+    calculation = HistoryCalculation(journal, ObservationStore())
+    visited = []
+    original = DatedFlows.interval
+    def counted(self, *args, **kwargs):
+        flows, reasons = original(self, *args, **kwargs)
+        visited.extend(flow.id for flow in flows)
+        return flows, reasons
+    monkeypatch.setattr(DatedFlows, 'interval', counted)
+    with localcontext() as context:
+        context.prec = 4
+        for day in [START, *days]:
+            total = calculation.period_capital(scope, START, day, 'EUR').net_contributions
+            # Each 0.4 rounds away when added to the balance. Subtotalling the
+            # two payments first would round up a full unit on every date.
+            assert total == 1000
+    assert len(visited) == len(set(visited)) == 1 + 2 * len(days)

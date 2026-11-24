@@ -1,5 +1,6 @@
 """A direct comparison of selected labels, alongside the advanced tree views."""
 from portfolio_app.interface.shared.number_format import change_columns
+from portfolio_app.interface.shared.display_names import display_name
 from portfolio_app.interface.shared.chart_hover import chart_hover
 
 from portfolio_app.interface.shared.currency_display import money, money_format, currency_symbol
@@ -13,8 +14,9 @@ from portfolio_app.interface.shared.charts import chart_config
 
 from portfolio_app.interface.shared.charts import bar_chart, hierarchy_chart, pie_chart, sort_allocation_nodes
 from portfolio_app.interface.shared.chart_navigation import sync_chart_category
+from portfolio_app.exposure.exposure_presentation import with_asset_tickers
 from portfolio_app.exposure.label_comparison import (
-    available_labels, compare_labels, comparison_assets, comparison_tree, immediate_children, label_memberships,
+    available_labels, comparison_assets, comparison_tree, immediate_children, LabelSelection,
 )
 from portfolio_app.interface.shared.presentation import allocation_total
 from portfolio_app.performance.performance_allocation import PerformanceExposures, add_performance_column
@@ -27,7 +29,7 @@ from portfolio_app.interface.shared.target_ui import target_caption, target_colu
 
 def render_label_comparison(exposures: pd.DataFrame, classifications: Classifications, *,
                             targets: TargetExposures | None = None, portfolio_value: float = 0., valuation_complete: bool = True,
-                            performance: PerformanceExposures | None = None, performance_percent: bool = True, measure=None, equity=None, complete=True) -> None:
+                            performance: PerformanceExposures | None = None, performance_percent: bool = True, measure=None, equity=None, complete=True, ticker_holdings=None) -> None:
     market = measure == 'Market exposure'
     st.subheader("Themes & sectors")
     choose, navigation, options = st.columns([1.2, 3, 1.2], vertical_alignment='bottom')
@@ -65,12 +67,13 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
     if not labels:
         st.info("Choose one or more labels to compare their combined asset allocations.")
         return
-    memberships = label_memberships(exposures, classifications, labels)
-    has_overlap = any(row.value != 0 and len(memberships[row.asset_id]) > 1 for row in exposures.itertuples())
-    if targets is not None:
-        for measure in (targets.known, targets.missing):
-            target_memberships = label_memberships(measure, classifications, labels)
-            has_overlap |= any(row.value > 0 and len(target_memberships[row.asset_id]) > 1 for row in measure.itertuples())
+    selection = LabelSelection(classifications, labels)
+    def overlaps(asset_ids):
+        return any(len(selection.matches(asset)) > 1 for asset in asset_ids.unique())
+    has_overlap = overlaps(exposures.loc[exposures.value.ne(0).fillna(True), 'asset_id'])
+    if targets is not None and not has_overlap:
+        has_overlap = any(overlaps(measure.loc[measure.value.gt(0), 'asset_id'])
+                          for measure in (targets.known, targets.missing))
     policy = "split"  # With disjoint labels, both policies give the same result.
     with controls:
         if has_overlap:
@@ -84,16 +87,18 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         chart_types = ["Bar"] if has_overlap and policy == "overlap" else ["Bar", "Pie", "Sunburst", "Treemap"]
         chart_type = st.selectbox("Chart", chart_types, help='Choose how the selected analysis is visualized.', index=chart_types.index("Sunburst") if "Sunburst" in chart_types else 0,
                                   key=f"label_compare_chart_{policy}")
-    comparison = compare_labels(exposures, classifications, labels, overlap=policy)
+    detail_key = f'label_compare_detail_{taxonomy}'
+    # Streamlit publishes the selected drill and chart options before the rerun.
+    # Category-only charts never display individual investment names.
+    if ticker_holdings is not None and (st.session_state.get(detail_key) or
+            (chart_type in {'Sunburst', 'Treemap'} and st.session_state.get('label_compare_assets_only'))):
+        exposures = with_asset_tickers(exposures, ticker_holdings)
+    comparison = selection.compare(exposures, overlap=policy)
     if comparison.unmatched_value:
         st.caption(f'Outside selected labels: {money(comparison.unmatched_value)} · These assets remain in the Assets view.')
-    performance_comparisons = [compare_labels(measure, classifications, labels, overlap=policy) for measure in performance.measures()] if performance else None
-    target_comparisons = None
     if targets is not None:
-        target_comparisons = [compare_labels(measure, classifications, labels, overlap=policy)
-                              for measure in (targets.known, targets.missing)]
         target_caption(valuation_complete=valuation_complete)
-    if comparison.allocations.empty:
+    if not comparison.branches:
         st.info("No positive valued assets match these labels in the current portfolio selection.")
     else:
         coverage = comparison.matched_value / comparison.portfolio_value if comparison.portfolio_value > 0 else float("nan")
@@ -105,8 +110,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             st.caption(f"{money(comparison.overlapping_value)} matches multiple selected labels. " +
                        ("Its value is split equally between those labels." if policy == "split" else
                         "Each matching label includes its full value. Label percentages can exceed 100% in total; bars show this overlap."))
-        roots = sorted({path[:length] for path in comparison.allocations["path"] for length in range(1, len(path) + 1)})
-        detail_key = f'label_compare_detail_{taxonomy}'
+        roots = comparison.branches
         if st.session_state.get(detail_key, ()) not in [(), *roots]:
             st.session_state[detail_key] = ()
         root = navigation.selectbox("Detail view", [(), *roots],
@@ -155,20 +159,22 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             allocation_total(" › ".join((by_key[root[0]].title, *root[1:])), float(tree.iloc[0]["value"]))
             st.caption("Asset percentages use this detail’s assigned value. Assets with several paths within a label share its value equally across those paths.")
             assets = comparison_assets(comparison, root, include_ids=True)
-            if target_comparisons is not None:
-                target_details = [item.allocations.loc[item.allocations["path"].map(lambda path: path[:len(root)] == root)]
-                                  for item in target_comparisons]
+            if targets is not None:
+                target_details = [selection.measure_values(measure, overlap=policy, root=root)
+                                  for measure in (targets.known, targets.missing)]
                 # Include targets for assets awaiting a quote in this branch.
                 identities = target_details[0][["asset_id", "asset_name"]].drop_duplicates("asset_id").rename(columns={"asset_name": "Investment"})
                 assets = assets.merge(identities, on="asset_id", how="outer", suffixes=("", "_target"))
-                assets["Investment"] = assets["Investment"].fillna(assets.pop("Investment_target"))
+                target_names = assets.pop("Investment_target")
+                target_only = assets["Investment"].isna()
+                assets.loc[target_only, "Investment"] = target_names.loc[target_only].map(display_name)
                 assets = add_target_columns(assets, assets["asset_id"].tolist(), target_totals(*target_details, key="asset_id"),
                                             portfolio_value=portfolio_value, valuation_complete=valuation_complete)
                 assets = assets.sort_values(["Value", "Investment"], ascending=[False, True],
                                              na_position="last", kind="stable", ignore_index=True)
-            if performance_comparisons is not None:
-                performance_details = [item.allocations.loc[item.allocations["path"].map(lambda path: path[:len(root)] == root)]
-                                       for item in performance_comparisons]
+            if performance is not None:
+                performance_details = [selection.measure_values(measure, overlap=policy, root=root)
+                                       for measure in performance.measures()]
                 assets = add_performance_column(assets, assets.asset_id.tolist(), performance_details, key="asset_id", percent=performance_percent)
             if not complete:
                 assets['Allocation %'] = float('nan')
@@ -185,17 +191,18 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             return
         allocation_total("Assets matching the selected labels — counted once", comparison.matched_value)
     table = comparison.table.copy()
-    if target_comparisons is not None:
-        table = add_target_columns(table, table["Label"].tolist(),
-                                   target_totals(*(item.table for item in target_comparisons), key="Label", value="Value"),
+    if targets is not None:
+        target_tables = [selection.measure_values(measure, overlap=policy) for measure in (targets.known, targets.missing)]
+        table = add_target_columns(table, table["Label"].tolist(), target_totals(*target_tables, key="Label", value="Value"),
                                    portfolio_value=portfolio_value, valuation_complete=valuation_complete)
-    if performance_comparisons is not None:
-        table = add_performance_column(table, table.Label.tolist(), [item.table for item in performance_comparisons],
+    if performance is not None:
+        performance_tables = [selection.measure_values(measure, overlap=policy) for measure in performance.measures()]
+        table = add_performance_column(table, table.Label.tolist(), performance_tables,
                                        key="Label", value="Value", percent=performance_percent)
     if not complete:
         table[['Portfolio %', 'Selected labels %']] = float('nan')
-        unknown_memberships = label_memberships(exposures.loc[exposures.value.isna()], classifications, labels)
-        unknown_labels = {label.title for matches in unknown_memberships.values() for label in matches}
+        unknown_assets = exposures.loc[exposures.value.isna(), "asset_id"].unique()
+        unknown_labels = {label.title for asset in unknown_assets for label in selection.matches(asset)}
         table.loc[table.Label.isin(unknown_labels), 'Value'] = float('nan')
     if market:
         table['% of portfolio equity'] = table.Value * 100 / equity if complete and equity and equity > 0 else float('nan')

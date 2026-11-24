@@ -1,11 +1,19 @@
 import pandas as pd
 import pytest
 
-from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension, classify_exposures
+from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension, build_tree, classify_exposures
 from portfolio_app.interface.shared.charts import bar_chart, hierarchy_chart, pie_chart, sort_allocation_nodes
 from portfolio_app.exposure.exposures import normalize_exposures
 from portfolio_app.portfolio.filtering import filter_holdings
 from portfolio_app.portfolio.valuation import portfolio_weights
+
+
+def test_category_tree_uses_only_paths_and_values():
+    category_rows = pd.DataFrame({'path': [('A',), ('A', 'B'), ('A', 'B')], 'value': [4., 2., -1.]})
+    position_rows = category_rows.assign(asset_id=['x', 'y', 'z'], asset_name=['X', 'Y', 'Z'])
+    expected = build_tree(position_rows, root=('A',))
+    assert expected.loc[expected.kind == 'assigned', 'value'].tolist() == [4.]
+    pd.testing.assert_frame_equal(build_tree(category_rows, root=('A',)), expected)
 
 
 def test_shared_bond_leaf_conserves_both_funds_despite_provider_names():
@@ -79,6 +87,20 @@ def test_multi_path_allocation_and_root_selection(exposures, taxonomy):
     assert aggregate(exposures, taxonomy, taxonomy="ai", root=("Absent",)).empty
 
 
+def test_classification_reads_only_identity_name_and_amount(monkeypatch):
+    exposures = pd.DataFrame({
+        'asset_id': ['a', 'a', 'b'], 'asset_name': ['Invented A', 'Invented A', 'Invented B'],
+        'value': [-8., float('nan'), 6.], 'unused': pd.Categorical(['x', 'y', 'z'])}, index=[2, 2, 1])
+    def unexpected(*args):
+        pytest.fail('Source metadata was scanned while assigning taxonomy paths')
+    monkeypatch.setattr(pd.Categorical, '__iter__', unexpected)
+    resolved = classify_exposures(exposures, {'a': {'labels': (('One',), ('Two',))}}, 'labels')
+    assert resolved.path.tolist() == [('One',), ('Two',), ('One',), ('Two',), ('Unclassified',)]
+    assert resolved.value.dropna().tolist() == [-4., -4., 6.]
+    assert resolved.value.isna().tolist() == [False, False, True, True, False]
+    assert list(classify_exposures(pd.DataFrame(), {}, 'labels')) == list(resolved)
+
+
 def test_same_labels_under_different_parents_are_distinct(exposures, taxonomy):
     nodes = aggregate(exposures, taxonomy, taxonomy="ai")
     shared = nodes.loc[nodes["label"] == "Shared"]
@@ -134,6 +156,58 @@ def test_exposure_boundary_and_flat_dimensions(valued):
         assert_conserved(nodes, 744)
     holdings = aggregate_dimension(exposures, "holding", show_tickers=True)
     assert holdings.loc[holdings["label"] == "Nvidia (NVDA)", "value"].iloc[0] == 240
+
+
+def test_flat_dimensions_build_one_leaf_per_category_in_source_order(monkeypatch):
+    from portfolio_app.exposure import aggregation
+
+    rows = pd.DataFrame({
+        "asset_id": ["a", "b", "a", "c"], "asset_name": ["First", "Two", "Alternate", "Three"],
+        "value": [1e16, -1e16, 1., 0.], "account": ["A", "B", "A", ""],
+        "unused": ["Extra field"] * 4,
+    })
+    original = aggregation.build_tree
+    def checked(allocations, **kwargs):
+        assert len(allocations) == 3
+        return original(allocations, **kwargs)
+    monkeypatch.setattr(aggregation, "build_tree", checked)
+    nodes = aggregate_dimension(rows, "account")
+    assert nodes.label.tolist() == ["account", "A", "B", "Unspecified"]
+    assert nodes.value.tolist() == [1., 1e16, -1e16, 0.]
+    assert nodes.percentage.tolist() == nodes.value.tolist()
+    holdings = aggregate_dimension(rows, "holding", show_tickers=True)
+    assert holdings.label.tolist() == ["holding", "Alternate (A)", "Two (B)", "Three (C)"]
+    assert holdings.value.tolist() == nodes.value.tolist()
+
+
+@pytest.mark.parametrize("dimension", ["account", "holding"])
+def test_secondary_flat_measure_matches_chart_without_building_nodes(monkeypatch, dimension):
+    from portfolio_app.exposure import aggregation
+
+    rows = pd.DataFrame({
+        "asset_id": ["a", "b", "a", "c", "d"], "asset_name": ["One", "Two", "One", "Three", "Four"],
+        "account": ["First", "Second", "First", "", "Zero only"],
+        "value": pd.Series([3., -2., -1., pd.NA, 0.], dtype="Float64"),
+    })
+    nodes = aggregate_dimension(rows, dimension)
+    expected = nodes.loc[nodes.depth == 1].set_index("node_id").value
+
+    def unused(*args, **kwargs):
+        pytest.fail("A secondary amount requested a chart hierarchy")
+    monkeypatch.setattr(aggregation, "build_tree", unused)
+    amounts = aggregation.dimension_measure(rows, dimension).set_index("node_id").value
+    pd.testing.assert_series_equal(amounts.reindex(expected.index, fill_value=0.), expected)
+
+
+@pytest.mark.parametrize("dtype", ["Float32", "Float64", "object"])
+def test_flat_dimensions_keep_unknown_amounts_in_their_category(dtype):
+    rows = pd.DataFrame({"asset_id": ["a", "b", "a"], "asset_name": ["One", "Two", "One"],
+                         "value": pd.Series([1., pd.NA, 2.], dtype=dtype)})
+    nodes = aggregate_dimension(rows, "holding")
+    assert nodes.label.tolist() == ["holding", "One", "Two"]
+    assert nodes.value.isna().tolist() == [True, False, True]
+    assert nodes.value.iloc[1] == 3.
+    assert nodes.percentage.isna().all()
 
 
 def test_empty_and_zero_allocations(exposures, taxonomy):
@@ -207,3 +281,93 @@ def test_default_sort_orders_siblings_without_detaching_descendants(exposures, t
 def test_invalid_depth(exposures, taxonomy, depth):
     with pytest.raises(ValueError):
         aggregate(exposures, taxonomy, taxonomy="ai", depth=depth)
+
+
+@pytest.mark.parametrize('holdings', [False, True])
+def test_build_tree_encodes_each_shared_category_path_once(monkeypatch, holdings):
+    from unittest.mock import Mock
+    from portfolio_app.exposure import aggregation
+    original = aggregation._node_id
+    categories = []
+    def encode(kind, path, asset_id=''):
+        if kind == 'category':
+            categories.append(path)
+        return original(kind, path, asset_id)
+    monkeypatch.setattr(aggregation, '_node_id', encode)
+    descendant = Mock(wraps=aggregation.is_descendant)
+    monkeypatch.setattr(aggregation, 'is_descendant', descendant)
+    root = ('Invented "theme"',)
+    paths = [root, root + ('A',), root + ('B',), ('Other',)]
+    rows = pd.DataFrame([dict(asset_id=f'a{i}', asset_name=f'Asset {i}', path=paths[i % len(paths)], value=1.)
+                         for i in range(60)])
+    nodes = aggregation.build_tree(rows, root=root, include_holdings=holdings)
+    assert [call.args for call in descendant.call_args_list] == [(path, root) for path in paths]
+    assert set(categories) == set(paths[:3]) and len(categories) == 3
+    assert_conserved(nodes, 45.)
+
+
+@pytest.mark.parametrize('include_holdings', [False, True])
+def test_wide_taxonomy_decodes_only_displayed_text_in_batches(monkeypatch, include_holdings):
+    rows = pd.DataFrame({'asset_id': ['a', 'b'] * 5000, 'asset_name': ['One', 'Two'] * 5000,
+                         'value': [1., -0.25] * 5000})
+    paths = {'a': {'sector': (('A',),)}, 'b': {'sector': (('B',),)}}
+    batches = {'asset_id': [], 'asset_name': []}
+    original_list = pd.Series.tolist
+    original_iter = pd.Series.__iter__
+
+    def decode(series):
+        if series.name in batches:
+            batches[series.name].append(len(series))
+        return original_list(series)
+
+    def iterate(series):
+        if series.name in batches:
+            pytest.fail('Classifying the portfolio decoded text one scalar at a time')
+        return original_iter(series)
+
+    monkeypatch.setattr(pd.Series, 'tolist', decode)
+    monkeypatch.setattr(pd.Series, '__iter__', iterate)
+    nodes = aggregate(rows, paths, taxonomy='sector', include_holdings=include_holdings)
+    assert nodes.iloc[0].value == 3750.
+    assert nodes.loc[nodes.kind.eq('holding'), 'label'].tolist() == (['One', 'Two'] if include_holdings else [])
+    for field, sizes in batches.items():
+        if field == 'asset_name' and not include_holdings:
+            assert not sizes
+        else:
+            assert sum(sizes) == len(rows) and max(sizes) < len(rows)
+
+
+@pytest.mark.parametrize('include_holdings', [False, True])
+def test_taxonomy_aggregation_streams_the_same_classified_allocations(monkeypatch, exposures, taxonomy, include_holdings):
+    extra = exposures.iloc[[0, 2]].assign(asset_name=['Another name', 'C'], value=[-11.2, float('nan')])
+    repeated = pd.concat([exposures, extra])
+    options = dict(root=('AI',), depth=1, include_holdings=include_holdings)
+    expected = build_tree(classify_exposures(repeated, taxonomy, 'ai'), root_label='ai', **options)
+    def intermediate_frame(*args, **kwargs):
+        pytest.fail('The hierarchy materialized all intermediate classified rows')
+    monkeypatch.setattr(pd.DataFrame, 'from_records', intermediate_frame)
+    pd.testing.assert_frame_equal(aggregate(repeated, taxonomy, taxonomy='ai', **options), expected, check_exact=True)
+
+
+@pytest.mark.parametrize('holdings', [False, True])
+@pytest.mark.parametrize('depth', [None, 0, 1])
+def test_sparse_taxonomy_measure_preserves_every_displayed_amount(monkeypatch, holdings, depth):
+    from portfolio_app.exposure import aggregation
+
+    rows = pd.DataFrame({'asset_id': ['a', 'a', 'b', 'b', 'b', 'c', 'd'],
+                         'value': [3., -1.5, 0., 0., 0., -2., float('nan')]})
+    rows['asset_name'] = rows.asset_id
+    labels = {'a': {'t': (('A',), ('Other',))}, 'b': {'t': (('A', 'Child'),)},
+              'c': {'t': (('A', 'Sibling'),)}}
+    options = dict(taxonomy='t', root=(), depth=depth, include_holdings=holdings)
+    expected = aggregate(rows, labels, **options).set_index('node_id').value
+    visited = []
+    def counted(frame, *args, **kwargs):
+        visited.append(len(frame))
+        return aggregate(frame, *args, **kwargs)
+    monkeypatch.setattr(aggregation, 'aggregate', counted)
+    actual = aggregation.taxonomy_measure(rows, labels, **options).set_index('node_id').value
+    pd.testing.assert_series_equal(actual.reindex(expected.index, fill_value=0.), expected, check_exact=True)
+    assert visited == [4 if holdings else 5]
+    assert aggregation.taxonomy_measure(rows.assign(value=0.), labels, **options).empty
+    assert visited[-1] == 0

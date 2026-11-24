@@ -10,9 +10,9 @@ import yaml
 
 from portfolio_app.application import PortfolioInputs
 from portfolio_app.portfolio.allocation import load_allocation
-from portfolio_app.funds.etf import load_funds
+from portfolio_app.funds.etf import FundCatalog
 from portfolio_app.portfolio.positions import read_snapshot
-from portfolio_app.exposure.taxonomy import load_classifications
+from portfolio_app.exposure.taxonomy import copy_classifications, load_classifications
 
 
 def file_stamp(path):
@@ -23,13 +23,34 @@ def file_stamp(path):
         return (str(path.resolve()), None)
 
 
-def cached_input(key, signature, loader):
+def cached_input(key, signature, loader, *, immutable=False):
     cache = st.session_state.setdefault('parsed_inputs', {})
     previous = cache.get(key)
     if previous is None or previous[0] != signature:
         previous = (signature, loader())
         cache[key] = previous
-    return deepcopy(previous[1])
+    return previous[1] if immutable else deepcopy(previous[1])
+
+
+def cached_classifications(key, signature, loader):
+    return copy_classifications(cached_input(key, signature, loader, immutable=True))
+
+
+def monitoring_snapshot(directory):
+    """The validated document and content revision read from the same bytes."""
+    from portfolio_app.monitoring.monitoring_store import FILE, load_monitoring
+    return cached_input('monitoring_snapshot', file_stamp(directory / FILE),
+                        lambda: load_monitoring(directory), immutable=True)
+
+
+def monitoring_document(directory):
+    return monitoring_snapshot(directory)[0]
+
+
+def observation_snapshot(directory):
+    from portfolio_app.performance.history_observations import FILE, load_observations
+    return cached_input('history_observations', file_stamp(directory / FILE),
+                        lambda: load_observations(directory), immutable=True)
 
 
 def load_inputs(directory):
@@ -39,18 +60,35 @@ def load_inputs(directory):
         with workspace_lock(directory):
             pass
     holdings_path = directory / 'holdings.csv'
-    snapshot = cached_input('holdings', file_stamp(holdings_path), lambda: read_snapshot(holdings_path))
     from portfolio_app.ledger.account_journal import load_journal
     from portfolio_app.ledger.security_history import effective_holdings
     from portfolio_app.portfolio.positions import HoldingsSnapshot
-    journal, journal_revision = cached_input('history_journal', file_stamp(directory / 'account-journal.json'), lambda: load_journal(directory))
-    if journal.securities:
-        snapshot = HoldingsSnapshot(effective_holdings(snapshot.holdings, journal.securities), snapshot.revision)
-    snapshot.holdings.attrs['history_journal_revision'] = journal_revision
+    def effective_snapshot():
+        snapshot = read_snapshot(holdings_path)
+        journal, revision = load_journal(directory)
+        if journal.securities:
+            snapshot = HoldingsSnapshot(effective_holdings(snapshot.holdings, journal.securities), snapshot.revision)
+        snapshot.holdings.attrs['history_journal_revision'] = revision
+        return snapshot
+    journal_stamp = file_stamp(directory / 'account-journal.json')
+    snapshot = cached_input('holdings', (file_stamp(holdings_path), journal_stamp), effective_snapshot)
     path = directory / 'allocation.yaml'
-    allocation = cached_input('allocation', (file_stamp(path), snapshot.revision, file_stamp(directory / 'account-journal.json')), lambda: load_allocation(path, snapshot.holdings))
+    allocation = cached_input('allocation', (file_stamp(path), snapshot.revision, journal_stamp), lambda: load_allocation(path, snapshot.holdings))
     path = directory / 'classifications.yaml'
-    classifications = cached_input('classifications', file_stamp(path), lambda: load_classifications(path) if path.exists() else {})
+    classifications = cached_classifications('classifications', file_stamp(path), lambda: load_classifications(path) if path.exists() else {})
+    signature = fund_sources(directory)
+    catalog = st.session_state.setdefault('fund_catalog', FundCatalog())
+    funds = cached_input('funds', signature, lambda: catalog.load(directory / 'etfs'))
+    return PortfolioInputs(snapshot, allocation, classifications, funds)
+
+
+def loaded_fund_sources():
+    """File revisions used by the session's last successful fund load."""
+    saved = st.session_state.get('parsed_inputs', {}).get('funds')
+    return saved[0] if saved is not None else None
+
+
+def fund_sources(directory):
     manifests = sorted((directory / 'etfs').glob('*.yaml'))
     manifest_stamp = tuple(file_stamp(p) for p in manifests)
     def holdings_files():
@@ -67,6 +105,4 @@ def load_inputs(directory):
     except (OSError, ValueError, yaml.YAMLError):
         # Use the canonical loader's validation/error reporting.
         files = []
-    signature = (str(directory.resolve()), manifest_stamp, tuple(file_stamp(p) for p in files))
-    funds = cached_input('funds', signature, lambda: load_funds(directory / 'etfs'))
-    return PortfolioInputs(snapshot, allocation, classifications, funds)
+    return str(directory.resolve()), manifest_stamp, tuple(file_stamp(p) for p in files)

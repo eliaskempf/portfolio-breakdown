@@ -221,3 +221,43 @@ def test_flow_repair_identifies_the_actual_dated_evidence(amount, currency, desc
         '2024-01-01', '2024-01-04', 'EUR', security_cash=(cash,))
     assert len(reasons) == 1 and issue_kind(reasons[0]) == kind
     assert str(reasons[0]).endswith(description + ' on 2024-01-03')
+
+
+def test_daily_component_totals_only_recompute_on_ledger_dates(monkeypatch):
+    from portfolio_app.performance import personal_performance as history
+    from portfolio_app.performance.history_flows import DatedFlows
+    from portfolio_app.ledger.security_history import Charge
+    books, prices = [], []
+    # More independent positions than the working set of full cash-flow timelines.
+    for index in range(40):
+        identity = f'invented-{index}'
+        currency = 'USD' if index == 0 else 'EUR'
+        events = (E(f'open-{index}', 'opening', '2024-01-01', quantity=D(1), amount=D(10), currency='EUR'),
+                  E(f'buy-{index}', 'buy', '2024-01-03', quantity=D(1), price=D(12), currency=currency,
+                    charges_known=True, charges=(Charge(D(1), currency, date='2024-01-06'),)))
+        books.append(SecurityBook(identity, identity, ('1', '10', 'EUR'), records=events,
+                                  active_ids=tuple(e.id for e in events)))
+        prices.extend(Observation(f'{identity}-{n}', 'price', identity, f'2024-01-{n:02}', D(n + 10), 'EUR')
+                      for n in range(1, 9))
+    j = Journal(version=2, securities=tuple(books))
+    store = ObservationStore(tuple(prices))
+    calculation = history.HistoryCalculation(j, store)
+    raw_total = DatedFlows.total
+    requests = []
+    def counted(self, start, end, **kwargs):
+        requests.append((self.scope, end))
+        return raw_total(self, start, end, **kwargs)
+    monkeypatch.setattr(DatedFlows, 'total', counted)
+    for day in range(2, 9):
+        for index, book in enumerate(books):
+            scope = HistoryScope((book.position_id,))
+            result = calculate_history(j, scope, store, '2024-01-01', f'2024-01-{day:02}', returns=False,
+                                       calculation=calculation)
+            assert result.ending_value == (day + 10) * (1 if day < 3 else 2)
+            if index == 0 and day >= 3:
+                assert result.net_contributions is None
+                assert any(reason.kind == 'fx' for reason in result.flow_reasons)
+            else:
+                assert result.net_contributions == (0 if day < 3 else 12 if day < 6 else 13)
+    assert len(requests) == 3 * len(books)
+    assert {end for _, end in requests} == {'2024-01-02', '2024-01-03', '2024-01-06'}

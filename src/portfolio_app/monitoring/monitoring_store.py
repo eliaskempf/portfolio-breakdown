@@ -7,7 +7,7 @@ from uuid import uuid4
 from portfolio_app.workspace.atomic_file import staged_text
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.monitoring.monitoring import Rule, SeriesSpec, Evaluation, utc_now
-from portfolio_app.workspace.storage import save_document
+from portfolio_app.workspace.storage import load_finite_json, revision as file_revision, save_document
 from portfolio_app.workspace.workspace_lock import workspace_lock
 
 FILE = 'monitoring.json'
@@ -31,12 +31,11 @@ def load_monitoring(directory):
         return empty_document(), None
     try:
         content = path.read_bytes()
-        raw = json.loads(content, parse_constant=lambda x: (_ for _ in ()).throw(ValueError(x)))
+        raw = load_finite_json(content)
         if not isinstance(raw, dict) or raw.get('version') != 1:
             raise ValueError('Unsupported monitoring version')
         if any(not isinstance(raw.get(k), list) for k in ('rules', 'observations', 'events', 'notice_seen')) or any(not isinstance(raw.get(k), dict) for k in ('states', 'definitions')):
             raise ValueError('Invalid monitoring document')
-        json.dumps(raw, allow_nan=False)
         if any(not isinstance(x, str) for x in raw['notice_seen']):
             raise ValueError('Invalid notification identities')
         rules = [rule_from_dict(r) for r in raw['rules']]
@@ -85,6 +84,7 @@ def _write(directory, document, revision, *, backup=False):
         directory.mkdir(parents=True, exist_ok=True)
         with staged_text(path, lambda handle: handle.write(content), sync=True) as temporary:
             temporary.replace(path)
+        return sha256(content.encode('utf-8')).hexdigest()
 
 
 def save_rule(directory, rule, *, expected_rule_revision=None):
@@ -118,82 +118,123 @@ def delete_rule(directory, identity, expected_rule_revision):
         _write(directory, doc, revision, backup=True)
 
 
+class EvaluationWriter:
+    """One worker pass, with a validated document shared across its independent writes."""
+    def __init__(self, directory):
+        self.directory = directory
+        self._snapshot = None
+
+    def _load(self):
+        if self._snapshot is None or file_revision(self.directory / FILE) != self._snapshot[1]:
+            self._snapshot = load_monitoring(self.directory)
+        return self._snapshot
+
+    def enabled_rules(self):
+        doc, _ = self._load()
+        return [(rule_from_dict(raw), doc['states'].get(raw['id'], {}).get('last_valid', {}).get('observed_at'))
+                for raw in doc['rules'] if raw['enabled']]
+
+    def record(self, rule, evaluations, *, recovered=False, now=None):
+        now = now or utc_now()
+        with workspace_lock(self.directory):
+            doc, revision = self._load()
+            # An interrupted update must reload the last published document on retry.
+            self._snapshot = None
+            changed = _apply_evaluations(doc, rule, evaluations, recovered, now)
+            if changed:
+                revision = _write(self.directory, doc, revision)
+            self._snapshot = doc, revision
+            return changed
+
+
 def record_evaluations(directory, rule, evaluations, *, recovered=False, now=None):
-    now = now or utc_now()
-    with workspace_lock(directory):
-        doc, revision = load_monitoring(directory)
-        current = next((r for r in doc['rules'] if r['id'] == rule.id), None)
-        if not current or current['revision'] != rule.revision or not current['enabled']:
-            return False
-        state = doc['states'].get(rule.id, {})
-        changed = False
-        for evaluation in evaluations:
-            raw = asdict(evaluation)
-            # Account calculations use the observation time of the inputs, not
-            # the polling clock, to avoid logging unchanged snapshots repeatedly.
-            fingerprint = sha256(json.dumps(raw, sort_keys=True, allow_nan=False).encode()).hexdigest()
-            if state.get('fingerprint') == fingerprint:
-                continue
-            previous = state.get('condition', 'normal')
-            state = {**state, 'fingerprint': fingerprint, 'quality': evaluation.quality,
-                     'latest': raw, 'checked_at': now.isoformat(), 'revision': rule.revision}
-            doc['observations'].append(dict(rule_id=rule.id, revision=rule.revision,
-                fingerprint=fingerprint, evaluation=raw, recorded_at=now.isoformat(), recovered=recovered))
-            if evaluation.quality in {'valid', 'not_applicable'}:
-                current_condition = evaluation.condition if evaluation.quality == 'valid' else 'normal'
-                state['condition'] = current_condition
-                if evaluation.quality == 'valid':
-                    state['last_valid'] = raw
-                # One episode lasts until full recovery to normal. Escalation
-                # gets its own alert but jitter inside the warning zone does not.
-                if current_condition == 'normal':
-                    state.pop('episode', None)
-                    state['notified'] = []
-                    for event in doc['events']:
-                        if event['rule_id'] == rule.id and event['revision'] == rule.revision:
-                            event['resolved'] = True
-                elif current_condition not in state.get('notified', []):
-                    state.setdefault('episode', uuid4().hex)
-                    state['notified'] = [*state.get('notified', []), current_condition]
-                    doc['events'].append(dict(id=uuid4().hex, rule_id=rule.id, revision=rule.revision,
-                        episode=state['episode'], name=rule.name, condition=current_condition,
-                        observed_at=evaluation.observed_at, recorded_at=now.isoformat(), evaluation=raw,
-                        read=False, acknowledged=False, resolved=False, recovered=recovered))
-                state['previous_condition'] = previous
-            doc['states'][rule.id] = state
-            changed = True
-        if changed:
-            _write(directory, doc, revision)
-        return changed
+    return EvaluationWriter(directory).record(rule, evaluations, recovered=recovered, now=now)
 
 
-def mark_events(directory, identities, *, acknowledge=False):
-    if not identities:
-        return
-    with workspace_lock(directory):
-        doc, revision = load_monitoring(directory)
-        changed = False
+def _apply_evaluations(doc, rule, evaluations, recovered, now):
+    current = next((r for r in doc['rules'] if r['id'] == rule.id), None)
+    if not current or current['revision'] != rule.revision or not current['enabled']:
+        return False
+    state = doc['states'].get(rule.id, {})
+    changed = False
+    for evaluation in evaluations:
+        raw = asdict(evaluation)
+        # Account calculations use the observation time of the inputs, not
+        # the polling clock, to avoid logging unchanged snapshots repeatedly.
+        fingerprint = sha256(json.dumps(raw, sort_keys=True, allow_nan=False).encode()).hexdigest()
+        if state.get('fingerprint') == fingerprint:
+            continue
+        previous = state.get('condition', 'normal')
+        state = {**state, 'fingerprint': fingerprint, 'quality': evaluation.quality,
+                 'latest': raw, 'checked_at': now.isoformat(), 'revision': rule.revision}
+        doc['observations'].append(dict(rule_id=rule.id, revision=rule.revision,
+            fingerprint=fingerprint, evaluation=raw, recorded_at=now.isoformat(), recovered=recovered))
+        if evaluation.quality in {'valid', 'not_applicable'}:
+            current_condition = evaluation.condition if evaluation.quality == 'valid' else 'normal'
+            state['condition'] = current_condition
+            if evaluation.quality == 'valid':
+                state['last_valid'] = raw
+            # One episode lasts until full recovery to normal. Escalation
+            # gets its own alert but jitter inside the warning zone does not.
+            if current_condition == 'normal':
+                state.pop('episode', None)
+                state['notified'] = []
+                for event in doc['events']:
+                    if event['rule_id'] == rule.id and event['revision'] == rule.revision:
+                        event['resolved'] = True
+            elif current_condition not in state.get('notified', []):
+                state.setdefault('episode', uuid4().hex)
+                state['notified'] = [*state.get('notified', []), current_condition]
+                doc['events'].append(dict(id=uuid4().hex, rule_id=rule.id, revision=rule.revision,
+                    episode=state['episode'], name=rule.name, condition=current_condition,
+                    observed_at=evaluation.observed_at, recorded_at=now.isoformat(), evaluation=raw,
+                    read=False, acknowledged=False, resolved=False, recovered=recovered))
+            state['previous_condition'] = previous
+        doc['states'][rule.id] = state
+        changed = True
+    return changed
+
+
+def _mark_events(doc, identities, *, acknowledge=False):
+    changed = False
+    if identities:
         for event in doc['events']:
             if event['id'] in identities:
                 changed |= not event['read'] or (acknowledge and not event['acknowledged'])
                 event['read'] = True
                 if acknowledge:
                     event['acknowledged'] = True
-        if changed:
-            _write(directory, doc, revision)
+    return changed
 
 
-def remember_notices(directory, current, *, opened=False):
-    initial, _ = load_monitoring(directory)
-    retained = set(current) if opened else set(initial['notice_seen']) & set(current)
-    if retained == set(initial['notice_seen']):
-        return retained
+def mark_events(directory, identities, *, acknowledge=False):
+    identities = set(identities)
+    if not identities:
+        return
     with workspace_lock(directory):
         doc, revision = load_monitoring(directory)
-        seen = set(doc['notice_seen']) & set(current)
-        if opened:
-            seen = set(current)
-        if seen != set(doc['notice_seen']):
-            doc['notice_seen'] = sorted(seen)
+        if _mark_events(doc, identities, acknowledge=acknowledge):
             _write(directory, doc, revision)
-        return seen
+
+
+def remember_notices(directory, current, *, opened=False, previously_seen=None, read_events=(), on_write=None):
+    """Persist one panel observation, marking only events included in that observation read."""
+    current = set(current)
+    read_events = set(read_events)
+    if previously_seen is not None and not read_events:
+        previous = set(previously_seen)
+        retained = current if opened else previous & current
+        if retained == previous:
+            return retained
+    with workspace_lock(directory):
+        doc, revision = load_monitoring(directory)
+        previous = set(doc['notice_seen'])
+        seen = current if opened else previous & current
+        events_changed = _mark_events(doc, read_events)
+        if not events_changed and seen == previous:
+            return seen
+        doc['notice_seen'] = sorted(seen)
+        published = _write(directory, doc, revision)
+    if on_write is not None:
+        on_write(revision, published)
+    return seen

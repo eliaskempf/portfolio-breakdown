@@ -79,6 +79,7 @@ handoff.md
 !/docs/user/assets/demo-contribution.png
 
 !/.github/workflows/desktop-experiment.yml
+!/.github/workflows/performance-benchmark.yml
 
 # Working handoffs are preserved outside the public source tree.
 /docs/*-session-*.md

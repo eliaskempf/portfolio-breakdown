@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from portfolio_app.portfolio.holdings import DataError
-from portfolio_app.interface.shared.input_cache import cached_input, file_stamp
+from portfolio_app.interface.shared.input_cache import cached_input, file_stamp, observation_snapshot
 from portfolio_app.taxes.tax_evidence import (FILE, load_inputs, save_inputs, evidence_key, read_market,
     request_market, cache_path)
 from portfolio_app.taxes.tax_service import candidates, result_for, combined, observation_market, index_observations, distribution_evidence
@@ -136,8 +136,11 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
         forecast = year == date.today().year
         boundary = min(f'{year}-12-31', date.today().isoformat())
         fingerprint = sha256(repr((journal, holdings.to_dict('records'))).encode()).hexdigest()
-        all_items = cached_input('tax_candidates', (fingerprint, boundary, repr(funds)),
-            lambda: candidates(holdings, journal, boundary, funds, valued))
+        # Eligibility uses fund identities. Constituent rows and weights have no
+        # bearing on which purchased lots appear in the calculator.
+        fund_isins = frozenset(fund.isin for fund in funds)
+        all_items = cached_input('tax_candidates', (fingerprint, boundary, fund_isins),
+            lambda: candidates(holdings, journal, boundary, funds, valued), immutable=True)
         if forecast and valued is not None:
             from dataclasses import replace
             prices = {r['position_id']: r for r in valued.to_dict('records')}
@@ -194,10 +197,10 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
         if not items:
             st.caption('No funds selected · adjust Filter')
             return
-        from portfolio_app.performance.history_observations import load_observations
         from portfolio_app.analytics.fundamentals import load_fee_overrides
-        observations = cached_input('tax_observations', file_stamp(directory/'history-observations.json'),
-            lambda: index_observations(load_observations(directory)[0]))
+        store, observation_revision = observation_snapshot(directory)
+        observations = cached_input('tax_observations', observation_revision,
+                                    lambda: index_observations(store), immutable=True)
         policies = cached_input('tax_policies', file_stamp(directory/'fund-fees.json'), lambda: load_fee_overrides(directory/'fund-fees.json'))
         prepared, requested, pending = [], set(), False
         for item in items:

@@ -550,24 +550,25 @@ def test_interval_switches_reuse_ledgers_and_previous_points(tmp_path, monkeypat
     monkeypatch.setattr(ui, 'date', FixedDate)
     journal, scope, store = chart_fixture()
     calls, replays = [], []
-    calculate, replay = charts.calculate_history, performance.replay_securities
+    # Observe cache misses at the calculation itself, including calls from other views.
+    calculate, replay = performance._calculate_history, performance.replay_securities
     def counted(*args, **kwargs):
         calls.append((args[3], args[4], kwargs.get('annualized', True)))
         return calculate(*args, **kwargs)
     def replayed(*args, **kwargs):
         replays.append(kwargs.get('as_of'))
         return replay(*args, **kwargs)
-    monkeypatch.setattr(charts, 'calculate_history', counted)
+    monkeypatch.setattr(performance, '_calculate_history', counted)
     monkeypatch.setattr(performance, 'replay_securities', replayed)
     def view(period): return ui.prepared_history_view(tmp_path, journal, scope, store, 'synthetic', period)
     all_view = view('All')
     before_replays, before_calls = len(replays), len(calls)
     month = view('1M')
     assert len(replays) == before_replays  # Range changes never reconstruct the same ledger state.
-    assert len(calls) == before_calls + 2  # New range result and new requested-start hover point.
+    assert len(calls) == before_calls + 1  # Only the new interval; hover points share one sequence.
     assert view('All') == all_view
-    assert len(calls) == before_calls + 2
-    assert month == charts.history_view(journal, scope, store, '1M', today=FixedDate.today())
+    assert len(calls) == before_calls + 1
+    assert month == charts.history_view(journal, scope, store, '1M', today=FixedDate.today(), period_annualized=False)
 
 
 def test_reused_context_expires_for_workspace_currency_date_and_evidence(tmp_path, monkeypatch):

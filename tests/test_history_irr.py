@@ -149,3 +149,38 @@ def test_prefix_interval_bounds_enclose_direct_high_precision_evaluation():
             for (n, a), (lower, upper) in zip(terms, bounds):
                 prefix += a*(n*z-shift).exp()
                 assert lower <= prefix <= upper
+
+
+def test_dominance_bounds_match_full_schedule_with_irregular_dates():
+    from decimal import localcontext
+    from portfolio_app.performance.history_irr import _bounds
+    # Savings plans can have repeated contributions, smaller withdrawals, and
+    # occasional larger payments. The largest payment can be far from either end.
+    terms = ((0, D(-50)), (2, D(-100)), (21, D(30)), (47, D(-100)), (55, D(-200)),
+             (180, D(25)), (296, D(-100)), (367, D(800)))
+    with localcontext() as context:
+        context.prec = 80
+        count = D(2*(len(terms)-1))
+        low = min(D(0), *((abs(terms[0][1])/(count*abs(a))).ln()/n for n,a in terms[1:]))
+        high = max(D(0), *((count*abs(a)/abs(terms[-1][1])).ln()/(terms[-1][0]-n) for n,a in terms[:-1]))
+        assert _bounds(terms) == (low-1, high+1)
+
+    # An interior term outside the supported decimal division range must
+    # still go through the same checks even when its log would be dominated.
+    from decimal import Overflow
+    with localcontext() as context:
+        context.prec = 80
+        with pytest.raises(Overflow):
+            _bounds(((0, D(-100)), (1, D(-100)), (2, D('1e-1000000')), (3, D(1))))
+
+
+def test_equal_monthly_contributions_need_only_three_bound_logarithms():
+    from cProfile import Profile
+    from portfolio_app.performance.history_irr import _bounds
+    terms = tuple((30*i, D(-100)) for i in range(48)) + ((1450, D(5000)),)
+    with Profile() as profile:
+        _bounds(terms)
+    logs = sum(entry.callcount for entry in profile.getstats() if isinstance(entry.code, str)
+               and "'ln' of 'decimal.Decimal'" in entry.code)
+    # Two distinct left ratios and one right ratio outside the starting bound.
+    assert logs == 3

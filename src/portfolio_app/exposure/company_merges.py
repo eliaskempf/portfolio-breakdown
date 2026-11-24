@@ -14,8 +14,9 @@ import unicodedata
 import pandas as pd
 import yaml
 
+from portfolio_app.exposure.taxonomy import copy_classifications
 from portfolio_app.interface.shared.display_names import display_name
-from portfolio_app.funds.etf import FundSnapshot, matching_fund
+from portfolio_app.funds.etf import FundSnapshot, constituent_records, matching_fund
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.workspace.storage import save_document
 
@@ -79,22 +80,29 @@ def inventory(holdings: pd.DataFrame, funds: list[FundSnapshot], reviewed: dict)
         if row.get('instrument_type') == 'equity':
             items.append(dict(node=f"direct:{row['id']}", asset_id=row['id'], name=row['name'], isin=row.get('isin', ''),
                               ticker=row.get('ticker', ''), source='Direct holdings', origin='direct', date='', fund=''))
-    equity_isins = {r['isin'] for f in funds for r in f.constituents.to_dict('records') if r.get('instrument_type') == 'equity' and r['isin']}
+    equity_isins = set()
+    for fund in funds:
+        frame = fund.constituents
+        if 'instrument_type' in frame:
+            equity_isins.update(filter(None, frame.loc[frame.instrument_type.eq('equity'), 'isin'].to_numpy(dtype=object)))
     held = {f.isin for r in holdings.to_dict('records') if (f := matching_fund(r, funds)) is not None}
     for fund in funds:
-        if fund.isin not in held:
+        if fund.isin not in held or fund.constituents.empty:
             continue
-        for row in fund.constituents.to_dict('records'):
+        source = display_name(fund.name) + (' (proxy)' if fund.proxy_source else '')
+        as_of = str(fund.as_of)
+        fields = ['constituent_id', 'isin', 'name', 'ticker', 'weight']
+        fields.extend(field for field in ('instrument_type', 'source_ticker') if field in fund.constituents)
+        for row in constituent_records(fund.constituents[fields]):
             kind = row.get('instrument_type')
-            key = identity(row['constituent_id'], row['isin'])
-            legacy_equity = (not isinstance(kind, str) or not kind) and (fund.equity_fund or row['isin'] in equity_isins or key in reviewed)
+            legacy_equity = (not isinstance(kind, str) or not kind) and (
+                fund.equity_fund or row['isin'] in equity_isins or identity(row['constituent_id'], row['isin']) in reviewed)
             if row['weight'] <= 0 or (kind != 'equity' and not legacy_equity):
                 continue
-            ticker = row.get('source_ticker') or row['ticker']
+            ticker = row.get('source_ticker', '') or row['ticker']
             items.append(dict(node=f"fund:{fund.isin}:{row['constituent_id']}", asset_id=row['constituent_id'], name=row['name'],
                               isin=row['isin'], ticker=ticker if isinstance(ticker, str) else '',
-                              source=display_name(fund.name) + (' (proxy)' if fund.proxy_source else ''),
-                              origin=fund.isin, date=str(fund.as_of), fund=fund.isin))
+                              source=source, origin=fund.isin, date=as_of, fund=fund.isin))
     return items
 
 
@@ -114,8 +122,8 @@ class MergePlan:
 
     def apply(self, holdings: pd.DataFrame, funds: list[FundSnapshot], classifications: dict):
         """Annotate analysis copies; original identities and positions stay intact."""
-        links = {}
-        labels = {asset: dict(paths) for asset, paths in classifications.items()}
+        links = defaultdict(dict)
+        labels = copy_classifications(classifications)
         for group in self.groups:
             name = group.name + (' *' if group.basis == 'Estimated name match' and group.enabled else '')
             if group.enabled:
@@ -129,17 +137,23 @@ class MergePlan:
                 label = name if group.enabled else display_name(member['name'])
                 if not group.enabled:
                     labels.setdefault(asset, dict(classifications.get(member['asset_id'], {})))
-                links[member['node']] = (asset, label)
-        direct = holdings.copy()
-        direct['analysis_asset_id'] = [links.get(f'direct:{r.id}', ('', ''))[0] for r in direct.itertuples()]
-        direct['analysis_asset_name'] = [links.get(f'direct:{r.id}', ('', ''))[1] for r in direct.itertuples()]
-        snapshots = []
-        for fund in funds:
-            frame = fund.constituents.copy()
-            pairs = [links.get(f'fund:{fund.isin}:{r.constituent_id}', ('', '')) for r in frame.itertuples()]
-            frame['analysis_asset_id'] = [p[0] for p in pairs]
-            frame['analysis_asset_name'] = [p[1] for p in pairs]
-            snapshots.append(replace(fund, constituents=frame))
+                source = None if member['node'].startswith('direct:') else member['fund']
+                links[source][str(member['asset_id'])] = (asset, label)
+
+        def annotated(frame, id_column, fund):
+            result = frame.copy()
+            matches = links.get(fund)
+            if matches and len(frame):
+                pairs = [matches.get(str(asset_id), ('', '')) for asset_id in frame[id_column].to_numpy(dtype=object)]
+                result['analysis_asset_id'] = [asset for asset, _ in pairs]
+                result['analysis_asset_name'] = [label for _, label in pairs]
+            else:
+                result['analysis_asset_id'] = ''
+                result['analysis_asset_name'] = ''
+            return result
+
+        direct = annotated(holdings, 'id', None)
+        snapshots = [replace(fund, constituents=annotated(fund.constituents, 'constituent_id', fund.isin)) for fund in funds]
         return direct, snapshots, labels
 
 
@@ -152,18 +166,18 @@ def build_plan(holdings: pd.DataFrame, funds: list[FundSnapshot], reviewed: dict
             parents[i] = parents[parents[i]]
             i = parents[i]
         return i
-    def join(indices):
-        roots = sorted({root(i) for i in indices})
-        for r in roots[1:]:
-            parents[r] = roots[0]
-    keys = defaultdict(list)
-    for i, item in enumerate(items):
-        key = identity(item['asset_id'], item['isin'])
-        keys[('reviewed', reviewed[key]) if key in reviewed else ('security', key)].append(i)
-    for indices in keys.values():
-        join(indices)
+    # Start with exact identity components. Keep their origins and reviewed issuer
+    # alongside the union-find tree so checking a name never scans unrelated assets.
+    representatives, origins, issuers = {}, defaultdict(set), {}
     names = defaultdict(list)
     for i, item in enumerate(items):
+        key = identity(item['asset_id'], item['isin'])
+        exact = ('reviewed', reviewed[key]) if key in reviewed else ('security', key)
+        component = representatives.setdefault(exact, i)
+        parents[i] = component
+        origins[component].add(item['origin'])
+        if key in reviewed:
+            issuers[component] = reviewed[key]
         name = normalized_name(item['name'])
         if len(name) >= 4:
             names[name].append(i)
@@ -172,20 +186,28 @@ def build_plan(holdings: pd.DataFrame, funds: list[FundSnapshot], reviewed: dict
         components = {root(i) for i in indices}
         if len(components) < 2:
             continue
-        members = [i for i in range(len(items)) if root(i) in components]
-        per_source = defaultdict(set)
-        verified = set()
-        for i in members:
-            per_source[items[i]['origin']].add(root(i))
-            key = identity(items[i]['asset_id'], items[i]['isin'])
-            if key in reviewed:
-                verified.add(reviewed[key])
-        # Two different rows in one fund or conflicting reviewed companies make
-        # the name ambiguous. Do not join them even via a third provider.
-        if len(verified) > 1 or any(len(parts) > 1 for parts in per_source.values()):
+        verified = {issuers[c] for c in components if c in issuers}
+        if len(verified) > 1:
             continue
-        join(members)
-        estimated.update(members)
+        # Check all transitive members, including aliases with a different name.
+        # Grow the largest set in place only after every origin check passes.
+        leader = max(components, key=lambda c: len(origins[c]))
+        others = components - {leader}
+        additional = set()
+        for component in others:
+            sources = origins[component]
+            if not sources.isdisjoint(origins[leader]) or not sources.isdisjoint(additional):
+                break
+            additional.update(sources)
+        else:
+            origins[leader].update(additional)
+            for component in others:
+                parents[component] = leader
+                del origins[component]
+            if verified:
+                issuers[leader] = next(iter(verified))
+            # A single member marks every eventual superset as an estimated match.
+            estimated.add(indices[0])
     groups = defaultdict(list)
     for i in range(len(items)):
         groups[root(i)].append(i)

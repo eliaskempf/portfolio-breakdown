@@ -232,3 +232,37 @@ assert 'eur' in result.holdings.index and result.correlations.loc['eur'].isna().
         assert not app.exception
         expanded = json.loads(app.get('plotly_chart')[0].proto.spec)
         assert expanded['layout']['xaxis']['ticktext'] == ['Invented FX cash']
+
+
+def test_calculate_risk_uses_fresh_histories_and_refresh_reloads_them(tmp_path, monkeypatch):
+    from portfolio_app.analytics.risk_data import DEFAULT_BENCHMARK, DemoRiskHistoryProvider, RiskHistoryService
+    from portfolio_app.interface.views.analytics import portfolio_analytics_ui
+    benchmark = DEFAULT_BENCHMARK + ':EUR'
+    provider = DemoRiskHistoryProvider()
+    RiskHistoryService(provider, tmp_path / '.cache' / 'risk-history').get(benchmark)
+    calls = []
+    def fetch(self, ticker, years):
+        calls.append(ticker)
+        return provider.fetch(ticker, years)
+    monkeypatch.setattr('portfolio_app.analytics.risk_data.MarketRiskHistoryProvider.fetch', fetch)
+    monkeypatch.setattr(portfolio_analytics_ui, 'view_metrics', lambda *args, **kwargs: {})
+    app = AppTest.from_string(f"""
+from pathlib import Path
+import pandas as pd
+from portfolio_app.interface.views.analytics.portfolio_analytics_ui import render_portfolio_analytics
+holdings = pd.DataFrame([dict(id='invented', name='Invented Share', ticker='SYNTH', account='Test',
+    shares=1., current_value_reporting=100., instrument_type='equity', quote_currency='EUR')])
+render_portfolio_analytics(holdings, Path({str(tmp_path)!r}), [])
+""").run()
+    assert not app.exception and calls == []
+    by_label(app.button, 'Calculate risk').click().run()
+    if 'analytics_risk_refresh' in app.session_state:
+        app.session_state['analytics_risk_refresh'].result.result(timeout=8)
+        app.run()
+    assert not app.exception and calls == ['SYNTH']
+    assert by_label(app.metric, 'Beta').value != '—'
+    by_label(app.button, 'Refresh risk').click().run()
+    if 'analytics_risk_refresh' in app.session_state:
+        app.session_state['analytics_risk_refresh'].result.result(timeout=8)
+        app.run()
+    assert not app.exception and calls == ['SYNTH', benchmark, 'SYNTH']

@@ -41,7 +41,7 @@ detail.history_for=lambda _:history()
 st.button('Open position',on_click=request_position,args=('position-0',))
 if st.session_state.get('position_edit_dialog'):
     if not st.session_state.get('scheduled'):
-        coordinator.request(root,'invented-refresh',lambda:time.sleep(.5))
+        coordinator.request(root,'invented-refresh',lambda:time.sleep(.5),channel='valuation')
         st.session_state.scheduled=True
     render_market_status(root,0,show_caption=False)
 render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{},demo=False)

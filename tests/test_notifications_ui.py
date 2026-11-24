@@ -95,3 +95,94 @@ render_refresh_status(root, [], refresh_revision(root), include_notices={include
     assert not app.exception
     assert any('Discovering and updating' in item.value for item in app.caption)
     assert any('1 ETF breakdown(s) unavailable' in item.value for item in app.caption) == include_notices
+
+
+def test_header_and_monitoring_share_reads_and_observe_external_acknowledgement(tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    from portfolio_app.monitoring import monitoring_store as store
+    from portfolio_app.monitoring.monitoring import Evaluation
+    from test_monitoring import rule, NOW
+
+    saved = rule()
+    store.save_rule(tmp_path, saved)
+    store.record_evaluations(tmp_path, saved, [Evaluation('2026-10-09', -5., condition='triggered')], now=NOW)
+    event_id = store.load_monitoring(tmp_path)[0]['events'][0]['id']
+    original = store.load_monitoring
+    reads = []
+    def counted(directory):
+        reads.append(directory)
+        return original(directory)
+    monkeypatch.setattr(store, 'load_monitoring', counted)
+    app = AppTest.from_string(f'''
+from pathlib import Path
+import streamlit as st
+from portfolio_app.interface.shared.notifications_ui import _monitoring_document
+from portfolio_app.interface.views.monitoring.monitoring_ui import watch_monitoring
+from portfolio_app.monitoring.monitoring_store import remember_notices
+root = Path({str(tmp_path)!r})
+watch_monitoring(root, demo=True, evaluate_rules=False)
+doc = _monitoring_document(root)
+remember_notices(root, set(), previously_seen=doc['notice_seen'])
+st.metric('Unread', sum(not e['read'] for e in doc['events']))
+''').run()
+    assert not app.exception and app.metric[0].value == '1'
+    app.run()
+    assert reads == [tmp_path]
+    store.mark_events(tmp_path, [event_id], acknowledge=True)
+    reads.clear()
+    app.run()
+    assert reads == [tmp_path] and app.metric[0].value == '0'
+
+
+@pytest.mark.parametrize('external_edit', ['none', 'before', 'after'])
+def test_overview_reuses_its_own_notification_receipts_and_observes_other_edits(tmp_path, external_edit):
+    from dataclasses import replace
+    from portfolio_app.interface.shared.overview_navigation import ViewSources
+    from portfolio_app.monitoring import monitoring_store as store
+    from test_monitoring import rule
+
+    sources = ViewSources(tmp_path)
+    other_window = ViewSources(tmp_path)
+
+    def edit():
+        store.save_rule(tmp_path, replace(rule(), enabled=False))
+    if external_edit == 'before':
+        edit()
+    store.remember_notices(tmp_path, {'manual'}, opened=True, on_write=sources.notices_recorded)
+    if external_edit == 'after':
+        edit()
+    assert sources.current() == (external_edit == 'none')
+    assert not other_window.current()
+    assert store.load_monitoring(tmp_path)[0]['notice_seen'] == ['manual']
+
+
+def test_overview_detects_etf_failure_until_the_bell_has_displayed_it(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    app = AppTest.from_string(f"""
+from pathlib import Path
+from types import SimpleNamespace
+import pandas as pd
+import streamlit as st
+from portfolio_app.funds.etf_refresh import write_json
+from portfolio_app.interface.shared.notifications_ui import notification_bell
+root = Path({str(tmp_path)!r})
+status = SimpleNamespace(estimated_costs=0, problems=pd.DataFrame())
+current = notification_bell(st.container(), root, [], pd.DataFrame(columns=['price_status']), status)
+st.metric('Shown status is current', str(current()))
+write_json(root/'.cache'/'etf-refresh'/'status.json', {{'synthetic': {{'status': 'failed', 'error': 'Invented failure'}}}})
+st.metric('After external update', str(current()))
+""").run()
+    assert not app.exception and [m.value for m in app.metric] == ['True', 'False']
+    app.run()
+    assert not app.exception and [m.value for m in app.metric] == ['True', 'True']
+
+
+def test_mounted_portfolio_inputs_expire_from_the_original_capture(tmp_path, monkeypatch):
+    from portfolio_app.interface.shared import overview_navigation
+    now = [0.]
+    monkeypatch.setattr(overview_navigation, 'monotonic', lambda: now[0])
+    sources = overview_navigation.ViewSources(tmp_path)
+    now[0] = 59.9
+    assert sources.current()
+    now[0] = 60.
+    assert not sources.current()

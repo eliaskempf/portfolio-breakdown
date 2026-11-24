@@ -232,6 +232,12 @@ Do not make live network access necessary for unit tests. Use fixtures or inject
 
 ## Performance discipline
 
+For ongoing performance work, measure the affected interaction, fix the underlying
+cause and verify the change against the same workload. Make a dedicated commit
+for each completed improvement before investigating the next outstanding issue.
+Continue across the application while evidence identifies another opportunity.
+Prioritize the installed apps and verify shared interactions in the browser too.
+
 Treat responsiveness as a standing product requirement in every implementation
 and review, not only when the user reports slowness. Actively look for and avoid
 unnecessary calculation, repeated parsing and validation, duplicate data loading,

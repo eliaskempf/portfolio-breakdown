@@ -438,12 +438,13 @@ class _SecurityReplay:
         self.events = [(b, e) for b in books for e in selected_events(b)]
         self.events.sort(key=lambda pair: (pair[1].date, pair[1].sequence, pair[0].position_id))
         self.offset = 0
+        self._latest_cash_date = ''
 
     def advance(self, as_of=None, sequence=None):
         from portfolio_app.performance.cost_basis import component
         owners = self.owners
         states = dict(self.state.positions)
-        cash, disposals = list(self.state.cash), list(self.state.disposals)
+        new_cash, new_disposals = [], []
         offset = self.offset
         with localcontext() as context:
             context.prec = 60
@@ -461,7 +462,7 @@ class _SecurityReplay:
                         raise DataError('An asset fee needs an activated paying position and opening inventory.')
                     remaining, paid = _consume(payer.lots, charge.quantity)
                     states[charge.position_id] = replace(payer, lots=remaining, quantity=payer.quantity-charge.quantity)
-                    disposals.append(SecurityDisposal(e.id, charge.position_id, e.date, 'asset_fee', paid))
+                    new_disposals.append(SecurityDisposal(e.id, charge.position_id, e.date, 'asset_fee', paid))
                 state = states[book.position_id]
                 if e.kind not in ('opening', 'checkpoint') and not state.boundary:
                     raise DataError('Start history with an explicit opening snapshot, including zero.')
@@ -513,7 +514,7 @@ class _SecurityReplay:
                     pass
                 elif e.kind in ('sell', 'transfer', 'transfer_out', 'inventory_out', 'swap', 'asset_fee'):
                     lots, moved = _consume(lots, e.quantity)
-                    disposals.append(SecurityDisposal(e.id, book.position_id, e.date, e.kind, moved))
+                    new_disposals.append(SecurityDisposal(e.id, book.position_id, e.date, e.kind, moved))
                     if e.kind == 'swap':
                         destination = owners.get(e.other_position_id)
                         other = states.get(e.other_position_id)
@@ -548,18 +549,26 @@ class _SecurityReplay:
                     denomination(e.currency)
                     gross = e.gross if e.kind in ('buy', 'sell') else e.amount
                     sign = -1 if e.kind in ('buy', 'fee', 'tax') else 1
-                    cash.append(SecurityCash(e.id, book.position_id, book.account_id, e.date, e.sequence,
+                    new_cash.append(SecurityCash(e.id, book.position_id, book.account_id, e.date, e.sequence,
                         e.currency, None if gross is None else sign*gross, e.kind, e.value_date, event_id=e.id))
                 for i, c in enumerate(e.charges):
-                    cash.append(SecurityCash(f'{e.id}:charge:{i}', book.position_id, book.account_id,
+                    new_cash.append(SecurityCash(f'{e.id}:charge:{i}', book.position_id, book.account_id,
                         c.date or e.date, e.sequence, c.currency, None if c.amount is None else -c.amount,
                         c.kind, external=c.external, event_id=e.id))
                 if e.kind in ('buy', 'sell', 'distribution') and not e.charges_known:
-                    cash.append(SecurityCash(f'{e.id}:unknown-charges', book.position_id, book.account_id,
+                    new_cash.append(SecurityCash(f'{e.id}:unknown-charges', book.position_id, book.account_id,
                         e.date, e.sequence, e.currency, None, 'fee', event_id=e.id))
-        self.state = SecuritiesState(states, tuple(cash), tuple(disposals))
+        cash = self.state.cash + tuple(new_cash)
+        disposals = self.state.disposals + tuple(new_disposals)
+        latest = max((posting.date for posting in new_cash), default='')
+        latest = max(self._latest_cash_date, latest)
+        # Only a separately dated posting can still be pending after its event.
+        visible_cash = tuple(p for p in cash if p.date <= as_of) if as_of and as_of < latest else cash
+        snapshot = SecuritiesState(dict(states), visible_cash, disposals)
+        self.state = SecuritiesState(states, cash, disposals)
         self.offset = offset
-        return SecuritiesState(dict(states), tuple(c for c in cash if not as_of or c.date <= as_of), tuple(disposals))
+        self._latest_cash_date = latest
+        return snapshot
 
 
 def replay_securities(books, *, as_of=None, sequence=None):

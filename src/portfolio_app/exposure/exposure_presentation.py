@@ -67,6 +67,19 @@ def canonical_asset_names(rows):
     return result
 
 
+def with_asset_tickers(exposures, holdings):
+    """Use the held listing's ticker for every source of an asset, including ETF rows."""
+    source_tickers = exposures[['asset_id', 'ticker']].drop_duplicates('asset_id', keep='last').set_index('asset_id').ticker
+    direct_tickers = holdings[['id', 'ticker']].drop_duplicates('id', keep='last').set_index('id').ticker
+    tickers = exposures.asset_id.map(source_tickers.to_dict() | direct_tickers.to_dict())
+    shown = tickers.notna() & tickers.ne('')
+    if not shown.any():
+        return exposures
+    names = exposures.asset_name.copy()
+    names.loc[shown] = names.loc[shown] + ' (' + tickers.loc[shown].astype(str) + ')'
+    return exposures.assign(asset_name=names)
+
+
 @dataclass(frozen=True)
 class MarketAnalysis:
     """Owned presentation projections with two deliberately different totals.

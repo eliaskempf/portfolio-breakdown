@@ -23,7 +23,7 @@ from portfolio_app.performance.performance import position_performance, summariz
 from portfolio_app.portfolio.strategic import bucket_paths, category_labels, bucket_positions, strategic_summary, strategic_tree, strategic_performance
 
 
-def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None, open_capital_targets=None, current_valued=None, automatic_history=False, show_sold_positions=False):
+def render_strategic_overview(valued, config, *, open_position=None, percent=False, on_toggle_gain=None, edit_position=None, position_context="overview", analytics=None, exposure_result=None, future=None, data_dir=None, leverage_enabled=True, open_exposure_targets=None, open_capital_targets=None, current_valued=None, automatic_history=False, show_sold_positions=False, history_holdings=None, journal=None, observation_snapshot=None, input_revisions=None):
     from portfolio_app.workspace.display_preferences import load_preferences, save_overview_view
     from portfolio_app.portfolio.holdings import DataError
     modes = ['Allocation', 'Performance', *(['Analytics'] if analytics else [])]
@@ -89,7 +89,10 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         from portfolio_app.portfolio.positions import read_snapshot
         from portfolio_app.portfolio.holdings import DataError
         try:
-            history = prepare_portfolio_history(data_dir,read_snapshot(data_dir / 'holdings.csv').holdings,
+            if history_holdings is None:
+                history_holdings = read_snapshot(data_dir / 'holdings.csv').holdings
+            history = prepare_portfolio_history(data_dir, history_holdings, journal=journal, observation_snapshot=observation_snapshot,
+                journal_revision=input_revisions[1] if input_revisions else None,
                 config=config,bucket=bucket,displayed=valued, current_valued=current_valued if current_valued is not None else valued,
                 include_points=st.session_state.get('strategic_view', 'Performance') == 'Performance',
                 annualized=st.session_state.get('strategic_view', 'Performance') == 'Performance')
@@ -143,7 +146,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
         if has_history:
             from portfolio_app.interface.views.history.history_ui import render_portfolio_history
             render_portfolio_history(data_dir,history,label='Category value' if bucket else 'Portfolio value',
-                                     percent=percent,on_toggle_gain=on_toggle_gain,automatic=automatic_history)
+                                     percent=percent,on_toggle_gain=on_toggle_gain,automatic=automatic_history, input_revisions=input_revisions)
         elif history is not None:
             from portfolio_app.interface.views.history.history_data_ui import brief_reasons, readable_reasons
             reasons = history['view'].all_result.value_reasons
@@ -151,11 +154,12 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             st.caption('History chart needs two dated valuations.', help=detail or
                        'Review the selected holdings in Positions → History for missing transactions or valuations.')
         with st.container(key='tour_performance'):
-            table = strategic_performance(valued, config, bucket)
-            if history is not None:
+            if history is None:
+                table = strategic_performance(valued, config, bucket)
+            else:
                 from portfolio_app.performance.gain_comparison import known_category_performance
                 from portfolio_app.interface.shared.currency_display import reporting_currency
-                table = known_category_performance(valued, read_snapshot(data_dir / 'holdings.csv').holdings,
+                table = known_category_performance(valued, history_holdings,
                     config, history['journal'], history['observations'],
                     current_valued if current_valued is not None else valued, bucket, target=reporting_currency(),
                     calculation=history['calculation'], current_values=history['current_values'])
@@ -200,7 +204,7 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
             from portfolio_app.exposure.exposure_presentation import exposure_positions, companion_nodes
             market = measure == 'Market exposure'
             plotted = exposure_positions(valued, exposure_result, future) if market else valued
-            plotted_selection = bucket_positions(plotted, config, bucket)
+            plotted_selection = bucket_positions(plotted, config, bucket) if market else selected
             partial = market and plotted_selection.current_value_reporting.isna().any()
             chart_positions = exposure_positions(valued, exposure_result, future, known_only=True) if partial else plotted
             if partial:
@@ -209,15 +213,18 @@ def render_strategic_overview(valued, config, *, open_position=None, percent=Fal
                 render_exposure_coverage(scoped_rows, plotted)
                 st.caption('Chart and Known exposure show only resolved contributions. Total exposure stays unavailable for affected rows.')
             with chart_column:
-                tree = companion_nodes(sort_allocation_nodes(strategic_tree(chart_positions, config, bucket)), future)
-                if bucket_positions(chart_positions, config, bucket).current_value_reporting.lt(0).any():
+                chart_selection = bucket_positions(chart_positions, config, bucket) if partial else plotted_selection
+                values = chart_selection.current_value_reporting
+                if values.lt(0).any():
                     from portfolio_app.interface.views.exposure.portfolio_exposure_ui import signed_chart
                     amount = 'Exposure' if market else 'Value'
                     table = strategic_summary(chart_positions, config, bucket).rename(columns={'Value': amount})
                     signed_chart(table, 'Category', amount, 'strategic_exposure_chart' if market else 'signed_capital_chart')
-                elif not tree.empty and tree.value.max() > 0:
+                elif values.gt(0).any():
+                    allocation_tree = strategic_tree(chart_positions, config, bucket)
+                    tree = companion_nodes(sort_allocation_nodes(allocation_tree), future)
                     figure = hierarchy_chart(tree, 'Sunburst', preserve_order=True)
-                    reference = strategic_tree(valued, config)
+                    reference = allocation_tree if not market and not bucket else strategic_tree(valued, config)
                     colors = dict(zip(reference.node_id, strategic_colors(reference, config)))
                     position_colors = {json.loads(row.node_id)[2]: colors[row.node_id] for row in reference.itertuples() if row.kind == 'holding'}
                     linked_color = position_colors.get(future.proxy_position_id) if future else None

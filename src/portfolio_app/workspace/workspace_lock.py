@@ -19,11 +19,22 @@ _held = local()
 write_context = ContextVar('workspace_write_context', default=None)
 
 
+def in_workspace_transaction():
+    """Whether this thread owns a workspace barrier that other writers would need."""
+    return bool(getattr(_held, 'keys', ()))
+
+
 def bind_workspace(launch, chosen):
     context = (launch, chosen)
     write_context.set(context)
     with _mutex:
         _contexts[str(chosen.directory)] = context
+
+
+def workspace_context(directory: Path):
+    """Capture the selection that owns work started in this script or a dialog fragment."""
+    with _mutex:
+        return write_context.get() or _contexts.get(str(directory))
 
 
 def document_workspace(path: Path) -> Path:
@@ -60,8 +71,7 @@ def workspace_lock(directory: Path, *, check_context=True):
         with write_lock(directory / '.workspace.lock'):
             # Streamlit can run dialog fragments on a new script thread without
             # rerunning render_app. Their old document paths must remain fenced.
-            with _mutex:
-                context = write_context.get() or _contexts.get(key)
+            context = workspace_context(directory)
             if check_context and context is not None:
                 from portfolio_app.workspace.workspace_selection import selection
                 launch, expected = context

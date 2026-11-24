@@ -164,6 +164,26 @@ def test_install_refresh_proxy_metadata_and_failure_preserve_files(tmp_path, syn
     assert len(list(directory.glob('*.csv'))) == 2
 
 
+def test_identical_provider_refresh_preserves_revisions_and_repairs_damaged_csv(tmp_path, synthetic_source):
+    fund = install_snapshot(tmp_path, synthetic_source, fetch=lambda _: dws_export())
+    manifest = fund.manifest_path
+    csv = next(tmp_path.glob('*.csv'))
+    def revision(path):
+        stat = path.stat()
+        return stat.st_ino, stat.st_mtime_ns, stat.st_ctime_ns
+    original = csv.read_bytes()
+    before = revision(manifest), revision(csv)
+    refresh_snapshot(fund, fetch=lambda _: dws_export())
+    assert (revision(manifest), revision(csv)) == before
+    csv.write_bytes(original.replace(b'Invented First', b'Damaged record'))
+    assert len(csv.read_bytes()) == len(original)
+    refresh_snapshot(fund, fetch=lambda _: dws_export())
+    assert csv.read_bytes() == original and revision(manifest) == before[0]
+    refresh_snapshot(fund, fetch=lambda _: dws_export((55, 44, 1)))
+    assert revision(manifest) != before[0]
+    assert load_funds(tmp_path)[0].constituents.weight.iloc[0] == .55
+
+
 def test_refresh_does_not_overwrite_concurrent_manifest_edit(tmp_path, synthetic_source):
     fund = install_snapshot(tmp_path, synthetic_source, fetch=lambda _: dws_export())
     def fetch(_):

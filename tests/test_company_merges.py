@@ -169,3 +169,96 @@ def test_reviewed_links_survive_identifier_enrichment_and_plain_provider_refresh
         assert stock_exposure(linked, funds).companies['Total'].tolist() == [150.]
         disabled.update(m['node'] for m in plan.groups[0].members)
         assert not build_plan(rows, snapshots, reviewed, MergeSettings(disabled)).groups[0].enabled
+
+
+def test_inventory_formats_source_labels_once_per_held_fund(monkeypatch):
+    from portfolio_app.exposure import company_merges
+    holdings, funds = universe()
+    frames = []
+    for fund in funds:
+        constituents = pd.concat([fund.constituents.assign(constituent_id=f'row-{i}') for i in range(20)])
+        frames.append(replace(fund, constituents=constituents))
+    original = company_merges.display_name
+    labels = []
+    def counted(name):
+        labels.append(name)
+        return original(name)
+    monkeypatch.setattr(company_merges, 'display_name', counted)
+    items = company_merges.inventory(holdings, frames, {})
+    assert len(items) == 40
+    assert labels == [fund.name for fund in funds]
+
+
+def test_each_estimated_name_checks_only_its_identity_components(monkeypatch):
+    from portfolio_app.exposure import company_merges
+    holdings, funds = universe()
+    count = 150
+    snapshots = []
+    for index, fund in enumerate(funds):
+        rows = pd.DataFrame([dict(constituent_id=f'{index}-{n}', name=f'Invented issuer {n}',
+                                  isin='', ticker='', weight=1/count, instrument_type='equity')
+                             for n in range(count)])
+        snapshots.append(replace(fund, constituents=rows))
+    # Count full-universe index scans. Looking up every other issuer for each
+    # estimated name makes a pair of broad funds quadratic.
+    full_scans = []
+    def observed_range(*args):
+        if args == (2 * count,):
+            full_scans.append(1)
+        return range(*args)
+    monkeypatch.setattr(company_merges, 'range', observed_range, raising=False)
+    plan = build_plan(holdings, snapshots, {}, MergeSettings(set()))
+    assert len(plan.groups) == count
+    assert all(g.basis == 'Estimated name match' and len(g.members) == 2 for g in plan.groups)
+    assert len(full_scans) <= 3
+
+
+def test_aliased_component_retains_its_origin_and_estimated_status(monkeypatch):
+    from portfolio_app.exposure import company_merges
+    # The exact security Y has two names and two origins. Its alias in C must
+    # prevent merging the second, different security from C through that name.
+    records = [('A', 'X', 'Invented north'), ('B', 'Y', 'Invented north'),
+               ('C', 'Y', 'Invented south'), ('C', 'Z', 'Invented south')]
+    items = [dict(node=f'n{i}', asset_id=identity, isin=identity, name=name, origin=origin,
+                  source=origin, fund=origin, date='', ticker='')
+             for i, (origin, identity, name) in enumerate(records)]
+    monkeypatch.setattr(company_merges, 'inventory', lambda *args: items)
+    plan = build_plan(pd.DataFrame(), [], {}, MergeSettings(set()))
+    assert len(plan.groups) == 1
+    assert plan.groups[0].basis == 'Estimated name match'
+    assert [m['node'] for m in plan.groups[0].members] == ['n0', 'n1', 'n2']
+
+
+def test_merge_annotations_use_source_local_ids_and_preserve_provider_columns(monkeypatch):
+    from portfolio_app.exposure import company_merges
+
+    holdings, funds = universe()
+    for i, fund in enumerate(funds):
+        frame = fund.constituents.assign(constituent_id='vendor:shared', isin='ZZ1111111111',
+                                         provider_note='Invented metadata', analysis_asset_id='old')
+        unrelated = frame.assign(constituent_id='vendor:bond', instrument_type='bond', weight=.1)
+        funds[i] = replace(fund, constituents=pd.concat([frame, unrelated]))
+    funds.append(replace(funds[0], isin='ZZ9999999999'))
+
+    read_records = company_merges.constituent_records
+    def projected(frame):
+        assert 'provider_note' not in frame
+        return read_records(frame)
+    monkeypatch.setattr(company_merges, 'constituent_records', projected)
+    # Walking whole rows would extract every provider field merely to look up an ID.
+    original_tuples = pd.DataFrame.itertuples
+    def check_columns(frame, *args, **kwargs):
+        assert 'provider_note' not in frame
+        return original_tuples(frame, *args, **kwargs)
+    monkeypatch.setattr(pd.DataFrame, 'itertuples', check_columns)
+    plan = build_plan(holdings, funds, {}, MergeSettings({'fund:ZZ2222222222:vendor:shared'}))
+    assert len(plan.groups) == 1 and not plan.groups[0].enabled
+    _, linked, _ = plan.apply(holdings, funds, {})
+    for i, fund in enumerate(linked):
+        expected = f'separate:fund:{fund.isin}:vendor:shared' if i < 2 else ''
+        assert fund.constituents.analysis_asset_id.tolist() == [expected, '']
+        assert fund.constituents.index.tolist() == [0, 0]
+        assert fund.constituents.provider_note.tolist() == ['Invented metadata'] * 2
+        fund.constituents['provider_note'] = 'Edited copy'
+        assert funds[i].constituents.provider_note.tolist() == ['Invented metadata'] * 2
+        assert funds[i].constituents.analysis_asset_id.tolist() == ['old'] * 2

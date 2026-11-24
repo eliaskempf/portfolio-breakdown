@@ -1,4 +1,5 @@
 """Opt-in market observations for personal history; never reconstruct trades."""
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from uuid import uuid4
@@ -73,28 +74,65 @@ def fetch_fx(source, target, start, end, *, factory=None):
     return tuple(result)
 
 
+class _DownloadMerge:
+    """Stage each source atomically, sharing lookups until the download is published."""
+    def __init__(self, store):
+        self.store = store
+        self.by_id = None
+        self.by_key = None
+
+    def add(self, observations):
+        additions, changes = {}, {}
+        explicit_correction = False
+        for observation in observations:
+            if self.by_id is None:
+                self.by_key = {o.key: o for o in active_observations(self.store)}
+                self.by_id = {o.id: o for o in self.store.observations}
+            key = observation.key
+            previous = changes.get(key) or self.by_key.get(key)
+            if previous:
+                if previous.source == 'manual' or previous.source.startswith('manual: '):
+                    continue
+                if (previous.amount == observation.amount and previous.listing == observation.listing
+                        and previous.calendar == observation.calendar and previous.exchange_timezone == observation.exchange_timezone):
+                    continue
+                observation = replace(observation, replaces=previous.id)
+            existing = additions.get(observation.id) or self.by_id.get(observation.id)
+            if existing:
+                if existing != observation:
+                    raise DataError('Observation ID already has different evidence.')
+                continue
+            if not isinstance(observation, Observation):
+                raise DataError('Invalid or duplicate historical evidence.')
+            if previous is None and observation.replaces:
+                # A supplied link can move an observation to a different key.
+                # Validate the entire chain before committing this source.
+                explicit_correction = True
+            additions[observation.id] = observation
+            changes[key] = observation
+        if not additions:
+            return
+        if explicit_correction:
+            verified = replace(self.store, observations=(*self.by_id.values(), *additions.values()))
+            self.by_key = {o.key: o for o in active_observations(verified)}
+            self.store = verified
+        else:
+            self.by_key.update(changes)
+        self.by_id.update(additions)
+
+    def active_rows(self):
+        return self.by_key.values() if self.by_key is not None else active_observations(self.store)
+
+    def result(self):
+        if self.by_id is None or len(self.by_id) == len(self.store.observations):
+            return self.store
+        return replace(self.store, observations=tuple(self.by_id.values()))
+
+
 def merge_download(store, observations):
-    active = {o.key: o for o in active_observations(store)}
-    from dataclasses import replace
-    records = list(store.observations)
-    identities = {o.id: o for o in records}
-    for observation in observations:
-        previous = active.get(observation.key)
-        if previous and (previous.source == 'manual' or previous.source.startswith('manual: ') or (previous.amount == observation.amount and previous.listing == observation.listing
-                and previous.calendar == observation.calendar and previous.exchange_timezone == observation.exchange_timezone)):
-            continue
-        if previous:
-            observation = replace(observation, replaces=previous.id)
-        if observation.id in identities:
-            if identities[observation.id] != observation:
-                raise DataError('Observation ID already has different evidence.')
-            continue
-        records.append(observation)
-        identities[observation.id] = observation
-        active[observation.key] = observation
-    # Validate one append-only batch, rather than rebuilding the full correction
-    # graph after every downloaded daily close (quadratic in history length).
-    return replace(store, observations=tuple(records)) if len(records) != len(store.observations) else store
+    batch = _DownloadMerge(store)
+    batch.add(observations)
+    return batch.result()
 
 
 def download_scope_observations(directory, journal, scope, store, start, end, target):
@@ -107,7 +145,8 @@ def download_scope_observations(directory, journal, scope, store, start, end, ta
     from portfolio_app.ledger.security_history import selected_events, affected_positions
     from portfolio_app.derivatives.settlement_archive import SettlementArchive
     holdings = read_snapshot(directory / 'holdings.csv').holdings.set_index('position_id')
-    updated, errors, currencies = store, [], set()
+    batch = _DownloadMerge(store)
+    errors, currencies = [], set()
     identities = set(scope.positions) | {b.position_id for b in journal.securities if b.account_id in scope.accounts}
     for identity in sorted(identities):
         if identity not in holdings.index or not holdings.loc[identity].ticker:
@@ -116,7 +155,7 @@ def download_scope_observations(directory, journal, scope, store, start, end, ta
             prices = fetch_security_prices(holdings.loc[identity].ticker, identity, start, end)
             if not prices:
                 raise DataError('No historical prices returned.')
-            updated = merge_download(updated, prices)
+            batch.add(prices)
         except Exception as exc:
             errors.append(f'{identity}: {type(exc).__name__}; retry historical prices')
     subjects = set(scope.positions)
@@ -143,15 +182,15 @@ def download_scope_observations(directory, journal, scope, store, start, end, ta
         values = [Observation(uuid4().hex, 'price', contract.id, stamp, value.price, contract.currency,
             source='Accepted settlement archive') for stamp, value in SettlementArchive(directory).entries(contract).items()
             if start <= stamp <= end]
-        updated = merge_download(updated, values)
-    currencies.update(o.currency for o in active_observations(updated)
+        batch.add(values)
+    currencies.update(o.currency for o in batch.active_rows()
                       if o.subject in subjects or o.subject == scope.key)
     for currency in sorted(currencies - {'', target}):
         try:
             rates = fetch_fx(currency, target, start, end)
             if not rates:
                 raise DataError('No historical FX returned.')
-            updated = merge_download(updated, rates)
+            batch.add(rates)
         except Exception as exc:
             errors.append(f'{currency}/{target}: {type(exc).__name__}; retry historical FX')
-    return updated, errors
+    return batch.result(), errors

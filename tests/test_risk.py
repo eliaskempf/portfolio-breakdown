@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.analytics.risk import eur_prices, risk_analytics, weekly_returns
+from portfolio_app.analytics.risk import daily_prices, eur_prices, risk_analytics, weekly_returns
 from portfolio_app.analytics.risk_data import AdjustedHistory, RiskHistoryService, YahooRiskHistoryProvider
 
 TODAY = date(2026, 9, 27)
@@ -97,6 +97,32 @@ def test_intersection_must_have_52_observations():
     assert result.beta is None
 
 
+def test_valid_daily_history_skips_sorting_and_filtering(monkeypatch):
+    dates = pd.bdate_range('2025-01-01', periods=180, name='Trading day')
+    prices = pd.Series(np.linspace(50., 100., len(dates)), index=dates, name='Close')
+
+    def unexpected(*args, **kwargs):
+        pytest.fail('Already ordered, positive daily prices were sorted or filtered')
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pd.Series, 'sort_index', unexpected)
+        patch.setattr(pd.Series, 'where', unexpected)
+        cleaned = daily_prices(prices)
+    pd.testing.assert_series_equal(cleaned, prices)
+    cleaned.iloc[0] = 5.
+    assert prices.iloc[0] == 50.
+
+
+def test_daily_prices_use_last_local_observation_before_rejecting_invalid_closes():
+    dates = pd.DatetimeIndex(['2025-01-06 00:15', '2025-01-03 18:00', '2025-01-06 18:00',
+                              '2025-01-02 00:05', '2025-01-07 00:00', '2025-01-08 00:00'],
+                             tz='Asia/Tokyo', name='Trading day')
+    prices = pd.Series(['10', '9', 'invalid', '8', '-3', 'inf'], index=dates, name='Close')
+    expected = pd.Series([8., 9.], index=pd.DatetimeIndex(['2025-01-02', '2025-01-03'],
+                          name='Trading day').as_unit(dates.unit), name='Close')
+    pd.testing.assert_series_equal(daily_prices(prices), expected)
+
+
 def test_historical_fx_currency_subunits_and_missing_fx():
     prices = pd.Series([1000., 1200., 1400.], index=pd.date_range('2026-01-01', periods=3))
     fx = pd.Series([1.2, 1.3], index=prices.index[:2])
@@ -135,3 +161,31 @@ def test_yahoo_history_requests_adjustment(monkeypatch):
             return pd.DataFrame({'Close': [100., 102.]}, index=pd.date_range('2026-01-01', periods=2))
     monkeypatch.setattr(yf, 'Ticker', lambda ticker: Ticker())
     assert YahooRiskHistoryProvider().fetch('INVENTED', 3).prices.tolist() == [100., 102.]
+
+
+def test_asset_risk_shares_benchmark_fridays_across_distinct_trading_calendars(monkeypatch):
+    from portfolio_app.analytics import risk
+    benchmark = history(np.tile(market(), 2))
+    # Duplicates, weekend trading and an exchange holiday span the first
+    # window boundary. A missing whole week must also remove the next return.
+    first = benchmark.copy()
+    first.index -= pd.Timedelta(days=6)
+    second = benchmark.drop(benchmark.index[-43]).copy()
+    second.index -= pd.Timedelta(days=1)
+    second = pd.concat([second, second.iloc[-12:-11] * 1.01]).iloc[::-1]
+    histories = {'first': first, 'second': second}
+    frame = held(list(histories), [65, 35])
+    explicit = {key: weekly_returns(prices, today=TODAY) for key, prices in histories.items()}
+    expected = risk_analytics(frame, {}, benchmark, years=3, today=TODAY, return_series=explicit)
+    calendars = []
+    original = risk.weekly_returns
+    def counted(series, **kwargs):
+        calendars.append(len(series))
+        return original(series, **kwargs)
+    monkeypatch.setattr(risk, 'weekly_returns', counted)
+    actual = risk_analytics(frame, histories, benchmark, years=3, today=TODAY)
+    assert calendars == [len(benchmark)]
+    assert actual.observations == expected.observations > 52
+    assert actual.beta == expected.beta and actual.volatility == expected.volatility
+    pd.testing.assert_frame_equal(actual.holdings, expected.holdings)
+    pd.testing.assert_frame_equal(actual.correlations, expected.correlations)

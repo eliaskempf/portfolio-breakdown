@@ -86,20 +86,24 @@ if st.button('Open position'): dialog()
             settle(page)
             page.evaluate('''() => {
                 window.statusCounts=[];
+                window.initialPlot=document.querySelector('[role="dialog"] .js-plotly-plot');
+                window.chartWasStale=false;
                 const sample=()=>window.statusCounts.push([...document.querySelectorAll('[role="dialog"] [data-testid="stCaptionContainer"]')]
                     .filter(e=>e.textContent.includes('Market closed · Quotes as of') && e.getClientRects().length
                         && getComputedStyle(e).visibility!=='hidden').length);
-                window.statusObserver=new MutationObserver(sample);
+                window.statusObserver=new MutationObserver(() => {
+                    sample();
+                    if (window.initialPlot.closest('[data-stale="true"]')) window.chartWasStale=true;
+                });
                 window.statusObserver.observe(document.body,{subtree:true,childList:true,attributes:true,characterData:true});
                 sample();
             }''')
             (tmp_path/'complete').touch()
             playwright.expect(dialog.get_by_text('Loading historical prices and FX…', exact=True)).to_have_count(0, timeout=10000)
-            deadline = time.monotonic()+10
-            while not (tmp_path/'rendered').exists() and time.monotonic()<deadline:
-                page.wait_for_timeout(50)
-            assert (tmp_path/'rendered').exists()
             settle(page)
+            page.wait_for_timeout(2200)
+            assert page.evaluate('initialPlot.isConnected && !chartWasStale')
+            assert not (tmp_path/'rendered').exists(), 'An unchanged refresh rebuilt the chart'
             counts = page.evaluate('() => {window.statusObserver.disconnect();return window.statusCounts;}')
             assert counts and max(counts) == 1, f'Duplicate valuation status during refresh: {max(counts)}'
             playwright.expect(status).to_have_count(1)

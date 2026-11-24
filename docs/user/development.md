@@ -91,7 +91,10 @@ account states between cash/account event dates. A settlement value date alone
 does not release a pending receipt; explicit receipt events remain authoritative.
 Background data refreshes must remain local to the affected result. Dialog polling
 fragments must stop writing when their captured position or view is no longer
-selected; a stale timer must not draw into a replacement view. Verify actual
+selected; a stale timer must not draw into a replacement view. Status pollers
+use the runtime's fragment timer through `status_fragment`. A callback requests
+the next interval while work is pending. Returning to its default interval or
+stopping the timer leaves widget events available for user interactions. Verify actual
 transitions with delayed synthetic data: settled screenshots alone miss old
 controls and charts briefly appearing during a switch.
 
@@ -243,6 +246,9 @@ remain distinct: final adoption checks run only when requesting the complete
 state, and validation failures remain failures on retry. Explicit zero inception
 uses a validated zero-opening source marker; snapshots never imply unknown
 prehistory was empty.
+A later opening balance in another currency preserves the confirmed inception
+and its first-day contributions. Closing valuations still require cash coverage
+for the account on the requested date.
 
 Long XIRR schedules can certify uniqueness by enclosing a sign-changing root and
 all proper discounted cash-flow prefixes with directed decimal intervals. A
@@ -724,6 +730,201 @@ as well as interval switches. A warm session cache does not establish acceptable
 initial-load performance. Use synthetic ledgers for repeatable regression checks;
 read-only inspection of a running portfolio must emit only timing metadata.
 
+
+### Packaged performance benchmark
+
+The **Packaged performance benchmark** Actions workflow exercises WebView2 on
+Windows, Qt WebEngine on Ubuntu and WKWebView on macOS. It also drives Chromium
+against each packaged server. The benchmark builds a disposable binary from the
+release PyInstaller spec with an additional measurement hook. Only the benchmark
+build contains the synthetic provider and timing probes.
+
+The app leaves garbage collection to Python by default. Set Streamlit's
+`runner.postScriptGC` to `true` to force a full collection after each rerun.
+Explicit configuration files, environment options and command-line flags take
+precedence over the app default.
+
+The collection experiment compares the shipped default with forced collection
+in the same binary. Automatic garbage collection stays active in both trials.
+Each process makes five visits to the Companies grid and 80 Overview switches. Results include click-to-paint and settled times,
+chart digests, collection counts and five samples of server resident memory.
+Memory samples come from the Streamlit server PID after cleanup. Compare resident
+memory within each OS because working-set accounting differs by platform.
+
+Each runner compares two modes of the same binary. The navigation experiment
+keeps persistent history and background refresh active in both modes. Its
+reference runs the whole application when switching views. The candidate
+renders the mounted Overview panel using the validated portfolio snapshot.
+The job checks for repeated valuations and journal serialization on warm
+switches and records their call counts per interaction. Workspace edits,
+global controls, expired or changed quotes, and completed background updates
+use ordinary application loading. The next panel interaction after one minute
+also revalidates time-sensitive inputs. Idle navigation schedules no timer.
+
+In the history experiment the reference bypasses
+persisted history and background chart calculation. The candidate uses both.
+Each pair starts with a new synthetic portfolio, then completely exits and
+reopens the same workspace. Each process measures the first Allocation to
+Performance switch, a range change with a download held open, and five repeat
+switches. The second pair reverses the mode order. A cold launch here means
+an empty application cache and a fresh process. The operating system can still
+have executable or filesystem pages in memory.
+
+Select the input portfolio with the workflow's profile input or the driver's
+`--profile` option. All profiles use two years of invented EUR prices and 25
+monthly buys per position. The small control has 12 positions and no ETFs.
+The ETF-heavy profile has 24 direct equities and 24 held ETFs, with eight
+snapshots each of 50, 500 and 1,500 constituents. The 16,400 constituent rows
+include shared companies, direct/indirect overlap and eight partial snapshots.
+The mixed-history navigation benchmark also opens Performance while purchase-date
+FX is pending. All 48 positions have purchases on the same 25 USD dates and six
+positions lack closes on 22 days. The driver releases the synthetic rates after
+the first chart settles. It measures cold paint, background publication and idle
+fades, verifies every purchase cost, and compares the rendered series before
+and after publication. A separate cold visit adds four cash accounts and 2,920
+daily deposits to the 48 securities. It checks every painted portfolio value
+against the fixture's prices, shares and cash balance, then changes the range
+to three months and back. The benchmark also counts how often a holding's
+capital is recalculated between its purchases.
+
+The ten-year navigation trial uses 24 equities, 24 ETFs, 5,856 purchases
+staggered across each month, and four cash accounts with monthly deposits. It
+opens Performance from Allocation, selects 3M, then All, and returns to 1Y.
+The report records chart paint and settled times, checks every daily balance
+including the unknown balance before the first cash opening, and counts
+portfolio valuations during each range change.
+
+The mixed-history profile uses the same holdings and prices. Some overlapping
+constituents have only fund-local identifiers and company names. It also includes
+4,000 archived monitoring observations and 24 invented provider sectors. After
+the timed asset visits, the benchmark opens Themes & sectors twice, records the
+first painted chart and settled frame, and compares every label and value.
+It also measures the first and repeat opens of asset source details. It compares
+the displayed sources across binaries and checks that opening and closing the
+read-only dialog causes zero additional candidate portfolio valuations. The Exposure benchmark branch
+uses mixed-history on push. It also runs a separate native pair with the
+multi-account profile. That profile holds each of the 24 ETFs in four invented
+accounts alongside 24 direct shares. Its 120 positions have 3,000 purchases and
+87,720 price observations. Each listing has the same price history across its
+accounts. This additional pair opens Assets once and Companies twice, then
+repeats the Themes & sectors comparison with the same four-account scope. It
+checks the source disclosure for all 65,624 ownership contributions and compares
+every displayed sector label and value across binaries. It repeats the sector
+visit with **Show tickers** enabled, checks that the Assets table gained a Ticker
+column, and verifies that every sector amount matches the default view. After
+restoring the default, it switches the grouping to Account and Investment. It times the painted charts
+and populated tables, checks their row counts, and compares all four account
+amounts and the 30 largest investment contributions across binaries. It then visits
+Positions, Rebalance and Overview twice. Each visit records the first populated
+frame, settled frame and journal read count. The comparison checks all 120
+displayed position rows, the planning controls and the allocation chart data.
+
+The `checklist` experiment measures Positions → History once after launch and
+twice after returning to Holdings. One purchase in every fourth position has
+unconfirmed fees. The other positions exercise complete return calculations.
+Timing starts when the History control is clicked in the settled Positions view.
+The renderer records the first frame containing all expected rows and the
+settled frame. The comparison checks row identities, every cell and diagnostic
+tooltip across visits and binaries, and counts checklist calculations. Pushes
+to the exposure benchmark branch include a paired installed run on the
+mixed-history portfolio. Select `checklist` in the workflow to run additional
+pairs in both the installed renderer and Chromium.
+
+The `market-chart` experiment opens a position's USD closing-price chart in
+EUR after starting the app with saved prices and FX rates. It visits 1Y, 5Y
+and Max ranges and repeats both longer ranges. Max contains 7,560 trading
+days. Three dates lack FX observations. The renderer checks each omission,
+every displayed date and converted close, and periods with different UTC
+offsets. Each action times the first animation frame with a visible EUR chart
+for the selected range and the frame where the app settles. It also counts
+price and FX file opens and times conversions. Fresh saved prices must work
+offline, and revisiting an unchanged range reuses both saved series.
+Exposure benchmark branch pushes run the installed comparison. The workflow
+also accepts `market-chart` with a listed-equity profile for both surfaces.
+
+The `risk` experiment with the `mixed-history` profile uses 96 equities and
+24 ETFs, including two distinct listings with the same long display name.
+The first Calculate action should request the one missing adjusted history.
+Expanding and collapsing the 120 × 120 matrix should reuse the calculation and
+avoid a portfolio valuation. Each sample records request and calculation counts,
+click-to-chart time, settled time and encoded label size. The candidate has a
+label budget of 1 KiB per instrument, independent of the numeric matrix. The
+driver compares all three displayed estimates and every correlation across
+actions and binaries. Select this experiment to run it on both renderers.
+The `risk-cold` and `risk-stale` mixed-history comparisons use 48 listings.
+The `risk-cold` experiment starts with every adjusted history missing, including
+the benchmark. It measures first chart paint, settling and peak simultaneous
+provider requests, and verifies one acquisition per listing. Both binaries must
+produce the same risk metrics and correlation matrix.
+The `risk-stale` experiment dates every saved history and holds back a provider
+correction until the candidate displays the cached matrix. It compares the
+completed matrix and all three risk metrics with a synchronous reference.
+
+Mixed-history navigation also exercises two background providers together on each
+renderer. With Performance already open and a history download held pending,
+the ETF worker receives an identical snapshot or a provider failure. The driver
+checks the unread badge, then releases unchanged historical prices. It samples
+the mounted chart for fades and replacements, counts portfolio valuations while
+idle, and compares the financial series with the ordinary navigation run. These
+results appear in the navigation artifact under `background_checks`. A third
+case refreshes two equity quotes and a portfolio FX rate in
+stages. It checks that Overview navigation and range changes reuse the complete
+cached valuation, that switching through Positions preserves the same visible
+total, and that releasing the last quote publishes the corrected total. It also
+reads the on-disk quotes and FX rate before and after completion to verify what
+a new application process would load.
+Another case opens Notifications during a pending ETF check. It checks that the
+failure appears inside the panel, its unread count clears, and the chart and
+valuation stay in place while the panel opens, updates and closes.
+
+The Exposure experiment builds both the pre-change reference and the current
+application on each runner. With the ETF-heavy profile it times Overview to
+the first populated Exposure table and two return visits, then opens a source
+preview locally. It compares row counts and sampled row and preview contents
+between binaries. Pushes to the Exposure benchmark branch also run the Overview
+navigation experiment with the same installed candidate and portfolio profile.
+Each platform artifact includes the Exposure results at its root and the Overview
+results under `navigation/`. The Exposure results include first-table and settled-view
+times. To run locally, pass `--experiment exposure --profile etf-heavy` and
+`--reference` with the reference executable built with the same driver.
+
+The history and navigation job summaries show median and nearest-rank p95 interaction times.
+The JSON artifact retains every sample, including the click-to-first-drawn-chart
+and settled-view measurements, server calculation time and time from driver
+dispatch to the first server chart enqueue. The renderer times its own frames.
+Server work is counted between ordered event-log boundaries for each action.
+The driver and server use the host monotonic clock for the enqueue measurement.
+Chart paint is sampled at an animation frame with a populated Plotly trace.
+Launch time includes readiness polling and browser startup in browser mode.
+Where the native shell exposes its animation completion, the artifact also
+records the interval to usable Allocation. Compare within a platform and run.
+Use the manual workflow’s pair count for longer runs before treating timing
+differences as a release threshold.
+The deterministic checks fail on a changed series digest, a miss on a primed
+chart, an unexpected fade on unchanged data, or loss of the last complete chart
+while background work waits for a slot or calculates a replacement.
+The download stays blocked until the first chart and range change have been
+measured. Refresh completion timings include status polling. The changed-data
+trial deliberately delays the worker to verify interaction behavior, so use
+this trial for correctness and compare first-click and repeat-click times for
+latency.
+
+For a local run, sync the locked window, release and browser dependencies and
+install Playwright Chromium. From the project root, build the disposable bundle
+and pass its native executable to the driver. On Linux, provide an X11 session
+or use Xvfb. The output directory must be new.
+
+```sh
+uv run python tools/perf_benchmark/build.py dist/performance
+uv run python tools/perf_benchmark/run.py dist/performance/portfolio-window/portfolio-window dist/performance-results
+```
+
+The chart and summary snapshots in a workspace's private `.cache/history-views`
+directory are disposable. Their identity includes the ledger fingerprint,
+observation revision, scope, period, currency, day, requested metrics and model
+version. Bump the model schema when a calculation or coverage convention changes.
+Only historical results belong here. Current quotes and today's gain fallback
+continue to use their own current evidence.
 
 ## History playground
 

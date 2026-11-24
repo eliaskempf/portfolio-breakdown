@@ -79,3 +79,35 @@ def test_future_projection_reconciliation(contracts):
     assert overview['cost_basis_reporting'] == 100.  # Additional funding is not gain/reference cost.
     assert overview['position_id'] == capital['source_position_id'] == risk['id'] == exposure['source_position_id']
     assert 'notional' not in risk and 'shares' not in exposure
+
+
+@pytest.mark.parametrize('lookthrough', [False, True])
+@pytest.mark.parametrize('keep_group_whole', [False, True])
+def test_secondary_projection_retains_requested_financial_and_grouping_fields(monkeypatch, lookthrough, keep_group_whole):
+    from portfolio_app.exposure import exposure_analysis
+    from portfolio_app.portfolio.grouping import InstrumentGroup
+
+    fund_position = source()
+    second = fund_position.assign(id='invented-second', position_id='second', isin='ZZ8888888888',
+                                  ticker='OTHER', account='Invented second account')
+    rows = pd.concat([fund_position, second], ignore_index=True)
+    constituents = pd.DataFrame([dict(constituent_id='invented-security', name='Invented security',
+                                      ticker='', isin='', weight=.6, instrument_type='equity')])
+    funds = [FundSnapshot(row.id, row.name, row.isin, (), date(2001, 1, 1), 'Invented source',
+                          constituents, equity_fund=True) for row in rows.itertuples()]
+    group = InstrumentGroup('display:invented', 'Invented group', frozenset([rows.id.iloc[0]]), frozenset())
+    measures = [pd.Series([float('nan'), -12.]), pd.Series([0., 3.]), pd.Series([1., 0.])]
+    flags = dict(lookthrough=lookthrough, group=group, keep_group_whole=keep_group_whole)
+    reference = exposure_analysis.project_measures(rows, measures, funds, rows, **flags)
+
+    original = exposure_analysis.expand_etfs
+    def projected(*args, **kwargs):
+        result = original(*args, **kwargs)
+        assert 'target_allocation' not in result and 'portfolio_weight' not in result
+        return result
+    monkeypatch.setattr(exposure_analysis, 'expand_etfs', projected)
+    fields = ['asset_id', 'asset_name', 'account', 'custom_theme', 'instrument_type']
+    displayed = exposure_analysis.project_measures(rows, measures, funds, rows, output_columns=fields, **flags)
+    for before, after in zip(reference, displayed):
+        columns = [column for column in before if column in [*fields, 'value']]
+        pd.testing.assert_frame_equal(after, before[columns], check_exact=True)

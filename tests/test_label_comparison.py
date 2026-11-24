@@ -150,6 +150,18 @@ def test_drill_preserves_assigned_label_value_and_conserves_every_branch(compari
     assert subdetail.loc[subdetail.is_leaf, "percentage"].sum() == 1
 
 
+def test_allocations_share_the_path_of_a_common_sector_across_sources(comparison_data):
+    exposures, classified = comparison_data
+    label = Label("labels", ("Group B",))
+    classified["b"] = classified["a"]
+    comparison = compare_labels(exposures, classified, [label], overlap="split")
+    details = comparison.allocations
+    assert details.asset_id.tolist() == ["a", "a", "b"]
+    assert details.value.tolist() == [100., 20., 80.]
+    assert details.path.iloc[0] == (label.key,)
+    assert all(path is details.path.iloc[0] for path in details.path)
+
+
 def test_assets_only_merges_multiple_paths_and_direct_indirect_rows(comparison_data):
     exposures, classified = comparison_data
     labels = [Label("labels", ("Group A",))]
@@ -175,3 +187,156 @@ def test_unknown_and_parent_assigned_assets_remain_visible_in_drill():
     detail = immediate_children(comparison_tree(comparison, labels, root=(labels[0].key,)))
     assert detail.loc[detail.is_leaf, "value"].sum() == 80
     assert set(detail.loc[detail.is_leaf, "label"]) == {"Synthetic A", "Child"}
+
+
+def test_selection_shares_classification_evidence_across_measures(monkeypatch):
+    from portfolio_app.exposure import label_comparison
+    parent = Label('theme', ('A',))
+    child = Label('theme', ('A', 'B'))
+    missing = Label('sector', ('Unclassified',))
+    path = ('A', 'B')
+    classified = {'a': {'theme': (path, path, ('A', 'C'))}}
+    rows = pd.DataFrame([dict(asset_id='a', asset_name='Asset A', value=12.)])
+    calls = []
+    original = label_comparison.paths_for
+    def lookup(classes, asset, taxonomy):
+        calls.append((asset, taxonomy))
+        return original(classes, asset, taxonomy)
+    monkeypatch.setattr(label_comparison, 'paths_for', lookup)
+    selection = label_comparison.LabelSelection(classified, [child, missing, parent, child])
+    matches = selection.matches('a')
+    assert list(matches) == [child, missing, parent]
+    assert matches[parent] == (path, ('A', 'C'))
+    for amount in (12., -6.):
+        compared = selection.compare(rows.assign(value=amount), overlap='split')
+        assert compared.matched_value == compared.overlapping_value == amount
+        assert compared.allocations.value.sum() == pytest.approx(amount)
+    assert calls == [('a', 'theme'), ('a', 'sector')]
+
+
+@pytest.mark.parametrize('policy', ['split', 'overlap'])
+def test_secondary_measures_match_full_comparison_without_building_a_chart(comparison_data, monkeypatch, policy):
+    from portfolio_app.exposure import label_comparison
+    rows, classes = comparison_data
+    rows.loc[1, ['asset_name', 'value']] = ['Second source name', -20.]
+    labels = [Label('labels', (name,)) for name in ('Group B', 'Group A', 'Empty')]
+    selection = label_comparison.LabelSelection(classes, labels)
+    full = selection.compare(rows, overlap=policy)
+    def unused(*args, **kwargs):
+        pytest.fail('A secondary measure constructed a chart tree')
+    monkeypatch.setattr(label_comparison, 'build_tree', unused)
+    pd.testing.assert_frame_equal(selection.measure_values(rows, overlap=policy), full.table[['Label', 'Value']])
+    for branch in [(labels[0].key,), (labels[1].key, 'First'), (labels[2].key,), ('removed',)]:
+        expected = full.allocations.loc[full.allocations.path.map(lambda p: p[:len(branch)] == branch),
+                                        ['asset_id', 'asset_name', 'value']].reset_index(drop=True)
+        actual = selection.measure_values(rows, overlap=policy, root=branch)
+        pd.testing.assert_frame_equal(actual, expected, check_dtype=not expected.empty)
+
+
+def test_zero_measure_needs_membership_only_in_a_drilled_asset_table(monkeypatch):
+    from portfolio_app.exposure.label_comparison import LabelSelection
+
+    label = Label('sector', ('A',))
+    rows = pd.DataFrame({'asset_id': ['zero', 'signed'], 'asset_name': ['One', 'Two'], 'value': [0., -2.]})
+    selection = LabelSelection({asset: {'sector': (label.path,)} for asset in rows.asset_id}, [label])
+    lookup, seen = selection.matches, []
+    def observed(asset):
+        seen.append(asset)
+        return lookup(asset)
+    monkeypatch.setattr(selection, 'matches', observed)
+    assert selection.measure_values(rows, overlap='split').Value.tolist() == [-2.]
+    assert seen == ['signed']
+    seen.clear()
+    detail = selection.measure_values(rows, overlap='split', root=(label.key,))
+    assert detail.asset_id.tolist() == ['zero', 'signed']
+    assert seen == ['zero', 'signed']
+
+
+def test_flat_label_chart_uses_one_total_per_matched_label(monkeypatch):
+    from portfolio_app.exposure import aggregation
+
+    labels = [Label('sector', (name,)) for name in ('A', 'B', 'Unused')]
+    classes = {name: {'sector': ((name,),)} for name in ('A', 'B')}
+    rows = pd.DataFrame({'asset_id': ['A', 'B', 'A'], 'asset_name': ['One', 'Two', 'One'],
+                         'value': [100.01, 100.01, -12.99]})
+    original = aggregation.build_tree
+    def checked(allocations, **kwargs):
+        assert len(allocations) == 2
+        return original(allocations, **kwargs)
+    monkeypatch.setattr(aggregation, 'build_tree', checked)
+    result = compare_labels(rows, classes, labels, overlap='split')
+    assert len(result.allocations) == 3
+    assert result.table.set_index('Label').Value.to_dict() == {'A': 100.01 - 12.99, 'B': 100.01, 'Unused': 0.}
+    # Root accumulation follows the source contributions. The union denominator
+    # uses fsum independently of how the contributions are grouped.
+    assert result.nodes.value.tolist() == [187.03, 100.01 - 12.99, 100.01]
+    assert result.matched_value == 187.03
+
+
+def test_comparison_does_not_iterate_unrelated_source_metadata(comparison_data, monkeypatch):
+    from portfolio_app.exposure.label_comparison import LabelSelection
+    rows, classes = comparison_data
+    selection = LabelSelection(classes, [Label('labels', ('Group A',)), Label('labels', ('Group B',))])
+    expected = selection.compare(rows, overlap='split')
+    wide = rows.assign(extra_source_metadata='Invented account')
+    original = pd.DataFrame.itertuples
+    def checked(frame, *args, **kwargs):
+        assert 'extra_source_metadata' not in frame
+        return original(frame, *args, **kwargs)
+    monkeypatch.setattr(pd.DataFrame, 'itertuples', checked)
+    actual = selection.compare(wide, overlap='split')
+    pd.testing.assert_frame_equal(actual.allocations, expected.allocations)
+    pd.testing.assert_frame_equal(selection.measure_values(wide, overlap='split'), expected.table[['Label', 'Value']])
+
+
+@pytest.mark.parametrize('policy', ['split', 'overlap'])
+def test_overview_measures_resolve_each_asset_once_and_keep_source_addition_order(monkeypatch, policy):
+    from portfolio_app.exposure.label_comparison import LabelSelection
+
+    labels = [Label('sector', ('Shared',)), Label('sector', ('Shared', 'Child')),
+              Label('sector', ('Unclassified',))]
+    classes = {'a': {'sector': (('Shared', 'Child'),)}, 'b': {'sector': (('Shared',),)}}
+    rows = pd.DataFrame({'asset_id': ['a', 'b', 'a', 'b', None, 'zero', 'unpriced'],
+                         'asset_name': ['Invented'] * 7,
+                         'value': [1e16, 1., -1e16, 2., -3., 0., float('nan')]})
+    expected = LabelSelection(classes, labels).compare(rows, overlap=policy).table[['Label', 'Value']]
+    selection = LabelSelection(classes, labels)
+    resolved = []
+    original = selection.matches
+    def tracked(asset):
+        resolved.append(asset)
+        return original(asset)
+    monkeypatch.setattr(selection, 'matches', tracked)
+    actual = selection.measure_values(rows.drop(columns='asset_name'), overlap=policy)
+    pd.testing.assert_frame_equal(actual, expected, check_exact=True)
+    assert resolved[:2] == ['a', 'b']
+    assert len(resolved) == 3 and pd.isna(resolved[2])
+
+
+def test_flat_overview_exposes_drill_paths_without_materializing_asset_rows(monkeypatch):
+    from portfolio_app.exposure import label_comparison
+
+    labels = [Label('theme', ('A',)), Label('theme', ('B',))]
+    classes = {'shared': {'theme': (('A',), ('B',))}, 'only-a': {'theme': (('A',),)}}
+    rows = pd.DataFrame({'asset_id': ['shared', 'only-a', 'shared'],
+                         'asset_name': ['First name', 'Other', 'Second name'],
+                         'value': [30., -5., 10.]})
+    overview = label_comparison.compare_labels(rows, classes, labels, overlap='overlap')
+    assert overview.branches == tuple(sorted((label.key,) for label in labels))
+    with monkeypatch.context() as patch:
+        def unexpected(self):
+            pytest.fail('An undrilled flat chart requested individual contributions')
+        patch.setattr(label_comparison.LabelComparison, 'allocations', property(unexpected))
+        tree = comparison_tree(overview, labels, include_holdings=False)
+    assert tree.value.tolist() == [75., 35., 40.]
+    assert tree.percentage.tolist() == pytest.approx([1., 35/75, 40/75])
+    assert overview.nodes.iloc[0].percentage == pytest.approx(75/35)
+
+    # A saved result is a snapshot even if holdings or classifications change
+    # before the user opens the detail.
+    rows.loc[:, 'value'] = 0.
+    classes.clear()
+    details = overview.allocations
+    assert details is overview.allocations
+    assert details.value.tolist() == [30., 30., -5., 10., 10.]
+    assert details.asset_name.tolist() == ['First name', 'First name', 'Other', 'First name', 'First name']

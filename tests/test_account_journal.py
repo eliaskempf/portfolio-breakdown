@@ -361,3 +361,35 @@ def test_journal_cache_does_not_share_mutable_nested_costs(tmp_path):
     latest, same_revision = load_journal(tmp_path)
     assert latest.securities[0].records[0].costs[0]['amount'] == '20'
     assert same_revision == revision
+
+
+def test_large_journal_copies_event_objects_once_and_detaches_nested_lots(monkeypatch):
+    from copy import deepcopy
+    from portfolio_app.ledger import account_journal as ledger
+    from portfolio_app.ledger.security_history import Charge, SecurityBook, SecurityEvent, SecurityLot
+    from portfolio_app.performance.cost_basis import component
+
+    lots = (SecurityLot('lot', D(2), costs=(component(2, 20, 'EUR'),)),)
+    opening = SecurityEvent('open', 'opening', '2024-01-01', quantity=D(2), lots=lots)
+    trades = tuple(SecurityEvent(f'buy-{i}', 'buy', '2024-02-01', price=D(10), quantity=D(1),
+                                 currency='EUR', charges=(Charge(D(1), 'EUR'),)) for i in range(300))
+    book = SecurityBook('invented', 'asset', ('', '', ''), records=(opening, *trades))
+    template = Journal(version=2, securities=(book,))
+    expected = deepcopy(template)
+    visited = []
+
+    def counted(value, memo):
+        if value is template:
+            visited.extend(id(event) in memo for event in book.records)
+        return deepcopy(value, memo)
+
+    monkeypatch.setattr(ledger, 'deepcopy', counted)
+    clone = ledger._copy_journal(template)
+    assert clone == expected
+    assert visited == [True] * len(book.records)
+    records = clone.securities[0].records
+    assert all(original is not owned for original, owned in zip(book.records, records, strict=True))
+    assert records[1].charges[0] is not trades[0].charges[0]
+    assert records[0].lots[0] is not opening.lots[0]
+    records[0].lots[0].costs[0]['amount'] = '999'
+    assert opening.lots[0].costs[0]['amount'] == '20'

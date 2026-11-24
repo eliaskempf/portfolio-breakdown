@@ -151,22 +151,19 @@ def indicator_frame(rule, series, *, now=None):
     if rule.period == 'months':
         monthly = completed.resample('ME').last()
         # A month becomes complete when the next local calendar month begins.
-        monthly = monthly.loc[monthly.index.to_period('M') < pd.Period(local_today, freq='M')]
+        current_month = pd.Period(local_today, freq='M')
+        monthly = monthly.loc[monthly.index.to_period('M') < current_month]
         averages = monthly.rolling(rule.window, min_periods=rule.window).mean()
         # Mapping the *month*, not resampling a forward-filled daily series, keeps
         # missing source months invalid until a full consecutive window exists.
         keys = completed.index.to_period('M')
         ready = averages.copy()
         ready.index = ready.index.to_period('M')
-        sma = pd.Series([ready.get(k, float('nan')) if k < pd.Period(local_today, freq='M')
-                         else ready.get(k-1, float('nan')) for k in keys], index=completed.index)
-        # During any historical month use the preceding completed month, except
-        # its final observation (the month-end decision includes that close).
-        for key in keys.unique():
-            rows = completed.index[keys == key]
-            sma.loc[rows] = ready.get(key-1, float('nan'))
-            if key < pd.Period(local_today, freq='M'):
-                sma.loc[rows[-1]] = ready.get(key, float('nan'))
+        # Each session uses the preceding month's average, except for the last
+        # completed session of a finished month, which includes that month's close.
+        final_close = ~keys.duplicated(keep='last') & (keys < current_month)
+        reference_month = keys.where(final_close, keys - 1)
+        sma = pd.Series(ready.reindex(reference_month).to_numpy(), index=completed.index)
     else:
         sma = completed.rolling(rule.window, min_periods=rule.window).mean()
     result = pd.DataFrame({'price': completed, 'sma': sma})
@@ -192,13 +189,24 @@ def completed_evaluation(rule, series, stamp, row, *, note):
 
 
 def evaluate_series(rule, series, *, now=None, frame=None):
+    latest, _ = evaluate_with_history(rule, series, now=now, frame=frame)
+    return latest
+
+
+def evaluate_with_history(rule, series, *, now=None, frame=None, frame_for=None):
+    """Evaluate live freshness from the full indicator history shared with charts and catch-up."""
     now = now or utc_now()
     if series.quality != 'valid':
-        return unavailable(series.note or 'Market data unavailable.', quality=series.quality)
+        return unavailable(series.note or 'Market data unavailable.', quality=series.quality), None
     if rule.series.currency and series.currency != rule.series.currency:
-        return unavailable('The source returned a different currency. Review this rule.')
+        return unavailable('The source returned a different currency. Review this rule.'), None
     if frame is None:
-        frame = indicator_frame(rule, series, now=now)
+        calculate = frame_for or indicator_frame
+        frame = calculate(rule, series, now=now)
+    return _latest_indicator(rule, series, frame, now), frame
+
+
+def _latest_indicator(rule, series, frame, now):
     if frame.empty:
         return unavailable('No completed observations available.')
     latest = frame.iloc[-1]
@@ -239,7 +247,7 @@ def evaluate_series(rule, series, *, now=None, frame=None):
                       inputs={'currency': series.currency, 'basis': rule.series.basis})
 
 
-def evaluate_account(rule, journal, holdings, valued, *, reporting_currency='EUR', fx_rates=None, now=None):
+def evaluate_account(rule, journal, holdings, valued, *, reporting_currency='EUR', fx_rates=None, now=None, state=None):
     from portfolio_app.ledger.account_journal import replay, effective_events
     from portfolio_app.derivatives.account_margin import conversion_rate, margin_coverage
     from decimal import Decimal
@@ -249,7 +257,7 @@ def evaluate_account(rule, journal, holdings, valued, *, reporting_currency='EUR
         return unavailable('The monitored account no longer exists.')
     if rule.kind == 'coverage':
         coverage = margin_coverage(journal, holdings, valued, rule.account_id, rule.currency,
-                                   reporting_currency=reporting_currency, fx_rates=fx_rates)
+                                   reporting_currency=reporting_currency, fx_rates=fx_rates, state=state)
         if coverage.eligible_collateral is None or coverage.maintenance_requirement is None:
             return unavailable('Complete collateral valuations, FX and a maintenance requirement are needed.')
         if coverage.maintenance_requirement <= 0:
@@ -261,7 +269,8 @@ def evaluate_account(rule, journal, holdings, valued, *, reporting_currency='EUR
                                'eligible_value': float(r.eligible_value) if r.eligible_value is not None else None, 'issue': r.issue} for r in coverage.collateral],
                   'requirements': [{'date': r.as_of, 'source': r.source} for r in journal.margin_requirements if r.account_id == rule.account_id]}
         return Evaluation(stamp, value, condition=condition(value, rule), inputs=inputs, note=' '.join(coverage.issues))
-    state = replay(journal)
+    if state is None:
+        state = replay(journal)
     def convert(amount, currency):
         rate = conversion_rate(fx_rates, currency, rule.currency, reporting_currency)
         if rate is None:

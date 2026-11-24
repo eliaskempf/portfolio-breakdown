@@ -11,15 +11,16 @@ def scope_observations(journal, scope, observations, target):
     """Conservative historical currency requirements, shared by charts and gates."""
     from portfolio_app.ledger.account_journal import effective_events
     from portfolio_app.market.currencies import quote_unit
-    from portfolio_app.performance.history_observations import active_observations
     from portfolio_app.ledger.security_history import selected_events
     subjects = set(scope.positions) | {b.instrument_id for b in journal.securities if b.position_id in scope.positions}
     positions = {p.id: p for p in journal.positions if p.account_id in scope.accounts}
     contracts = {p.contract_id for p in positions.values()}
     subjects.update(positions)
     subjects.update(contracts)
-    active = active_observations(observations)
-    currencies = {quote_unit(o.currency)[0] for o in active if o.kind == 'price' and o.subject in subjects}
+    index = index_observations(observations)
+    rows = [offset for subject in subjects for offset in index.scope_rows.get(('price', subject), ())]
+    price_currencies = {index.active[offset].currency for offset in rows}
+    currencies = {quote_unit(currency)[0] for currency in price_currencies}
     currencies.update(c.currency for c in journal.contracts if c.id in contracts)
     for book in journal.securities:
         if book.position_id not in scope.positions and book.account_id not in scope.accounts:
@@ -34,9 +35,38 @@ def scope_observations(journal, scope, observations, target):
             currencies.update((event.currency, event.other_currency))
     pairs = {(native, target) for native in currencies - {'', target}}
     pairs |= {(right, left) for left, right in tuple(pairs)}
-    return tuple(o for o in active if o.kind == 'price' and o.subject in subjects
-                 or o.kind == 'fx' and (o.currency, o.target) in pairs
-                 or o.kind == 'value' and o.subject == scope.key)
+    for source, destination in pairs:
+        rows.extend(index.scope_rows.get(('fx', source, destination), ()))
+    rows.extend(index.scope_rows.get(('value', scope.key), ()))
+    # Corrections can put surviving rows anywhere in the saved evidence order.
+    return tuple(index.active[offset] for offset in sorted(rows))
+
+
+@dataclass(frozen=True)
+class ScopeObservationDates:
+    chart_dates: frozenset[str]
+    boundary_dates: frozenset[str]
+    negative_equity_dates: frozenset[str]
+    requires_fx_validation: bool
+
+
+def scope_observation_dates(journal, scope, observations, target):
+    chart, boundaries, negative = set(), set(), set()
+    # Include rates outside the chart interval: a closed session may carry a
+    # prior closing conversion. Only rate() decides whether evidence conflicts.
+    paired = {source for source, other in index_observations(observations).reciprocal_closing_pairs if other == target}
+    requires_fx_validation = False
+    for observation in scope_observations(journal, scope, observations, target):
+        if observation.kind == 'price' and observation.currency in paired:
+            requires_fx_validation = True
+        if observation.kind != 'value' or observation.side == 'close':
+            chart.add(observation.date)
+        else:
+            boundaries.add(observation.date)
+        if observation.kind == 'value' and observation.currency == target and observation.amount < 0:
+            negative.add(observation.date)
+    return ScopeObservationDates(frozenset(chart), frozenset(boundaries), frozenset(negative), requires_fx_validation)
+
 
 # Provider venue codes, not ticker suffixes or an instrument's domicile.
 VENUES = {
@@ -119,22 +149,24 @@ def valuation_fx(observations, source, target, stamp):
     """
     observations = index_observations(observations)
     requested = date.fromisoformat(stamp)
-    dates = [stamp]
-    if fx_closed_day(requested, source, target):
-        previous = requested-timedelta(days=1)
+    as_of = stamp
+    value = rate(observations, source, target, stamp, side='close')
+    if source == target:
+        return value, ()
+    if value is None and fx_closed_day(requested, source, target):
+        previous = requested - timedelta(days=1)
         for _ in range(7):
             if not fx_closed_day(previous, source, target):
-                dates.append(previous.isoformat())
+                as_of = previous.isoformat()
+                value = rate(observations, source, target, as_of, side='close')
                 break
             previous -= timedelta(days=1)
-    for as_of in dates:
-        value = rate(observations, source, target, as_of, side='close')
-        if value is not None:
-            evidence = tuple(provenance(o, stamp) for o in observations.fx.get(as_of, ())
-                if o.side == 'close' and ((o.currency, o.target) == (source, target)
-                                         or (o.currency, o.target) == (target, source)))
-            return value, evidence
-    return None, ()
+    if value is None:
+        return None, ()
+    evidence = tuple(provenance(o, stamp) for o in observations.fx.get(as_of, ())
+        if o.side == 'close' and ((o.currency, o.target) == (source, target)
+                                 or (o.currency, o.target) == (target, source)))
+    return value, evidence
 
 
 def price_at(observations, subjects, stamp, *, events=(), contract=None):

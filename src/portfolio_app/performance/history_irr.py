@@ -60,10 +60,25 @@ def _bounds(terms, budget=None):
     if budget is not None:
         budget.take(2*len(terms))
     nlast, last = terms[-1]
-    first = terms[0][1]
+    first = abs(terms[0][1])
     count = Decimal(2*(len(terms)-1))
-    low = min(Decimal(0), *( (abs(first)/(count*abs(a))).ln()/n for n,a in terms[1:] ))
-    high = max(Decimal(0), *( (count*abs(a)/abs(last)).ln()/(nlast-n) for n,a in terms[:-1] ))
+    low = high = Decimal(0)
+    # Moving away from the endpoint increases the day divisor. A later ratio
+    # can only lower the left bound if it is smaller than all earlier ratios.
+    # On the right it must be larger.
+    # Compute every ratio so arithmetic range checks still cover every term.
+    smallest = Decimal(1)
+    for n, coefficient in terms[1:]:
+        ratio = first / (count * abs(coefficient))
+        if ratio < smallest:
+            smallest = ratio
+            low = min(low, ratio.ln() / n)
+    largest = Decimal(1)
+    for n, coefficient in reversed(terms[:-1]):
+        ratio = count * abs(coefficient) / abs(last)
+        if ratio > largest:
+            largest = ratio
+            high = max(high, ratio.ln() / (nlast - n))
     return low-1, high+1
 
 

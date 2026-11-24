@@ -12,10 +12,10 @@ import pandas as pd
 import streamlit as st
 from portfolio_app.interface.shared.charts import chart_config
 
-from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension
+from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension, dimension_measure, taxonomy_measure
 from portfolio_app.interface.shared.charts import bar_chart, hierarchy_chart, hierarchy_table, pie_chart, sort_allocation_nodes
 from portfolio_app.interface.shared.display_names import display_name, instrument_name, named_holdings
-from portfolio_app.funds.etf import matching_fund, fund_classifications
+from portfolio_app.funds.etf import matching_fund
 from portfolio_app.interface.views.funds.etf_refresh_ui import render_refresh_controls
 from portfolio_app.interface.views.funds.etf_selection import render_etf_choices, render_etf_toggle
 from portfolio_app.interface.views.exposure.exposure_assets_ui import render_assets
@@ -42,14 +42,15 @@ from portfolio_app.interface.views.exposure.stock_ui import render_stock_exposur
 from portfolio_app.exposure.stock_exposure import load_company_identities
 from portfolio_app.exposure.company_merges import build_plan, load_company_names, load_settings
 from portfolio_app.interface.views.exposure.company_merge_ui import render_company_merges
-from portfolio_app.interface.shared.input_cache import cached_input
+from portfolio_app.interface.shared.input_cache import cached_classifications, cached_input
 from portfolio_app.exposure.exposure_workspace import analytical_signature
+from portfolio_app.exposure.exposure_presentation import with_asset_tickers
 from portfolio_app.exposure.geography import resolve_geography
 from portfolio_app.interface.views.exposure.geography_ui import render_geography
 from portfolio_app.exposure.sector_classification import sector_classifications
 
 
-def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False, source_valued=None, performance_percent=False, allocation=None, etf_revision=0, on_toggle_gain=None, exposure_result=None, leverage_context=None):
+def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_service, refresh=False, source_valued=None, performance_percent=False, allocation=None, fund_revision=None, on_toggle_gain=None, exposure_result=None, leverage_context=None, current_view=None):
     dimensions = metadata_dimensions(holdings)
     unified = exposure_result is not None
     if unified:
@@ -106,23 +107,37 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             field = 'exposure_reporting' if basis == 'Equity only' else 'market_exposure_reporting'
         show_tickers = st.checkbox('Show tickers', help='Display quote tickers alongside investment names.', value=False, key='display_tickers')
         show_chart = st.checkbox('Show largest exposures chart', help='Show a chart of the largest exposures in the current selection.', key='exposure_show_chart')
-        with st.expander('Individual ETFs'):
-            expanded_funds = render_etf_choices(holdings, funds, data_dir, enabled=lookthrough)
-        refresh_panel = st.expander('ETF refresh & snapshots', expanded=st.session_state.pop('exposure_notification_sources', False))
-        with refresh_panel:
-            render_refresh_controls(data_dir, holdings, funds, demo=demo)
+        expanded_funds = render_etf_choices(holdings, funds, data_dir, enabled=lookthrough)
+        if st.session_state.pop('exposure_notification_sources', False):
+            st.session_state['exposure_refresh_open'] = True
+        refresh_panel = st.expander('ETF refresh & snapshots', key='exposure_refresh_open', on_change='rerun')
+        if refresh_panel.open:
+            with refresh_panel:
+                render_refresh_controls(data_dir, holdings, funds, demo=demo)
         display_group = smh_group_control(holdings, funds)
         try:
             settings = load_settings(data_dir / 'company-merges.yaml')
             identities = load_company_identities(data_dir / 'company-identities.yaml')
             company_names = load_company_names(data_dir / 'company-names.yaml')
-            signature = analytical_signature(holdings, funds, str(data_dir.resolve()),
-                settings, identities, company_names, classifications)
-            plan = cached_input('company_plan', signature,
-                lambda: build_plan(holdings, funds, identities, settings, classifications, company_names))
-            render_company_merges(plan, settings, data_dir / 'company-merges.yaml')
+            # Record just the listing identities consumed by the merge planner. A
+            # quote or quantity update must flow through the current valued rows.
+            fields = ('id', 'name', 'instrument_type', 'isin', 'wkn', 'ticker')
+            listings = holdings.loc[:, [field for field in fields if field in holdings]]
+            listings.attrs = {}
+            identity_key = analytical_signature(listings, funds, str(data_dir.resolve()),
+                settings, identities, company_names, classifications, fund_revision=fund_revision)
+            signature = analytical_signature(holdings, (), identity_key)
+
+            def load_plan():
+                return cached_input('company_plan', identity_key,
+                    lambda: build_plan(listings, funds, identities, settings, classifications, company_names), immutable=True)
+
+            render_company_merges(load_plan, settings, data_dir / 'company-merges.yaml')
             if lookthrough:
-                holdings, funds, classifications = plan.apply(holdings, funds, classifications)
+                plan = load_plan()
+                direct, funds, classifications = cached_input('exposure_identities', identity_key,
+                    lambda: plan.apply(listings, funds, classifications))
+                holdings = holdings.assign(analysis_asset_id=direct.analysis_asset_id, analysis_asset_name=direct.analysis_asset_name)
                 active_isins = {fund.isin for fund in expanded_funds}
                 expanded_funds = [fund for fund in funds if fund.isin in active_isins]
         except DataError as exc:
@@ -130,11 +145,14 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             return
     # Resolve from manual classifications before adding provider fallbacks, so
     # provider metadata is never mistaken for an authoritative manual override.
-    geography = cached_input('geography', (signature, lookthrough),
-                             lambda: resolve_geography(holdings, funds, classifications))
+    manual_classifications = classifications
+
+    def load_geography():
+        return cached_input('geography', (signature, lookthrough),
+                            lambda: resolve_geography(holdings, funds, manual_classifications), immutable=True)
     def classify():
-        return sector_classifications(fund_classifications(classifications, funds, holdings), holdings, funds)
-    classifications = cached_input('exposure_classifications', (signature, lookthrough), classify)
+        return sector_classifications(classifications, holdings, funds, include_provider=True)
+    classifications = cached_classifications('exposure_classifications', (signature, lookthrough), classify)
     names = taxonomy_names(classifications)
     with filters:
         with st.container():
@@ -226,8 +244,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                              percent=performance_percent, key='exposure_value', on_toggle_gain=on_toggle_gain,
                              freshness=summarize_freshness(selected), freshness_rows=selected)
             second.metric('Portfolio share', f'{100 * selected_total / total:.1f}%' if not missing and not all_missing and total else '—', help='Current value of this selection divided by total portfolio value.')
-    with refresh_panel:
-        if lookthrough:
+    if lookthrough and refresh_panel.open:
+        with refresh_panel:
             intact = sum(row.get('shares', 0) > 0 and row.get('instrument_type') == 'etf'
                          and matching_fund(row, expanded_funds) is None for row in selected.to_dict('records'))
             if intact:
@@ -238,19 +256,27 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         with results_area:
             st.info('No holdings match the selected filters.')
         return valued
+    def named_contributions(exposures):
+        names = {name: display_name(name) for name in exposures.asset_name.unique()}
+        exposures['asset_name'] = exposures.asset_name.map(names)
+        residual = exposures.source_type.eq('etf_other')
+        source_names = {row.id: instrument_name(row) for row in holdings.itertuples()}
+        exposures.loc[residual, 'asset_name'] = exposures.loc[residual, 'source_instrument'].map(
+            lambda asset: f'{source_names.get(asset, "ETF")} / Other')
+        return exposures
+
     try:
         if unified:
             # Recalculate only when analytical inputs or company identities change.
             # Proxy lookup keeps the full source universe, independent of scope.
             merged_valued = valued.loc[valued.position_id.isin(original_valued.position_id)].copy()
-            result = cached_input('analysis_exposure',
-                analytical_signature(merged_valued, funds, str(data_dir.resolve()), allocation, leverage_context),
+            result_key = analytical_signature(merged_valued, (), signature, lookthrough, allocation, leverage_context.exposure_options(merged_valued))
+            result = cached_input('analysis_exposure', result_key,
                 lambda: prepare_exposure(merged_valued, funds, allocation, leverage_context))
-            exposures = cached_input('analysis_contributions',
-                (analytical_signature(merged_valued, funds, leverage_context), tuple(selected.position_id),
-                 measure, field, tuple(f.isin for f in expanded_funds)),
-                lambda: analysis_contributions(result, valued, funds, selected.position_id,
-                    measure=measure, field=field, expanded_funds=expanded_funds))
+            contribution_key = (result_key, tuple(selected.position_id), measure, field, tuple(f.isin for f in expanded_funds))
+            exposures = cached_input('analysis_contributions', contribution_key,
+                lambda: named_contributions(analysis_contributions(result, valued, funds, selected.position_id,
+                    measure=measure, field=field, expanded_funds=expanded_funds)))
             missing = int(exposures.value.isna().sum())
             selected_total = exposures.known_value.sum(min_count=1)
             with summary_area:
@@ -269,15 +295,17 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                     else:
                         render_exposure_coverage(exposures, valued, field='value')
         else:
-            exposures = prepare_exposures(selected, expanded_funds, holdings, lookthrough=lookthrough)
+            # The merge-plan signature covers the full resolver universe and fund snapshots.
+            # Selected valued rows additionally cover quote, currency, metadata and scope changes.
+            resolved_components = (cached_input('resolved_fund_components', identity_key, dict, immutable=True)
+                                   if lookthrough else None)
+            contribution_key = (analytical_signature(selected, (), signature), lookthrough, tuple(f.isin for f in expanded_funds))
+            exposures = cached_input('analysis_contributions', contribution_key,
+                lambda: named_contributions(prepare_exposures(selected, expanded_funds, holdings, lookthrough=lookthrough,
+                                                             resolved_components=resolved_components)))
     except DataError as exc:
         st.error(str(exc))
         return valued
-    exposures["asset_name"] = exposures["asset_name"].map(display_name)
-    residual = exposures.source_type.eq('etf_other')
-    source_names = {row.id: instrument_name(row) for row in holdings.itertuples()}
-    exposures.loc[residual, 'asset_name'] = exposures.loc[residual, 'source_instrument'].map(
-        lambda asset: f'{source_names.get(asset, "ETF")} / Other')
     effective_exposures = exposures
     saved_classifications = classifications
     mode = results_area.segmented_control('Exposure view', ['Assets', 'Companies', 'Themes & sectors', 'Geography'], help='Choose the exposure analysis to display.', required=True, default='Assets', key='exposure_view')
@@ -290,32 +318,35 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             except DataError as exc:
                 st.error(str(exc))
                 return valued
+        measure_fields = ("asset_id", "asset_name", *dimensions)
         if not unified and "target_allocation" in valued and valued["target_allocation"].notna().any():
             try:
-                targets = target_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group, holdings=holdings)
-                for measure in (targets.known, targets.missing):
-                    measure["asset_name"] = measure["asset_name"].map(display_name)
+                targets = target_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group,
+                                           holdings=holdings, resolved_components=resolved_components, output_columns=measure_fields)
             except DataError as exc:
                 st.error(str(exc))
                 return valued
         if not unified:
             try:
-                performance = performance_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group, holdings=holdings)
+                performance = performance_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group,
+                                                     holdings=holdings, resolved_components=resolved_components, output_columns=measure_fields)
             except DataError as exc:
                 st.error(str(exc))
                 return valued
-            for amounts in performance.measures():
-                amounts['asset_name'] = amounts['asset_name'].map(display_name)
     match_note = '* Estimated company match · Review or undo in Data & settings → Company merges' if lookthrough and any(group.enabled and group.basis == 'Estimated name match' for group in plan.groups) else ''
     complete = missing == 0
     equity = result.denominator if unified else None
-    display_exposures = effective_exposures if unified else complete_exposures(effective_exposures, selected)
+    display_exposures = effective_exposures if unified or not missing else complete_exposures(effective_exposures, selected)
     with results_area:
         if mode == 'Companies':
-            render_stock_exposure(selected, expanded_funds, data_dir, query=query, allocation=allocation)
+            def current_companies():
+                return st.session_state.get('exposure_view') == 'Companies' and current_view()
+            render_stock_exposure(selected, expanded_funds, data_dir, query=query, allocation=allocation,
+                                  current_view=current_companies if current_view else None,
+                                  contribution_key=contribution_key, identities=identities)
         elif mode == 'Geography':
             with st.container(key='tour_geography'):
-                render_geography(display_exposures, geography, complete=complete, query=query,
+                render_geography(display_exposures, load_geography(), contribution_key=contribution_key, complete=complete, query=query,
                     equity=equity, measure=measure if unified else None)
             if match_note:
                 st.caption(match_note)
@@ -323,8 +354,8 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             with st.container(key='tour_exposure_assets'):
                 render_assets(display_exposures, selected, holdings, funds, saved_classifications,
                               query=query, show_tickers=show_tickers, show_chart=show_chart, complete=missing == 0,
-                              breakdown=lookthrough, context=str(data_dir.resolve()) + measure, footer=match_note, geography=geography,
-                              measure=measure if unified else None, equity=equity)
+                              breakdown=lookthrough, context=str(data_dir.resolve()) + measure, footer=match_note, load_geography=load_geography,
+                              measure=measure if unified else None, equity=equity, contribution_key=contribution_key, current_view=current_view)
         else:
             render_theme_view(exposures, selected, holdings, classifications, names, dimensions, targets, performance,
                               total, all_missing, selected_total, show_tickers, performance_percent,
@@ -399,16 +430,13 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
     if view != 'selected_labels':
         with chart_settings:
             chart_type = st.selectbox('Chart', ['Sunburst', 'Treemap', 'Bar', 'Pie'], help='Choose how the selected analysis is visualized.', key='exposure_control_chart')
-    chart_exposures = exposures.copy()
-    if show_tickers:
-        # Prefer the direct listing's ticker for every row of the same asset,
-        # including ETF-derived rows, so their holding leaves remain combined.
-        tickers = dict(zip(exposures["asset_id"], exposures["ticker"]))
-        tickers.update(dict(zip(holdings["id"], holdings["ticker"])))
-        chart_exposures["asset_name"] = [f"{row.asset_name} ({tickers[row.asset_id]})" if tickers[row.asset_id] else row.asset_name for row in exposures.itertuples()]
+    chart_exposures = exposures
+    if show_tickers and view.startswith('taxonomy:') and include_holdings and chart_type not in {'Bar', 'Pie'}:
+        chart_exposures = with_asset_tickers(exposures, holdings)
     if view == "selected_labels":
         render_label_comparison(chart_exposures, classifications, targets=targets, portfolio_value=total, valuation_complete=all_missing == 0,
-                                performance=performance, performance_percent=performance_percent, measure=measure, equity=equity, complete=complete)
+                                performance=performance, performance_percent=performance_percent, measure=measure, equity=equity, complete=complete,
+                                ticker_holdings=holdings if show_tickers else None)
     else:
         if view.startswith("taxonomy:"):
             nodes = aggregate(chart_exposures, classifications, taxonomy=taxonomy, root=root, depth=depth, include_holdings=include_holdings and chart_type not in {"Bar", "Pie"})
@@ -461,26 +489,19 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
                     allocation['Allocation %'] = float('nan')
                 if market:
                     allocation['% of portfolio equity'] = allocation.Value * 100 / equity if complete and equity and equity > 0 else float('nan')
+                def measure_totals(measure):
+                    if view.startswith("taxonomy:"):
+                        return taxonomy_measure(measure, classifications, taxonomy=taxonomy, root=root, depth=depth,
+                                                include_holdings=include_holdings and chart_type not in {"Bar", "Pie"})
+                    return dimension_measure(measure, "holding" if view == "holding" else view.removeprefix("metadata:"))
+
                 if targets is not None:
-                    measures = []
-                    for measure in (targets.known, targets.missing):
-                        if view.startswith("taxonomy:"):
-                            measures.append(aggregate(measure, classifications, taxonomy=taxonomy, root=root, depth=depth,
-                                                      include_holdings=include_holdings and chart_type not in {"Bar", "Pie"}))
-                        else:
-                            measures.append(aggregate_dimension(measure, "holding" if view == "holding" else view.removeprefix("metadata:")))
-                    totals = target_totals(*measures, key="node_id")
+                    totals = target_totals(measure_totals(targets.known), measure_totals(targets.missing), key="node_id")
                     allocation = add_target_columns(allocation, nodes.loc[nodes["parent_id"] != "", "node_id"].tolist(), totals,
                                                     portfolio_value=total, valuation_complete=all_missing == 0)
                     target_caption(valuation_complete=all_missing == 0)
-                performance_measures = []
-                for measure in performance.measures() if performance else ():
-                    if view.startswith("taxonomy:"):
-                        performance_measures.append(aggregate(measure, classifications, taxonomy=taxonomy, root=root, depth=depth,
-                                                              include_holdings=include_holdings and chart_type not in {"Bar", "Pie"}))
-                    else:
-                        performance_measures.append(aggregate_dimension(measure, "holding" if view == "holding" else view.removeprefix("metadata:")))
                 if performance is not None:
+                    performance_measures = [measure_totals(measure) for measure in performance.measures()]
                     allocation = add_performance_column(allocation, nodes.loc[nodes["parent_id"] != "", "node_id"].tolist(),
                                                     performance_measures, key="node_id", percent=performance_percent)
                 label_config = {}

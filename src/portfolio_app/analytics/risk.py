@@ -17,7 +17,13 @@ def daily_prices(series: pd.Series) -> pd.Series:
     """Keep local trading dates, not UTC dates shifted across a market close."""
     result = pd.to_numeric(series, errors='coerce').copy()
     result.index = pd.DatetimeIndex(result.index).tz_localize(None).normalize()
-    result = result.loc[~result.index.duplicated(keep='last')].sort_index()
+    if not result.index.is_unique:
+        result = result.loc[~result.index.duplicated(keep='last')]
+    if not result.index.is_monotonic_increasing:
+        result = result.sort_index()
+    values = result.to_numpy(copy=False)
+    if values.dtype.kind in 'fiu' and np.isfinite(values).all() and (values > 0).all():
+        return result
     return result.where(np.isfinite(result) & result.gt(0)).dropna()
 
 
@@ -117,6 +123,12 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
     end = pd.Timestamp(today or date.today()).normalize()
     start = end - pd.DateOffset(years=years)
     bench = weekly_returns(benchmark, today=end).loc[lambda s: s.index >= start].rename('__benchmark__')
+    # All assets are evaluated on the same completed Fridays. Include the prior
+    # close for the first requested return, even when the window starts midweek.
+    benchmark_present = bench.notna()
+    fridays = bench.index
+    if len(fridays):
+        fridays = fridays.insert(0, fridays[0] - pd.Timedelta(days=7))
     # Listing-level histories are fetched once; calculation identities remain instrument IDs.
     returns, values = {}, {}
     for identity, rows in held.groupby('id', sort=False):
@@ -140,11 +152,14 @@ def risk_analytics(valued, histories: dict[str, pd.Series], benchmark: pd.Series
                 raise ValueError('Explicit risk returns require ordered unique weekly dates.')
             series = pd.to_numeric(series, errors='coerce').replace([np.inf, -np.inf], np.nan).reindex(bench.index)
         elif identity in histories:
-            series = weekly_returns(histories[identity], today=end).reindex(bench.index)
+            # An observation from Saturday through Friday belongs to that week.
+            # The tolerance leaves empty weeks missing, including their next return.
+            closes = daily_prices(histories[identity]).reindex(fridays, method='ffill', tolerance='6D')
+            series = closes.pct_change(fill_method=None).replace([np.inf, -np.inf], np.nan).iloc[1:]
         else:
             result.excluded[identity] = f'{label}: {(failures or {}).get(identity, "market history unavailable")}'
             continue
-        if pd.concat([series, bench], axis=1).dropna().shape[0] < MIN_OBSERVATIONS:
+        if (series.notna() & benchmark_present).sum() < MIN_OBSERVATIONS:
             result.excluded[identity] = f'{label}: fewer than 52 matched weekly returns'
             continue
         returns[identity], values[identity] = series, value

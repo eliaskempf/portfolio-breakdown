@@ -1,0 +1,100 @@
+name: Packaged performance benchmark
+'on':
+  workflow_dispatch:
+    inputs:
+      experiment:
+        description: 'Comparison to measure'
+        type: choice
+        options: [navigation, history, exposure, risk, risk-cold, risk-stale, collection, checklist, market-chart]
+        default: navigation
+      profile:
+        description: 'Synthetic portfolio size'
+        type: choice
+        options: [etf-heavy, mixed-history, multi-account, small]
+        default: etf-heavy
+      pairs:
+        description: 'Alternating pairs per surface (1 to 10)'
+        type: number
+        default: 2
+  push:
+    branches: [perf/native-cache-benchmark, perf/overview-navigation, perf/benchmark-scale, perf/exposure-navigation]
+permissions:
+  contents: read
+concurrency:
+  group: packaged-performance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-2022, python: '3.12', executable: 'dist/performance/portfolio-app/Portfolio Breakdown.exe'}
+          - {os: ubuntu-22.04, python: '3.12', executable: 'dist/performance/portfolio-window/portfolio-window'}
+          - {os: macos-15, python: '3.13', executable: 'dist/performance/Portfolio Breakdown Experimental.app/Contents/MacOS/portfolio-window'}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONUNBUFFERED: '1'
+      EXPERIMENT: ${{ inputs.experiment || (github.ref_name == 'perf/exposure-navigation' && 'exposure' || github.ref_name == 'perf/native-cache-benchmark' && 'history' || 'navigation') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: 0.12.10
+          python-version: ${{ matrix.python }}
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libopengl0 libegl1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 libxcb-xinerama0 libxcb-randr0 libxcb-shape0 libxcb-xfixes0 libxkbfile1
+      - run: uv sync --locked --extra window --group release --group browser
+      - run: uv run --no-sync playwright install chromium
+      - name: Build the reference with the same measurement driver
+        if: env.EXPERIMENT == 'exposure' || env.EXPERIMENT == 'checklist' || env.EXPERIMENT == 'market-chart' || startsWith(env.EXPERIMENT, 'risk')
+        run: |
+          git restore --source=66d429fdc71db2b8dacf8d965d193f5b5c57abfa -- src/portfolio_app
+          uv run --no-sync python tools/perf_benchmark/build.py dist/reference
+          git restore --source=HEAD -- src/portfolio_app
+      - id: packaged
+        run: uv run --no-sync python tools/perf_benchmark/build.py dist/performance
+      - name: Alternate reference and cached runs in the packaged renderer and Chromium
+        env:
+          EXECUTABLE: ${{ matrix.executable }}
+          PROFILE: ${{ inputs.profile || (github.ref_name == 'perf/exposure-navigation' && 'mixed-history' || github.ref_name == 'perf/benchmark-scale' && 'etf-heavy' || 'small') }}
+          PAIRS: ${{ inputs.pairs || 2 }}
+          CHECK_OVERVIEW: ${{ github.event_name == 'push' && github.ref_name == 'perf/exposure-navigation' }}
+        run: |
+          prefix=()
+          if [[ "$RUNNER_OS" == Linux ]]; then prefix=(xvfb-run -a); fi
+          reference=()
+          if [[ "$EXPERIMENT" == exposure || "$EXPERIMENT" == checklist || "$EXPERIMENT" == market-chart || "$EXPERIMENT" == risk* ]]; then reference=(--reference "dist/reference/${EXECUTABLE#dist/performance/}"); fi
+          "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results --pairs "$PAIRS" --experiment "$EXPERIMENT" --profile "$PROFILE" "${reference[@]}"
+          if [[ "$CHECK_OVERVIEW" == true ]]; then
+            "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/checklist --pairs "$PAIRS" --experiment checklist --surface native --profile mixed-history "${reference[@]}"
+            "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/collection --pairs 2 --experiment collection --surface native --profile multi-account
+            "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/navigation --pairs "$PAIRS" --experiment navigation --profile "$PROFILE"
+            "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/multi-account --pairs 1 --experiment exposure --surface native --profile multi-account "${reference[@]}"
+            "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/risk --pairs 1 --experiment risk --surface native --profile mixed-history "${reference[@]}"
+            "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/risk-cold --pairs 1 --experiment risk-cold --surface native --profile mixed-history "${reference[@]}"
+            "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/risk-stale --pairs 1 --experiment risk-stale --surface native --profile mixed-history "${reference[@]}"
+          fi
+      - name: Check installed market-price range switches
+        if: "!cancelled() && steps.packaged.outcome == 'success' && github.event_name == 'push' && github.ref_name == 'perf/exposure-navigation'"
+        env:
+          EXECUTABLE: ${{ matrix.executable }}
+        run: |
+          prefix=()
+          if [[ "$RUNNER_OS" == Linux ]]; then prefix=(xvfb-run -a); fi
+          "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/market-chart --pairs 2 --experiment market-chart --surface native --profile mixed-history --reference "dist/reference/${EXECUTABLE#dist/performance/}"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: performance-${{ matrix.os }}
+          path: dist/performance-results/**/*.json
+          if-no-files-found: warn

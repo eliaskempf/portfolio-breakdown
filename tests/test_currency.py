@@ -288,17 +288,23 @@ def test_cost_component_quantity_must_reconcile():
 def test_reporting_risk_histories_and_foreign_cash(tmp_path):
     from portfolio_app.analytics.risk_data import RiskHistoryService, AdjustedHistory
     dates = pd.date_range('2026-01-01', periods=3)
+    calls = []
     class Provider:
         def fetch(self, ticker, years):
+            calls.append(ticker)
             currency, values = {'SYNTH': ('USD',[100,110,120]), 'USDEUR=X': ('EUR',[.8,.9,1.]),
                                 'GBPEUR=X': ('EUR',[1.2,1.2,1.2])}[ticker]
             return AdjustedHistory(pd.Series(values,index=dates), currency)
     service = RiskHistoryService(Provider(), tmp_path / 'risk')
-    result = service.in_currency('SYNTH', 'GBP')
+    memo = {}
+    result = service.in_currency('SYNTH', 'GBP', refresh=True, memo=memo)
     assert result.prices.tolist() == pytest.approx([80/1.2,99/1.2,100])
     assert result.currency == 'GBP'
-    assert service.cash('USD','GBP').prices.tolist() == pytest.approx([.8/1.2,.9/1.2,1/1.2])
-    assert service.cash('EUR','USD').prices.tolist() == pytest.approx([1/.8,1/.9,1])
+    assert service.cash('USD', 'GBP', refresh=True, memo=memo).prices.tolist() == pytest.approx([.8/1.2,.9/1.2,1/1.2])
+    assert service.cash('EUR', 'USD', refresh=True, memo=memo).prices.tolist() == pytest.approx([1/.8,1/.9,1])
+    assert calls == ['SYNTH', 'USDEUR=X', 'GBPEUR=X']
+    service.cash('EUR', 'USD', refresh=True, memo={})
+    assert calls[-2:] == ['GBPEUR=X', 'USDEUR=X']
 
 
 def test_price_chart_uses_historical_fx_without_changing_native_data():
@@ -321,3 +327,51 @@ def test_estimate_status_flows_through_grouped_performance(prices):
     table = add_performance_column(pd.DataFrame({'Investment':['Invented instrument']}), ['invented'],
                                    list(measures.measures()), key='asset_id')
     assert table['Performance coverage'].iloc[0] == 'Complete · Estimated'
+
+
+def test_active_costs_own_the_freshly_decoded_components(monkeypatch):
+    from portfolio_app.performance import cost_basis
+
+    row = dict(shares=2, acquisition_price=10, acquisition_currency='EUR')
+    parts = [component(2, 20, 'EUR', conversions={'USD': {'amount': '24', 'method': 'supplied_cost'}})]
+    row[FIELD] = encode_components(parts, row)
+    documents = []
+    decode = cost_basis.read_details
+
+    def observed(value):
+        document = decode(value)
+        documents.append(document)
+        return document
+
+    monkeypatch.setattr(cost_basis, 'read_details', observed)
+    first = active_components(row)
+    assert first is documents[0]['components']
+    first[0]['conversions']['USD']['amount'] = '999'
+    assert active_components(row) == parts
+
+
+def test_pending_cost_discovers_dates_until_first_terminal_issue():
+    from portfolio_app.market.fx import DatedRate
+    from types import SimpleNamespace
+    seen = []
+    def get(source, target, day):
+        seen.append(day)
+        if day == '2024-02-01':
+            return DatedRate(note='Unavailable')
+        return DatedRate(note='Loading', pending=True)
+    history = SimpleNamespace(get=get)
+    parts = [component(1, 10, 'USD', f'2024-0{i}-01') for i in range(1, 4)]
+    result = resolve_cost(parts, 'EUR', history)
+    assert result.amount is None and result.note == 'Loading Excluded from gains.'
+    assert seen == ['2024-01-01', '2024-02-01']
+    for bad_part in (component(1, None, 'USD'), component(1, 10, ''), component(1, 10, 'GBP')):
+        seen.clear()
+        assert resolve_cost([parts[0], bad_part, parts[2]], 'EUR', history) == result
+        assert seen == ['2024-01-01']
+    def conflict(source, target, day):
+        if day == parts[0]['date']:
+            return DatedRate(note='Loading', pending=True)
+        raise DataError('Conflicting saved rates')
+    assert resolve_cost(parts, 'EUR', SimpleNamespace(get=conflict)) == result
+    with pytest.raises(DataError, match='Conflicting saved rates'):
+        resolve_cost(parts[1:], 'EUR', SimpleNamespace(get=conflict))

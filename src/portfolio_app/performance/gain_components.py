@@ -38,19 +38,34 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
         state = replay_securities(journal.securities, as_of=end)
         book = next(b for b in journal.securities if b.position_id == identity)
         recorded = recorded_security_gains(book, state, observations, end, target)
-    scope = HistoryScope((identity,))
-    value = current_value if current_value is not None else (
-        calculation.value(scope, end, target) if calculation else
-        value_at(journal, scope, observations, end, target)).amount
+    value = current_value
+    if value is None:
+        scope = HistoryScope((identity,))
+        value = (calculation.value(scope, end, target) if calculation else
+                 value_at(journal, scope, observations, end, target)).amount
     if recorded.remaining_cost is not None:
         return replace(recorded, unrealized=value-recorded.remaining_cost if value is not None else None)
     if value is None:
         return recorded
-    state = calculation.securities(end) if calculation else replay_securities(journal.securities, as_of=end)
-    balance = state.positions.get(identity)
-    if balance is None or not balance.quantity:
+    if calculation is not None:
+        quantity, costs = calculation.partial_lot_costs(identity, end, target)
+    else:
+        quantity, costs = partial_lot_costs(state.positions.get(identity), observations, target)
+    if not costs:
         return recorded
-    gains = []
+    with localcontext() as context:
+        context.prec = 60
+        gains = [value * units / quantity - cost for units, cost in costs]
+    return replace(recorded, unrealized=sum(gains, ZERO), reasons=(*recorded.reasons,
+                   'Unrealized gain covers only units with supplied acquisition costs'))
+
+
+def partial_lot_costs(balance, observations, target):
+    """Resolve supported quantities and costs independently of the closing mark."""
+    if balance is None or not balance.quantity:
+        return ZERO, ()
+    historical = ObservationFX(observations)
+    costs = []
     with localcontext() as context:
         context.prec = 60
         for lot in balance.lots:
@@ -58,14 +73,13 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
                 continue
             known = [p for p in lot.costs if p['amount'] != '']
             units = sum((Decimal(p['shares']) for p in known), ZERO)
-            resolved = resolve_cost(known, target, ObservationFX(observations)) if units else None
+            resolved = resolve_cost(known, target, historical) if units else None
             if resolved is not None and resolved.exact_amount is not None:
-                gains.append(value*units/balance.quantity-resolved.exact_amount)
-    return replace(recorded, unrealized=sum(gains, ZERO), reasons=(*recorded.reasons,
-                   'Unrealized gain covers only units with supplied acquisition costs')) if gains else recorded
+                costs.append((units, resolved.exact_amount))
+    return balance.quantity, tuple(costs)
 
 
-def recorded_security_gains(book, state, observations, end, target):
+def recorded_security_gains(book, state, observations, end, target, selected=None):
     """Cost and cash facts change on ledger dates, independently of end-date prices."""
     identity = book.position_id
     balance = state.positions.get(identity)
@@ -97,7 +111,7 @@ def recorded_security_gains(book, state, observations, end, target):
     converted = {c.id:convert(c.amount,c.currency,target,c.date,observations) for c in cash}
     if any(value is None for value in converted.values()):
         reasons.append('Cash amount or dated FX is missing')
-    events = [e for e in selected_events(book) if e.date <= end]
+    events = [e for e in (selected_events(book) if selected is None else selected) if e.date <= end]
     disposed = {d.event_id:cost(tuple(p for lot in d.lots for p in lot.costs))
                 for d in state.disposals if d.position_id == identity and d.kind in ('sell', 'swap')}
     # Preserve every matching event prefix, including IDs containing colons.

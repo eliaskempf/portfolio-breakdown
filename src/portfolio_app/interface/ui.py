@@ -11,9 +11,10 @@ from portfolio_app.demo_data.demo import initialize_live_demo, live_demo_pending
 from portfolio_app.funds.etf import validate_fund_listings
 from portfolio_app.interface.views.exposure.exposure_ui import render_analysis
 from portfolio_app.funds.etf_refresh import coordinator
-from portfolio_app.interface.views.funds.etf_refresh_ui import refresh_revision, render_refresh_status
+from portfolio_app.interface.views.funds.etf_refresh_ui import refresh_revision
 from portfolio_app.portfolio.holdings import DataError
-from portfolio_app.interface.views.positions.position_ui import render_position_editor, render_position_dialog, request_position
+from portfolio_app.interface.views.positions.position_ui import (position_dialog_sources, render_position_editor,
+    render_position_dialog, request_position)
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.portfolio.rebalancing import RebalanceError
 from portfolio_app.interface.views.portfolio.rebalance_ui import render_rebalancing
@@ -22,18 +23,19 @@ from portfolio_app.interface.shared.presentation import apply_style, empty_overv
 from portfolio_app.portfolio.allocation import migration_preview
 from portfolio_app.interface.views.portfolio.strategic_ui import render_strategic_overview
 from portfolio_app.interface.views.portfolio.scoped_ui import render_scoped_rebalancing
-from portfolio_app.interface.shared.input_cache import load_inputs, cached_input
+from portfolio_app.interface.shared.input_cache import load_inputs, cached_input, loaded_fund_sources
 from portfolio_app.exposure.exposure_workspace import analytical_signature
-from portfolio_app.market.market_data import coordinator as market_coordinator, prices_for
+from portfolio_app.market.market_data import BackgroundPrices, coordinator as market_coordinator, prices_for
 from portfolio_app.interface.shared.view_state import preserve_view_inputs, finish_view_inputs
 from portfolio_app.application import (historical_for, load_leverage_context, prepare_application,
-    prepare_exposure, select_price_service)
+    prepare_exposure, select_price_service, valuation_requests)
 
 
 def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None, intro: bool = False, ignore_selection: bool = False, managed: bool = False) -> None:
     from portfolio_app.settings import ensure_app_theme
     ensure_app_theme()
     st.session_state['position_dialog_host_ready'] = False
+    st.session_state['exposure_asset_dialog_host_ready'] = False
     from portfolio_app.settings import icon_path
     from portfolio_app.interface.views.workspace.workspace_ui import app_header, workspace_error, workspace_info
     persistent_data_dir = data_dir
@@ -68,6 +70,14 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     data_dir, demo, refresh, settings_panel, workspace_panel, notifications_slot = app_header(
         data_dir, demo_dir, demo=demo, launcher_directory=persistent_data_dir if managed else None)
     launcher_directory = persistent_data_dir if managed and not demo else None
+    from portfolio_app.interface.shared.overview_navigation import render_panel, ViewSources
+    from portfolio_app.interface.views.onboarding.tour import active as tour_active
+    view_sources = None
+    if st.session_state.get('main_tabs', 'Overview') in ('Overview', 'Exposure') and not tour_active():
+        try:
+            view_sources = ViewSources(data_dir)
+        except (DataError, OSError):
+            pass  # Normal workspace loading owns recovery and validation messages.
     from portfolio_app.interface.shared.calendar_ui import configure_calendar
     if settings_panel is not None:
         with settings_panel:
@@ -83,7 +93,6 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if not demo and render_backup_dialog(data_dir, persistent_data_dir, chosen.generation):
         mark_view_ready()
         return
-    from portfolio_app.interface.views.onboarding.tour import active as tour_active
     if tour_active():
         write_context.set(None)
         # Always value the isolated tour with its own synthetic quotes.
@@ -110,10 +119,13 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     reporting_currency = currency_settings.reporting_currency
     st.session_state['reporting_currency'] = reporting_currency
     historical = historical_for(data_dir, demo=demo and not (data_dir / '.live-demo').exists())
+    observation_snapshot = None
     if (data_dir / 'history-observations.json').exists():
-        from portfolio_app.performance.history_observations import ObservationFX, load_observations as load_historical_observations
+        from portfolio_app.performance.history_observations import ObservationFX
+        from portfolio_app.interface.shared.input_cache import observation_snapshot as load_historical_observations
         try:
-            historical = ObservationFX(load_historical_observations(data_dir)[0], historical)
+            observation_snapshot = load_historical_observations(data_dir)
+            historical = ObservationFX(observation_snapshot[0], historical)
         except DataError as exc:
             workspace_error(exc, workspace_panel)
             mark_view_ready()
@@ -138,6 +150,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         st.caption("Offline demo · Invented prices, buy-ins and ETF weights · Resets on restart" if offline_demo else
                    "Demo · Invented quantities, targets and buy-ins · Public market data · Resets on restart")
     from portfolio_app.interface.views.exposure.portfolio_exposure_ui import render_exposure_targets, render_leverage_editor
+    # Fragment comparisons must start before the reads that produced the displayed values.
+    dialog_baseline = position_dialog_sources(data_dir)
     try:
         leverage_context = load_leverage_context(data_dir, reporting_currency)
     except DataError as exc:
@@ -161,10 +175,11 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             if sandbox:
                 st.json(asdict(sandbox[0]))
             st.json(asdict(leverage))
-    etf_revision = refresh_revision(data_dir)
+    etf_revision = None if offline_demo else refresh_revision(data_dir)
     try:
         inputs = load_inputs(data_dir)
         snapshot, allocation, classifications, funds = inputs
+        fund_revision = loaded_fund_sources()
         if snapshot.holdings.attrs.get('history_journal_revision') != leverage_context.journal_revision:
             st.rerun()
         holdings = snapshot.holdings
@@ -204,25 +219,36 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         if render_guided_setup(data_dir, snapshot, allocation):
             mark_view_ready()
             return
-    background_prices = price_service is None and not offline_demo
+    supplied_prices = price_service is not None
+    background_prices = not supplied_prices and not offline_demo
     market_workspace = str(data_dir.resolve())
-    market_revision = market_coordinator.revision(market_workspace)
     price_service = select_price_service(data_dir, offline_demo=offline_demo, supplied=price_service, live_prices=prices_for)
-    with st.spinner('Valuing portfolio…'):
-        prepared = prepare_application(inputs, price_service, refresh=refresh,
-            reporting_currency=reporting_currency, historical=historical)
-    valued, status = prepared.valued, prepared.status
-    if actual_active:
-        from portfolio_app.portfolio.actual_portfolio import capital_plan_positions, journal_positions
-        from portfolio_app.derivatives.futures_valuation import load_valuations
-        try:
-            valuations, manual_fx = load_valuations(data_dir, journal)
-            valued = journal_positions(valued, journal, price_service, reporting_currency=reporting_currency,
-                valuations=valuations, fx_rates=manual_fx)
-        except DataError as exc:
-            workspace_error(exc, workspace_panel)
-            mark_view_ready()
-            return
+    background_reader = price_service if isinstance(price_service, BackgroundPrices) else None
+    market_revision = (background_reader.display_revision if background_reader else
+                       market_coordinator.channel_state(market_workspace, 'valuation')[0])
+
+    def current_market_prices():
+        if background_reader:
+            return background_reader.still_current()
+        return market_coordinator.channel_state(market_workspace, 'valuation')[0] == market_revision
+
+    with valuation_requests(price_service, historical) as valuation_history:
+        with st.spinner('Valuing portfolio…'):
+            prepared = prepare_application(inputs, price_service, refresh=refresh,
+                reporting_currency=reporting_currency, historical=valuation_history)
+        valued, status = prepared.valued, prepared.status
+        ordinary_valued = valued
+        if actual_active:
+            from portfolio_app.portfolio.actual_portfolio import capital_plan_positions, journal_positions
+            from portfolio_app.derivatives.futures_valuation import load_valuations
+            try:
+                valuations, manual_fx = load_valuations(data_dir, journal)
+                valued = journal_positions(valued, journal, price_service, reporting_currency=reporting_currency,
+                    valuations=valuations, fx_rates=manual_fx)
+            except DataError as exc:
+                workspace_error(exc, workspace_panel)
+                mark_view_ready()
+                return
     if notice := st.session_state.pop('currency_notice', None):
         st.info(notice)
     if render_currency_dialog(data_dir, snapshot, currency_settings, price_service, historical):
@@ -230,7 +256,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         return
     if demo_pending:
         if background_prices:
-            render_market_status(market_workspace, market_revision, show_caption=False)
+            render_market_status(market_workspace, market_revision, reader=background_reader, show_caption=False)
         if initialize_live_demo(data_dir, valued):
             st.rerun()
         with st.container(key='demo_loading'):
@@ -245,10 +271,13 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                 st.caption('You can also explore an offline example with App menu → Help → Take the tour, or select My portfolio in the header’s portfolio selector.')
                 mark_view_ready()
         return
-    exposure_signature = analytical_signature(valued, funds, str(data_dir.resolve()), reporting_currency, allocation, leverage_context)
-    exposure_result = cached_input(
-        'portfolio_exposure', exposure_signature,
-        lambda: prepare_exposure(valued, funds, allocation, leverage_context))
+    exposure_signature = exposure_result = None
+    if feature_active:
+        exposure_signature = analytical_signature(valued, funds, str(data_dir.resolve()), reporting_currency,
+            allocation, leverage_context.exposure_options(valued), fund_revision=fund_revision)
+        exposure_result = cached_input(
+            'portfolio_exposure', exposure_signature,
+            lambda: prepare_exposure(valued, funds, allocation, leverage_context))
     display_valued, display_exposure = valued, exposure_result
     if actual_active:
         from portfolio_app.derivatives.futures_investments import investment_positions
@@ -275,27 +304,31 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
     if not overview.open:
         st.session_state.pop('import_complete', None)
     from portfolio_app.interface.views.monitoring.monitoring_ui import watch_monitoring, render_monitoring, render_alert_dialog
-    watch_monitoring(data_dir, demo=offline_demo, disabled=tour_active())
+    monitoring_revision, _ = market_coordinator.channel_state(market_workspace, 'monitoring')
     if tabs[-2].open:
         with tabs[-2]:
             render_monitoring(data_dir, holdings, journal, demo=offline_demo)
+    watch_monitoring(data_dir, demo=offline_demo, evaluate_rules=not tour_active(), visible=tabs[-2].open,
+                     starting_revision=monitoring_revision)
     if tabs[-1].open:
         with tabs[-1]:
             from portfolio_app.interface.views.taxes.tax_ui import render_taxes
             render_taxes(data_dir, holdings, journal, funds, valued, demo=offline_demo)
     from portfolio_app.interface.shared.notifications_ui import notification_bell
-    notifications_panel = notification_bell(notifications_slot, data_dir, funds, valued, status,
+    current_etf_notices = notification_bell(notifications_slot, data_dir, funds, valued, status, etf_revision=etf_revision,
         demo=offline_demo, cache_warning=price_service.cache_warning,
-        exposure_issues=exposure_result.issues if exposure_result else (), disabled=tour_active(), journal=journal)
-    if notifications_panel.open:
-        from portfolio_app.interface.shared.notifications_ui import render_notifications
-        with notifications_panel:
-            render_notifications(data_dir, funds, etf_revision, valued, status, demo=offline_demo, launcher_directory=launcher_directory,
-                cache_warning=price_service.cache_warning, exposure_issues=exposure_result.issues if exposure_result else (),
-                prices_pending=background_prices and market_coordinator.pending(market_workspace), journal=journal)
-    elif not demo_pending:
-        # Keep background completion reruns active without displaying notices.
-        render_refresh_status(data_dir, funds, etf_revision, demo=offline_demo, show_messages=False)
+        exposure_issues=exposure_result.issues if exposure_result else (), disabled=tour_active(), journal=journal,
+        background_prices=background_prices, launcher_directory=launcher_directory,
+        on_notices_recorded=view_sources.notices_recorded if view_sources else None)
+    def current_view(tab):
+        try:
+            return (st.session_state.get('main_tabs', 'Overview') == tab
+                    and (st.session_state.get(unit_key) == '%') == percent
+                    and refresh_allowed() and (ignore_selection or selection(persistent_data_dir) == chosen)
+                    and current_market_prices() and current_etf_notices() and view_sources.current())
+        except (DataError, OSError):
+            return False
+
     if (sandbox or broker_workspace) and tabs[4].open:
         with tabs[4]:
             if broker_workspace:
@@ -309,7 +342,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         with positions:
             render_position_editor(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, embedded=True,
                                    allocation=allocation, valued=display_valued.loc[display_valued.shares.ne(0)].copy() if hide_empty else display_valued,
-                                   account_valued=valued, percent=percent, defer_dialog=True, has_accounts=broker_workspace)
+                                   account_valued=valued, percent=percent, defer_dialog=True, journal=journal, has_accounts=broker_workspace)
     def open_valued_position(position_id, *, editing=False):
         from portfolio_app.ledger.bank_accounts import bank_detail_position
         if actual_active and (bank_position := bank_detail_position(journal, position_id)):
@@ -360,16 +393,30 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                     st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Exposure targets')
                 def open_capital_targets():
                     st.session_state.update(main_tabs='Rebalance', rebalance_tabs='Targets', exposure_target_mode='Category targets')
-                render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_capital_targets=open_capital_targets, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
-                                          current_valued=valued, automatic_history=not offline_demo, show_sold_positions=not hide_empty,
-                                          leverage_enabled=(leverage.enabled or broker_workspace) and leverage_supported,
-                                          percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
-                                          edit_position=lambda position_id: open_valued_position(position_id, editing=True),
-                                          analytics=lambda selected, scope, scoped_future, scoped: render_portfolio_analytics(
-                                              investment_risk_positions(selected, valued) if actual_active else selected, data_dir, funds, demo=offline_demo, scope=scope, future=scoped_future,
-                                              portfolio_result=overview_exposure if actual_active or sandbox or leverage.liabilities else None,
-                                              portfolio_net_equity=(overview_exposure.net_equity if overview_exposure is not None else
-                                                  valued.loc[valued.shares.gt(0), 'current_value_reporting'].sum(skipna=False)), scoped=scoped))
+                def current_analytics():
+                    return st.session_state.get('strategic_view') == 'Analytics' and current_view('Overview')
+
+                def draw_overview():
+                    render_strategic_overview(overview_values, overview_config, data_dir=data_dir, open_capital_targets=open_capital_targets, open_exposure_targets=open_exposure_targets, exposure_result=overview_exposure, future=actual_future, open_position=open_valued_position,
+                                              current_valued=valued, history_holdings=holdings, journal=journal, observation_snapshot=observation_snapshot,
+                                              input_revisions=(snapshot.revision, leverage_context.journal_revision), automatic_history=not offline_demo, show_sold_positions=not hide_empty,
+                                              leverage_enabled=(leverage.enabled or broker_workspace) and leverage_supported,
+                                              percent=percent, on_toggle_gain=toggle_unit, position_context=context_key,
+                                              edit_position=lambda position_id: open_valued_position(position_id, editing=True),
+                                              analytics=lambda selected, scope, scoped_future, scoped: render_portfolio_analytics(
+                                                  investment_risk_positions(selected, valued) if actual_active else selected, data_dir, funds, demo=offline_demo, scope=scope, future=scoped_future,
+                                                  portfolio_result=overview_exposure if actual_active or sandbox or leverage.liabilities else None,
+                                                  portfolio_net_equity=(overview_exposure.net_equity if overview_exposure is not None else
+                                                      valued.loc[valued.shares.gt(0), 'current_value_reporting'].sum(skipna=False)), scoped=scoped,
+                                                  current_view=current_analytics if view_sources and not supplied_prices else None))
+
+                def current_overview():
+                    return st.session_state.get('strategic_view') != 'Analytics' and current_view('Overview')
+
+                if view_sources is None or supplied_prices or st.session_state.get('strategic_view') == 'Analytics':
+                    draw_overview()
+                else:
+                    render_panel(draw_overview, current_overview)
             if import_tips is not None:
                 with import_tips.container():
                     render_import_next_steps()
@@ -380,8 +427,9 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             else:
                 render_analysis(data_dir, holdings, classifications, funds, demo=offline_demo,
                     price_service=price_service, source_valued=visible, performance_percent=percent,
-                    allocation=allocation, etf_revision=etf_revision, on_toggle_gain=toggle_unit,
-                    exposure_result=exposure_result, leverage_context=leverage_context)
+                    allocation=allocation, fund_revision=fund_revision, on_toggle_gain=toggle_unit,
+                    exposure_result=exposure_result, leverage_context=leverage_context,
+                    current_view=(lambda: current_view('Exposure')) if view_sources and not supplied_prices else None)
     if rebalance.open and not unsupported_records:
         with rebalance:
             plan_tab, targets_tab = st.tabs(['Plan', 'Targets'], key='rebalance_tabs', on_change='rerun')
@@ -416,7 +464,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                             from portfolio_app.interface.views.exposure.exposure_plan_ui import render_exposure_plan
                             if broker_workspace:
                                 from portfolio_app.derivatives.account_planning import render_account_plan
-                                render_account_plan(data_dir, exposure_result, allocation, valued, journal, exposure_signature=exposure_signature)
+                                render_account_plan(data_dir, exposure_result, allocation, valued, journal,
+                                    exposure_signature=(exposure_signature, leverage_context.journal_revision))
                             else:
                                 render_exposure_plan(data_dir, exposure_result, allocation, valued, future=actual_future, exposure_signature=exposure_signature)
                         elif allocation:
@@ -427,13 +476,14 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
                             render_rebalancing(capital_plan_positions(valued) if actual_active else valued)
                     except RebalanceError as exc:
                         st.error(str(exc))
-    if background_prices or market_coordinator.pending(market_workspace) or market_coordinator.revision(market_workspace) != market_revision:
-        render_market_status(market_workspace, market_revision, show_caption=False)
+    if background_prices or market_coordinator.channel_state(market_workspace, 'valuation') != (market_revision, False):
+        render_market_status(market_workspace, market_revision, reader=background_reader, show_caption=False)
     if not tour_active():
         render_alert_dialog(data_dir)
-    render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued, prices=price_service)
+    render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued, prices=price_service,
+                           journal=journal, baseline=dialog_baseline)
     render_tour(empty=holdings.empty)
-    if not offline_demo and not tour_active() and not notifications_panel.open:
+    if not offline_demo and not tour_active() and not st.session_state.get('workspace_notifications', False):
         from portfolio_app.interface.shared.update_ui import render_update_dialog
         render_update_dialog(launcher_directory=launcher_directory)
     finish_view_inputs()
@@ -441,18 +491,28 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
 
 
 
-def render_market_status(market_workspace, market_revision, *, show_caption=True):
-    pending = market_coordinator.pending(market_workspace)
-    @st.fragment(run_every=.5 if pending else None)
-    def market_status():
-        if market_coordinator.revision(market_workspace) != market_revision and refresh_allowed():
+def render_market_status(market_workspace, market_revision, *, reader=None, show_caption=True):
+    from portfolio_app.interface.shared.background_ui import status_fragment
+    @status_fragment()
+    def market_status(poll):
+        waiting = reader is not None and reader.submit_waiting()
+        revision, pending = market_coordinator.channel_state(market_workspace, 'valuation')
+        pending = pending or waiting
+        if not pending and revision != market_revision and refresh_allowed():
             st.rerun()
-        if show_caption and market_coordinator.pending(market_workspace):
+        if pending or revision != market_revision:
+            poll(.5)
+        if show_caption and pending:
             st.caption('Updating prices in the background · Saved quotes remain visible with their original dates')
     market_status()
 
 
 def main():
+    from streamlit import config
+    # Streamlit otherwise scans the complete heap after every fragment, even a
+    # display-only switch. Let Python schedule collections unless overridden.
+    if not config.is_manually_set('runner.postScriptGC'):
+        config.set_option('runner.postScriptGC', False)
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-dir", type=Path, default=Path.cwd() / "data" / "portfolio")
     parser.add_argument("--demo-dir", type=Path)

@@ -13,7 +13,7 @@ import pandas as pd
 from portfolio_app.portfolio.physical_assets import METALS
 from portfolio_app.exposure.aggregation import classify_exposures
 from portfolio_app.exposure.countries import COUNTRIES
-from portfolio_app.funds.etf import FundSnapshot, constituent_resolver, matching_fund
+from portfolio_app.funds.etf import FundSnapshot, constituent_records, constituent_resolver, matching_fund
 from portfolio_app.exposure.taxonomy import Classifications, TaxonomyPath
 
 UNKNOWN = 'Unknown geography'
@@ -101,7 +101,7 @@ def resolve_geography(holdings: pd.DataFrame, funds: list[FundSnapshot],
     resolve = constituent_resolver(holdings)
     for fund in funds:
         source = f'{fund.name} · {fund.as_of}' + (' (proxy)' if fund.proxy_source else '')
-        for row in fund.constituents.to_dict('records'):
+        for row in constituent_records(fund.constituents):
             asset, _ = resolve(row)
             records[asset].append((row, source))
     paths, sources, reasons = {}, {}, {}

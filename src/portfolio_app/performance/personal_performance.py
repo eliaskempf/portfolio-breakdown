@@ -8,6 +8,7 @@ from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
+from functools import cached_property
 import math
 
 from portfolio_app.ledger.account_journal import effective_events, replay
@@ -25,6 +26,15 @@ class AmountResult:
     amount: Decimal | None
     reasons: tuple[str, ...] = ()
     evidence: tuple[ValuationEvidence, ...] = ()
+
+
+@dataclass(frozen=True)
+class PeriodCapital:
+    opening_value: AmountResult
+    opening_capital: AmountResult
+    net_contributions: Decimal | None
+    invested_capital: Decimal | None
+    flow_reasons: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -91,10 +101,12 @@ class HistoryCalculation:
     def __init__(self, journal, observations):
         self.journal, self.observations = journal, index_observations(observations)
         self._account_events = effective_events(journal)
+        self._last_cash_openings = last_cash_openings(self._account_events)
+        self._books = {book.position_id: book for book in journal.securities}
         self._position_starts = account_position_starts(self._account_events)
-        self._account_starts = account_start_dates(journal, self._account_events)
         from portfolio_app.ledger.account_inception import account_inceptions
         self._account_inceptions = account_inceptions(journal, self._account_events)
+        self._account_starts = account_start_dates(journal, self._account_events, inceptions=self._account_inceptions)
         self._events = {book.position_id: selected_events(book) for book in journal.securities}
         self._coverage_events = {identity: tuple(e for e in events if
             e.kind in ('opening', 'checkpoint', 'note', 'cost', 'inventory_in', 'inventory_out')
@@ -109,9 +121,14 @@ class HistoryCalculation:
         self._security_dates = sorted({event.date for event in events} |
             {charge.date for event in events for charge in event.charges if charge.date})
         self._flow_dates = sorted(set(self._security_dates) | {e.date for e in self._account_events})
+        self._capital_dates = sorted(set(self._flow_dates) | {stamp for stamp, _ in self._unresolved_receipts if stamp})
         self.fingerprint = history_fingerprint(journal)
         self._facts = OrderedDict()
+        # The selected chart owns this compact summary. Comparison series can
+        # read it without displacing it with sibling scopes.
+        self._validated_history_dates = {}
         self._flows = OrderedDict()
+        self._position_flows = {}
 
     def _get(self, key, load):
         if key not in self._facts:
@@ -120,6 +137,19 @@ class HistoryCalculation:
         while len(self._facts) > 8192:
             self._facts.popitem(last=False)
         return self._facts[key]
+
+    def event_dates(self, scope):
+        from portfolio_app.performance.gain_accounting import ScopeEventDates
+        def build():
+            books = ((book, self._events[book.position_id]) for book in self.journal.securities)
+            return ScopeEventDates(self.journal, self._account_events, books)
+        index = self._get(('event_dates_by_component',), build)
+        return self._get(('scope_dates', scope), lambda: index.dates(scope))
+
+    def observation_dates(self, scope, target):
+        from portfolio_app.performance.history_valuation import scope_observation_dates
+        return self._get(('observation_dates', scope, target),
+                         lambda: scope_observation_dates(self.journal, scope, self.observations, target))
 
     def securities(self, stamp=None):
         from portfolio_app.ledger.security_history import SecurityTimeline
@@ -130,13 +160,19 @@ class HistoryCalculation:
         from portfolio_app.performance.gain_components import recorded_security_gains
         interval = bisect_right(self._security_dates, stamp)
         def load():
-            book = next(b for b in self.journal.securities if b.position_id == identity)
-            return recorded_security_gains(book, self.securities(stamp), self.observations, stamp, target)
+            book = self._books[identity]
+            return recorded_security_gains(book, self.securities(stamp), self.observations, stamp, target, self._events[identity])
         return self._get(('security_gains', identity, interval, target), load)
 
     def account_postings(self):
         return self._get(('account_postings',), lambda: cash_postings(
             self.journal, security_cash=self.securities().cash))
+
+    def partial_lot_costs(self, identity, stamp, target):
+        from portfolio_app.performance.gain_components import partial_lot_costs
+        interval = bisect_right(self._security_dates, stamp)
+        return self._get(('partial_lot_costs', identity, interval, target), lambda:
+            partial_lot_costs(self.securities(stamp).positions.get(identity), self.observations, target))
 
     def accounts(self, stamp):
         from portfolio_app.ledger.account_timeline import AccountTimeline
@@ -147,6 +183,10 @@ class HistoryCalculation:
         return self._get(('value', scope, stamp, target), lambda: value_at(
             self.journal, scope, self.observations, stamp, target, calculation=self))
 
+    def retain_value(self, scope, stamp, target, value):
+        """Reuse an already validated close for gain accounting and overlapping chart ranges."""
+        self._get(('value', scope, stamp, target), lambda: value)
+
     def opening(self, scope, stamp, target):
         return self._get(('opening', scope, stamp, target), lambda: opening_value_at(
             self.journal, scope, self.observations, stamp, target, calculation=self))
@@ -155,15 +195,83 @@ class HistoryCalculation:
         return self._get(('capital', scope, stamp, target), lambda: capital_at_start(
             self.journal, scope, self.observations, stamp, target, calculation=self))
 
-    def flows(self, scope, start, end, target):
+    @cached_property
+    def _position_flow_inputs(self):
+        from portfolio_app.performance.history_flows import position_flow_inputs
+        return position_flow_inputs(self)
+
+    def dated_flows(self, scope, target):
         from portfolio_app.performance.history_flows import DatedFlows
+        if len(scope.positions) == 1 and not scope.accounts and not scope.unresolved:
+            identity = scope.positions[0]
+            if identity in self._events:
+                # One currency per recorded security; each retains only its own dated inputs.
+                flows = self._position_flows.get(identity)
+                if flows is None or flows.target != target:
+                    flows = DatedFlows(self, scope, target, position_inputs=self._position_flow_inputs[identity])
+                    self._position_flows[identity] = flows
+                return flows
         key = scope, target
         if key not in self._flows:
             self._flows[key] = DatedFlows(self, scope, target)
         self._flows.move_to_end(key)
         while len(self._flows) > 32:
             self._flows.popitem(last=False)
-        return self._flows[key].interval(start, end)
+        return self._flows[key]
+
+    def flows(self, scope, start, end, target):
+        return self.dated_flows(scope, target).interval(start, end)
+
+    @cached_property
+    def _receipt_dates_by_position(self):
+        dates = defaultdict(set)
+        for stamp, affected in self._unresolved_receipts:
+            if stamp:
+                for identity in affected:
+                    dates[identity].add(stamp)
+        return dates
+
+    def _position_capital_dates(self, scope):
+        dates = self.event_dates(scope)
+        receipt_dates = self._receipt_dates_by_position.get(scope.positions[0])
+        return sorted(receipt_dates.union(dates)) if receipt_dates else dates
+
+    def _coverage_dates(self, scope):
+        members = set(scope.positions)
+        dates = {e.date for identity in members for e in self._coverage_events.get(identity, ())}
+        if scope.accounts:
+            accounts = set(scope.accounts)
+            members.update(b.position_id for b in self.journal.securities if b.account_id in accounts)
+            # An ordinary cash flow changes contributions. Its conversion is
+            # checked separately on its payment date by external_flows.
+            dates.update(e.date for e in self._account_events if e.account_id in accounts and e.kind != 'cash_flow')
+        for identity in members:
+            dates.update(self._receipt_dates_by_position.get(identity, ()))
+        return sorted(dates)
+
+    def coverage(self, scope, start, end):
+        dates = self._get(('coverage_dates', scope), lambda: self._coverage_dates(scope))
+        boundary = bisect_right(dates, end)
+        latest = self._get(('coverage', scope, start), dict)
+        if boundary not in latest:
+            result = coverage_reasons(self.journal, scope, self.observations, start, end,
+                                      events_by_position=self._events, calculation=self)
+            latest.clear()
+            latest[boundary] = result
+        return latest[boundary]
+
+    def period_capital(self, scope, start, end, target):
+        """Opening value, cash and cost evidence are independent of the closing mark."""
+        latest = self._get(('period_capital', scope, start, target), dict)
+        dates = self._capital_dates
+        if len(scope.positions) == 1 and not scope.accounts:
+            dates = self._get(('position_capital_dates', scope.positions[0]), lambda: self._position_capital_dates(scope))
+        boundary = bisect_right(dates, end)
+        if boundary not in latest:
+            result = _period_capital(self, scope, start, end, target)
+            latest.clear()
+            latest[boundary] = result
+        return latest[boundary]
 
     def flow_inputs(self):
         def load():
@@ -194,15 +302,27 @@ def confirmed_empty_before(book, stamp, *, events=None):
                 and events[0].source == 'confirmed_zero_start' and stamp < events[0].date)
 
 
-def account_start_dates(journal, events=None):
+def last_cash_openings(events):
+    # Effective events are ordered by economic date after corrections and voids.
+    return {event.account_id: event.date for event in events if event.kind == 'cash_open'}
+
+
+def account_start_dates(journal, events=None, *, inceptions=None):
+    """An explicit empty account starts before its first-day postings in every currency."""
+    from portfolio_app.ledger.account_inception import account_inceptions
+    if events is None:
+        events = effective_events(journal)
+    if inceptions is None:
+        events = tuple(events)
+        inceptions = account_inceptions(journal, events)
     owners = {p.id: p.account_id for p in journal.positions}
     first, openings = {}, {}
-    for event in effective_events(journal) if events is None else events:
+    for event in events:
         for account in {event.account_id, event.other_account_id, owners.get(event.position_id)} - {'', None}:
             first[account] = min(first.get(account, event.date), event.date)
             if event.kind == 'cash_open':
                 openings.setdefault(account, set()).add(event.date)
-    return {account: stamp for account, stamp in first.items() if openings.get(account) == {stamp}}
+    return {account: stamp for account, stamp in first.items() if openings.get(account) == {stamp}} | inceptions
 
 
 def account_starts_on(journal, account, stamp):
@@ -301,7 +421,7 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
     from portfolio_app.performance.history_observations import ObservationFX
     total, reasons = ZERO, list(scope.unresolved)
     states = (calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)).positions
-    books = {b.position_id: b for b in journal.securities}
+    books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
     initial_positions = initial_security_positions(journal, scope, stamp, calculation=calculation)
     for identity in scope.positions:
         if identity in initial_positions:
@@ -348,7 +468,7 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
         return AmountResult(supplied.amount, evidence=(provenance(supplied, stamp),))
     securities = calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)
     accounts = (calculation.accounts(stamp) if calculation else replay(journal, as_of=stamp)) if scope.accounts else None
-    books = {b.position_id: b for b in journal.securities}
+    books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
     total, reasons, evidence = ZERO, [], []
 
     def add(amount, denomination, identity):
@@ -388,11 +508,11 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
     inceptions = calculation._account_inceptions if calculation else account_inceptions(journal, events)
     position_starts = calculation._position_starts if calculation else account_position_starts(events)
     bank_starts = _portfolio_bank_starts(journal, scope, calculation)
+    openings = calculation._last_cash_openings if calculation else last_cash_openings(events)
     for account in scope.accounts:
         if stamp < bank_starts.get(account, '') or (account in inceptions and stamp < inceptions[account]):
             continue
-        openings = [e for e in events if e.account_id == account and e.kind == 'cash_open']
-        if not openings or any(e.date > stamp for e in openings):
+        if account not in openings or stamp < openings[account]:
             reasons.append(Issue(f'{account}: missing opening cash coverage on {stamp}', 'transaction'))
         for (owner, currency), amount in accounts.cash.items():
             if owner == account:
@@ -453,7 +573,7 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
     def events_for(book):
         return events_by_position[book.position_id] if events_by_position is not None else selected_events(book)
     reasons = list(scope.unresolved)
-    books = {b.position_id: b for b in journal.securities}
+    books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
     initial_positions = initial_security_positions(journal, scope, start, calculation=calculation)
     for identity in scope.positions:
         book = books.get(identity)
@@ -487,9 +607,9 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
             reasons.append(Issue('Unapplied transaction evidence requires review', 'transaction'))
     classes = dict(observations.classifications)
     account_events = calculation._account_events if calculation else effective_events(journal)
-    starts = calculation._account_starts if calculation else account_start_dates(journal, account_events)
     from portfolio_app.ledger.account_inception import account_inceptions
     inceptions = calculation._account_inceptions if calculation else account_inceptions(journal, account_events)
+    starts = calculation._account_starts if calculation else account_start_dates(journal, account_events, inceptions=inceptions)
     boundary_reason = 'linked movement crosses different opening boundaries; choose a period starting before or after this day'
     bank_starts = _portfolio_bank_starts(journal, scope, calculation)
     for book in journal.securities if initial_positions else ():
@@ -604,7 +724,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
     classes = dict(observations.classifications)
     if account_events is None:
         account_events = calculation._account_events if calculation else effective_events(journal)
-    starts = calculation._account_starts if calculation else account_start_dates(journal, account_events)
+    starts = calculation._account_starts if calculation else account_start_dates(journal, account_events, inceptions=inceptions)
     for e in account_events:
         inside, other = e.account_id in accounts, e.other_account_id in accounts
         initial = include_account_start and (inside and starts.get(e.account_id) == start
@@ -721,16 +841,10 @@ def known_negative_equity_dates(journal, scope, observations, start, end, target
     Missing valuations stay unknown; never fill them to establish eligibility.
     Callers rendering many prefixes can reuse these dates and existing values.
     """
-    from portfolio_app.performance.history_observations import index_observations
-    from portfolio_app.performance.history_valuation import scope_observations
-    observations = index_observations(observations)
     calculation = calculation or HistoryCalculation(journal, observations)
-    active = scope_observations(journal, scope, observations, target)
-    from portfolio_app.performance.gain_accounting import scope_dates
-    dates = set(scope_dates(journal, scope))
-    dates |= {o.date for o in active}
-    negative = {o.date for o in active if o.kind == 'value' and o.subject == scope.key
-                and o.currency == target and start <= o.date <= end and o.amount < 0}
+    recorded = calculation.observation_dates(scope, target)
+    dates = recorded.chart_dates.union(recorded.boundary_dates, calculation.event_dates(scope))
+    negative = {day for day in recorded.negative_equity_dates if start <= day <= end}
     for stamp in sorted(dates):
         if not start <= stamp <= end or stamp in negative:
             continue
@@ -749,20 +863,11 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
         returns=returns, annualized=annualized, negative_dates=negative_dates, calculation=calculation, method=method))
 
 
-def _calculate_history(journal, scope, observations, start, end, target='EUR', *, returns=True, annualized=True, negative_dates=None, calculation=None, method='daily'):
-    if method not in ('daily', 'exact'):
-        raise ValueError('Unknown time-weighted return method')
-    days = (date.fromisoformat(end)-date.fromisoformat(start)).days
-    if days < 0:
-        from portfolio_app.portfolio.holdings import DataError
-        raise DataError('History end must not precede its start.')
-    calculation = calculation or HistoryCalculation(journal, observations)
-    observations = calculation.observations
-    opening, ending = calculation.opening(scope, start, target), calculation.value(scope, end, target)
-    coverage = coverage_reasons(journal, scope, observations, start, end, events_by_position=calculation._events, calculation=calculation)
-    flows, missing_flows = calculation.flows(scope, start, end, target)
+def _period_capital(calculation, scope, start, end, target):
+    opening = calculation.opening(scope, start, target)
+    coverage = calculation.coverage(scope, start, end)
+    net, missing_flows = calculation.dated_flows(scope, target).total(start, end, amount_needed=not coverage)
     flow_reasons = tuple(dict.fromkeys((*coverage, *missing_flows)))
-    net = sum((f.amount for f in flows), ZERO) if not flow_reasons else None
     capital = calculation.capital(scope, start, target)
     # A remaining-cost correction changes neither inventory nor cash. It cannot
     # invalidate market-value returns, but the old opening cost no longer proves
@@ -774,6 +879,22 @@ def _calculate_history(journal, scope, observations, start, end, target='EUR', *
     if cost_boundaries:
         capital = AmountResult(None, (*capital.reasons, *cost_boundaries))
     invested = capital.amount + net if capital.amount is not None and net is not None else None
+    return PeriodCapital(opening, capital, net, invested, flow_reasons)
+
+
+def _calculate_history(journal, scope, observations, start, end, target='EUR', *, returns=True, annualized=True, negative_dates=None, calculation=None, method='daily'):
+    if method not in ('daily', 'exact'):
+        raise ValueError('Unknown time-weighted return method')
+    days = (date.fromisoformat(end)-date.fromisoformat(start)).days
+    if days < 0:
+        from portfolio_app.portfolio.holdings import DataError
+        raise DataError('History end must not precede its start.')
+    calculation = calculation or HistoryCalculation(journal, observations)
+    observations = calculation.observations
+    basis = calculation.period_capital(scope, start, end, target)
+    opening, capital = basis.opening_value, basis.opening_capital
+    net, invested, flow_reasons = basis.net_contributions, basis.invested_capital, basis.flow_reasons
+    ending = calculation.value(scope, end, target)
     gain = ending.amount - opening.amount - net if ending.amount is not None and opening.amount is not None and net is not None else None
     total_gain = ending.amount - invested if ending.amount is not None and invested is not None else None
     opening_gain = opening.amount - capital.amount if opening.amount is not None and capital.amount is not None else None
@@ -789,6 +910,7 @@ def _calculate_history(journal, scope, observations, start, end, target='EUR', *
         if negative or opening.amount < 0 or ending.amount < 0:
             mwr_reasons = twr_reasons = (Issue('Percentage return is unavailable across negative equity', 'negative_equity'),)
         else:
+            flows, _ = calculation.flows(scope, start, end, target)
             if annualized:
                 mwr, reason = xirr(opening.amount, ending.amount, flows, start, end)
                 mwr_reasons = (reason,) if reason else ()

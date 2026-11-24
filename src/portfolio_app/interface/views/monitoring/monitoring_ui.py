@@ -10,13 +10,14 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from portfolio_app.interface.shared.background_ui import refresh_allowed
+from portfolio_app.interface.shared.input_cache import cached_input, monitoring_document
 
 from portfolio_app.interface.shared.charts import style_figure
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.monitoring.monitoring import Rule, SeriesSpec, evaluate_series, indicator_frame, condition, utc_now
 from portfolio_app.monitoring.monitoring_presentation import observation_time, alert_details, comparison_observation, sma_label
 from portfolio_app.monitoring.monitoring_service import monitoring_for
-from portfolio_app.monitoring.monitoring_store import (load_monitoring, rule_from_dict, save_rule, delete_rule, mark_events)
+from portfolio_app.monitoring.monitoring_store import (rule_from_dict, save_rule, delete_rule, mark_events)
 
 
 def request_monitoring(*, symbol='', account=''):
@@ -59,7 +60,9 @@ def _plot(rule, series, *, key='monitoring_chart_', show_condition=True, tracked
     # Calculate with all source history before clipping; a display window must
     # never shorten the SMA's warm-up or change a saved rule's live evaluation.
     now = utc_now()
-    frame = indicator_frame(rule, series, now=now)
+    local_day = pd.Timestamp(now).tz_convert(series.timezone).date()
+    frame = cached_input('monitoring_chart_history', (series, rule.period, rule.window, rule.comparison_window, rule.cadence, local_day),
+                         lambda: indicator_frame(rule, series, now=now), immutable=True)
     if frame.empty:
         st.info('No completed observations available.')
         return
@@ -508,7 +511,7 @@ def render_monitoring(directory, holdings, journal, *, demo=False):
     if view != 'Tracked rules':
         st.session_state.pop('monitoring_delete_requested', None)
     try:
-        doc, _ = load_monitoring(directory)
+        doc = monitoring_document(directory)
         if view == 'Tracked rules' and doc['rules']:
             service = monitoring_for(directory, demo=demo)
             status, check = st.columns([4,1.5], vertical_alignment='center')
@@ -533,27 +536,36 @@ def render_monitoring(directory, holdings, journal, *, demo=False):
         st.error(str(exc))
 
 
-def watch_monitoring(directory, *, demo=False, disabled=False):
-    """Invisible heartbeat: evaluation remains active regardless of selected tab."""
-    if disabled:
+def watch_monitoring(directory, *, demo=False, evaluate_rules=True, visible=True, starting_revision=None):
+    """Watch requested charts, and evaluate saved rules outside the guided tour."""
+    if not visible and not evaluate_rules:
         return
     service = monitoring_for(directory, demo=demo)
     directory = service.directory
     try:
-        doc, _ = load_monitoring(directory)
+        doc = monitoring_document(directory)
     except DataError:
         return  # The Monitoring view reports the corrupt document.
-    enabled = any(r['enabled'] for r in doc['rules'])
-    if enabled:
-        service.schedule()
+    enabled = evaluate_rules and any(r['enabled'] for r in doc['rules'])
     from portfolio_app.market.market_data import coordinator
-    revision = coordinator.revision(directory)
-    @st.fragment(run_every=60 if enabled else None)
-    def heartbeat():
+    from portfolio_app.interface.shared.background_ui import status_fragment
+    revision = starting_revision
+    if revision is None:
+        revision, _ = coordinator.channel_state(directory, 'monitoring')
+    @status_fragment(run_every=60 if enabled else None)
+    def heartbeat(poll):
+        nonlocal revision
         if enabled:
             service.schedule()
-        if coordinator.revision(directory) != revision and refresh_allowed():
-            st.rerun()
+        current, pending = coordinator.channel_state(directory, 'monitoring')
+        if current != revision and refresh_allowed():
+            # Background rule evaluations need a page update on other views
+            # only when their visible notifications have changed.
+            if visible or monitoring_document(directory)['events'] != doc['events']:
+                st.rerun()
+            revision = current
+        if pending:
+            poll(.5)
     heartbeat()
 
 
@@ -588,7 +600,7 @@ def render_alert_dialog(directory):
         value for key,value in st.session_state.items() if key.endswith(('_dialog_open','_dialog_requested'))):
         return
     try:
-        doc, _ = load_monitoring(directory)
+        doc = monitoring_document(directory)
     except DataError:
         return
     rules = {r['id']:r for r in doc['rules'] if r['enabled'] and r['delivery'] == 'dialog'}

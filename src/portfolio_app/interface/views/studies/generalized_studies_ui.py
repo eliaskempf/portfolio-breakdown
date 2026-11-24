@@ -13,7 +13,7 @@ from portfolio_app.studies.generalized_studies import (
     compare_policies, forward_paths, funding_cohorts, reconstruct,
 )
 from portfolio_app.portfolio.holdings import DataError
-from portfolio_app.workspace.storage import save_document
+from portfolio_app.workspace.storage import load_finite_json, save_document
 
 SETTINGS_FILE = 'generalized-study-settings.json'
 MODES = ('Forward Monte Carlo', 'Rolling Monte Carlo', 'Historical settlements',
@@ -26,12 +26,11 @@ def load_study_settings(directory):
         return {}, None
     try:
         content = path.read_bytes()
-        raw = json.loads(content)
+        raw = load_finite_json(content)
         if raw.get('version') != 1 or not isinstance(raw.get('scenarios'), dict):
             raise ValueError('Unsupported study settings')
         if any(not isinstance(key, str) or not isinstance(value, dict) for key, value in raw['scenarios'].items()):
             raise ValueError('Invalid scenario settings')
-        json.dumps(raw, allow_nan=False)
         return raw['scenarios'], sha256(content).hexdigest()
     except (OSError, ValueError, TypeError) as exc:
         raise DataError(f'Cannot load generalized study settings: {exc}') from exc

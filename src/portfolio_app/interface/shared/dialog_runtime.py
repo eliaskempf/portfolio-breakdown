@@ -17,25 +17,34 @@ HOST = 'position_dialog_host'
 
 def route_position_callback():
     """Replace an opener/dismiss callback's default whole-application rerun."""
-    if st.session_state.get('position_dialog_host_ready') and ThreadState.get().run_location == RunLocation.CALLBACK:
-        st.rerun(HOST)
+    if st.session_state.get('position_dialog_host_ready'):
+        route_dialog_callback(HOST)
+
+
+def route_dialog_callback(host):
+    if ThreadState.get().run_location == RunLocation.CALLBACK:
+        st.rerun(host)
 
 
 def local_dialog_updates():
     # Capture the owner when the context/decorator is declared. A nested polling
     # fragment must rebuild that owner on an explicit retry so its timer and
     # closed-over download state are initialized again.
-    fragment = ThreadState.get().fragment_id
-    return _local_dialog_updates(fragment)
+    return local_fragment_updates(dialog_only=True)
+
+
+def local_fragment_updates(*, dialog_only=False):
+    """Capture the owning result region before declaring its nested status fragment."""
+    return _local_updates(ThreadState.get().fragment_id, dialog_only)
 
 
 @contextmanager
-def _local_dialog_updates(fragment):
+def _local_updates(fragment, dialog_only):
     try:
         yield
     except RerunException as exc:
         request = exc.rerun_data
-        if fragment and st.session_state.get('position_edit_dialog') and not request.fragment_id_queue:
+        if fragment and not request.fragment_id_queue and (not dialog_only or st.session_state.get('position_edit_dialog')):
             # st.rerun's request has already been consumed at its yield point.
             # Preserve all other request fields, including pending widget values.
             raise RerunException(replace(request, fragment_id_queue=[fragment],
@@ -43,15 +52,23 @@ def _local_dialog_updates(fragment):
         raise
 
 
-def close_position_button():
+def close_dialog_button(label, *, key):
     """Use native dismissal for both X and Close, without a second server roundtrip."""
-    component = st.components.v2.component('position_dialog_close',
-        html='<button type="button">Close</button>',
+    component = st.components.v2.component('portfolio_dialog_close',
+        html='<button type="button"></button>',
         css='button {font:inherit;color:inherit;background:transparent;border:1px solid color-mix(in srgb,currentColor 25%,transparent);border-radius:6px;padding:.4rem .8rem;cursor:pointer;} button:focus-visible {outline:2px solid #5470c6;outline-offset:2px;}',
         js='''export default function(component) {
             const button=component.parentElement.querySelector('button');
-            const close=()=>document.querySelector('[role="dialog"] button[aria-label="Close"]')?.click();
+            button.textContent=component.data;
+            const close=()=>{
+                let element=button;
+                while(element){
+                    const dialog=element.closest('[role="dialog"]');
+                    if(dialog){dialog.querySelector('button[aria-label="Close"]')?.click();return;}
+                    element=element.getRootNode().host;
+                }
+            };
             button.addEventListener('click',close);
             return ()=>button.removeEventListener('click',close);
         }''')
-    component(key='position_dialog_close')
+    component(key=key, data=label)

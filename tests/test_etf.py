@@ -11,7 +11,7 @@ import pytest
 from portfolio_app.exposure.aggregation import aggregate, aggregate_dimension
 from portfolio_app.funds.etf import (
     FundSnapshot, effective_exposure_table, expand_etfs, fund_breakdown,
-    load_funds, matching_fund, snapshot_age_days, validate_constituents,
+    group_fund_positions, load_funds, matching_fund, snapshot_age_days, validate_constituents,
 )
 from portfolio_app.exposure.exposures import normalize_exposures
 from portfolio_app.portfolio.grouping import InstrumentGroup, group_classifications, group_exposures, group_members_table
@@ -37,6 +37,50 @@ def positions():
         {"position_id": "p2", "id": "semis", "name": "SMH UCITS", "ticker": "VVSM.DE", "isin": "IE00BMC38736", "current_value_reporting": 10000., "portfolio": "AI", "account": "B"},
         {"position_id": "p3", "id": "us-smh", "name": "US SMH", "ticker": "SMH", "isin": "US92189F6768", "current_value_reporting": 500., "portfolio": "Core", "account": "B"},
     ])
+
+
+def test_fund_position_groups_preserve_identifier_priority_order_and_shared_listings(fund):
+    first = replace(fund, isin='ISIN-A', wkn='WKN-A', tickers=('SHARED', 'SHARED'))
+    second = replace(fund, isin='ISIN-B', wkn='WKN-B', tickers=('SHARED', 'B'))
+    funds = [first, second]
+    rows = [
+        {'isin': ' isin-a ', 'wkn': 'WKN-B', 'ticker': 'B'},
+        {'isin': 'UNKNOWN', 'ticker': 'SHARED'},
+        {'wkn': ' wkn-b ', 'ticker': 'SHARED'},
+        {'wkn': 'UNKNOWN', 'ticker': 'SHARED'},
+        {'ticker': ' shared '},
+        {},
+        {'isin': 'ISIN-A', 'account': 'another synthetic account'},
+    ]
+    groups = group_fund_positions(funds, iter(rows))
+    assert groups == [[rows[0], rows[4], rows[6]], [rows[2], rows[4]]]
+    assert groups == [[row for row in rows if matching_fund(row, [item])] for item in funds]
+    assert matching_fund(rows[4], funds) is None
+
+
+def test_closed_fund_panels_read_label_positions_once_and_skip_selected_values(fund, positions, monkeypatch):
+    from types import SimpleNamespace
+    from portfolio_app.interface.views.funds import etf_ui
+
+    second = replace(fund, fund_id='another', isin='SYNTHETIC', tickers=(), name='Example fund')
+    selected = positions.iloc[:1]
+    reads = []
+    labels = []
+    original = pd.DataFrame.to_dict
+
+    def records(frame, *args, **kwargs):
+        reads.append(id(frame))
+        return original(frame, *args, **kwargs)
+
+    def closed(label, **kwargs):
+        labels.append(label)
+        return SimpleNamespace(open=False)
+
+    monkeypatch.setattr(pd.DataFrame, 'to_dict', records)
+    monkeypatch.setattr(etf_ui.st, 'expander', closed)
+    etf_ui.render_fund_details([fund, second], selected, holdings=positions)
+    assert labels == ['ETF breakdown: Smh', 'ETF breakdown: Example fund']
+    assert reads == [id(positions)]
 
 
 def test_partial_weights_and_source_values_are_conserved(fund, positions):
@@ -392,3 +436,150 @@ def test_vaneck_refresh_preserves_reviewed_metadata(configured_fund, provider_xl
     assert reloaded.notes == updated.notes == fund.notes
     assert reloaded.proxy_source == fund.proxy_source and reloaded.summaries == fund.summaries
     pd.testing.assert_frame_equal(reloaded.basket, fund.basket)
+
+
+def test_repeated_fund_positions_share_only_snapshot_facts(fund, positions, monkeypatch):
+    from portfolio_app.funds import etf
+    second_account = positions.loc[[1]].assign(position_id='p4', account='C', current_value_reporting=-500.)
+    positions = pd.concat([positions, second_account], ignore_index=True)
+    exposures = normalize_exposures(positions)
+    checked = []
+    def checked_breakdown(snapshot):
+        checked.append(snapshot.fund_id)
+        return fund_breakdown(snapshot)
+    monkeypatch.setattr(etf, 'fund_breakdown', checked_breakdown)
+
+    rows = expand_etfs(exposures, [fund], positions)
+    assert checked == [fund.fund_id]
+    assert rows.source_position_id.tolist() == ['p1', 'p2', 'p2', 'p2', 'p3', 'p4', 'p4', 'p4']
+    second = rows.loc[rows.source_position_id.eq('p4')]
+    assert second.account.eq('C').all()
+    assert second.value.tolist() == pytest.approx([-40., -35., -425.])
+    assert second.asset_id.tolist() == rows.loc[rows.source_position_id.eq('p2'), 'asset_id'].tolist()
+    assert second.source_type.tolist() == ['etf_constituent', 'etf_constituent', 'etf_other']
+
+    fund.constituents.loc[0, 'weight'] = 2.
+    with pytest.raises(DataError, match='finite fractions'):
+        expand_etfs(exposures, [fund], positions)
+
+
+def test_expansion_preserves_source_metadata_and_clears_fund_only_fields(fund, positions):
+    key = object()
+    exposures = normalize_exposures(positions)
+    exposures['desk'] = pd.array([1, 2, None], dtype='Int64')
+    exposures['shares'] = [20, 100, 5]
+    exposures['wkn'] = ['direct-wkn', 'fund-wkn', 'other-wkn']
+    exposures[key] = [0., -10., float('nan')]
+
+    rows = expand_etfs(exposures, [fund], positions, additional_measures=(key,))
+    assert rows.columns.tolist() == [*exposures.columns, 'instrument_type', 'exposure_kind']
+    assert rows.desk.iloc[:4].tolist() == [1, 2, 2, 2]
+    assert pd.isna(rows.desk.iloc[-1])
+    assert rows.wkn.tolist() == ['direct-wkn', '', '', '', 'other-wkn']
+    assert rows.shares.dropna().tolist() == [20, 5]
+    assert rows[key].iloc[:4].tolist() == pytest.approx([0., -.8, -.7, -8.5])
+    assert pd.isna(rows[key].iloc[-1])
+    assert rows.exposure_kind.isna().tolist() == [True, False, False, False, True]
+
+
+def test_revision_scoped_fund_components_are_shared_across_amounts(fund, positions, monkeypatch):
+    from portfolio_app.exposure.exposure_analysis import project_measures
+    from portfolio_app.exposure.exposures import project_contributions
+    from portfolio_app.funds import etf
+
+    amounts = pd.Series([0., -10., float("nan")], index=positions.index)
+    changed = pd.Series([12., 30., 4.], index=positions.index)
+    source = project_contributions(positions, amounts)
+    expected = expand_etfs(project_contributions(positions, changed), [fund], positions)
+    calls = []
+    original = etf._component_columns
+    def observed(snapshot, resolve):
+        calls.append(snapshot.isin)
+        return original(snapshot, resolve)
+    monkeypatch.setattr(etf, "_component_columns", observed)
+
+    components = {}
+    expand_etfs(source, [fund], positions, resolved_components=components)
+    # The session can hand each rerun a fresh copy of the same snapshot.
+    copied = replace(fund, constituents=fund.constituents.copy())
+    (actual,) = project_measures(positions, [changed], [copied], positions,
+                                 lookthrough=True, resolved_components=components)
+    pd.testing.assert_frame_equal(actual, expected, check_exact=True)
+    assert calls == [fund.isin]
+
+
+def test_related_measures_share_expansion_and_keep_separate_coverage(fund, positions, monkeypatch):
+    from portfolio_app.exposure.exposure_analysis import project_measures
+    from portfolio_app.exposure.exposures import project_contributions
+    from portfolio_app.funds import etf
+    positions = positions.set_axis([8, 2, 5])
+    positions['source_ordinal'] = ['Invented metadata A', 'Invented metadata B', 'Invented metadata C']
+    measures = [pd.Series(amounts, index=positions.index)
+                for amounts in [(1., -100., float('nan')), (0., 0., float('nan')), (6., float('nan'), 4.)]]
+    expected = [expand_etfs(project_contributions(positions, value), [fund], positions) for value in measures]
+    checked = []
+    def breakdown(snapshot):
+        checked.append(snapshot.fund_id)
+        return fund_breakdown(snapshot)
+    monkeypatch.setattr(etf, 'fund_breakdown', breakdown)
+    actual = project_measures(positions, measures, [fund], positions, lookthrough=True)
+    assert checked == [fund.fund_id]
+    for result, reference in zip(actual, expected):
+        pd.testing.assert_frame_equal(result, reference)
+
+    checked.clear()
+    project_measures(positions, [measures[2]], [fund], positions, lookthrough=True)
+    assert checked == []
+
+
+def test_fund_catalog_reuses_only_unchanged_validated_files(tmp_path, monkeypatch):
+    from portfolio_app.funds.etf import FundCatalog
+    header = 'constituent_id,name,ticker,isin,weight\n'
+    for i in (1, 2):
+        (tmp_path / f'f{i}.yaml').write_text(
+            f'fund_id: f{i}\nname: Invented {i}\nisin: ZZ000000000{i}\ntickers: []\n'
+            f'as_of: 2025-01-01\nsource: synthetic\nholdings_file: h{i}.csv\n')
+        (tmp_path / f'h{i}.csv').write_text(header + f'c{i},Invented,,,.5\n')
+    read = pd.read_csv
+    reads = []
+    def track(path, **kwargs):
+        reads.append(path.name)
+        return read(path, **kwargs)
+    monkeypatch.setattr(pd, 'read_csv', track)
+    catalog = FundCatalog()
+    funds = catalog.load(tmp_path)
+    funds[0].constituents.loc[0, 'weight'] = .9
+    assert catalog.load(tmp_path)[0].constituents.weight.item() == .5
+    assert reads == ['h1.csv', 'h2.csv']
+
+    (tmp_path / 'h2.csv').write_text(header + 'c2,Invented,,,.625\n')
+    assert catalog.load(tmp_path)[1].constituents.weight.item() == .625
+    assert reads == ['h1.csv', 'h2.csv', 'h2.csv']
+    (tmp_path / 'h2.csv').write_text(header + 'c2,Invented,,,2\n')
+    with pytest.raises(DataError, match='finite fractions'):
+        catalog.load(tmp_path)
+    # A cached substitute basket can never bypass the holdings sign restriction.
+    (tmp_path / 'h2.csv').write_text(header + 'c2,Invented,,,.5\n')
+    (tmp_path / 'basket.csv').write_text(header + 'long,Long,,,.6\nshort,Short,,,-.2\n')
+    manifest = tmp_path / 'f1.yaml'
+    original = manifest.read_text()
+    manifest.write_text(original + 'basket_file: basket.csv\n')
+    assert catalog.load(tmp_path)[0].basket.weight.tolist() == [.6, -.2]
+    manifest.write_text(original.replace('h1.csv', 'basket.csv'))
+    with pytest.raises(DataError, match='finite fractions'):
+        catalog.load(tmp_path)
+
+
+def test_constituent_records_preserve_normalized_and_provider_specific_values():
+    from decimal import Decimal
+    from portfolio_app.funds.etf import constituent_records
+    frame = pd.DataFrame({'name': ['Invented', None], 'weight': [.75, float('nan')]})
+    for snapshot in (frame, frame.assign(quantity=pd.array([1, pd.NA], dtype='Int64'),
+                                         published=pd.to_datetime(['2025-01-01', None], utc=True),
+                                         metadata=[{'weight': Decimal('0.75')}, None])):
+        rows = list(constituent_records(snapshot))
+        expected = snapshot.to_dict('records')
+        assert list(rows[0]) == list(expected[0])
+        pd.testing.assert_frame_equal(pd.DataFrame(rows), pd.DataFrame(expected))
+        if 'quantity' in snapshot:
+            assert rows[1]['quantity'] is None

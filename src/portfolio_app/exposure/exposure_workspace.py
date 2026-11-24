@@ -4,15 +4,19 @@ from dataclasses import fields
 
 import pandas as pd
 
-from portfolio_app.funds.etf import constituent_resolver, matching_fund
+from portfolio_app.funds.etf import constituent_records, constituent_resolver, matching_fund
 from portfolio_app.exposure.exposure_presentation import canonical_asset_names
 
 
-def analytical_signature(valued, funds, *policies):
+def analytical_signature(valued, funds, *policies, fund_revision=None):
     """Ignore advancing quote ages, never amounts, identities or pricing inputs."""
     diagnostics = {'price_age_hours', 'fx_age_hours', 'price_observed_at', 'fx_observed_at'}
     digest = sha256(valued.drop(columns=list(diagnostics), errors='ignore').to_json(double_precision=15).encode())
-    digest.update(repr(policies).encode())
+    digest.update(repr((valued.attrs.get('reporting_currency'), policies)).encode())
+    if fund_revision is not None:
+        # The loader supplies the revisions of the exact manifests and constituent files it read.
+        digest.update(repr(fund_revision).encode())
+        return digest.hexdigest()
     for fund in funds:
         for field in fields(fund):
             value = getattr(fund, field.name)
@@ -103,7 +107,7 @@ def analysis_contributions(result, sources, funds, selected_ids, *, measure='Mar
     metadata = {}
     resolve = constituent_resolver(sources)
     for fund in funds:
-        for item in fund.constituents.to_dict('records'):
+        for item in constituent_records(fund.constituents):
             asset, _ = resolve(item)
             metadata.setdefault(asset, (item.get('ticker', ''), item.get('isin', '')))
     for row in sources.to_dict('records'):

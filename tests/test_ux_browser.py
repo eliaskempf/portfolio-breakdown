@@ -336,6 +336,50 @@ def ux_page(tmp_path, request):
             path = tmp_path / filename
             path.write_text(path.read_text().replace('SYNTH-A', 'VVSM.DE'))
     setup = ''
+    if getattr(request, 'param', '') in ('count_app_runs', 'company_details'):
+        setup = """from pathlib import Path
+with Path(__file__).with_name('full-runs.log').open('a') as counter:
+    print('run', file=counter)
+"""
+    if getattr(request, 'param', '') == 'company_details':
+        setup += """from portfolio_app.interface.views.analytics import portfolio_analytics_ui as analytics
+if not hasattr(analytics, '_original_company_analysis'):
+    analytics._original_company_analysis = analytics.load_company_analysis
+    def count_company_analysis(*args, **kwargs):
+        with Path(__file__).with_name('company-runs.log').open('a') as counter:
+            print('analysis', file=counter)
+        return analytics._original_company_analysis(*args, **kwargs)
+    analytics.load_company_analysis = count_company_analysis
+"""
+    if getattr(request, 'param', '') == 'pending_fundamentals':
+        from dataclasses import asdict
+        from datetime import datetime, timedelta, timezone
+        from portfolio_app.analytics.analytics_cache import AnalyticsCache
+        from portfolio_app.analytics.fundamentals import normalize_info
+        cache = AnalyticsCache(tmp_path / '.cache' / 'fundamentals', now=lambda: datetime.now(timezone.utc) - timedelta(days=2))
+        for ticker in ('SYNTH-A', 'SYNTH-B', 'SYNTH-C'):
+            cached = normalize_info(ticker, {'quoteType': 'EQUITY', 'trailingPE': 10.})
+            cache.get('fundamentals-v1:' + ticker, lambda: asdict(cached))
+        setup = """from pathlib import Path
+import time
+from portfolio_app.analytics.fundamentals import YahooFundamentalsProvider, normalize_info
+from portfolio_app.interface.views.analytics import position_metrics_ui, metric_updates
+root = Path(__file__).parent
+with (root / 'full-runs.log').open('a') as runs:
+    print('run', file=runs)
+def fetch(self, ticker):
+    (root / ('requested-' + ticker)).touch()
+    deadline = time.monotonic() + 30
+    while not (root / ('release-' + ticker)).exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError('Synthetic provider release timed out')
+        time.sleep(.02)
+    return normalize_info(ticker, {'quoteType': 'EQUITY', 'trailingPE': 20.})
+YahooFundamentalsProvider.fetch = fetch
+def metrics(holdings, directory, **options):
+    return metric_updates.view_metrics(holdings, directory, **dict(options, demo=False))
+position_metrics_ui.view_metrics = metrics
+"""
     if str(getattr(request, 'param', '')).startswith('slow_purchase_selection'):
         # Keep intermediate DOM states observable even on a fast test machine.
         setup = '''import time
@@ -373,6 +417,9 @@ if not hasattr(position_ui, '_original_remember_draft'):
             yield page, tmp_path
             browser.close()
     finally:
+        if getattr(request, 'param', '') == 'pending_fundamentals':
+            for ticker in ('SYNTH-A', 'SYNTH-B', 'SYNTH-C'):
+                (tmp_path / ('release-' + ticker)).touch()
         process.terminate(); process.wait(timeout=10)
 
 
@@ -415,6 +462,30 @@ def assert_gain_color(locator, *, positive):
     color = locator.evaluate('el => getComputedStyle(el).color')
     channels = [int(value) for value in re.findall(r'\d+', color)[:3]]
     assert (channels[1] > channels[0]) if positive else (channels[0] > channels[1])
+
+
+@pytest.mark.parametrize('ux_page', ['count_app_runs'], indirect=True)
+def test_overview_switch_reuses_snapshot_until_external_quote_changes(ux_page):
+    page, directory = ux_page
+    counter = directory / 'full-runs.log'
+    value = page.locator('.st-key-overview_value').get_by_test_id('stMetric')
+    playwright.expect(value).to_contain_text('€330.00')
+    settle(page)
+    before = counter.read_text()
+    for mode in ('Performance', 'Allocation', 'Performance'):
+        page.get_by_role('radio', name=mode, exact=True).click()
+        panel = '.st-key-tour_performance' if mode == 'Performance' else '.st-key-overview_allocation'
+        page.locator(panel + ' .main-svg').first.wait_for()
+        settle(page)
+        assert counter.read_text() == before
+    quotes = directory / 'demo_prices.json'
+    data = json.loads(quotes.read_text())
+    data['prices']['SYNTH-A']['price'] = 110
+    quotes.write_text(json.dumps(data))
+    page.get_by_role('radio', name='Allocation', exact=True).click()
+    playwright.expect(value).to_contain_text('€350.00')
+    settle(page)
+    assert len(counter.read_text().splitlines()) == len(before.splitlines()) + 1
 
 
 def test_category_scope_performance_and_tab_roundtrip(ux_page):

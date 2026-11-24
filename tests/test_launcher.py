@@ -12,6 +12,24 @@ from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.runtime.launcher import choose_port, instance, open_existing, request_instance, session_files
 
 
+@pytest.mark.parametrize('explicit, expected', [(None, False), (True, True), (False, False)])
+def test_app_collection_default_respects_explicit_streamlit_settings(tmp_path, monkeypatch, explicit, expected):
+    import sys
+    from streamlit import config
+    from streamlit.config_option import ConfigOption
+    from portfolio_app.interface import ui
+
+    key = 'runner.postScriptGC'
+    monkeypatch.setitem(config.get_config_options(), key, ConfigOption(key, default_val=True))
+    if explicit is not None:
+        config.set_option(key, explicit)
+    monkeypatch.setattr(sys, 'argv', ['portfolio-app', '--data-dir', str(tmp_path)])
+    observed = []
+    monkeypatch.setattr(ui, 'render_app', lambda *a, **kw: observed.append(config.get_option(key)))
+    ui.main()
+    assert observed == [expected]
+
+
 def test_occupied_explicit_port_does_not_attach_to_another_app():
     with socket.socket() as occupied:
         occupied.bind(('127.0.0.1', 0))

@@ -2,9 +2,11 @@
 from dataclasses import asdict, dataclass, field, replace
 from decimal import Decimal
 from hashlib import sha256
-from functools import lru_cache
+from functools import cached_property, lru_cache
 import json
 from pathlib import Path
+from threading import Lock
+from weakref import WeakValueDictionary
 
 from portfolio_app.derivatives.derivative_types import decimal, identifier
 from portfolio_app.portfolio.holdings import DataError
@@ -12,6 +14,16 @@ from portfolio_app.ledger.security_history import day, denomination
 from portfolio_app.workspace.storage import save_document
 
 FILE = 'history-observations.json'
+
+# Readers keep a strong reference while building or waiting. The registry
+# does not retain a file revision or store after the last reader leaves.
+_build_locks = WeakValueDictionary()
+_build_locks_guard = Lock()
+
+
+def _build_lock(key):
+    with _build_locks_guard:
+        return _build_locks.setdefault(key, Lock())
 
 
 @dataclass(frozen=True)
@@ -27,7 +39,7 @@ class HistoryScope:
                 identifier(value)
             object.__setattr__(self, field, values)
 
-    @property
+    @cached_property
     def key(self):
         return sha256(json.dumps(asdict(self), sort_keys=True).encode()).hexdigest()
 
@@ -114,25 +126,38 @@ class ObservationStore:
         object.__setattr__(self, 'classifications', values)
         active_observations(self)
 
+    @cached_property
+    def active(self):
+        """Validate the correction chain once and retain its surviving rows in saved order."""
+        seen, replaced = set(), set()
+        for observation in self.observations:
+            if observation.replaces:
+                if observation.replaces not in seen or observation.replaces in replaced:
+                    raise DataError('Observation correction must replace one active observation.')
+                replaced.add(observation.replaces)
+            seen.add(observation.id)
+        values = tuple(o for o in self.observations if o.id not in replaced) if replaced else self.observations
+        if len({o.key for o in values}) != len(values):
+            raise DataError('Correct the existing observation instead of adding a competing valuation.')
+        return values
+
+    @cached_property
+    def index(self):
+        # cached_property can enter concurrently on its first access. Publish
+        # inside the lock so both callers receive the very same derived tables.
+        with _build_lock(id(self)):
+            fields = vars(self)
+            if 'index' not in fields:
+                fields['index'] = _ObservationIndex(self)
+            return fields['index']
+
 
 def active_observations(store):
-    if isinstance(store, _ObservationIndex):
-        return store.active
-    seen, replaced = {}, set()
-    for observation in store.observations:
-        if observation.replaces:
-            if observation.replaces not in seen or observation.replaces in replaced:
-                raise DataError('Observation correction must replace one active observation.')
-            replaced.add(observation.replaces)
-        seen[observation.id] = observation
-    values = [o for o in store.observations if o.id not in replaced]
-    if len({o.key for o in values}) != len(values):
-        raise DataError('Correct the existing observation instead of adding a competing valuation.')
-    return tuple(values)
+    return store.active
 
 
 class _ObservationIndex:
-    """Read-only per-calculation index; never persisted or globally cached."""
+    """Derived lookup tables shared by consumers of one immutable store."""
     def __init__(self, store):
         self.observations, self.reviews, self.classifications = store.observations, store.reviews, store.classifications
         self.active = active_observations(store)
@@ -150,8 +175,30 @@ class _ObservationIndex:
         self.price_series = {subject: tuple(series[stamp] for stamp in self.price_dates[subject])
                              for subject, series in prices.items()}
 
+    @cached_property
+    def scope_rows(self):
+        """Active row offsets by price subject, currency pair, or valuation scope."""
+        groups = {}
+        for offset, observation in enumerate(self.active):
+            key = ((observation.kind, observation.currency, observation.target) if observation.kind == 'fx'
+                   else (observation.kind, observation.subject))
+            groups.setdefault(key, []).append(offset)
+        return groups
+
+    @cached_property
+    def reciprocal_closing_pairs(self):
+        """Currency pairs whose closing conversion may need the reciprocal check in rate()."""
+        reciprocal = set()
+        for day in self.fx.values():
+            if len(day) < 2:
+                continue
+            pairs = {(o.currency, o.target) for o in day if o.side == 'close'}
+            reciprocal.update((source, target) for source, target in pairs if (target, source) in pairs)
+        return frozenset(reciprocal)
+
+
 def index_observations(store):
-    return store if isinstance(store, _ObservationIndex) else _ObservationIndex(store)
+    return store if isinstance(store, _ObservationIndex) else store.index
 
 
 def from_dict(raw):
@@ -173,7 +220,9 @@ def load_observations(directory):
         return ObservationStore(), None
     try:
         content = path.read_bytes()
-        return _observations_from_bytes(content), sha256(content).hexdigest()
+        revision = sha256(content).hexdigest()
+        with _build_lock(revision):
+            return _observations_from_bytes(content), revision
     except (ValueError, TypeError, KeyError, OSError) as exc:
         raise DataError(f'Invalid historical observations; file retained: {exc}') from exc
 

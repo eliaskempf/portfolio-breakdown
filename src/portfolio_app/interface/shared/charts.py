@@ -51,20 +51,25 @@ def correlation_chart(correlations: pd.DataFrame, names: dict[str, str], *, comp
     """A full-width matrix with display names and distinct cells for equal names."""
     rows = [escape(names.get(key, key)) for key in correlations.index]
     columns = [escape(names.get(key, key)) for key in correlations.columns]
+    # Category coordinates distinguish equal names. Explicit tick text can be
+    # shortened independently of the full axis aliases used in a cell's hover.
+    x = [str(i) for i in range(len(columns))]
+    y = [str(i) for i in range(len(rows))]
     figure = style_figure(go.Figure(go.Heatmap(
-        z=correlations.to_numpy(), x=list(range(len(columns))), y=list(range(len(rows))),
+        z=correlations.to_numpy(), x=x, y=y,
         zmin=-1, zmax=1, zmid=0,
         colorscale=[[0, '#b8a0dd'], [.25, '#76628f'], [.5, '#303744'],
                     [.75, '#398b87'], [1, '#80d3c5']],
-        customdata=[[[row, column] for column in columns] for row in rows],
-        hovertemplate='%{customdata[0]}<br>%{customdata[1]}<br>Correlation: %{z:.2f}<extra></extra>',
+        hovertemplate='%{y}<br>%{x}<br>Correlation: %{z:.2f}<extra></extra>',
         hoverongaps=False,
         colorbar=dict(x=1.01, xanchor='left', xpad=0, thickness=14, len=.9,
                       outlinewidth=0, tickvals=[-1, -.5, 0, .5, 1], title='Correlation'),
     )))
-    figure.update_xaxes(tickmode='array', tickvals=list(range(len(columns))), ticktext=columns,
+    figure.update_xaxes(type='category', tickmode='array', tickvals=x, ticktext=columns,
+                        labelalias=dict(zip(x, columns)),
                         tickangle=-40, automargin=True, showgrid=False, zeroline=False)
-    figure.update_yaxes(tickmode='array', tickvals=list(range(len(rows))), ticktext=rows,
+    figure.update_yaxes(type='category', tickmode='array', tickvals=y, ticktext=rows,
+                        labelalias=dict(zip(y, rows)),
                         autorange='reversed', automargin=True, showgrid=False, zeroline=False)
     figure.update_layout(height=max(640, min(1000, 36 * len(rows) + 220)),
                          margin=dict(l=12, r=20, t=24, b=12))

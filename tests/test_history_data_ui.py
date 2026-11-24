@@ -286,3 +286,80 @@ render_return_inputs(Path({str(tmp_path)!r}), Journal(), HistoryScope(), Observa
     assert not app.exception
     assert 'Unresolved withholding' in [line.value for line in app.text]
     assert not app.text_input and not app.button
+
+
+def test_visible_history_reasons_share_names_and_limit_after_formatting(tmp_path):
+    from portfolio_app.interface.views.history.history_data_ui import HistoryReasonFormatter
+
+    journal, scope, _, _ = fixture(tmp_path)
+    reads = []
+    def load_names():
+        reads.append(True)
+        return scope_names(tmp_path, journal, scope)
+    formatter = HistoryReasonFormatter(journal, load_names)
+    assert formatter.format(()) == () and not reads
+    first = 'position-0: missing price'
+    reasons = (first, first, 'unknown-a: missing FX', 'unknown-b: missing FX', scope.key+': missing value')
+    expected = readable_reasons(tmp_path, journal, scope, reasons)
+    def bounded_input():
+        yield from reasons
+        raise AssertionError('The visible explanations were already complete')
+    assert formatter.format(bounded_input(), limit=3) == expected[:3]
+    assert formatter.format((first,)) == expected[:1]
+    assert len(reads) == 1
+
+
+def test_missing_inputs_share_indexed_dated_rates_and_last_active_price_currency(tmp_path, monkeypatch):
+    from portfolio_app.performance import history_valuation
+    from portfolio_app.performance.history_observations import index_observations
+    journal, scope, store, _ = fixture(tmp_path)
+    # The most recently saved row corrects an earlier boundary in another currency.
+    store = replace(store, observations=store.observations + (
+        Observation('later', 'price', 'position-0', '2024-01-03', D(11), 'GBP'),
+        Observation('correction', 'price', 'position-0', '2024-01-01', D(9), 'CAD',
+                    side='after', boundary='opening', replaces='p1'),))
+    index = index_observations(store)
+    lookups = []
+    actual_fx = history_valuation.valuation_fx
+    def counted(source_index, source, target, stamp):
+        assert source_index is index
+        lookups.append((source, target, stamp))
+        return actual_fx(source_index, source, target, stamp)
+    monkeypatch.setattr(history_valuation, 'valuation_fx', counted)
+    reasons = ('position-0: missing price on 2024-01-02',
+               'position-0: missing value or USD/EUR FX on 2024-01-01',
+               'position-0: missing value or USD/EUR FX on 2024-01-02')
+    tasks = missing_inputs(view(*reasons, *reasons), journal, scope, store, 'EUR')
+    assert [(item.kind, item.currency) for item in tasks] == [('fx', 'USD'), ('price', 'CAD')]
+    assert lookups == [('USD', 'EUR', '2024-01-01'), ('USD', 'EUR', '2024-01-02')]
+
+
+def test_domestic_corrections_do_not_build_a_market_index_without_a_dated_issue(tmp_path, monkeypatch):
+    from portfolio_app.interface.views.history import history_data_ui as corrections
+    journal, scope, store, _ = fixture(tmp_path)
+    def unexpected(_):
+        pytest.fail('A domestic cash flow needs no historical rate lookup')
+    monkeypatch.setattr(corrections, 'index_observations', unexpected)
+    assert not missing_inputs(view('position-0: missing value or USD/USD FX on 2024-01-01'),
+                              journal, scope, store, 'USD')
+
+
+def test_correction_tasks_preserve_conflicting_rate_errors(tmp_path):
+    journal, scope, store, _ = fixture(tmp_path)
+    store = replace(store, observations=store.observations + (
+        Observation('opposite', 'fx', 'EUR/USD', '2024-01-01', D(2), 'EUR', 'USD'),))
+    with pytest.raises(DataError, match='Conflicting direct and inverse'):
+        missing_inputs(view('position-0: missing value or USD/EUR FX on 2024-01-01'),
+                       journal, scope, store, 'EUR')
+
+
+def test_missing_exact_marks_fall_back_to_the_scoped_contract_currency():
+    from portfolio_app.derivatives.derivative_types import ContractSpec
+    from portfolio_app.ledger.account_journal import Account, PositionSpec
+    contract = ContractSpec('INVENTED', '2026-12-18', 'GBP', 10, 1)
+    account = Account('account', 'Invented account')
+    position = PositionSpec('contract-position', account.id, contract.id)
+    journal = Journal(version=2, accounts=(account,), contracts=(contract,), positions=(position,))
+    reasons = [f'{identity}: missing exact-contract mark on 2024-01-02' for identity in (position.id, contract.id)]
+    tasks = missing_inputs(view(*reasons), journal, HistoryScope(accounts=(account.id,)), ObservationStore(), 'EUR')
+    assert {(t.subject, t.currency) for t in tasks} == {(position.id, 'GBP'), (contract.id, 'GBP')}
