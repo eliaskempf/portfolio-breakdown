@@ -311,3 +311,32 @@ def test_overview_measures_resolve_each_asset_once_and_keep_source_addition_orde
     pd.testing.assert_frame_equal(actual, expected, check_exact=True)
     assert resolved[:2] == ['a', 'b']
     assert len(resolved) == 3 and pd.isna(resolved[2])
+
+
+def test_flat_overview_exposes_drill_paths_without_materializing_asset_rows(monkeypatch):
+    from portfolio_app.exposure import label_comparison
+
+    labels = [Label('theme', ('A',)), Label('theme', ('B',))]
+    classes = {'shared': {'theme': (('A',), ('B',))}, 'only-a': {'theme': (('A',),)}}
+    rows = pd.DataFrame({'asset_id': ['shared', 'only-a', 'shared'],
+                         'asset_name': ['First name', 'Other', 'Second name'],
+                         'value': [30., -5., 10.]})
+    overview = label_comparison.compare_labels(rows, classes, labels, overlap='overlap')
+    assert overview.branches == tuple(sorted((label.key,) for label in labels))
+    with monkeypatch.context() as patch:
+        def unexpected(self):
+            pytest.fail('An undrilled flat chart requested individual contributions')
+        patch.setattr(label_comparison.LabelComparison, 'allocations', property(unexpected))
+        tree = comparison_tree(overview, labels, include_holdings=False)
+    assert tree.value.tolist() == [75., 35., 40.]
+    assert tree.percentage.tolist() == pytest.approx([1., 35/75, 40/75])
+    assert overview.nodes.iloc[0].percentage == pytest.approx(75/35)
+
+    # A saved result is a snapshot even if holdings or classifications change
+    # before the user opens the detail.
+    rows.loc[:, 'value'] = 0.
+    classes.clear()
+    details = overview.allocations
+    assert details is overview.allocations
+    assert details.value.tolist() == [30., 30., -5., 10., 10.]
+    assert details.asset_name.tolist() == ['First name', 'First name', 'Other', 'First name', 'First name']

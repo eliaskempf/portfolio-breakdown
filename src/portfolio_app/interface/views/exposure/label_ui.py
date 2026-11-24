@@ -91,7 +91,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         st.caption(f'Outside selected labels: {money(comparison.unmatched_value)} · These assets remain in the Assets view.')
     if targets is not None:
         target_caption(valuation_complete=valuation_complete)
-    if comparison.allocations.empty:
+    if not comparison.branches:
         st.info("No positive valued assets match these labels in the current portfolio selection.")
     else:
         coverage = comparison.matched_value / comparison.portfolio_value if comparison.portfolio_value > 0 else float("nan")
@@ -103,7 +103,7 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
             st.caption(f"{money(comparison.overlapping_value)} matches multiple selected labels. " +
                        ("Its value is split equally between those labels." if policy == "split" else
                         "Each matching label includes its full value. Label percentages can exceed 100% in total; bars show this overlap."))
-        roots = sorted({path[:length] for path in comparison.allocations["path"] for length in range(1, len(path) + 1)})
+        roots = comparison.branches
         detail_key = f'label_compare_detail_{taxonomy}'
         if st.session_state.get(detail_key, ()) not in [(), *roots]:
             st.session_state[detail_key] = ()
