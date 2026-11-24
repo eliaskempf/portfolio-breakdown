@@ -45,14 +45,14 @@ def select_sources(valued, classifications, *, metadata=None, asset_ids=None,
                              int(valued.current_value_reporting.isna().sum()))
 
 
-def prepare_exposures(selected, funds, holdings, *, lookthrough):
+def prepare_exposures(selected, funds, holdings, *, lookthrough, resolved_components=None):
     """Keep source identities and residual Other rows through normalized expansion."""
     exposures = normalize_exposures(selected)
-    return expand_etfs(exposures, funds, holdings) if lookthrough else exposures
+    return expand_etfs(exposures, funds, holdings, resolved_components=resolved_components) if lookthrough else exposures
 
 
 def project_measures(positions: pd.DataFrame, measures: Sequence[pd.Series], funds, holdings, *,
-                     lookthrough=False, group=None, keep_group_whole=False):
+                     lookthrough=False, group=None, keep_group_whole=False, resolved_components=None):
     """Apply the same source-to-asset weights to related amounts and coverage flags."""
     # Only measures with the same source rows share a projection. This
     # retains each measure's coverage, validation and inferred metadata types.
@@ -76,10 +76,12 @@ def project_measures(positions: pd.DataFrame, measures: Sequence[pd.Series], fun
             columns = list(dict.fromkeys([*columns, 'instrument_type', 'exposure_kind']))
             if group and keep_group_whole:
                 intact = sources.source_instrument.isin(group.members)
-                children = expand_etfs(sources.loc[~intact], funds, holdings, additional_measures=keys[1:])
+                children = expand_etfs(sources.loc[~intact], funds, holdings, additional_measures=keys[1:],
+                                       resolved_components=resolved_components)
                 expanded = pd.concat([sources.loc[intact], children], ignore_index=True)
             else:
-                expanded = expand_etfs(sources, funds, holdings, additional_measures=keys[1:])
+                expanded = expand_etfs(sources, funds, holdings, additional_measures=keys[1:],
+                                       resolved_components=resolved_components)
         if group:
             expanded = group_exposures(expanded, group)
         common = expanded.loc[:, columns].set_axis(columns, axis='columns')

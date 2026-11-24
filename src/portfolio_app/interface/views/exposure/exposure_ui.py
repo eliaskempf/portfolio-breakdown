@@ -289,9 +289,12 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
         else:
             # The merge-plan signature covers the full resolver universe and fund snapshots.
             # Selected valued rows additionally cover quote, currency, metadata and scope changes.
+            resolved_components = (cached_input('resolved_fund_components', identity_key, dict, immutable=True)
+                                   if lookthrough else None)
             contribution_key = (analytical_signature(selected, (), signature), lookthrough, tuple(f.isin for f in expanded_funds))
             exposures = cached_input('analysis_contributions', contribution_key,
-                lambda: named_contributions(prepare_exposures(selected, expanded_funds, holdings, lookthrough=lookthrough)))
+                lambda: named_contributions(prepare_exposures(selected, expanded_funds, holdings, lookthrough=lookthrough,
+                                                             resolved_components=resolved_components)))
     except DataError as exc:
         st.error(str(exc))
         return valued
@@ -309,13 +312,15 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
                 return valued
         if not unified and "target_allocation" in valued and valued["target_allocation"].notna().any():
             try:
-                targets = target_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group, holdings=holdings)
+                targets = target_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group,
+                                           holdings=holdings, resolved_components=resolved_components)
             except DataError as exc:
                 st.error(str(exc))
                 return valued
         if not unified:
             try:
-                performance = performance_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group, holdings=holdings)
+                performance = performance_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group,
+                                                     holdings=holdings, resolved_components=resolved_components)
             except DataError as exc:
                 st.error(str(exc))
                 return valued

@@ -315,12 +315,15 @@ def _component_columns(fund, resolve):
     return components, weights
 
 
-def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd.DataFrame, *, additional_measures=()) -> pd.DataFrame:
+def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd.DataFrame, *, additional_measures=(),
+                resolved_components=None) -> pd.DataFrame:
     columns = list(dict.fromkeys([*exposures.columns, "instrument_type", "exposure_kind"]))
     resolve = constituent_resolver(holdings)
     if exposures.empty:
         return pd.DataFrame(columns=columns)
-    by_fund = {}
+    # A caller can reuse the validated components across amounts and account scopes
+    # within one revision of the fund catalog and the full holdings resolver.
+    by_fund = {} if resolved_components is None else resolved_components
     result = {column: [] for column in columns}
     measures = ("value", *additional_measures)
     missing = float("nan")
@@ -330,9 +333,10 @@ def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd
             for column, values in result.items():
                 values.append(source.get(column, missing))
             continue
-        if id(fund) not in by_fund:
-            by_fund[id(fund)] = _component_columns(fund, resolve)
-        components, weights = by_fund[id(fund)]
+        key = id(fund) if resolved_components is None else (fund.isin, fund.fund_id)
+        if key not in by_fund:
+            by_fund[key] = _component_columns(fund, resolve)
+        components, weights = by_fund[key]
         source["direct_or_indirect"] = "indirect"
         source["wkn"] = ""
         # Fund quantities, quotes and targets do not describe its constituents.

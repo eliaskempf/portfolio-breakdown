@@ -482,6 +482,32 @@ def test_expansion_preserves_source_metadata_and_clears_fund_only_fields(fund, p
     assert rows.exposure_kind.isna().tolist() == [True, False, False, False, True]
 
 
+def test_revision_scoped_fund_components_are_shared_across_amounts(fund, positions, monkeypatch):
+    from portfolio_app.exposure.exposure_analysis import project_measures
+    from portfolio_app.exposure.exposures import project_contributions
+    from portfolio_app.funds import etf
+
+    amounts = pd.Series([0., -10., float("nan")], index=positions.index)
+    changed = pd.Series([12., 30., 4.], index=positions.index)
+    source = project_contributions(positions, amounts)
+    expected = expand_etfs(project_contributions(positions, changed), [fund], positions)
+    calls = []
+    original = etf._component_columns
+    def observed(snapshot, resolve):
+        calls.append(snapshot.isin)
+        return original(snapshot, resolve)
+    monkeypatch.setattr(etf, "_component_columns", observed)
+
+    components = {}
+    expand_etfs(source, [fund], positions, resolved_components=components)
+    # The session can hand each rerun a fresh copy of the same snapshot.
+    copied = replace(fund, constituents=fund.constituents.copy())
+    (actual,) = project_measures(positions, [changed], [copied], positions,
+                                 lookthrough=True, resolved_components=components)
+    pd.testing.assert_frame_equal(actual, expected, check_exact=True)
+    assert calls == [fund.isin]
+
+
 def test_related_measures_share_expansion_and_keep_separate_coverage(fund, positions, monkeypatch):
     from portfolio_app.exposure.exposure_analysis import project_measures
     from portfolio_app.exposure.exposures import project_contributions

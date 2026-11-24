@@ -32,6 +32,31 @@ def test_default_exposure_is_all_assets_without_chart_or_label_requirement(multi
     assert list_data(app, 'Exposure assets')['maxHeight'] is None
 
 
+def test_fund_components_reused_until_constituent_evidence_changes(multi_fund_workspace, monkeypatch):
+    from portfolio_app.funds import etf
+
+    original = etf._component_columns
+    calls = []
+    def observed(fund, resolve):
+        calls.append(fund.fund_id)
+        return original(fund, resolve)
+    monkeypatch.setattr(etf, '_component_columns', observed)
+
+    app = launch(multi_fund_workspace)
+    assert effective(app).loc[lambda r: r.Asset.eq('Invented Alpha'), 'Total'].item() == 175.
+    assert sorted(calls) == ['emerging', 'world']
+    by_label(app.get('button_group'), 'Exposure view').set_value('Themes & sectors').run()
+    assert not app.exception
+    assert len(calls) == 2  # Primary value, targets and performance used the same weights.
+
+    path = multi_fund_workspace / 'etfs' / 'world.csv'
+    path.write_text(path.read_text().replace(',0.5,equity', ',0.6,equity'))
+    by_label(app.get('button_group'), 'Exposure view').set_value('Assets').run()
+    assert not app.exception
+    assert effective(app).loc[lambda r: r.Asset.eq('Invented Alpha'), 'Total'].item() == 185.
+    assert 'world' in calls[2:]
+
+
 def test_source_scope_filters_before_expansion_search_retains_denominator(multi_fund_workspace):
     path = multi_fund_workspace / 'holdings.csv'
     rows = pd.read_csv(path).fillna('')
