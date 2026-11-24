@@ -25,15 +25,19 @@ def mixed_books():
 
 @pytest.mark.parametrize('factory', [lambda: activated().journal.securities,
                                    lambda: mixed_journal().securities, mixed_books])
-@pytest.mark.parametrize('reverse', [False, True])
-def test_snapshots_equal_fresh_replay_in_both_directions(factory, reverse):
+@pytest.mark.parametrize('order', ['forward', 'backward', 'interleaved'])
+def test_snapshots_equal_fresh_replay_across_query_orders(factory, order):
     books = factory()
     dates = sorted({e.date for b in books for e in b.records} |
                    {c.date for b in books for e in b.records for c in e.charges if c.date})
-    queries = [dates[0], *dates, '2026-12-31', None]
+    queries = [*dates, '2026-12-31', None]
+    if order == 'backward':
+        queries.reverse()
+    elif order == 'interleaved':
+        queries = queries[::2] + queries[1::2]
     timeline = SecurityTimeline(books)
     saved = []
-    for stamp in reversed(queries) if reverse else queries:
+    for stamp in queries:
         state = timeline.at(stamp)
         assert state == replay_securities(books, as_of=stamp)
         saved.append((state, deepcopy(state)))
@@ -140,13 +144,43 @@ def test_full_cash_then_forward_chart_keeps_bounded_snapshots_and_two_passes(mon
         if n % 37 == 0:
             snapshots.append((stamp, state))
         assert len(timeline.snapshots) <= timeline.MAX_SNAPSHOTS
+        assert timeline._cursors.keys() <= timeline.snapshots.keys()
     assert len(calls) <= 2*count
     for stamp, state in snapshots:
         assert state == replay_securities(books, as_of=stamp)
     assert complete == replay_securities(books)
-    # An evicted early query resets the cursor, then a new forward pass remains
+    # An evicted query resumes from an earlier state. Subsequent advances remain
     # correct even when separately dated charges extend beyond the event day.
     for n in (1, 2, count//2, count+1, 0, count+3):
         stamp = (begin+timedelta(days=n)).isoformat()
         assert timeline.at(stamp) == replay_securities(books, as_of=stamp)
         assert len(timeline.snapshots) <= timeline.MAX_SNAPSHOTS
+        assert timeline._cursors.keys() <= timeline.snapshots.keys()
+
+
+def test_backwards_seek_resumes_inventory_with_its_pending_cash(monkeypatch):
+    from portfolio_app.ledger.security_history import Charge
+    start = date(2024, 1, 1)
+    def day(offset):
+        return (start + timedelta(days=offset)).isoformat()
+    buys = tuple(E(f'buy-{n}', 'buy', day(n), quantity=1, price=10, currency='EUR',
+                   charges=(Charge(D(2), 'EUR', day(85)),) if n == 79 else (),
+                   charges_known=True) for n in range(1, 101))
+    books = (book(opening('0', '0'), *buys),)
+    expected = {n: replay_securities(books, as_of=day(n)) for n in (80, 85, 95)}
+    timeline = SecurityTimeline(books)
+    earlier = timeline.at(day(80))
+    timeline.at(day(90))
+    timeline.at(day(100))
+    lots = []
+    original = SecurityLot.__post_init__
+    def count(lot):
+        lots.append(lot.id)
+        original(lot)
+    monkeypatch.setattr(SecurityLot, '__post_init__', count)
+    assert timeline.at(day(85)) == expected[85]
+    assert lots == [f'buy-{n}' for n in range(81, 86)]
+    lots.clear()
+    assert timeline.at(day(95)) == expected[95]
+    assert lots == [f'buy-{n}' for n in range(91, 96)]
+    assert earlier == expected[80]

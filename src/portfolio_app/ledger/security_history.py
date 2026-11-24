@@ -3,7 +3,7 @@
 Records are retained once. Only explicitly selected records affect balances;
 review receipts retain previous selections. An opening is a boundary, not a buy.
 """
-from copy import deepcopy
+from copy import copy, deepcopy
 from dataclasses import asdict, dataclass, field, replace
 from datetime import date
 from decimal import Decimal, localcontext
@@ -577,11 +577,12 @@ def replay_securities(books, *, as_of=None, sequence=None):
 
 
 class SecurityTimeline:
-    """Dated snapshots from one forward replay; historical queries can arrive in any order.
+    """Dated snapshots from resumable forward replay, for queries in any order.
 
     Charges can settle on another date, so snapshots filter cash by its own date
-    while the cursor retains future cash postings. Balances and lots are immutable;
-    each snapshot owns its positions mapping and never sees subsequent mutations.
+    while the cursor retains future cash postings. Recent snapshots retain a
+    resumable cursor at the same date. Each visible snapshot owns its positions
+    mapping and never sees subsequent advances.
     """
 
     MAX_SNAPSHOTS = 64
@@ -592,7 +593,9 @@ class SecurityTimeline:
         self.replay = _SecurityReplay(self.books)
         self.dates = sorted({e.date for _, e in self.replay.events} |
                             {c.date for _, e in self.replay.events for c in e.charges if c.date})
-        self.snapshots = OrderedDict({0: self.replay.state})
+        self._initial = copy(self.replay)
+        self.snapshots = OrderedDict({0: replace(self.replay.state, positions=dict(self.replay.state.positions))})
+        self._cursors = {}
         self._cursor_index = 0
         self._complete = None
 
@@ -604,16 +607,24 @@ class SecurityTimeline:
         if index in self.snapshots:
             self.snapshots.move_to_end(index)
             return self.snapshots[index]
-        # An uncached backwards request resets the forward cursor once. The
-        # following ascending chart pass then advances incrementally again.
-        cursor = _SecurityReplay(self.books) if index < self._cursor_index else self.replay
-        snapshot = cursor.advance(self.dates[index-1]) if index else cursor.state
+        cursor = self.replay
+        if index != self._cursor_index + 1:
+            # A visible snapshot can omit future-dated charges. Resume the closest
+            # preceding private state, including pending postings and event offset.
+            prior = max((i for i in self._cursors if i < index), default=0)
+            if index < self._cursor_index or prior > self._cursor_index:
+                cursor = copy(self._cursors.get(prior, self._initial))
+        snapshot = (cursor.advance(self.dates[index-1]) if index else
+                    replace(cursor.state, positions=dict(cursor.state.positions)))
         self.replay, self._cursor_index = cursor, index
         if index == len(self.dates):
             self._complete = snapshot
         self.snapshots[index] = snapshot
+        # advance replaces its state and never mutates a previously saved one.
+        self._cursors[index] = copy(cursor)
         while len(self.snapshots) > self.MAX_SNAPSHOTS:
-            self.snapshots.popitem(last=False)
+            evicted, _ = self.snapshots.popitem(last=False)
+            self._cursors.pop(evicted, None)
         return snapshot
 
 
