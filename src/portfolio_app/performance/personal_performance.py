@@ -188,6 +188,17 @@ class HistoryCalculation:
         return self._get(('value', scope, stamp, target), lambda: value_at(
             self.journal, scope, self.observations, stamp, target, calculation=self))
 
+    def value_with_members(self, scope, stamp, target):
+        """Value one date with each member subtotal for a fully supported, derived close."""
+        cached = self._facts.get(('value', scope, stamp, target))
+        if cached is not None and (cached.amount is None or (cached.evidence and cached.evidence[0].kind == 'value')):
+            return self.value(scope, stamp, target), ()
+        members = []
+        close = value_at(self.journal, scope, self.observations, stamp, target,
+                         calculation=self, member_amounts=members)
+        self.retain_value(scope, stamp, target, close)
+        return close, members
+
     def retain_value(self, scope, stamp, target, value):
         """Reuse an already validated close for gain accounting and overlapping chart ranges."""
         self._get(('value', scope, stamp, target), lambda: value)
@@ -446,7 +457,7 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
     return AmountResult(None if reasons else total, tuple(dict.fromkeys(reasons)))
 
 
-def value_at(journal, scope, observations, stamp, target, *, calculation=None):
+def value_at(journal, scope, observations, stamp, target, *, calculation=None, member_amounts=None):
     """Dated equity with supported closing-price and FX closure conventions."""
     if scope.unresolved:
         return AmountResult(None, scope.unresolved)
@@ -468,9 +479,13 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
             reasons.append(Issue(f'{identity}: missing value or {denomination}/{target} FX on {stamp}', 'fx'))
         else:
             total += value
+            if member_amounts is not None:
+                member_amounts[-1] += value
             evidence.extend(fx_evidence)
 
     for identity in scope.positions:
+        if member_amounts is not None:
+            member_amounts.append(ZERO)
         book = books.get(identity)
         state = states.get(identity)
         if book and confirmed_empty_before(book, stamp, events=calculation._events[book.position_id] if calculation else None):
@@ -496,6 +511,8 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
     position_starts = calculation._position_starts if calculation else account_position_starts(events)
     openings = calculation._last_cash_openings if calculation else last_cash_openings(events)
     for account in scope.accounts:
+        if member_amounts is not None:
+            member_amounts.append(ZERO)
         if account in inceptions and stamp < inceptions[account]:
             continue
         if account not in openings or stamp < openings[account]:
@@ -524,6 +541,8 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
         for identity, claim in accounts.pending.items():
             if claim.account_id == account:
                 add(claim.amount, claim.currency, identity)
+    if reasons and member_amounts:
+        member_amounts.clear()
     return AmountResult(None if reasons else total, tuple(reasons), tuple(evidence))
 
 

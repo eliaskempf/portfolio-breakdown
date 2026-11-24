@@ -145,6 +145,31 @@ def full_history_summary(calculation, scope, today, target):
     return HistorySummary(start, end, result, useful)
 
 
+def _chart_valuations(calculation, scope, target, stamps, beginning, first, last, *, full_scan, include_points):
+    days = (day for day in stamps if full_scan or day >= first)
+    # Missing opening capital makes each plotted gain depend on individually
+    # supported members. A complete portfolio close already valued every member.
+    collect = (include_points and not scope.unresolved and len(scope.positions) + len(scope.accounts) > 1
+               and calculation.capital(scope, beginning, target).amount is None)
+    if not collect:
+        return {day: calculation.value(scope, day, target) for day in days}, {}, None
+
+    valuations, gains, last_gain = {}, {}, None
+    for day in days:
+        cached = calculation._chart_gains.get((scope, day, target))
+        if not first <= day <= last or cached is not None:
+            valuations[day] = calculation.value(scope, day, target)
+            if cached is not None and first <= day <= last:
+                gains[day] = cached  # A very long chart can evict this before rendering the point.
+            continue
+        valuations[day], members = calculation.value_with_members(scope, day, target)
+        if members:
+            last_gain = summarize_known_gain(calculation.journal, scope, calculation.observations, day, target,
+                                             calculation=calculation, _member_closes=members)
+            gains[day] = last_gain.capital, last_gain.amount
+    return valuations, gains, last_gain
+
+
 def history_view(journal, scope, observations, period='1Y', *, today=None, target='EUR', include_points=True, calculation=None, annualized=True, period_annualized=True):
     calculation = calculation or HistoryCalculation(journal, index_observations(observations))
     journal, observations = calculation.journal, calculation.observations
@@ -158,7 +183,8 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     stamps, extra = _valuation_stamps(calculation, scope, target, dates, recorded, beginning, first, last)
     coverage = calculation._validated_history_dates.get((scope, target, beginning, last))
     full_scan = first <= beginning or (_requires_full_valuation_scan(scope, recorded) and coverage is None)
-    valuations = {stamp: calculation.value(scope, stamp, target) for stamp in stamps if full_scan or stamp >= first}
+    valuations, projected_gains, last_gain = _chart_valuations(calculation, scope, target, stamps, beginning,
+        first, last, full_scan=full_scan, include_points=include_points)
     values = {stamp: valuation.amount for stamp, valuation in valuations.items()}
     available = [stamp for stamp, value in values.items() if value is not None]
     all_start = beginning
@@ -177,10 +203,12 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
         return summarize_known_gain(journal, scope, observations, day, target, calculation=calculation)
 
     def gain_point(day):
+        if day in projected_gains:
+            return projected_gains.pop(day)
         known = known_gain(day)
         return known.capital, known.amount
 
-    all_known = known_gain(all_end)
+    all_known = last_gain if last_gain is not None and last_gain.as_of == all_end else known_gain(all_end)
     window = [stamp for stamp in available if first <= stamp <= last]
     start,end = (window[0],window[-1]) if window else (first,last)
     if first <= all_start:

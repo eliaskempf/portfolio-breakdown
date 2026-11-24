@@ -641,3 +641,52 @@ def test_overlapping_chart_ranges_reuse_partial_gain_for_the_same_scope_and_curr
                                                 for mark in store.observations))
     corrected = history_view(journal, scope, changed, '1M', today=today)
     assert corrected.points[-2]['Total gain'] == view.points[-2]['Total gain'] + 20
+
+
+def test_partial_gain_values_members_once_and_keeps_scope_marks_separate(monkeypatch):
+    from portfolio_app.performance import personal_performance as perf
+
+    security = reconstruction_candidate(book(E('buy', 'buy', START, quantity=10, price=10,
+        currency='EUR', charges_known=True)), ('buy',), starts_at_zero=True)
+    journal = Journal(version=2, securities=(security,), accounts=(Account('cash', 'Invented cash'),),
+                      events=(Event('open', START, 'cash_open', 'cash', 'EUR', 100),))
+    stock, cash = HistoryScope(('stock',)), HistoryScope(accounts=('cash',))
+    scope = HistoryScope(stock.positions, cash.accounts)
+    day, late = '2024-06-01', '2024-07-01'
+    store = observations(journal, scope, [('stock', START, 10), ('stock', day, 11),
+                                         ('stock', late, 12), ('stock', END, 13)], extra=(
+        O('stock-mark', 'value', stock.key, day, 121, 'EUR'),
+        O('cash-mark', 'value', cash.key, day, 105, 'EUR'),
+        O('foreign-mark', 'value', stock.key, late, 900, 'USD')))
+    calculation = perf.HistoryCalculation(journal, store)
+    calculation.value(scope, day, 'EUR')  # A summary may already have validated this portfolio close.
+    calls = []
+    original = perf.value_at
+    def count(source, selected, observations, stamp, target, **options):
+        if stamp in (day, late):
+            calls.append((selected, stamp))
+        return original(source, selected, observations, stamp, target, **options)
+    monkeypatch.setattr(perf, 'value_at', count)
+    view = history_view(journal, scope, store, 'All', today=date.fromisoformat(END), calculation=calculation)
+    chart = {row['Date']: row for row in view.points}
+    assert (chart[day]['Value'], chart[day]['Invested capital'], chart[day]['Total gain']) == (210, 200, 26)
+    assert (chart[late]['Value'], chart[late]['Invested capital'], chart[late]['Total gain']) == (220, 200, 20)
+    assert calls == [(scope, day), (scope, late)]
+
+
+def test_member_closes_keep_flat_portfolio_and_individual_account_rounding():
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    journal = Journal(accounts=(Account('a', 'Invented A'), Account('b', 'Invented B')), events=(
+        Event('a', START, 'cash_open', 'a', 'EUR', D('1e23')),
+        Event('b-gbp', START, 'cash_open', 'b', 'GBP', 1),
+        Event('b-usd', START, 'cash_open', 'b', 'USD', 1)))
+    scope = HistoryScope(accounts=('a', 'b'))
+    store = observations(journal, scope, fx=[(native, 'EUR', START, '.00004') for native in ('USD', 'GBP')])
+    calculation = HistoryCalculation(journal, store)
+    close, members = calculation.value_with_members(scope, START, 'EUR')
+    standalone = [calculation.value(HistoryScope(accounts=(a,)), START, 'EUR').amount for a in scope.accounts]
+    assert members == standalone
+    assert close.amount == calculation.value(scope, START, 'EUR').amount
+    assert members == [D('1e23'), D('0.00008')]
+    assert close.amount == D('1e23') and close.amount != sum(members)

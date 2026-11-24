@@ -12,7 +12,7 @@ from decimal import Decimal
 import math
 
 from portfolio_app.ledger.account_journal import effective_events
-from portfolio_app.performance.history_observations import HistoryScope
+from portfolio_app.performance.history_observations import HistoryScope, lookup
 from portfolio_app.performance.personal_performance import HistoryCalculation
 from portfolio_app.ledger.security_history import SecurityBook, replay_securities, selected_events, affected_positions
 
@@ -160,7 +160,7 @@ def _gain_members(calculation, scope):
     return tuple(members)
 
 
-def summarize_known_gain(journal, scope, observations, end, target='EUR', *, current_values=None, summary_rows=None, calculation=None):
+def summarize_known_gain(journal, scope, observations, end, target='EUR', *, current_values=None, summary_rows=None, calculation=None, _member_closes=None):
     """Sum supported components; missing evidence never becomes a zero gain.
 
     Current summary rows supply only unrealized gain, with an explicit limitation.
@@ -168,6 +168,8 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     Historical callers never project current quantities or costs backwards.
     """
     calculation = calculation or HistoryCalculation(journal, observations)
+    if current_values is not None or summary_rows is not None:
+        _member_closes = None  # Chart subtotals correspond to the complete historical membership.
     estimate_notes = []
     estimated = calculation._get(('gain_estimates',), lambda: tuple((b, e) for b in journal.securities
         for e in calculation._events[b.position_id] if e.estimated or e.valuation_quality == 'estimated'
@@ -214,11 +216,19 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
     if rows:
         parts = [part for part in parts if part.book or part.scope.accounts or rows.get(part.identity, {}).get('shares') != 0]
     gains, values, capitals, reasons = [], [], [], [*scope.unresolved, *estimate_notes]
-    for part in parts:
+    for index, part in enumerate(parts):
         identity, member, book = part.identity, part.scope, part.book
         has_history = part.first_date is not None and part.first_date <= end
         # Historical valuations also validate dated FX when a current quote overrides them.
-        historical_value = calculation.value(member, end, target).amount if has_history or current_values is None else None
+        if _member_closes is None:
+            historical_value = calculation.value(member, end, target).amount if has_history or current_values is None else None
+        else:
+            historical_value = _member_closes[index]
+            if ('value', member.key) in calculation.observations.scope_rows:
+                # A supplied member close overrides its own calculated amount only.
+                mark = lookup(calculation.observations, 'value', member.key, end, currency=target)
+                if mark is not None:
+                    historical_value = mark.amount
         value = historical_value if current_values is None else current_values.get(identity)
         values.append(value)
         gain = capital = None

@@ -149,3 +149,24 @@ def test_cash_only_history_uses_security_postings_without_dated_inventory(monkey
     assert points['2026-01-02'] == 980 and points['2026-01-04'] == 991
     assert view.end == '2026-01-04'  # The receipt moves a claim into cash at the same value.
     assert calls and set(calls) == {None}
+
+
+def test_group_member_closes_use_loan_claim_and_futures_equity_of_the_owning_account():
+    from portfolio_app.performance.history_observations import HistoryScope, Observation
+
+    journal = mixed_journal()
+    stock, account = HistoryScope(('invented-stock',)), HistoryScope(accounts=('broker',))
+    scope = HistoryScope(stock.positions, account.accounts)
+    dates = [f'2026-01-{n:02}' for n in range(1, 11)]
+    store = ObservationStore(tuple(Observation(subject+day, 'price', subject, day, amount, 'EUR')
+        for day in dates for subject, amount in [('invented-stock', D(12)), ('future', D(103))]))
+    calculation, independent = HistoryCalculation(journal, store), HistoryCalculation(journal, store)
+    for day in dates:
+        close, members = calculation.value_with_members(scope, day, 'EUR')
+        assert close == independent.value(scope, day, 'EUR')
+        if day == dates[-1]:
+            assert close.amount is None and not members  # An unknown distribution charge makes cash incomplete.
+        else:
+            separate = [independent.value(member, day, 'EUR').amount for member in (stock, account)]
+            assert members == separate
+            assert close.amount == sum(separate)
