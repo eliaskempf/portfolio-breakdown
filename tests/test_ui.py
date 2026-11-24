@@ -201,6 +201,67 @@ def test_open_dialog_observes_journal_published_during_parent_render(sample_data
     assert published and displayed == published
 
 
+def test_standalone_dialog_rechecks_snapshots_captured_before_mount(tmp_path, monkeypatch):
+    from portfolio_app.performance import position_summary
+    from portfolio_app.portfolio.positions import read_snapshot
+    from synthetic_sample import create_sample_data
+
+    create_sample_data(tmp_path)
+    # The caller can capture effective rows and a valuation before the dialog
+    # exists. A later default baseline cannot certify those earlier reads.
+    script = f"""
+from pathlib import Path
+import streamlit as st
+from portfolio_app.interface.shared.input_cache import load_inputs
+from portfolio_app.interface.views.positions.position_ui import render_position_dialog
+root = Path({str(tmp_path)!r})
+before = load_inputs(root).snapshot
+if not st.session_state.get('published'):
+    path = root/'holdings.csv'
+    path.write_text(path.read_text().replace('Nvidia', 'Renamed instrument'))
+    st.session_state['published'] = True
+st.session_state.update(position_edit_selected='position-0', position_edit_action='Details', position_edit_dialog=True)
+render_position_dialog(root/'holdings.csv', before, {{}}, demo=True)
+"""
+    rendered = []
+    def record(row, directory, journal, **kwargs):
+        rendered.append((row['name'], kwargs['input_revisions'][0]))
+    monkeypatch.setattr(position_summary, 'render_position_summary', record)
+    app = AppTest.from_string(script, default_timeout=15).run()
+    assert not app.exception
+    assert rendered == [('Renamed instrument', read_snapshot(tmp_path/'holdings.csv').revision)]
+
+
+def test_open_position_keeps_the_last_complete_journal_when_another_source_is_invalid(tmp_path, monkeypatch):
+    from portfolio_app.interface import ui
+    from portfolio_app.ledger.account_journal import Journal, save_journal
+    from portfolio_app.performance import position_summary
+    from synthetic_sample import create_sample_data
+
+    create_sample_data(tmp_path)
+    app = launch(tmp_path, tab='Positions')
+    app.session_state['position_edit_selected'] = 'position-0'
+    app.session_state['position_edit_action'] = 'Details'
+    app.session_state['position_edit_dialog'] = True
+    render = ui.render_position_dialog
+    displayed = []
+
+    def publish_after_valuation(*args, **kwargs):
+        save_journal(tmp_path, Journal(version=2), None)
+        (tmp_path/'allocation.yaml').write_text('buckets: [')
+        return render(*args, **kwargs)
+
+    def record(row, directory, journal, **kwargs):
+        displayed.append((journal.version, kwargs['input_revisions'][1]))
+
+    monkeypatch.setattr(ui, 'render_position_dialog', publish_after_valuation)
+    monkeypatch.setattr(position_summary, 'render_position_summary', record)
+    app.run()
+    assert not app.exception
+    assert displayed == [(Journal().version, None)]
+    assert any('last valid position' in warning.value for warning in app.warning)
+
+
 def test_position_detail_rechecks_a_journal_published_after_row_selection(tmp_path, monkeypatch):
     from portfolio_app.interface.views.positions import position_detail
     from portfolio_app.ledger.account_journal import Journal, load_journal, save_journal

@@ -216,15 +216,64 @@ def test_headline_owner_survives_chart_switches_and_retires_with_the_dialog(monk
     import streamlit as st
     from portfolio_app.interface.views.positions.position_detail import _position_view_guard
     state = dict(portfolio_workspace_context='first', position_edit_selected='invented',
-                 position_edit_action='Details', position_edit_dialog=True)
+                 position_edit_action='Details', position_edit_dialog=True, position_detail_generation=1)
     monkeypatch.setattr(st, 'session_state', state)
-    active = _position_view_guard('invented', include_view=False)
-    original_chart = _position_view_guard('invented')
+    checks = []
+    active = _position_view_guard('invented', include_view=False, checked_journal=lambda: checks.append('headline'))
+    original_chart = _position_view_guard('invented', checked_journal=lambda: checks.append('original chart'))
     state['position_edit_history_mode_invented'] = 'Price'
     assert active() and not original_chart()
     for key, replacement in [('position_edit_selected', 'other'), ('position_edit_action', 'Edit position'),
-                             ('portfolio_workspace_context', 'second'), ('position_edit_dialog', False)]:
+                             ('portfolio_workspace_context', 'second'), ('position_edit_dialog', False), ('position_detail_generation', 2)]:
         before = state[key]
         state[key] = replacement
         assert not active()
         state[key] = before
+    assert checks == ['headline']
+
+
+@pytest.mark.parametrize('changed_file', ['holdings.csv', 'account-journal.json'])
+def test_open_position_reuses_inputs_until_the_selected_sources_change(tmp_path, monkeypatch, changed_file):
+    from portfolio_app.interface.shared import dialog_runtime
+    from portfolio_app.interface.views.positions.position_ui import _checked_position_journal, position_dialog_sources
+    from portfolio_app.workspace import storage
+    import streamlit as st
+
+    holdings = tmp_path / 'holdings.csv'
+    journal_file = tmp_path / 'account-journal.json'
+    holdings.write_text('invented first holding')
+    journal_file.write_text('invented journal fixture')
+    revisions = tuple(storage.revision(source) for source in (holdings, journal_file))
+    stamps = position_dialog_sources(tmp_path)[:2]
+    journal_snapshot = object(), revisions[1]
+    reads = []
+    revision = storage.revision
+
+    def track_revision(source):
+        reads.append(source)
+        return revision(source)
+
+    class RefreshOwner(Exception):
+        pass
+
+    def rerender():
+        raise RefreshOwner
+
+    monkeypatch.setattr(storage, 'revision', track_revision)
+    monkeypatch.setattr(dialog_runtime, 'local_dialog_updates', lambda: lambda fn: fn)
+    monkeypatch.setattr(st, 'rerun', rerender)
+    current = _checked_position_journal(holdings, stamps, revisions, journal_snapshot)
+    assert current() is journal_snapshot and reads == []
+    source = tmp_path / changed_file
+    temporary = source.with_suffix('.new')
+    temporary.write_bytes(source.read_bytes())
+    temporary.replace(source)
+    assert current() is journal_snapshot
+    assert current() is journal_snapshot and reads == [source]
+
+    source.write_text('invented replacement')
+    with pytest.raises(RefreshOwner):
+        current()
+    source.unlink()
+    with pytest.raises(RefreshOwner):
+        current()

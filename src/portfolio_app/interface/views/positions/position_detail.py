@@ -1,16 +1,19 @@
 """Read-only position details and instrument market-price history."""
 
-from portfolio_app.interface.shared.currency_display import reporting_currency, money
+from functools import partial
+
 import pandas as pd
 import streamlit as st
 
+from portfolio_app.interface.shared.currency_display import reporting_currency, money
 from portfolio_app.interface.shared.display_names import instrument_name
 from portfolio_app.market.history import HistoryService, DemoHistoryProvider
 from portfolio_app.market.market_data import history_for
 from portfolio_app.interface.shared.presentation import return_percent
 
 
-def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edit=None, input_revisions=None):
+def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edit=None,
+                           input_revisions=None, checked_journal=None):
     # Keep the native accessible dialog name; put visible actions alongside the
     # same asset heading, rather than in a separate, widely spaced metadata row.
     st.html('''<style>\n    [role="dialog"]:has(.st-key-position_detail_header) > h2[slot="title"] {display:none;}\n    [role="dialog"] .st-key-position_detail_header {padding-right:40px;}\n    /* Keep the window fixed while loading or switching differently sized views.
@@ -40,7 +43,7 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
     if any(identifiers):
         st.caption(' · '.join(x for x in identifiers if x))
     from portfolio_app.ledger.account_journal import load_journal
-    journal, journal_revision = load_journal(data_dir)
+    journal, journal_revision = checked_journal() if checked_journal is not None else load_journal(data_dir)
     has_history = any(b.position_id == row.position_id and b.active for b in journal.securities)
     if input_revisions is None:
         from portfolio_app.portfolio.positions import read_snapshot
@@ -58,8 +61,9 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
     view = st.segmented_control('Position detail view', views,
         default='History', required=True, key=view_key, label_visibility='collapsed') or views[0]
     from portfolio_app.performance.position_summary import render_position_summary
+    view_guard = partial(_position_view_guard, row.position_id, checked_journal=checked_journal)
     render_position_summary(row, data_dir, journal, has_history=has_history, demo=demo, input_revisions=input_revisions,
-                            is_active=_position_view_guard(row.position_id, include_view=False))
+                            is_active=view_guard(include_view=False))
     active_class = 'position_active_'+view.replace(' ', '_')
     # Native selection changes in the browser before Python finishes its rerun.
     # Hide the outgoing view at that point, including nested fragments which
@@ -79,23 +83,30 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
         with body.container():
             with st.container(key=active_class):
                 _render_position_view(view, row, data_dir, journal, has_history, demo=demo, allocation=allocation,
-                                      input_revisions=input_revisions)
+                                      input_revisions=input_revisions, view_guard=view_guard)
                 st.html(f'<span hidden data-position-view-ready="{view}"></span>')
 
 
-def _position_view_guard(position_id, *, include_view=True):
+def _position_view_guard(position_id, *, include_view=True, checked_journal=None):
     """A polling fragment must not write into a later dialog view's DOM path."""
-    keys = ('portfolio_workspace_context', 'position_edit_selected', 'position_edit_action')
+    keys = ('portfolio_workspace_context', 'position_edit_selected', 'position_edit_action', 'position_detail_generation')
     if include_view:
         keys += (f'position_edit_detail_view_{position_id}', f'position_edit_history_mode_{position_id}')
     expected = {key: st.session_state.get(key) for key in keys}
-    return lambda: (st.session_state.get('position_edit_dialog', True)
-                    and all(st.session_state.get(key) == value for key, value in expected.items()))
+
+    def active():
+        if (not st.session_state.get('position_edit_dialog', True)
+                or any(st.session_state.get(key) != value for key, value in expected.items())):
+            return False
+        if checked_journal is not None:
+            checked_journal()
+        return True
+    return active
 
 
-def _render_position_view(view, row, data_dir, journal, has_history, *, demo, allocation, input_revisions):
+def _render_position_view(view, row, data_dir, journal, has_history, *, demo, allocation, input_revisions, view_guard):
     if view == 'History':
-        _render_history_view(row, data_dir, journal, has_history, demo=demo, allocation=allocation, input_revisions=input_revisions)
+        _render_history_view(row, data_dir, journal, has_history, demo=demo, allocation=allocation, input_revisions=input_revisions, view_guard=view_guard)
         return
     if view == 'Holdings':
         if not has_history:
@@ -110,7 +121,7 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
         from portfolio_app.interface.views.history.history_ui import render_history_results, _key
         from portfolio_app.performance.history_observations import HistoryScope
         render_history_results(data_dir,journal,HistoryScope((row.position_id,)),key=_key(data_dir,row.position_id)+'result_',label='Position value',automatic=not demo,show_summary=False,
-                               is_active=_position_view_guard(row.position_id), input_revisions=input_revisions)
+                               is_active=view_guard(), input_revisions=input_revisions)
         return
     if view == 'Transactions':
         from portfolio_app.interface.views.history.history_ui import render_position_history
@@ -130,7 +141,7 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
         render_market_history(row.ticker, data_dir, key=f'position_edit_history_{row.position_id}_',
             demo=synthetic_prices, manual=pd.notna(row.get('manual_price', float('nan'))), service=service,
             native_currency=row.get('quote_currency'), heading='',
-            is_active=_position_view_guard(row.position_id))
+            is_active=view_guard())
         return
     names = {b.id: b.name for b in allocation.buckets} if allocation else {}
     details = {'Quantity': f"{row.shares:g} {row.get('quantity_unit') or 'units'}", 'Account': row.get('account') or '—',
@@ -181,14 +192,14 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
         st.caption(row.valuation_note)
 
 
-def _render_history_view(row, data_dir, journal, has_history, *, demo, allocation, input_revisions):
+def _render_history_view(row, data_dir, journal, has_history, *, demo, allocation, input_revisions, view_guard):
     from portfolio_app.interface.views.history.history_ui import _visible_records
     book = next((b for b in journal.securities if b.position_id == row.position_id), None)
     from portfolio_app.ledger.security_history import affected_positions, current_records
     related = any(affected_positions(owner, event).intersection({row.position_id})
                   for owner in journal.securities for event in current_records(owner))
     if book is None or not (_visible_records(book) or related):
-        _render_position_view('Price', row, data_dir, journal, has_history, demo=demo, allocation=allocation, input_revisions=input_revisions)
+        _render_position_view('Price', row, data_dir, journal, has_history, demo=demo, allocation=allocation, input_revisions=input_revisions, view_guard=view_guard)
         return
     key = f'position_edit_history_mode_{row.position_id}'
     preference = st.session_state.get('position_history_preferences', {}).get(row.position_id)
@@ -235,5 +246,5 @@ def _render_history_view(row, data_dir, journal, has_history, *, demo, allocatio
         for name in ('Holdings', 'Price'):
             with st.container(key='position_history_'+name):
                 if mode == name:
-                    _render_position_view(mode, row, data_dir, journal, has_history, demo=demo, allocation=allocation, input_revisions=input_revisions)
+                    _render_position_view(mode, row, data_dir, journal, has_history, demo=demo, allocation=allocation, input_revisions=input_revisions, view_guard=view_guard)
                     st.html(f'<span hidden data-position-history-ready="{mode}"></span>')

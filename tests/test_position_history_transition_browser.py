@@ -165,6 +165,23 @@ render_position_dialog(root/'holdings.csv',read_snapshot(root/'holdings.csv'),{}
             assert dialog.evaluate('e=>e===window.originalDialog')
             page.wait_for_timeout(2300)
             assert (tmp_path/'calculations.txt').read_text().count('summary') == 2
+            # A file edited in place can be temporarily invalid. Keep the last
+            # complete view and recover even when the editor restores identical bytes.
+            source = tmp_path/'account-journal.json'
+            original = source.read_bytes()
+            saved_metrics = metrics.all_text_contents()
+            source.write_bytes(b'{"version":')
+            warning = dialog.get_by_text('The updated portfolio could not be read. Showing the last valid position.')
+            playwright.expect(warning).to_be_visible(timeout=10000)
+            playwright.expect(metrics).to_have_count(3)
+            settle(page)
+            assert metrics.all_text_contents() == saved_metrics
+            source.write_bytes(original)
+            playwright.expect(warning).to_have_count(0, timeout=10000)
+            settle(page)
+            assert metrics.all_text_contents() == saved_metrics
+            assert visible_chart.evaluate('e=>e.data[0].name') == 'Price'
+            assert not page.get_by_test_id('stException').count()
             dialog.get_by_role('button', name='Close', exact=True).first.click()
             playwright.expect(dialog).to_have_count(0)
             page.wait_for_timeout(2300)
