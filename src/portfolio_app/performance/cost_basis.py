@@ -93,6 +93,7 @@ def encode_components(parts, row):
 
 
 def read_details(value):
+    """Decode and validate a fresh, caller-owned cost document."""
     try:
         raw = json.loads(value)
         if not isinstance(raw, dict) or raw.get('version') != 1 or len(raw.get('summary', [])) != 3:
@@ -112,7 +113,7 @@ def active_components(row):
     if isinstance(value, str) and value:
         raw = read_details(value)
         if same_summary(raw['summary'], fingerprint(row)):
-            return deepcopy(raw['components'])
+            return raw['components']
         # External balance/cost edit: the summary supersedes old purchase evidence.
         return [aggregate_component(row)]
     if not row.get('balance_replaced_at') and row.get('purchase_history'):

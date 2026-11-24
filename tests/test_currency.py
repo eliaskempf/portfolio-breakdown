@@ -327,3 +327,24 @@ def test_estimate_status_flows_through_grouped_performance(prices):
     table = add_performance_column(pd.DataFrame({'Investment':['Invented instrument']}), ['invented'],
                                    list(measures.measures()), key='asset_id')
     assert table['Performance coverage'].iloc[0] == 'Complete · Estimated'
+
+
+def test_active_costs_own_the_freshly_decoded_components(monkeypatch):
+    from portfolio_app.performance import cost_basis
+
+    row = dict(shares=2, acquisition_price=10, acquisition_currency='EUR')
+    parts = [component(2, 20, 'EUR', conversions={'USD': {'amount': '24', 'method': 'supplied_cost'}})]
+    row[FIELD] = encode_components(parts, row)
+    documents = []
+    decode = cost_basis.read_details
+
+    def observed(value):
+        document = decode(value)
+        documents.append(document)
+        return document
+
+    monkeypatch.setattr(cost_basis, 'read_details', observed)
+    first = active_components(row)
+    assert first is documents[0]['components']
+    first[0]['conversions']['USD']['amount'] = '999'
+    assert active_components(row) == parts
