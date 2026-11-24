@@ -5,6 +5,10 @@ import streamlit as st
 from streamlit.proto.ForwardMsg_pb2 import ForwardMsg
 from streamlit.runtime.scriptrunner_utils.script_run_context import ThreadState, get_script_run_ctx
 
+from portfolio_app.interface.shared.fragment_handoff import install_fragment_handoff
+
+install_fragment_handoff()
+
 
 def refresh_allowed():
     state = st.session_state

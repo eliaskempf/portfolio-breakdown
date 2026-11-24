@@ -96,6 +96,12 @@ stopping the timer leaves widget events available for user interactions. Verify 
 transitions with delayed synthetic data: settled screenshots alone miss old
 controls and charts briefly appearing during a switch.
 
+Streamlit 1.66.1 can replace a finished script runner while its final UI messages
+are still queued for delivery. When the next request redraws a different fragment,
+the previous view can stay blank. `interface/shared/fragment_handoff.py` allows
+the session to deliver that pending output in order. Its regression tests exercise
+the runtime's message queues when updating the Streamlit dependency.
+
 Streamlit streams updates at numeric element paths and retires unused elements
 at the end of a rerun. Optional messages or controls must not shift the paths of
 later content. Reserve fixed sibling sections with
