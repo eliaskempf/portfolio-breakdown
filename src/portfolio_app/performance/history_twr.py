@@ -88,7 +88,6 @@ def _finish_return(factor, base, invested, ending):
 def chart_returns(calculation, scope, start, target, values, full_result, negative_dates):
     """Evaluate dated closes against one sequence of funded flow boundaries."""
     from bisect import bisect_left
-    from portfolio_app.performance.personal_performance import coverage_reasons
 
     opening = full_result.opening_value
     if opening is None or opening < 0:
@@ -100,9 +99,7 @@ def chart_returns(calculation, scope, start, target, values, full_result, negati
         # accumulate. Find the first affected close without scanning every prefix.
         def unsupported(day):
             _, missing = calculation.flows(scope, start, day, target)
-            return bool(missing or coverage_reasons(calculation.journal, scope,
-                calculation.observations, start, day, events_by_position=calculation._events,
-                calculation=calculation))
+            return bool(missing or calculation.coverage(scope, start, day))
         dates = dates[:bisect_left(dates, True, key=unsupported)]
     if not dates:
         return {}

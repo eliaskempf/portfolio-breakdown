@@ -227,6 +227,30 @@ class HistoryCalculation:
         receipt_dates = self._receipt_dates_by_position.get(scope.positions[0])
         return sorted(receipt_dates.union(dates)) if receipt_dates else dates
 
+    def _coverage_dates(self, scope):
+        members = set(scope.positions)
+        dates = {e.date for identity in members for e in self._coverage_events.get(identity, ())}
+        if scope.accounts:
+            accounts = set(scope.accounts)
+            members.update(b.position_id for b in self.journal.securities if b.account_id in accounts)
+            # An ordinary cash flow changes contributions. Its conversion is
+            # checked separately on its payment date by external_flows.
+            dates.update(e.date for e in self._account_events if e.account_id in accounts and e.kind != 'cash_flow')
+        for identity in members:
+            dates.update(self._receipt_dates_by_position.get(identity, ()))
+        return sorted(dates)
+
+    def coverage(self, scope, start, end):
+        dates = self._get(('coverage_dates', scope), lambda: self._coverage_dates(scope))
+        boundary = bisect_right(dates, end)
+        latest = self._get(('coverage', scope, start), dict)
+        if boundary not in latest:
+            result = coverage_reasons(self.journal, scope, self.observations, start, end,
+                                      events_by_position=self._events, calculation=self)
+            latest.clear()
+            latest[boundary] = result
+        return latest[boundary]
+
     def period_capital(self, scope, start, end, target):
         """Opening value, cash and cost evidence are independent of the closing mark."""
         latest = self._get(('period_capital', scope, start, target), dict)
@@ -778,8 +802,7 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
 
 def _period_capital(calculation, scope, start, end, target):
     opening = calculation.opening(scope, start, target)
-    coverage = coverage_reasons(calculation.journal, scope, calculation.observations, start, end,
-                                events_by_position=calculation._events, calculation=calculation)
+    coverage = calculation.coverage(scope, start, end)
     flows, missing_flows = calculation.flows(scope, start, end, target)
     flow_reasons = tuple(dict.fromkeys((*coverage, *missing_flows)))
     net = None if flow_reasons else sum((flow.amount for flow in flows), ZERO)

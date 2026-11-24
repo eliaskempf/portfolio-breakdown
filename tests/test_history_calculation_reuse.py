@@ -497,3 +497,32 @@ def test_position_capital_tracks_its_payments_and_delayed_charges(monkeypatch):
     assert actual == expected
     assert [item.net_contributions for item in actual] == [0, 10, 10, 12, 12, 12]
     assert rebuilt == [days[0], days[1], days[3]]
+
+
+def test_cashflows_change_capital_without_rechecking_unchanged_ledger_coverage(monkeypatch):
+    from portfolio_app.ledger.account_journal import Account, Event
+    import portfolio_app.performance.personal_performance as module
+    days = [f'2024-01-{day:02}' for day in range(2, 8)]
+    journal = Journal(accounts=(Account('cash', 'Invented account'),), events=(
+        Event('open', START, 'cash_open', 'cash', 'EUR', D(10)),
+        *(Event('flow-'+day, day, 'cash_flow', 'cash', 'EUR', D(1)) for day in days),
+        Event('unclassified', days[3], 'cash_adjust', 'cash', 'EUR', D(2))))
+    scope, store = HistoryScope(accounts=('cash',)), ObservationStore()
+    expected = [module._period_capital(HistoryCalculation(journal, store), scope, START, day, 'EUR') for day in days]
+    checks = []
+    original = module.coverage_reasons
+    def counted(journal, scope, observations, start, end, **kwargs):
+        checks.append(end)
+        return original(journal, scope, observations, start, end, **kwargs)
+    monkeypatch.setattr(module, 'coverage_reasons', counted)
+    calculation = HistoryCalculation(journal, store)
+    actual = [calculation.period_capital(scope, START, day, 'EUR') for day in days]
+    assert actual == expected
+    assert [item.net_contributions for item in actual] == [1, 2, 3, None, None, None]
+    assert checks == [days[0], days[3]]
+    # Navigation can revisit earlier dates and a reclassification creates new evidence.
+    for day in reversed(days):
+        assert calculation.coverage(scope, START, day) == original(journal, scope, store, START, day)
+    classified = replace(store, classifications=(('unclassified', 'income'),))
+    assert not HistoryCalculation(journal, classified).coverage(scope, START, days[-1])
+    assert calculation.coverage(scope, START, days[-1])
