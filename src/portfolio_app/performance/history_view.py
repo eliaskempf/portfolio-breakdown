@@ -83,15 +83,37 @@ def _all_history(calculation, scope, target, dates, recorded, beginning, last, s
     return end, negative, _period_result(calculation, scope, target, dates, beginning, end, negative, annualized)
 
 
-def full_history_time_weighted(calculation, scope, today, target):
-    """The All-period return for consumers that do not display a dated series."""
+def _full_interval(calculation, scope, today, target, *, annualized):
     dates = calculation.event_dates(scope)
     last = today.isoformat()
     beginning = dates[0] if dates else last
     recorded = calculation.observation_dates(scope, target)
     stamps = _valuation_stamps(calculation, scope, target, dates, recorded, beginning, beginning, last)
-    _, _, result = _all_history(calculation, scope, target, dates, recorded, beginning, last, stamps, annualized=False)
+    end, _, result = _all_history(calculation, scope, target, dates, recorded, beginning, last, stamps,
+                                  annualized=annualized)
+    return beginning, end, result, stamps
+
+
+def full_history_time_weighted(calculation, scope, today, target):
+    """The All-period return for consumers that do not display a dated series."""
+    _, _, result, _ = _full_interval(calculation, scope, today, target, annualized=False)
     return result.time_weighted
+
+
+@dataclass(frozen=True)
+class HistorySummary:
+    all_start: str
+    all_end: str
+    all_result: PersonalPerformance
+    useful: bool
+
+
+def full_history_summary(calculation, scope, today, target):
+    """Return the checklist metrics and whether two distinct dates have supported valuations."""
+    start, end, result, stamps = _full_interval(calculation, scope, today, target, annualized=True)
+    useful = result.ending_value is not None and any(
+        calculation.value(scope, day, target).amount is not None for day in reversed(stamps) if day < end)
+    return HistorySummary(start, end, result, useful)
 
 
 def history_view(journal, scope, observations, period='1Y', *, today=None, target='EUR', include_points=True, calculation=None, annualized=True, period_annualized=True):

@@ -238,17 +238,18 @@ def test_category_comparison_does_not_calculate_unused_annualized_returns(monkey
     assert result['Return (%)'].tolist() == pytest.approx([20])
 
 
-def test_scalar_twr_resolves_endpoints_and_flow_boundaries_without_daily_inventory(monkeypatch):
+@pytest.mark.parametrize('summary', [False, True], ids=['category-return', 'history-status'])
+def test_full_history_scalars_visit_only_required_closes(monkeypatch, summary):
     from datetime import timedelta
-    from portfolio_app.performance.history_view import full_history_time_weighted
+    from portfolio_app.performance.history_view import full_history_summary, full_history_time_weighted
     from test_daily_twr import example, trade
 
     start = date(2024, 1, 1)
     prices = [((start + timedelta(days=i)).isoformat(), 100+i) for i in range(100)]
     journal, scope, store = example((trade('buy', 'buy', '2024-02-01', 131),), quantity=1, prices=prices)
     today = start + timedelta(days=101)
-    expected = history_view(journal, scope, store, 'All', today=today).all_result.time_weighted
-    assert expected is not None
+    view = history_view(journal, scope, store, 'All', today=today)
+    assert view.all_result.time_weighted is not None
     calculation = HistoryCalculation(journal, store)
     value = calculation.value
     dates = set()
@@ -256,14 +257,20 @@ def test_scalar_twr_resolves_endpoints_and_flow_boundaries_without_daily_invento
         dates.add(stamp)
         return value(scope, stamp, target)
     monkeypatch.setattr(calculation, 'value', observe)
-    assert full_history_time_weighted(calculation, scope, today, 'EUR') == expected
-    assert dates <= {today.isoformat(), prices[-1][0], '2024-01-31', start.isoformat()}
+    needed = {today.isoformat(), prices[-1][0], '2024-01-31', start.isoformat()}
+    if summary:
+        result = full_history_summary(calculation, scope, today, 'EUR')
+        assert result.all_result == view.all_result and result.useful
+        needed.add(prices[-2][0])
+    else:
+        assert full_history_time_weighted(calculation, scope, today, 'EUR') == view.all_result.time_weighted
+    assert dates <= needed
 
 
 @pytest.mark.parametrize('case', ['negative close', 'negative boundary', 'corrected boundary',
-                                  'negative other currency', 'unvalued purchase', 'fully sold', 'no prices'])
-def test_scalar_twr_preserves_full_history_eligibility(case):
-    from portfolio_app.performance.history_view import full_history_time_weighted
+                                  'negative other currency', 'unvalued purchase', 'fully sold', 'no prices', 'single close'])
+def test_full_history_scalars_preserve_eligibility(case):
+    from portfolio_app.performance.history_view import full_history_summary, full_history_time_weighted
     from test_daily_twr import example, trade
     today = date(2024, 1, 10)
     events = ()
@@ -272,6 +279,8 @@ def test_scalar_twr_preserves_full_history_eligibility(case):
     elif case == 'unvalued purchase':
         events = (trade('buy', 'buy', '2024-01-09', 110),)
     prices = () if case == 'no prices' else (('2024-01-01', 100), ('2024-01-06', 110))
+    if case == 'single close':
+        prices = prices[:1]
     journal, scope, store = example(events, quantity=1, prices=prices)
     if 'negative' in case or case == 'corrected boundary':
         boundary = {} if case == 'negative close' else dict(side='after', boundary='invented-flow')
@@ -281,8 +290,14 @@ def test_scalar_twr_preserves_full_history_eligibility(case):
         if case == 'corrected boundary':
             extra.append(replace(negative, id='correction', replaces='negative', amount=1))
         store = replace(store, observations=(*store.observations, *extra))
-    expected = history_view(journal, scope, store, 'All', today=today).all_result.time_weighted
-    assert (expected is not None) == (case in {'fully sold', 'corrected boundary', 'negative other currency'})
+    view = history_view(journal, scope, store, 'All', today=today)
+    summary = full_history_summary(HistoryCalculation(journal, store), scope, today, 'EUR')
+    assert (summary.all_start, summary.all_end, summary.useful, summary.all_result) == (
+        view.all_start, view.all_end, view.useful, view.all_result)
+    if case in {'no prices', 'single close'}:
+        assert not summary.useful
+    expected = view.all_result.time_weighted
+    assert (expected is not None) == (case in {'fully sold', 'corrected boundary', 'negative other currency', 'single close'})
     assert full_history_time_weighted(HistoryCalculation(journal, store), scope, today, 'EUR') == expected
 
 
