@@ -130,7 +130,8 @@ def test_internal_transfer_across_mixed_opening_boundaries_is_not_profit():
 
 
 @pytest.mark.parametrize('kind', ['transfer_in', 'inventory_in'])
-def test_first_day_external_security_inflow_is_a_contribution(kind):
+@pytest.mark.parametrize('later_currency', [False, True])
+def test_first_day_external_security_inflow_is_a_contribution(kind, later_currency):
     from portfolio_app.ledger.security_history import SecurityBook, SecurityEvent
     from portfolio_app.performance.history_observations import Observation
     fields = {'amount': D(100), 'currency': 'EUR'} if kind == 'transfer_in' else {
@@ -140,12 +141,34 @@ def test_first_day_external_security_inflow_is_a_contribution(kind):
     book = SecurityBook('stock', 'invented', ('0', '', ''), account_id='a', records=entries,
                         active_ids=tuple(e.id for e in entries))
     journal = Journal(version=5, accounts=(Account('a', 'Invented new'),), securities=(book,), events=(
-        Event('zero', '2024-01-02', 'cash_open', 'a', 'EUR', D(0), source='confirmed_zero_start'),))
+        Event('zero', '2024-01-02', 'cash_open', 'a', 'EUR', D(0), source='confirmed_zero_start'),
+        *((Event('usd', '2024-02-02', 'cash_open', 'a', 'USD', D(10)),) if later_currency else ())))
     observations = ObservationStore((Observation('price', 'price', 'stock', '2024-01-03', D(100), 'EUR'),))
     result = calculate_history(journal, HistoryScope(('stock',), ('a',)), observations, '2024-01-02', '2024-01-03')
-    assert result.opening_value == 0 and result.ending_value == 100
-    assert result.net_contributions == 100 and result.gain == 0 and result.time_weighted == 0
-    assert result.opening_capital == 0 and result.invested_capital == 100 and result.total_gain == 0
+    assert (result.opening_value, result.opening_capital, result.net_contributions, result.invested_capital) == (0, 0, 100, 100)
+    if later_currency:
+        # A later opening balance leaves intervening account marks unsupported.
+        assert result.ending_value is result.gain is result.time_weighted is None
+        assert any('missing opening cash coverage' in reason for reason in result.value_reasons)
+    else:
+        assert result.ending_value == 100 and result.gain == 0 and result.time_weighted == 0 and result.total_gain == 0
+
+
+def test_later_currency_balance_preserves_first_day_cash_funding_and_requires_its_own_evidence():
+    journal = Journal(accounts=(Account('a', 'Invented account'),), events=(
+        Event('zero', '2024-01-02', 'cash_open', 'a', 'EUR', D(0), source='confirmed_zero_start'),
+        Event('deposit', '2024-01-02', 'cash_flow', 'a', 'EUR', D(75)),
+        Event('usd', '2024-02-02', 'cash_open', 'a', 'USD', D(10))))
+    scope = HistoryScope(accounts=('a',))
+    calculation = HistoryCalculation(journal, ObservationStore())
+    for start in ('2024-01-01', '2024-01-02'):
+        view = calculate_history(journal, scope, calculation.observations, start, '2024-01-03', calculation=calculation)
+        assert (view.opening_value, view.net_contributions, view.invested_capital) == (0, 75, 75)
+        assert view.ending_value is view.gain is view.time_weighted is None
+        assert any('missing opening cash coverage' in reason for reason in view.value_reasons)
+    later = calculate_history(journal, scope, calculation.observations, '2024-01-02', '2024-02-02', calculation=calculation)
+    assert later.net_contributions is None
+    assert any('account opening boundary inside interval' in reason for reason in later.flow_reasons)
 
 
 def test_internal_security_transfer_with_mixed_openings_keeps_terminal_value():

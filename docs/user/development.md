@@ -244,6 +244,9 @@ remain distinct: final adoption checks run only when requesting the complete
 state, and validation failures remain failures on retry. Explicit zero inception
 uses a validated zero-opening source marker; snapshots never imply unknown
 prehistory was empty.
+A later opening balance in another currency preserves the confirmed inception
+and its first-day contributions. Closing valuations still require cash coverage
+for the account on the requested date.
 
 Long XIRR schedules can certify uniqueness by enclosing a sign-changing root and
 all proper discounted cash-flow prefixes with directed decimal intervals. A

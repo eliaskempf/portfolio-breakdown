@@ -104,9 +104,9 @@ class HistoryCalculation:
         self._last_cash_openings = last_cash_openings(self._account_events)
         self._books = {book.position_id: book for book in journal.securities}
         self._position_starts = account_position_starts(self._account_events)
-        self._account_starts = account_start_dates(journal, self._account_events)
         from portfolio_app.ledger.account_inception import account_inceptions
         self._account_inceptions = account_inceptions(journal, self._account_events)
+        self._account_starts = account_start_dates(journal, self._account_events, inceptions=self._account_inceptions)
         self._events = {book.position_id: selected_events(book) for book in journal.securities}
         self._coverage_events = {identity: tuple(e for e in events if
             e.kind in ('opening', 'checkpoint', 'note', 'cost', 'inventory_in', 'inventory_out')
@@ -301,15 +301,22 @@ def last_cash_openings(events):
     return {event.account_id: event.date for event in events if event.kind == 'cash_open'}
 
 
-def account_start_dates(journal, events=None):
+def account_start_dates(journal, events=None, *, inceptions=None):
+    """An explicit empty account starts before its first-day postings in every currency."""
+    from portfolio_app.ledger.account_inception import account_inceptions
+    if events is None:
+        events = effective_events(journal)
+    if inceptions is None:
+        events = tuple(events)
+        inceptions = account_inceptions(journal, events)
     owners = {p.id: p.account_id for p in journal.positions}
     first, openings = {}, {}
-    for event in effective_events(journal) if events is None else events:
+    for event in events:
         for account in {event.account_id, event.other_account_id, owners.get(event.position_id)} - {'', None}:
             first[account] = min(first.get(account, event.date), event.date)
             if event.kind == 'cash_open':
                 openings.setdefault(account, set()).add(event.date)
-    return {account: stamp for account, stamp in first.items() if openings.get(account) == {stamp}}
+    return {account: stamp for account, stamp in first.items() if openings.get(account) == {stamp}} | inceptions
 
 
 def account_starts_on(journal, account, stamp):
@@ -568,9 +575,9 @@ def coverage_reasons(journal, scope, observations, start, end, *, events_by_posi
             reasons.append(Issue('Unapplied transaction evidence requires review', 'transaction'))
     classes = dict(observations.classifications)
     account_events = calculation._account_events if calculation else effective_events(journal)
-    starts = calculation._account_starts if calculation else account_start_dates(journal, account_events)
     from portfolio_app.ledger.account_inception import account_inceptions
     inceptions = calculation._account_inceptions if calculation else account_inceptions(journal, account_events)
+    starts = calculation._account_starts if calculation else account_start_dates(journal, account_events, inceptions=inceptions)
     boundary_reason = 'linked movement crosses different opening boundaries; choose a period starting before or after this day'
     for book in journal.securities if initial_positions else ():
         for event in events_for(book):
@@ -668,7 +675,7 @@ def external_flows(journal, scope, observations, start, end, target, *, security
     classes = dict(observations.classifications)
     if account_events is None:
         account_events = calculation._account_events if calculation else effective_events(journal)
-    starts = calculation._account_starts if calculation else account_start_dates(journal, account_events)
+    starts = calculation._account_starts if calculation else account_start_dates(journal, account_events, inceptions=inceptions)
     for e in account_events:
         inside, other = e.account_id in accounts, e.other_account_id in accounts
         initial = include_account_start and (inside and starts.get(e.account_id) == start
