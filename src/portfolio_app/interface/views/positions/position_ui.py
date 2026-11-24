@@ -307,7 +307,8 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
                 close_dialog_button('Close', key='position_dialog_close')
             elif action == 'Details':
                 from portfolio_app.interface.shared.input_cache import load_effective_snapshot
-                current_holdings = load_effective_snapshot(path).holdings
+                effective = load_effective_snapshot(path)
+                current_holdings = effective.holdings
                 selected = current_holdings.loc[current_holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
                 if selected.empty:
                     st.warning('This position no longer exists.')
@@ -325,7 +326,8 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
                     def edit_position():
                         st.session_state['position_edit_action'] = 'Edit position'
                     from portfolio_app.interface.views.positions.position_detail import render_position_detail
-                    render_position_detail(row, path.parent, demo=demo, allocation=allocation, on_edit=edit_position)
+                    render_position_detail(row, path.parent, demo=demo, allocation=allocation, on_edit=edit_position,
+                        input_revisions=(effective.revision, current_holdings.attrs['history_journal_revision']))
                 close_dialog_button('Close', key='position_dialog_close')
             else:
                 rendered = render_position_form(path, read_snapshot(path), funds, demo=demo, allocation=allocation, action=action, valued=valued)

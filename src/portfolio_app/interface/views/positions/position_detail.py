@@ -10,7 +10,7 @@ from portfolio_app.market.market_data import history_for
 from portfolio_app.interface.shared.presentation import return_percent
 
 
-def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edit=None):
+def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edit=None, input_revisions=None):
     # Keep the native accessible dialog name; put visible actions alongside the
     # same asset heading, rather than in a separate, widely spaced metadata row.
     st.html('''<style>\n    [role="dialog"]:has(.st-key-position_detail_header) > h2[slot="title"] {display:none;}\n    [role="dialog"] .st-key-position_detail_header {padding-right:40px;}\n    /* Keep the window fixed while loading or switching differently sized views.
@@ -42,6 +42,15 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
     from portfolio_app.ledger.account_journal import load_journal
     journal, journal_revision = load_journal(data_dir)
     has_history = any(b.position_id == row.position_id and b.active for b in journal.securities)
+    if input_revisions is None:
+        from portfolio_app.portfolio.positions import read_snapshot
+        # Standalone detail views have no owning CSV snapshot. Only an automatic
+        # refresh will need its revision for the background publication check.
+        holdings_revision = read_snapshot(data_dir / 'holdings.csv').revision if has_history and not demo else None
+        input_revisions = holdings_revision, journal_revision
+    elif input_revisions[1] != journal_revision:
+        # A journal was published between selecting the effective row and opening it.
+        st.rerun()
     view_key = f'position_edit_detail_view_{row.position_id}'
     views = ['History', 'Key metrics', 'Transactions', 'Details']
     if st.session_state.get(view_key) == 'Price history':
@@ -49,7 +58,7 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
     view = st.segmented_control('Position detail view', views,
         default='History', required=True, key=view_key, label_visibility='collapsed') or views[0]
     from portfolio_app.performance.position_summary import render_position_summary
-    render_position_summary(row, data_dir, journal, has_history=has_history, demo=demo, journal_revision=journal_revision,
+    render_position_summary(row, data_dir, journal, has_history=has_history, demo=demo, input_revisions=input_revisions,
                             is_active=_position_view_guard(row.position_id, include_view=False))
     active_class = 'position_active_'+view.replace(' ', '_')
     # Native selection changes in the browser before Python finishes its rerun.
@@ -70,7 +79,7 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
         with body.container():
             with st.container(key=active_class):
                 _render_position_view(view, row, data_dir, journal, has_history, demo=demo, allocation=allocation,
-                                      journal_revision=journal_revision)
+                                      input_revisions=input_revisions)
                 st.html(f'<span hidden data-position-view-ready="{view}"></span>')
 
 
@@ -84,9 +93,9 @@ def _position_view_guard(position_id, *, include_view=True):
                     and all(st.session_state.get(key) == value for key, value in expected.items()))
 
 
-def _render_position_view(view, row, data_dir, journal, has_history, *, demo, allocation, journal_revision=None):
+def _render_position_view(view, row, data_dir, journal, has_history, *, demo, allocation, input_revisions):
     if view == 'History':
-        _render_history_view(row, data_dir, journal, has_history, demo=demo, allocation=allocation)
+        _render_history_view(row, data_dir, journal, has_history, demo=demo, allocation=allocation, input_revisions=input_revisions)
         return
     if view == 'Holdings':
         if not has_history:
@@ -101,7 +110,7 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
         from portfolio_app.interface.views.history.history_ui import render_history_results, _key
         from portfolio_app.performance.history_observations import HistoryScope
         render_history_results(data_dir,journal,HistoryScope((row.position_id,)),key=_key(data_dir,row.position_id)+'result_',label='Position value',automatic=not demo,show_summary=False,
-                               is_active=_position_view_guard(row.position_id))
+                               is_active=_position_view_guard(row.position_id), input_revisions=input_revisions)
         return
     if view == 'Transactions':
         from portfolio_app.interface.views.history.history_ui import render_position_history
@@ -141,7 +150,7 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
         observations, revision = observation_snapshot(data_dir)
         target = reporting_currency()
         calculation = prepared_history_calculation(data_dir, journal, observations, revision,
-                                                   target=target, journal_revision=journal_revision)
+                                                   target=target, journal_revision=input_revisions[1])
         from portfolio_app.performance.gain_components import security_gain_components
         from portfolio_app.performance.gain_accounting import amount
         components = security_gain_components(journal, row.position_id, observations, date.today().isoformat(),
@@ -172,14 +181,14 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
         st.caption(row.valuation_note)
 
 
-def _render_history_view(row, data_dir, journal, has_history, *, demo, allocation):
+def _render_history_view(row, data_dir, journal, has_history, *, demo, allocation, input_revisions):
     from portfolio_app.interface.views.history.history_ui import _visible_records
     book = next((b for b in journal.securities if b.position_id == row.position_id), None)
     from portfolio_app.ledger.security_history import affected_positions, current_records
     related = any(affected_positions(owner, event).intersection({row.position_id})
                   for owner in journal.securities for event in current_records(owner))
     if book is None or not (_visible_records(book) or related):
-        _render_position_view('Price', row, data_dir, journal, has_history, demo=demo, allocation=allocation)
+        _render_position_view('Price', row, data_dir, journal, has_history, demo=demo, allocation=allocation, input_revisions=input_revisions)
         return
     key = f'position_edit_history_mode_{row.position_id}'
     preference = st.session_state.get('position_history_preferences', {}).get(row.position_id)
@@ -226,5 +235,5 @@ def _render_history_view(row, data_dir, journal, has_history, *, demo, allocatio
         for name in ('Holdings', 'Price'):
             with st.container(key='position_history_'+name):
                 if mode == name:
-                    _render_position_view(mode, row, data_dir, journal, has_history, demo=demo, allocation=allocation)
+                    _render_position_view(mode, row, data_dir, journal, has_history, demo=demo, allocation=allocation, input_revisions=input_revisions)
                     st.html(f'<span hidden data-position-history-ready="{mode}"></span>')

@@ -201,6 +201,38 @@ def test_open_dialog_observes_journal_published_during_parent_render(sample_data
     assert published and displayed == published
 
 
+def test_position_detail_rechecks_a_journal_published_after_row_selection(tmp_path, monkeypatch):
+    from portfolio_app.interface.views.positions import position_detail
+    from portfolio_app.ledger.account_journal import Journal, load_journal, save_journal
+    from portfolio_app.performance import position_summary
+
+    from synthetic_sample import create_sample_data
+    create_sample_data(tmp_path)
+    app = launch(tmp_path, tab='Positions')
+    app.session_state['position_edit_selected'] = 'position-0'
+    app.session_state['position_edit_action'] = 'Details'
+    app.session_state['position_edit_dialog'] = True
+    render = position_detail.render_position_detail
+    revisions, rendered = [], []
+
+    def publish_once(*args, **kwargs):
+        revisions.append(kwargs['input_revisions'][1])
+        if len(revisions) == 1:
+            save_journal(tmp_path, Journal(version=2), None)
+        return render(*args, **kwargs)
+
+    def summary(*args, **kwargs):
+        rendered.append(kwargs['input_revisions'][1])
+
+    monkeypatch.setattr(position_detail, 'render_position_detail', publish_once)
+    monkeypatch.setattr(position_summary, 'render_position_summary', summary)
+    app.run()
+    assert not app.exception
+    revision = load_journal(tmp_path)[1]
+    assert revisions[0] is None and revisions[-1] == revision
+    assert rendered == [revision]
+
+
 def test_demo_launch_and_subset_selection(sample_data_dir):
     app = launch(sample_data_dir)
     assert not app.exception

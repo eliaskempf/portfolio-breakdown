@@ -13,7 +13,7 @@ from test_personal_performance import journal, observed
 from test_ui import by_label
 
 
-def launch(tmp_path, *, history=True, complete=True, estimated=False):
+def launch(tmp_path, *, history=True, complete=True, estimated=False, demo=True):
     (tmp_path/'holdings.csv').write_text('position_key,id,name,ticker,shares,acquisition_price,acquisition_currency\n'
         'holding,invented,Invented holding,SYNTH,15,5.333333333333333,EUR\n')
     j, scope = journal(), HistoryScope(('holding',))
@@ -33,7 +33,7 @@ from portfolio_app.portfolio.positions import read_snapshot
 path = Path({str(tmp_path)!r})
 row = read_snapshot(path/'holdings.csv').holdings.assign(
     current_value_reporting=300., unrealized_gain_reporting=220., cost_basis_reporting=80., return_pct=275.).iloc[0]
-render_position_detail(row, path, demo=True)
+render_position_detail(row, path, demo={demo!r})
 ''', default_timeout=15).run()
     return app, calculate_history(j, scope, store, '2024-01-01', '2025-01-01')
 
@@ -68,6 +68,32 @@ def test_personal_headlines_are_identical_across_charts_ranges_and_tabs(tmp_path
     details = app.dataframe[0].value.set_index('Position').Details
     assert details['Return on cost'] == return_percent(275)
     assert details['Unrealized gain'] == '+€220.00'
+
+
+def test_summary_and_holdings_refresh_use_the_loaded_input_revisions(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+    from portfolio_app.ledger.account_journal import load_journal
+    from portfolio_app.ledger.security_history import history_fingerprint
+    from portfolio_app.performance.personal_history_refresh import RefreshStatus, refresher
+    from portfolio_app.portfolio.positions import read_snapshot
+
+    from portfolio_app.interface.views.positions import position_detail
+    from portfolio_app.market.history import DemoHistoryProvider, HistoryService
+    market = HistoryService(DemoHistoryProvider(), tmp_path / '.cache' / 'history')
+    monkeypatch.setattr(position_detail, 'history_for', lambda _: market)
+    request = Mock(return_value=RefreshStatus())
+    monkeypatch.setattr(refresher, 'request', request)
+    app, _ = launch(tmp_path, demo=False)
+    assert not app.exception
+    request.reset_mock()
+    by_label(app.get('button_group'), 'History type').set_value('Holdings').run()
+    assert not app.exception
+    saved, revision = load_journal(tmp_path)
+    expected = (read_snapshot(tmp_path / 'holdings.csv').revision, revision)
+    assert request.call_count >= 2
+    for call in request.call_args_list:
+        assert call.kwargs['input_revisions'] == expected
+        assert call.kwargs['fingerprint'] == history_fingerprint(saved)
 
 
 def test_recorded_details_reuse_the_validated_ledger_and_observations(tmp_path, monkeypatch):

@@ -7,7 +7,7 @@ from portfolio_app.interface.shared.currency_display import money, reporting_cur
 from portfolio_app.interface.shared.presentation import return_percent
 
 
-def render_position_summary(row, directory, journal, *, has_history, demo=False, is_active=None, journal_revision=None):
+def render_position_summary(row, directory, journal, *, has_history, input_revisions, demo=False, is_active=None):
     from portfolio_app.interface.views.history.history_ui import prepared_history_view, prepared_history_calculation
     from portfolio_app.performance.history_observations import FILE, HistoryScope
     from portfolio_app.interface.shared.input_cache import file_stamp, observation_snapshot
@@ -15,7 +15,9 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False,
     scope = HistoryScope((row.position_id,))
     target = reporting_currency()
     if has_history and not demo:
-        refresher.request(directory, journal, scope, target)
+        from portfolio_app.interface.views.history.history_ui import prepared_history_fingerprint
+        refresher.request(directory, journal, scope, target, input_revisions=input_revisions,
+                          fingerprint=prepared_history_fingerprint(directory, journal, input_revisions[1]))
 
     @st.fragment
     def summary():
@@ -38,7 +40,7 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False,
             stamp, today = file_stamp(directory / FILE), date.today()
             observations, revision = observation_snapshot(directory)
             calculation = prepared_history_calculation(directory, journal, observations, revision, target=target,
-                                                       journal_revision=journal_revision)
+                                                       journal_revision=input_revisions[1])
             view = prepared_history_view(directory, journal, scope, observations, revision, 'All',
                 target=target, include_points=False, calculation=calculation)
             known = summarize_known_gain(journal, scope, observations, today.isoformat(), target,

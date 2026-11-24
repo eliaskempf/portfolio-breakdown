@@ -49,21 +49,24 @@ def _key(directory, identity):
     return 'personal_history_' + sha256((str(directory.resolve())+identity).encode()).hexdigest()[:12] + '_'
 
 
+def prepared_history_fingerprint(directory, journal, journal_revision):
+    from portfolio_app.ledger.security_history import history_fingerprint
+    if journal_revision is None:
+        return history_fingerprint(journal)
+    from portfolio_app.interface.shared.input_cache import cached_input
+    return cached_input('journal_history_fingerprint', (str(directory.resolve()), journal_revision),
+                        lambda: history_fingerprint(journal), immutable=True)
+
+
 def prepared_history_calculation(directory, journal, observations, revision, *, target=None, journal_revision=None):
     """One session-owned ledger context across scopes and range switches."""
     from portfolio_app.interface.shared.currency_display import reporting_currency
     from portfolio_app.performance.personal_performance import HistoryCalculation
-    from portfolio_app.ledger.security_history import history_fingerprint
     target = target or reporting_currency()
     cache = st.session_state.setdefault('parsed_inputs', {})
     previous = cache.get('history_calculation')
     workspace = str(directory.resolve())
-    if journal_revision is None:
-        fingerprint = history_fingerprint(journal)
-    else:
-        from portfolio_app.interface.shared.input_cache import cached_input
-        fingerprint = cached_input('journal_history_fingerprint', (workspace, journal_revision),
-                                   lambda: history_fingerprint(journal), immutable=True)
+    fingerprint = prepared_history_fingerprint(directory, journal, journal_revision)
     signature = workspace, fingerprint, revision, target, date.today()
     if previous is None or previous[0] != signature:
         # Results and ledger facts must expire together when evidence changes.
@@ -926,8 +929,8 @@ def render_history_results(directory, journal, scope, *, key, label='Historical 
     def request_refresh(**kwargs):
         if input_revisions is not None:
             kwargs['input_revisions'] = input_revisions
-            if prepared is not None:
-                kwargs['fingerprint'] = prepared['calculation'].fingerprint
+            kwargs['fingerprint'] = (prepared['calculation'].fingerprint if prepared is not None else
+                                     prepared_history_fingerprint(directory, journal, input_revisions[1]))
         return refresher.request(directory, journal, scope, target, **kwargs)
     refresh = request_refresh()
     cached = prepared
