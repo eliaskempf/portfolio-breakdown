@@ -388,6 +388,13 @@ def opening_value_at(journal, scope, observations, stamp, target, *, calculation
     return AmountResult(None if reasons else total, tuple(dict.fromkeys(reasons)))
 
 
+def _security_positions_at(journal, scope, stamp, calculation):
+    if not scope.positions:
+        return {}
+    state = calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)
+    return state.positions
+
+
 def capital_at_start(journal, scope, observations, stamp, target, *, calculation=None):
     """Snapshot cost seeds known gain; it is never a return-opening valuation.
 
@@ -398,7 +405,7 @@ def capital_at_start(journal, scope, observations, stamp, target, *, calculation
     from portfolio_app.performance.cost_basis import resolve_cost
     from portfolio_app.performance.history_observations import ObservationFX
     total, reasons = ZERO, list(scope.unresolved)
-    states = (calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)).positions
+    states = _security_positions_at(journal, scope, stamp, calculation)
     books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
     initial_positions = initial_security_positions(journal, scope, stamp, calculation=calculation)
     for identity in scope.positions:
@@ -442,7 +449,7 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
     supplied = lookup(observations, 'value', scope.key, stamp, currency=target)
     if supplied:
         return AmountResult(supplied.amount, evidence=(provenance(supplied, stamp),))
-    securities = calculation.securities(stamp) if calculation else replay_securities(journal.securities, as_of=stamp)
+    states = _security_positions_at(journal, scope, stamp, calculation)
     accounts = (calculation.accounts(stamp) if calculation else replay(journal, as_of=stamp)) if scope.accounts else None
     books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
     total, reasons, evidence = ZERO, [], []
@@ -461,7 +468,7 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None):
 
     for identity in scope.positions:
         book = books.get(identity)
-        state = securities.positions.get(identity)
+        state = states.get(identity)
         if book and confirmed_empty_before(book, stamp, events=calculation._events[book.position_id] if calculation else None):
             continue
         if book is None or state is None or not state.boundary:

@@ -181,8 +181,8 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
             estimate_notes.append('Estimated acquisition cost retained from supplied evidence')
         if event.valuation_quality == 'estimated' or event.estimated:
             estimate_notes.append('Estimated monetary valuation retained from supplied evidence')
-    if any(e.valuation_quality == 'estimated' or any(p.get('quality') == 'estimated' for p in e.costs)
-           for _, e in estimated):
+    if scope.positions and any(e.valuation_quality == 'estimated' or any(p.get('quality') == 'estimated' for p in e.costs)
+                               for _, e in estimated):
         states = calculation.securities(end).positions
         if any(p.get('quality') == 'estimated' for identity in scope.positions
                if identity in states for p in states[identity].costs):

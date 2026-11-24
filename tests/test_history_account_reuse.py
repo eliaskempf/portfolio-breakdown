@@ -119,3 +119,33 @@ def test_posting_ids_keep_longest_matching_event_prefix_and_correction_root():
     assert postings['security:pdf'].amount == -3
     assert postings['security:unknown:unknown-charges'].kind == 'security_unknown'
     assert len(postings) == 6
+
+
+def test_cash_only_history_uses_security_postings_without_dated_inventory(monkeypatch):
+    from datetime import date
+    from portfolio_app.performance.history_observations import HistoryScope
+    from portfolio_app.performance.history_view import history_view
+    from portfolio_app.performance.personal_performance import value_at
+
+    source = mixed_journal()
+    # Retain the corrected purchase, its later charge, the sale and its explicit receipt.
+    journal = replace(source, contracts=(), positions=(), events=tuple(e for e in source.events
+                      if e.id in {'cash', 'sale-receipt'}))
+    scope = HistoryScope(accounts=('broker',))
+    store = ObservationStore()
+    calculation = HistoryCalculation(journal, store)
+    calls = []
+    securities = calculation.securities
+    def track(stamp=None):
+        calls.append(stamp)
+        return securities(stamp)
+    monkeypatch.setattr(calculation, 'securities', track)
+    for day, expected in [(9, 991), (2, 980), (4, 991), (10, None)]:
+        stamp = f'2026-01-{day:02}'
+        assert value_at(journal, scope, store, stamp, 'EUR').amount == expected
+        assert calculation.value(scope, stamp, 'EUR').amount == expected
+    view = history_view(journal, scope, store, 'All', today=date(2026, 1, 10), calculation=calculation)
+    points = {p['Date']: p['Value'] for p in view.points}
+    assert points['2026-01-02'] == 980 and points['2026-01-04'] == 991
+    assert view.end == '2026-01-04'  # The receipt moves a claim into cash at the same value.
+    assert calls and set(calls) == {None}
