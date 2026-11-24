@@ -184,6 +184,10 @@ class HistoryCalculation:
         return self._get(('value', scope, stamp, target), lambda: value_at(
             self.journal, scope, self.observations, stamp, target, calculation=self))
 
+    def retain_value(self, scope, stamp, target, value):
+        """Reuse an already validated close for gain accounting and overlapping chart ranges."""
+        self._get(('value', scope, stamp, target), lambda: value)
+
     def opening(self, scope, stamp, target):
         return self._get(('opening', scope, stamp, target), lambda: opening_value_at(
             self.journal, scope, self.observations, stamp, target, calculation=self))

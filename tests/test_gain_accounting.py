@@ -560,3 +560,40 @@ def test_partial_lot_basis_reuses_only_costs_across_daily_marks(monkeypatch):
     updated = security_gain_components(journal, 'stock', corrected, '2024-03-17', current_value=D(60),
                                        calculation=HistoryCalculation(journal, corrected))
     assert updated.unrealized == 29 and updated.remaining_cost is None
+
+
+def test_chart_gain_reuses_the_close_and_preserves_individual_marks(monkeypatch):
+    from portfolio_app.performance import history_view as views, personal_performance
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    purchase = E('buy', 'buy', START, quantity=10, price=10, currency='EUR', charges_known=True)
+    security = reconstruction_candidate(book(purchase), ('buy',), starts_at_zero=True)
+    journal = Journal(version=2, securities=(security,), accounts=(Account('cash', 'Invented cash'),),
+                      events=(Event('open', START, 'cash_open', 'cash', 'EUR', 100),))
+    position = HistoryScope(('stock',))
+    scope = HistoryScope(('stock',), ('cash',))
+    middle = '2024-06-01'
+    store = observations(journal, scope, [('stock', START, 10), ('stock', middle, 11), ('stock', END, 12)],
+                         extra=(O('whole', 'value', scope.key, middle, D(777), 'EUR'),
+                                O('member', 'value', position.key, middle, D(123), 'EUR')))
+    calculation = HistoryCalculation(journal, store)
+    # A long chart evicts early point-cache entries before reaching their gain calculation.
+    full_interval = views._all_history
+    def evict_middle(*args, **kwargs):
+        result = full_interval(*args, **kwargs)
+        calculation._facts.pop(('value', scope, middle, 'EUR'))
+        return result
+    monkeypatch.setattr(views, '_all_history', evict_middle)
+    calculated = []
+    original = personal_performance.value_at
+    def track(source, selection, observations, stamp, currency, **options):
+        if selection == scope:
+            calculated.append(stamp)
+        return original(source, selection, observations, stamp, currency, **options)
+    monkeypatch.setattr(personal_performance, 'value_at', track)
+    chart = history_view(journal, scope, store, 'All', today=date.fromisoformat(END), calculation=calculation)
+    point = next(p for p in chart.points if p['Date'] == middle)
+    assert (point['Value'], point['Invested capital'], point['Total gain']) == (777, 200, 23)
+    assert chart.points[0]['Value'] is None
+    assert chart.all_known.amount == 20
+    assert calculated.count(middle) == 1

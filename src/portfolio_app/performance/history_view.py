@@ -171,7 +171,12 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
         # chart availability even when the visible window is entirely empty.
         useful = any(calculation.value(scope, day, target).amount is not None
                      for day in reversed(stamps) if day < min(first, all_end))
-    all_known = summarize_known_gain(journal,scope,observations,all_end,target,calculation=calculation)
+    def known_gain(day):
+        if day in valuations:
+            calculation.retain_value(scope, day, target, valuations[day])
+        return summarize_known_gain(journal, scope, observations, day, target, calculation=calculation)
+
+    all_known = known_gain(all_end)
     window = [stamp for stamp in available if first <= stamp <= last]
     start,end = (window[0],window[-1]) if window else (first,last)
     if first <= all_start:
@@ -198,7 +203,7 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
                     and all_result.net_contributions is not None and not missing else None)
         gain = values[stamp] - invested if values[stamp] is not None and invested is not None else None
         if invested is None:
-            known = summarize_known_gain(journal,scope,observations,stamp,target,calculation=calculation)
+            known = all_known if stamp == all_end else known_gain(stamp)
             invested, gain = known.capital, known.amount
         points.append({'Date':stamp, 'Value':float(values[stamp]) if values[stamp] is not None else None,
             'Invested capital':float(invested) if invested is not None else None,
