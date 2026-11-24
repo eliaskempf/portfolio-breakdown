@@ -13,11 +13,19 @@ NODE_COLUMNS = ["node_id", "parent_id", "label", "path", "depth", "value", "perc
 ALLOCATION_COLUMNS = ["asset_id", "asset_name", "path", "value"]
 
 
+def _text_values(column):
+    # Arrow-backed string columns can decode a batch without allocating a
+    # Python string array for the entire expanded portfolio.
+    batch_size = 4096
+    for start in range(0, len(column), batch_size):
+        yield from column.iloc[start:start + batch_size].tolist()
+
+
 def _classified_rows(exposures, classifications, taxonomy, *, include_names):
     if exposures.empty:
         return
-    names = exposures.asset_name if include_names else repeat(None)
-    for asset, name, value in zip(exposures.asset_id, names, exposures.value):
+    names = _text_values(exposures.asset_name) if include_names else repeat(None)
+    for asset, name, value in zip(_text_values(exposures.asset_id), names, exposures.value):
         paths = paths_for(classifications, asset, taxonomy)
         share = value / len(paths)
         for path in paths:

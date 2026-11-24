@@ -307,6 +307,37 @@ def test_build_tree_encodes_each_shared_category_path_once(monkeypatch, holdings
 
 
 @pytest.mark.parametrize('include_holdings', [False, True])
+def test_wide_taxonomy_decodes_only_displayed_text_in_batches(monkeypatch, include_holdings):
+    rows = pd.DataFrame({'asset_id': ['a', 'b'] * 5000, 'asset_name': ['One', 'Two'] * 5000,
+                         'value': [1., -0.25] * 5000})
+    paths = {'a': {'sector': (('A',),)}, 'b': {'sector': (('B',),)}}
+    batches = {'asset_id': [], 'asset_name': []}
+    original_list = pd.Series.tolist
+    original_iter = pd.Series.__iter__
+
+    def decode(series):
+        if series.name in batches:
+            batches[series.name].append(len(series))
+        return original_list(series)
+
+    def iterate(series):
+        if series.name in batches:
+            pytest.fail('Classifying the portfolio decoded text one scalar at a time')
+        return original_iter(series)
+
+    monkeypatch.setattr(pd.Series, 'tolist', decode)
+    monkeypatch.setattr(pd.Series, '__iter__', iterate)
+    nodes = aggregate(rows, paths, taxonomy='sector', include_holdings=include_holdings)
+    assert nodes.iloc[0].value == 3750.
+    assert nodes.loc[nodes.kind.eq('holding'), 'label'].tolist() == (['One', 'Two'] if include_holdings else [])
+    for field, sizes in batches.items():
+        if field == 'asset_name' and not include_holdings:
+            assert not sizes
+        else:
+            assert sum(sizes) == len(rows) and max(sizes) < len(rows)
+
+
+@pytest.mark.parametrize('include_holdings', [False, True])
 def test_taxonomy_aggregation_streams_the_same_classified_allocations(monkeypatch, exposures, taxonomy, include_holdings):
     extra = exposures.iloc[[0, 2]].assign(asset_name=['Another name', 'C'], value=[-11.2, float('nan')])
     repeated = pd.concat([exposures, extra])
