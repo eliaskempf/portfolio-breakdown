@@ -477,11 +477,16 @@ def value_at(journal, scope, observations, stamp, target, *, calculation=None, m
     books = calculation._books if calculation else {b.position_id: b for b in journal.securities}
     total, reasons, evidence = ZERO, [], []
 
+    # Every component of this close uses the same dated evidence for its currency.
+    rates = {}
+
     def add(amount, denomination, identity):
         nonlocal total
         if amount == 0:
             return
-        fx, fx_evidence = valuation_fx(observations, denomination, target, stamp)
+        if denomination not in rates:
+            rates[denomination] = valuation_fx(observations, denomination, target, stamp)
+        fx, fx_evidence = rates[denomination]
         value = amount*fx if amount is not None and fx is not None else None
         if value is None:
             reasons.append(Issue(f'{identity}: missing value or {denomination}/{target} FX on {stamp}', 'fx'))

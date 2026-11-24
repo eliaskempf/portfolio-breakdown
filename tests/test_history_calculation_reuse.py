@@ -593,3 +593,57 @@ def test_sibling_returns_and_range_capital_use_validated_security_closes(monkeyp
     for members in (scope, HistoryScope(('sibling',)), HistoryScope(('invented', 'sibling'))):
         assert full_history_time_weighted(calculation, members, date.fromisoformat(dates[-1]), 'EUR') == 0
         assert calculation.capital(members, dates[21], 'EUR').amount == 210 * len(members.positions)
+
+
+def test_dated_close_shares_fx_across_members_and_preserves_per_member_evidence(monkeypatch):
+    import portfolio_app.performance.personal_performance as module
+    from portfolio_app.ledger.account_journal import Account, Event
+    from test_daily_twr import example
+
+    friday, saturday, monday = '2024-01-05', '2024-01-06', '2024-01-08'
+    journal, _, _ = example((), quantity=1)
+    accounts = (Account('first', 'Invented first'), Account('second', 'Invented second'))
+    journal = replace(journal, accounts=accounts, events=(
+        Event('first-open', friday, 'cash_open', 'first', 'USD', 10),
+        Event('second-open', friday, 'cash_open', 'second', 'USD', 3),
+        Event('eu-open', friday, 'cash_open', 'second', 'EUR', 4)))
+    scope = HistoryScope(('invented',), ('first', 'second'))
+    prices = tuple(Observation('p-'+day, 'price', 'invented', day, 20, 'USD') for day in (saturday, monday))
+    store = ObservationStore((*prices, Observation('friday-fx', 'fx', 'EUR/USD', friday, 2, 'EUR', target='USD')))
+    calls, original = [], module.valuation_fx
+    def observed(store, source, target, stamp):
+        calls.append((source, stamp))
+        return original(store, source, target, stamp)
+    monkeypatch.setattr(module, 'valuation_fx', observed)
+    calc = HistoryCalculation(journal, store)
+    weekend, members = calc.value_with_members(scope, saturday, 'EUR')
+    assert weekend.amount == D('20.5') and members == [10, 5, D('5.5')]
+    assert [(e.subject, e.as_of, e.method) for e in weekend.evidence] == [
+        ('invented', saturday, 'close'), *[('EUR/USD', friday, 'closed_fx_session')]*3]
+    unsupported, members = calc.value_with_members(scope, monday, 'EUR')
+    assert unsupported.amount is None and not members
+    assert [str(issue).split(':')[0] for issue in unsupported.reasons] == ['invented', 'first', 'second']
+    assert [day for currency, day in calls if currency == 'USD'] == [saturday, monday]
+
+
+def test_shared_fx_preserves_component_rounding_and_checks_only_used_currencies():
+    from decimal import localcontext
+    from portfolio_app.ledger.account_journal import Account, Event
+    from portfolio_app.performance.personal_performance import value_at
+    from portfolio_app.portfolio.holdings import DataError
+
+    accounts = tuple(Account(name, name) for name in ('first', 'second'))
+    journal = Journal(accounts=accounts, events=tuple(
+        Event('opening-'+a.id, START, 'cash_open', a.id, 'USD', 5) for a in accounts))
+    scope = HistoryScope(accounts=('first', 'second'))
+    inverse = Observation('inverse', 'fx', 'EUR/USD', START, 3, 'EUR', target='USD')
+    with localcontext() as context:
+        context.prec = 3
+        members = []
+        result = value_at(journal, scope, ObservationStore((inverse,)), START, 'EUR', member_amounts=members)
+        assert result.amount == D('3.32') and members == [D('1.66'), D('1.66')]
+    conflict = ObservationStore((inverse, Observation('direct', 'fx', 'USD/EUR', START, 1, 'USD', target='EUR')))
+    with pytest.raises(DataError, match='Conflicting direct and inverse'):
+        value_at(journal, scope, conflict, START, 'EUR')
+    empty = replace(journal, events=tuple(replace(e, amount=0) for e in journal.events))
+    assert value_at(empty, scope, conflict, START, 'EUR').amount == 0

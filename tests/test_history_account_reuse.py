@@ -170,3 +170,25 @@ def test_group_member_closes_use_loan_claim_and_futures_equity_of_the_owning_acc
             separate = [independent.value(member, day, 'EUR').amount for member in (stock, account)]
             assert members == separate
             assert close.amount == sum(separate)
+
+
+def test_unknown_cash_and_known_cash_share_fx_without_sharing_coverage():
+    from portfolio_app.ledger.account_journal import Event
+    from portfolio_app.performance.history_observations import HistoryScope, Observation
+    stamp = '2026-01-10'
+    source = mixed_journal()
+    journal = replace(source, accounts=(*source.accounts, Account('reserve', 'Invented reserve')),
+                      contracts=(), positions=(), events=(
+                          *(e for e in source.events if e.id in {'cash', 'sale-receipt'}),
+                          Event('reserve-open', '2026-01-01', 'cash_open', 'reserve', 'EUR', 10)))
+    scope = HistoryScope(accounts=('broker', 'reserve'))
+    rate = Observation('euro', 'fx', 'EUR/USD', stamp, 2, 'EUR', target='USD')
+    calculation = HistoryCalculation(journal, ObservationStore((rate,)))
+    value, members = calculation.value_with_members(scope, stamp, 'USD')
+    assert value.amount is None and not members
+    assert len(value.reasons) == 1 and str(value.reasons[0]).startswith('broker:')
+    assert [e.subject for e in value.evidence] == ['EUR/USD']
+    conflict = Observation('inverse', 'fx', 'USD/EUR', stamp, 1, 'USD', target='EUR')
+    with pytest.raises(DataError, match='Conflicting direct and inverse'):
+        HistoryCalculation(journal, ObservationStore((rate, conflict))).value(
+            HistoryScope(accounts=('broker',)), stamp, 'USD')
