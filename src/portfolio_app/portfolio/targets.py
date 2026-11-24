@@ -17,7 +17,7 @@ class TargetExposures:
 
 def target_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *,
                      lookthrough: bool = False, group: InstrumentGroup | None = None,
-                     holdings: pd.DataFrame | None = None, resolved_components=None) -> TargetExposures:
+                     holdings: pd.DataFrame | None = None, resolved_components=None, output_columns=None) -> TargetExposures:
     """Targets survive missing quotes. Missing targets travel as a separate measure.
 
     Reusing ETF expansion and grouping preserves source identity, residuals and
@@ -27,7 +27,7 @@ def target_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *,
     targets = positions.get("target_allocation", pd.Series(float("nan"), index=positions.index))
     frames = project_measures(positions, (targets.fillna(0), targets.isna().astype(float)), funds,
                               positions if holdings is None else holdings, lookthrough=lookthrough, group=group,
-                              resolved_components=resolved_components)
+                              resolved_components=resolved_components, output_columns=output_columns)
     return TargetExposures(*frames)
 
 

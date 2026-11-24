@@ -316,8 +316,12 @@ def _component_columns(fund, resolve):
 
 
 def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd.DataFrame, *, additional_measures=(),
-                resolved_components=None) -> pd.DataFrame:
+                resolved_components=None, output_columns=None) -> pd.DataFrame:
+    measures = ("value", *additional_measures)
     columns = list(dict.fromkeys([*exposures.columns, "instrument_type", "exposure_kind"]))
+    if output_columns is not None:
+        required = set(output_columns).union(measures)
+        columns = [column for column in columns if column in required]
     resolve = constituent_resolver(holdings)
     if exposures.empty:
         return pd.DataFrame(columns=columns)
@@ -325,7 +329,6 @@ def expand_etfs(exposures: pd.DataFrame, funds: list[FundSnapshot], holdings: pd
     # within one revision of the fund catalog and the full holdings resolver.
     by_fund = {} if resolved_components is None else resolved_components
     result = {column: [] for column in columns}
-    measures = ("value", *additional_measures)
     missing = float("nan")
     for source in exposures.to_dict("records"):
         fund = matching_fund(source, funds)

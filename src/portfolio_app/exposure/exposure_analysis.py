@@ -52,7 +52,7 @@ def prepare_exposures(selected, funds, holdings, *, lookthrough, resolved_compon
 
 
 def project_measures(positions: pd.DataFrame, measures: Sequence[pd.Series], funds, holdings, *,
-                     lookthrough=False, group=None, keep_group_whole=False, resolved_components=None):
+                     lookthrough=False, group=None, keep_group_whole=False, resolved_components=None, output_columns=None):
     """Apply the same source-to-asset weights to related amounts and coverage flags."""
     # Only measures with the same source rows share a projection. This
     # retains each measure's coverage, validation and inferred metadata types.
@@ -63,6 +63,12 @@ def project_measures(positions: pd.DataFrame, measures: Sequence[pd.Series], fun
         mask = measure.notna().to_numpy(dtype=bool).tobytes()
         batches.setdefault(mask, []).append((index, measure))
 
+    requested = None if output_columns is None else {"value", *output_columns}
+    expanded_fields = requested
+    if group and requested is not None:
+        # Group by the original source and preserve the group identity before
+        # projecting the fields used by the chart's financial columns.
+        expanded_fields = requested | {"source_instrument", "asset_id", "asset_name", "ticker", "isin", "source_type"}
     frames = [None] * len(measures)
     for batch in batches.values():
         sources = project_contributions(positions, batch[0][1])
@@ -77,13 +83,16 @@ def project_measures(positions: pd.DataFrame, measures: Sequence[pd.Series], fun
             if group and keep_group_whole:
                 intact = sources.source_instrument.isin(group.members)
                 children = expand_etfs(sources.loc[~intact], funds, holdings, additional_measures=keys[1:],
-                                       resolved_components=resolved_components)
-                expanded = pd.concat([sources.loc[intact], children], ignore_index=True)
+                                       resolved_components=resolved_components, output_columns=expanded_fields)
+                whole = sources.loc[intact, sources.columns.isin(children.columns)]
+                expanded = pd.concat([whole, children], ignore_index=True)
             else:
                 expanded = expand_etfs(sources, funds, holdings, additional_measures=keys[1:],
-                                       resolved_components=resolved_components)
+                                       resolved_components=resolved_components, output_columns=expanded_fields)
         if group:
             expanded = group_exposures(expanded, group)
+        if requested is not None:
+            columns = [column for column in columns if column in requested]
         common = expanded.loc[:, columns].set_axis(columns, axis='columns')
         for key, (index, _) in zip(keys, batch):
             frames[index] = common.assign(value=expanded[key])

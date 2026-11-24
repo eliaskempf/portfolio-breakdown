@@ -23,7 +23,7 @@ class PerformanceExposures:
 
 def performance_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *, lookthrough: bool = False,
                           group: InstrumentGroup | None = None, holdings: pd.DataFrame | None = None,
-                          resolved_components=None) -> PerformanceExposures:
+                          resolved_components=None, output_columns=None) -> PerformanceExposures:
     """ETF constituent history is unknown; grouped whole funds retain their costs.
 
     Missing held positions travel separately so partial returns cannot appear
@@ -39,7 +39,7 @@ def performance_exposures(positions: pd.DataFrame, funds: list[FundSnapshot], *,
                 (held & ~known).astype(float), (known & positions.get('cost_estimated', pd.Series(False, index=positions.index))).astype(float))
     frames = project_measures(positions, measures, funds, positions if holdings is None else holdings,
                               lookthrough=lookthrough, group=group, keep_group_whole=True,
-                              resolved_components=resolved_components)
+                              resolved_components=resolved_components, output_columns=output_columns)
     return PerformanceExposures(*frames)
 
 

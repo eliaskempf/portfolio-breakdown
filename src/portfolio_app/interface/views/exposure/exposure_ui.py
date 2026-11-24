@@ -310,17 +310,18 @@ def render_analysis(data_dir, holdings, classifications, funds, *, demo, price_s
             except DataError as exc:
                 st.error(str(exc))
                 return valued
+        measure_fields = ("asset_id", "asset_name", *dimensions)
         if not unified and "target_allocation" in valued and valued["target_allocation"].notna().any():
             try:
                 targets = target_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group,
-                                           holdings=holdings, resolved_components=resolved_components)
+                                           holdings=holdings, resolved_components=resolved_components, output_columns=measure_fields)
             except DataError as exc:
                 st.error(str(exc))
                 return valued
         if not unified:
             try:
                 performance = performance_exposures(selected, expanded_funds, lookthrough=lookthrough, group=display_group,
-                                                     holdings=holdings, resolved_components=resolved_components)
+                                                     holdings=holdings, resolved_components=resolved_components, output_columns=measure_fields)
             except DataError as exc:
                 st.error(str(exc))
                 return valued
