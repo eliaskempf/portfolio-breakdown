@@ -265,6 +265,17 @@ class BackgroundHistory:
                 lambda: self.service.get(ticker, period, refresh=refresh))
         return result
 
+    def snapshot(self, ticker, period, **options):
+        """Read the display value and remember whether its job still needs observing."""
+        generation = self.coordinator.revision(self.workspace)
+        result = self.get(ticker, period, **options)
+        pending = self.pending(ticker, period)
+        if not pending and generation != self.coordinator.revision(self.workspace):
+            # The worker may have published after get() read the cache but before
+            # pending() observed its completion. Read the publication without enqueueing.
+            result, _ = self.service.cached(ticker, period, manual=options.get('manual', False))
+        return result, pending
+
     def pending(self, ticker, period):
         return self.coordinator.pending(self.workspace, ('history', ticker, period))
 

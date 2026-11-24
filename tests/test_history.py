@@ -79,7 +79,8 @@ def test_cached_timezone_offsets_convert_without_refresh(tmp_path):
     assert result.dates == ('2026-03-27T00:00:00','2026-03-30T00:00:00')
 
 
-def test_chart_renders_converted_and_native_history_across_dst(tmp_path):
+@pytest.mark.parametrize('background', [False, True], ids=['synchronous', 'finished-before-poll'])
+def test_chart_renders_converted_and_native_history_across_dst(tmp_path, background):
     from streamlit.testing.v1 import AppTest
     app = AppTest.from_string('''
 from pathlib import Path
@@ -92,11 +93,26 @@ class InventedProvider:
         return (HistoryResult(dates,(.9,.8),'EUR','fresh') if ticker.endswith('EUR=X')
                 else HistoryResult(dates,(100.,110.),'USD','fresh'))
 st.session_state.reporting_currency='EUR'
-render_market_history('INVENTED',Path(st.session_state.directory),key='synthetic_',demo=True,
-    service=HistoryService(InventedProvider(),Path(st.session_state.directory)/'history'))
+service=HistoryService(InventedProvider(),Path(st.session_state.directory)/'history')
+if st.session_state.background:
+    from portfolio_app.market.market_data import BackgroundHistory
+    class ImmediateJobs:
+        def __init__(self): self.finished=0
+        def request(self, workspace, key, work):
+            work()
+            self.finished+=1
+            return True
+        def pending(self,*args): return False
+        def revision(self,workspace): return self.finished
+    service=BackgroundHistory(service, ImmediateJobs(), st.session_state.directory)
+render_market_history('INVENTED',Path(st.session_state.directory),key='synthetic_',demo=not st.session_state.background,
+    service=service)
+st.caption('After the chart')
 ''',default_timeout=10)
     app.session_state.directory = str(tmp_path)
+    app.session_state.background = background
     app.run()
+    assert any(c.value == 'After the chart' for c in app.caption)
     assert not app.exception and len(app.get('plotly_chart')) == 1
     for period in ('1M','6M','1Y','5Y','Max'):
         app.get('button_group')[0].set_value(period).run()
@@ -110,3 +126,28 @@ render_market_history('INVENTED',Path(st.session_state.directory),key='synthetic
         assert figure['layout']['yaxis']['tickprefix'] == symbol
         assert 'Price: ' + symbol in figure['data'][0]['hovertemplate']
         assert figure['layout']['height'] == 340
+
+
+def test_price_refresh_finishing_during_mount_preserves_following_page_content(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    app = AppTest.from_string('''
+from pathlib import Path
+import streamlit as st
+from portfolio_app.market.history import HistoryResult
+from portfolio_app.interface.views.history.market_history_ui import render_market_history
+class FinishingHistory:
+    def __init__(self): self.checked = False
+    def get(self, *args, **kwargs):
+        if self.checked:
+            return HistoryResult(('2024-01-02',), (12.,), 'EUR', 'cached')
+        return HistoryResult()
+    def pending(self, *args):
+        waiting = not self.checked
+        self.checked = True
+        return waiting
+render_market_history('SYNTH', Path(st.session_state.directory), key='immediate_', service=FinishingHistory())
+st.button('Following control')
+''', default_timeout=10)
+    app.session_state.directory = str(tmp_path)
+    app.run()
+    assert not app.exception and any(button.label == 'Following control' for button in app.button)

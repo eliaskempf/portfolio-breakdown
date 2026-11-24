@@ -11,7 +11,7 @@ from portfolio_app.interface.shared.render_sections import render_sections
 from portfolio_app.interface.shared.charts import chart_config, style_figure, PALETTE
 from portfolio_app.interface.shared.currency_display import reporting_currency
 from portfolio_app.market.history import HistoryService, DemoHistoryProvider, PERIODS
-from portfolio_app.market.market_data import history_for
+from portfolio_app.market.market_data import BackgroundHistory, history_for
 
 
 def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
@@ -22,10 +22,16 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
         st.markdown(f'**{heading}**')
     if service is None:
         service = HistoryService(DemoHistoryProvider(), data_dir / '.cache' / 'history') if demo else history_for(data_dir)
+    def quote(symbol, period, **options):
+        if isinstance(service, BackgroundHistory):
+            return service.snapshot(symbol, period, **options)
+        result = service.get(symbol, period, **options)
+        return result, not demo and service.pending(symbol, period)
+
     # Valuation/contract metadata can identify units while the first chart loads.
     saved_period = st.session_state.get(key+'period') or '1Y'
-    initial = service.get(ticker, saved_period, manual=manual)
-    native = initial.currency or expected_currency or native_currency
+    initial = quote(ticker, saved_period, manual=manual)
+    native = initial[0].currency or expected_currency or native_currency
     with st.container(horizontal=True, horizontal_alignment='distribute', vertical_alignment='bottom'):
         period = st.segmented_control('Period', list(PERIODS), default='1Y', required=True, key=key+'period', label_visibility='collapsed') or '1Y'
         history_currency = reporting_currency()
@@ -34,7 +40,7 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
                 help='Chart currency. Conversion uses historical exchange rates.')
 
     def read(*, use_initial=False):
-        result = initial if use_initial else service.get(ticker, period, manual=manual)
+        result, pending = initial if use_initial else quote(ticker, period, manual=manual)
         if result.prices and expected_currency and result.currency != expected_currency:
             result = replace(result, dates=(), prices=(), status='unavailable',
                              note='History returned an unexpected currency; the reference chart is withheld.')
@@ -45,12 +51,12 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
             for units in {result.currency, history_currency} - {'EUR'}:
                 symbol = f'{units}EUR=X'
                 requested.append(symbol)
-                legs[units] = service.get(symbol, period)
+                legs[units], checking = quote(symbol, period)
+                pending = pending or checking
             result = convert_price_history(result, history_currency, legs)
-        return result, requested
+        return result, requested, pending
 
-    result, requested = read(use_initial=period == saved_period)
-    pending = not demo and any(service.pending(symbol, period) for symbol in requested)
+    result, requested, pending = read(use_initial=period == saved_period)
     from portfolio_app.interface.shared.dialog_runtime import local_fragment_updates
 
     @st.fragment
@@ -64,15 +70,15 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
             if not compact:
                 sections['market_description'].caption(caption.format(currency=result.currency))
 
+        mounted = False
         @status_fragment()
         @local_fragment_updates()
         def progress(poll):
             nonlocal result, requested, pending
             if is_active is not None and not is_active():
                 return
-            if pending and not any(service.pending(symbol, period) for symbol in requested):
-                updated, requested = read()
-                pending = any(service.pending(symbol, period) for symbol in requested)
+            if mounted and pending and not any(service.pending(symbol, period) for symbol in requested):
+                updated, requested, pending = read()
                 if not pending:
                     previous, result = result, updated
                     if (result.dates, result.prices, result.currency) != (previous.dates, previous.prices, previous.currency):
@@ -86,7 +92,9 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
             with details['market_refresh']:
                 if pending:
                     st.caption('Updating market-price history in the background…')
-                    poll(2)
+                    # A fast job can finish during the enclosing page render.
+                    # Publish on a local tick so the rest of that page still mounts.
+                    poll(.1 if not mounted and not any(service.pending(symbol, period) for symbol in requested) else 2)
                 elif not demo and result.status in {'stale', 'unavailable'} and ticker and not manual:
                     if st.button('Retry history', key=key+'retry'):
                         service.get(ticker, period, refresh=True)
@@ -95,6 +103,7 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
 
         with sections['market_status']:
             progress()
+        mounted = True
     market_result()
     return result
 
