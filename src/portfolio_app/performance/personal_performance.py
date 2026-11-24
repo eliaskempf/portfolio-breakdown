@@ -124,6 +124,9 @@ class HistoryCalculation:
         self._capital_dates = sorted(set(self._flow_dates) | {stamp for stamp, _ in self._unresolved_receipts if stamp})
         self.fingerprint = history_fingerprint(journal)
         self._facts = OrderedDict()
+        # The selected chart owns this compact summary. Comparison series can
+        # read it without displacing it with sibling scopes.
+        self._validated_history_dates = {}
         self._flows = OrderedDict()
         self._position_flows = {}
 

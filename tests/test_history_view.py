@@ -300,3 +300,60 @@ def test_short_chart_keeps_fx_validation_outside_its_window():
         Observation('late', 'price', 'holding', '2025-02-20', 13, 'EUR')))
     with pytest.raises(DataError, match='Conflicting direct and inverse'):
         history_view(journal, scope, store, '1M', today=date(2025, 3, 1))
+
+
+def test_cash_scope_reuses_validated_closes_after_point_cache_eviction(monkeypatch):
+    from datetime import timedelta
+    from portfolio_app.ledger.account_journal import Account, Event
+    from portfolio_app.performance.history_view import full_history_time_weighted
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    journal, _, _ = fixture()
+    journal = replace(journal, accounts=(Account('cash', 'Invented cash'),),
+                      events=(Event('opening', '2024-01-01', 'cash_open', 'cash', 'EUR', 100),
+                              Event('withdraw', '2024-01-11', 'cash_flow', 'cash', 'EUR', -250),
+                              Event('deposit', '2024-01-12', 'cash_flow', 'cash', 'EUR', 250)))
+    scope = HistoryScope(('holding',), ('cash',))
+    days = [(date(2024, 1, 1) + timedelta(days=i)).isoformat() for i in range(185)]
+    store = ObservationStore(tuple(Observation('price-'+day, 'price', 'holding', day, D(10), 'EUR') for day in days))
+    today = date.fromisoformat(days[-1])
+    calculation = HistoryCalculation(journal, store)
+    history_view(journal, scope, store, '1Y', today=today, calculation=calculation)
+    full_history_time_weighted(calculation, HistoryScope(accounts=('cash',)), today, 'EUR')
+    history_view(journal, HistoryScope(accounts=('cash',)), store, '1M', today=today,
+                 include_points=False, calculation=calculation)
+    calculation._facts.clear()
+    requested = set()
+    original = calculation.value
+    def track(selection, day, target):
+        if selection == scope:
+            if not requested:
+                calculation._validated_history_dates.clear()
+            requested.add(day)
+        return original(selection, day, target)
+    monkeypatch.setattr(calculation, 'value', track)
+    view = history_view(journal, scope, store, '1M', today=today, calculation=calculation)
+    assert view == history_view(journal, scope, store, '1M', today=today)
+    assert view.all_result.time_weighted is None
+    assert not requested.intersection(days[1:130])
+
+
+def test_unrecorded_range_boundary_can_extend_only_its_own_supported_history():
+    from portfolio_app.ledger.account_journal import Account, Event
+    from portfolio_app.performance.history_view import full_history_summary
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    journal, _, _ = fixture()
+    journal = replace(journal, accounts=(Account('cash', 'Invented cash'),),
+                      events=(Event('opening', '2024-01-01', 'cash_open', 'cash', 'EUR', 100),))
+    scope = HistoryScope(('holding',), ('cash',))
+    friday = Observation('close', 'price', 'holding', '2024-03-15', D(11), 'EUR', listing='INVENTED',
+                         calendar='XETR', exchange_timezone='Europe/Berlin')
+    store, today = ObservationStore((friday,)), date(2024, 6, 16)
+    calculation = HistoryCalculation(journal, store)
+    for period, end, useful in [('3M', '2024-03-16', True), ('1M', '2024-03-15', False),
+                                ('3M', '2024-03-16', True)]:
+        view = history_view(journal, scope, store, period, today=today, calculation=calculation)
+        assert view == history_view(journal, scope, store, period, today=today)
+        assert (view.all_end, view.useful) == (end, useful)
+    assert full_history_summary(calculation, scope, today, 'EUR').all_end == '2024-03-15'

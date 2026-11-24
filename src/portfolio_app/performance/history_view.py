@@ -46,9 +46,12 @@ class HistoryView:
 
 def _valuation_stamps(calculation, scope, target, dates, recorded, beginning, first, last):
     flows, _ = calculation.flows(scope, beginning, last, target)
-    return sorted({day for day in recorded.chart_dates if beginning <= day <= last}
-                  | {flow.date for flow in flows} | {day for day in dates if beginning <= day <= last}
-                  | {beginning, first, last})
+    days = ({day for day in recorded.chart_dates if beginning <= day <= last}
+            | {flow.date for flow in flows} | {day for day in dates if beginning <= day <= last}
+            | {beginning, last})
+    extra = first if first not in days else None
+    days.add(first)
+    return sorted(days), extra
 
 
 def _period_result(calculation, scope, target, dates, start, end, negative_dates, annualized):
@@ -67,24 +70,46 @@ def _requires_full_valuation_scan(scope, recorded):
     return bool(scope.accounts) or recorded.requires_fx_validation
 
 
-def _all_history(calculation, scope, target, dates, recorded, beginning, last, stamps,
-                 *, annualized, valuations=None):
-    if valuations is None and _requires_full_valuation_scan(scope, recorded):
-        valuations = {day: calculation.value(scope, day, target) for day in stamps}
+@dataclass(frozen=True)
+class _ValidatedDates:
+    last_supported: str
+    supported_count: int
+    negative_dates: tuple[str, ...]
 
+
+def _all_history(calculation, scope, target, dates, recorded, beginning, last, stamps,
+                 *, annualized, coverage, valuations=None, extra=None, retain_for_chart=False):
     def value(day):
         return valuations[day] if valuations is not None else calculation.value(scope, day, target)
 
-    end = next((day for day in reversed(stamps) if value(day).amount is not None), last)
-    if valuations is None:
-        # FIFO inventory is long-only and validated prices are positive. Only
-        # explicit scope valuations (including flow boundaries) can be negative.
-        negative = tuple(sorted(day for day in recorded.negative_equity_dates if beginning <= day <= last))
-    else:
+    new_coverage = None
+    needs_scan = _requires_full_valuation_scan(scope, recorded)
+    if needs_scan and coverage is None and valuations is None:
+        valuations = {day: calculation.value(scope, day, target) for day in stamps}
+    if coverage is not None:
+        negative = coverage.negative_dates
+    elif valuations is not None:
         negative = calculation._get(('negative_equity_dates', scope, beginning, last, target), lambda:
             known_negative_equity_dates(calculation.journal, scope, calculation.observations, beginning, last,
                                         target, valuations=valuations, calculation=calculation))
-    return end, negative, _period_result(calculation, scope, target, dates, beginning, end, negative, annualized)
+        if retain_for_chart and needs_scan:
+            # A window boundary without a recorded close is specific to this range.
+            supported = [day for day in stamps if day != extra and value(day).amount is not None]
+            new_coverage = coverage = _ValidatedDates(supported[-1] if supported else '', len(supported), negative)
+    else:
+        # Long-only securities with positive prices need only explicit negative scope marks.
+        negative = tuple(sorted(day for day in recorded.negative_equity_dates if beginning <= day <= last))
+    if coverage is None:
+        end = next((day for day in reversed(stamps) if value(day).amount is not None), last)
+        useful = None
+    else:
+        supported_extra = extra if extra and value(extra).amount is not None else ''
+        end = max(coverage.last_supported, supported_extra) or last
+        useful = coverage.supported_count + bool(supported_extra) >= 2
+    result = _period_result(calculation, scope, target, dates, beginning, end, negative, annualized)
+    if new_coverage is not None:
+        calculation._validated_history_dates = {(scope, target, beginning, last): new_coverage}
+    return end, negative, result, useful
 
 
 def _full_interval(calculation, scope, today, target, *, annualized):
@@ -92,9 +117,9 @@ def _full_interval(calculation, scope, today, target, *, annualized):
     last = today.isoformat()
     beginning = dates[0] if dates else last
     recorded = calculation.observation_dates(scope, target)
-    stamps = _valuation_stamps(calculation, scope, target, dates, recorded, beginning, beginning, last)
-    end, _, result = _all_history(calculation, scope, target, dates, recorded, beginning, last, stamps,
-                                  annualized=annualized)
+    stamps, _ = _valuation_stamps(calculation, scope, target, dates, recorded, beginning, beginning, last)
+    end, _, result, _ = _all_history(calculation, scope, target, dates, recorded, beginning, last, stamps,
+        annualized=annualized, coverage=calculation._validated_history_dates.get((scope, target, beginning, last)))
     return beginning, end, result, stamps
 
 
@@ -130,16 +155,18 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     last = today.isoformat()
     recorded = calculation.observation_dates(scope, target)
     beginning = earliest.isoformat()
-    stamps = _valuation_stamps(calculation, scope, target, dates, recorded, beginning, first, last)
-    full_scan = first <= beginning or _requires_full_valuation_scan(scope, recorded)
+    stamps, extra = _valuation_stamps(calculation, scope, target, dates, recorded, beginning, first, last)
+    coverage = calculation._validated_history_dates.get((scope, target, beginning, last))
+    full_scan = first <= beginning or (_requires_full_valuation_scan(scope, recorded) and coverage is None)
     valuations = {stamp: calculation.value(scope, stamp, target) for stamp in stamps if full_scan or stamp >= first}
     values = {stamp: valuation.amount for stamp, valuation in valuations.items()}
     available = [stamp for stamp, value in values.items() if value is not None]
     all_start = beginning
-    all_end, negative_dates, all_result = _all_history(calculation, scope, target, dates, recorded,
-        beginning, last, stamps, annualized=annualized, valuations=valuations if full_scan else None)
-    useful = len(available) >= 2
-    if not useful and not full_scan and all_result.ending_value is not None:
+    all_end, negative_dates, all_result, validated_useful = _all_history(calculation, scope, target, dates, recorded,
+        beginning, last, stamps, annualized=annualized, coverage=coverage,
+        valuations=valuations if full_scan or coverage is not None else None, extra=extra, retain_for_chart=include_points)
+    useful = len(available) >= 2 if validated_useful is None else validated_useful
+    if validated_useful is None and not useful and not full_scan and all_result.ending_value is not None:
         # The last supported endpoint is known; an earlier close can establish
         # chart availability even when the visible window is entirely empty.
         useful = any(calculation.value(scope, day, target).amount is not None
