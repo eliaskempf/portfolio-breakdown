@@ -335,3 +335,78 @@ def test_queue_does_not_retain_or_calculate_abandoned_risk_selections(monkeypatc
         release.set()
         pool.close()
     assert called == ['active'] and pool._errors == {}
+
+
+@pytest.mark.parametrize('current', [True, False])
+def test_simultaneous_initial_risk_reads_reuse_only_current_evidence(current):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from portfolio_app.analytics import risk_refresh
+
+    began, joined, release = Event(), Event(), Event()
+    class Selection:
+        def matches(self, other):
+            joined.set()
+            return self is other
+
+        def proxies_current(self):
+            return True
+
+    selection = Selection()
+    workspace = ('synthetic-cold-read', None)
+    calls = []
+    def calculate(*, cached_read):
+        calls.append(cached_read)
+        began.set()
+        assert release.wait(5)
+        histories = SimpleNamespace(due=False, inputs_current=lambda *, allow_due: current)
+        return SimpleNamespace(histories=histories)
+
+    def read():
+        return risk_refresh.read_risk_snapshot(workspace, selection, calculate, force=False)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(read)
+        try:
+            assert began.wait(3)
+            second = pool.submit(read)
+            assert joined.wait(3)
+        finally:
+            release.set()
+        assert (first.result() is second.result()) == current
+    assert len(calls) == (1 if current else 2)
+    # A later visit consults its own session and current inputs.
+    read()
+    assert len(calls) == (2 if current else 3)
+
+
+def test_slow_initial_risk_read_leaves_other_requests_independent():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from portfolio_app.analytics.risk_refresh import read_risk_snapshot
+
+    first, other = (risk_updates.RiskSelection((name,), (), pd.DataFrame()) for name in ('first', 'other'))
+    workspace = ('synthetic-cold-read', None)
+    began, release = Event(), Event()
+
+    def slow(*, cached_read):
+        began.set()
+        assert release.wait(5)
+        raise ValueError('synthetic calculation failed')
+
+    def quick(*, cached_read):
+        return 'separate result'
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        busy = pool.submit(read_risk_snapshot, workspace, first, slow, force=False)
+        try:
+            assert began.wait(3)
+            for owner, selection, force in [(workspace, other, False), (workspace, first, True),
+                                             (('second-workspace', None), first, False)]:
+                pending = pool.submit(read_risk_snapshot, owner, selection, quick, force=force)
+                assert pending.result(timeout=3) == 'separate result'
+        finally:
+            release.set()
+        with pytest.raises(ValueError, match='synthetic calculation failed'):
+            busy.result()
+    assert read_risk_snapshot(workspace, first, quick, force=False) == 'separate result'

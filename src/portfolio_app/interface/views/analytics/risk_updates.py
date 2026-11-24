@@ -9,7 +9,7 @@ from portfolio_app.analytics.analytics_service import load_risk
 from portfolio_app.analytics.risk import RiskAnalytics
 from portfolio_app.analytics.risk_data import RiskHistoryService
 from portfolio_app.analytics.risk_refresh import (
-    active_risk_refresh, cached_history_reader, retry_deferred, start_risk_refresh, workspace_history_cache,
+    active_risk_refresh, read_risk_snapshot, retry_deferred, start_risk_refresh, workspace_history_cache,
 )
 from portfolio_app.interface.shared.background_ui import refresh_allowed, status_fragment
 from portfolio_app.workspace.workspace_lock import workspace_context
@@ -32,6 +32,7 @@ class RiskSelection:
 
 @dataclass(frozen=True)
 class RiskSnapshot:
+    """Completed results and source rows are read-only across subscribing views."""
     selection: RiskSelection
     histories: RiskHistoryService
     result: RiskAnalytics
@@ -137,7 +138,7 @@ def view_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
     if demo:
         return publish(calculate())
 
-    saved = calculate(cached_read=cached_history_reader(workspace))
+    saved = read_risk_snapshot(workspace, selection, calculate, force=refresh)
     if not saved.histories.due:
         return publish(saved)
     if deferred:

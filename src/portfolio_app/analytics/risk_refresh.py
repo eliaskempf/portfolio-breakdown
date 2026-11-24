@@ -1,7 +1,7 @@
 """One background calculation publishes a complete risk result for its selection."""
 from concurrent.futures import Future
 from functools import partial
-from threading import RLock
+from threading import Lock, RLock
 from time import monotonic
 from weakref import WeakKeyDictionary, WeakValueDictionary, ref
 
@@ -68,6 +68,7 @@ def _run_pending(target):
 _lock = RLock()
 _active = WeakKeyDictionary()
 _readers = WeakKeyDictionary()
+_initial_reads = {}
 _caches = WeakValueDictionary()
 _failures = WeakKeyDictionary()
 
@@ -116,6 +117,36 @@ def cached_history_reader(workspace):
                     pinned.setdefault(key, entry)
         _readers[read] = workspace, pinned
     return read
+
+
+class _InitialRiskRead:
+    def __init__(self, workspace, selection, force):
+        self.workspace, self.selection, self.force = workspace, selection, force
+        self.lock = Lock()
+        self.snapshot = None
+
+
+def read_risk_snapshot(workspace, selection, calculate, *, force):
+    """Share acquisition and calculation only while matching readers overlap."""
+    with _lock:
+        read = next((r for r in _initial_reads if r.workspace == workspace and r.force == force
+                     and r.selection.matches(selection)), None)
+        if read is None:
+            read = _InitialRiskRead(workspace, selection, force)
+        _initial_reads[read] = _initial_reads.get(read, 0) + 1
+    try:
+        with read.lock:
+            snapshot = read.snapshot
+            if (snapshot is not None and selection.proxies_current()
+                    and snapshot.histories.inputs_current(allow_due=snapshot.histories.due)):
+                return snapshot
+            read.snapshot = calculate(cached_read=cached_history_reader(workspace))
+            return read.snapshot
+    finally:
+        with _lock:
+            _initial_reads[read] -= 1
+            if not _initial_reads[read]:
+                del _initial_reads[read]
 
 
 def active_risk_refresh(workspace, selection, *, force):
