@@ -136,6 +136,11 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
             raise AssertionError(f'Unexpected adjusted history requests: {fetched}')
         return report
     if scenario == 'exposure':
+        for visit in report['main_tabs']:
+            during = interval(visit)
+            visit['journal_reads'] = sum(e['event'] == 'journal_read' for e in during)
+            if variant == 'candidate' and visit['journal_reads'] > 1:
+                raise AssertionError(f"Repeated journal reads while navigating to {visit['name']}")
         if visit := report['fundamentals']:
             start, end = visit.pop('event_range')
             during = events[start:end]
@@ -257,6 +262,11 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
 
 
 def check_exposure(report, expected, surface, profile):
+    for visit in report['main_tabs']:
+        digest = hashlib.sha256(json.dumps(visit.pop('sample'), ensure_ascii=False).encode()).hexdigest()
+        if digest != expected.setdefault((surface, visit['name']), digest):
+            raise AssertionError(f"Displayed {visit['name']} data changed between visits or binaries")
+        visit['digest'] = digest
     for visit in report['visits']:
         sample = visit.pop('sample')
         if sample != expected.setdefault(surface, sample) or visit['rows'] != (12 if profile == 'small' else 100):

@@ -789,7 +789,10 @@ checks the source disclosure for all 65,624 ownership contributions and compares
 every displayed sector label and value across binaries. On its second sector visit,
 it switches the grouping to Account and Investment. It times the painted charts
 and populated tables, checks their row counts, and compares all four account
-amounts and the 30 largest investment contributions across binaries.
+amounts and the 30 largest investment contributions across binaries. It then visits
+Positions, Rebalance and Overview twice. Each visit records the first populated
+frame, settled frame and journal read count. The comparison checks all 120
+displayed position rows, the planning controls and the allocation chart data.
 
 The native historical-risk comparison uses 48 market-valued listings. It starts
 with the benchmark and 47 adjusted histories already cached. The first Calculate

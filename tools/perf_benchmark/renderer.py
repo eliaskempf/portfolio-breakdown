@@ -340,17 +340,56 @@ def exposure_dimension_visit(read, name):
     return result
 
 
+def measure_main_tabs(read, trial):
+    """Measure a populated first frame and settled content after leaving a ready view."""
+    visits = []
+    for name in ('Positions', 'Rebalance', 'Overview') * 2:
+        first_event = event_count(trial)
+        read("const name = " + json.dumps(name) + """; const button = tab(name);
+            w.tabVisit = null;
+            const start = w.performance.now();
+            button.click();
+            let first = null;
+            function frame() {
+                const elapsed = w.performance.now() - start;
+                const positions = name === 'Positions' && findTable('.st-key-tour_position_list', 'Positions');
+                const rows = positions?.tBodies?.[0]?.querySelectorAll('tr[data-position-id]');
+                const amount = d.querySelector('.st-key-planning_amount input');
+                const calculate = d.querySelector('.st-key-planning_calculate button');
+                const chart = d.querySelector('.st-key-overview_allocation .js-plotly-plot');
+                const ready = tab(name)?.getAttribute('aria-selected') === 'true' && (
+                    name === 'Positions' ? rows?.length === 120 :
+                    name === 'Rebalance' ? visible(calculate) && visible(amount) : visible(allocation()));
+                if (ready && first === null) first = elapsed;
+                if (ready && !running()) {
+                    const sample = name === 'Positions' ? Array.from(rows, row => [row.dataset.positionId, row.innerText]) :
+                        name === 'Rebalance' ? [amount.value, calculate.innerText] :
+                        [Array.from(chart.data[0].labels), Array.from(chart.data[0].values)];
+                    w.tabVisit = {name, paint_ms:first, settled_ms:elapsed, sample};
+                } else if (exception() || elapsed > 30000) w.tabVisit = {error:name + ' did not finish rendering'};
+                else w.requestAnimationFrame(frame);
+            }
+            w.requestAnimationFrame(frame); return true;""")
+        result = wait(lambda: read('return w.tabVisit;'))
+        if 'error' in result:
+            raise RuntimeError(result['error'])
+        result['event_range'] = [first_event, event_count(trial)]
+        visits.append(result)
+    return visits
+
+
 def exercise_exposure(evaluate, trial, variant, *, themes=False, company_accounts=False):
     """Time the first populated table frame and verify local source disclosure."""
     context = CONTEXT + """
         const tab = name => [...d.querySelectorAll('[role=tab]')].find(t => t.textContent.trim() === name);
-        const table = () => {
-            const host = d.querySelector('.st-key-tour_exposure_assets .stBidiComponent');
+        const findTable = (container, name) => {
+            const host = d.querySelector(container + ' .stBidiComponent');
             if (!visible(host)) return null;
-            const selector = 'table[aria-label="Exposure assets"]';
+            const selector = 'table[aria-label="' + name + '"]';
             return host.querySelector(selector) || [host,...host.querySelectorAll('*')]
                 .map(e=>e.shadowRoot?.querySelector(selector)).find(Boolean);
         };
+        const table = () => findTable('.st-key-tour_exposure_assets', 'Exposure assets');
     """
     def read(js):
         return evaluate('(() => {' + context + js + '})()')
@@ -520,7 +559,9 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False, company_account
         read("tab('Overview').click(); return true;")
         wait(lambda: ready() and read("return !table() && tab('Overview').getAttribute('aria-selected') === 'true';"))
     fundamentals = exercise_fundamentals(evaluate, trial, variant) if themes else None
-    return dict(ready_at=ready_at, visits=visits, themes=theme_visits, details=details, companies=companies, fundamentals=fundamentals)
+    main_tabs = measure_main_tabs(read, trial) if company_accounts else []
+    return dict(ready_at=ready_at, visits=visits, themes=theme_visits, details=details, companies=companies,
+                fundamentals=fundamentals, main_tabs=main_tabs)
 
 
 def exercise_risk(evaluate, trial, *, await_refresh=False):

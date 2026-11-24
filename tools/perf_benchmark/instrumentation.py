@@ -54,6 +54,9 @@ def observe_server(trial):
         analytics_service.risk_analytics = counted(analytics_service.risk_analytics, 'risk_calculated')
         return
     if scenario == 'exposure':
+        if os.environ.get('PORTFOLIO_BENCHMARK_COMPANY_ACCOUNTS') == '1':
+            from portfolio_app.ledger import account_journal
+            account_journal.load_journal = counted(account_journal.load_journal, 'journal_read')
         if os.environ.get('PORTFOLIO_BENCHMARK_THEMES') == '1':
             from perf_benchmark.fixture import benchmark_fundamentals
             from portfolio_app.analytics.fundamentals import YahooFundamentalsProvider
