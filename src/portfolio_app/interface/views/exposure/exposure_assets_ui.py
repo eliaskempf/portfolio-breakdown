@@ -2,6 +2,7 @@
 from portfolio_app.interface.shared.chart_hover import chart_hover
 
 from portfolio_app.interface.shared.currency_display import currency_symbol, money
+from portfolio_app.interface.shared.display_names import instrument_name
 from portfolio_app.interface.shared.input_cache import cached_input
 from portfolio_app.interface.shared.ui_help import column_help
 from hashlib import sha256
@@ -14,7 +15,7 @@ from portfolio_app.interface.shared.charts import chart_config
 from portfolio_app.interface.shared.charts import style_figure
 from portfolio_app.funds.etf import matching_fund
 from portfolio_app.interface.views.funds.etf_ui import render_fund_details
-from portfolio_app.exposure.exposure_tables import asset_exposure_table, asset_search_mask, asset_source_amounts, exposure_sources
+from portfolio_app.exposure.exposure_tables import asset_exposure_table, asset_search_mask, asset_source_values, exposure_sources
 from portfolio_app.exposure.label_presentation import taxonomy_colors
 from portfolio_app.interface.shared.list_ui import BOUNDED_LIST_HEIGHT, ListColumn, frame_rows, packed_frame_rows, render_list
 from portfolio_app.exposure.taxonomy import copy_classifications, describe, taxonomy_names
@@ -22,24 +23,34 @@ from portfolio_app.exposure.taxonomy import copy_classifications, describe, taxo
 
 def preview_facts(exposures, selected):
     """Numeric facts for local disclosure. Share each distinct source label across assets."""
-    values = asset_source_amounts(exposures, selected).sort_values('Value', ascending=False, na_position='last')
+    values = asset_source_values(exposures).sort_values('Value', ascending=False, na_position='last')
     counts = values.asset_id.value_counts().to_dict()
     top = values.groupby('asset_id', sort=False).head(4)
-    labels = top['Source'].fillna('Unavailable')
-    prefix = top.Exposure.isin(('Direct', 'Future', 'Futures proxy'))
-    labels.loc[prefix] = top.loc[prefix, 'Exposure'] + ' · ' + labels.loc[prefix]
-    accounts = top.Account.fillna('').ne('')
-    labels.loc[accounts] += ' · ' + top.loc[accounts, 'Account']
-    codes, names = pd.factorize(labels)
+    names = {}
+    for row in selected.itertuples(index=False):
+        name = instrument_name(row)
+        account = getattr(row, 'account', None)
+        names[row.position_id] = f'{name} · {account}' if pd.notna(account) and account else name
+
+    prefixes = top.Exposure.where(top.Exposure.isin(('Direct', 'Future', 'Futures proxy')), '')
+    label_ids = {}
+    source_labels = {}
     by_asset = {}
-    for asset, code, amount, share in zip(top.asset_id, codes.tolist(), top.Value, top['% of asset exposure']):
-        # Round once with the same precision as Python's monetary display. Formatting
-        # and preview markup are deferred until the user expands a row.
+    amounts = top.Value.to_numpy(dtype=object, na_value=None).tolist()
+    shares = top['% of asset exposure'].to_numpy(dtype=object, na_value=None).tolist()
+    for asset, position, prefix, amount, share in zip(top.asset_id.tolist(), top.source_position_id.tolist(),
+                                                     prefixes.tolist(), amounts, shares):
+        key = (position, prefix)
+        if key not in source_labels:
+            label = names.get(position, 'Unavailable')
+            if prefix:
+                label = f'{prefix} · {label}'
+            source_labels[key] = label_ids.setdefault(label, len(label_ids))
         if asset not in by_asset:
             by_asset[asset] = [max(0, int(counts[asset]) - 4)]
-        by_asset[asset].append([code, round(amount, 2) if pd.notna(amount) else None,
-                               round(share, 2) if pd.notna(share) else None])
-    return {'labels': names.tolist(), 'assets': by_asset}
+        by_asset[asset].append([source_labels[key], round(amount, 2) if amount is not None else None,
+                               round(share, 2) if share is not None else None])
+    return {'labels': list(label_ids), 'assets': by_asset}
 
 
 def render_assets(exposures, selected, holdings, funds, classifications, *, query='', show_tickers=False, show_chart=False, complete=True, breakdown=False, context='exposure', footer='', load_geography, measure=None, equity=None, contribution_key, current_view=None):

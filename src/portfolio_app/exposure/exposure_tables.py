@@ -52,24 +52,39 @@ def asset_exposure_table(exposures, *, classifications=None, taxonomy='labels', 
     return result.sort_values(['Total', 'Asset'], ascending=[False, True], na_position='last', ignore_index=True)
 
 
-def asset_source_amounts(exposures, selected):
-    """Aggregate all asset/source pairs once, with asset-relative denominators."""
-    grouped = exposures.groupby(['asset_id', 'source_position_id', 'direct_or_indirect'], sort=False).value
-    values = grouped.sum().mask(grouped.count() < grouped.size()).rename('Value').reset_index()
+def asset_source_values(exposures):
+    """One amount per asset, position and exposure kind, in first appearance order."""
+    keys = ['asset_id', 'source_position_id', 'direct_or_indirect']
+    columns = [*keys, 'value']
+    if 'source_channel' in exposures:
+        columns.append('source_channel')
+    rows = exposures[columns].dropna(subset=keys)
+    repeated = rows.duplicated(keys)
+    values = rows.loc[~repeated].rename(columns={'value': 'Value', 'source_channel': 'Exposure'}).reset_index(drop=True)
+    if repeated.any():
+        # Different legs can reach the same asset from the same position. Preserve
+        # pandas' compensated sum and keep any partially valued group unknown.
+        grouped = rows.groupby(keys, sort=False, observed=True).value
+        amounts = grouped.sum().mask(grouped.count() < grouped.size())
+        values['Value'] = amounts.reindex(pd.MultiIndex.from_frame(values[keys])).array
     totals = values.groupby('asset_id', sort=False)['Value']
     total = totals.transform('sum').mask(totals.transform('count') < totals.transform('size'))
     values['% of asset exposure'] = 100 * values['Value'] / total.where(total > 0)
+    if 'Exposure' not in values:
+        values['Exposure'] = values.direct_or_indirect.map({'direct': 'Direct', 'indirect': 'ETF', 'future': 'Futures proxy'})
+    return values
+
+
+def asset_source_amounts(exposures, selected):
+    """Add position metadata to the source amounts shown in financial details."""
+    values = asset_source_values(exposures)
+    channels = values.pop('Exposure')
     positions = selected.set_index('position_id')
     source = values.source_position_id
-    names = {position: instrument_name(row) for position, row in positions.iterrows()}
+    names = {row.position_id: instrument_name(row) for row in selected.itertuples(index=False)}
     values['Source'] = pd.Series(names, dtype=str).reindex(source).array
     values['Account'] = positions['account'].reindex(source).array if 'account' in positions else ''
-    values['Exposure'] = values.direct_or_indirect.map({'direct': 'Direct', 'indirect': 'ETF', 'future': 'Futures proxy'})
-    if 'source_channel' in exposures:
-        channels = exposures.drop_duplicates(['asset_id', 'source_position_id', 'direct_or_indirect'])[
-            ['asset_id', 'source_position_id', 'direct_or_indirect', 'source_channel']]
-        values = values.merge(channels, on=['asset_id', 'source_position_id', 'direct_or_indirect'], how='left')
-        values['Exposure'] = values.pop('source_channel')
+    values['Exposure'] = channels
     return values
 
 

@@ -176,3 +176,59 @@ def test_packed_asset_rows_preserve_nulls_labels_numbers_and_source_identity():
     decoded = [dict(zip(payload['fields'], row)) for row in json.loads(payload['values'])]
     assert [dict(row, id=row[payload['idColumn']]) for row in decoded] == frame_rows(table, id_column='asset_id')
     assert rows.ids == {'a', 'b'}
+
+
+def test_source_values_aggregate_only_repeated_position_legs(monkeypatch):
+    from portfolio_app.exposure.exposure_tables import asset_source_values
+
+    rows = pd.DataFrame([
+        ('a', 'held', 'indirect', 20., None),
+        ('a', 'other', 'future', -5., 'Future'),
+        ('a', None, 'direct', 900., 'Direct'),
+        ('b', 'held', 'indirect', 0., 'ETF'),
+    ], columns=['asset_id', 'source_position_id', 'direct_or_indirect', 'value', 'source_channel'],
+       index=[5, 2, 5, 2])
+    grouped_pairs = []
+    groupby = pd.DataFrame.groupby
+    def track(frame, by, *args, **kwargs):
+        if isinstance(by, list):
+            grouped_pairs.append(tuple(by))
+        return groupby(frame, by, *args, **kwargs)
+    monkeypatch.setattr(pd.DataFrame, 'groupby', track)
+
+    unique = asset_source_values(rows)
+    assert not grouped_pairs
+    assert unique['Value'].tolist() == [20., -5., 0.]
+    assert unique['% of asset exposure'][:2].tolist() == pytest.approx([100 * 20 / 15, -100 * 5 / 15])
+    assert pd.isna(unique['% of asset exposure'].iloc[2])
+
+    extra = rows.iloc[[0, 3]].copy()
+    extra['value'] = [5., float('nan')]
+    extra['source_channel'] = 'Different second channel'
+    combined = asset_source_values(pd.concat([rows, extra]))
+    assert grouped_pairs == [('asset_id', 'source_position_id', 'direct_or_indirect')]
+    assert combined['Value'][:2].tolist() == [25., -5.]
+    assert combined['% of asset exposure'][:2].tolist() == [125., -25.]
+    assert pd.isna(combined['Value'].iloc[2])
+    assert pd.isna(combined['Exposure'].iloc[0])
+
+
+def test_previews_share_labels_across_positions_and_keep_unknown_and_signed_values():
+    from portfolio_app.interface.views.exposure.exposure_assets_ui import preview_facts
+
+    selected = pd.DataFrame([
+        dict(position_id=position, name='Invented shared', account='Invented account')
+        for position in ('p1', 'p2')
+    ])
+    rows = pd.DataFrame([
+        ('a', 'p1', 'direct', 2.675, 'Direct'),
+        ('b', 'p2', 'direct', 1., 'Direct'),
+        ('a', 'p1', 'future', -1., 'Future'),
+        ('c', 'unknown', 'indirect', pd.NA, pd.NA),
+    ], columns=['asset_id', 'source_position_id', 'direct_or_indirect', 'value', 'source_channel'])
+    rows['value'] = rows.value.astype('Float64')
+    facts = preview_facts(rows, selected)
+    assert facts['labels'] == ['Direct · Invented shared · Invented account',
+                               'Future · Invented shared · Invented account', 'Unavailable']
+    assert facts['assets'] == {'a': [0, [0, 2.67, 159.7], [1, -1., -59.7]],
+                               'b': [0, [0, 1., 100.]], 'c': [0, [2, None, None]]}
