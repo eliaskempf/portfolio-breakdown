@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from portfolio_app.analytics.risk import eur_prices, risk_analytics, weekly_returns
+from portfolio_app.analytics.risk import daily_prices, eur_prices, risk_analytics, weekly_returns
 from portfolio_app.analytics.risk_data import AdjustedHistory, RiskHistoryService, YahooRiskHistoryProvider
 
 TODAY = date(2026, 9, 27)
@@ -95,6 +95,32 @@ def test_intersection_must_have_52_observations():
     assert result.status == 'unavailable'
     assert result.observations < 52
     assert result.beta is None
+
+
+def test_valid_daily_history_skips_sorting_and_filtering(monkeypatch):
+    dates = pd.bdate_range('2025-01-01', periods=180, name='Trading day')
+    prices = pd.Series(np.linspace(50., 100., len(dates)), index=dates, name='Close')
+
+    def unexpected(*args, **kwargs):
+        pytest.fail('Already ordered, positive daily prices were sorted or filtered')
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pd.Series, 'sort_index', unexpected)
+        patch.setattr(pd.Series, 'where', unexpected)
+        cleaned = daily_prices(prices)
+    pd.testing.assert_series_equal(cleaned, prices)
+    cleaned.iloc[0] = 5.
+    assert prices.iloc[0] == 50.
+
+
+def test_daily_prices_use_last_local_observation_before_rejecting_invalid_closes():
+    dates = pd.DatetimeIndex(['2025-01-06 00:15', '2025-01-03 18:00', '2025-01-06 18:00',
+                              '2025-01-02 00:05', '2025-01-07 00:00', '2025-01-08 00:00'],
+                             tz='Asia/Tokyo', name='Trading day')
+    prices = pd.Series(['10', '9', 'invalid', '8', '-3', 'inf'], index=dates, name='Close')
+    expected = pd.Series([8., 9.], index=pd.DatetimeIndex(['2025-01-02', '2025-01-03'],
+                          name='Trading day').as_unit(dates.unit), name='Close')
+    pd.testing.assert_series_equal(daily_prices(prices), expected)
 
 
 def test_historical_fx_currency_subunits_and_missing_fx():

@@ -17,7 +17,13 @@ def daily_prices(series: pd.Series) -> pd.Series:
     """Keep local trading dates, not UTC dates shifted across a market close."""
     result = pd.to_numeric(series, errors='coerce').copy()
     result.index = pd.DatetimeIndex(result.index).tz_localize(None).normalize()
-    result = result.loc[~result.index.duplicated(keep='last')].sort_index()
+    if not result.index.is_unique:
+        result = result.loc[~result.index.duplicated(keep='last')]
+    if not result.index.is_monotonic_increasing:
+        result = result.sort_index()
+    values = result.to_numpy(copy=False)
+    if values.dtype.kind in 'fiu' and np.isfinite(values).all() and (values > 0).all():
+        return result
     return result.where(np.isfinite(result) & result.gt(0)).dropna()
 
 
