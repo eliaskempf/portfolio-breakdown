@@ -66,3 +66,19 @@ def test_background_view_uses_one_complete_revision_and_leaves_inputs_untouched(
     update = future.result(5)
     assert update.revision == revision and update.revision != load_observations(tmp_path)[1]
     assert update.view == history_view(journal, scope, store, today=today, period_annualized=False)
+
+
+@pytest.mark.parametrize('points', [False, True])
+def test_recomputes_stored_view_from_before_valuation_precision_fix(tmp_path, monkeypatch, points):
+    from portfolio_app.performance import history_view_cache
+
+    journal, scope = setup(tmp_path)
+    today = date(2024, 1, 8)
+    view = history_view(journal, scope, ObservationStore(), today=today, include_points=points)
+    signature = ('journal', 'observations', scope, '1Y', 'EUR', today, points, True)
+    versions = history_view_cache._versions()
+    with monkeypatch.context() as previous:
+        previous.setattr(history_view_cache, '_versions', lambda: (1, *versions[1:]))
+        load_or_compute(tmp_path, signature, lambda: replace(view, useful=not view.useful))
+    assert load_or_compute(tmp_path, signature, lambda: view) == view
+    assert load_or_compute(tmp_path, signature, lambda: pytest.fail('updated snapshot should be reusable')) == view
