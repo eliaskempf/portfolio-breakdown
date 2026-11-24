@@ -257,3 +257,46 @@ def test_hover_series_matches_independent_intervals(problem):
     for point in view.points:
         expected = calculate_history(journal, scope, store, START, point['Date'], annualized=False)
         assert point['TWR'] == expected.time_weighted
+
+
+def test_short_chart_uses_visible_closes_and_preserves_all_history(monkeypatch):
+    from datetime import timedelta
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+    journal, scope, store = fixture()
+    start = date(2024, 1, 1)
+    dates = [(start + timedelta(days=i)).isoformat() for i in range(165)]
+    closes = tuple(Observation('p'+day, 'price', 'holding', day, D(10+i), 'EUR') for i, day in enumerate(dates))
+    store = replace(store, observations=closes)
+    today = date.fromisoformat(dates[-1])
+    all_history = history_view(journal, scope, store, 'All', today=today)
+    calculation = HistoryCalculation(journal, store)
+    value_at, requested = calculation.value, set()
+    def observe(scope, day, target):
+        requested.add(day)
+        return value_at(scope, day, target)
+    monkeypatch.setattr(calculation, 'value', observe)
+    chart = history_view(journal, scope, store, '1M', today=today, calculation=calculation)
+    assert chart.all_result == all_history.all_result and chart.all_known == all_history.all_known
+    assert chart.useful and chart.points == tuple(p for p in all_history.points if p['Date'] >= chart.requested_start)
+    assert requested <= {dates[0], *(day for day in dates if day >= chart.requested_start)}
+
+
+@pytest.mark.parametrize('earlier_marks', [0, 1, 2])
+def test_window_with_no_marks_retains_global_chart_availability(earlier_marks):
+    journal, scope, store = fixture()
+    store = replace(store, observations=store.observations[:earlier_marks])
+    result = history_view(journal, scope, store, '1M', today=date(2025, 3, 31))
+    assert result.useful == (earlier_marks == 2)
+    assert all(point['Value'] is None for point in result.points)
+
+def test_short_chart_keeps_fx_validation_outside_its_window():
+    from portfolio_app.portfolio.holdings import DataError
+    journal, scope, store = fixture()
+    intermediate = store.observations[1]
+    store = replace(store, observations=(store.observations[0], replace(intermediate, currency='USD'),
+        *store.observations[2:],
+        Observation('rate', 'fx', 'USD/EUR', intermediate.date, 1, 'USD', target='EUR'),
+        Observation('inverse', 'fx', 'EUR/USD', intermediate.date, 2, 'EUR', target='USD'),
+        Observation('late', 'price', 'holding', '2025-02-20', 13, 'EUR')))
+    with pytest.raises(DataError, match='Conflicting direct and inverse'):
+        history_view(journal, scope, store, '1M', today=date(2025, 3, 1))

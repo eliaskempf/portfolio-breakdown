@@ -61,11 +61,15 @@ def _period_result(calculation, scope, target, dates, start, end, negative_dates
     return result
 
 
+def _requires_full_valuation_scan(scope, recorded):
+    # Accounts can turn negative between flows. Reciprocal FX quotes can
+    # conflict on an intermediate closing date, including outside a chart window.
+    return bool(scope.accounts) or recorded.requires_fx_validation
+
+
 def _all_history(calculation, scope, target, dates, recorded, beginning, last, stamps,
                  *, annualized, valuations=None):
-    if valuations is None and (scope.accounts or recorded.requires_fx_validation):
-        # Account equity can turn negative between flows. Reciprocal FX closes
-        # can also conflict at an intermediate valuation, even after the last flow.
+    if valuations is None and _requires_full_valuation_scan(scope, recorded):
         valuations = {day: calculation.value(scope, day, target) for day in stamps}
 
     def value(day):
@@ -127,12 +131,19 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
     recorded = calculation.observation_dates(scope, target)
     beginning = earliest.isoformat()
     stamps = _valuation_stamps(calculation, scope, target, dates, recorded, beginning, first, last)
-    valuations = {stamp:calculation.value(scope,stamp,target) for stamp in stamps}
-    values = {stamp:valuation.amount for stamp,valuation in valuations.items()}
-    available = [stamp for stamp in stamps if values[stamp] is not None]
+    full_scan = first <= beginning or _requires_full_valuation_scan(scope, recorded)
+    valuations = {stamp: calculation.value(scope, stamp, target) for stamp in stamps if full_scan or stamp >= first}
+    values = {stamp: valuation.amount for stamp, valuation in valuations.items()}
+    available = [stamp for stamp, value in values.items() if value is not None]
     all_start = beginning
     all_end, negative_dates, all_result = _all_history(calculation, scope, target, dates, recorded,
-        beginning, last, stamps, annualized=annualized, valuations=valuations)
+        beginning, last, stamps, annualized=annualized, valuations=valuations if full_scan else None)
+    useful = len(available) >= 2
+    if not useful and not full_scan and all_result.ending_value is not None:
+        # The last supported endpoint is known; an earlier close can establish
+        # chart availability even when the visible window is entirely empty.
+        useful = any(calculation.value(scope, day, target).amount is not None
+                     for day in reversed(stamps) if day < min(first, all_end))
     all_known = summarize_known_gain(journal,scope,observations,all_end,target,calculation=calculation)
     window = [stamp for stamp in available if first <= stamp <= last]
     start,end = (window[0],window[-1]) if window else (first,last)
@@ -170,4 +181,4 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
             'TWR':returns.get(stamp)})
     # Rendering may join neighbors; missing observations stay missing in math.
     gaps = tuple((stamp,valuations[stamp].reasons) for stamp in stamps if start <= stamp <= end and values[stamp] is None)
-    return HistoryView(first,last,start,end,tuple(points),result,all_start,all_end,all_result,len(available) >= 2,all_known,gaps)
+    return HistoryView(first,last,start,end,tuple(points),result,all_start,all_end,all_result,useful,all_known,gaps)
