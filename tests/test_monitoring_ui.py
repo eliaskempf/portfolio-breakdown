@@ -215,3 +215,26 @@ def test_first_visit_shows_plain_world_sma_until_a_threshold_is_entered(tmp_path
     assert traces()==['Completed close','SMA']
     assert by_label(app.button,'Track rule').disabled
     assert not app.exception
+
+
+def test_sma_pair_preview_save_edit_and_switch_to_price(tmp_path):
+    import json
+    app = launch(tmp_path, seed=None)
+    by_label(app.selectbox, 'Comparison').select('SMA vs. SMA').run()
+    chart = json.loads(app.get('plotly_chart')[0].proto.spec)
+    assert [trace['name'] for trace in chart['data']] == ['5-session SMA', '200-session SMA']
+    by_label(app.number_input, 'Comparison SMA (sessions)').set_value(8).run()
+    by_label(app.number_input, 'Reference SMA (sessions)').set_value(50).run()
+    by_label(app.number_input, 'Distance from SMA trigger (%)').set_value(0.).run()
+    assert {'8-session SMA', '50-session SMA', 'Preview condition'} <= {metric.label for metric in app.metric}
+    by_label(app.button, 'Track rule').click().run()
+    saved = load_monitoring(tmp_path)[0]['rules'][0]
+    assert saved['name'].endswith('SMA 8 vs. 50')
+    assert (saved['comparison_window'], saved['window'], saved['cadence']) == (8, 50, 'daily')
+    by_label(app.button, 'Edit rule').click().run()
+    assert by_label(app.selectbox, 'Comparison').value == 'SMA vs. SMA'
+    assert by_label(app.number_input, 'Comparison SMA (sessions)').value == 8
+    by_label(app.selectbox, 'Comparison').select('Price vs. SMA').run()
+    by_label(app.button, 'Save changes').click().run()
+    assert load_monitoring(tmp_path)[0]['rules'][0]['comparison_window'] is None
+    assert not app.exception

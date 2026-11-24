@@ -14,11 +14,27 @@ def sma_label(rule):
     return f'{rule.window}-{"month" if rule.period == "months" else "session"} SMA'
 
 
+def comparison_observation(rule, evaluation):
+    if evaluation.get('value') is None:
+        return 'Observation unavailable.'
+    unit = evaluation['inputs']['currency']
+    left = evaluation['inputs']['comparison_sma']
+    right = evaluation['reference']
+    return (f'{rule.comparison_window}-session SMA {left:,.2f} {unit} · '
+            f'{sma_label(rule)} {right:,.2f} {unit} · Distance {signed_percent(evaluation["value"])}')
+
+
 def alert_details(rule, evaluation):
     value = evaluation.get('value')
     if rule.kind == 'sma':
         cadence = {'daily':'Daily close', 'monthly':'Month-end close', 'intraday':'Intraday price'}[rule.cadence]
         comparison = 'at or below' if rule.direction == 'below' else 'at or above'
+        if rule.comparison_window is not None:
+            subject = f'{rule.comparison_window}-session SMA'
+            reference = sma_label(rule)
+            condition = f'{subject} {comparison} {signed_percent(rule.threshold)} relative to the {reference}.'
+            observed = comparison_observation(rule, evaluation)
+            return condition, observed
         condition = f'{cadence} {comparison} {signed_percent(rule.threshold)} relative to its {sma_label(rule)}.'
         observed = 'Observation unavailable.' if value is None else f'{rule.series.name or rule.series.symbol}: {signed_percent(value)} from its {sma_label(rule)}.'
     elif rule.kind == 'ltv':

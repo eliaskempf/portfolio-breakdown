@@ -33,11 +33,20 @@ completed close enters the average. Months finalize when the next local calendar
 month begins; a provider bar still developing during the trading session does not
 count as a completed close.
 
-Rules compare `100 × (price / SMA − 1)` with an inclusive threshold. For example,
+**Price vs. SMA** compares `100 × (price / SMA − 1)` with an inclusive threshold. For example,
 a below rule with a −2% trigger fires at or below 98% of its SMA. A one-percentage-
 point approaching band begins at −1%. Above rules reverse the comparison.
 
-Choose completed daily close, completed month-end close, or a timestamped
+Choose **SMA vs. SMA** to compare two averages of the same instrument at each
+completed daily close. The comparison window defaults to 5 sessions and the
+reference window to 200. Each line appears once it has enough closes. The
+condition uses the percentage distance from the reference SMA. A below rule
+with a 0% threshold triggers when the comparison SMA is at or below the
+reference SMA. At −2%, it triggers when the comparison SMA is at least 2% lower.
+An already-met condition alerts on the first valid check. Both averages and
+their distance appear in the alert.
+
+For **Price vs. SMA**, choose completed daily close, completed month-end close, or a timestamped
 intraday observation. Intraday mode normally uses the last completed SMA.
 **Include developing period**, under **Timing & data freshness**, instead combines the
 current observation with the preceding N−1 completed periods. This changes the
