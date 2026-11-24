@@ -597,3 +597,47 @@ def test_chart_gain_reuses_the_close_and_preserves_individual_marks(monkeypatch)
     assert chart.points[0]['Value'] is None
     assert chart.all_known.amount == 20
     assert calculated.count(middle) == 1
+
+
+def test_overlapping_chart_ranges_reuse_partial_gain_for_the_same_scope_and_currency(monkeypatch):
+    from datetime import timedelta
+    from portfolio_app.performance import history_view as views
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+
+    buy = E('buy', 'buy', START, quantity=10, price=10, currency='EUR', charges_known=True)
+    security = reconstruction_candidate(book(buy), ('buy',), starts_at_zero=True)
+    journal = Journal(version=2, securities=(security,), accounts=(
+        Account('cash', 'Invented cash'), Account('other', 'Invented reserve')),
+        events=(Event('open', START, 'cash_open', 'cash', 'EUR', 100),
+                Event('reserve', START, 'cash_open', 'other', 'EUR', 300)))
+    scope = HistoryScope(('stock',), ('cash',))
+    dates = [(date.fromisoformat(START) + timedelta(days=i)).isoformat() for i in range(120)]
+    prices = tuple(O('price-'+day, 'price', 'stock', day, D(10+i), 'EUR') for i, day in enumerate(dates))
+    rates = tuple(O('fx-'+day, 'fx', 'EUR/USD', day, D('1.5'), 'EUR', target='USD') for day in dates)
+    store = ObservationStore(prices + rates)
+    today = date.fromisoformat(dates[-1])
+    calculation = HistoryCalculation(journal, store)
+    first = history_view(journal, scope, store, '1Y', today=today, calculation=calculation)
+    assert first.all_result.opening_capital is None
+    calculation._facts.clear()  # Older per-member valuations were evicted by another range.
+    expected = history_view(journal, scope, store, '1M', today=today)
+    original = views.summarize_known_gain
+    requested = []
+    def count(source, selected, observations, stamp, *args, **kwargs):
+        requested.append((selected, stamp))
+        return original(source, selected, observations, stamp, *args, **kwargs)
+    monkeypatch.setattr(views, 'summarize_known_gain', count)
+    view = history_view(journal, scope, store, '1M', today=today, calculation=calculation)
+    assert view == expected
+    assert requested == [(scope, dates[-1])]  # The endpoint also supplies detailed metric explanations.
+    foreign = history_view(journal, scope, store, '1M', today=today, target='USD', calculation=calculation)
+    assert foreign == history_view(journal, scope, store, '1M', today=today, target='USD')
+    assert foreign.points[-2]['Total gain'] == 1.5 * view.points[-2]['Total gain']
+    other_scope = HistoryScope(('stock',), ('other',))
+    other = history_view(journal, other_scope, store, '1M', today=today, calculation=calculation)
+    assert other == history_view(journal, other_scope, store, '1M', today=today)
+    assert other.points[-2]['Invested capital'] != view.points[-2]['Invested capital']
+    changed = replace(store, observations=tuple(replace(mark, amount=mark.amount + 2) if mark == prices[-2] else mark
+                                                for mark in store.observations))
+    corrected = history_view(journal, scope, changed, '1M', today=today)
+    assert corrected.points[-2]['Total gain'] == view.points[-2]['Total gain'] + 20

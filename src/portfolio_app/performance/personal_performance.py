@@ -124,19 +124,23 @@ class HistoryCalculation:
         self._capital_dates = sorted(set(self._flow_dates) | {stamp for stamp, _ in self._unresolved_receipts if stamp})
         self.fingerprint = history_fingerprint(journal)
         self._facts = OrderedDict()
+        # Daily chart gains depend on the complete ledger and observation snapshot.
+        # Keep these scalar pairs through turnover of the much larger set of member facts.
+        self._chart_gains = OrderedDict()
         # The selected chart owns this compact summary. Comparison series can
         # read it without displacing it with sibling scopes.
         self._validated_history_dates = {}
         self._flows = OrderedDict()
         self._position_flows = {}
 
-    def _get(self, key, load):
-        if key not in self._facts:
-            self._facts[key] = load()
-        self._facts.move_to_end(key)
-        while len(self._facts) > 8192:
-            self._facts.popitem(last=False)
-        return self._facts[key]
+    def _get(self, key, load, *, cache=None):
+        cache = self._facts if cache is None else cache
+        if key not in cache:
+            cache[key] = load()
+        cache.move_to_end(key)
+        while len(cache) > 8192:
+            cache.popitem(last=False)
+        return cache[key]
 
     def event_dates(self, scope):
         from portfolio_app.performance.gain_accounting import ScopeEventDates

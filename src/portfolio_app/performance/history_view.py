@@ -147,7 +147,7 @@ def full_history_summary(calculation, scope, today, target):
 
 def history_view(journal, scope, observations, period='1Y', *, today=None, target='EUR', include_points=True, calculation=None, annualized=True, period_annualized=True):
     calculation = calculation or HistoryCalculation(journal, index_observations(observations))
-    observations = calculation.observations
+    journal, observations = calculation.journal, calculation.observations
     today = today or date.today()
     dates = calculation.event_dates(scope)
     earliest = date.fromisoformat(min(dates)) if dates else today
@@ -176,6 +176,10 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
             calculation.retain_value(scope, day, target, valuations[day])
         return summarize_known_gain(journal, scope, observations, day, target, calculation=calculation)
 
+    def gain_point(day):
+        known = known_gain(day)
+        return known.capital, known.amount
+
     all_known = known_gain(all_end)
     window = [stamp for stamp in available if first <= stamp <= last]
     start,end = (window[0],window[-1]) if window else (first,last)
@@ -203,8 +207,11 @@ def history_view(journal, scope, observations, period='1Y', *, today=None, targe
                     and all_result.net_contributions is not None and not missing else None)
         gain = values[stamp] - invested if values[stamp] is not None and invested is not None else None
         if invested is None:
-            known = all_known if stamp == all_end else known_gain(stamp)
-            invested, gain = known.capital, known.amount
+            if stamp == all_end:
+                invested, gain = all_known.capital, all_known.amount
+            else:
+                invested, gain = calculation._get((scope, stamp, target), lambda: gain_point(stamp),
+                                                  cache=calculation._chart_gains)
         points.append({'Date':stamp, 'Value':float(values[stamp]) if values[stamp] is not None else None,
             'Invested capital':float(invested) if invested is not None else None,
             'Total gain':float(gain) if gain is not None else None,
