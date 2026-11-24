@@ -487,6 +487,7 @@ def _smoke(command, evidence, installation):
                     for name in ['Synthetic imported CSV', 'Synthetic imported Excel']:
                         expect(page.get_by_role('table', name='Positions', exact=True).get_by_text(name, exact=True)).to_be_visible()
                     runs.click(page, page.get_by_role('button', name=re.compile(r'Add position$')))
+                    runs.click(page, page.get_by_role('dialog').get_by_text('Existing holding', exact=True))
                     runs.click(page, page.get_by_role('button', name='Enter manually', exact=True))
                     # Each changed field commits on blur/Enter and can rebuild
                     # the dialog. Acknowledge that run before the next edit/save.
