@@ -25,6 +25,42 @@ def observe_server(trial):
 
     application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
     scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
+    if scenario == 'purchase-fx':
+        from datetime import date, timedelta
+        import pandas as pd
+        import yfinance
+        from portfolio_app.market.fx import YahooFXHistory
+        from portfolio_app.performance.personal_history_refresh import refresher
+        from perf_benchmark.renderer import wait
+
+        def fetch(self, currency, start, end):
+            day = date.fromisoformat(end) - timedelta(days=1)
+            record('purchase_fx_requested', currency=currency, day=day.isoformat())
+            (trial / 'fx-pending').touch()
+            wait(lambda: (trial / 'release-fx').exists(), timeout=120)
+            time.sleep(.075)  # Each independent rate arrives asynchronously, including later requests.
+            return pd.Series(.9, index=pd.date_range(start, day))
+
+        def unexpected(ticker, *args, **kwargs):
+            record('unexpected_listing', ticker=ticker)
+            raise AssertionError(f'Unexpected live listing in purchase FX benchmark: {ticker}')
+
+        prepare = application.prepare_application
+        def observe_costs(*args, **kwargs):
+            result = prepare(*args, **kwargs)
+            costs = result.valued.cost_basis_reporting
+            complete = bool(costs.notna().all())
+            record('purchase_costs', covered=int(costs.count()), total=float(costs.sum()),
+                   distinct=sorted(set(map(float, costs.dropna()))))
+            if complete:
+                (trial / 'fx-published').touch()
+            return result
+
+        YahooFXHistory.fetch = fetch
+        yfinance.Ticker = unexpected
+        refresher.download = lambda directory, journal, scope, store, start, end, target: (store, ())
+        application.prepare_application = observe_costs
+        return
     if scenario == 'market-chart':
         from ipaddress import ip_address
         from pathlib import Path

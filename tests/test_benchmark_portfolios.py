@@ -73,6 +73,31 @@ def test_navigation_benchmark_portfolio(tmp_path, profile, positions, etfs, comp
         assert missing == (listings if cold else [listings[-1]])
 
 
+def test_purchase_fx_benchmark_needs_dated_rates_and_has_partial_closes(tmp_path):
+    import json
+    from datetime import date
+    path = Path(__file__).resolve().parents[1] / 'tools/perf_benchmark/fixture.py'
+    spec = spec_from_file_location('benchmark_fixture', path)
+    fixture = module_from_spec(spec)
+    spec.loader.exec_module(fixture)
+    workspace = tmp_path / 'synthetic'
+    fixture.create_workspace(workspace, 'mixed-history', today=date(2026, 5, 31), purchase_fx=True)
+    expected = json.loads((tmp_path / 'purchase-fx.json').read_bytes())
+    journal, _ = load_journal(workspace)
+    store, _ = load_observations(workspace)
+    assert len(expected['days']) == 25
+    assert (expected['positions'], expected['basis'], expected['closing']) == (48, 108000, 160200)
+    for book in journal.securities:
+        buys = [event for event in book.records if event.kind == 'buy']
+        assert [(event.date, event.currency) for event in buys] == [(day, 'USD') for day in expected['days']]
+    assert all(obs.kind == 'price' and obs.currency == 'EUR' for obs in store.observations)
+    from collections import Counter
+    counts = Counter(obs.date for obs in store.observations)
+    assert Counter(counts.values()) == {42: 22, 48: 709}
+    assert counts[expected['end']] == 48
+    assert json.loads((workspace / '.cache/prices.json').read_bytes())['fx:USD']['quote']['price'] == .9
+
+
 def test_market_chart_benchmark_starts_with_durable_price_and_fx_ranges(tmp_path):
     import csv
     from portfolio_app.market.history import HistoryService, convert_price_history

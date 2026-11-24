@@ -31,10 +31,13 @@ def event_count(trial):
     return (trial / 'server.jsonl').read_bytes().count(b'\n')
 
 
-def interact(evaluate, command, control):
+def interact(evaluate, command, control, *, missing_costs=False):
     first_event = event_count(control)
     dispatched = time.monotonic_ns() / 1e6
-    evaluate('(() => {' + CONTEXT + 'const label=' + json.dumps(command) + """;
+    comparison = ('''const result = d.querySelector('.st-key-tour_performance [data-testid=stAlert]');
+        return visible(result) && result.textContent.includes('Add convertible buy-ins');''' if missing_costs else
+        "return visible(d.querySelector('.st-key-tour_performance .js-plotly-plot .main-svg'));")
+    evaluate('(() => {' + CONTEXT + 'const comparisonReady = () => {' + comparison + '}; const label=' + json.dumps(command) + """;
     const control = [...d.querySelectorAll('[role=radio],button')].find(e => visible(e) && e.textContent.trim() === label);
     if (!control) throw Error('Missing control ' + label);
     const start = w.performance.now();
@@ -47,8 +50,7 @@ def interact(evaluate, command, control):
         const target = label === 'Performance' ? visible(chart) :
             label === 'Allocation' ? visible(allocation()) : visible(chart) && chart.data[0].x[0] !== previous;
         if (target && first === null) first = elapsed;
-        const settled = target && !running() && (label !== 'Performance' ||
-            visible(d.querySelector('.st-key-tour_performance .js-plotly-plot .main-svg')));
+        const settled = target && !running() && (label !== 'Performance' || comparisonReady());
         confirmations = settled ? confirmations + 1 : 0;
         if (confirmations >= 2) w.benchmarkResult = {chart_ms:first, settled_ms:elapsed};
         else if (exception() || elapsed > 30000) {
@@ -68,7 +70,36 @@ def interact(evaluate, command, control):
     return result
 
 
-def exercise(evaluate, control, scenario, *, persistent):
+def observe_chart_frames(evaluate):
+    evaluate('(() => {' + CONTEXT + """
+        const original = history(), closing = original.data[0].y.at(-1), firstDay = original.data[0].x[0];
+        let faded = false, last = closing;
+        const state = w.benchmarkRefresh = {changes:0, fades:0, replaced:false, preserved:true, delta:0};
+        function frame() {
+            const chart = history();
+            if (chart) {
+                if (chart !== original) state.replaced = true;
+                const stale = !!chart.closest('[data-stale=true]');
+                if (stale && !faded) state.fades++;
+                faded = stale;
+                const value = chart.data[0].y.at(-1);
+                if (value !== last) { state.changes++; last = value; }
+                state.delta = value - closing;
+                if (chart.data[0].x[0] !== firstDay) state.preserved = false;
+            } else {
+                state.replaced = true;
+            }
+            if (!state.done) w.requestAnimationFrame(frame);
+        }
+        frame(); return true; })()""")
+
+
+def chart_digest(evaluate):
+    series = evaluate('(() => {' + CONTEXT + 'return JSON.stringify(history().data.map(t => [t.name,t.x,Array.from(t.y),t.customdata]));})()')
+    return hashlib.sha256(series.encode()).hexdigest()
+
+
+def await_allocation(evaluate):
     ready = '(!document.querySelector("#portfolio-app") || window.PortfolioSplash?.state === "first-view-rendered")'
     animation_done = None
     def is_ready():
@@ -82,7 +113,36 @@ def exercise(evaluate, control, scenario, *, persistent):
         except Exception:
             return False  # The native startup document is replaced on Qt and Cocoa.
     wait(is_ready, timeout=100)
-    ready_at = time.time()
+    return time.time(), animation_done
+
+
+def exercise_purchase_fx(evaluate, trial):
+    ready_at, _ = await_allocation(evaluate)
+    wait(lambda: (trial / 'fx-pending').exists())
+    first = interact(evaluate, 'Performance', trial, missing_costs=True)
+    before = chart_digest(evaluate)
+    observe_chart_frames(evaluate)
+    start = time.perf_counter()
+    publication_start = event_count(trial)
+    (trial / 'release-fx').touch()
+    wait(lambda: (trial / 'fx-published').exists(), timeout=120)
+    wait(lambda: evaluate('(() => {' + CONTEXT + 'return visible(history()) && !running() && !exception();})()'))
+    publication_ms = (time.perf_counter() - start) * 1000
+    time.sleep(5)  # Include two idle status polls after the completed valuation.
+    state = evaluate('(() => {' + CONTEXT + """
+        const chart = history(), value = chart?.data.find(t => t.name === 'Value');
+        w.benchmarkRefresh.done = true;
+        return {refresh:w.benchmarkRefresh, visible:!!visible(chart) && !running() && !exception(),
+                points:value?.x.length, closing:value?.y.at(-1), end:value?.x.at(-1)};
+    })()""")
+    if not state['visible'] or chart_digest(evaluate) != before:
+        raise AssertionError(f'Purchase-cost publication disturbed the historical series: {state}')
+    return dict(ready_at=ready_at, first=first, digest=before, publication_start=publication_start,
+                publication_ms=publication_ms, **state)
+
+
+def exercise(evaluate, control, scenario, *, persistent):
+    ready_at, animation_done = await_allocation(evaluate)
     background = {}
     if scenario == 'quote-pending':
         from portfolio_app.interface.shared.money import format_money
@@ -117,27 +177,7 @@ def exercise(evaluate, control, scenario, *, persistent):
     period = interact(evaluate, '3M', control)
     if (control / 'completed').exists():
         raise AssertionError('The date range must be usable during the blocked download')
-    evaluate('(() => {' + CONTEXT + """
-        const original = history(), closing = original.data[0].y.at(-1), firstDay = original.data[0].x[0];
-        let faded = false, last = closing;
-        const state = w.benchmarkRefresh = {changes:0, fades:0, replaced:false, preserved:true, delta:0};
-        function frame() {
-            const chart = history();
-            if (chart) {
-                if (chart !== original) state.replaced = true;
-                const stale = !!chart.closest('[data-stale=true]');
-                if (stale && !faded) state.fades++;
-                faded = stale;
-                const value = chart.data[0].y.at(-1);
-                if (value !== last) { state.changes++; last = value; }
-                state.delta = value - closing;
-                if (chart.data[0].x[0] !== firstDay) state.preserved = false;
-            } else {
-                state.replaced = true;
-            }
-            if (!state.done) w.requestAnimationFrame(frame);
-        }
-        frame(); return true; })()""")
+    observe_chart_frames(evaluate)
     if scenario.startswith('etf-'):
         bell = CONTEXT + """
             const bell = [...d.querySelectorAll('.st-key-header_notifications [data-testid=stPopoverButton]')]
@@ -205,8 +245,7 @@ def exercise(evaluate, control, scenario, *, persistent):
         raise AssertionError(f'Unchanged refresh disturbed chart {refresh}')
     if scenario.startswith('etf-'):
         background['end_event'] = event_count(control)
-    series = evaluate('(() => {' + CONTEXT + 'return JSON.stringify(history().data.map(t => [t.name,t.x,Array.from(t.y),t.customdata]));})()')
-    digest = hashlib.sha256(series.encode()).hexdigest()
+    digest = chart_digest(evaluate)
     interact(evaluate, '1Y', control)
     warm = []
     for index in range(5):
@@ -855,6 +894,8 @@ def exercise_collection(evaluate, trial):
 
 
 def measure_view(evaluate, trial, variant, scenario, *, themes=False, company_accounts=False):
+    if scenario == 'purchase-fx':
+        return exercise_purchase_fx(evaluate, trial)
     if scenario == 'market-chart':
         return exercise_market_chart(evaluate, trial)
     if scenario == 'checklist':

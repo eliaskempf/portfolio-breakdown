@@ -58,7 +58,7 @@ def holdings_and_funds(directory, profile, today):
         yield fund_id, name, ticker, isin, 'etf', 'equity'
 
 
-def create_workspace(directory: Path, profile='small', *, today=None, checklist=False):
+def create_workspace(directory: Path, profile='small', *, today=None, checklist=False, purchase_fx=False):
     directory.mkdir()
     today = today or date.today()
     start = today - timedelta(days=730)
@@ -86,21 +86,32 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
         f'- id: group{i}\n  name: Invented group {i}\n  target: {target}\n'
         for i, target in enumerate((.4, .3, .3))), encoding='utf-8')
     rows = read_snapshot(directory / 'holdings.csv').holdings
+    gap_offsets = {730 - offset for offset in range(15, 345, 15)} if purchase_fx else set()
     journal, books, observations = Journal(version=2), [], []
     instrument_order = {asset: i for i, asset in enumerate(rows.id.unique())}
     for index, (_, row) in enumerate(rows.iterrows()):
         book = book_for(journal, row)
         buys = tuple(SecurityEvent(f'b-{index}-{t}', 'buy', day(t * 30), quantity=Decimal(1),
-            price=Decimal(100), currency='EUR', charges_known=not (checklist and index % 4 == 0 and t == 1))
+            price=Decimal(100), currency='USD' if purchase_fx else 'EUR', charges_known=not (checklist and index % 4 == 0 and t == 1))
             for t in range(25))
         books.append(reconstruction_candidate(replace(book, records=buys),
             tuple(event.id for event in buys), starts_at_zero=True))
         price_change = 10 + instrument_order[row.id]
         observations.extend(Observation(f'o-{index}-{t}', 'price', book.position_id, day(t),
-            100 + Decimal(price_change * t) / 730, 'EUR', source='invented') for t in range(731))
+            100 + Decimal(price_change * t) / 730, 'EUR', source='invented') for t in range(731)
+            if index >= 6 or t not in gap_offsets)
     save_journal(directory, replace(journal, securities=tuple(books)), None)
     save_observations(directory, ObservationStore(tuple(observations)), None)
     save_overview_view(directory, 'Allocation')
+    if purchase_fx:
+        stamp = datetime.now(timezone.utc).isoformat()
+        entry = dict(quote=dict(price=.9, currency='EUR', observed_at=stamp), attempted_at=stamp, error='')
+        cache = directory / '.cache'
+        cache.mkdir(exist_ok=True)
+        (cache / 'prices.json').write_text(json.dumps({'fx:USD': entry}), encoding='utf-8')
+        expected = dict(days=[day(t * 30) for t in range(25)], end=day(730), positions=len(books),
+                        basis=25 * 90 * len(books), closing=float((rows.shares * rows.manual_price).sum()))
+        (directory.parent / 'purchase-fx.json').write_text(json.dumps(expected), encoding='utf-8')
 
     if profile in {'mixed-history', 'multi-account'}:
         from portfolio_app.monitoring.monitoring import Evaluation, Rule, SeriesSpec

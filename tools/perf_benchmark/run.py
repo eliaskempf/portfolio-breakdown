@@ -89,6 +89,31 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         start, end = measurement.pop('event_range')
         return events[start:end]
 
+    if scenario == 'purchase-fx':
+        settings = json.loads((workspace.parent / 'purchase-fx.json').read_bytes())
+        requests = Counter((e['currency'], e['day']) for e in events if e['event'] == 'purchase_fx_requested')
+        expected_requests = Counter(('USD', day) for day in settings['days'])
+        if requests != expected_requests or any(e['event'] == 'unexpected_listing' for e in events):
+            raise AssertionError(f'Unexpected FX or listing requests: {requests}')
+        split = report.pop('publication_start')
+        initial = [e for e in events[:split] if e['event'] == 'purchase_costs']
+        published = [e for e in events[split:] if e['event'] == 'purchase_costs']
+        if not initial or any(e['covered'] for e in initial) or not published:
+            raise AssertionError(f'Expected unknown acquisition costs until release: {initial}, {published}')
+        final = published[-1]
+        if (final['covered'] != settings['positions'] or final['total'] != settings['basis'] or
+                final['distinct'] != [settings['basis'] / settings['positions']]):
+            raise AssertionError(f'Completed purchase costs differ from fixture: {published[-1]}')
+        first = report['first']
+        first.pop('dispatch_ms')
+        first['valuations'] = sum(e['event'] == 'portfolio_valued' for e in interval(first))
+        report.update(published_valuations=len(published), requests=requests.total())
+        if (first['valuations'] or len(published) != 1 or report['refresh']['fades'] > 1 or
+                report['refresh']['changes'] or report['refresh']['replaced'] or not report['refresh']['preserved']):
+            raise AssertionError(f'Purchase FX refresh repeated or interrupted chart work: {report}')
+        if report['closing'] != settings['closing'] or report['end'][:10] != settings['end'] or report['points'] not in (366, 367):
+            raise AssertionError(f'Incomplete or incorrect historical chart: {report}')
+        return report
     if scenario == 'market-chart':
         if any(e['event'] in {'unexpected_market_fetch', 'unexpected_market_network'} for e in events):
             raise AssertionError('Fresh saved market data triggered a provider or network request')
@@ -257,16 +282,18 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
 
         if experiment == 'navigation' and profile == 'mixed-history':
             checks = result.setdefault('background_checks', [])
-            for scenario in ('etf-checked', 'etf-failed', 'quote-pending', 'etf-open-failed'):
+            for scenario in ('etf-checked', 'etf-failed', 'quote-pending', 'etf-open-failed', 'purchase-fx'):
                 with TemporaryDirectory(prefix='portfolio-refresh-benchmark-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
-                    create_workspace(workspace, profile, today=as_of)
+                    create_workspace(workspace, profile, today=as_of, purchase_fx=scenario == 'purchase-fx')
                     if scenario == 'quote-pending':
                         prepare_quote_check(workspace)
-                    else:
+                    elif scenario.startswith('etf-'):
                         prepare_fund_check(workspace)
                     metrics = benchmark(executable, workspace, Path(tmp) / 'trial', 'navigation', surface, scenario)
-                    if metrics['digest'] != expected['unchanged']:
+                    key = 'purchase-fx' if scenario == 'purchase-fx' else 'unchanged'
+                    digest = expected.setdefault(key, metrics['digest'])
+                    if metrics['digest'] != digest:
                         raise AssertionError('Provider check altered the rendered historical series')
                     checks.append(dict(surface=surface, scenario=scenario, **metrics))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
@@ -281,6 +308,12 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
                 rows.append(f"| {surface} | {launch} | {variant} | {median(r['launch_ms'] for r in runs):.0f} | "
                             f"{median(r['first']['chart_ms'] for r in runs):.0f} | {median(warm):.0f} / {warm[ceil(.95*len(warm))-1]:.0f} |")
     summary = f'Portfolio profile: {profile}\n\n' + '\n'.join(rows) + '\n'
+    for check in result.get('background_checks', []):
+        if check['scenario'] == 'purchase-fx':
+            summary += (f"\n{check['surface']} purchase-date FX: first Performance paint "
+                        f"{check['first']['chart_ms']:.0f} ms, completed costs {check['publication_ms']:.0f} ms "
+                        f"after release, {check['requests']} FX dates, {check['published_valuations']} valuation(s), "
+                        f"{check['refresh']['fades']} chart fade(s).\n")
     print(summary)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:

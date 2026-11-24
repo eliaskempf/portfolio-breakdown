@@ -771,7 +771,12 @@ monthly buys per position. The small control has 12 positions and no ETFs.
 The ETF-heavy profile has 24 direct equities and 24 held ETFs, with eight
 snapshots each of 50, 500 and 1,500 constituents. The 16,400 constituent rows
 include shared companies, direct/indirect overlap and eight partial snapshots.
-The mixed-history profile uses the same holdings and prices. Some overlapping
+The mixed-history navigation benchmark also opens Performance while purchase-date
+FX is pending. All 48 positions have purchases on the same 25 USD dates and six
+positions lack closes on 22 days. The driver releases the synthetic rates after
+the first chart settles. It measures cold paint, background publication and idle
+fades, verifies every purchase cost, and compares the rendered series before
+and after publication. The mixed-history profile uses the same holdings and prices. Some overlapping
 constituents have only fund-local identifiers and company names. It also includes
 4,000 archived monitoring observations and 24 invented provider sectors. After
 the timed asset visits, the benchmark opens Themes & sectors twice, records the
