@@ -295,7 +295,6 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
             st.rerun()
         with local_dialog_updates(), st.container(key='position_dialog_'+str(st.session_state.get('position_edit_selected', 'new'))+'_'+st.session_state.get('position_edit_action', 'Details')):
             snapshot, allocation, valued = values()
-            current = read_snapshot(path)
             for key, value in st.session_state.get('position_draft', {}).items():
                 if key not in st.session_state:
                     st.session_state[key] = value
@@ -307,8 +306,8 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
                     st.session_state.get('position_edit_selected'), allocation=allocation, editing=action == 'Edit position')
                 close_dialog_button('Close', key='position_dialog_close')
             elif action == 'Details':
-                from portfolio_app.ledger.security_history import effective_holdings
-                current_holdings = effective_holdings(current.holdings, load_journal(path.parent)[0].securities)
+                from portfolio_app.interface.shared.input_cache import load_effective_snapshot
+                current_holdings = load_effective_snapshot(path).holdings
                 selected = current_holdings.loc[current_holdings.position_id.eq(st.session_state.get('position_edit_selected'))]
                 if selected.empty:
                     st.warning('This position no longer exists.')
@@ -329,7 +328,7 @@ def _render_position_dialog(path, snapshot, funds, *, demo, allocation, valued, 
                     render_position_detail(row, path.parent, demo=demo, allocation=allocation, on_edit=edit_position)
                 close_dialog_button('Close', key='position_dialog_close')
             else:
-                rendered = render_position_form(path, current, funds, demo=demo, allocation=allocation, action=action, valued=valued)
+                rendered = render_position_form(path, read_snapshot(path), funds, demo=demo, allocation=allocation, action=action, valued=valued)
                 _remember_draft()
                 if not rendered and st.button('Cancel', help='Discard this position draft without saving.'):
                     _clear_editor()

@@ -53,13 +53,13 @@ def observation_snapshot(directory):
                         lambda: load_observations(directory), immutable=True)
 
 
-def load_inputs(directory):
-    directory = Path(directory)
+def load_effective_snapshot(holdings_path):
+    """Read current holdings with applied security history, shared across session views."""
+    directory = holdings_path.parent
     if any((directory / name).exists() for name in ('.allocation-publication.json', '.history-publication.json')):
         from portfolio_app.workspace.workspace_lock import workspace_lock
         with workspace_lock(directory):
             pass
-    holdings_path = directory / 'holdings.csv'
     from portfolio_app.ledger.account_journal import load_journal
     from portfolio_app.ledger.security_history import effective_holdings
     from portfolio_app.portfolio.positions import HoldingsSnapshot
@@ -71,9 +71,15 @@ def load_inputs(directory):
         snapshot.holdings.attrs['history_journal_revision'] = revision
         return snapshot
     journal_stamp = file_stamp(directory / 'account-journal.json')
-    snapshot = cached_input('holdings', (file_stamp(holdings_path), journal_stamp), effective_snapshot)
+    return cached_input('holdings', (file_stamp(holdings_path), journal_stamp), effective_snapshot)
+
+
+def load_inputs(directory):
+    directory = Path(directory)
+    snapshot = load_effective_snapshot(directory / 'holdings.csv')
+    journal_revision = snapshot.holdings.attrs['history_journal_revision']
     path = directory / 'allocation.yaml'
-    allocation = cached_input('allocation', (file_stamp(path), snapshot.revision, journal_stamp), lambda: load_allocation(path, snapshot.holdings))
+    allocation = cached_input('allocation', (file_stamp(path), snapshot.revision, journal_revision), lambda: load_allocation(path, snapshot.holdings))
     path = directory / 'classifications.yaml'
     classifications = cached_classifications('classifications', file_stamp(path), lambda: load_classifications(path) if path.exists() else {})
     signature = fund_sources(directory)
