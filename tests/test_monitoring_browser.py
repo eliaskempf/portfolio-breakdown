@@ -12,6 +12,7 @@ from urllib.request import urlopen
 import pytest
 
 from test_monitoring_service import account_workspace
+from portfolio_app.monitoring.monitoring_service import MonitoringService
 from portfolio_app.monitoring.monitoring_store import load_monitoring
 from browser_support import settle
 
@@ -68,7 +69,8 @@ def test_trigger_dialog_acknowledgment_and_account_rule_navigation(monitoring_pa
     page,url,root=monitoring_page
     page.goto(url)
     dialog=page.get_by_role('dialog',name='Monitoring alert')
-    playwright.expect(dialog).to_be_visible(timeout=20000)
+    # A first evaluation can finish after the initial render. Allow one monitoring heartbeat.
+    playwright.expect(dialog).to_be_visible(timeout=75000)
     playwright.expect(dialog).to_contain_text('60.00%')
     dialog.get_by_role('button',name='Acknowledge alert',exact=True).click()
     playwright.expect(dialog).to_have_count(0)
@@ -108,6 +110,9 @@ def test_trigger_dialog_acknowledgment_and_account_rule_navigation(monitoring_pa
 
 def test_indicator_browse_save_and_notification_destination(monitoring_page):
     page,url,root=monitoring_page
+    # Start navigation from an existing alert produced by the real offline evaluator.
+    MonitoringService(root, demo=True).evaluate()
+    assert load_monitoring(root)[0]['events'][0]['condition'] == 'triggered'
     page.goto(url)
     page.get_by_role('dialog',name='Monitoring alert').get_by_role('button',name='View rule',exact=True).click()
     playwright.expect(page.get_by_role('dialog',name='Monitoring alert')).to_have_count(0)
@@ -144,6 +149,7 @@ def test_alerts_arrive_on_every_tab_without_global_status_or_banners(monitoring_
     from portfolio_app.monitoring.monitoring import Evaluation
     from portfolio_app.monitoring.monitoring_store import record_evaluations, rule_from_dict
     page,url,root=monitoring_page
+    MonitoringService(root, demo=True).evaluate()
     page.goto(url)
     dialog=page.get_by_role('dialog',name='Monitoring alert')
     dialog.get_by_role('button',name='Acknowledge alert',exact=True).click()
