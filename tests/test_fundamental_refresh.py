@@ -74,7 +74,7 @@ def test_cache_only_failure_cooldown_survives_failed_write_and_observes_external
     def fail(*args):
         raise OSError('Synthetic outage')
     with monkeypatch.context() as m:
-        m.setattr('portfolio_app.analytics.analytics_cache.atomic_json', fail)
+        m.setattr('portfolio_app.analytics.analytics_cache.staged_text', fail)
         assert cache.get('test', fail).status == 'stale'
         retained, due = cache.cached('test')
         assert not due and retained.data == {'value': 1}

@@ -297,7 +297,7 @@ def test_failed_risk_cache_write_survives_selection_changes(tmp_path, monkeypatc
     monkeypatch.setattr(risk_updates.st, 'session_state', session)
     def fail(*args):
         raise OSError('Invented read-only cache')
-    monkeypatch.setattr(analytics_cache, 'atomic_json', fail)
+    monkeypatch.setattr(analytics_cache, 'staged_text', fail)
     def fetch(self, ticker, years):
         calls.append(ticker)
         return DemoRiskHistoryProvider().fetch(ticker, years)

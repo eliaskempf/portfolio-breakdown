@@ -15,19 +15,18 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
-@document_write
 def atomic_json(path: Path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with staged_text(path, lambda handle: json.dump(value, handle, allow_nan=False)) as temporary:
-        temporary.replace(path)
+    _publish_json(path, lambda handle: json.dump(value, handle, allow_nan=False))
 
 
 @document_write
-def _save_if_unchanged(path, version, entry):
-    # A slow provider must not overwrite a correction published while it ran.
-    if AnalyticsCache._version(path) != version:
+def _publish_json(path: Path, write, version=None):
+    # Check and replace under the same workspace barrier as external corrections.
+    if version is not None and AnalyticsCache._version(path) != version:
         return False
-    atomic_json(path, entry)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with staged_text(path, write) as temporary:
+        temporary.replace(path)
     return True
 
 
@@ -131,8 +130,8 @@ class AnalyticsCache:
             data = fetch()
             if not isinstance(data, dict):
                 raise ValueError('Provider returned invalid analytics data')
-            json.dumps(data, allow_nan=False)
             entry = dict(data=data, fetched_at=stamp, attempted_at=stamp, error='')
+            content = json.dumps(entry, allow_nan=False)
             result = CachedResult(data, 'fresh', stamp)
         except Exception:
             # Provider failures must not break valuations or expose raw responses.
@@ -140,16 +139,24 @@ class AnalyticsCache:
                          attempted_at=stamp, error='Provider unavailable; cached data may be shown.')
             result = CachedResult(entry['data'], 'stale' if entry['data'] is not None else 'unavailable',
                                   entry['fetched_at'], entry['error'])
+            content = None
         if not path:
             self.memory[key] = entry
             return result
+        def write(handle):
+            if content is None:
+                # A failed provider may have raced a repair to malformed stale data.
+                # Serialize that fallback only if it still owns the disk revision.
+                json.dump(entry, handle, allow_nan=False)
+            else:
+                handle.write(content)
+
         with self._save_lock:
             try:
-                if version is not None:
-                    if self._unsaved.get(key) is not pending or not _save_if_unchanged(path, version, entry):
-                        return self.cached(key, ttl=ttl)[0]
-                else:
-                    atomic_json(path, entry)
+                if version is not None and self._unsaved.get(key) is not pending:
+                    return self.cached(key, ttl=ttl)[0]
+                if not _publish_json(path, write, version):
+                    return self.cached(key, ttl=ttl)[0]
                 self._unsaved.pop(key, None)
             except OSError:
                 self._unsaved[key] = (version if version is not None else self._version(path), entry)
