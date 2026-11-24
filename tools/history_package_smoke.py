@@ -75,6 +75,7 @@ def create_acceptance_workspace(directory: Path):
 
 def smoke(command, evidence=None):
     from playwright.sync_api import sync_playwright, expect
+    from browser_sync import StreamlitReruns
     from package_smoke import wait_for_instance, settle_app
     from portfolio_app.workspace.backup import inspect_backup
     from portfolio_app.workspace.workspace import inventory
@@ -153,21 +154,20 @@ def smoke(command, evidence=None):
             page.get_by_role('tab', name='Futures', exact=True).click(); settle_app(page)
             for name in ('Cash & financing', 'Collateral', 'Marks & FX', 'Positions & transactions'):
                 page.get_by_role('radio', name=name, exact=True).click(); settle_app(page)
-            page.get_by_role('tab', name='Overview', exact=True).click(); settle_app(page)
+            runs.click(page, page.get_by_role('tab', name='Overview', exact=True))
 
         def settings(page, action):
-            settle_app(page)
+            # Each menu interaction triggers a Streamlit rerun. The popover
+            # can display its old controls until the server finishes that run.
+            trigger = page.get_by_role('button', name='App menu', exact=True)
+            if trigger.get_attribute('aria-expanded') != 'true':
+                runs.click(page, trigger)
             menu = page.get_by_test_id('stPopoverBody')
-            if not menu.is_visible():
-                page.get_by_role('button', name='App menu', exact=True).click()
-                expect(menu).to_be_visible()
-                settle_app(page)
             heading = menu.get_by_text('Workspace', exact=True)
             section = heading.locator('xpath=ancestor::details[1]')
             if section.get_attribute('open') is None:
-                heading.click()
-                settle_app(page)
-            section.get_by_role('button', name=action, exact=True).click()
+                runs.click(page, heading)
+            runs.click(page, section.get_by_role('button', name=action, exact=True))
             dialog = page.get_by_role('dialog', name=action, exact=True)
             expect(dialog).to_be_visible()
             return dialog
@@ -182,6 +182,7 @@ def smoke(command, evidence=None):
                                                       args=['--no-sandbox'])
                     page = browser.new_page(viewport={'width': 1440, 'height': 1100})
                     page.set_default_timeout(30000)
+                    runs = StreamlitReruns(page, settle=settle_app, timeout_ms=30000)
                     page.goto(url)
                     page.get_by_role('tab', name='Overview', exact=True).wait_for()
                     inspect_views(page)
