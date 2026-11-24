@@ -19,7 +19,10 @@ def test_analytics_views_dialog_and_mobile_layout(ux_page):
     playwright.expect(page.get_by_role('button', name='Calculate risk')).to_be_visible()
     page.streamlit_reruns.click(page, page.get_by_role('button', name='Calculate risk'))
     playwright.expect(page.get_by_text('Annualized volatility', exact=True)).to_be_visible()
-    assert page.get_by_text('Beta', exact=True).bounding_box()['y'] < page.get_by_text('Direct-stock P/E', exact=True).bounding_box()['y']
+    metric_labels = page.get_by_test_id('stMetricLabel')
+    beta = metric_labels.get_by_text('Beta', exact=True)
+    pe = metric_labels.get_by_text('Direct-stock P/E', exact=True)
+    assert beta.bounding_box()['y'] < pe.bounding_box()['y']
     page.get_by_text('Annualized volatility', exact=True).scroll_into_view_if_needed()
     page.screenshot(path=str(directory / 'analytics-risk.png'), full_page=True)
     chart = page.locator('.js-plotly-plot').filter(has=page.locator('.heatmaplayer'))

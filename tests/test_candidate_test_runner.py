@@ -106,13 +106,13 @@ def test_workflow_keeps_ceiling_and_aggregate_artifact_path():
     import yaml
     workflow = yaml.load((ROOT/'.github/workflows/source-validation.yml').read_text(), Loader=yaml.BaseLoader)
     job = workflow['jobs']['validate']
-    assert job['timeout-minutes'] == '45'
+    assert job['timeout-minutes'] == '${{ matrix.timeout_minutes }}'
     step = next(s for s in job['steps'] if s.get('name') == 'Tests (including required browser suites)')
     assert step['run'] == 'uv run python tools/run_candidate_tests.py'
     assert step['env']['PORTFOLIO_REQUIRE_BROWSER'] == '1'
-    assert step['env']['PORTFOLIO_BROWSER_WORKERS'] == '${{ matrix.browser_workers }}'
-    assert {row['platform']: row['browser_workers'] for row in job['strategy']['matrix']['include']} == {
-        'linux-x64': '2', 'windows-x64': '3'}
+    assert step['env']['PORTFOLIO_BROWSER_WORKERS'] == '2'
+    assert [(row['platform'], row['timeout_minutes']) for row in job['strategy']['matrix']['include']] == [
+        ('linux-x64', '45'), ('windows-x64', '60')]
     upload = next(s for s in job['steps'] if s.get('with', {}).get('name') == 'candidate-test-results-${{ matrix.platform }}')
     paths = upload['with']['path'].splitlines()
     assert 'dist/test-results.xml' in paths and 'dist/candidate-tests/*.log' in paths
