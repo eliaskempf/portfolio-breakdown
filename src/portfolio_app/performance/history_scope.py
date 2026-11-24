@@ -1,7 +1,9 @@
 """Map Overview's existing category selection to historical source membership."""
+from collections import defaultdict
+from functools import cached_property
+
 from portfolio_app.ledger.account_journal import effective_events
 from portfolio_app.performance.history_observations import HistoryScope
-from portfolio_app.portfolio.strategic import bucket_positions
 
 
 def can_start_history_chart(journal, scope):
@@ -14,43 +16,80 @@ def can_start_history_chart(journal, scope):
                     for book in books.values() for e in selected_events(book)))
 
 
-def category_history_scope(journal, holdings, config, bucket='', *, displayed=None):
-    if 'bucket_id' not in holdings:
-        assignments = displayed.set_index('position_id').bucket_id.to_dict() if displayed is not None else {}
-        holdings = holdings.assign(bucket_id=holdings.position_id.map(assignments).fillna(''))
-    linked = {link.position_id for link in journal.cash_links}
-    selected = bucket_positions(holdings, config, bucket)
-    positions = set(selected.position_id) - linked
-    unresolved = []
-    if not bucket:
-        # Retained histories must survive closing/removing the current position.
-        positions.update(b.position_id for b in journal.securities)
-        return HistoryScope(tuple(positions), tuple(a.id for a in journal.accounts))
-    included = {''} if bucket == 'unassigned' else config.descendants(bucket)
-    assignments = holdings.set_index('position_id').bucket_id.to_dict()
-    if bucket == 'unassigned':
-        positions.update(b.position_id for b in journal.securities if b.position_id not in assignments)
-    cash = {(link.account_id, link.currency): assignments.get(link.position_id, '') for link in journal.cash_links}
-    components = {a.id: set() for a in journal.accounts}
-    for event in effective_events(journal):
-        if event.kind == 'cash_open':
-            components[event.account_id].add(cash.get((event.account_id, event.currency), ''))
-        elif event.kind in ('debt_open', 'borrow'):
-            components[event.account_id].add('')
-    for position in journal.positions:
-        components[position.account_id].add(position.bucket_id if position.bucket_id in config.descendants() else '')
-    accounts = []
-    for account in journal.accounts:
-        categories = components[account.id]
-        if not categories.intersection(included):
-            continue
-        if categories <= included:
-            accounts.append(account.id)
-        else:
-            unresolved.append(f'{account.name}: cash, debt or futures span categories; a dated category allocation is needed')
-    if displayed is not None:
-        selected_display = bucket_positions(displayed, config, bucket)
-        investment_ids = set(displayed.attrs.get('investment_members', {})) | {'future:overlay'}
-        if set(selected_display.position_id).intersection(investment_ids):
+class CategoryHistoryScopes:
+    """Resolve sibling scopes from the same holdings and journal during one comparison."""
+
+    def __init__(self, journal, holdings, config, displayed=None):
+        self.journal = journal
+        self.holdings = holdings
+        self.config = config
+        self.displayed = displayed
+        self.linked = {link.position_id for link in journal.cash_links}
+
+    @cached_property
+    def _holding_categories(self):
+        if 'bucket_id' in self.holdings:
+            return self.holdings.bucket_id
+        displayed = self.displayed
+        fallback = dict(zip(displayed.position_id, displayed.bucket_id)) if displayed is not None else {}
+        return self.holdings.position_id.map(fallback).fillna('')
+
+    @cached_property
+    def assignments(self):
+        return dict(zip(self.holdings.position_id, self._holding_categories))
+
+    @cached_property
+    def _positions(self):
+        positions = defaultdict(set)
+        for identity, category in zip(self.holdings.position_id, self._holding_categories):
+            if identity not in self.linked:
+                positions[category].add(identity)
+        # A removed book belongs to Unassigned until given a current assignment.
+        positions[''].update(b.position_id for b in self.journal.securities if b.position_id not in self.assignments)
+        return positions
+
+    @cached_property
+    def _accounts(self):
+        components = {account.id: set() for account in self.journal.accounts}
+        cash = {(link.account_id, link.currency): self.assignments.get(link.position_id, '')
+                for link in self.journal.cash_links}
+        for event in effective_events(self.journal):
+            if event.kind == 'cash_open':
+                components[event.account_id].add(cash.get((event.account_id, event.currency), ''))
+            elif event.kind in ('debt_open', 'borrow'):
+                components[event.account_id].add('')
+        configured = {b.id for b in self.config.buckets}
+        for position in self.journal.positions:
+            components[position.account_id].add(position.bucket_id if position.bucket_id in configured else '')
+        return components
+
+    @cached_property
+    def _investment_categories(self):
+        if self.displayed is None:
+            return set()
+        investments = set(self.displayed.attrs.get('investment_members', {})) | {'future:overlay'}
+        return {category for identity, category in zip(self.displayed.position_id, self.displayed.bucket_id)
+                if identity in investments}
+
+    def scope(self, bucket=''):
+        if not bucket:
+            positions = set(self.holdings.position_id) - self.linked
+            positions.update(b.position_id for b in self.journal.securities)
+            return HistoryScope(tuple(positions), tuple(a.id for a in self.journal.accounts))
+        included = {''} if bucket == 'unassigned' else self.config.descendants(bucket)
+        positions = set().union(*(self._positions.get(category, ()) for category in included))
+        accounts, unresolved = [], []
+        for account in self.journal.accounts:
+            categories = self._accounts[account.id]
+            if categories.intersection(included):
+                if categories <= included:
+                    accounts.append(account.id)
+                else:
+                    unresolved.append(f'{account.name}: cash, debt or futures span categories; a dated category allocation is needed')
+        if self._investment_categories.intersection(included):
             unresolved.append('This category includes allocated futures capital; dated category capital history is not yet supported')
-    return HistoryScope(tuple(positions), tuple(accounts), tuple(unresolved))
+        return HistoryScope(tuple(positions), tuple(accounts), tuple(unresolved))
+
+
+def category_history_scope(journal, holdings, config, bucket='', *, displayed=None):
+    return CategoryHistoryScopes(journal, holdings, config, displayed).scope(bucket)
