@@ -7,7 +7,7 @@ from portfolio_app.interface.shared.currency_display import money, reporting_cur
 from portfolio_app.interface.shared.presentation import return_percent
 
 
-def render_position_summary(row, directory, journal, *, has_history, demo=False, is_active=None):
+def render_position_summary(row, directory, journal, *, has_history, demo=False, is_active=None, journal_revision=None):
     from portfolio_app.interface.views.history.history_ui import prepared_history_view, prepared_history_calculation
     from portfolio_app.performance.history_observations import FILE, HistoryScope
     from portfolio_app.interface.shared.input_cache import file_stamp, observation_snapshot
@@ -37,7 +37,8 @@ def render_position_summary(row, directory, journal, *, has_history, demo=False,
             from portfolio_app.interface.views.history.history_data_ui import readable_reasons
             stamp, today = file_stamp(directory / FILE), date.today()
             observations, revision = observation_snapshot(directory)
-            calculation = prepared_history_calculation(directory, journal, observations, revision, target=target)
+            calculation = prepared_history_calculation(directory, journal, observations, revision, target=target,
+                                                       journal_revision=journal_revision)
             view = prepared_history_view(directory, journal, scope, observations, revision, 'All',
                 target=target, include_points=False, calculation=calculation)
             known = summarize_known_gain(journal, scope, observations, today.isoformat(), target,

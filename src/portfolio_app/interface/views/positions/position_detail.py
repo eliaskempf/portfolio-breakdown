@@ -40,7 +40,7 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
     if any(identifiers):
         st.caption(' · '.join(x for x in identifiers if x))
     from portfolio_app.ledger.account_journal import load_journal
-    journal, _ = load_journal(data_dir)
+    journal, journal_revision = load_journal(data_dir)
     has_history = any(b.position_id == row.position_id and b.active for b in journal.securities)
     view_key = f'position_edit_detail_view_{row.position_id}'
     views = ['History', 'Key metrics', 'Transactions', 'Details']
@@ -49,7 +49,7 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
     view = st.segmented_control('Position detail view', views,
         default='History', required=True, key=view_key, label_visibility='collapsed') or views[0]
     from portfolio_app.performance.position_summary import render_position_summary
-    render_position_summary(row, data_dir, journal, has_history=has_history, demo=demo,
+    render_position_summary(row, data_dir, journal, has_history=has_history, demo=demo, journal_revision=journal_revision,
                             is_active=_position_view_guard(row.position_id, include_view=False))
     active_class = 'position_active_'+view.replace(' ', '_')
     # Native selection changes in the browser before Python finishes its rerun.
@@ -69,7 +69,8 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
         body = st.empty()
         with body.container():
             with st.container(key=active_class):
-                _render_position_view(view, row, data_dir, journal, has_history, demo=demo, allocation=allocation)
+                _render_position_view(view, row, data_dir, journal, has_history, demo=demo, allocation=allocation,
+                                      journal_revision=journal_revision)
                 st.html(f'<span hidden data-position-view-ready="{view}"></span>')
 
 
@@ -83,7 +84,7 @@ def _position_view_guard(position_id, *, include_view=True):
                     and all(st.session_state.get(key) == value for key, value in expected.items()))
 
 
-def _render_position_view(view, row, data_dir, journal, has_history, *, demo, allocation):
+def _render_position_view(view, row, data_dir, journal, has_history, *, demo, allocation, journal_revision=None):
     if view == 'History':
         _render_history_view(row, data_dir, journal, has_history, demo=demo, allocation=allocation)
         return
@@ -135,12 +136,16 @@ def _render_position_view(view, row, data_dir, journal, has_history, *, demo, al
                'Quote date': row.get('price_observed_at') or '—'}
     if has_history:
         from datetime import date
-        from portfolio_app.performance.history_observations import load_observations
-        observations, _ = load_observations(data_dir)
+        from portfolio_app.interface.shared.input_cache import observation_snapshot
+        from portfolio_app.interface.views.history.history_ui import prepared_history_calculation
+        observations, revision = observation_snapshot(data_dir)
+        target = reporting_currency()
+        calculation = prepared_history_calculation(data_dir, journal, observations, revision,
+                                                   target=target, journal_revision=journal_revision)
         from portfolio_app.performance.gain_components import security_gain_components
         from portfolio_app.performance.gain_accounting import amount
         components = security_gain_components(journal, row.position_id, observations, date.today().isoformat(),
-            reporting_currency(), current_value=amount(row.get('current_value_reporting')))
+            target, current_value=amount(row.get('current_value_reporting')), calculation=calculation)
         details.update({'Recorded realized gain': money(components.realized, signed=True),
                         'Recorded income (net)': money(components.income, signed=True),
                         'Other recorded expenses': money(components.expenses),

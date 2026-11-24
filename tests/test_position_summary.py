@@ -70,6 +70,28 @@ def test_personal_headlines_are_identical_across_charts_ranges_and_tabs(tmp_path
     assert details['Unrealized gain'] == '+€220.00'
 
 
+def test_recorded_details_reuse_the_validated_ledger_and_observations(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+    from portfolio_app.ledger import security_history
+    from portfolio_app.performance import gain_components, history_observations
+
+    app, _ = launch(tmp_path)
+    hashes = Mock(wraps=security_history.history_fingerprint)
+    replays = Mock(wraps=gain_components.replay_securities)
+    reads = Mock(wraps=history_observations.load_observations)
+    monkeypatch.setattr(security_history, 'history_fingerprint', hashes)
+    monkeypatch.setattr(gain_components, 'replay_securities', replays)
+    monkeypatch.setattr(history_observations, 'load_observations', reads)
+    by_label(app.get('button_group'), 'Position detail view').set_value('Details').run()
+    assert not app.exception
+    details = app.dataframe[0].value.set_index('Position').Details
+    assert details['Recorded purchase payments'] == '€60.00'
+    assert details['Unrealized gain'] == '+€220.00'
+    replays.assert_not_called()
+    hashes.assert_not_called()
+    reads.assert_not_called()
+
+
 def test_summary_only_uses_recorded_cost_and_leaves_annualized_return_unknown(tmp_path):
     app, _ = launch(tmp_path, history=False)
     assert headlines(app) == [('Position value', '€300.00', '+€220.00'),
