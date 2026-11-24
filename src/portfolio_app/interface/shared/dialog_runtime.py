@@ -30,17 +30,21 @@ def local_dialog_updates():
     # Capture the owner when the context/decorator is declared. A nested polling
     # fragment must rebuild that owner on an explicit retry so its timer and
     # closed-over download state are initialized again.
-    fragment = ThreadState.get().fragment_id
-    return _local_dialog_updates(fragment)
+    return local_fragment_updates(dialog_only=True)
+
+
+def local_fragment_updates(*, dialog_only=False):
+    """Capture the owning result region before declaring its nested status fragment."""
+    return _local_updates(ThreadState.get().fragment_id, dialog_only)
 
 
 @contextmanager
-def _local_dialog_updates(fragment):
+def _local_updates(fragment, dialog_only):
     try:
         yield
     except RerunException as exc:
         request = exc.rerun_data
-        if fragment and st.session_state.get('position_edit_dialog') and not request.fragment_id_queue:
+        if fragment and not request.fragment_id_queue and (not dialog_only or st.session_state.get('position_edit_dialog')):
             # st.rerun's request has already been consumed at its yield point.
             # Preserve all other request fields, including pending widget values.
             raise RerunException(replace(request, fragment_id_queue=[fragment],

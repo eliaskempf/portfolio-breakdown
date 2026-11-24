@@ -5,6 +5,7 @@ from dataclasses import replace
 import plotly.graph_objects as go
 import streamlit as st
 
+from portfolio_app.interface.shared.background_ui import status_fragment
 from portfolio_app.interface.shared.render_sections import render_sections
 
 from portfolio_app.interface.shared.charts import chart_config, style_figure, PALETTE
@@ -50,44 +51,59 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
 
     result, requested = read(use_initial=period == saved_period)
     pending = not demo and any(service.pending(symbol, period) for symbol in requested)
-    completed = not pending
+    from portfolio_app.interface.shared.dialog_runtime import local_fragment_updates
 
-    from portfolio_app.interface.shared.dialog_runtime import local_dialog_updates
-    @st.fragment(run_every=2 if pending else None)
-    @local_dialog_updates()
-    def progress():
-        nonlocal result, requested, completed
+    @st.fragment
+    def market_result():
         if is_active is not None and not is_active():
             return
-        if not completed and not any(service.pending(symbol, period) for symbol in requested):
-            result, requested = read()
-            completed = not any(service.pending(symbol, period) for symbol in requested)
-        sections = render_sections(key, 'market_result', 'market_refresh')
-        with sections['market_result']:
-            _draw_history(result, key=key, index_points=index_points, compact=compact, caption=caption)
-        with sections['market_refresh']:
-            if not completed:
-                st.caption('Updating market-price history in the background…')
-            elif not demo and result.status in {'stale', 'unavailable'} and ticker and not manual:
-                if st.button('Retry history', key=key+'retry'):
-                    service.get(ticker, period, refresh=True)
-                    st.rerun()
-    progress()
+        sections = render_sections(key, 'market_plot', 'market_description', 'market_status')
+        if result.prices:
+            with sections['market_plot']:
+                _draw_prices(result, index_points)
+            if not compact:
+                sections['market_description'].caption(caption.format(currency=result.currency))
+
+        @status_fragment()
+        @local_fragment_updates()
+        def progress(poll):
+            nonlocal result, requested, pending
+            if is_active is not None and not is_active():
+                return
+            if pending and not any(service.pending(symbol, period) for symbol in requested):
+                updated, requested = read()
+                pending = any(service.pending(symbol, period) for symbol in requested)
+                if not pending:
+                    previous, result = result, updated
+                    if (result.dates, result.prices, result.currency) != (previous.dates, previous.prices, previous.currency):
+                        st.rerun()
+            details = render_sections(key, 'market_retrieved', 'market_note', 'market_refresh')
+            if result.prices and not compact:
+                details['market_retrieved'].caption(f'History last retrieved: {result.fetched_at}')
+            if result.note and (not compact or result.status not in {'fresh', 'cached'}):
+                message = details['market_note'].warning if result.status == 'stale' else details['market_note'].info
+                message(result.note)
+            with details['market_refresh']:
+                if pending:
+                    st.caption('Updating market-price history in the background…')
+                    poll(2)
+                elif not demo and result.status in {'stale', 'unavailable'} and ticker and not manual:
+                    if st.button('Retry history', key=key+'retry'):
+                        service.get(ticker, period, refresh=True)
+                        pending = True
+                        st.rerun(scope='fragment')
+
+        with sections['market_status']:
+            progress()
+    market_result()
     return result
 
 
-def _draw_history(result, *, key, index_points, compact, caption):
-    sections = render_sections(key, 'market_plot', 'market_description', 'market_retrieved', 'market_note')
-    if result.prices:
-        units = 'Index points' if index_points else result.currency
-        figure = style_figure(go.Figure(go.Scatter(x=result.dates, y=result.prices, mode='lines',
-            name='Price', line=dict(color=PALETTE[0], width=2.5), hovertemplate='Price: %{y:,.2f} '+units+'<extra></extra>')))
-        figure.update_layout(height=340, yaxis_title=units, margin=dict(l=0, r=0, t=12, b=0))
-        if not index_points:
-            money_history_axes(figure, result.currency)
-        sections['market_plot'].plotly_chart(chart_hover(figure), width='stretch', config=chart_config())
-        if not compact:
-            sections['market_description'].caption(caption.format(currency=result.currency))
-            sections['market_retrieved'].caption(f'History last retrieved: {result.fetched_at}')
-    if result.note and (not compact or result.status not in {'fresh', 'cached'}):
-        (sections['market_note'].warning if result.status == 'stale' else sections['market_note'].info)(result.note)
+def _draw_prices(result, index_points):
+    units = 'Index points' if index_points else result.currency
+    figure = style_figure(go.Figure(go.Scatter(x=result.dates, y=result.prices, mode='lines',
+        name='Price', line=dict(color=PALETTE[0], width=2.5), hovertemplate='Price: %{y:,.2f} '+units+'<extra></extra>')))
+    figure.update_layout(height=340, yaxis_title=units, margin=dict(l=0, r=0, t=12, b=0))
+    if not index_points:
+        money_history_axes(figure, result.currency)
+    st.plotly_chart(chart_hover(figure), width='stretch', config=chart_config())

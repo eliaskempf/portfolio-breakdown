@@ -18,7 +18,7 @@ from test_history_download import setup
 playwright = pytest.importorskip('playwright.sync_api')
 
 
-@pytest.mark.parametrize('kind', ['market', 'personal'])
+@pytest.mark.parametrize('kind', ['market', 'market-cached', 'personal'])
 def test_delayed_retry_rebuilds_owner_and_updates_chart_without_app_rerun(tmp_path, kind):
     journal, _ = setup(tmp_path)
     save_journal(tmp_path, journal, None)
@@ -46,8 +46,12 @@ class FakeMarket:
         if refresh: self.requested=time.monotonic()
         if self.requested and not self.pending():
             return HistoryResult(('2024-01-01','2024-01-02'),(100.,110.),'EUR','cached','2024-01-03','Invented retry')
+        if KIND == 'market-cached':
+            return HistoryResult(('2024-01-01','2024-01-02'),(100.,110.),'EUR','stale','','Invented initial failure')
         return HistoryResult((),(),'EUR','unavailable','','Invented initial failure')
-    def pending(self,*args): return self.requested is not None and time.monotonic()-self.requested<.5
+    def pending(self,*args):
+        if KIND == 'market-cached': return self.requested is not None and not (root/'release').exists()
+        return self.requested is not None and time.monotonic()-self.requested<.5
 class FakePersonal:
     def __init__(self): self.requested=False; self.busy=False
     def request(self,*args,force=False,**kwargs):
@@ -65,6 +69,11 @@ class FakePersonal:
     def pending(self,*args): return self.busy
 if not hasattr(market,'_retry_fixture'):
     market._retry_fixture=FakeMarket()
+    style = market.style_figure
+    def counted_style(*args, **kwargs):
+        count('figures.txt')
+        return style(*args, **kwargs)
+    market.style_figure = counted_style
     refresh_module.refresher=FakePersonal()
     def counted_load(root):
         count('observation-reads.txt')
@@ -74,7 +83,7 @@ st.session_state['position_edit_dialog']=True
 @st.dialog('Invented history')
 def dialog():
     count('dialog-renders.txt')
-    if KIND == 'market':
+    if KIND.startswith('market'):
         market.render_market_history('SYNTH',root,key='retry_',service=market._retry_fixture)
     else:
         personal.render_history_results(root,load_journal(root)[0],HistoryScope(('position-0',)),
@@ -97,16 +106,40 @@ dialog()
             browser = runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'), args=['--no-sandbox'])
             page = browser.new_page(viewport={'width':1280, 'height':1000})
             page.goto(f'http://127.0.0.1:{port}')
-            button = page.get_by_role('button', name='Retry history' if kind == 'market' else 'Retry prices', exact=True)
+            button = page.get_by_role('button', name='Retry history' if kind.startswith('market') else 'Retry prices', exact=True)
             button.wait_for(); settle(page)
-            assert page.locator('.js-plotly-plot').count() == 0
+            assert page.locator('.js-plotly-plot').count() == (1 if kind == 'market-cached' else 0)
             button.click()
+            if kind == 'market-cached':
+                loading = page.get_by_text('Updating market-price history in the background…', exact=True)
+                loading.wait_for()
+                settle(page)
+                plot = page.locator('.js-plotly-plot')
+                plot.evaluate('''el => {
+                    window.cachedPricePlot = el;
+                    window.pricePlotFaded = false;
+                    window.priceChanges = new MutationObserver(() => {
+                        if (el.closest('[data-stale="true"]')) window.pricePlotFaded = true;
+                    });
+                    window.priceChanges.observe(document.body, {subtree: true, attributes: true});
+                }''')
+                figures = tmp_path/'figures.txt'
+                before = figures.read_text()
+                page.wait_for_timeout(4300)
+                pending = figures.read_text()
+                (tmp_path/'release').touch()
+                loading.wait_for(state='hidden')
+                playwright.expect(page.get_by_text('History last retrieved: 2024-01-03')).to_be_visible()
+                page.wait_for_timeout(4300)
+                assert pending == before and figures.read_text() == before
+                assert plot.evaluate('el => el === window.cachedPricePlot && !window.pricePlotFaded')
+                assert plot.evaluate('el => Array.from(el.data[0].y)') == [100, 110]
             playwright.expect(page.locator('.js-plotly-plot')).to_have_count(1, timeout=15000)
             settle(page)
             playwright.expect(page.get_by_role('dialog')).to_be_visible()
             playwright.expect(button).to_have_count(0)
             assert (tmp_path/'app-renders.txt').read_text() == '1'
-            assert (tmp_path/'dialog-renders.txt').read_text() == ('1' if kind == 'personal' else '2')
+            assert (tmp_path/'dialog-renders.txt').read_text() == '1'
             if kind == 'personal':
                 before = (tmp_path/'observation-reads.txt').read_text()
                 page.wait_for_timeout(2500); settle(page)
