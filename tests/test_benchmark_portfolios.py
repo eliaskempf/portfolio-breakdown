@@ -140,6 +140,19 @@ def test_cash_history_fixture_funds_each_account(tmp_path, long_history, purchas
         stagger = index % 12 if long_history else 0
         assert buys[-1].date == (start + timedelta(days=(purchases-1)*30 + stagger)).isoformat()
 
+    if long_history:
+        from decimal import Decimal
+        store, _ = load_observations(workspace)
+        first_quotes = {o.subject: o.currency for o in store.observations if o.kind == 'price' and o.date == expected['start']}
+        currencies = [first_quotes[b.position_id] for b in journal.securities]
+        assert currencies == expected['quote_currencies']
+        assert Counter(currencies) == {'EUR': 4, 'USD': 4, 'GBP': 4}
+        assert all(set(currencies[category::3]) == {'EUR', 'USD', 'GBP'} for category in range(3))
+        for offset, usd, inverse_gbp in [(0, '.8', '.8'), (29, '.8', '.8'), (30, '.9', '.75')]:
+            stamp = (start + timedelta(days=offset)).isoformat()
+            assert {(o.currency, o.target): o.amount for o in store.index.fx[stamp]} == {
+                ('USD', 'EUR'): Decimal(usd), ('EUR', 'GBP'): Decimal(inverse_gbp)}
+
 
 def test_market_chart_benchmark_starts_with_durable_price_and_fx_ranges(tmp_path):
     import csv

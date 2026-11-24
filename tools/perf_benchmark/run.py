@@ -119,6 +119,11 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
                 if member_closes > 4 * (settings['positions'] + settings['accounts']):
                     raise AssertionError(f'{action["period"]} calculated {member_closes} individual member closes')
                 action['member_closes_calculated'] = member_closes
+                valuations = sum(e['valuations'] for e in charts)
+                fx_lookups = sum(e['fx_lookups'] for e in charts)
+                if fx_lookups > valuations * len(set(settings['quote_currencies']) | {'EUR'}):
+                    raise AssertionError(f'{action["period"]} performed {fx_lookups} FX lookups across {valuations} valuations')
+                action['fx_lookups'] = fx_lookups
             for offset, (stamp, actual) in enumerate(points):
                 day = first + timedelta(days=offset)
                 if stamp[:10] != day.isoformat():
@@ -129,10 +134,14 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
                         raise AssertionError('The combined balance before the first cash opening must be unknown')
                     continue
                 balance = settings['accounts'] * (100 + (t//30 if long_history else t))
+                # Calculate the expected EUR balance independently from the app.
+                alternate = (t//30) % 2
+                rates = {'EUR': 1., 'USD': .90 if alternate else .80, 'GBP': 1/(.75 if alternate else .80)}
                 for index, close in enumerate(settings['closing_prices']):
                     stagger = index % 12 if long_history else 0
                     shares = 1 + max(0, (t-stagger)//30)
-                    balance += shares * (100 + (close-100) * t / (end-start).days)
+                    rate = rates[settings['quote_currencies'][index]] if long_history else 1.
+                    balance += shares * (100 + (close-100) * t / (end-start).days) * rate
                 if actual is None or not isclose(actual, balance, rel_tol=1e-12):
                     raise AssertionError(f'Incorrect cash-history close for {day}: {actual}, expected {balance}')
             action['closes'] = len(points)
@@ -385,7 +394,8 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
         all_days = next(action for action in check['actions'] if action['period'] == 'All')
         summary += (f"\n{check['surface']} ten-year history paint/settle: {actions}. "
                     f"The All chart used {all_days['portfolio_closes_calculated']} whole-portfolio and "
-                    f"{all_days['member_closes_calculated']} single-member valuations for {all_days['closes']} dates.\n")
+                    f"{all_days['member_closes_calculated']} single-member valuations with {all_days['fx_lookups']} "
+                    f"FX lookups for {all_days['closes']} dates.\n")
     print(summary)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:

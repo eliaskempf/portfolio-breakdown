@@ -790,7 +790,9 @@ staggered across each month, and four cash accounts with monthly deposits. It
 opens Performance from Allocation, selects 3M, then All, and returns to 1Y.
 The report records chart paint and settled times, checks every daily balance
 including the unknown balance before the first cash opening, and counts
-portfolio valuations during each range change.
+portfolio and single-member valuations during each range change. Historical closes
+span EUR, USD and GBP with changing direct and inverse rates. The benchmark
+checks the converted balances and bounds FX lookups by the currencies valued.
 
 The mixed-history profile uses the same holdings and prices. Some overlapping
 constituents have only fund-local identifiers and company names. It also includes

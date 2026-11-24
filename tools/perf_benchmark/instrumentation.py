@@ -39,9 +39,18 @@ def observe_server(trial):
             return original_capital(calculation, scope, *args)
 
         if scenario == 'long-history':
+            original_fx = performance.valuation_fx
+            def measured_fx(*args, **kwargs):
+                if getattr(work, 'scope', None) is not None:
+                    work.fx_lookups += 1
+                return original_fx(*args, **kwargs)
+            performance.valuation_fx = measured_fx
+
             original_value = performance.value_at
             def measured_value(journal, scope, *args, **kwargs):
                 selected = getattr(work, 'scope', None)
+                if selected is not None:
+                    work.valuations += 1
                 if scope == selected:
                     work.closes += 1
                 elif selected is not None and len(scope.positions) + len(scope.accounts) == 1:
@@ -51,15 +60,16 @@ def observe_server(trial):
 
         original_chart = views.history_view
         def measured_chart(*args, **kwargs):
-            work.positions = work.closes = work.member_closes = 0
+            work.positions = work.closes = work.member_closes = work.valuations = work.fx_lookups = 0
             work.scope = args[1] if len(args) > 1 else kwargs['scope']
             try:
                 result = original_chart(*args, **kwargs)
                 record('cash_history_calculated', points=len(result.points), positions=work.positions,
-                       closes=work.closes, member_closes=work.member_closes)
+                       closes=work.closes, member_closes=work.member_closes,
+                       valuations=work.valuations, fx_lookups=work.fx_lookups)
                 return result
             finally:
-                del work.positions, work.closes, work.member_closes, work.scope
+                del work.positions, work.closes, work.member_closes, work.valuations, work.fx_lookups, work.scope
 
         performance._period_capital = measured_capital
         views.history_view = measured_chart

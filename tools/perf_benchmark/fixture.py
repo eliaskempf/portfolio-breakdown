@@ -96,6 +96,8 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
     rows = read_snapshot(directory / 'holdings.csv').holdings
     gap_offsets = {duration - offset for offset in range(15, 345, 15)} if purchase_fx else set()
     journal, books, observations = Journal(version=2), [], []
+    multi_currency = long_history and not purchase_fx
+    quote_currencies = []
     instrument_order = {asset: i for i, asset in enumerate(rows.id.unique())}
     for index, (_, row) in enumerate(rows.iterrows()):
         book = book_for(journal, row)
@@ -105,10 +107,21 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
             for t in range(purchases))
         books.append(reconstruction_candidate(replace(book, records=buys),
             tuple(event.id for event in buys), starts_at_zero=True))
+        # Rotate within each category as well as across the whole portfolio.
+        currency = ('EUR', 'USD', 'GBP')[(index + index // 3) % 3] if multi_currency else 'EUR'
+        quote_currencies.append(currency)
         price_change = 10 + instrument_order[row.id]
         observations.extend(Observation(f'o-{index}-{t}', 'price', book.position_id, day(t),
-            100 + Decimal(price_change * t) / duration, 'EUR', source='invented') for t in range(duration + 1)
+            100 + Decimal(price_change * t) / duration, currency, source='invented') for t in range(duration + 1)
             if index >= 6 or t not in gap_offsets)
+    if multi_currency:
+        # Mix both FX directions, with a rate change at each monthly boundary.
+        for t in range(duration + 1):
+            alternate = (t // 30) % 2
+            for source, target, rate in [('USD', 'EUR', '.90' if alternate else '.80'),
+                                         ('EUR', 'GBP', '.75' if alternate else '.80')]:
+                observations.append(Observation(f'fx-{source}-{target}-{t}', 'fx', f'{source}/{target}',
+                    day(t), Decimal(rate), source, target, source='invented'))
     if cash_history or long_history:
         accounts = tuple(Account(f'cash-{i}', f'Invented cash {i}') for i in range(4))
         events = [Event(f'opening-{i}', day(0), 'cash_open', account.id, 'EUR', 100)
@@ -119,6 +132,8 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
         journal = replace(journal, accounts=accounts, events=tuple(events))
         expected = dict(start=day(0), end=day(duration), accounts=len(accounts), positions=len(books),
                         closing_prices=rows.manual_price.tolist(), purchases=purchases)
+        if long_history:
+            expected['quote_currencies'] = quote_currencies
         (directory.parent / 'cash-history.json').write_text(json.dumps(expected), encoding='utf-8')
     save_journal(directory, replace(journal, securities=tuple(books)), None)
     save_observations(directory, ObservationStore(tuple(observations)), None)
