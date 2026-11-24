@@ -171,24 +171,34 @@ def test_warm_navigation_reads_the_journal_once_per_render(sample_data_dir, monk
         assert reads == [sample_data_dir]
 
 
-def test_dialog_host_observes_journal_published_during_parent_render(sample_data_dir, monkeypatch):
+def test_open_dialog_observes_journal_published_during_parent_render(sample_data_dir, monkeypatch):
     from portfolio_app.interface import ui
-    from portfolio_app.ledger.account_journal import Journal, save_journal
+    from portfolio_app.interface.views.positions import position_ui
+    from portfolio_app.ledger.account_journal import Journal, load_journal, save_journal
 
     app = launch(sample_data_dir, tab='Positions')
+    app.session_state['position_edit_selected'] = 'position-0'
+    app.session_state['position_edit_action'] = 'Edit position'
+    app.session_state['position_edit_dialog'] = True
     render = ui.render_position_dialog
-    revisions = []
+    reload_values = position_ui._reload_dialog_values
+    published, displayed = [], []
 
     def publish_once(*args, **kwargs):
-        revisions.append(kwargs['journal'].version)
-        if len(revisions) == 1:
+        if not published:
             save_journal(sample_data_dir, Journal(version=2), None)
+            published.append(load_journal(sample_data_dir)[1])
         return render(*args, **kwargs)
 
+    def observe_inputs(directory, **kwargs):
+        displayed.append(kwargs['inputs'].snapshot.holdings.attrs['history_journal_revision'])
+        return reload_values(directory, **kwargs)
+
     monkeypatch.setattr(ui, 'render_position_dialog', publish_once)
+    monkeypatch.setattr(position_ui, '_reload_dialog_values', observe_inputs)
     app.run()
     assert not app.exception
-    assert revisions == [1, 2]
+    assert published and displayed == published
 
 
 def test_demo_launch_and_subset_selection(sample_data_dir):

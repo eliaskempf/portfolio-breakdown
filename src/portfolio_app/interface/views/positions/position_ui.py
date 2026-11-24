@@ -247,15 +247,22 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
             journal = current_journal
         return current_values[1:]
 
+    mounted = False
+
     @st.fragment(key=HOST)
     def host():
+        nonlocal mounted
+        revisiting = mounted
+        mounted = True
         st.session_state['position_dialog_host_ready'] = True
         if not st.session_state.get('position_edit_dialog') and not st.session_state.get('position_edit_open_request'):
             # Read-only open/close never rebuilds the portfolio. Persisted changes
             # get one parent refresh once the dialog has actually closed.
             # Refresh the parent toolbar when a draft is created or discarded,
             # while keeping ordinary read-only dismissal local.
-            if position_dialog_sources(path.parent) != baseline or _has_position_draft() != draft_visible:
+            # On initial mount the parent may already be showing a save conflict.
+            # A later fragment dismissal owns the refresh after a dialog edit.
+            if revisiting and (position_dialog_sources(path.parent) != baseline or _has_position_draft() != draft_visible):
                 st.rerun()
             return
         _render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=valued, values=values)
