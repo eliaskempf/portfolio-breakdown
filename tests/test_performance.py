@@ -90,3 +90,59 @@ def test_empty_input_and_overflow_stay_unavailable():
     result = position_performance(positions().assign(shares=1e308, acquisition_price=1e308))
     assert result.unrealized_gain.isna().all()
     assert result.cost_basis.isna().all()
+
+
+def test_performance_writes_complete_columns_and_keeps_position_order(monkeypatch):
+    frame = pd.concat([positions()] * 32, ignore_index=True)
+    frame.index = pd.Index(range(len(frame) * 3, 0, -3), name='source_row')
+    frame.attrs['source'] = 'synthetic'
+    writes = []
+    set_value = pd.DataFrame._set_value
+
+    def counted(self, index, column, value, *args, **kwargs):
+        writes.append(column)
+        return set_value(self, index, column, value, *args, **kwargs)
+
+    monkeypatch.setattr(pd.DataFrame, '_set_value', counted)
+    result = position_performance(frame)
+    assert not writes
+    pd.testing.assert_index_equal(result.index, frame.index)
+    assert result.attrs == frame.attrs
+    assert result.unrealized_gain.tolist()[:2] == [20, -20]
+    assert result.cost_basis.notna().sum() == len(frame)
+
+
+def test_cash_costs_are_read_once_and_duplicate_row_labels_keep_separate_balances(monkeypatch):
+    from portfolio_app.performance import performance
+
+    frame = positions().iloc[:2].assign(instrument_type='cash', acquisition_price=[10., float('nan')])
+    frame.index = [7, 7]
+    reads = []
+    read = performance.active_components
+
+    def counted(row):
+        reads.append(row['shares'])
+        return read(row)
+
+    monkeypatch.setattr(performance, 'active_components', counted)
+    result = position_performance(frame)
+    assert reads == frame.shares.tolist()
+    assert result.cost_basis_reporting.notna().tolist() == [True, False]
+    assert performance.cash_balance_only(result).tolist() == [False, True]
+
+
+def test_invalid_closed_cash_evidence_precedes_historical_fx_requests():
+    from portfolio_app.performance.cost_basis import component, encode_components
+    from portfolio_app.portfolio.holdings import DataError
+
+    frame = positions().iloc[:2].assign(instrument_type=['equity', 'cash'], shares=[2., 0.],
+                                         acquisition_currency='USD')
+    frame['cost_basis_details'] = [
+        encode_components([component(2, 60, 'USD', '2024-01-02')], frame.iloc[0]), '{invalid']
+
+    class Historical:
+        def get(self, *args):
+            pytest.fail('Invalid cash evidence must be reported before requesting an exchange rate')
+
+    with pytest.raises(DataError, match='Stored cost details'):
+        position_performance(frame, historical=Historical())
