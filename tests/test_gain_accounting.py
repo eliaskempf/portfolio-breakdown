@@ -502,3 +502,38 @@ def test_partial_gain_reuses_dated_ledger_without_changing_supported_components(
         assert gain.amount == (5 if stamp >= '2024-07-01' else None)
         assert gain.capital is None and gain.partial
     assert summarize_known_gain(journal, scope, obs, END, calculation=calculation).value == (120 if with_price else None)
+
+
+def test_partial_lot_basis_reuses_only_costs_across_daily_marks(monkeypatch):
+    from portfolio_app.performance import gain_components
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+    journal = Journal(version=2, securities=(book(
+        E('open', 'opening', START, quantity=1, currency='EUR'),
+        E('known', 'buy', '2024-02-01', quantity=2, price=6, currency='EUR', charges_known=True),
+        E('foreign', 'buy', '2024-03-01', quantity=1, price=5, currency='USD', charges_known=True)),))
+    obs = ObservationStore()
+    calc = HistoryCalculation(journal, obs)
+    calls = []
+    resolve = gain_components.resolve_cost
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return resolve(*args, **kwargs)
+    monkeypatch.setattr(gain_components, 'resolve_cost', counted)
+    def gain(stamp, value):
+        return security_gain_components(journal, 'stock', obs, stamp, current_value=D(value), calculation=calc)
+    february = gain('2024-02-01', 33)
+    assert february.unrealized == 10 and february.remaining_cost is None
+    february_calls = len(calls)
+    # The quote and gain change while the supported cost and units stay fixed.
+    assert gain('2024-02-29', 48).unrealized == 20
+    assert len(calls) == february_calls
+    assert gain('2024-03-01', 48).unrealized == 12
+    march_calls = len(calls)
+    assert march_calls > february_calls
+    assert gain('2024-02-01', 33) == february
+    assert gain('2024-03-17', 60).unrealized == 18
+    assert len(calls) == march_calls
+    corrected = ObservationStore((O('supplied', 'fx', 'USD/EUR', '2024-03-01', D('.8'), 'USD', 'EUR'),))
+    updated = security_gain_components(journal, 'stock', corrected, '2024-03-17', current_value=D(60),
+                                       calculation=HistoryCalculation(journal, corrected))
+    assert updated.unrealized == 29 and updated.remaining_cost is None

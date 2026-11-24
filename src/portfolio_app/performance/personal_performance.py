@@ -147,6 +147,12 @@ class HistoryCalculation:
             return recorded_security_gains(book, self.securities(stamp), self.observations, stamp, target)
         return self._get(('security_gains', identity, interval, target), load)
 
+    def partial_lot_costs(self, identity, stamp, target):
+        from portfolio_app.performance.gain_components import partial_lot_costs
+        interval = bisect_right(self._security_dates, stamp)
+        return self._get(('partial_lot_costs', identity, interval, target), lambda:
+            partial_lot_costs(self.securities(stamp).positions.get(identity), self.observations, target))
+
     def accounts(self, stamp):
         from portfolio_app.ledger.account_timeline import AccountTimeline
         # Cash postings are derived once from the same immutable journal snapshot.

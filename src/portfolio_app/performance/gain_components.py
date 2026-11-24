@@ -46,11 +46,25 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
         return replace(recorded, unrealized=value-recorded.remaining_cost if value is not None else None)
     if value is None:
         return recorded
-    state = calculation.securities(end) if calculation else replay_securities(journal.securities, as_of=end)
-    balance = state.positions.get(identity)
-    if balance is None or not balance.quantity:
+    if calculation is not None:
+        quantity, costs = calculation.partial_lot_costs(identity, end, target)
+    else:
+        quantity, costs = partial_lot_costs(state.positions.get(identity), observations, target)
+    if not costs:
         return recorded
-    gains = []
+    with localcontext() as context:
+        context.prec = 60
+        gains = [value * units / quantity - cost for units, cost in costs]
+    return replace(recorded, unrealized=sum(gains, ZERO), reasons=(*recorded.reasons,
+                   'Unrealized gain covers only units with supplied acquisition costs'))
+
+
+def partial_lot_costs(balance, observations, target):
+    """Resolve supported quantities and costs independently of the closing mark."""
+    if balance is None or not balance.quantity:
+        return ZERO, ()
+    historical = ObservationFX(observations)
+    costs = []
     with localcontext() as context:
         context.prec = 60
         for lot in balance.lots:
@@ -58,11 +72,10 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
                 continue
             known = [p for p in lot.costs if p['amount'] != '']
             units = sum((Decimal(p['shares']) for p in known), ZERO)
-            resolved = resolve_cost(known, target, ObservationFX(observations)) if units else None
+            resolved = resolve_cost(known, target, historical) if units else None
             if resolved is not None and resolved.exact_amount is not None:
-                gains.append(value*units/balance.quantity-resolved.exact_amount)
-    return replace(recorded, unrealized=sum(gains, ZERO), reasons=(*recorded.reasons,
-                   'Unrealized gain covers only units with supplied acquisition costs')) if gains else recorded
+                costs.append((units, resolved.exact_amount))
+    return balance.quantity, tuple(costs)
 
 
 def recorded_security_gains(book, state, observations, end, target):
