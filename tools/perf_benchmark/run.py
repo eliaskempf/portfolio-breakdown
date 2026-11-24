@@ -396,6 +396,8 @@ def check_exposure(report, expected, surface, profile):
             raise AssertionError('Company names, values or denominators changed across visits or binaries')
         visit['digest'] = digest
     dimensions = [item for visit in report['themes'] for item in visit.get('dimensions', [])]
+    if profile == 'multi-account' and sum(visit.get('show_tickers', False) for visit in report['themes']) != 1:
+        raise AssertionError('Four-account comparison missed the ticker-enabled sector chart')
     if profile == 'multi-account' and [item['name'] for item in dimensions] != ['Account', 'Investment']:
         raise AssertionError('Four-account comparison missed a grouping')
     for visit in report['themes']:
@@ -471,6 +473,9 @@ def run_comparison(candidate, reference, destination, surfaces, pairs, profile, 
                               'sector chart ms', [round(v['chart_ms']) for v in report['themes']],
                               'company grid ms', [round(v['grid_ms']) for v in report['companies']], flush=True)
                         for visit in report['themes']:
+                            if visit.get('show_tickers'):
+                                print(surface, name, 'ticker-enabled sector paint / settled ms',
+                                      round(visit['chart_ms']), round(visit['settled_ms']), flush=True)
                             for dimension in visit.get('dimensions', []):
                                 print(surface, name, dimension['name'], 'paint / settled ms',
                                       round(dimension['chart_ms']), round(dimension['settled_ms']), flush=True)

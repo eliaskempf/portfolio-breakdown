@@ -602,6 +602,22 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False, company_account
             assets.scrollIntoView({block:'center'}); assets.click(); return true;""")
         wait(lambda: read("return !!table()?.querySelector('tr[data-position-id]') && !running();"))
 
+    def set_ticker_display(enabled):
+        controls = """
+            const settings = [...d.querySelectorAll('button')].find(e =>
+                visible(e) && e.querySelector('p')?.textContent.trim() === 'Data & settings');
+            const checkbox = d.querySelector('.st-key-display_tickers input[type=checkbox]');
+        """
+        read(controls + "settings.click(); return true;")
+        wait(lambda: read(controls + "return visible(checkbox?.closest('label'));"))
+        read(controls + "checkbox.click(); return true;")
+        wait(lambda: read("""
+            const t = table();
+            return t?.querySelector('tr[data-position-id]') && !running() &&
+                [...t.querySelectorAll('th button')].some(e => e.textContent.trim() === 'Ticker') ===
+        """ + json.dumps(enabled) + ";"))
+        read(controls + "if (visible(checkbox?.closest('label'))) settings.click(); return true;")
+
     def company_visit(*, check_sources):
         read("""
             const button = [...d.querySelectorAll('[role=radio],button')].find(e =>
@@ -757,7 +773,11 @@ def exercise_exposure(evaluate, trial, variant, *, themes=False, company_account
             companies = [company_visit(check_sources=False), company_visit(check_sources=True)]
             if company_accounts:
                 back_to_assets()
-                theme_visits = [theme_visit(), theme_visit(dimensions=True)]
+                theme_visits = [theme_visit()]
+                set_ticker_display(True)
+                theme_visits.append(dict(theme_visit(), show_tickers=True))
+                set_ticker_display(False)
+                theme_visits.append(theme_visit(dimensions=True))
         read("tab('Overview').click(); return true;")
         wait(lambda: ready() and read("return !table() && tab('Overview').getAttribute('aria-selected') === 'true';"))
     fundamentals = exercise_fundamentals(evaluate, trial, variant) if themes else None

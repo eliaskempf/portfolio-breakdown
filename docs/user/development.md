@@ -800,8 +800,10 @@ accounts alongside 24 direct shares. Its 120 positions have 3,000 purchases and
 accounts. This additional pair opens Assets once and Companies twice, then
 repeats the Themes & sectors comparison with the same four-account scope. It
 checks the source disclosure for all 65,624 ownership contributions and compares
-every displayed sector label and value across binaries. On its second sector visit,
-it switches the grouping to Account and Investment. It times the painted charts
+every displayed sector label and value across binaries. It repeats the sector
+visit with **Show tickers** enabled, checks that the Assets table gained a Ticker
+column, and verifies that every sector amount matches the default view. After
+restoring the default, it switches the grouping to Account and Investment. It times the painted charts
 and populated tables, checks their row counts, and compares all four account
 amounts and the 30 largest investment contributions across binaries. It then visits
 Positions, Rebalance and Overview twice. Each visit records the first populated
