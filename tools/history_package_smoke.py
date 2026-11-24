@@ -157,11 +157,17 @@ def smoke(command, evidence=None):
 
         def settings(page, action):
             settle_app(page)
-            page.get_by_role('button', name='App menu', exact=True).click()
-            heading = page.get_by_text('Workspace', exact=True)
-            if heading.locator('xpath=ancestor::details[1]').get_attribute('open') is None:
+            menu = page.get_by_test_id('stPopoverBody')
+            if not menu.is_visible():
+                page.get_by_role('button', name='App menu', exact=True).click()
+                expect(menu).to_be_visible()
+                settle_app(page)
+            heading = menu.get_by_text('Workspace', exact=True)
+            section = heading.locator('xpath=ancestor::details[1]')
+            if section.get_attribute('open') is None:
                 heading.click()
-            page.get_by_role('button', name=action, exact=True).click()
+                settle_app(page)
+            section.get_by_role('button', name=action, exact=True).click()
             dialog = page.get_by_role('dialog', name=action, exact=True)
             expect(dialog).to_be_visible()
             return dialog
@@ -191,6 +197,7 @@ def smoke(command, evidence=None):
                     finally:
                         draft.close()
                     dialog.get_by_role('button', name='Close backup', exact=True).click()
+                    expect(dialog).not_to_be_visible()
                     dialog = settings(page, 'Restore backup')
                     dialog.locator('input[type=file]').set_input_files(archive)
                     dialog.get_by_role('button', name='Review backup', exact=True).click()
