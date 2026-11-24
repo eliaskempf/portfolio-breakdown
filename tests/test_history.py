@@ -333,3 +333,50 @@ def test_concurrent_failed_attempt_does_not_discard_successful_prices(tmp_path):
     service = HistoryService(Invented(), tmp_path, now=lambda: clock)
     assert service.get('INVENTED').prices == (22.,)
     assert offline.get('INVENTED').prices == (22.,)
+
+
+def test_fx_conversion_parses_only_nonstandard_dates_individually(monkeypatch):
+    from portfolio_app.market import history
+    native = history.HistoryResult(
+        ('2026-03-27T23:59:59.123456789-04:00', '2026-03-30T00:00:00+02:00',
+         '2026-03-30T12:01:00Z', 'April 1, 2026', '2026-04-02'), (10., 12., 15., 20., 25.), 'USD', 'fresh')
+    rates = history.HistoryResult(('2026-03-27', '2026-03-30', '2026-04-01'), (.8, .75, .9), 'EUR', 'stale')
+    seen = []
+    timestamp = pd.Timestamp
+    def counted(stamp):
+        seen.append(stamp)
+        return timestamp(stamp)
+    monkeypatch.setattr(pd, 'Timestamp', counted)
+    converted = history.convert_price_history(native, 'EUR', {'USD': rates})
+    assert seen == ['April 1, 2026']
+    assert converted.dates == ('2026-03-27T00:00:00', '2026-03-30T00:00:00',
+                               '2026-03-30T00:00:00', '2026-04-01T00:00:00')
+    assert converted.prices == (8., 9., 11.25, 18.)
+    assert converted.status == 'stale' and 'omitted' in converted.note
+
+
+@pytest.mark.parametrize('invalid', ['2026-02-30', '2026-02-28T37:00:00', '2026-02-28T12:00:00oops'])
+def test_fx_conversion_validates_the_full_timestamp(invalid):
+    from portfolio_app.market.history import HistoryResult, convert_price_history
+    native = HistoryResult((invalid,), (10.,), 'USD', 'fresh')
+    rates = HistoryResult(('2026-02-28',), (.9,), 'EUR', 'fresh')
+    with pytest.raises(ValueError):
+        convert_price_history(native, 'EUR', {'USD': rates})
+
+
+@pytest.mark.parametrize('days', [('2024-11-03', 'NaT', '2026-04-05'), ('1500-11-03', 'NaT', '2500-04-05')])
+def test_converted_history_preserves_the_supported_date_range(days):
+    from portfolio_app.market.history import HistoryResult, convert_price_history
+    native = HistoryResult(days, (10., 20., 30.), 'USD', 'cached')
+    rates = HistoryResult(native.dates, (.8, .9, 1.), 'EUR', 'cached')
+    try:
+        original_index = pd.DatetimeIndex([pd.Timestamp(day).date() for day in days])
+    except pd.errors.OutOfBoundsDatetime:
+        # pandas 2.2 constructs this index at nanosecond precision.
+        with pytest.raises(pd.errors.OutOfBoundsDatetime):
+            convert_price_history(native, 'EUR', {'USD': rates})
+        return
+    converted = convert_price_history(native, 'EUR', {'USD': rates})
+    assert converted.dates == tuple(day.isoformat() for day in original_index)
+    assert all(type(day) is str for day in converted.dates)
+    assert converted.prices == (8., 18., 30.)

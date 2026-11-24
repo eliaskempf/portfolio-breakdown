@@ -1,11 +1,12 @@
 """On-demand market-price history, separate from personal investment returns."""
 from collections import OrderedDict
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 import json
 import math
 import os
+import re
 from pathlib import Path
 from portfolio_app.workspace.atomic_file import staged_text
 from threading import Lock
@@ -214,11 +215,27 @@ class HistoryService:
         return result
 
 
+# Daily providers emit ISO calendar dates or timestamps with a local clock.
+# Only strip a clock that is well formed. Older formats use the original parser.
+_ISO_DAILY = re.compile(
+    r'[0-9]{4}-[0-9]{2}-[0-9]{2}'
+    r'(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]{1,9})?'
+    r'(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])?)?'
+)
+
+
+def _trading_day(stamp):
+    # Taking the provider's local date preserves the trading day across DST.
+    if isinstance(stamp, str) and _ISO_DAILY.fullmatch(stamp):
+        try:
+            return date.fromisoformat(stamp[:10])
+        except ValueError:
+            pass
+    return pd.Timestamp(stamp).date()
+
+
 def _trading_dates(dates):
-    # Daily bars are keyed by the provider's local trading date. Parse offsets
-    # individually: DST varies within cached ISO dates, and converting midnight
-    # to UTC would shift positive-offset markets onto the previous FX date.
-    return pd.DatetimeIndex([pd.Timestamp(stamp).date() for stamp in dates])
+    return pd.DatetimeIndex([_trading_day(stamp) for stamp in dates])
 
 
 def convert_price_history(result, target, legs):
@@ -237,6 +254,7 @@ def convert_price_history(result, target, legs):
         prices = prices / rates.reindex(prices.index) if inverse else prices * rates.reindex(prices.index)
         statuses.append(fx.status)
     prices = prices.replace([float('inf'), -float('inf')], float('nan')).dropna()
-    return replace(result, dates=tuple(stamp.isoformat() for stamp in prices.index), prices=tuple(prices), currency=target,
+    dates = prices.index.to_numpy(dtype='datetime64[s]').astype(str).tolist()
+    return replace(result, dates=tuple(dates), prices=tuple(prices), currency=target,
                    status='stale' if 'stale' in statuses else result.status,
                    note='Dates without historical FX are omitted.' if len(prices) < len(result.prices) else result.note)
