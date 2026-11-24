@@ -65,6 +65,39 @@ def test_fx_dates_include_foreign_account_cash_and_inverse_rates():
     assert [o.id for o in scope_observations(journal, scope, obs, 'EUR')] == ['direct', 'inverse']
 
 
+def test_scoped_evidence_reads_only_selected_rows_after_indexing():
+    from portfolio_app.performance.history_valuation import scope_observations, scope_observation_dates
+    from test_daily_twr import example
+    journal, scope, _ = example((), quantity=1)
+    observations = (
+        Observation('old', 'price', 'invented', START, 1, 'JPY'),
+        Observation('inverse', 'fx', 'EUR/USD', START, 1, 'EUR', target='USD'),
+        Observation('ignored', 'price', 'unrelated', START, 1, 'JPY'),
+        Observation('boundary', 'value', scope.key, START, -1, 'EUR', side='after', boundary='flow'),
+        Observation('price', 'price', 'SYNTH', END, 2, 'USD'),
+        Observation('corrected', 'price', 'invented', START, 2, 'EUR', replaces='old'),
+        Observation('obsolete-currency', 'fx', 'JPY/EUR', START, 1, 'JPY', target='EUR'))
+    index = ObservationStore(observations).index
+    traversals, reads = [], []
+
+    class TrackedRows(tuple):
+        def __iter__(self):
+            traversals.append(True)
+            return super().__iter__()
+
+        def __getitem__(self, offset):
+            result = super().__getitem__(offset)
+            reads.append(result.id)
+            return result
+
+    index.active = TrackedRows(index.active)
+    expected = ['inverse', 'boundary', 'price', 'corrected']
+    assert [o.id for o in scope_observations(journal, scope, index, 'EUR')] == expected
+    dates = scope_observation_dates(journal, scope, index, 'EUR')
+    assert dates.chart_dates == {START, END} and dates.negative_equity_dates == dates.boundary_dates == {START}
+    assert len(traversals) == 1 and set(reads) == set(expected)
+
+
 def test_chart_current_gain_and_categories_share_ledgers_but_not_valuation_basis(monkeypatch):
     import portfolio_app.performance.personal_performance as performance
     journal = Journal(version=2, securities=(

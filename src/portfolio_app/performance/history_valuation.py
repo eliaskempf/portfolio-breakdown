@@ -11,15 +11,16 @@ def scope_observations(journal, scope, observations, target):
     """Conservative historical currency requirements, shared by charts and gates."""
     from portfolio_app.ledger.account_journal import effective_events
     from portfolio_app.market.currencies import quote_unit
-    from portfolio_app.performance.history_observations import active_observations
     from portfolio_app.ledger.security_history import selected_events
     subjects = set(scope.positions) | {b.instrument_id for b in journal.securities if b.position_id in scope.positions}
     positions = {p.id: p for p in journal.positions if p.account_id in scope.accounts}
     contracts = {p.contract_id for p in positions.values()}
     subjects.update(positions)
     subjects.update(contracts)
-    active = active_observations(observations)
-    currencies = {quote_unit(o.currency)[0] for o in active if o.kind == 'price' and o.subject in subjects}
+    index = index_observations(observations)
+    rows = [offset for subject in subjects for offset in index.scope_rows.get(('price', subject), ())]
+    price_currencies = {index.active[offset].currency for offset in rows}
+    currencies = {quote_unit(currency)[0] for currency in price_currencies}
     currencies.update(c.currency for c in journal.contracts if c.id in contracts)
     for book in journal.securities:
         if book.position_id not in scope.positions and book.account_id not in scope.accounts:
@@ -34,9 +35,12 @@ def scope_observations(journal, scope, observations, target):
             currencies.update((event.currency, event.other_currency))
     pairs = {(native, target) for native in currencies - {'', target}}
     pairs |= {(right, left) for left, right in tuple(pairs)}
-    return tuple(o for o in active if o.kind == 'price' and o.subject in subjects
-                 or o.kind == 'fx' and (o.currency, o.target) in pairs
-                 or o.kind == 'value' and o.subject == scope.key)
+    for source, destination in pairs:
+        rows.extend(index.scope_rows.get(('fx', source, destination), ()))
+    rows.extend(index.scope_rows.get(('value', scope.key), ()))
+    # Corrections can put surviving rows anywhere in the saved evidence order.
+    return tuple(index.active[offset] for offset in sorted(rows))
+
 
 @dataclass(frozen=True)
 class ScopeObservationDates:

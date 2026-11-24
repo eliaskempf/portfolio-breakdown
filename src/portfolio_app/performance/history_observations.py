@@ -173,6 +173,16 @@ class _ObservationIndex:
                              for subject, series in prices.items()}
 
     @cached_property
+    def scope_rows(self):
+        """Active row offsets by price subject, currency pair, or valuation scope."""
+        groups = {}
+        for offset, observation in enumerate(self.active):
+            key = ((observation.kind, observation.currency, observation.target) if observation.kind == 'fx'
+                   else (observation.kind, observation.subject))
+            groups.setdefault(key, []).append(offset)
+        return groups
+
+    @cached_property
     def reciprocal_closing_pairs(self):
         """Currency pairs whose closing conversion may need the reciprocal check in rate()."""
         reciprocal = set()
