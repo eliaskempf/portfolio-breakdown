@@ -828,13 +828,16 @@ offline, and revisiting an unchanged range reuses both saved series.
 Exposure benchmark branch pushes run the installed comparison. The workflow
 also accepts `market-chart` with a listed-equity profile for both surfaces.
 
-The native historical-risk comparison uses 48 market-valued listings. It starts
-with the benchmark and 47 adjusted histories already cached. The first Calculate
-action should request the missing listing once. Expanding and collapsing the
-matrix should reuse the calculation and avoid a portfolio valuation. Each sample records request and calculation
-counts, click-to-chart time and settled time, and compares all three displayed
-risk estimates and the full correlation matrix across binaries. Select the
-`risk` experiment with a listed-equity profile to run it on both renderers.
+The `risk` experiment with the `mixed-history` profile uses 96 equities and
+24 ETFs, including two distinct listings with the same long display name.
+The first Calculate action should request the one missing adjusted history.
+Expanding and collapsing the 120 × 120 matrix should reuse the calculation and
+avoid a portfolio valuation. Each sample records request and calculation counts,
+click-to-chart time, settled time and encoded label size. The candidate has a
+label budget of 1 KiB per instrument, independent of the numeric matrix. The
+driver compares all three displayed estimates and every correlation across
+actions and binaries. Select this experiment to run it on both renderers.
+The `risk-cold` and `risk-stale` mixed-history comparisons use 48 listings.
 The `risk-cold` experiment starts with every adjusted history missing, including
 the benchmark. It measures first chart paint, settling and peak simultaneous
 provider requests, and verifies one acquisition per listing. Both binaries must

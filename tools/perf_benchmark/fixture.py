@@ -24,7 +24,7 @@ def company(index):
     return f'company-{index}', f'Invented company {index}', f'ZZC-{index}', f'ZZ{index:010d}'
 
 
-def holdings_and_funds(directory, profile, today):
+def holdings_and_funds(directory, profile, today, *, large_risk_matrix=False):
     if profile == 'small':
         for index in range(12):
             yield f'invented-{index}', f'Invented holding {index}', '', '', 'other', 'non_equity'
@@ -32,8 +32,13 @@ def holdings_and_funds(directory, profile, today):
     if profile not in {'etf-heavy', 'mixed-history', 'multi-account'}:
         raise ValueError(f'Unknown portfolio profile {profile!r}')
     directory.mkdir()
-    for index in range(DIRECT_EQUITIES):
-        yield *company(index), 'equity', 'equity'
+    equities = 96 if large_risk_matrix else DIRECT_EQUITIES
+    for index in range(equities):
+        identity, name, ticker, isin = company(index)
+        if large_risk_matrix:
+            label = 'shared <A> & B' if index < 2 else str(index)
+            name = f'Invented international investment holding {label}'
+        yield identity, name, ticker, isin, 'equity', 'equity'
     for index, size in enumerate(FUND_SIZES):
         fund_id = f'fund-{index}'
         name, ticker, isin = f'Invented fund {index}', f'ZZF-{index}', f'ZZF{index:09d}'
@@ -51,14 +56,15 @@ def holdings_and_funds(directory, profile, today):
                 identity = row if row < size // 2 else (index + 1) * max(FUND_SIZES) + row
                 weight = coverage * (size - row) / (size * (size + 1) / 2)
                 constituent = company(identity)
-                if sectors and DIRECT_EQUITIES <= row < size // 2 and row % 4 == 0 and index % 3 != 0:
+                if sectors and equities <= row < size // 2 and row % 4 == 0 and index % 3 != 0:
                     constituent = (f'local-{index}-{row}', constituent[1], '', '')
                 sector = [f'Invented sector {identity % 24}'] if sectors else []
                 writer.writerow([*constituent, weight, 'equity', *sector])
         yield fund_id, name, ticker, isin, 'etf', 'equity'
 
 
-def create_workspace(directory: Path, profile='small', *, today=None, checklist=False, purchase_fx=False, cash_history=False):
+def create_workspace(directory: Path, profile='small', *, today=None, checklist=False, purchase_fx=False, cash_history=False,
+                     large_risk_matrix=False):
     directory.mkdir()
     today = today or date.today()
     start = today - timedelta(days=730)
@@ -74,7 +80,7 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
         writer = csv.writer(handle)
         writer.writerow(columns.split())
         for index, (identity, name, ticker, isin, kind, exposure) in enumerate(
-                holdings_and_funds(directory / 'etfs', profile, today)):
+                holdings_and_funds(directory / 'etfs', profile, today, large_risk_matrix=large_risk_matrix)):
             for account in range(4 if multi_account and kind == 'etf' else 1):
                 position = f'{identity}-account-{account}' if multi_account else identity
                 row = [position, identity, name, ticker, isin, 25, 100, 'EUR', f'group{index % 3}',

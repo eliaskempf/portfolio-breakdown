@@ -199,6 +199,8 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
                 raise AssertionError(f'Unexpected risk calculation count on action {index}: {action}')
             if action['holdings'] != len(risk_listings) - 1 or any(value in ('', '—') for value in action['metrics']):
                 raise AssertionError('Incomplete risk estimates or correlation matrix')
+            if variant == 'candidate' and action['label_bytes'] > 1024 * action['holdings']:
+                raise AssertionError('Risk matrix label payload exceeded 1 KiB per instrument')
         if scenario == 'risk-cold':
             edges = []
             for event in events:
@@ -434,7 +436,8 @@ def run_comparison(candidate, reference, destination, surfaces, pairs, profile, 
             for name, exe in (reversed(order) if pair % 2 else order):
                 with TemporaryDirectory(prefix=experiment + '-benchmark-') as tmp:
                     workspace = Path(tmp) / 'synthetic'
-                    create_workspace(workspace, profile, today=as_of, checklist=experiment == 'checklist')
+                    create_workspace(workspace, profile, today=as_of, checklist=experiment == 'checklist',
+                                     large_risk_matrix=experiment == 'risk' and profile == 'mixed-history')
                     report = benchmark(exe, workspace, Path(tmp) / 'trial', name, surface, experiment,
                                        themes=profile == 'mixed-history', company_accounts=profile == 'multi-account')
                     if experiment == 'market-chart':

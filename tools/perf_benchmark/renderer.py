@@ -823,7 +823,11 @@ def exercise_risk(evaluate, trial, *, await_refresh=False):
                 if (painted && drawn === null) drawn = elapsed;
                 if (painted && !running()) {
                     const trace = chart.data[0];
+                    const labels = [trace.x, trace.y, trace.customdata, trace.text, trace.hovertext,
+                        trace.hovertemplate, ...[chart.layout.xaxis, chart.layout.yaxis].map(axis =>
+                            [axis.tickvals, axis.ticktext, axis.labelalias])];
                     w.riskVisit = {chart_ms:drawn, settled_ms:elapsed, metrics, holdings:trace.x.length,
+                        label_bytes:new w.TextEncoder().encode(JSON.stringify(labels)).length,
                         matrix:JSON.stringify(trace.z)};
                 } else if (elapsed > 60000 || exception()) w.riskVisit = {error:'Risk matrix did not settle: ' + action};
                 else w.requestAnimationFrame(frame);

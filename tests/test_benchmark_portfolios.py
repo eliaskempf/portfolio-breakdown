@@ -73,6 +73,19 @@ def test_navigation_benchmark_portfolio(tmp_path, profile, positions, etfs, comp
         assert missing == (listings if cold else [listings[-1]])
 
 
+def test_large_risk_matrix_uses_distinct_listings_even_when_names_match(tmp_path):
+    from datetime import date
+    path = Path(__file__).resolve().parents[1] / 'tools/perf_benchmark/fixture.py'
+    spec = spec_from_file_location('benchmark_fixture', path)
+    fixture = module_from_spec(spec)
+    spec.loader.exec_module(fixture)
+    rows = list(fixture.holdings_and_funds(tmp_path / 'etfs', 'mixed-history', date(2026, 5, 31),
+                                          large_risk_matrix=True))
+    assert len(rows) == len({row[0] for row in rows}) == len({row[2] for row in rows}) == 120
+    assert sum(row[4] == 'etf' for row in rows) == 24
+    assert rows[0][1] == rows[1][1] and len(rows[0][1]) > 28
+
+
 def test_purchase_fx_benchmark_needs_dated_rates_and_has_partial_closes(tmp_path):
     import json
     from datetime import date
