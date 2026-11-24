@@ -5,6 +5,7 @@ from hashlib import sha256
 import streamlit as st
 
 from portfolio_app.interface.shared.background_ui import refresh_allowed, status_fragment
+from portfolio_app.interface.shared.dialog_runtime import local_fragment_updates
 from portfolio_app.interface.shared.render_sections import render_sections
 
 from portfolio_app.ledger.account_journal import load_journal
@@ -31,42 +32,46 @@ def render_history_status_list(path, snapshot, holdings, *, demo=False):
     target = reporting_currency()
     refresh = RefreshStatus() if demo else refresher.request(path.parent, journal, scope, target)
 
-    sections = render_sections('history_status_', 'refresh', 'list')
-    displayed = None
-    update_ready = False
-
     @st.fragment
     def checklist():
-        nonlocal displayed
         current, revision = load_journal(path.parent)
         observations, evidence_revision = observation_snapshot(path.parent)
         displayed = revision, evidence_revision
-        _render_history_status_list(path, snapshot, holdings, current, observations, displayed)
+        published = displayed
+        sections = render_sections('history_status_', 'refresh', 'list')
 
-    @status_fragment()
-    def status(poll):
-        nonlocal refresh, update_ready
-        if refresh.pending and not refresher.pending(path.parent):
-            current, revision = load_journal(path.parent)
-            refresh = refresher.request(path.parent, current, scope, target)
-            update_ready = (revision, observation_snapshot(path.parent)[1]) != displayed
-        if refresh.pending:
-            st.caption('Loading historical prices and FX…')
-            poll(2)
-        elif update_ready:
-            if refresh_allowed():
-                st.rerun()
-            poll(2)
-        elif refresh.errors:
-            if st.button('Retry prices', key='history_status_retry'):
-                current, _ = load_journal(path.parent)
-                refresher.request(path.parent, current, scope, target, force=True)
-                st.rerun()
+        @local_fragment_updates()
+        def update_checklist():
+            st.rerun()
 
-    with sections['list']:
-        checklist()
-    with sections['refresh']:
-        status()
+        @status_fragment()
+        def status(poll):
+            nonlocal refresh, published
+            if refresh.pending and not refresher.pending(path.parent):
+                latest, journal_revision = load_journal(path.parent)
+                refresh = refresher.request(path.parent, latest, scope, target)
+                published = journal_revision, observation_snapshot(path.parent)[1]
+            if refresh.pending:
+                st.caption('Loading historical prices and FX…')
+                poll(2)
+            elif published != displayed:
+                if refresh_allowed():
+                    if published[0] != revision:
+                        st.rerun()  # A journal edit can also change the holdings on the parent page.
+                    update_checklist()
+                poll(2)
+            elif refresh.errors:
+                if st.button('Retry prices', key='history_status_retry'):
+                    latest, _ = load_journal(path.parent)
+                    refresh = refresher.request(path.parent, latest, scope, target, force=True)
+                    update_checklist()
+
+        with sections['list']:
+            _render_history_status_list(path, snapshot, holdings, current, observations, displayed)
+        with sections['refresh']:
+            status()
+
+    checklist()
 
 
 def _render_history_status_list(path, snapshot, holdings, journal, observations, revisions):

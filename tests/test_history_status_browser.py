@@ -86,6 +86,7 @@ import portfolio_app.interface.views.history.history_status_ui as checklist
 from portfolio_app.performance.history_observations import Observation
 import portfolio_app.performance.personal_market as market
 root=Path(__file__).parent
+with (root/'page-renders.txt').open('a') as log: print('page', file=log)
 if not hasattr(market,'_invented_checklist'):
     render_list = checklist._render_history_status_list
     def counted(*args, **kwargs):
@@ -147,6 +148,7 @@ checklist.render_history_status_list(root/'holdings.csv',snapshot,snapshot.holdi
             assert len(polls) == finished_polls
             assert after_pending == pending and renders.read_text() == finished
             assert len(finished.splitlines()) == len(pending.splitlines()) + 1
+            assert (tmp_path/'page-renders.txt').read_text().splitlines() == ['page']
             playwright.expect(table.get_by_text('Applied',exact=True)).to_be_visible()
             playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
             assert load_journal(tmp_path)[0]==journal
