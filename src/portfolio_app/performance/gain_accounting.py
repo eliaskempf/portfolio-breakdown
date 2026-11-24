@@ -14,7 +14,7 @@ import math
 from portfolio_app.ledger.account_journal import effective_events
 from portfolio_app.performance.history_observations import HistoryScope
 from portfolio_app.performance.personal_performance import HistoryCalculation
-from portfolio_app.ledger.security_history import replay_securities, selected_events, affected_positions
+from portfolio_app.ledger.security_history import SecurityBook, replay_securities, selected_events, affected_positions
 
 ZERO = Decimal(0)
 
@@ -133,6 +133,35 @@ def current_component_values(valued, journal, *, calculation=None):
     return result
 
 
+@dataclass(frozen=True)
+class _GainMember:
+    identity: str
+    scope: HistoryScope
+    book: SecurityBook | None
+    first_date: str | None
+    has_opening_quantity: bool
+    first_disposal: str | None
+    first_income: str | None
+
+
+def _gain_members(calculation, scope):
+    # Scope membership and the selected ledger are fixed for this calculation.
+    books = {b.position_id: b for b in calculation.journal.securities}
+
+    def member(identity, boundary):
+        events = calculation._events.get(identity, ())
+        opening = next((e for e in events if e.kind == 'opening'), None)
+        dates = calculation.event_dates(boundary)
+        return _GainMember(identity, boundary, books.get(identity), dates[0] if dates else None,
+            bool(opening and opening.quantity),
+            next((e.date for e in events if e.kind in ('sell', 'swap')), None),
+            next((e.date for e in events if e.kind in ('distribution', 'reward')), None))
+
+    members = [member(identity, HistoryScope((identity,))) for identity in scope.positions]
+    members.extend(member('account:'+identity, HistoryScope(accounts=(identity,))) for identity in scope.accounts)
+    return tuple(members)
+
+
 def summarize_known_gain(journal, scope, observations, end, target='EUR', *, current_values=None, summary_rows=None, calculation=None):
     """Sum supported components; missing evidence never becomes a zero gain.
 
@@ -177,27 +206,26 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
                     capital = basis.invested_capital
                     count = len(scope.positions)+len(scope.accounts)
                     reasons = list(estimate_notes)
-                    if any(e.kind == 'opening' and e.quantity for b in journal.securities
-                           if b.position_id in scope.positions for e in selected_events(b)):
+                    if calculation._get(('gain_opening', scope.positions), lambda: any(
+                            e.kind == 'opening' and e.quantity for identity in scope.positions
+                            for e in calculation._events.get(identity, ()))):
                         reasons.append('Earlier realized gains and income before opening snapshots are unknown')
                     return GainSummary(value-capital, value, capital, count, count, tuple(reasons), end, target)
-    books = {b.position_id: b for b in journal.securities}
     rows = {} if summary_rows is None else summary_rows.set_index('position_id').to_dict('index')
-    parts = [(identity, HistoryScope((identity,))) for identity in scope.positions
-             if not (rows.get(identity, {}).get('shares') == 0 and identity not in books)]
-    parts += [('account:'+identity, HistoryScope(accounts=(identity,))) for identity in scope.accounts]
+    parts = calculation._get(('gain_members', scope), lambda: _gain_members(calculation, scope))
+    if rows:
+        parts = [part for part in parts if part.book or part.scope.accounts or rows.get(part.identity, {}).get('shares') != 0]
     gains, values, capitals, reasons = [], [], [], [*scope.unresolved, *estimate_notes]
-    for identity, member in parts:
-        dates = calculation.event_dates(member)
-        has_history = bool(dates and dates[0] <= end)
+    for part in parts:
+        identity, member, book = part.identity, part.scope, part.book
+        has_history = part.first_date is not None and part.first_date <= end
         # Historical valuations also validate dated FX when a current quote overrides them.
         historical_value = calculation.value(member, end, target).amount if has_history or current_values is None else None
         value = historical_value if current_values is None else current_values.get(identity)
         values.append(value)
         gain = capital = None
-        book = books.get(identity)
         if has_history:
-            basis = calculation.period_capital(member, dates[0], end, target)
+            basis = calculation.period_capital(member, part.first_date, end, target)
             capital = basis.invested_capital
             if value is not None and capital is not None:
                 gain = value-capital
@@ -208,8 +236,7 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
                     gain = value-basis.opening_value.amount-basis.net_contributions
                     reasons.append(f'{identity}: only post-snapshot gain is known; opening acquisition cost is unavailable')
             if book:
-                openings = [e for e in selected_events(book) if e.kind == 'opening']
-                if openings and openings[0].quantity:
+                if part.has_opening_quantity:
                     reasons.append(f'{identity}: earlier realized gains and income before the snapshot are unknown')
             else:
                 reasons.append(f'{identity}: account performance begins at its recorded opening equity')
@@ -224,12 +251,10 @@ def summarize_known_gain(journal, scope, observations, end, target='EUR', *, cur
                 from portfolio_app.performance.gain_components import security_gain_components
                 components = security_gain_components(journal, identity, observations, end, target,
                                                      current_value=value, calculation=calculation)
-                events = [e for e in selected_events(book) if e.date <= end]
-                kinds = {e.kind for e in events}
                 known_parts = [gain if gain is not None else components.unrealized]
-                if kinds.intersection({'sell', 'swap'}):
+                if part.first_disposal is not None and part.first_disposal <= end:
                     known_parts.append(components.known_realized)
-                if kinds.intersection({'distribution', 'reward'}):
+                if part.first_income is not None and part.first_income <= end:
                     known_parts.append(components.known_income)
                 if components.known_expenses:
                     known_parts.append(-components.known_expenses)

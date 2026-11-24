@@ -38,10 +38,11 @@ def security_gain_components(journal, identity, observations, end, target='EUR',
         state = replay_securities(journal.securities, as_of=end)
         book = next(b for b in journal.securities if b.position_id == identity)
         recorded = recorded_security_gains(book, state, observations, end, target)
-    scope = HistoryScope((identity,))
-    value = current_value if current_value is not None else (
-        calculation.value(scope, end, target) if calculation else
-        value_at(journal, scope, observations, end, target)).amount
+    value = current_value
+    if value is None:
+        scope = HistoryScope((identity,))
+        value = (calculation.value(scope, end, target) if calculation else
+                 value_at(journal, scope, observations, end, target)).amount
     if recorded.remaining_cost is not None:
         return replace(recorded, unrealized=value-recorded.remaining_cost if value is not None else None)
     if value is None:
@@ -78,7 +79,7 @@ def partial_lot_costs(balance, observations, target):
     return balance.quantity, tuple(costs)
 
 
-def recorded_security_gains(book, state, observations, end, target):
+def recorded_security_gains(book, state, observations, end, target, selected=None):
     """Cost and cash facts change on ledger dates, independently of end-date prices."""
     identity = book.position_id
     balance = state.positions.get(identity)
@@ -110,7 +111,7 @@ def recorded_security_gains(book, state, observations, end, target):
     converted = {c.id:convert(c.amount,c.currency,target,c.date,observations) for c in cash}
     if any(value is None for value in converted.values()):
         reasons.append('Cash amount or dated FX is missing')
-    events = [e for e in selected_events(book) if e.date <= end]
+    events = [e for e in (selected_events(book) if selected is None else selected) if e.date <= end]
     disposed = {d.event_id:cost(tuple(p for lot in d.lots for p in lot.costs))
                 for d in state.disposals if d.position_id == identity and d.kind in ('sell', 'swap')}
     # Preserve every matching event prefix, including IDs containing colons.

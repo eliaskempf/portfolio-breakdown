@@ -483,6 +483,7 @@ def test_negative_cash_covered_by_assets_is_not_negative_portfolio_equity():
 def test_partial_gain_reuses_dated_ledger_without_changing_supported_components(monkeypatch, with_price):
     from portfolio_app.performance.personal_performance import HistoryCalculation
     import portfolio_app.performance.gain_components as components
+    import portfolio_app.performance.gain_accounting as accounting
     # Missing opening cost forces the component fallback, including before the
     # income event. Query out of order so cached future cash cannot leak back.
     journal = Journal(version=2, securities=(book(
@@ -496,12 +497,34 @@ def test_partial_gain_reuses_dated_ledger_without_changing_supported_components(
     def unexpected_replay(*args, **kwargs):
         pytest.fail('Component fallback must reuse the calculation ledger')
     monkeypatch.setattr(components, 'replay_securities', unexpected_replay)
+    def unexpected_selection(*args):
+        pytest.fail('Daily gain marks must use the effective events already selected for this calculation')
+    monkeypatch.setattr(accounting, 'selected_events', unexpected_selection)
+    scopes = []
+    def counted_scope(*args, **kwargs):
+        scope = HistoryScope(*args, **kwargs)
+        scopes.append(scope)
+        return scope
+    monkeypatch.setattr(accounting, 'HistoryScope', counted_scope)
     for stamp in dates:
         assert security_gain_components(journal, 'stock', obs, stamp, calculation=calculation) == expected[stamp]
         gain = summarize_known_gain(journal, scope, obs, stamp, calculation=calculation)
         assert gain.amount == (5 if stamp >= '2024-07-01' else None)
         assert gain.capital is None and gain.partial
     assert summarize_known_gain(journal, scope, obs, END, calculation=calculation).value == (120 if with_price else None)
+    assert scopes == [scope]
+
+
+def test_reused_gain_members_follow_current_summary_only_rows():
+    from portfolio_app.performance.personal_performance import HistoryCalculation
+    journal, store = Journal(), ObservationStore()
+    calculation = HistoryCalculation(journal, store)
+    scope = HistoryScope(('invented',))
+    for shares, expected in ((1, (1, D(4))), (0, (0, None)), (2, (1, D(4)))):
+        rows = pd.DataFrame([dict(position_id='invented', shares=shares, unrealized_gain_reporting=4)])
+        result = summarize_known_gain(journal, scope, store, END, summary_rows=rows,
+                                      current_values={'invented': D(80)}, calculation=calculation)
+        assert (result.count, result.amount) == expected
 
 
 def test_partial_lot_basis_reuses_only_costs_across_daily_marks(monkeypatch):

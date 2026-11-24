@@ -154,7 +154,7 @@ class HistoryCalculation:
         interval = bisect_right(self._security_dates, stamp)
         def load():
             book = next(b for b in self.journal.securities if b.position_id == identity)
-            return recorded_security_gains(book, self.securities(stamp), self.observations, stamp, target)
+            return recorded_security_gains(book, self.securities(stamp), self.observations, stamp, target, self._events[identity])
         return self._get(('security_gains', identity, interval, target), load)
 
     def partial_lot_costs(self, identity, stamp, target):
