@@ -95,6 +95,32 @@ def test_label_choices_survive_position_filters_and_no_matches_are_clear(label_d
     assert app.tabs[1].dataframe[-1].value.iloc[0]["Portfolio %"] == 50
 
 
+def test_overview_only_formats_tickers_when_it_displays_investments(label_data, monkeypatch):
+    from unittest.mock import Mock
+    from portfolio_app.interface.views.exposure import label_ui
+
+    formatter = Mock(wraps=label_ui.with_asset_tickers)
+    monkeypatch.setattr(label_ui, "with_asset_tickers", formatter)
+    app = launch(label_data)
+    by_label(app.checkbox, "Show tickers").check().run()
+    assert not app.exception
+    formatter.assert_not_called()
+
+    root = (Label("labels", ("Group A",)).key,)
+    by_label(app.selectbox, "Detail view").set_value(root).run()
+    assert not app.exception
+    assert app.tabs[1].dataframe[-1].value["Investment"].tolist() == ["Synthetic A (NVDA)"]
+    formatter.assert_called_once()
+
+    formatter.reset_mock()
+    by_label(app.button, "Back to overview").click().run()
+    assert not app.exception
+    formatter.assert_not_called()
+    by_label(app.checkbox, "Show individual assets directly").check().run()
+    assert not app.exception
+    formatter.assert_called_once()
+
+
 def test_detail_navigation_assets_tickers_and_back_to_overview(label_data):
     app = launch(label_data)
     root = (Label("labels", ("Group A",)).key,)

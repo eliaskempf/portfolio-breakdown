@@ -429,6 +429,22 @@ def test_plain_smh_with_ucits_isin_is_actionable(tmp_path, sample_data_dir):
     assert "SMH.L" in app.error[0].value
 
 
+def test_incomplete_investment_chart_displays_ticker_once(tmp_path, sample_data_dir):
+    import json
+
+    shutil.copy(sample_data_dir / "demo_prices.json", tmp_path)
+    (tmp_path / "holdings.csv").write_text(
+        "id,name,shares,ticker\npriced,Synthetic Supplier,1,NVDA\nunpriced,Pending Quote,1,\n"
+    )
+    app = launch(tmp_path)
+    theme_view(app, "holding")
+    by_label(app.checkbox, "Show tickers").check().run()
+    assert not app.exception
+    assert missing_prices(app) == "1"
+    trace = json.loads(app.tabs[1].get("plotly_chart")[0].proto.spec)["data"][0]
+    assert [name for name in trace["labels"] if "NVDA" in name] == ["Synthetic Supplier (NVDA)"]
+
+
 def test_show_tickers_preserves_merged_hierarchy_leaf_across_exchanges(tmp_path, sample_data_dir):
     import json
     from portfolio_app.funds.etf import load_funds

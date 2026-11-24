@@ -14,6 +14,7 @@ from portfolio_app.interface.shared.charts import chart_config
 
 from portfolio_app.interface.shared.charts import bar_chart, hierarchy_chart, pie_chart, sort_allocation_nodes
 from portfolio_app.interface.shared.chart_navigation import sync_chart_category
+from portfolio_app.exposure.exposure_presentation import with_asset_tickers
 from portfolio_app.exposure.label_comparison import (
     available_labels, comparison_assets, comparison_tree, immediate_children, LabelSelection,
 )
@@ -28,7 +29,7 @@ from portfolio_app.interface.shared.target_ui import target_caption, target_colu
 
 def render_label_comparison(exposures: pd.DataFrame, classifications: Classifications, *,
                             targets: TargetExposures | None = None, portfolio_value: float = 0., valuation_complete: bool = True,
-                            performance: PerformanceExposures | None = None, performance_percent: bool = True, measure=None, equity=None, complete=True) -> None:
+                            performance: PerformanceExposures | None = None, performance_percent: bool = True, measure=None, equity=None, complete=True, ticker_holdings=None) -> None:
     market = measure == 'Market exposure'
     st.subheader("Themes & sectors")
     choose, navigation, options = st.columns([1.2, 3, 1.2], vertical_alignment='bottom')
@@ -86,6 +87,12 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
         chart_types = ["Bar"] if has_overlap and policy == "overlap" else ["Bar", "Pie", "Sunburst", "Treemap"]
         chart_type = st.selectbox("Chart", chart_types, help='Choose how the selected analysis is visualized.', index=chart_types.index("Sunburst") if "Sunburst" in chart_types else 0,
                                   key=f"label_compare_chart_{policy}")
+    detail_key = f'label_compare_detail_{taxonomy}'
+    # Streamlit publishes the selected drill and chart options before the rerun.
+    # Category-only charts never display individual investment names.
+    if ticker_holdings is not None and (st.session_state.get(detail_key) or
+            (chart_type in {'Sunburst', 'Treemap'} and st.session_state.get('label_compare_assets_only'))):
+        exposures = with_asset_tickers(exposures, ticker_holdings)
     comparison = selection.compare(exposures, overlap=policy)
     if comparison.unmatched_value:
         st.caption(f'Outside selected labels: {money(comparison.unmatched_value)} · These assets remain in the Assets view.')
@@ -104,7 +111,6 @@ def render_label_comparison(exposures: pd.DataFrame, classifications: Classifica
                        ("Its value is split equally between those labels." if policy == "split" else
                         "Each matching label includes its full value. Label percentages can exceed 100% in total; bars show this overlap."))
         roots = comparison.branches
-        detail_key = f'label_compare_detail_{taxonomy}'
         if st.session_state.get(detail_key, ()) not in [(), *roots]:
             st.session_state[detail_key] = ()
         root = navigation.selectbox("Detail view", [(), *roots],

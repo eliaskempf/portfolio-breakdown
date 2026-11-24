@@ -44,6 +44,7 @@ from portfolio_app.exposure.company_merges import build_plan, load_company_names
 from portfolio_app.interface.views.exposure.company_merge_ui import render_company_merges
 from portfolio_app.interface.shared.input_cache import cached_classifications, cached_input
 from portfolio_app.exposure.exposure_workspace import analytical_signature
+from portfolio_app.exposure.exposure_presentation import with_asset_tickers
 from portfolio_app.exposure.geography import resolve_geography
 from portfolio_app.interface.views.exposure.geography_ui import render_geography
 from portfolio_app.exposure.sector_classification import sector_classifications
@@ -424,16 +425,13 @@ def render_theme_view(exposures, selected, holdings, classifications, names, dim
             chart_type = st.selectbox('Chart', ['Sunburst', 'Treemap', 'Bar', 'Pie'], help='Choose how the selected analysis is visualized.', key='exposure_control_chart')
     if query:
         st.caption('Search applies in Assets. Theme percentages cover the selected source scope.')
-    chart_exposures = exposures.copy()
-    if show_tickers:
-        # Prefer the direct listing's ticker for every row of the same asset,
-        # including ETF-derived rows, so their holding leaves remain combined.
-        tickers = dict(zip(exposures["asset_id"], exposures["ticker"]))
-        tickers.update(dict(zip(holdings["id"], holdings["ticker"])))
-        chart_exposures["asset_name"] = [f"{row.asset_name} ({tickers[row.asset_id]})" if tickers[row.asset_id] else row.asset_name for row in exposures.itertuples()]
+    chart_exposures = exposures
+    if show_tickers and view.startswith('taxonomy:') and include_holdings and chart_type not in {'Bar', 'Pie'}:
+        chart_exposures = with_asset_tickers(exposures, holdings)
     if view == "selected_labels":
         render_label_comparison(chart_exposures, classifications, targets=targets, portfolio_value=total, valuation_complete=all_missing == 0,
-                                performance=performance, performance_percent=performance_percent, measure=measure, equity=equity, complete=complete)
+                                performance=performance, performance_percent=performance_percent, measure=measure, equity=equity, complete=complete,
+                                ticker_holdings=holdings if show_tickers else None)
     else:
         if view.startswith("taxonomy:"):
             nodes = aggregate(chart_exposures, classifications, taxonomy=taxonomy, root=root, depth=depth, include_holdings=include_holdings and chart_type not in {"Bar", "Pie"})
