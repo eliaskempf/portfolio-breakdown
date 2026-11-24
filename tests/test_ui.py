@@ -152,6 +152,45 @@ def test_smh_group_uses_fund_labels_and_shows_original_members(grouped_data):
     assert app.tabs[1].dataframe[-1].value["Value"].sum() == 560  # Fund and stocks separate within Group A.
 
 
+def test_warm_navigation_reads_the_journal_once_per_render(sample_data_dir, monkeypatch):
+    from portfolio_app.ledger import account_journal
+
+    app = launch(sample_data_dir)
+    reads = []
+    load = account_journal.load_journal
+
+    def count_reads(directory):
+        reads.append(directory)
+        return load(directory)
+
+    monkeypatch.setattr(account_journal, 'load_journal', count_reads)
+    for tab in ('Positions', 'Rebalance', 'Overview'):
+        reads.clear()
+        activate(app, tab)
+        assert not app.exception
+        assert reads == [sample_data_dir]
+
+
+def test_dialog_host_observes_journal_published_during_parent_render(sample_data_dir, monkeypatch):
+    from portfolio_app.interface import ui
+    from portfolio_app.ledger.account_journal import Journal, save_journal
+
+    app = launch(sample_data_dir, tab='Positions')
+    render = ui.render_position_dialog
+    revisions = []
+
+    def publish_once(*args, **kwargs):
+        revisions.append(kwargs['journal'].version)
+        if len(revisions) == 1:
+            save_journal(sample_data_dir, Journal(version=2), None)
+        return render(*args, **kwargs)
+
+    monkeypatch.setattr(ui, 'render_position_dialog', publish_once)
+    app.run()
+    assert not app.exception
+    assert revisions == [1, 2]
+
+
 def test_demo_launch_and_subset_selection(sample_data_dir):
     app = launch(sample_data_dir)
     assert not app.exception

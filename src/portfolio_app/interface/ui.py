@@ -14,7 +14,8 @@ from portfolio_app.interface.views.exposure.exposure_ui import render_analysis
 from portfolio_app.funds.etf_refresh import coordinator
 from portfolio_app.interface.views.funds.etf_refresh_ui import refresh_revision
 from portfolio_app.portfolio.holdings import DataError
-from portfolio_app.interface.views.positions.position_ui import render_position_editor, render_position_dialog, request_position
+from portfolio_app.interface.views.positions.position_ui import (position_dialog_sources, render_position_editor,
+    render_position_dialog, request_position)
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.portfolio.rebalancing import RebalanceError
 from portfolio_app.interface.views.portfolio.rebalance_ui import render_rebalancing
@@ -146,6 +147,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         st.caption("Offline demo · Invented prices, buy-ins and ETF weights · Resets on restart" if offline_demo else
                    "Demo · Invented quantities, targets and buy-ins · Public market data · Resets on restart")
     from portfolio_app.interface.views.exposure.portfolio_exposure_ui import render_exposure_targets, render_leverage_editor
+    # Fragment comparisons must start before the reads that produced the displayed values.
+    dialog_baseline = position_dialog_sources(data_dir)
     try:
         leverage_context = load_leverage_context(data_dir, reporting_currency)
     except DataError as exc:
@@ -327,7 +330,7 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         with positions:
             render_position_editor(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, embedded=True,
                                    allocation=allocation, valued=display_valued.loc[display_valued.shares.ne(0)].copy() if hide_empty else display_valued,
-                                   account_valued=valued, percent=percent, defer_dialog=True)
+                                   account_valued=valued, percent=percent, defer_dialog=True, journal=journal)
     def open_valued_position(position_id, *, editing=False):
         if actual_active and position_id in {p.id for p in journal.positions} | {investment.id for investment in journal.investments}:
             request_position(position_id, editing=editing)
@@ -455,7 +458,8 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
         render_market_status(market_workspace, market_revision, reader=background_reader, show_caption=False)
     if not tour_active():
         render_alert_dialog(data_dir)
-    render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued, prices=price_service)
+    render_position_dialog(data_dir / 'holdings.csv', snapshot, funds, demo=offline_demo, allocation=allocation, valued=valued, prices=price_service,
+                           journal=journal, baseline=dialog_baseline)
     render_tour(empty=holdings.empty)
     finish_view_inputs()
     mark_view_ready()
