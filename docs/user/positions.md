@@ -187,14 +187,37 @@ After a balance replacement, additional purchase dates must be after the balance
 confirmation date. Retained batches are context, not a complete transaction
 ledger; do not sum old and recalculated batches to reconstruct the holding.
 
-## Physical gold {#physical-gold}
+## Physical assets {#physical-assets}
 
-In **Add position → Physical asset → Gold spot price**, enter fine-gold weight
-in troy ounces, grams or kilograms. One troy ounce is 31.1034768 grams. The app
-retrieves gold spot in USD per troy ounce, converts the quantity and values it in
-the selected portfolio currency. Prices represent fine-gold spot value, without coin/bar premiums or dealing
-costs. Gold spot history is not yet supported. Manual pricing remains available;
-existing manual holdings only switch when you explicitly choose live spot pricing.
+**Add position → Physical asset** starts with **Gold spot price** and troy ounces.
+Select **Silver spot price**, **Platinum spot price** or **Palladium spot price**
+under **Valuation method** for another metal. Editing or reusing an existing
+holding opens its saved valuation method.
+
+### Precious-metal spot prices {#physical-gold}
+
+Enter the fine-metal content in troy ounces, grams or kilograms. The app
+converts the USD quote per troy ounce to the saved weight unit and reporting
+currency. [Gold API quote specification](https://gold-api.com/llms.txt)
+
+With a recorded buy-in and any required FX, **Details** shows
+unrealized gain and return on cost. Spot quotes supply current prices only.
+For personal period and annualized returns, record purchases or a starting
+balance and supply the required dated prices per saved unit and FX under
+**Correct market data**. [Performance and return requirements](performance.md)
+
+### Manual valuation
+
+Select **Manual price** for a collectible premium or an appraised item. Choose
+a unit or type your own, such as bottles. Enter a quantity of one for a single
+item or a count for a collection, then record the price of one unit, its currency
+and observation date. A blank price keeps the quantity and marks the value as
+unknown. Use **Edit position** to update an appraisal. For a holding with
+recorded purchases, **Valuation** updates the current price and **Transactions**
+opens its purchase and sale history.
+
+The saved unit also applies to purchases and buy-in amounts. Changing units on
+a new draft clears its amounts. Saved holdings retain their unit when edited.
 
 ## Calendar layout
 

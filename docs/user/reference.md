@@ -28,7 +28,10 @@ The stable `id` identifies an instrument. You may repeat it across account or
 portfolio rows; its name, ticker, and ISIN must be consistent. Holdings remain
 separate positions in the table and merge by asset ID for holding allocation.
 Different exchange listings need distinct IDs. Blank tickers are allowed; without
-a manual price or supported gold-spot source, a nonzero holding stays unvalued.
+a manual price or supported spot source, a nonzero holding stays unvalued.
+Physical metal holdings accept `gold_spot`, `silver_spot`, `platinum_spot` or
+`palladium_spot` in `price_source`, with `troy oz`, `grams` or `kg` in
+`quantity_unit`. For a manual price, leave `price_source` blank.
 Ordinary listing prices are looked up using tickers, not ISINs.
 Tickers and ISINs are trimmed and normalized to uppercase on loading, including
 tickers displayed in holding selectors and allocation charts. Stable IDs remain

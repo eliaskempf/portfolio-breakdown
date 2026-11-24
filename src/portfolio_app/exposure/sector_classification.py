@@ -1,8 +1,10 @@
 """Distinguish assets without a business sector from missing sector metadata."""
 from collections import defaultdict
 
+from portfolio_app.portfolio.physical_assets import METALS
 from portfolio_app.funds.etf import constituent_resolver, matching_fund
 
+METAL_NAMES = {metal.name for metal in METALS.values()}
 NO_SECTOR = 'No business sector'
 
 
@@ -19,8 +21,10 @@ def sector_classifications(classifications, holdings, funds):
     def observe(asset, row):
         kind = row.get('instrument_type')
         label = {'cash': 'Cash', 'crypto': 'Crypto', 'overnight_rate': 'Money market'}.get(kind)
-        if row.get('isin') == 'DE000EWG2LD7' or (kind == 'physical' and row.get('price_source') == 'gold_spot'):
+        if row.get('isin') == 'DE000EWG2LD7':
             label = 'Gold'
+        elif kind == 'physical' and (metal := METALS.get(row.get('price_source'))):
+            label = metal.name
         if label:
             candidates[asset].add(label)
 
@@ -40,8 +44,8 @@ def sector_classifications(classifications, holdings, funds):
             observe(resolve(row)[0], row)
     for asset, entry in classifications.items():
         for path in entry.get('asset_class', ()):
-            if path[-1].casefold() == 'gold':
-                candidates[asset].add('Gold')
+            if path[-1].title() in METAL_NAMES:
+                candidates[asset].add(path[-1].title())
             elif path[0].casefold() in {'money market', 'cash', 'crypto'}:
                 candidates[asset].add({'money market': 'Money market', 'cash': 'Cash', 'crypto': 'Crypto'}[path[0].casefold()])
     for asset, labels in candidates.items():

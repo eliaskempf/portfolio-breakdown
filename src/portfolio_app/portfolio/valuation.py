@@ -7,7 +7,7 @@ import pandas as pd
 
 from portfolio_app.market.prices import PriceService
 from portfolio_app.market.fx import current_rate
-from portfolio_app.portfolio.physical_assets import pricing_key, price_unit_factor
+from portfolio_app.portfolio.physical_assets import METALS, pricing_key, price_unit_factor
 
 
 def portfolio_weights(values: pd.Series) -> pd.Series:
@@ -66,7 +66,7 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
             continue
         key = pricing_key(position)
         if not key:
-            result.at[index, "valuation_note"] = "Missing ticker"
+            result.at[index, "valuation_note"] = ("Missing manual unit price" if position.get("instrument_type") == "physical" else "Missing ticker")
             result.at[index, "price_status"] = "missing"
             continue
         price = price_results[key]
@@ -86,10 +86,10 @@ def value_holdings(holdings: pd.DataFrame, prices: PriceService, *, refresh: boo
         fx = fx_results[quote.currency]
         result.at[index, "fx_status"] = fx.status
         notes = [f"Price refresh failed: {price.error}"] if price.error else []
-        if position.get('price_source') == 'gold_spot':
-            notes.append(f"Gold spot (Gold API), per {position['quantity_unit']} of fine gold.")
+        if metal := METALS.get(position.get('price_source')):
+            notes.append(f"{metal.name} spot (Gold API), per {position['quantity_unit']} of fine {metal.name.lower()}.")
             if result.at[index, 'price_age_hours'] >= 24:
-                notes.append('Gold spot quote is at least 24 hours old.')
+                notes.append(f'{metal.name} spot quote is at least 24 hours old.')
         if position.get('instrument_type') == 'crypto' and result.at[index, 'price_age_hours'] >= 24:
             notes.append('Crypto quote is at least 24 hours old; markets trade continuously.')
         if fx.quote is None:

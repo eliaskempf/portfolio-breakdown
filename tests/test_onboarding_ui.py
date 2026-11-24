@@ -193,17 +193,19 @@ def test_guided_categories_targets_and_first_physical_position(tmp_path):
     config = load_allocation(personal / 'allocation.yaml')
     assert [b.target for b in config.buckets] == [.8, .2]
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
-    by_label(app.radio, 'Valuation method').set_value('Manual price').run()
+    assert by_label(app.selectbox, 'Valuation method').value == 'Gold spot price'
+    by_label(app.selectbox, 'Valuation method').set_value('Manual price').run()
+    by_label(app.selectbox, 'Quantity unit').set_value('units').run()
     by_label(app.text_input, 'Instrument name').set_value('Invented gold coins')
     by_label(app.text_input, 'Quantity held (total)').set_value(str(2.5)).run()
-    by_label(app.number_input, 'Current price per troy oz (optional)').set_value(2000.)
+    by_label(app.number_input, 'Current unit price (optional)').set_value(2000.)
     gold = next(b.id for b in config.buckets if b.name == 'Invented gold')
     by_label(app.selectbox, 'Category').set_value(gold)
     by_label(app.button, 'Save position').click().run()
     assert not app.exception and not app.error
     saved = read_snapshot(personal / 'holdings.csv').holdings
     row = saved.iloc[0]
-    assert row.quantity_unit == 'troy oz' and row.instrument_type == 'physical'
+    assert row.quantity_unit == 'units' and row.instrument_type == 'physical'
     assert row.ticker == '' and row.bucket_id == gold
     assert row.manual_price == 2000.
     assert value_holdings(saved, PriceService(UnavailableProvider())).current_value_reporting.iloc[0] == 5000.
@@ -252,14 +254,15 @@ def test_physical_unit_change_clears_amounts_and_edit_keeps_unit(tmp_path):
     by_label(app.button, 'Add position').click().run()
     by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
-    by_label(app.radio, 'Valuation method').set_value('Manual price').run()
+    by_label(app.selectbox, 'Valuation method').set_value('Manual price').run()
+    by_label(app.text_input, 'Instrument name').set_value('Invented silver sample')
     by_label(app.text_input, 'Quantity held (total)').set_value(str(2.)).run()
-    by_label(app.number_input, 'Current price per troy oz (optional)').set_value(2000.).run()
+    by_label(app.number_input, 'Current unit price (optional)').set_value(2000.).run()
     by_label(app.selectbox, 'Quantity unit').set_value('grams').run()
     assert by_label(app.text_input, 'Quantity held (total)').value == ''
-    assert by_label(app.number_input, 'Current price per grams (optional)').value is None
+    assert by_label(app.number_input, 'Current unit price (optional)').value is None
     by_label(app.text_input, 'Quantity held (total)').set_value(str(10.)).run()
-    by_label(app.number_input, 'Current price per grams (optional)').set_value(60.)
+    by_label(app.number_input, 'Current unit price (optional)').set_value(60.)
     by_label(app.button, 'Save position').click().run()
     assert not app.exception and not app.error
     saved = read_snapshot(personal / 'holdings.csv').holdings
@@ -334,7 +337,9 @@ def test_physical_gold_spot_save_edit_and_explicit_manual_switch(tmp_path):
     by_label(app.button, 'Add position').click().run()
     by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
-    assert by_label(app.radio, 'Valuation method').value == 'Gold spot price'
+    assert by_label(app.selectbox, 'Valuation method').value == 'Gold spot price'
+    assert by_label(app.selectbox, 'Quantity unit').value == 'troy oz'
+    assert by_label(app.text_input, 'Instrument name').value == ''
     assert set(by_label(app.selectbox, 'Quantity unit').options) == {'troy oz', 'grams', 'kg'}
     by_label(app.selectbox, 'Quantity unit').set_value('kg').run()
     by_label(app.text_input, 'Quantity held (total)').set_value(str(.1)).run()
@@ -345,10 +350,10 @@ def test_physical_gold_spot_save_edit_and_explicit_manual_switch(tmp_path):
     assert row.price_source == 'gold_spot' and row.quantity_unit == 'kg'
     assert row.shares == .1 and row.ticker == ''
     position_action(app, 'Edit position')
-    assert by_label(app.radio, 'Valuation method').value == 'Gold spot price'
+    assert by_label(app.selectbox, 'Valuation method').value == 'Gold spot price'
     assert by_label(app.selectbox, 'Quantity unit').disabled
-    by_label(app.radio, 'Valuation method').set_value('Manual price').run()
-    by_label(app.number_input, 'Current price per kg (optional)').set_value(60000.)
+    by_label(app.selectbox, 'Valuation method').set_value('Manual price').run()
+    by_label(app.number_input, 'Current unit price (optional)').set_value(60000.)
     by_label(app.button, 'Save position').click().run()
     assert not app.exception and not app.error
     saved = read_snapshot(personal / 'holdings.csv').holdings
@@ -356,8 +361,8 @@ def test_physical_gold_spot_save_edit_and_explicit_manual_switch(tmp_path):
     prices = PriceService(SimpleNamespace(price=lambda _: None), now=lambda: datetime.now(timezone.utc))
     assert value_holdings(saved, prices).current_value_reporting.tolist() == [6000.]
     position_action(app, 'Edit position')
-    assert by_label(app.radio, 'Valuation method').value == 'Manual price'
-    by_label(app.radio, 'Valuation method').set_value('Gold spot price').run()
+    assert by_label(app.selectbox, 'Valuation method').value == 'Manual price'
+    by_label(app.selectbox, 'Valuation method').set_value('Gold spot price').run()
     by_label(app.button, 'Save position').click().run()
     assert not app.exception and not app.error
     saved = read_snapshot(personal / 'holdings.csv').holdings
@@ -373,10 +378,22 @@ def test_new_manual_units_cannot_be_reinterpreted_as_gold_ounces(tmp_path):
     by_label(app.button, 'Add position').click().run()
     by_label(app.get('button_group'), 'Entry method').set_value('Existing holding').run()
     by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
-    by_label(app.radio, 'Valuation method').set_value('Manual price').run()
+    by_label(app.selectbox, 'Valuation method').set_value('Manual price').run()
     by_label(app.selectbox, 'Quantity unit').set_value('units').run()
     by_label(app.text_input, 'Quantity held (total)').set_value(str(10.)).run()
-    by_label(app.radio, 'Valuation method').set_value('Gold spot price').run()
+    by_label(app.selectbox, 'Valuation method').set_value('Gold spot price').run()
     assert not app.exception
     assert by_label(app.text_input, 'Quantity held (total)').value == ''
     assert by_label(app.selectbox, 'Quantity unit').value == 'troy oz'
+    by_label(app.selectbox, 'Quantity unit').set_value('grams').run()
+    by_label(app.text_input, 'Quantity held (total)').set_value('12').run()
+    by_label(app.selectbox, 'Valuation method').set_value('Manual price').run()
+    assert by_label(app.selectbox, 'Quantity unit').value == 'grams'
+    by_label(app.selectbox, 'Valuation method').set_value('Silver spot price').run()
+    assert by_label(app.selectbox, 'Quantity unit').value == 'grams'
+    assert by_label(app.text_input, 'Quantity held (total)').value == '12'
+    by_label(app.text_input, 'Instrument name').set_value('Invented fine silver')
+    by_label(app.button, 'Save position').click().run()
+    assert not app.exception and not app.error
+    row = read_snapshot(tmp_path / 'invented-gold' / 'holdings.csv').holdings.iloc[0]
+    assert (row.price_source, row.quantity_unit, row.shares) == ('silver_spot', 'grams', 12)

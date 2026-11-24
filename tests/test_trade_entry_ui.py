@@ -15,7 +15,7 @@ from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.interface.views.positions.position_ui import render_position_editor
 path = Path({str(directory / 'holdings.csv')!r})
 render_position_editor(path, read_snapshot(path), [])
-''').run()
+''', default_timeout=15).run()
     by_label(app.button, 'Add position').click().run()
     return app
 
@@ -212,3 +212,36 @@ def test_sale_requires_nonnegative_explicit_taxes_and_preserves_zero_for_correct
     assert not app.exception and not app.error
     sale = selected_events(load_journal(tmp_path)[0].securities[0])[-1]
     assert [(c.kind, c.amount) for c in sale.charges] == [('fee', 0), ('tax', 0)]
+
+
+def test_update_physical_appraisal_after_purchase(tmp_path):
+    from test_ui import position_action
+    app = editor(tmp_path)
+    by_label(app.get('button_group'), 'Position type').set_value('Physical asset').run()
+    assert by_label(app.selectbox, 'Valuation method').value == 'Gold spot price'
+    by_label(app.selectbox, 'Valuation method').set_value('Manual price').run()
+    by_label(app.selectbox, 'Quantity unit').set_value('units').run()
+    by_label(app.text_input, 'Instrument name').set_value('Invented sculpture')
+    by_label(app.text_input, 'Quantity bought').set_value('1')
+    by_label(app.text_input, 'Unit price').set_value('100')
+    by_label(app.button, 'Save purchase').click().run()
+    assert not app.exception and not app.error
+    snapshot = read_snapshot(tmp_path / 'holdings.csv')
+    journal, revision = load_journal(tmp_path)
+    row = effective_holdings(snapshot.holdings, journal.securities).iloc[0]
+    position_action(app, 'Edit position', row.position_id)
+    # A second editor updates the appraisal before this draft is submitted.
+    from portfolio_app.portfolio.positions import save_position
+    save_position(tmp_path / 'holdings.csv', dict(manual_price='115', manual_price_currency='EUR',
+                  manual_price_date=date.today().isoformat()), expected_revision=snapshot.revision,
+                  position_id=row.position_id)
+    app.run()
+    by_label(app.button, 'Reload position form').click().run()
+    assert by_label(app.number_input, 'Current unit price (optional)').value == 115.
+    assert by_label(app.selectbox, 'Quantity unit').disabled
+    by_label(app.number_input, 'Current unit price (optional)').set_value(120.)
+    by_label(app.button, 'Save valuation').click().run()
+    assert not app.exception and not app.error
+    assert load_journal(tmp_path)[1] == revision
+    saved = effective_holdings(read_snapshot(tmp_path / 'holdings.csv').holdings, journal.securities).iloc[0]
+    assert (saved.quantity_unit, saved.shares, saved.acquisition_price, saved.manual_price) == ('units', 1, 100, 120)

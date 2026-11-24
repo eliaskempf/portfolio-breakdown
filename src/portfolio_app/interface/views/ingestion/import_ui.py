@@ -4,6 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from portfolio_app.portfolio.physical_assets import METALS
 from portfolio_app.funds.etf import validate_fund_listings
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.ingestion.import_readers import (
@@ -247,8 +248,8 @@ def render_listing_link(path, snapshot, funds, *, demo=False):
     asset_id = st.selectbox('Instrument to link', list(instruments.index), help='Choose the saved instrument whose live-price listing should be configured.',
                             format_func=lambda value: str(instruments.loc[value, 'name']), key='import_link_asset')
     row = instruments.loc[asset_id]
-    if row.get('price_source') == 'gold_spot':
-        st.info('This holding already uses gold spot pricing. Use Edit position to change its valuation method.')
+    if metal := METALS.get(row.get('price_source')):
+        st.info(f'This holding uses the {metal.name.lower()} spot price. Change its valuation method in Edit position.')
         return
     prefix = f'import_link_{asset_id}_{snapshot.revision}_'
     st.caption('Listing changes apply to all accounts for this instrument. Quantities, costs and allocation assignments stay saved.')

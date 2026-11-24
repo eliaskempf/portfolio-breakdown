@@ -2,12 +2,81 @@
 import pandas as pd
 import streamlit as st
 
+from portfolio_app.portfolio.physical_assets import METALS, WEIGHT_UNITS
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.interface.shared.currency_display import reporting_currency
 from portfolio_app.portfolio.portfolio_settings import REPORTING_CURRENCIES
 from portfolio_app.portfolio.position_entry import compact_decimal, decimal_input, linked_costs
 from portfolio_app.portfolio.purchases import COLUMNS, summarize_purchases, validate_purchases
 from portfolio_app.interface.shared.view_state import persistent_editor
+
+
+def physical_pricing(prefix, row, *, unit_locked):
+    """Keep entered amounts tied to the unit in which the holding is recorded."""
+    def clear_unit_amounts():
+        for field in ('shares', 'buy_in', 'total_buy_in', 'manual_price', 'from_purchases', 'trade_quantity', 'trade_price', 'trade_fees'):
+            st.session_state.pop(prefix + field, None)
+            st.session_state.get('position_draft', {}).pop(prefix + field, None)
+        for name in ('view_editor_drafts', 'view_editor_bases'):
+            st.session_state.get(name, {}).pop(prefix + 'purchase_editor', None)
+        st.session_state.pop(prefix + 'purchase_editor', None)
+        st.session_state[prefix + 'unit_changed'] = True
+
+    methods = {}
+    if not unit_locked or row.get('quantity_unit') in WEIGHT_UNITS:
+        methods = {f'{metal.name} spot price': source for source, metal in METALS.items()}
+    methods['Manual price'] = ''
+    initial_source = row.get('price_source', '') if unit_locked else 'gold_spot'
+
+    def change_valuation_method():
+        method = st.session_state.get(prefix + 'valuation_method')
+        unit = st.session_state.get(prefix + 'quantity_unit')
+        if methods.get(method) and unit not in WEIGHT_UNITS:
+            unit = 'troy oz'
+            clear_unit_amounts()
+        if unit:
+            st.session_state[prefix + 'quantity_unit'] = unit
+            st.session_state.get('position_draft', {})[prefix + 'quantity_unit'] = unit
+
+    method = st.selectbox('Valuation method', list(methods),
+        index=list(methods.values()).index(initial_source), disabled=len(methods) == 1,
+        help='Choose the spot quote for the metal you hold, or enter a dated manual price per unit.',
+        key=prefix + 'valuation_method', on_change=change_valuation_method)
+    price_source = methods[method]
+
+    units = list(WEIGHT_UNITS) if price_source else ['units', *WEIGHT_UNITS]
+    saved_unit = row.get('quantity_unit') or units[0]
+    if saved_unit not in units:
+        units.append(saved_unit)
+    unit_help = (f'Enter the fine {METALS[price_source].name.lower()} content. The spot quote excludes dealer premiums.'
+                 if price_source else 'Choose a unit or enter your own, such as bottles. Use it for quantity, cost and price.')
+    quantity_unit = st.selectbox('Quantity unit', units, index=units.index(saved_unit),
+        disabled=unit_locked, accept_new_options=not price_source and not unit_locked,
+        key=prefix + 'quantity_unit', on_change=clear_unit_amounts, help=unit_help)
+    if st.session_state.get(prefix + 'unit_changed'):
+        st.caption('Unit changed. Re-enter the quantity and prices.')
+    return price_source, (quantity_unit or '').strip()
+
+
+def optional_number(value) -> float | None:
+    return None if value is None or pd.isna(value) or value == "" else float(value)
+
+
+def render_manual_price(prefix, row, *, physical=False, quantity_unit=None):
+    with st.expander('Current valuation' if physical else 'Manual pricing', expanded=physical):
+        manual_price = st.number_input('Current unit price (optional)' if physical else 'Manual unit price (optional)',
+            min_value=0., value=optional_number(row.get('manual_price')), key=prefix + 'manual_price',
+            help=f'Price for one unit ({quantity_unit}). Leave blank for an unknown value.' if physical else 'Overrides market quotes. Clear to return to provider pricing.')
+        manual_currency = st.text_input('Price currency' if physical else 'Manual price currency', help='Currency of the manually entered current unit price.',
+                                        value=row.get('manual_price_currency') or (reporting_currency() if physical else ''), key=prefix + 'manual_currency')
+        if physical:
+            from datetime import date
+            initial_date = date.fromisoformat(row['manual_price_date']) if row.get('manual_price_date') else date.today()
+            manual_date = st.date_input('Price date', value=initial_date, max_value=date.today(), key=prefix + 'manual_date').isoformat()
+        else:
+            manual_date = st.text_input('Manual price date (YYYY-MM-DD)', help='Date the manual price was observed, in year-month-day format.', value=row.get('manual_price_date', ''), key=prefix + 'manual_date')
+
+    return manual_price, manual_currency, manual_date
 
 
 def buy_in_currency(prefix, row, *, editing):

@@ -106,6 +106,10 @@ def test_non_geographic_assets_and_no_inference_from_currency_names_or_isin_pref
             ('miner', 'Gold Mining Synthetic', 'SYN.DE', 'US0000000000', 'equity'),
         ]
     ])
+    held.loc[held.id == 'gold', 'price_source'] = 'silver_spot'
+    geo = resolve_geography(held, [], {})
+    assert geo.paths['gold'] == (('Silver',),)
+    held.loc[held.id == 'gold', 'price_source'] = ''
     geo = resolve_geography(held, [], {'gold': {'asset_class': (('Commodities', 'Gold'),)}})
     for asset, expected in [('crypto', 'Crypto'), ('cash', 'Cash'), ('gold', 'Gold'), ('verified', 'Gold'),
                             ('physical', UNKNOWN), ('etc', UNKNOWN), ('miner', UNKNOWN)]:

@@ -47,6 +47,7 @@ def test_sector_fallback_preserves_overrides_and_unknown_assets():
         dict(id='cash', instrument_type='cash'), dict(id='crypto', instrument_type='crypto'),
         dict(id='bond', instrument_type='bond'), dict(id='fund', instrument_type='etf'),
         dict(id='gold', instrument_type='physical', price_source='gold_spot'),
+        dict(id='silver', instrument_type='physical', price_source='silver_spot'),
         dict(id='physical', instrument_type='physical'), dict(id='etc', instrument_type='etc'),
         dict(id='company', instrument_type='equity'),
     ])
@@ -58,6 +59,7 @@ def test_sector_fallback_preserves_overrides_and_unknown_assets():
     assert result['crypto']['labels'] == original['crypto']['labels']
     assert result['crypto']['sector'] == ((NO_SECTOR, 'Crypto'),)
     assert result['gold']['sector'] == ((NO_SECTOR, 'Gold'),)
+    assert result['silver']['sector'] == ((NO_SECTOR, 'Silver'),)
     assert 'labels' not in result['gold']
     for asset in ('fund', 'physical', 'etc', 'company'):
         assert paths_for(result, asset, 'sector') == (UNCLASSIFIED,)

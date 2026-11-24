@@ -277,7 +277,7 @@ than extend this historical map.
 | `generalized_studies_ui.py` | `interface/views/studies/generalized_studies_ui.py` | No |
 | `geography.py` | `exposure/geography.py` | No |
 | `geography_ui.py` | `interface/views/exposure/geography_ui.py` | No |
-| `gold_prices.py` | `market/gold_prices.py` | No |
+| `gold_prices.py` | `market/metal_prices.py` | No |
 | `grid_interactions.py` | `interface/shared/grid_interactions.py` | No |
 | `group_ui.py` | `interface/views/portfolio/group_ui.py` | No |
 | `grouping.py` | `portfolio/grouping.py` | No |

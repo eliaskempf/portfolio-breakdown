@@ -25,7 +25,7 @@ substitutes. Unknown geography and coverage remain visible. The stock-only view
 excludes non-equity sources and reports unresolved coverage separately.
 
 The Sector view distinguishes **No business sector** from **Unclassified**.
-Explicitly identified money-market exposure, gold, crypto and cash appear under
+Explicitly identified money-market exposure, precious metals, crypto and cash appear under
 the former, with separate subcategories. They remain in the portfolio denominator.
 Unknown company sectors, unsupported fund breakdowns and uncovered ETF weights
 remain Unclassified. Saved sector labels and provider sectors take precedence;
