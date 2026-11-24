@@ -227,3 +227,38 @@ def test_aliased_component_retains_its_origin_and_estimated_status(monkeypatch):
     assert len(plan.groups) == 1
     assert plan.groups[0].basis == 'Estimated name match'
     assert [m['node'] for m in plan.groups[0].members] == ['n0', 'n1', 'n2']
+
+
+def test_merge_annotations_use_source_local_ids_and_preserve_provider_columns(monkeypatch):
+    from portfolio_app.exposure import company_merges
+
+    holdings, funds = universe()
+    for i, fund in enumerate(funds):
+        frame = fund.constituents.assign(constituent_id='vendor:shared', isin='ZZ1111111111',
+                                         provider_note='Invented metadata', analysis_asset_id='old')
+        unrelated = frame.assign(constituent_id='vendor:bond', instrument_type='bond', weight=.1)
+        funds[i] = replace(fund, constituents=pd.concat([frame, unrelated]))
+    funds.append(replace(funds[0], isin='ZZ9999999999'))
+
+    read_records = company_merges.constituent_records
+    def projected(frame):
+        assert 'provider_note' not in frame
+        return read_records(frame)
+    monkeypatch.setattr(company_merges, 'constituent_records', projected)
+    # Walking whole rows would extract every provider field merely to look up an ID.
+    original_tuples = pd.DataFrame.itertuples
+    def check_columns(frame, *args, **kwargs):
+        assert 'provider_note' not in frame
+        return original_tuples(frame, *args, **kwargs)
+    monkeypatch.setattr(pd.DataFrame, 'itertuples', check_columns)
+    plan = build_plan(holdings, funds, {}, MergeSettings({'fund:ZZ2222222222:vendor:shared'}))
+    assert len(plan.groups) == 1 and not plan.groups[0].enabled
+    _, linked, _ = plan.apply(holdings, funds, {})
+    for i, fund in enumerate(linked):
+        expected = f'separate:fund:{fund.isin}:vendor:shared' if i < 2 else ''
+        assert fund.constituents.analysis_asset_id.tolist() == [expected, '']
+        assert fund.constituents.index.tolist() == [0, 0]
+        assert fund.constituents.provider_note.tolist() == ['Invented metadata'] * 2
+        fund.constituents['provider_note'] = 'Edited copy'
+        assert funds[i].constituents.provider_note.tolist() == ['Invented metadata'] * 2
+        assert funds[i].constituents.analysis_asset_id.tolist() == ['old'] * 2
