@@ -449,7 +449,8 @@ def exercise_market_chart(evaluate, trial):
         const dialog = () => d.querySelector('[role=dialog]');
         const option = (group, label) => [...(dialog()?.querySelectorAll('[aria-label="'+group+'"] [role=radio]') ?? [])]
             .find(e => visible(e) && e.textContent.trim() === label);
-        const chart = () => dialog()?.querySelector('.st-key-position_history_Price .js-plotly-plot');
+        const plotSelector = '.st-key-position_history_Price .js-plotly-plot';
+        const chart = () => dialog()?.querySelector(plotSelector);
     """
     def read(js):
         return evaluate('(() => {' + context + js + '})()')
@@ -471,7 +472,7 @@ def exercise_market_chart(evaluate, trial):
         total = fixture['ranges']['Max']
         start = total - fixture['ranges'][label]
         omissions = [i for i in fixture['missing_fx'] if i >= start]
-        config = dict(label=label, points=total-start-len(omissions), first=index == 0,
+        config = dict(visit=index+1, label=label, points=total-start-len(omissions), first=index == 0,
                       end=fixture['end'], total=total, start=start, omissions=omissions)
         start_event = event_count(trial)
         read("const c = " + json.dumps(config) + """;
@@ -480,7 +481,7 @@ def exercise_market_chart(evaluate, trial):
             w.marketChartVisit = null;
             const start = w.performance.now();
             button.click();
-            let paint = null, quiet = 0;
+            let paint = null, quiet = 0, sawRunning = false;
             function frame() {
                 const plot = chart();
                 const trace = plot?.data?.[0];
@@ -492,7 +493,9 @@ def exercise_market_chart(evaluate, trial):
                     plot.layout?.yaxis?.tickprefix === '€' && trace.x[c.points-1] === c.end+'T00:00:00' &&
                     Math.abs(trace.y[0] - (100+firstStep)*(.8+firstStep)) <= 1e-9;
                 if (displayed && paint === null) paint = elapsed;
-                quiet = displayed && !running() ? quiet+1 : 0;
+                const activeRun = running();
+                sawRunning ||= activeRun;
+                quiet = displayed && !activeRun ? quiet+1 : 0;
                 if (quiet >= 2) {
                     const last = new Date(c.end+'T00:00:00Z');
                     let point = c.points-1;
@@ -511,9 +514,11 @@ def exercise_market_chart(evaluate, trial):
                         points:c.points, paint_ms:paint, settled_ms:elapsed}; return;
                 }
                 if (exception() || elapsed > 45000) {
-                    const selected = dialog()?.querySelector('[aria-label="Period"] [aria-checked="true"]');
+                    const selected = [...(dialog()?.querySelectorAll('[aria-label="Period"] [aria-checked="true"]') ?? [])].find(visible);
+                    const plots = [...(dialog()?.querySelectorAll(plotSelector) ?? [])];
                     w.marketChartVisit = {error:'Saved market chart did not settle: '+JSON.stringify({
-                        requested:c.label, selected:selected?.textContent?.trim(), running:running(), exception:exception(),
+                        visit:c.visit, requested:c.label, selected:selected?.textContent?.trim(), running:activeRun, sawRunning, exception:exception(),
+                        plots:plots.map(el => ({visible:visible(el), points:el.data?.[0]?.x?.length})),
                         expectedPoints:c.points, tracePoints:trace?.x?.length, renderedPoints:plot?.calcdata?.[0]?.length,
                         line:!!line?.getAttribute('d'), currency:plot?.layout?.yaxis?.tickprefix,
                         lastDate:trace?.x?.at(-1), stale:!!plot?.closest('[data-stale=true]'), paint
@@ -523,7 +528,9 @@ def exercise_market_chart(evaluate, trial):
             w.requestAnimationFrame(frame); return true;""")
         action = wait(lambda: read("return w.marketChartVisit;"), timeout=50)
         if 'error' in action:
-            raise RuntimeError(action['error'])
+            events = (trial / 'server.jsonl').read_bytes().splitlines()[start_event:]
+            server = [json.loads(line) for line in events]
+            raise RuntimeError(f"{action['error']}; server events since click: {server[-20:]}")
         action['event_range'] = [start_event, event_count(trial)]
         actions.append(action)
     return dict(ready_at=ready_at, actions=actions)

@@ -117,11 +117,35 @@ def observe_server(trial):
             record('unexpected_market_fetch')
             raise AssertionError('The benchmark should use saved prices and FX')
         MarketHistoryProvider.history = unexpected_fetch
+        from streamlit.runtime.app_session import AppSession
+        from streamlit.runtime.scriptrunner_utils.script_run_context import ScriptRunContext
+
+        handle_request = AppSession._handle_rerun_script_request
+        def observe_market_request(session, client_state=None):
+            if client_state is not None:
+                fragment = client_state.fragment_id
+                for widget in client_state.widget_states.widgets:
+                    if 'position_edit_history_' in widget.id and widget.id.endswith('_period'):
+                        record('market_range_requested', selection=list(widget.string_array_value.data),
+                               fragment=fragment, registered=not fragment or session._fragment_storage.contains(fragment),
+                               automatic=client_state.is_auto_rerun)
+            return handle_request(session, client_state)
+
+        enqueue = ScriptRunContext.enqueue
+        def observe_market_chart(ctx, msg):
+            result = enqueue(ctx, msg)
+            if msg.HasField('delta') and msg.delta.new_element.HasField('plotly_chart'):
+                record('market_chart_enqueued', path=list(msg.metadata.delta_path), fragment=msg.delta.fragment_id,
+                       bytes=len(msg.delta.new_element.plotly_chart.spec), reference=msg.hash in ctx.cached_message_hashes)
+            return result
+
+        AppSession._handle_rerun_script_request = observe_market_request
+        ScriptRunContext.enqueue = observe_market_chart
         convert = history.convert_price_history
         def measured_conversion(*args, **kwargs):
             start = time.perf_counter_ns()
             result = convert(*args, **kwargs)
-            record('converted', elapsed_ms=(time.perf_counter_ns() - start) / 1e6)
+            record('converted', points=len(result.prices), elapsed_ms=(time.perf_counter_ns() - start) / 1e6)
             return result
         history.convert_price_history = measured_conversion
         return
