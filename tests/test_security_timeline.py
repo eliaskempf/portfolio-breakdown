@@ -53,6 +53,43 @@ def test_failed_advance_preserves_earlier_states_and_retries_validation():
         assert timeline.at('2024-01-02') == earlier
 
 
+def test_daily_closes_do_not_reread_settled_cash_postings(monkeypatch):
+    from portfolio_app.ledger.security_history import SecurityCash
+
+    begin = date(2024, 1, 1)
+    dates = [(begin + timedelta(days=i)).isoformat() for i in range(1, 91)]
+    buys = tuple(E(f'buy-{i}', 'buy', stamp, quantity=1, price=10, currency='EUR',
+                   charges_known=True) for i, stamp in enumerate(dates))
+    timeline = SecurityTimeline((book(opening('0', '0'), *buys),))
+    date_reads = 0
+    original = SecurityCash.__getattribute__
+
+    def counted(posting, field):
+        nonlocal date_reads
+        if field == 'date':
+            date_reads += 1
+        return original(posting, field)
+
+    monkeypatch.setattr(SecurityCash, '__getattribute__', counted)
+    for i, stamp in enumerate(dates):
+        state = timeline.at(stamp)
+        assert len(state.cash) == i + 1 and state.cash[-1].id == buys[i].id
+    assert date_reads <= 2 * len(buys)
+
+
+def test_future_charge_appears_on_its_own_date_in_original_posting_order():
+    from portfolio_app.ledger.security_history import Charge
+
+    purchase = E('buy', 'buy', '2024-01-02', quantity=2, price=10, currency='EUR',
+                 charges_known=True, charges=(Charge(1, 'EUR', '2024-01-04'),))
+    sale = E('sell', 'sell', '2024-01-03', quantity=1, price=12, currency='EUR', charges_known=True)
+    timeline = SecurityTimeline((book(opening('0', '0'), purchase, sale),))
+    before = timeline.at('2024-01-03')
+    after = timeline.at('2024-01-04')
+    assert [p.id for p in before.cash] == ['buy', 'sell']
+    assert [p.id for p in after.cash] == ['buy', 'buy:charge:0', 'sell']
+
+
 def test_daily_queries_construct_each_purchase_lot_once(monkeypatch):
     begin = date(2024, 1, 1)
     purchases = tuple(E(f'buy-{n}', 'buy', (begin+timedelta(days=n*5)).isoformat(),
