@@ -36,6 +36,14 @@ def cached_classifications(key, signature, loader):
     return copy_classifications(cached_input(key, signature, loader, immutable=True))
 
 
+def current_account_state(directory, journal, journal_revision):
+    """Reuse the complete validated replay across views of one saved journal."""
+    from portfolio_app.ledger.account_journal import replay
+    if journal_revision is None:
+        return replay(journal)
+    return cached_input('account_state', (str(directory.resolve()), journal_revision), lambda: replay(journal))
+
+
 def monitoring_snapshot(directory):
     """The validated document and content revision read from the same bytes."""
     from portfolio_app.monitoring.monitoring_store import FILE, load_monitoring

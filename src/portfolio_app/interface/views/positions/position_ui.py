@@ -91,7 +91,7 @@ def _has_position_draft():
 
 
 def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False, allocation=None,
-                           valued=None, account_valued=None, percent=False, defer_dialog=False, journal=None):
+                           valued=None, account_valued=None, percent=False, defer_dialog=False, journal=None, account_state=None):
     dialog_baseline = position_dialog_sources(path.parent) if not defer_dialog else None
     account_valued = account_valued if account_valued is not None else valued
     _consume_position_event(path, snapshot, journal)
@@ -154,7 +154,7 @@ def render_position_editor(path, snapshot, funds, *, demo=False, embedded=False,
         from portfolio_app.interface.views.derivatives.accounts_ui import render_actual_positions
         if journal is None:
             journal, _ = load_journal(path.parent)
-        render_actual_positions(path.parent, journal, valued=account_valued)
+        render_actual_positions(path.parent, journal, valued=account_valued, state=account_state)
     if not defer_dialog:
         render_position_dialog(path, snapshot, funds, demo=demo, allocation=allocation, valued=account_valued,
                                journal=journal, baseline=dialog_baseline)
@@ -191,7 +191,7 @@ def position_dialog_sources(directory):
         ('holdings.csv', 'account-journal.json', 'history-observations.json', 'allocation.yaml', 'portfolio.yaml'))
 
 
-def _reload_dialog_values(directory, *, demo, prices=None, inputs=None, journal=None):
+def _reload_dialog_values(directory, *, demo, prices=None, inputs=None, journal_snapshot=None):
     """Use the normal valuation pipeline after a child workflow changes facts."""
     from portfolio_app.interface.shared.input_cache import load_inputs
     from portfolio_app.application import prepare_application, select_price_service, historical_for
@@ -201,14 +201,15 @@ def _reload_dialog_values(directory, *, demo, prices=None, inputs=None, journal=
     prices = select_price_service(directory, offline_demo=demo, supplied=prices)
     historical = ObservationFX(load_observations(directory)[0], historical_for(directory, demo=demo))
     valued = prepare_application(inputs, prices, reporting_currency=reporting_currency(), historical=historical).valued
-    if journal is None:
-        journal, _ = load_journal(directory)
+    journal, revision = journal_snapshot if journal_snapshot is not None else load_journal(directory)
     if journal.accounts:
         from portfolio_app.portfolio.actual_portfolio import journal_positions
         from portfolio_app.derivatives.futures_valuation import load_valuations
-        valuations, rates = load_valuations(directory, journal)
+        from portfolio_app.interface.shared.input_cache import current_account_state
+        state = current_account_state(directory, journal, revision)
+        valuations, rates = load_valuations(directory, journal, state=state)
         valued = journal_positions(valued, journal, prices, reporting_currency=reporting_currency(),
-                                  valuations=valuations, fx_rates=rates)
+                                  valuations=valuations, fx_rates=rates, state=state)
     return inputs.snapshot, inputs.allocation, valued
 
 
@@ -255,7 +256,7 @@ def render_position_dialog(path, snapshot, funds, *, demo=False, allocation=None
                 allocation = inputs.allocation
             else:
                 refreshed_snapshot, allocation, valued = _reload_dialog_values(
-                    path.parent, demo=demo, prices=prices, inputs=inputs, journal=current[0])
+                    path.parent, demo=demo, prices=prices, inputs=inputs, journal_snapshot=current)
         last_sources, snapshot, journal_snapshot = signature, refreshed_snapshot, current
 
     def values(*, read_only):

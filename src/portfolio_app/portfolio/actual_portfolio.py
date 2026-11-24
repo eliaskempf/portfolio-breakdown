@@ -65,14 +65,14 @@ def assert_cash_editable(path, position_ids):
         raise DataError('This cash balance is maintained in Accounts. Record a dated reconciliation there.')
 
 
-def journal_positions(valued, journal, prices, *, reporting_currency='EUR', marks=None, fx_rates=None, valuations=None, now=None):
+def journal_positions(valued, journal, prices, *, reporting_currency='EUR', marks=None, fx_rates=None, valuations=None, now=None, state=None):
     from portfolio_app.ledger.account_journal import replay
     validate_links(journal, valued)
-    state = replay(journal)
+    state = replay(journal) if state is None else state
     marks = marks or {}
     from portfolio_app.derivatives.futures_valuation import freshness, select_valuations, valuation_fields
     if valuations is None:
-        valuations = select_valuations(journal, now=now)
+        valuations = select_valuations(journal, now=now, state=state)
         # This projection API accepts caller-selected prices. The application
         # selects manual/automatic observations with load_valuations beforehand.
         for identity, observation in marks.items():

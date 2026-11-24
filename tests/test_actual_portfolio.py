@@ -172,3 +172,44 @@ def test_zero_value_closed_investment_retains_fx_for_recorded_loss(tmp_path):
     assert investment.current_value_reporting == 0
     assert investment.cost_basis_reporting == 90
     assert investment.unrealized_gain_reporting == -90 and investment.return_pct == -100
+
+
+def test_saved_account_state_is_shared_across_readers_and_invalidated_on_publication(tmp_path, monkeypatch):
+    import streamlit as st
+    from portfolio_app.derivatives import futures_valuation
+    from portfolio_app.interface.shared.input_cache import current_account_state
+    from portfolio_app.interface.views.derivatives.accounts_ui import render_actual_positions
+    from portfolio_app.ledger import account_journal
+
+    prices, journal, _ = invented(tmp_path)
+    valued = prepare_portfolio(read_snapshot(tmp_path/'holdings.csv').holdings, prices)
+    save_journal(tmp_path, journal, None)
+    saved, first_revision = account_journal.load_journal(tmp_path)
+    marks, rates = futures_valuation.load_valuations(tmp_path, saved)
+    expected = journal_positions(valued, saved, prices, valuations=marks, fx_rates=rates)
+    replay = account_journal.replay
+    reads = []
+
+    def count(source, **kwargs):
+        reads.append(source)
+        return replay(source, **kwargs)
+
+    monkeypatch.setattr(st, 'session_state', {})
+    monkeypatch.setattr(account_journal, 'replay', count)
+    monkeypatch.setattr(futures_valuation, 'replay', count)
+    for _ in range(2):
+        state = current_account_state(tmp_path, saved, first_revision)
+        current_marks, current_rates = futures_valuation.load_valuations(tmp_path, saved, state=state)
+        assert (current_marks, current_rates) == (marks, rates)
+        projected = journal_positions(valued, saved, prices, valuations=current_marks, fx_rates=current_rates, state=state)
+        pd.testing.assert_frame_equal(projected, expected)
+        render_actual_positions(tmp_path, saved, state=state)
+        state.cash.clear()
+    assert reads == [saved]
+
+    updated = append_events(saved, [Event('invented-deposit', '2026-01-04', 'cash_flow', 'a', 'EUR', 25)])
+    save_journal(tmp_path, updated, first_revision)
+    latest, latest_revision = account_journal.load_journal(tmp_path)
+    reads.clear()
+    assert current_account_state(tmp_path, latest, latest_revision) == replay(updated)
+    assert reads == [latest]
