@@ -776,7 +776,13 @@ FX is pending. All 48 positions have purchases on the same 25 USD dates and six
 positions lack closes on 22 days. The driver releases the synthetic rates after
 the first chart settles. It measures cold paint, background publication and idle
 fades, verifies every purchase cost, and compares the rendered series before
-and after publication. The mixed-history profile uses the same holdings and prices. Some overlapping
+and after publication. A separate cold visit adds four cash accounts and 2,920
+daily deposits to the 48 securities. It checks every painted portfolio value
+against the fixture's prices, shares and cash balance, then changes the range
+to three months and back. The benchmark also counts how often a holding's
+capital is recalculated between its purchases.
+
+The mixed-history profile uses the same holdings and prices. Some overlapping
 constituents have only fund-local identifiers and company names. It also includes
 4,000 archived monitoring observations and 24 invented provider sectors. After
 the timed asset visits, the benchmark opens Themes & sectors twice, records the

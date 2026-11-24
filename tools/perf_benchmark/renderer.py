@@ -116,6 +116,19 @@ def await_allocation(evaluate):
     return time.time(), animation_done
 
 
+def exercise_cash_history(evaluate, trial):
+    ready_at, _ = await_allocation(evaluate)
+    actions = []
+    for control, period in [('Performance', '1Y'), ('3M', '3M'), ('1Y', '1Y')]:
+        action = interact(evaluate, control, trial)
+        points = evaluate('(() => {' + CONTEXT + """
+            const trace = history().data.find(t => t.name === 'Value');
+            return trace.x.map((date, i) => [date, trace.y[i]]);
+        })()""")
+        actions.append(dict(period=period, points=points, digest=chart_digest(evaluate), **action))
+    return dict(ready_at=ready_at, actions=actions)
+
+
 def exercise_purchase_fx(evaluate, trial):
     ready_at, _ = await_allocation(evaluate)
     wait(lambda: (trial / 'fx-pending').exists())
@@ -894,6 +907,8 @@ def exercise_collection(evaluate, trial):
 
 
 def measure_view(evaluate, trial, variant, scenario, *, themes=False, company_accounts=False):
+    if scenario == 'cash-history':
+        return exercise_cash_history(evaluate, trial)
     if scenario == 'purchase-fx':
         return exercise_purchase_fx(evaluate, trial)
     if scenario == 'market-chart':

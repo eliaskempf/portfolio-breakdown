@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from portfolio_app.ledger.account_journal import Journal, save_journal
+from portfolio_app.ledger.account_journal import Account, Event, Journal, save_journal
 from portfolio_app.ledger.history_commands import book_for, reconstruction_candidate
 from portfolio_app.ledger.security_history import SecurityEvent
 from portfolio_app.performance.history_observations import Observation, ObservationStore, save_observations
@@ -58,7 +58,7 @@ def holdings_and_funds(directory, profile, today):
         yield fund_id, name, ticker, isin, 'etf', 'equity'
 
 
-def create_workspace(directory: Path, profile='small', *, today=None, checklist=False, purchase_fx=False):
+def create_workspace(directory: Path, profile='small', *, today=None, checklist=False, purchase_fx=False, cash_history=False):
     directory.mkdir()
     today = today or date.today()
     start = today - timedelta(days=730)
@@ -100,6 +100,16 @@ def create_workspace(directory: Path, profile='small', *, today=None, checklist=
         observations.extend(Observation(f'o-{index}-{t}', 'price', book.position_id, day(t),
             100 + Decimal(price_change * t) / 730, 'EUR', source='invented') for t in range(731)
             if index >= 6 or t not in gap_offsets)
+    if cash_history:
+        accounts = tuple(Account(f'cash-{i}', f'Invented cash {i}') for i in range(4))
+        events = [Event(f'opening-{i}', day(0), 'cash_open', account.id, 'EUR', 100)
+                  for i, account in enumerate(accounts)]
+        events.extend(Event(f'move-{t}-{i}', day(t), 'cash_flow', account.id, 'EUR', 1)
+                      for t in range(1, 731) for i, account in enumerate(accounts))
+        journal = replace(journal, accounts=accounts, events=tuple(events))
+        expected = dict(start=day(0), end=day(730), accounts=len(accounts), positions=len(books),
+                        closing_sum=float(rows.manual_price.sum()), purchases=25)
+        (directory.parent / 'cash-history.json').write_text(json.dumps(expected), encoding='utf-8')
     save_journal(directory, replace(journal, securities=tuple(books)), None)
     save_observations(directory, ObservationStore(tuple(observations)), None)
     save_overview_view(directory, 'Allocation')

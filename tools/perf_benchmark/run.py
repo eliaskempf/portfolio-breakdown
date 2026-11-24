@@ -6,10 +6,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 import platform
 import socket
-from math import ceil
+from math import ceil, isclose
 from statistics import median
 import subprocess
 import sys
@@ -89,6 +89,35 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         start, end = measurement.pop('event_range')
         return events[start:end]
 
+    if scenario == 'cash-history':
+        from dateutil.relativedelta import relativedelta
+        settings = json.loads((workspace.parent / 'cash-history.json').read_bytes())
+        start, end = (date.fromisoformat(settings[key]) for key in ('start', 'end'))
+        positions = settings['positions']
+        for i, action in enumerate(report['actions']):
+            action.pop('dispatch_ms')
+            during = interval(action)
+            counts = [e['positions'] for e in during if e['event'] == 'cash_history_calculated' and e['points']]
+            # Each holding has 25 purchase dates plus its opening and interval endpoints.
+            if ((i == 0 and not counts) or (i == 2 and counts) or
+                    sum(counts) > positions * (settings['purchases'] + 3)):
+                raise AssertionError(f'Unexpected position capital work on {action["period"]}: {counts}')
+            action['position_capital_calculations'] = counts
+            first = end - relativedelta(months=12 if action['period'] == '1Y' else 3)
+            points = action.pop('points')
+            if len(points) != (end-first).days+1:
+                raise AssertionError(f'Incomplete cash-history range: {action["period"]}, {len(points)} closes')
+            for offset, (stamp, actual) in enumerate(points):
+                day = first + timedelta(days=offset)
+                t = (day-start).days
+                shares = min(settings['purchases'], 1 + t//30)
+                opening_sum = 100 * positions
+                prices = opening_sum + (settings['closing_sum'] - opening_sum) * t / (end-start).days
+                value = shares * prices + settings['accounts'] * (100 + t)
+                if stamp[:10] != day.isoformat() or actual is None or not isclose(actual, value, rel_tol=1e-12):
+                    raise AssertionError(f'Incorrect cash-history close for {day}: {actual}, expected {value}')
+            action['closes'] = len(points)
+        return report
     if scenario == 'purchase-fx':
         settings = json.loads((workspace.parent / 'purchase-fx.json').read_bytes())
         requests = Counter((e['currency'], e['day']) for e in events if e['event'] == 'purchase_fx_requested')
@@ -298,6 +327,17 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
                     checks.append(dict(surface=surface, scenario=scenario, **metrics))
                     (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
 
+            with TemporaryDirectory(prefix='portfolio-cash-history-') as tmp:
+                workspace = Path(tmp) / 'synthetic'
+                create_workspace(workspace, profile, today=as_of, cash_history=True)
+                metrics = benchmark(executable, workspace, Path(tmp) / 'trial', 'navigation', surface, 'cash-history')
+                for action in metrics['actions']:
+                    key = ('cash-history', action['period'])
+                    if action['digest'] != expected.setdefault(key, action['digest']):
+                        raise AssertionError('Account-history series differed across ranges or renderers')
+                result.setdefault('cash_history', []).append(dict(surface=surface, **metrics))
+                (destination / 'results.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+
     rows = ['| Surface | Launch | Reuse | Launch to ready (ms) | First chart (ms) | Warm chart median / p95 (ms) |',
             '|---|---|---|---:|---:|---:|']
     for surface in surfaces:
@@ -314,6 +354,10 @@ def run(executable, destination, surfaces, pairs, experiment='history', profile=
                         f"{check['first']['chart_ms']:.0f} ms, completed costs {check['publication_ms']:.0f} ms "
                         f"after release, {check['requests']} FX dates, {check['published_valuations']} valuation(s), "
                         f"{check['refresh']['fades']} chart fade(s).\n")
+    for check in result.get('cash_history', []):
+        first, quarter, repeat = check['actions']
+        summary += (f"\n{check['surface']} four-account history: cold Performance paint {first['chart_ms']:.0f} ms, "
+                    f"3M {quarter['chart_ms']:.0f} ms, repeat 1Y {repeat['chart_ms']:.0f} ms.\n")
     print(summary)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:

@@ -25,6 +25,32 @@ def observe_server(trial):
 
     application.prepare_application = counted(application.prepare_application, 'portfolio_valued')
     scenario = os.environ['PORTFOLIO_BENCHMARK_REFRESH']
+    if scenario == 'cash-history':
+        from threading import local
+        from portfolio_app.performance import history_view as views, personal_performance as performance
+        from portfolio_app.performance.personal_history_refresh import refresher
+
+        refresher.download = lambda directory, journal, scope, store, start, end, target: (store, ())
+        work = local()
+        original_capital = performance._period_capital
+        def measured_capital(calculation, scope, *args):
+            if getattr(work, 'positions', None) is not None and len(scope.positions) == 1 and not scope.accounts:
+                work.positions += 1
+            return original_capital(calculation, scope, *args)
+
+        original_chart = views.history_view
+        def measured_chart(*args, **kwargs):
+            work.positions = 0
+            try:
+                result = original_chart(*args, **kwargs)
+                record('cash_history_calculated', points=len(result.points), positions=work.positions)
+                return result
+            finally:
+                del work.positions
+
+        performance._period_capital = measured_capital
+        views.history_view = measured_chart
+        return
     if scenario == 'purchase-fx':
         from datetime import date, timedelta
         import pandas as pd

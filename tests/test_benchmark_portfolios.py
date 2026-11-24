@@ -98,6 +98,29 @@ def test_purchase_fx_benchmark_needs_dated_rates_and_has_partial_closes(tmp_path
     assert json.loads((workspace / '.cache/prices.json').read_bytes())['fx:USD']['quote']['price'] == .9
 
 
+def test_cash_history_fixture_posts_daily_funding_to_each_account(tmp_path):
+    import json
+    from collections import Counter
+    from datetime import date
+    path = Path(__file__).resolve().parents[1] / 'tools/perf_benchmark/fixture.py'
+    spec = spec_from_file_location('benchmark_fixture', path)
+    fixture = module_from_spec(spec)
+    spec.loader.exec_module(fixture)
+    workspace = tmp_path / 'synthetic'
+    fixture.create_workspace(workspace, today=date(2026, 5, 31), cash_history=True)
+    expected = json.loads((tmp_path / 'cash-history.json').read_bytes())
+    journal, _ = load_journal(workspace)
+    assert (expected['accounts'], expected['positions'], expected['purchases']) == (4, 12, 25)
+    openings = [e for e in journal.events if e.kind == 'cash_open']
+    assert {e.account_id for e in openings} == {a.id for a in journal.accounts}
+    assert all(e.date == expected['start'] and e.amount == 100 for e in openings)
+    moves = [e for e in journal.events if e.kind == 'cash_flow']
+    assert len(moves) == len({(e.account_id, e.date) for e in moves}) == 2920
+    assert all(e.currency == 'EUR' and e.amount == 1 for e in moves)
+    assert set(Counter(e.date for e in moves).values()) == {4}
+    assert min(e.date for e in moves) > expected['start'] and max(e.date for e in moves) == expected['end']
+
+
 def test_market_chart_benchmark_starts_with_durable_price_and_fx_ranges(tmp_path):
     import csv
     from portfolio_app.market.history import HistoryService, convert_price_history
