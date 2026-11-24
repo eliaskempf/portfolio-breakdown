@@ -1,22 +1,33 @@
 """Shared native chart, history controls and loading states for position dialogs."""
 from portfolio_app.interface.shared.chart_hover import chart_hover, money_history_axes
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 import plotly.graph_objects as go
 import streamlit as st
 
 from portfolio_app.interface.shared.background_ui import status_fragment
+from portfolio_app.interface.shared.dialog_runtime import local_fragment_updates
 from portfolio_app.interface.shared.render_sections import render_sections
 
 from portfolio_app.interface.shared.charts import chart_config, style_figure, PALETTE
 from portfolio_app.interface.shared.currency_display import reporting_currency
-from portfolio_app.market.history import HistoryService, DemoHistoryProvider, PERIODS
+from portfolio_app.market.history import HistoryResult, HistoryService, DemoHistoryProvider, PERIODS
 from portfolio_app.market.market_data import BackgroundHistory, history_for
+
+
+@dataclass
+class _MarketReading:
+    period: str
+    units: str
+    source: tuple[HistoryResult, bool]
+    display: HistoryResult
+    retry_needed: dict[str, bool]
+    pending: bool
 
 
 def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
                           heading='Market-price history', index_points=False, is_active=None,
-                          expected_currency=None, native_currency=None, service=None, compact=False,
+                          expected_currency=None, native_currency=None, service=None, compact=False, render_details=None,
                           caption='Instrument closing prices in {currency} · Excludes dividend reinvestment · Not your personal return history'):
     if not compact and heading:
         st.markdown(f'**{heading}**')
@@ -28,19 +39,12 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
         result = service.get(symbol, period, **options)
         return result, not demo and service.pending(symbol, period)
 
-    # Valuation/contract metadata can identify units while the first chart loads.
-    saved_period = st.session_state.get(key+'period') or '1Y'
-    initial = quote(ticker, saved_period, manual=manual)
-    native = initial[0].currency or expected_currency or native_currency
-    with st.container(horizontal=True, horizontal_alignment='distribute', vertical_alignment='bottom'):
-        period = st.segmented_control('Period', list(PERIODS), default='1Y', required=True, key=key+'period', label_visibility='collapsed') or '1Y'
-        history_currency = reporting_currency()
-        if not index_points and native and native != reporting_currency():
-            history_currency = st.selectbox('Currency', [reporting_currency(), native], key=key+'currency_code', width=110,
-                help='Chart currency. Conversion uses historical exchange rates.')
+    def selectable_currency(source):
+        native = source[0].currency or expected_currency or native_currency
+        return native if native and not index_points and native != reporting_currency() else None
 
-    def read(*, use_initial=False):
-        result, pending = initial if use_initial else quote(ticker, period, manual=manual)
+    def read(source, period, history_currency):
+        result, pending = source
         if result.prices and expected_currency and result.currency != expected_currency:
             result = replace(result, dates=(), prices=(), status='unavailable',
                              note='History returned an unexpected currency; the reference chart is withheld.')
@@ -56,15 +60,28 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
                 retry_needed[symbol] = not fx.prices or fx.currency != 'EUR' or fx.status in {'stale', 'unavailable'}
                 pending = pending or checking
             result = convert_price_history(result, history_currency, legs)
-        return result, retry_needed, pending
+        return _MarketReading(period, history_currency, source, result, retry_needed, pending)
 
-    result, retry_needed, pending = read(use_initial=period == saved_period)
-    from portfolio_app.interface.shared.dialog_runtime import local_fragment_updates
-
+    publication = None
     @st.fragment
     def market_result():
+        nonlocal publication
         if is_active is not None and not is_active():
             return
+        ready, publication = publication, None
+        with st.container(horizontal=True, horizontal_alignment='distribute', vertical_alignment='bottom'):
+            period = st.segmented_control('Period', list(PERIODS), default='1Y', required=True,
+                                          key=key+'period', label_visibility='collapsed') or '1Y'
+            if ready is not None and ready.period != period:
+                ready = None
+            source = ready.source if ready is not None else quote(ticker, period, manual=manual)
+            native = selectable_currency(source)
+            units = reporting_currency()
+            if native:
+                units = st.selectbox('Currency', [units, native], key=key+'currency_code', width=110,
+                    help='Chart currency. Conversion uses historical exchange rates.')
+        reading = ready if ready is not None and ready.units == units else read(source, period, units)
+        result = reading.display
         sections = render_sections(key, 'market_plot', 'market_description', 'market_status')
         if result.prices:
             with sections['market_plot']:
@@ -72,19 +89,16 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
             if not compact:
                 sections['market_description'].caption(caption.format(currency=result.currency))
 
-        mounted = False
-        @status_fragment()
         @local_fragment_updates()
-        def progress(poll):
-            nonlocal result, retry_needed, pending
+        def redraw_chart():
+            st.rerun()
+
+        mounted = False
+        @st.fragment
+        def market_status():
             if is_active is not None and not is_active():
                 return
-            if mounted and pending and not any(service.pending(symbol, period) for symbol in retry_needed):
-                updated, retry_needed, pending = read()
-                if not pending:
-                    previous, result = result, updated
-                    if (result.dates, result.prices, result.currency) != (previous.dates, previous.prices, previous.currency):
-                        st.rerun()
+            result = reading.display
             details = render_sections(key, 'market_retrieved', 'market_note', 'market_refresh')
             if result.prices and not compact:
                 details['market_retrieved'].caption(f'History last retrieved: {result.fetched_at}')
@@ -92,24 +106,53 @@ def render_market_history(ticker, data_dir, *, key, demo=False, manual=False,
                 message = details['market_note'].warning if result.status == 'stale' else details['market_note'].info
                 message(result.note)
             with details['market_refresh']:
-                if pending:
+                if reading.pending:
                     st.caption('Updating market-price history in the background…')
-                    # A fast job can finish during the enclosing page render.
-                    # Publish on a local tick so the rest of that page still mounts.
-                    poll(.1 if not mounted and not any(service.pending(symbol, period) for symbol in retry_needed) else 2)
                 elif not demo and result.status in {'stale', 'unavailable'} and ticker and not manual:
                     if st.button('Retry history', key=key+'retry'):
-                        for symbol, needs_retry in retry_needed.items():
+                        for symbol, needs_retry in reading.retry_needed.items():
                             if needs_retry:
                                 service.get(symbol, period, refresh=True)
-                        pending = True
+                        reading.pending = True
                         st.rerun(scope='fragment')
+            if render_details is not None:
+                render_details(result)
+
+            @status_fragment()
+            @local_fragment_updates()
+            def watch(poll):
+                nonlocal publication, reading
+                if not reading.pending or (is_active is not None and not is_active()):
+                    return
+                if any(service.pending(symbol, period) for symbol in reading.retry_needed):
+                    poll(2)
+                    return
+                if not mounted:
+                    # Finish mounting the enclosing page before publishing locally.
+                    poll(.1)
+                    return
+                source = quote(ticker, period, manual=manual)
+                updated = read(source, period, units)
+                options_changed = selectable_currency(source) != native
+                # A valid displayed series stays visible until its replacement
+                # is complete. With no series yet, offer newly known native units.
+                if updated.pending and (reading.display.prices or not options_changed):
+                    reading.retry_needed = updated.retry_needed
+                    poll(2)
+                    return
+                previous, reading = reading.display, updated
+                current = updated.display
+                if options_changed or (current.dates, current.prices, current.currency) != (previous.dates, previous.prices, previous.currency):
+                    publication = updated
+                    redraw_chart()
+                st.rerun()  # Only status and source details changed.
+            watch()
 
         with sections['market_status']:
-            progress()
+            market_status()
         mounted = True
-    market_result()
-    return result
+        return reading.display
+    return market_result()
 
 
 def _draw_prices(result, index_points):
