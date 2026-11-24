@@ -4,15 +4,16 @@ from hashlib import sha256
 
 import streamlit as st
 
+from portfolio_app.interface.shared.background_ui import refresh_allowed, status_fragment
 from portfolio_app.interface.shared.render_sections import render_sections
 
 from portfolio_app.ledger.account_journal import load_journal
 from portfolio_app.interface.shared.currency_display import reporting_currency
 from portfolio_app.interface.shared.display_names import instrument_name
 from portfolio_app.interface.views.history.history_data_ui import HistoryReasonFormatter
-from portfolio_app.performance.history_observations import HistoryScope, load_observations
+from portfolio_app.performance.history_observations import HistoryScope
 from portfolio_app.performance.history_status import position_history_statuses
-from portfolio_app.interface.shared.input_cache import cached_input
+from portfolio_app.interface.shared.input_cache import cached_input, observation_snapshot
 from portfolio_app.interface.shared.list_ui import ListColumn, render_list
 from portfolio_app.interface.views.positions.position_list import list_context
 
@@ -30,29 +31,46 @@ def render_history_status_list(path, snapshot, holdings, *, demo=False):
     target = reporting_currency()
     refresh = RefreshStatus() if demo else refresher.request(path.parent, journal, scope, target)
 
-    @st.fragment(run_every=2 if refresh.pending else None)
-    def region():
-        nonlocal refresh
+    sections = render_sections('history_status_', 'refresh', 'list')
+    displayed = None
+    update_ready = False
+
+    @st.fragment
+    def checklist():
+        nonlocal displayed
+        current, revision = load_journal(path.parent)
+        observations, evidence_revision = observation_snapshot(path.parent)
+        displayed = revision, evidence_revision
+        _render_history_status_list(path, snapshot, holdings, current, observations, displayed)
+
+    @status_fragment()
+    def status(poll):
+        nonlocal refresh, update_ready
         if refresh.pending and not refresher.pending(path.parent):
-            current, _ = load_journal(path.parent)
+            current, revision = load_journal(path.parent)
             refresh = refresher.request(path.parent, current, scope, target)
-        sections = render_sections('history_status_', 'refresh', 'list')
-        with sections['refresh']:
-            if refresh.pending:
-                st.caption('Loading historical prices and FX…')
-            elif refresh.errors:
-                if st.button('Retry prices', key='history_status_retry'):
-                    current, _ = load_journal(path.parent)
-                    refresher.request(path.parent, current, scope, target, force=True)
-                    st.rerun()
-        with sections['list']:
-            _render_history_status_list(path, snapshot, holdings)
-    region()
+            update_ready = (revision, observation_snapshot(path.parent)[1]) != displayed
+        if refresh.pending:
+            st.caption('Loading historical prices and FX…')
+            poll(2)
+        elif update_ready:
+            if refresh_allowed():
+                st.rerun()
+            poll(2)
+        elif refresh.errors:
+            if st.button('Retry prices', key='history_status_retry'):
+                current, _ = load_journal(path.parent)
+                refresher.request(path.parent, current, scope, target, force=True)
+                st.rerun()
+
+    with sections['list']:
+        checklist()
+    with sections['refresh']:
+        status()
 
 
-def _render_history_status_list(path, snapshot, holdings):
-    journal, journal_revision = load_journal(path.parent)
-    observations, observations_revision = load_observations(path.parent)
+def _render_history_status_list(path, snapshot, holdings, journal, observations, revisions):
+    journal_revision, observations_revision = revisions
     target = reporting_currency()
     signature = (str(path.parent.resolve()), snapshot.revision, journal_revision, observations_revision,
                  target, date.today(), tuple((row.position_id, getattr(row, 'instrument_type', ''), getattr(row, 'account_id', '')) for row in holdings.itertuples()))

@@ -66,6 +66,7 @@ def test_checklist_loads_prices_without_opening_each_position(tmp_path):
     import sys
     import time
     from urllib.request import urlopen
+    from streamlit.proto.BackMsg_pb2 import BackMsg
     from test_history_download import setup
     from portfolio_app.ledger.account_journal import save_journal, load_journal
     from portfolio_app.performance.history_observations import ObservationStore, CoverageReview, save_observations, load_observations
@@ -81,20 +82,28 @@ from pathlib import Path
 from decimal import Decimal
 import time
 from portfolio_app.portfolio.positions import read_snapshot
-from portfolio_app.interface.views.history.history_status_ui import render_history_status_list
+import portfolio_app.interface.views.history.history_status_ui as checklist
 from portfolio_app.performance.history_observations import Observation
 import portfolio_app.performance.personal_market as market
 root=Path(__file__).parent
 if not hasattr(market,'_invented_checklist'):
+    render_list = checklist._render_history_status_list
+    def counted(*args, **kwargs):
+        with (root/'renders.txt').open('a') as log: print('render', file=log)
+        return render_list(*args, **kwargs)
+    checklist._render_history_status_list = counted
     def prices(ticker,identity,start,end):
-        time.sleep(2)
+        for _ in range(300):
+            if (root/'release').exists(): break
+            time.sleep(.1)
+        else: raise TimeoutError('Synthetic price request was not released')
         with (root/'requests.txt').open('a') as f: f.write('request\\n')
         return (Observation('price','price',identity,end,Decimal(12),'EUR',source='Invented feed'),)
     market.fetch_security_prices=prices
     market.fetch_fx=lambda source,target,start,end: (Observation('fx','fx',source+'/'+target,'2024-01-02',Decimal(1),source,target=target,source='Invented FX'),)
     market._invented_checklist=True
 snapshot=read_snapshot(root/'holdings.csv')
-render_history_status_list(root/'holdings.csv',snapshot,snapshot.holdings)
+checklist.render_history_status_list(root/'holdings.csv',snapshot,snapshot.holdings)
 ''')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
@@ -110,13 +119,34 @@ render_history_status_list(root/'holdings.csv',snapshot,snapshot.holdings)
         with browser_session() as runner:
             browser=runner.chromium.launch(executable_path=os.environ.get('PORTFOLIO_TEST_CHROMIUM'),args=['--no-sandbox'])
             page=browser.new_page(viewport={'width':1440,'height':1000})
+            polls = []
+            def record(payload):
+                message = BackMsg.FromString(payload)
+                if message.WhichOneof('type') == 'rerun_script' and message.rerun_script.is_auto_rerun:
+                    polls.append(message.rerun_script.fragment_id)
+            page.on('websocket', lambda sock: sock.on('framesent', record) if '/_stcore/stream' in sock.url else None)
             page.goto(f'http://127.0.0.1:{port}')
             checkbox=page.get_by_role('checkbox',name='Only show positions needing attention')
             playwright.expect(checkbox).to_be_visible()
             if checkbox.is_checked():
                 checkbox.press('Space')
             table=page.get_by_role('table',name='History status',exact=True)
+            settle(page)
+            renders = tmp_path/'renders.txt'
+            pending = renders.read_text()
+            pending_polls = len(polls)
+            page.wait_for_timeout(4300)  # Two scheduled status ticks while the provider is pending.
+            after_pending = renders.read_text()
+            assert len(polls) > pending_polls
+            (tmp_path/'release').touch()
             playwright.expect(table.get_by_text('Available',exact=True)).to_have_count(3,timeout=20000)
+            settle(page)
+            finished = renders.read_text()
+            finished_polls = len(polls)
+            page.wait_for_timeout(4300)
+            assert len(polls) == finished_polls
+            assert after_pending == pending and renders.read_text() == finished
+            assert len(finished.splitlines()) == len(pending.splitlines()) + 1
             playwright.expect(table.get_by_text('Applied',exact=True)).to_be_visible()
             playwright.expect(page.get_by_test_id('stException')).to_have_count(0)
             assert load_journal(tmp_path)[0]==journal
