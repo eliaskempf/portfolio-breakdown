@@ -15,7 +15,7 @@ import pytest
 from portfolio_app.demo_data.demo import create_demo_data
 from portfolio_app.portfolio.positions import read_snapshot
 from portfolio_app.settings import theme_options
-from browser_support import choose_appearance, open_app_menu, select_tab, settle
+from browser_support import choose_appearance, open_app, open_app_menu, select_tab, settle
 
 playwright = pytest.importorskip('playwright.sync_api')
 
@@ -432,7 +432,7 @@ def test_guided_setup_and_physical_asset_in_dark_narrow_view(intro_page):
     page, url, directory = intro_page
     page.emulate_media(color_scheme='dark', reduced_motion='reduce')
     page.set_viewport_size({'width': 650, 'height': 950})
-    page.goto(url)
+    open_app(page, url)
     page.get_by_role('button', name='Start my portfolio', exact=True).click()
     dialog = page.get_by_role('dialog')
     playwright.expect(dialog.get_by_text('1 of 2 · Categories and optional targets', exact=True)).to_be_visible()
@@ -456,12 +456,15 @@ def test_guided_setup_and_physical_asset_in_dark_narrow_view(intro_page):
     unit.press('Enter')
     playwright.expect(unit).to_have_value('bottles')
     playwright.expect(dialog.get_by_role('spinbutton', name='Current unit price (optional)', exact=True)).to_be_visible()
-    page.wait_for_function("document.querySelector('[data-testid=stApp]')?.getAttribute('data-test-script-state') === 'notRunning'")
-    dialog.get_by_role('textbox', name='Instrument name', exact=True).fill('Invented vintage collection')
-    dialog.get_by_role('textbox', name='Quantity held (total)', exact=True).fill('3')
-    dialog.get_by_role('spinbutton', name='Current unit price (optional)', exact=True).fill('2000')
+    runs = page.streamlit_reruns
+    runs.commit_text(page, dialog.get_by_role('textbox', name='Instrument name', exact=True), 'Invented vintage collection')
+    runs.commit_text(page, dialog.get_by_role('textbox', name='Quantity held (total)', exact=True), '3')
+    price = dialog.get_by_role('spinbutton', name='Current unit price (optional)', exact=True)
+    price.fill('2000')
+    price.press('Enter')
+    settle(page)
     dialog.get_by_role('combobox', name='Category', exact=True).click()
-    page.get_by_role('option', name='Collectibles', exact=True).click()
+    runs.click(page, page.get_by_role('option', name='Collectibles', exact=True))
     dialog.get_by_role('textbox', name='Average buy-in per unit (optional)', exact=True).fill('1500')
     page.screenshot(path=str(directory / 'synthetic-physical-position.png'))
     assert dialog.evaluate('el => el.scrollWidth <= el.clientWidth + 1')
