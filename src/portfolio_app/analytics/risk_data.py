@@ -1,13 +1,20 @@
 """Adjusted market histories, isolated from unadjusted chart price histories."""
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
+from contextvars import copy_context
 from dataclasses import dataclass, replace
 from datetime import date
+from functools import partial
 from hashlib import sha256
+from threading import BoundedSemaphore
 from typing import Protocol
 
 import numpy as np
 import pandas as pd
 
 from portfolio_app.market.currencies import quote_unit
+from portfolio_app.workspace.workspace_lock import in_workspace_transaction
 
 from portfolio_app.analytics.analytics_cache import AnalyticsCache, ObservedCacheInput, utc_now
 from portfolio_app.analytics.risk import DEFAULT_BENCHMARK, MIN_OBSERVATIONS, daily_prices, eur_prices, weekly_returns
@@ -138,6 +145,40 @@ class DemoRiskHistoryProvider:
                                ticker.split(':')[-1] if is_index else 'EUR', note='Synthetic adjusted history')
 
 
+# The requesting thread can always acquire its own missing histories. Additional
+# provider calls are limited across workspaces and never wait for another batch.
+_cold_helpers = BoundedSemaphore(2)
+
+
+def _acquire_missing(tickers, acquire):
+    if len(tickers) < 2 or in_workspace_transaction():
+        return {ticker: acquire(ticker) for ticker in tickers}
+    pending = deque(tickers)
+
+    def drain():
+        results = {}
+        while True:
+            try:
+                ticker = pending.popleft()
+            except IndexError:
+                return results
+            results[ticker] = acquire(ticker)
+
+    with ExitStack() as capacity:
+        helpers = 0
+        while helpers < len(tickers) - 1 and _cold_helpers.acquire(blocking=False):
+            capacity.callback(_cold_helpers.release)
+            helpers += 1
+        if not helpers:
+            return drain()
+        with ThreadPoolExecutor(helpers, thread_name_prefix='risk-history') as pool:
+            jobs = [pool.submit(copy_context().run, drain) for _ in range(helpers)]
+            results = drain()
+            for job in jobs:
+                results.update(job.result())
+            return results
+
+
 class RiskHistoryService:
     def __init__(self, provider: RiskHistoryProvider, directory=None, *, now=utc_now, track_inputs=False, cached_read=None, before_fetch=None):
         self.cached_read, self.before_fetch = cached_read, before_fetch
@@ -166,29 +207,43 @@ class RiskHistoryService:
                 return False
         return True
 
+    def _fetch(self, ticker, years):
+        result = self.provider.fetch(ticker, years)
+        prices = daily_prices(result.prices)
+        if prices.empty:
+            raise ValueError('No valid adjusted prices')
+        return dict(dates=[stamp.date().isoformat() for stamp in prices.index], prices=prices.tolist(),
+                    currency=result.currency, note=result.note)
+
     def get(self, ticker, years=3, *, refresh=False):
-        if years not in (1, 3, 5, 10) or not ticker:
+        return self.get_many([ticker], years, refresh=refresh)[ticker]
+
+    def get_many(self, tickers, years=3, *, refresh=False):
+        """Read the requested base listings once, overlapping independent cold acquisitions."""
+        keys = {ticker: f'adjusted-daily-v1:{ticker}:{years}' for ticker in tickers}
+        if years not in (1, 3, 5, 10) or any(not ticker for ticker in keys):
             raise ValueError('A listing ticker and 1, 3, 5 or 10 years are required')
-        def fetch():
-            result = self.provider.fetch(ticker, years)
-            prices = daily_prices(result.prices)
-            if prices.empty:
-                raise ValueError('No valid adjusted prices')
-            return dict(dates=[stamp.date().isoformat() for stamp in prices.index], prices=prices.tolist(),
-                        currency=result.currency, note=result.note)
-        key = f'adjusted-daily-v1:{ticker}:{years}'
-        if self.cached_read is not None:
+        results, missing = {}, []
+        for ticker, key in keys.items():
+            if self.cached_read is None:
+                results[ticker] = self.cache.get(key, partial(self._fetch, ticker, years),
+                    refresh=refresh and key not in self.acquired, preserve_updates=True, before_fetch=self.before_fetch)
+                continue
             result, expired = self.cached_read(self.cache, key)
             if result.data is None and expired and not result.note:
-                # There is no prior history to display. Acquire just this dependency
-                # in the original calculation, without traversing the portfolio twice.
-                result = self.cache.get(key, fetch, preserve_updates=True)
-                self.acquired.add(key)
+                missing.append(ticker)
             else:
                 self.due |= expired or refresh
-        else:
-            result = self.cache.get(key, fetch, refresh=refresh and key not in self.acquired,
-                                    preserve_updates=True, before_fetch=self.before_fetch)
+                results[ticker] = result
+
+        def acquire(ticker):
+            return self.cache.get(keys[ticker], partial(self._fetch, ticker, years), preserve_updates=True)
+
+        results.update(_acquire_missing(missing, acquire))
+        self.acquired.update(keys[ticker] for ticker in missing)
+        return {ticker: self._history(key, results[ticker]) for ticker, key in keys.items()}
+
+    def _history(self, key, result):
         if self._inputs is not None:
             cached = replace(result, status='cached') if result.status == 'fresh' else result
             self._inputs[key] = ObservedCacheInput(cached)

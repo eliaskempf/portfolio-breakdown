@@ -19,6 +19,11 @@ _held = local()
 write_context = ContextVar('workspace_write_context', default=None)
 
 
+def in_workspace_transaction():
+    """Whether this thread owns a workspace barrier that other writers would need."""
+    return bool(getattr(_held, 'keys', ()))
+
+
 def bind_workspace(launch, chosen):
     context = (launch, chosen)
     write_context.set(context)

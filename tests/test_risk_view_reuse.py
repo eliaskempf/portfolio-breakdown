@@ -47,7 +47,8 @@ def test_risk_reuse_checks_revised_histories_weights_scope_and_retry_deadlines(t
     assert first.status == 'partial' and set(first.excluded) == {'b'} and 'fresh' in set(sources.Status)
     warm, cached = read(holdings.assign(price_age_hours=1.25))
     assert warm is first and 'fresh' not in set(cached.Status)
-    assert calls == [DEFAULT_BENCHMARK + ':EUR', 'SYNTH-A', 'SYNTH-B']
+    assert calls[0] == DEFAULT_BENCHMARK + ':EUR'
+    assert sorted(calls[1:]) == ['SYNTH-A', 'SYNTH-B']
     assert cached.attrs == sources.attrs
 
     # Another instance corrects adjusted prices without changing the fetched time.
@@ -410,3 +411,99 @@ def test_slow_initial_risk_read_leaves_other_requests_independent():
         with pytest.raises(ValueError, match='synthetic calculation failed'):
             busy.result()
     assert read_risk_snapshot(workspace, first, quick, force=False) == 'separate result'
+
+
+def test_cold_risk_overlaps_only_required_missing_listings(tmp_path, monkeypatch, settled_read):
+    from contextvars import ContextVar
+    from threading import Barrier, Lock
+    from portfolio_app.analytics.risk_data import RiskHistoryService
+    from test_risk import held
+
+    provider = DemoRiskHistoryProvider()
+    seed = RiskHistoryService(provider, tmp_path / '.cache' / 'risk-history')
+    benchmark = DEFAULT_BENCHMARK + ':EUR'
+    seed.get(benchmark)
+    seed.get('warm')
+    context = ContextVar('synthetic workspace tag')
+    context.set('portfolio')
+    pair = Barrier(2)
+    lock = Lock()
+    calls = []
+    def fetch(self, ticker, years):
+        with lock:
+            calls.append((ticker, context.get(None)))
+        if ticker in ('cold-a', 'cold-b'):
+            pair.wait(timeout=2)
+        return provider.fetch(ticker, years)
+
+    monkeypatch.setattr(risk_updates.st, 'session_state', {})
+    monkeypatch.setattr(MarketRiskHistoryProvider, 'fetch', fetch)
+    positions = held(['cold-a', 'cold-b', 'manual', 'warm', 'zero', 'cash'], [20.] * 6)
+    positions.loc[positions.id.eq('manual'), 'manual_price'] = 10.
+    positions.loc[positions.id.eq('zero'), 'shares'] = 0.
+    positions.loc[positions.id.eq('cash'), 'instrument_type'] = 'cash'
+    result, sources = settled_read(positions, tmp_path, False, DEFAULT_BENCHMARK, 3)
+    assert set(result.holdings.index) == {'cold-a', 'cold-b', 'warm', 'cash'}
+    assert set(result.excluded) == {'manual'}
+    assert sorted(calls) == [('cold-a', 'portfolio'), ('cold-b', 'portfolio')]
+    assert set(sources.loc[sources.Status.eq('fresh'), 'Instrument']) == {'cold-a', 'cold-b'}
+    assert settled_read(positions, tmp_path, False, DEFAULT_BENCHMARK, 3)[0] is result
+    assert len(calls) == 2
+
+
+def test_cold_batch_preserves_stale_and_failed_evidence_until_refresh(tmp_path):
+    from portfolio_app.analytics.risk_data import RiskHistoryService
+
+    old = datetime.now(timezone.utc) - timedelta(days=2)
+    demo = DemoRiskHistoryProvider()
+    seed = RiskHistoryService(demo, tmp_path, now=lambda: old)
+    seed.get('dated')
+    fetched = []
+    def fetch(ticker, years):
+        fetched.append(ticker)
+        if ticker == 'missing':
+            raise ValueError('Synthetic missing history')
+        return demo.fetch(ticker, years)
+
+    service = RiskHistoryService(SimpleNamespace(fetch=fetch), tmp_path, track_inputs=True,
+                                 cached_read=lambda cache, key: cache.cached(key))
+    symbols = ['dated', 'new', 'missing', 'new']
+    histories = service.get_many(symbols, refresh=True)
+    assert list(histories) == ['dated', 'new', 'missing']
+    assert [history.status for history in histories.values()] == ['stale', 'fresh', 'unavailable']
+    assert service.due and service.inputs_current(allow_due=True)
+    assert sorted(fetched) == ['missing', 'new']
+    refreshed = RiskHistoryService(SimpleNamespace(fetch=fetch), tmp_path)
+    refreshed.acquired.update(service.acquired)
+    refreshed.get_many(symbols, refresh=True)
+    assert fetched[2:] == ['dated']
+
+
+def test_cold_batch_keeps_progress_when_helpers_are_busy_or_workspace_is_locked(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier, Event, current_thread
+    from portfolio_app.analytics.risk_data import _acquire_missing
+    from portfolio_app.workspace.workspace_lock import workspace_lock
+
+    occupied, release = Barrier(4), Event()
+    def slow(ticker):
+        occupied.wait(timeout=4)
+        assert release.wait(4)
+        return ticker
+
+    # Two helper threads and the first caller wait on independent providers.
+    # Another caller must still be able to complete its own cold batch.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(_acquire_missing, ['a', 'b', 'c'], slow)
+        try:
+            occupied.wait(timeout=4)
+            caller = current_thread()
+            def reader(ticker):
+                assert current_thread() is caller
+                return ticker
+            assert _acquire_missing(['d', 'e'], reader) == {'d': 'd', 'e': 'e'}
+        finally:
+            release.set()
+        assert first.result() == {'a': 'a', 'b': 'b', 'c': 'c'}
+    with workspace_lock(tmp_path):
+        assert _acquire_missing(['d', 'e'], reader) == {'d': 'd', 'e': 'e'}

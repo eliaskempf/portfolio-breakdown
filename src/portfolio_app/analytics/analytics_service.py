@@ -139,6 +139,7 @@ def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
     memo, histories, failures, status = {}, {}, {}, []
     bench, benchmark_symbol = benchmark_risk_history(service, benchmark, target, years, refresh=refresh, memo=memo, today=today)
     status.append(dict(Instrument=benchmark_symbol, Status=bench.status, Retrieved=bench.fetched_at, Note=bench.note))
+    listings = []
     for identity, rows in valued.loc[valued.shares.gt(0)].groupby('id'):
         row = rows.iloc[0]
         if actual and row.get('instrument_type') == 'future':
@@ -154,6 +155,11 @@ def load_risk(valued, data_dir, demo, benchmark, years, refresh=False, *, future
         if not row.ticker or pd.notna(row.get('manual_price', float('nan'))):
             failures[identity] = 'no supported history for a manual or unlisted asset'
             continue
+        listings.append((identity, row))
+    if isinstance(service, RiskHistoryService) and service.cached_read is not None:
+        tickers = (row.ticker for _, row in listings if row.ticker not in memo)
+        memo.update(service.get_many(tickers, years, refresh=refresh))
+    for identity, row in listings:
         if row.get('instrument_type') == 'equity':
             isin = row.get('isin', '')
             history = equity_risk_history(service, row.ticker, isin if pd.notna(isin) else '', target,
