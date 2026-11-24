@@ -98,6 +98,7 @@ def test_keyboard_and_edit_button_open_rows_and_back_returns_to_list(position_pa
     page.keyboard.press('ArrowDown')
     page.keyboard.press('Enter')
     page.get_by_role('dialog').get_by_role('button', name='Edit position').click()
+    playwright.expect(page.get_by_role('dialog').get_by_role('textbox', name='Instrument name', exact=True)).to_be_visible()
     page.get_by_text('More details', exact=True).click()
     playwright.expect(page.get_by_role('textbox', name='Account / broker', exact=True)).to_have_value('Second')
     page.get_by_role('button', name='Cancel', exact=True).click()
@@ -105,6 +106,7 @@ def test_keyboard_and_edit_button_open_rows_and_back_returns_to_list(position_pa
     table.get_by_role('button', name='Edit Other invented token · Third', exact=True).click()
     page.get_by_text('More details', exact=True).click()
     playwright.expect(page.get_by_role('textbox', name='Account / broker', exact=True)).to_have_value('Third')
+    assert not page.page_errors()
 
 
 def test_metric_columns_sort_numerically_keep_missing_last_and_preserve_identity(position_page):

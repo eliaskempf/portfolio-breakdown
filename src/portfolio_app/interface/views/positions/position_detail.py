@@ -30,13 +30,7 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
     </style>''')
     with st.container(horizontal=True, horizontal_alignment='distribute', vertical_alignment='center', key='position_detail_header'):
         st.subheader(instrument_name(row), width='content')
-        with st.container(horizontal=True, width='content', gap='small'):
-            if on_edit:
-                st.button('Edit position', icon=':material/edit:', on_click=on_edit)
-            if row.get('ticker'):
-                from portfolio_app.interface.views.monitoring.monitoring_ui import request_monitoring
-                st.button('Track', help='Track this asset in Monitoring', icon=':material/notifications:',
-                    key='position_track_'+row.position_id, on_click=request_monitoring, kwargs={'symbol':row.ticker})
+        actions = st.container(horizontal=True, width='content', gap='small')
     identifiers = [str(row.get(k) or '') for k in ('ticker', 'isin')]
     if any(identifiers):
         st.caption(' · '.join(x for x in identifiers if x))
@@ -71,6 +65,15 @@ def render_position_detail(row, data_dir, *, demo=False, allocation=None, on_edi
             with st.container(key=active_class):
                 _render_position_view(view, row, data_dir, journal, has_history, demo=demo, allocation=allocation, funds=funds)
                 st.html(f'<span hidden data-position-view-ready="{view}"></span>')
+    # Header actions replace this dialog. Mount them after its body so a fast
+    # click cannot interrupt the first render while it is still emitting rows.
+    with actions:
+        if on_edit:
+            st.button('Edit position', icon=':material/edit:', on_click=on_edit)
+        if row.get('ticker'):
+            from portfolio_app.interface.views.monitoring.monitoring_ui import request_monitoring
+            st.button('Track', help='Track this asset in Monitoring', icon=':material/notifications:',
+                key='position_track_'+row.position_id, on_click=request_monitoring, kwargs={'symbol':row.ticker})
 
 
 def _position_view_guard(position_id):
