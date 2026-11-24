@@ -798,6 +798,10 @@ matrix should reuse the calculation and avoid a portfolio valuation. Each sample
 counts, click-to-chart time and settled time, and compares all three displayed
 risk estimates and the full correlation matrix across binaries. Select the
 `risk` experiment with a listed-equity profile to run it on both renderers.
+The `risk-cold` experiment starts with every adjusted history missing, including
+the benchmark. It measures first chart paint, settling and peak simultaneous
+provider requests, and verifies one acquisition per listing. Both binaries must
+produce the same risk metrics and correlation matrix.
 The `risk-stale` experiment dates every saved history and holds back a provider
 correction until the candidate displays the cached matrix. It compares the
 completed matrix and all three risk metrics with a synchronous reference.

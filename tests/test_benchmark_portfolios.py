@@ -57,12 +57,13 @@ def test_navigation_benchmark_portfolio(tmp_path, profile, positions, etfs, comp
                 closes[obs.subject].append((obs.date, obs.amount))
         assert all(len(series) == 731 for series in closes.values())
         assert len({tuple(sorted(series)) for series in closes.values()}) == 1
-    if profile == 'mixed-history':
+    if profile in {'mixed-history', 'multi-account'}:
         from portfolio_app.analytics.analytics_cache import AnalyticsCache
         from portfolio_app.analytics.risk import DEFAULT_BENCHMARK
-        listings = fixture.prepare_risk_check(workspace)
-        assert listings == [DEFAULT_BENCHMARK + ':EUR', *holdings.ticker]
+        cold = profile == 'multi-account'
+        listings = fixture.prepare_risk_check(workspace, scenario='risk-cold' if cold else 'risk')
+        assert listings == [DEFAULT_BENCHMARK + ':EUR', *dict.fromkeys(holdings.ticker)]
         assert read_snapshot(workspace / 'holdings.csv').holdings.manual_price.isna().all()
         cache = AnalyticsCache(workspace / '.cache' / 'risk-history')
         missing = [ticker for ticker in listings if cache.cached(f'adjusted-daily-v1:{ticker}:3')[1]]
-        assert missing == [listings[-1]]
+        assert missing == (listings if cold else [listings[-1]])

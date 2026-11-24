@@ -5,7 +5,7 @@ name: Packaged performance benchmark
       experiment:
         description: 'Comparison to measure'
         type: choice
-        options: [navigation, history, exposure, risk, risk-stale, collection]
+        options: [navigation, history, exposure, risk, risk-cold, risk-stale, collection]
         default: navigation
       profile:
         description: 'Synthetic portfolio size'
@@ -79,6 +79,7 @@ jobs:
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/navigation --pairs "$PAIRS" --experiment navigation --profile "$PROFILE"
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/multi-account --pairs 1 --experiment exposure --surface native --profile multi-account "${reference[@]}"
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/risk --pairs 1 --experiment risk --surface native --profile mixed-history "${reference[@]}"
+            "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/risk-cold --pairs 1 --experiment risk-cold --surface native --profile mixed-history "${reference[@]}"
             "${prefix[@]}" uv run --no-sync python tools/perf_benchmark/run.py "$EXECUTABLE" dist/performance-results/risk-stale --pairs 1 --experiment risk-stale --surface native --profile mixed-history "${reference[@]}"
           fi
       - if: always()

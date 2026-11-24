@@ -666,7 +666,7 @@ def exercise_collection(evaluate, trial):
 def measure_view(evaluate, trial, variant, scenario, *, themes=False, company_accounts=False):
     if scenario == 'collection':
         return exercise_collection(evaluate, trial)
-    if scenario in {'risk', 'risk-stale'}:
+    if scenario.startswith('risk'):
         return exercise_risk(evaluate, trial, await_refresh=scenario == 'risk-stale' and variant == 'candidate')
     if scenario == 'exposure':
         return exercise_exposure(evaluate, trial, variant, themes=themes, company_accounts=company_accounts)

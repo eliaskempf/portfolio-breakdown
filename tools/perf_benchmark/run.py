@@ -26,8 +26,8 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
         prepare_fundamental_check(workspace, expired=themes)
     if scenario == 'collection':
         prepare_fundamental_check(workspace, expired=False)
-    if scenario in {'risk', 'risk-stale'}:
-        risk_listings = prepare_risk_check(workspace, stale=scenario == 'risk-stale')
+    if scenario.startswith('risk'):
+        risk_listings = prepare_risk_check(workspace, scenario=scenario)
     env = dict(os.environ, PORTFOLIO_STATE_DIR=str(workspace.parent / 'state'),
         PORTFOLIO_BENCHMARK_TRIAL=str(trial), PORTFOLIO_BENCHMARK_VARIANT=variant,
         PORTFOLIO_BENCHMARK_REFRESH=scenario, PORTFOLIO_BENCHMARK_THEMES=str(int(themes)),
@@ -100,7 +100,7 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
             if any(e['event'] == 'portfolio_valued' for e in during):
                 raise AssertionError('Overview switch unexpectedly revalued the portfolio')
         return report
-    if scenario in {'risk', 'risk-stale'}:
+    if scenario.startswith('risk'):
         staged = scenario == 'risk-stale' and variant == 'candidate'
         data_actions = 2 if staged else 1
         fetched = Counter()
@@ -119,6 +119,18 @@ def benchmark(executable, workspace, trial, variant, surface, scenario, *, theme
                 raise AssertionError(f'Unexpected risk calculation count on action {index}: {action}')
             if action['holdings'] != len(risk_listings) - 1 or any(value in ('', '—') for value in action['metrics']):
                 raise AssertionError('Incomplete risk estimates or correlation matrix')
+        if scenario == 'risk-cold':
+            edges = []
+            for event in events:
+                if event['event'] == 'adjusted_fetched':
+                    edges.extend(((event['started_ms'], 1), (event['monotonic_ms'], -1)))
+            active = peak = 0
+            for _, change in sorted(edges):
+                active += change
+                peak = max(peak, active)
+            report['peak_provider_requests'] = peak
+            if variant == 'candidate' and not 2 <= peak <= 3:
+                raise AssertionError(f'Expected bounded overlap of cold provider requests, observed {peak}')
         expected = risk_listings[-1:] if scenario == 'risk' and variant == 'candidate' else risk_listings
         if fetched != Counter(expected):
             raise AssertionError(f'Unexpected adjusted history requests: {fetched}')
@@ -317,7 +329,7 @@ def run_comparison(candidate, reference, destination, surfaces, pairs, profile, 
                             raise AssertionError('Collection policy changed displayed financial data')
                         print(surface, name, 'median settled ms', round(median(a['settled_ms'] for a in report['actions'])),
                               'server MiB', [round(b / 2**20) for b in report['server_resident_bytes']], flush=True)
-                    elif experiment in {'risk', 'risk-stale'}:
+                    elif experiment.startswith('risk'):
                         actions = report['actions']
                         if experiment == 'risk-stale' and name == 'candidate':
                             if actions[0]['digest'] == actions[1]['digest']:
@@ -347,7 +359,7 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path)
     parser.add_argument('--surface', choices=['native','browser','both'], default='both')
     parser.add_argument('--pairs', type=int, choices=range(1,11), default=2)
-    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-stale', 'collection'], default='history')
+    parser.add_argument('--experiment', choices=['history', 'navigation', 'exposure', 'risk', 'risk-cold', 'risk-stale', 'collection'], default='history')
     parser.add_argument('--profile', choices=['small', 'etf-heavy', 'mixed-history', 'multi-account'], default='small')
     parser.add_argument('--reference', type=Path, help='Reference bundle for a paired comparison')
     options = parser.parse_args()
@@ -357,10 +369,10 @@ if __name__ == '__main__':
             parser.error('The collection benchmark exercises the ETF look-through company grid')
         run_comparison(options.executable.resolve(), options.executable.resolve(), options.output.resolve(), surfaces,
                        options.pairs, options.profile, options.experiment)
-    elif options.experiment in {'exposure', 'risk', 'risk-stale'}:
+    elif options.experiment in {'exposure', 'risk', 'risk-cold', 'risk-stale'}:
         if not options.reference:
             parser.error('A paired binary comparison requires --reference')
-        if options.experiment in {'risk', 'risk-stale'} and options.profile == 'small':
+        if options.experiment.startswith('risk') and options.profile == 'small':
             parser.error('The risk benchmark requires a profile with listed equities and ETFs')
         run_comparison(options.executable.resolve(), options.reference.resolve(), options.output.resolve(), surfaces,
                        options.pairs, options.profile, options.experiment)

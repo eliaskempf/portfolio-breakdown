@@ -35,12 +35,13 @@ def observe_server(trial):
         refresher.download = lambda directory, journal, scope, store, start, end, target: (store, ())
         observe_collections(trial, record)
         return
-    if scenario in {'risk', 'risk-stale'}:
+    if scenario.startswith('risk'):
         from portfolio_app.analytics import analytics_service
         from portfolio_app.analytics.risk_data import DemoRiskHistoryProvider, MarketRiskHistoryProvider
         def adjusted(self, ticker, years):
+            started = time.monotonic_ns() / 1e6
             time.sleep(.03)
-            record('adjusted_fetched', ticker=ticker)
+            record('adjusted_fetched', ticker=ticker, started_ms=started)
             history = DemoRiskHistoryProvider.fetch(self, ticker, years)
             if scenario == 'risk-stale' and ticker == 'ZZC-0':
                 if os.environ['PORTFOLIO_BENCHMARK_VARIANT'] == 'candidate':
