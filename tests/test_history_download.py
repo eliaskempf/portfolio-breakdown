@@ -139,3 +139,57 @@ def test_accepted_futures_archive_marks_correct_values_without_cash_events(tmp_p
     assert calculate_history(journal,scope,corrected,'2026-01-05','2026-01-07').ending_value==1130
     assert len(corrected.observations)==len(store.observations)+1
     assert not corrected.reviews and load_journal(tmp_path)[0]==journal
+
+
+def test_multi_source_refresh_discards_failed_source_and_validates_once(tmp_path, monkeypatch):
+    import portfolio_app.performance.personal_market as market
+    (tmp_path/'holdings.csv').write_text('id,name,ticker,shares\na,First,FAKE-A,1\nb,Second,FAKE-B,1\nc,Third,FAKE-C,1\n')
+    scope = HistoryScope(('position-0', 'position-1', 'position-2'))
+    original = Observation('old', 'price', 'position-0', '2024-01-01', 7, 'EUR', source='Invented feed')
+    store = ObservationStore((original,))
+    corrected = replace(original, id='first', amount=D(9))
+    discarded = replace(original, id='shared-id', subject='position-1', currency='USD')
+    conflict = replace(discarded, id='first', date='2024-01-02')
+    accepted = replace(discarded, subject='position-2', currency='GBP')
+    groups = {'FAKE-A': (corrected,), 'FAKE-B': (discarded, conflict), 'FAKE-C': (accepted,)}
+    rates = []
+    def fx(source, target, start, end):
+        rates.append(source)
+        return (Observation('rate', 'fx', source+'/'+target, start, 1, source, target=target),)
+    monkeypatch.setattr(market, 'fetch_security_prices', lambda ticker, *_: groups[ticker])
+    monkeypatch.setattr(market, 'fetch_fx', fx)
+    builds = []
+    validate = ObservationStore.__post_init__
+    def counted(snapshot):
+        builds.append(len(snapshot.observations))
+        validate(snapshot)
+    monkeypatch.setattr(ObservationStore, '__post_init__', counted)
+    updated, errors = download_scope_observations(tmp_path, Journal(), scope, store, '2024-01-01', '2024-01-02', 'EUR')
+    assert errors == ['position-1: DataError; retry historical prices']
+    assert rates == ['GBP'] and builds == [4]
+    assert updated.observations[:3] == (original, replace(corrected, replaces='old'), accepted)
+    assert store.observations == (original,)
+
+
+def test_explicit_cross_key_corrections_validate_at_each_source(tmp_path, monkeypatch):
+    import portfolio_app.performance.personal_market as market
+    (tmp_path/'holdings.csv').write_text('id,name,ticker,shares\na,First,FAKE-A,1\nb,Second,FAKE-B,1\nc,Third,FAKE-C,1\n')
+    scope = HistoryScope(('position-0', 'position-1', 'position-2'))
+    original = Observation('original', 'price', 'position-2', '2024-01-01', 7, 'USD', source='Invented feed')
+    moved = replace(original, id='moved', subject='position-0', currency='GBP', replaces=original.id)
+    invalid = replace(moved, id='invalid', subject='position-1')
+    restored = replace(original, id='restored', amount=D(8), currency='EUR')
+    groups = {'FAKE-A': (moved,), 'FAKE-B': (invalid,), 'FAKE-C': (restored,)}
+    monkeypatch.setattr(market, 'fetch_security_prices', lambda ticker, *_: groups[ticker])
+    rate = Observation('rate', 'fx', 'GBP/EUR', '2024-01-01', 1, 'GBP', target='EUR')
+    calls = []
+    def fx(source, *_):
+        calls.append(source)
+        return (rate,)
+    monkeypatch.setattr(market, 'fetch_fx', fx)
+    updated, errors = download_scope_observations(tmp_path, Journal(), scope, ObservationStore((original,)),
+                                                  '2024-01-01', '2024-01-02', 'EUR')
+    assert errors == ['position-1: DataError; retry historical prices']
+    assert calls == ['GBP']
+    assert updated.observations == (original, moved, restored, rate)
+    assert updated.active == (moved, restored, rate)
