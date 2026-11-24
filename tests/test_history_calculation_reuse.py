@@ -467,3 +467,33 @@ def test_dated_valuations_reuse_corrected_account_opening_dates(monkeypatch):
     assert expected[scopes[0], days[2]].amount == 25
     assert all(expected[scopes[1], day].amount is None for day in days)
     assert not visits
+
+
+def test_position_capital_tracks_its_payments_and_delayed_charges(monkeypatch):
+    from portfolio_app.ledger.account_journal import Account, Event
+    from portfolio_app.ledger.security_history import Charge
+    import portfolio_app.performance.personal_performance as module
+    own = book(E('open', 'opening', START),
+               E('buy', 'buy', '2024-01-03', quantity=1, price=10, currency='EUR', charges_known=True,
+                 charges=(Charge(D(2), 'EUR', date='2024-01-05'),)))
+    other = book(E('other-open', 'opening', START),
+                 E('other-buy', 'buy', '2024-01-04', quantity=1, price=20, currency='EUR', charges_known=True),
+                 identity='other')
+    journal = Journal(version=2, securities=(own, other), accounts=(Account('cash', 'Invented'),),
+                      events=(Event('cash-open', START, 'cash_open', 'cash', 'EUR', D(0)),
+                              Event('deposit', '2024-01-06', 'cash_flow', 'cash', 'EUR', D(30))))
+    scope = HistoryScope(('stock',))
+    store = ObservationStore()
+    days = [f'2024-01-{day:02}' for day in range(2, 8)]
+    expected = [module._period_capital(HistoryCalculation(journal, store), scope, START, day, 'EUR') for day in days]
+    rebuilt = []
+    capital = module._period_capital
+    def counted(calc, scope, start, end, target):
+        rebuilt.append(end)
+        return capital(calc, scope, start, end, target)
+    monkeypatch.setattr(module, '_period_capital', counted)
+    calculation = HistoryCalculation(journal, store)
+    actual = [calculation.period_capital(scope, START, day, 'EUR') for day in days]
+    assert actual == expected
+    assert [item.net_contributions for item in actual] == [0, 10, 10, 12, 12, 12]
+    assert rebuilt == [days[0], days[1], days[3]]

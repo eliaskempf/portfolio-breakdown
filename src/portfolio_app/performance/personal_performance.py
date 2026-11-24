@@ -213,10 +213,27 @@ class HistoryCalculation:
             self._flows.popitem(last=False)
         return self._flows[key].interval(start, end)
 
+    @cached_property
+    def _receipt_dates_by_position(self):
+        dates = defaultdict(set)
+        for stamp, affected in self._unresolved_receipts:
+            if stamp:
+                for identity in affected:
+                    dates[identity].add(stamp)
+        return dates
+
+    def _position_capital_dates(self, scope):
+        dates = self.event_dates(scope)
+        receipt_dates = self._receipt_dates_by_position.get(scope.positions[0])
+        return sorted(receipt_dates.union(dates)) if receipt_dates else dates
+
     def period_capital(self, scope, start, end, target):
         """Opening value, cash and cost evidence are independent of the closing mark."""
         latest = self._get(('period_capital', scope, start, target), dict)
-        boundary = bisect_right(self._capital_dates, end)
+        dates = self._capital_dates
+        if len(scope.positions) == 1 and not scope.accounts:
+            dates = self._get(('position_capital_dates', scope.positions[0]), lambda: self._position_capital_dates(scope))
+        boundary = bisect_right(dates, end)
         if boundary not in latest:
             result = _period_capital(self, scope, start, end, target)
             latest.clear()
