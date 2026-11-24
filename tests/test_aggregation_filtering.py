@@ -300,3 +300,15 @@ def test_build_tree_encodes_each_shared_category_path_once(monkeypatch, holdings
     nodes = aggregation.build_tree(rows, root=root, include_holdings=holdings)
     assert set(categories) == set(paths) and len(categories) == len(paths)
     assert_conserved(nodes, 60.)
+
+
+@pytest.mark.parametrize('include_holdings', [False, True])
+def test_taxonomy_aggregation_streams_the_same_classified_allocations(monkeypatch, exposures, taxonomy, include_holdings):
+    extra = exposures.iloc[[0, 2]].assign(asset_name=['Another name', 'C'], value=[-11.2, float('nan')])
+    repeated = pd.concat([exposures, extra])
+    options = dict(root=('AI',), depth=1, include_holdings=include_holdings)
+    expected = build_tree(classify_exposures(repeated, taxonomy, 'ai'), root_label='ai', **options)
+    def intermediate_frame(*args, **kwargs):
+        pytest.fail('The hierarchy materialized all intermediate classified rows')
+    monkeypatch.setattr(pd.DataFrame, 'from_records', intermediate_frame)
+    pd.testing.assert_frame_equal(aggregate(repeated, taxonomy, taxonomy='ai', **options), expected, check_exact=True)

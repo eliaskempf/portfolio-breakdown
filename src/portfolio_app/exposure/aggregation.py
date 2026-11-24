@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from functools import cache
+from itertools import repeat
 import json
 
 import pandas as pd
@@ -12,15 +13,20 @@ NODE_COLUMNS = ["node_id", "parent_id", "label", "path", "depth", "value", "perc
 ALLOCATION_COLUMNS = ["asset_id", "asset_name", "path", "value"]
 
 
-def classify_exposures(exposures: pd.DataFrame, classifications: Classifications, taxonomy: str) -> pd.DataFrame:
+def _classified_rows(exposures, classifications, taxonomy, *, include_names):
     if exposures.empty:
-        return pd.DataFrame(columns=ALLOCATION_COLUMNS)
-    records = []
-    for asset, name, value in zip(exposures.asset_id, exposures.asset_name, exposures.value):
+        return
+    names = exposures.asset_name if include_names else repeat(None)
+    for asset, name, value in zip(exposures.asset_id, names, exposures.value):
         paths = paths_for(classifications, asset, taxonomy)
         share = value / len(paths)
-        records.extend((asset, name, path, share) for path in paths)
-    return pd.DataFrame.from_records(records, columns=ALLOCATION_COLUMNS)
+        for path in paths:
+            yield asset, name, path, share
+
+
+def classify_exposures(exposures: pd.DataFrame, classifications: Classifications, taxonomy: str) -> pd.DataFrame:
+    rows = _classified_rows(exposures, classifications, taxonomy, include_names=True)
+    return pd.DataFrame.from_records(rows, columns=ALLOCATION_COLUMNS)
 
 
 def _node_id(kind: str, path: TaxonomyPath, asset_id: str = "") -> str:
@@ -40,6 +46,15 @@ def build_tree(
     A category can have both its own allocation and classified descendants. An
     explicit 'Assigned here' leaf makes that remainder visible in every chart.
     """
+    rows = ()
+    if not allocations.empty:
+        assets = allocations.asset_id if include_holdings else repeat(None)
+        names = allocations.asset_name if include_holdings else repeat(None)
+        rows = zip(assets, names, allocations.path, allocations.value)
+    return _tree_from_rows(rows, root=root, depth=depth, include_holdings=include_holdings, root_label=root_label)
+
+
+def _tree_from_rows(rows, *, root, depth, include_holdings, root_label):
     if depth is not None and (not isinstance(depth, int) or isinstance(depth, bool) or depth < 0):
         raise ValueError("Depth must be a nonnegative integer or None.")
     nodes: dict[str, dict] = {}
@@ -51,15 +66,15 @@ def build_tree(
         return _node_id("category", path)
 
     root_id = category_id(root)
-    for row in allocations.itertuples(index=False):
-        if not is_descendant(row.path, root):
+    for asset, name, source_path, value in rows:
+        if not is_descendant(source_path, root):
             continue
-        path = row.path if depth is None else row.path[: len(root) + depth]
+        path = source_path if depth is None else source_path[: len(root) + depth]
         if include_holdings:
-            asset_values[(path, row.asset_id)] += row.value
-            asset_names[row.asset_id] = min(asset_names.get(row.asset_id, row.asset_name), row.asset_name)
+            asset_values[(path, asset)] += value
+            asset_names[asset] = min(asset_names.get(asset, name), name)
         else:
-            terminal_values[path] += row.value
+            terminal_values[path] += value
         for length in range(len(root), len(path) + 1):
             prefix = path[:length]
             node_id = category_id(prefix)
@@ -73,7 +88,7 @@ def build_tree(
                     "value": 0.0,
                     "kind": "category",
                 }
-            nodes[node_id]["value"] += row.value
+            nodes[node_id]["value"] += value
     if not nodes:
         return pd.DataFrame(columns=NODE_COLUMNS)
     if include_holdings:
@@ -120,10 +135,8 @@ def aggregate(
     depth: int | None = None,
     include_holdings: bool = False,
 ) -> pd.DataFrame:
-    return build_tree(
-        classify_exposures(exposures, classifications, taxonomy),
-        root=root, depth=depth, include_holdings=include_holdings, root_label=taxonomy,
-    )
+    rows = _classified_rows(exposures, classifications, taxonomy, include_names=include_holdings)
+    return _tree_from_rows(rows, root=root, depth=depth, include_holdings=include_holdings, root_label=taxonomy)
 
 
 def flat_category_tree(totals, *, root_label, total, denominator):
