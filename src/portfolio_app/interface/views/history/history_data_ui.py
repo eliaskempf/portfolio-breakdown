@@ -3,7 +3,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
-from functools import cached_property
+from functools import cache, cached_property
 import re
 from uuid import uuid4
 
@@ -12,7 +12,7 @@ import streamlit as st
 
 from portfolio_app.ledger.account_journal import effective_events
 from portfolio_app.performance.history_observations import (
-    Observation, active_observations, add_observation, lookup, rate, save_observations,
+    Observation, active_observations, add_observation, index_observations, lookup, rate, save_observations,
 )
 from portfolio_app.portfolio.holdings import DataError
 from portfolio_app.performance.history_diagnostics import issue_tree
@@ -136,6 +136,22 @@ def missing_inputs(view, journal, scope, observations, target):
                       'money_weighted_reasons', 'time_weighted_reasons'):
             reasons.extend(getattr(result, field))
     subjects = _subjects(journal, scope)
+
+    @cache
+    def price_currency(subject):
+        index = index_observations(observations)
+        rows = index.scope_rows.get(('price', subject))
+        if rows:
+            # The last surviving price in saved order can be a corrected older date.
+            return index.active[rows[-1]].currency
+        contracts = {p.contract_id for p in journal.positions if p.id == subject}
+        contracts.add(subject)
+        return next((contract.currency for contract in journal.contracts if contract.id in contracts), '')
+
+    @cache
+    def needs_fx(source, destination, stamp):
+        return source != destination and rate(index_observations(observations), source, destination, stamp) is None
+
     missing = set()
     for reason in issue_tree(reasons):
         identity, separator, detail = reason.partition(': ')
@@ -143,13 +159,9 @@ def missing_inputs(view, journal, scope, observations, target):
             continue
         price = re.fullmatch(r'missing (?:price|exact-contract mark) on (\d{4}-\d{2}-\d{2})', detail)
         if price and identity in subjects:
-            known = [o for o in active_observations(observations) if o.kind == 'price' and o.subject == identity]
-            currency = known[-1].currency if known else ''
-            contract = next((c for c in journal.contracts if c.id == identity or any(
-                p.id == identity and p.contract_id == c.id for p in journal.positions)), None)
-            missing.add(MissingInput('price', identity, price[1], currency or (contract.currency if contract else '')))
+            missing.add(MissingInput('price', identity, price[1], price_currency(identity)))
         fx = re.search(r'([A-Z]{3})/([A-Z]{3}) FX on (\d{4}-\d{2}-\d{2})$', detail)
-        if fx and rate(observations, fx[1], fx[2], fx[3]) is None:
+        if fx and needs_fx(fx[1], fx[2], fx[3]):
             missing.add(MissingInput('fx', fx[1]+'/'+fx[2], fx[3], fx[1], fx[2]))
     # Flow diagnostics deliberately do not guess whether a missing cash amount is FX.
     # Offer a rate only when the amount and its actual currency are known.
@@ -157,16 +169,16 @@ def missing_inputs(view, journal, scope, observations, target):
         if (cash.position_id in scope.positions) == (cash.account_id in scope.accounts and not cash.external):
             continue
         if (cash.amount is not None and cash.amount != 0 and view.all_start <= cash.date <= view.today
-                and rate(observations, cash.currency, target, cash.date) is None):
+                and needs_fx(cash.currency, target, cash.date)):
             missing.add(MissingInput('fx', cash.currency+'/'+target, cash.date, cash.currency, target))
     for event in effective_events(journal):
         if not view.all_start <= event.date <= view.today:
             continue
         if event.account_id in scope.accounts and event.amount and event.currency:
-            if rate(observations, event.currency, target, event.date) is None:
+            if needs_fx(event.currency, target, event.date):
                 missing.add(MissingInput('fx', event.currency+'/'+target, event.date, event.currency, target))
         if event.other_account_id in scope.accounts and event.other_amount and event.other_currency:
-            if rate(observations, event.other_currency, target, event.date) is None:
+            if needs_fx(event.other_currency, target, event.date):
                 missing.add(MissingInput('fx', event.other_currency+'/'+target, event.date, event.other_currency, target))
     return tuple(sorted(missing, key=lambda item: (item.date, item.kind, item.subject)))
 
