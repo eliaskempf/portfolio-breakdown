@@ -348,3 +348,30 @@ def test_active_costs_own_the_freshly_decoded_components(monkeypatch):
     assert first is documents[0]['components']
     first[0]['conversions']['USD']['amount'] = '999'
     assert active_components(row) == parts
+
+
+def test_pending_cost_discovers_dates_until_first_terminal_issue():
+    from portfolio_app.market.fx import DatedRate
+    from types import SimpleNamespace
+    seen = []
+    def get(source, target, day):
+        seen.append(day)
+        if day == '2024-02-01':
+            return DatedRate(note='Unavailable')
+        return DatedRate(note='Loading', pending=True)
+    history = SimpleNamespace(get=get)
+    parts = [component(1, 10, 'USD', f'2024-0{i}-01') for i in range(1, 4)]
+    result = resolve_cost(parts, 'EUR', history)
+    assert result.amount is None and result.note == 'Loading Excluded from gains.'
+    assert seen == ['2024-01-01', '2024-02-01']
+    for bad_part in (component(1, None, 'USD'), component(1, 10, ''), component(1, 10, 'GBP')):
+        seen.clear()
+        assert resolve_cost([parts[0], bad_part, parts[2]], 'EUR', history) == result
+        assert seen == ['2024-01-01']
+    def conflict(source, target, day):
+        if day == parts[0]['date']:
+            return DatedRate(note='Loading', pending=True)
+        raise DataError('Conflicting saved rates')
+    assert resolve_cost(parts, 'EUR', SimpleNamespace(get=conflict)) == result
+    with pytest.raises(DataError, match='Conflicting saved rates'):
+        resolve_cost(parts[1:], 'EUR', SimpleNamespace(get=conflict))

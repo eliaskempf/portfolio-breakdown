@@ -484,3 +484,54 @@ def test_valuation_revision_tracks_material_results_only(jobs):
         finish(jobs, 'workspace')
         assert jobs.channel_state('workspace', 'valuation') == (int(valuation and changed), False)
     assert jobs.revision('workspace') == 3
+
+
+def test_purchase_rates_join_one_nonblocking_valuation_batch(tmp_path):
+    from datetime import date
+    import pandas as pd
+    from portfolio_app.application import BackgroundFX, valuation_requests
+    from portfolio_app.market.fx import HistoricalFX
+    from portfolio_app.market.prices import UnavailableProvider
+    from portfolio_app.performance.cost_basis import component, resolve_cost
+    from portfolio_app.performance.history_observations import Observation, ObservationFX, ObservationStore
+
+    class Provider:
+        def __init__(self):
+            self.days = []
+
+        def fetch(self, currency, start, end):
+            self.days.append(end)
+            return pd.Series(.75, index=pd.date_range(start, end))
+
+    queue = RequestCoordinator(workers=2, capacity=1)
+    release = Event()
+    try:
+        assert queue.request('other', 'busy', lambda: release.wait(10))
+        service = HistoricalFX(Provider(), tmp_path / 'invented-rates')
+        dates = [(date(2024, 1, 1) + timedelta(days=30 * i)).isoformat() for i in range(25)]
+        parts = [component(1, 100, 'USD', day) for day in dates]
+        parts[1]['conversions'] = {'EUR': {'amount': '81', 'method': 'supplied_cost'}}
+        parts += [component(1, 0, 'GBP', dates[0]), component(1, 10, 'EUR')]
+        saved = ObservationStore((Observation('invented', 'fx', 'USD/EUR', dates[0], '.8', 'USD', 'EUR'),))
+        history = ObservationFX(saved, BackgroundFX(service, lambda *_: pytest.fail('Ungrouped request')))
+        reader = BackgroundPrices(PriceService(UnavailableProvider()), queue, str(tmp_path))
+        with valuation_requests(reader, history) as rates:
+            first = resolve_cost(parts, 'EUR', rates)
+            assert first.reason_kind == 'fx' and first.amount is None
+            assert resolve_cost(parts, 'EUR', rates) == first
+            assert not service.provider.days
+        assert reader.submit_waiting()
+        assert queue.channel_state(tmp_path, 'valuation') == (0, False)
+        release.set()
+        finish(queue, 'other')
+        assert not reader.submit_waiting()
+        finish(queue, tmp_path)
+        assert sorted(service.provider.days) == [(date.fromisoformat(day) + timedelta(days=1)).isoformat()
+                                                 for day in dates[2:]]
+        assert queue.channel_state(tmp_path, 'valuation') == (23, False)
+        with valuation_requests(reader, history) as rates:
+            assert resolve_cost(parts, 'EUR', rates).amount == 80 + 81 + 23 * 75 + 10
+        assert not reader.submit_waiting()
+    finally:
+        release.set()
+        queue.close()

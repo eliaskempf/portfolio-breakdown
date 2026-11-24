@@ -1,7 +1,6 @@
 """Portfolio-currency review and progressively disclosed cost conversion controls."""
 
 from portfolio_app.interface.shared.currency_display import reporting_currency
-from contextlib import nullcontext
 from decimal import Decimal
 from hashlib import sha256
 
@@ -17,7 +16,7 @@ from portfolio_app.workspace.storage import revision
 
 
 # Compatibility import for position/cost editors; service construction is UI-free.
-from portfolio_app.application import historical_for
+from portfolio_app.application import historical_for, valuation_requests
 
 
 def render_currency_setting(directory, settings):
@@ -60,8 +59,8 @@ def render_currency_dialog(directory, snapshot, settings, prices, historical):
                 dismiss()
                 st.rerun()
             return
-        with prices.collect_requests() if isinstance(prices, BackgroundPrices) else nullcontext():
-            candidate = prepare_portfolio(snapshot.holdings, prices, reporting_currency=target, historical=historical)
+        with valuation_requests(prices, historical) as valuation_history:
+            candidate = prepare_portfolio(snapshot.holdings, prices, reporting_currency=target, historical=valuation_history)
         held = candidate.loc[candidate.shares.gt(0)]
         from portfolio_app.performance.performance import cash_balance_only
         eligible = held.loc[~cash_balance_only(held)]

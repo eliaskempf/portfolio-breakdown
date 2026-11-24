@@ -36,6 +36,7 @@ class DatedRate:
     observed_on: str = ''
     source: str = 'Yahoo daily FX'
     note: str = ''
+    pending: bool = False
 
 
 class YahooFXHistory:

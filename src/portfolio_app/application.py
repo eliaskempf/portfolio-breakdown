@@ -3,7 +3,8 @@
 The caller owns navigation, refresh requests and recovery presentation. These
 functions do not fetch optional fundamentals or historical risk data.
 """
-from dataclasses import dataclass
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from typing import NamedTuple
 
 import pandas as pd
@@ -99,16 +100,50 @@ def historical_for(directory, *, demo=False):
     workspace = str(directory.resolve())
     service = HistoricalFX(directory=directory / '.cache' / 'purchase-fx')
 
-    class BackgroundFX:
-        def get(self, source, target, day):
-            result, due = service.cached(source, target, day)
-            if due:
-                def update():
-                    service.get(source, target, day, refresh=True)
-                    return service.cached(source, target, day)[0] != result
-                coordinator.request(workspace, f'purchase-fx-v1:{source}:{target}:{day}', update, channel='valuation')
-            return result
-    return BackgroundFX()
+    def submit(key, work):
+        coordinator.request(workspace, key, work, channel='valuation')
+    return BackgroundFX(service, submit)
+
+
+class BackgroundFX:
+    def __init__(self, service, submit, *, collect=False):
+        self.service = service
+        self.submit = submit
+        self._rates = {} if collect else None
+
+    def get(self, source, target, day):
+        key = f'purchase-fx-v1:{source}:{target}:{day}'
+        if self._rates is not None and key in self._rates:
+            return self._rates[key]
+        result, due = self.service.cached(source, target, day)
+        if due:
+            def update():
+                current, still_due = self.service.cached(source, target, day)
+                if still_due:
+                    self.service.get(source, target, day, refresh=True)
+                    current, _ = self.service.cached(source, target, day)
+                return current != result
+            self.submit(key, update)
+        displayed = replace(result, pending=True) if due and self._rates is not None else result
+        if self._rates is not None:
+            self._rates[key] = displayed
+        return displayed
+
+
+@contextmanager
+def valuation_requests(prices, historical):
+    """Discover current quotes and purchase-date FX before admitting one valuation batch."""
+    from portfolio_app.market.market_data import BackgroundPrices
+    from portfolio_app.performance.history_observations import ObservationFX
+    if not isinstance(prices, BackgroundPrices):
+        yield historical
+        return
+    fallback = historical.fallback if isinstance(historical, ObservationFX) else historical
+    if isinstance(fallback, BackgroundFX):
+        grouped = BackgroundFX(fallback.service, prices.request_valuation, collect=True)
+        historical = ObservationFX(historical.store, grouped) if isinstance(historical, ObservationFX) else grouped
+    with prices.collect_requests():
+        yield historical
 
 
 @dataclass(frozen=True)

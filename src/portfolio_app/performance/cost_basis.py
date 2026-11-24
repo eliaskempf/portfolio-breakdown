@@ -180,6 +180,7 @@ class ResolvedCost:
 
 def resolve_cost(parts, target, historical=None):
     total, estimated, notes = Decimal(0), False, []
+    first_pending = None
     for part in parts:
         if part.get('quality') == 'estimated':
             estimated = True
@@ -192,19 +193,31 @@ def resolve_cost(parts, target, historical=None):
             notes.append('Estimated using latest FX' if saved['method'] == 'estimate' else
                          f"Historical FX ({saved.get('observed_on', '')})" if saved['method'] == 'historical' else 'Supplied conversion')
         elif amount is None:
-            return ResolvedCost(None, note='Missing average buy-in or purchase cost; excluded from gains')
+            return first_pending or ResolvedCost(None, note='Missing average buy-in or purchase cost; excluded from gains')
         elif not part['currency']:
-            return ResolvedCost(None, note='Missing buy-in currency; excluded from gains')
+            return first_pending or ResolvedCost(None, note='Missing buy-in currency; excluded from gains')
         elif part['currency'] == target or amount == 0:
             total += amount
         elif part['date'] and historical is not None:
-            conversion = historical.get(part['currency'], target, part['date'])
+            try:
+                conversion = historical.get(part['currency'], target, part['date'])
+            except DataError:
+                if first_pending is not None:
+                    return first_pending
+                raise
             if conversion.rate is None:
-                return ResolvedCost(None, note=conversion.note + ' Excluded from gains.', reason_kind='fx')
+                issue = first_pending or ResolvedCost(None, note=conversion.note + ' Excluded from gains.', reason_kind='fx')
+                if not getattr(conversion, 'pending', False):
+                    return issue
+                # Keep the first unresolved cost visible while discovering the remaining jobs.
+                first_pending = issue
+                continue
             total += amount * Decimal(str(conversion.rate))
             notes.append(f'Historical market FX ({conversion.observed_on})')
         else:
-            return ResolvedCost(None, note='Missing purchase date or converted cost; excluded from gains')
+            return first_pending or ResolvedCost(None, note='Missing purchase date or converted cost; excluded from gains')
+    if first_pending is not None:
+        return first_pending
     value = float(total)
     return ResolvedCost(value if math.isfinite(value) else None, estimated,
                         '; '.join(dict.fromkeys(notes)) if math.isfinite(value) else 'Cost exceeds supported numeric range',

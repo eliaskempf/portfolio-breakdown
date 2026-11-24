@@ -237,12 +237,15 @@ class BackgroundPrices:
             def update():
                 getattr(self.service, kind)(value, refresh=refresh, defer_save=True)
                 return self.service.cached(key)[0] != current
-            if self._deferred is None:
-                self.coordinator.request(self.workspace, key, update, channel='valuation',
-                                         capture=self.service.cached_reader, prepare_write=self.service.take_cache_write)
-            else:
-                self._deferred.append((key, update))
+            self.request_valuation(key, update)
         return result
+
+    def request_valuation(self, key, work):
+        if self._deferred is None:
+            self.coordinator.request(self.workspace, key, work, channel='valuation',
+                                     capture=self.service.cached_reader, prepare_write=self.service.take_cache_write)
+        else:
+            self._deferred.append((key, work))
 
     def price(self, ticker, *, refresh=False):
         return self._read('price', ticker, refresh)

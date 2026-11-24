@@ -2,7 +2,6 @@
 
 import argparse
 from hashlib import sha256
-from contextlib import nullcontext
 from pathlib import Path
 
 import streamlit as st
@@ -29,7 +28,7 @@ from portfolio_app.exposure.exposure_workspace import analytical_signature
 from portfolio_app.market.market_data import BackgroundPrices, coordinator as market_coordinator, prices_for
 from portfolio_app.interface.shared.view_state import preserve_view_inputs, finish_view_inputs
 from portfolio_app.application import (historical_for, load_leverage_context, prepare_application,
-    prepare_exposure, select_price_service)
+    prepare_exposure, select_price_service, valuation_requests)
 
 
 def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = None, price_service: PriceService | None = None, intro: bool = False, ignore_selection: bool = False) -> None:
@@ -229,10 +228,10 @@ def render_app(data_dir: Path, *, demo: bool = False, demo_dir: Path | None = No
             return background_reader.still_current()
         return market_coordinator.channel_state(market_workspace, 'valuation')[0] == market_revision
 
-    with background_reader.collect_requests() if background_reader else nullcontext():
+    with valuation_requests(price_service, historical) as valuation_history:
         with st.spinner('Valuing portfolio…'):
             prepared = prepare_application(inputs, price_service, refresh=refresh,
-                reporting_currency=reporting_currency, historical=historical)
+                reporting_currency=reporting_currency, historical=valuation_history)
         valued, status = prepared.valued, prepared.status
         ordinary_valued = valued
         if actual_active:
