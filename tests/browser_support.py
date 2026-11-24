@@ -20,12 +20,17 @@ StreamlitReruns = _sync.StreamlitReruns
 
 
 def open_app_menu(page, section):
+    settle(page)
+    trigger = page.get_by_role('button', name='App menu', exact=True)
+    if trigger.get_attribute('aria-expanded') != 'true':
+        trigger.click()
     heading = page.get_by_test_id('stPopoverBody').get_by_text(section, exact=True)
-    if not heading.is_visible():
-        page.get_by_role('button', name='App menu', exact=True).click()
+    expect(heading).to_be_visible()
     details = heading.locator('xpath=ancestor::details[1]')
     if details.get_attribute('open') is None:
         heading.click()
+        expect(details).to_have_attribute('open', '')
+    settle_layout(page)
     return details
 
 
@@ -39,6 +44,7 @@ def choose_appearance(page, theme, *, standalone=False):
     )
     if not standalone:
         page.keyboard.press('Escape')
+        expect(page.get_by_role('button', name='App menu', exact=True)).to_have_attribute('aria-expanded', 'false')
 
 
 def settle(page, *, timeout=None):
