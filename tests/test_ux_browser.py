@@ -436,16 +436,22 @@ def test_category_scope_performance_and_tab_roundtrip(ux_page):
     open_settings(page)
     playwright.expect(page.get_by_role('radio', name='€', exact=True)).to_be_checked()
     page.keyboard.press('Escape')
-    value_box = value_card.get_by_test_id('stMetricValue').bounding_box()
-    gain_box = value_card.get_by_test_id('stMetricDelta').bounding_box()
+    playwright.expect(page.get_by_test_id('stPopoverBody')).not_to_be_visible()
+    settle(page)
+    # Closing the menu can restore scroll between separate browser calls.
+    # Compare viewport coordinates captured in the same layout.
+    value_box, gain_box = value_card.evaluate("""card => ['stMetricValue', 'stMetricDelta'].map(
+        id => card.querySelector('[data-testid="' + id + '"]').getBoundingClientRect().toJSON())""")
     assert gain_box['x'] >= value_box['x'] + value_box['width']
     assert abs(gain_box['y'] + gain_box['height']/2 - value_box['y'] - value_box['height']/2) < 12
     allocation = page.locator('.st-key-overview_allocation')
-    chart_box = allocation.get_by_test_id('stPlotlyChart').bounding_box()
-    summary_box = allocation.locator('.st-key-overview_allocation_summary').bounding_box()
+    chart_box, summary_box, control_box = allocation.evaluate("""section => {
+        const chart = section.querySelector('[data-testid="stPlotlyChart"]');
+        const summary = section.querySelector('.st-key-overview_allocation_summary');
+        const control = section.querySelector('.st-key-strategic_allocation_measure') || summary;
+        return [chart, summary, control].map(el => el.getBoundingClientRect().toJSON());
+    }""")
     assert summary_box['x'] >= chart_box['x'] + chart_box['width']
-    control = allocation.locator('.st-key-strategic_allocation_measure')
-    control_box = control.bounding_box() if control.count() else summary_box
     assert abs(control_box['x'] - summary_box['x']) < 2
     assert abs(control_box['y'] - chart_box['y']) < 4
     page.get_by_role('tab', name='Positions', exact=True).click()
