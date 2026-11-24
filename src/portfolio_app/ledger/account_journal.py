@@ -10,7 +10,7 @@ postings use Decimal cents, while prices and lot bases retain full precision.
 Corrections append a replacement event or a void; original facts remain saved.
 """
 from dataclasses import asdict, dataclass, replace
-from copy import deepcopy
+from copy import copy, deepcopy
 from functools import lru_cache
 from datetime import date
 from decimal import Decimal
@@ -806,6 +806,25 @@ def _journal_from_bytes(content):
     return journal_from_dict(json.loads(content))
 
 
+_JOURNAL_SCALARS = frozenset({str, int, bool, Decimal, type(None)})
+
+
+def _copy_journal(journal):
+    """Detach the validated template, including all mutable event evidence."""
+    memo = {}
+    for book in journal.securities:
+        for event in book.records:
+            # Most fields are scalar facts. Clone their container in one operation,
+            # then recursively detach every other value, including future fields.
+            owned = copy(event)
+            memo[id(event)] = owned
+            state = vars(owned)
+            for name, value in state.items():
+                if type(value) not in _JOURNAL_SCALARS and not (type(value) is tuple and not value):
+                    state[name] = deepcopy(value, memo)
+    return deepcopy(journal, memo)
+
+
 def load_journal(directory: Path):
     if (Path(directory)/'.history-publication.json').exists():
         from portfolio_app.workspace.workspace_lock import workspace_lock
@@ -816,7 +835,7 @@ def load_journal(directory: Path):
         return Journal(), None
     try:
         content = path.read_bytes()
-        result = deepcopy(_journal_from_bytes(content))
+        result = _copy_journal(_journal_from_bytes(content))
         return result, sha256(content).hexdigest()
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         raise DataError(f'Invalid account journal; existing file retained: {exc}') from exc
