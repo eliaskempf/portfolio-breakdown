@@ -1,7 +1,7 @@
 """Value-conserving allocation trees shared by every chart and table."""
 
 from collections import defaultdict
-from functools import cache
+from functools import cache, lru_cache
 from itertools import repeat
 import json
 
@@ -65,16 +65,14 @@ def _tree_from_rows(rows, *, root, depth, include_holdings, root_label):
     def category_id(path):
         return _node_id("category", path)
 
-    root_id = category_id(root)
-    for asset, name, source_path, value in rows:
+    # Many ETF contributions share the same sector paths. Keep references to
+    # their ancestors for this tree while bounding storage for wide taxonomies.
+    @lru_cache(maxsize=256)
+    def destinations(source_path):
         if not is_descendant(source_path, root):
-            continue
+            return None
         path = source_path if depth is None else source_path[: len(root) + depth]
-        if include_holdings:
-            asset_values[(path, asset)] += value
-            asset_names[asset] = min(asset_names.get(asset, name), name)
-        else:
-            terminal_values[path] += value
+        ancestors = []
         for length in range(len(root), len(path) + 1):
             prefix = path[:length]
             node_id = category_id(prefix)
@@ -88,7 +86,22 @@ def _tree_from_rows(rows, *, root, depth, include_holdings, root_label):
                     "value": 0.0,
                     "kind": "category",
                 }
-            nodes[node_id]["value"] += value
+            ancestors.append(nodes[node_id])
+        return path, ancestors
+
+    root_id = category_id(root)
+    for asset, name, source_path, value in rows:
+        destination = destinations(source_path)
+        if destination is None:
+            continue
+        path, ancestors = destination
+        if include_holdings:
+            asset_values[(path, asset)] += value
+            asset_names[asset] = min(asset_names.get(asset, name), name)
+        else:
+            terminal_values[path] += value
+        for node in ancestors:
+            node["value"] += value
     if not nodes:
         return pd.DataFrame(columns=NODE_COLUMNS)
     if include_holdings:

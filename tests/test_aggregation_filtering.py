@@ -285,6 +285,7 @@ def test_invalid_depth(exposures, taxonomy, depth):
 
 @pytest.mark.parametrize('holdings', [False, True])
 def test_build_tree_encodes_each_shared_category_path_once(monkeypatch, holdings):
+    from unittest.mock import Mock
     from portfolio_app.exposure import aggregation
     original = aggregation._node_id
     categories = []
@@ -293,13 +294,16 @@ def test_build_tree_encodes_each_shared_category_path_once(monkeypatch, holdings
             categories.append(path)
         return original(kind, path, asset_id)
     monkeypatch.setattr(aggregation, '_node_id', encode)
+    descendant = Mock(wraps=aggregation.is_descendant)
+    monkeypatch.setattr(aggregation, 'is_descendant', descendant)
     root = ('Invented "theme"',)
-    paths = [root, root + ('A',), root + ('B',)]
-    rows = pd.DataFrame([dict(asset_id=f'a{i}', asset_name=f'Asset {i}', path=paths[i % 3], value=1.)
+    paths = [root, root + ('A',), root + ('B',), ('Other',)]
+    rows = pd.DataFrame([dict(asset_id=f'a{i}', asset_name=f'Asset {i}', path=paths[i % len(paths)], value=1.)
                          for i in range(60)])
     nodes = aggregation.build_tree(rows, root=root, include_holdings=holdings)
-    assert set(categories) == set(paths) and len(categories) == len(paths)
-    assert_conserved(nodes, 60.)
+    assert [call.args for call in descendant.call_args_list] == [(path, root) for path in paths]
+    assert set(categories) == set(paths[:3]) and len(categories) == 3
+    assert_conserved(nodes, 45.)
 
 
 @pytest.mark.parametrize('include_holdings', [False, True])
