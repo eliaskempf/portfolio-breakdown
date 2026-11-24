@@ -137,3 +137,22 @@ def test_tax_candidates_depend_on_fund_identities_not_constituents(tmp_path, mon
     path.write_text(path.read_text().replace('0.5', '0.25'))
     app.run()
     assert not app.exception and len(calls) == 1
+
+
+def test_allowance_edits_reuse_projected_ownership(tmp_path, monkeypatch):
+    from portfolio_app.interface.views.taxes import tax_ui
+
+    observed = {}
+    original = tax_ui.result_for
+    def capture(item, *args, **kwargs):
+        observed[item.key] = item.holding
+        return original(item, *args, **kwargs)
+    monkeypatch.setattr(tax_ui, 'result_for', capture)
+    app = launch(tmp_path)
+    by_label(app.selectbox, 'Calculation year').set_value(2025).run()
+    previous = observed.copy()
+    observed.clear()
+    by_label(app.number_input, 'Available allowance · 2026 (€)').set_value(100.).run()
+    assert by_label(app.metric, 'Estimated tax').value == '€55.36'
+    assert previous.keys() == observed.keys() and observed
+    assert all(holding is previous[key] for key, holding in observed.items())

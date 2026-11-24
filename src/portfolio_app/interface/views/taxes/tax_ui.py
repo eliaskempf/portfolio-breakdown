@@ -131,7 +131,7 @@ def render_taxes(directory, holdings, journal, funds=(), valued=None, *, demo=Fa
         # bearing on which purchased lots appear in the calculator.
         fund_isins = frozenset(fund.isin for fund in funds)
         all_items = cached_input('tax_candidates', (fingerprint, boundary, fund_isins),
-            lambda: candidates(holdings, journal, boundary, funds, valued))
+            lambda: candidates(holdings, journal, boundary, funds, valued), immutable=True)
         if forecast and valued is not None:
             from dataclasses import replace
             prices = {r['position_id']: r for r in valued.to_dict('records')}
