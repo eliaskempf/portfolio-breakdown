@@ -210,6 +210,7 @@ def test_external_security_transfer_is_contribution_without_fabricating_purchase
 
 def test_daily_component_totals_only_recompute_on_ledger_dates(monkeypatch):
     from portfolio_app.performance import personal_performance as history
+    from portfolio_app.performance.history_flows import DatedFlows
     from portfolio_app.ledger.security_history import Charge
     books, prices = [], []
     # More independent positions than the working set of full cash-flow timelines.
@@ -226,12 +227,12 @@ def test_daily_component_totals_only_recompute_on_ledger_dates(monkeypatch):
     j = Journal(version=2, securities=tuple(books))
     store = ObservationStore(tuple(prices))
     calculation = history.HistoryCalculation(j, store)
-    raw_flows = calculation.flows
+    raw_total = DatedFlows.total
     requests = []
-    def counted(scope, start, end, target):
-        requests.append((scope, end))
-        return raw_flows(scope, start, end, target)
-    monkeypatch.setattr(calculation, 'flows', counted)
+    def counted(self, start, end, **kwargs):
+        requests.append((self.scope, end))
+        return raw_total(self, start, end, **kwargs)
+    monkeypatch.setattr(DatedFlows, 'total', counted)
     for day in range(2, 9):
         for index, book in enumerate(books):
             scope = HistoryScope((book.position_id,))
@@ -244,3 +245,4 @@ def test_daily_component_totals_only_recompute_on_ledger_dates(monkeypatch):
             else:
                 assert result.net_contributions == (0 if day < 3 else 12 if day < 6 else 13)
     assert len(requests) == 3 * len(books)
+    assert {end for _, end in requests} == {'2024-01-02', '2024-01-03', '2024-01-06'}

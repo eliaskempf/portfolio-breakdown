@@ -194,7 +194,7 @@ class HistoryCalculation:
         from portfolio_app.performance.history_flows import position_flow_inputs
         return position_flow_inputs(self)
 
-    def flows(self, scope, start, end, target):
+    def dated_flows(self, scope, target):
         from portfolio_app.performance.history_flows import DatedFlows
         if len(scope.positions) == 1 and not scope.accounts and not scope.unresolved:
             identity = scope.positions[0]
@@ -204,14 +204,17 @@ class HistoryCalculation:
                 if flows is None or flows.target != target:
                     flows = DatedFlows(self, scope, target, position_inputs=self._position_flow_inputs[identity])
                     self._position_flows[identity] = flows
-                return flows.interval(start, end)
+                return flows
         key = scope, target
         if key not in self._flows:
             self._flows[key] = DatedFlows(self, scope, target)
         self._flows.move_to_end(key)
         while len(self._flows) > 32:
             self._flows.popitem(last=False)
-        return self._flows[key].interval(start, end)
+        return self._flows[key]
+
+    def flows(self, scope, start, end, target):
+        return self.dated_flows(scope, target).interval(start, end)
 
     @cached_property
     def _receipt_dates_by_position(self):
@@ -803,9 +806,8 @@ def calculate_history(journal, scope, observations, start, end, target='EUR', *,
 def _period_capital(calculation, scope, start, end, target):
     opening = calculation.opening(scope, start, target)
     coverage = calculation.coverage(scope, start, end)
-    flows, missing_flows = calculation.flows(scope, start, end, target)
+    net, missing_flows = calculation.dated_flows(scope, target).total(start, end, amount_needed=not coverage)
     flow_reasons = tuple(dict.fromkeys((*coverage, *missing_flows)))
-    net = None if flow_reasons else sum((flow.amount for flow in flows), ZERO)
     capital = calculation.capital(scope, start, target)
     # A remaining-cost correction changes neither inventory nor cash. It cannot
     # invalidate market-value returns, but the old opening cost no longer proves

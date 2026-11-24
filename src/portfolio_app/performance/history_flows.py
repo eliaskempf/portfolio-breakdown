@@ -2,6 +2,7 @@
 from bisect import bisect_right
 from collections import defaultdict
 from datetime import date, timedelta
+from decimal import Decimal
 
 
 def position_flow_inputs(calculation):
@@ -32,13 +33,15 @@ class DatedFlows:
         self.buckets = {}
         self.starts = {}
         self.last = None
+        self.last_total = None
 
-    def interval(self, start, end):
+    def interval(self, start, end, *, include_account_start=True):
         from portfolio_app.performance.personal_performance import external_flows
         calculation = self.calculation
         dates = self.dates
         lower, upper = bisect_right(dates, start), bisect_right(dates, end)
-        key = start, upper
+        opening_allowed = include_account_start and start <= end
+        key = start, upper, opening_allowed
         if self.last is not None and self.last[0] == key:
             return self.last[1]
         cash, securities, accounts = self.cash, self.securities, self.accounts
@@ -65,7 +68,7 @@ class DatedFlows:
             for stamp in stamps:
                 self.buckets[stamp] = tuple(by_date[stamp]), tuple(issues[stamp])
         opening = (), ()
-        if start <= end and any(calculation._account_starts.get(account) == start for account in self.scope.accounts):
+        if opening_allowed and any(calculation._account_starts.get(account) == start for account in self.scope.accounts):
             if start not in self.starts:
                 self.starts[start] = external_flows(calculation.journal, self.scope, calculation.observations,
                     start, start, self.target, calculation=calculation, security_cash=cash.get(start, ()),
@@ -79,3 +82,26 @@ class DatedFlows:
         # prefix. Converted flows/issues themselves live once per actual date.
         self.last = key, result
         return result
+
+    def total(self, start, end, *, amount_needed):
+        """Extend a net contribution total in posting order as the chart advances."""
+        key = start, amount_needed
+        previous = self.last_total
+        if previous and previous[0] == key and start <= previous[1] <= end:
+            _, prior_end, (amount, reasons) = previous
+            if prior_end == end:
+                return amount, reasons
+            # The prior close already includes this date, even if an account
+            # opened then. New postings must still be checked while net is unknown.
+            flows, missing = self.interval(prior_end, end, include_account_start=False)
+        else:
+            amount = Decimal(0) if amount_needed else None
+            reasons = ()
+            flows, missing = self.interval(start, end)
+        if missing:
+            amount = None
+            reasons = tuple(sorted(set((*reasons, *missing))))
+        elif amount is not None:
+            amount = sum((flow.amount for flow in flows), amount)
+        self.last_total = key, end, (amount, reasons)
+        return amount, reasons

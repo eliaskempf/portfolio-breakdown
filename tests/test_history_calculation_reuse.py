@@ -188,8 +188,12 @@ def test_flow_reuse_matches_fresh_intervals_with_opening_day_and_unknown_fx(targ
     for start in ('2025-12-31', '2026-01-01', '2026-01-03', '2026-01-04'):
         for day in (12, 6, 9, 5, 7, 4, 11, 8, 10):
             end = f'2026-01-{day:02}'
-            assert calculation.flows(scope, start, end, target) == external_flows(
-                journal, scope, observations, start, end, target)
+            expected, issues = external_flows(journal, scope, observations, start, end, target)
+            assert calculation.flows(scope, start, end, target) == (expected, issues)
+            amount, reasons = calculation.dated_flows(scope, target).total(start, end, amount_needed=True)
+            assert amount == (None if issues else sum((flow.amount for flow in expected), D(0)))
+            assert [(str(r), type(r), getattr(r, 'kind', '')) for r in reasons] == [
+                (str(r), type(r), getattr(r, 'kind', '')) for r in issues]
 
 
 def test_daily_price_changes_do_not_rebuild_unchanged_flows(monkeypatch):
@@ -252,6 +256,14 @@ def test_future_flow_fx_conflicts_and_nonflow_issues_do_not_leak_into_early_inte
     with pytest.raises(DataError):
         calculation.flows(scope,'2024-01-01','2024-01-04','EUR')
     assert not calculation.flows(scope,'2024-01-01','2024-01-02','EUR')[1]
+    totals = calculation.dated_flows(scope, 'EUR')
+    for needed in (True, False):
+        amount, issues = totals.total('2024-01-01', '2024-01-03', amount_needed=needed)
+        assert amount is None and issues
+        for _ in range(2):
+            with pytest.raises(DataError):
+                totals.total('2024-01-01', '2024-01-04', amount_needed=needed)
+        assert totals.total('2024-01-01', '2024-01-02', amount_needed=needed) == (10 if needed else None, ())
 
 
 def test_category_comparison_does_not_calculate_unused_annualized_returns(monkeypatch):
@@ -526,3 +538,32 @@ def test_cashflows_change_capital_without_rechecking_unchanged_ledger_coverage(m
     classified = replace(store, classifications=(('unclassified', 'income'),))
     assert not HistoryCalculation(journal, classified).coverage(scope, START, days[-1])
     assert calculation.coverage(scope, START, days[-1])
+
+
+def test_daily_net_contributions_consume_each_posting_once_in_decimal_order(monkeypatch):
+    from decimal import localcontext
+    from portfolio_app.ledger.account_journal import Account, Event
+    from portfolio_app.performance.history_flows import DatedFlows
+    days = [f'2024-01-{day:02}' for day in range(2, 24)]
+    scope = HistoryScope(accounts=('cash',))
+    journal = Journal(accounts=(Account('cash', 'Invented account'),), events=(
+        Event('open', START, 'cash_open', 'cash', 'EUR', D(0)),
+        Event('fund', START, 'cash_flow', 'cash', 'EUR', D(1000)),
+        *(Event(f'{day}-{seq}', day, 'cash_flow', 'cash', 'EUR', D('.4'), sequence=seq)
+          for day in days for seq in (1, 2))))
+    calculation = HistoryCalculation(journal, ObservationStore())
+    visited = []
+    original = DatedFlows.interval
+    def counted(self, *args, **kwargs):
+        flows, reasons = original(self, *args, **kwargs)
+        visited.extend(flow.id for flow in flows)
+        return flows, reasons
+    monkeypatch.setattr(DatedFlows, 'interval', counted)
+    with localcontext() as context:
+        context.prec = 4
+        for day in [START, *days]:
+            total = calculation.period_capital(scope, START, day, 'EUR').net_contributions
+            # Each 0.4 rounds away when added to the balance. Subtotalling the
+            # two payments first would round up a full unit on every date.
+            assert total == 1000
+    assert len(visited) == len(set(visited)) == 1 + 2 * len(days)
